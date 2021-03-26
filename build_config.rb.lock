@@ -7,7 +7,7 @@ builds:
     https://github.com/take-cheeze/mruby-marshal.git:
       url: https://github.com/take-cheeze/mruby-marshal.git
       branch: HEAD
-      commit: 7362b124ebf124ebb6c9c456751fcb2be684444b
+      commit: 86546426d64d673f714ff570f1b6c2538cf10633
       version: 0.0.0
     https://github.com/mattn/mruby-onig-regexp.git:
       url: https://github.com/mattn/mruby-onig-regexp.git
