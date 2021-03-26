@@ -11,4 +11,5 @@ MRuby::Build.new do |_conf|
   gem core: 'mruby-io'
 
   gem "#{MRUBY_ROOT}/../../mruby-rgss"
+  gem "#{MRUBY_ROOT}/../../mruby-lcf"
 end
