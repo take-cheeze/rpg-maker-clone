@@ -1,4 +1,4 @@
-MRuby::Gem::Specification.new('mruby-rss') do |spec|
+MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'
   spec.summary = 'RGSS implementation in mruby'
