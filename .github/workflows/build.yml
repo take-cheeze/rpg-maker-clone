@@ -24,15 +24,17 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
+      
+      - name: setup
+        run: |
+          sudo apt install cmake ninja-build build-essential ruby
 
-      # Runs a single command using the runners shell
       - name: cmake
         run: |
           mkdir build
           cd build
           cmake -GNinja ..
 
-      # Runs a set of commands using the runners shell
       - name: build
         run: |
           ninja -C build
