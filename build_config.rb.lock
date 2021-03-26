@@ -1,0 +1,21 @@
+---
+mruby:
+  version: 3.0.0
+  release_no: 30000
+builds:
+  host:
+    https://github.com/take-cheeze/mruby-marshal.git:
+      url: https://github.com/take-cheeze/mruby-marshal.git
+      branch: HEAD
+      commit: 7362b124ebf124ebb6c9c456751fcb2be684444b
+      version: 0.0.0
+    https://github.com/mattn/mruby-onig-regexp.git:
+      url: https://github.com/mattn/mruby-onig-regexp.git
+      branch: HEAD
+      commit: 76087d150d12f167e95ae10d326099b352cf3d18
+      version: 0.0.0
+    https://github.com/mrbgems/mruby-stringio.git:
+      url: https://github.com/mrbgems/mruby-stringio.git
+      branch: HEAD
+      commit: 92c06329b833803ab3c3c2840981c60d90e4a9bf
+      version: 0.0.0
