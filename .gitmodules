@@ -7,9 +7,6 @@
 [submodule "third_party/cmdline"]
 	path = third_party/cmdline
 	url = git@github.com:tanakh/cmdline.git
-[submodule "timidity-git"]
-	path = timidity-git
-	url = https://git.code.sf.net/p/timidity/git
 [submodule "third_party/timidity"]
 	path = third_party/timidity
 	url = https://git.code.sf.net/p/timidity/git
