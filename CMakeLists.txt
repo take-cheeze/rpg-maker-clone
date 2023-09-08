@@ -31,3 +31,7 @@ add_test(
   NAME mruby_test
   COMMAND env MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb rake test
   WORKING_DIRECTORY "${MRUBY_PREFIX}")
+
+add_test(
+  NAME exe_open
+  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone)
