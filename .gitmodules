@@ -1,12 +1,21 @@
 [submodule "third_party/stb"]
-	path = third_party/stb
+	path = 3rd/stb
 	url = git@github.com:nothings/stb.git
 [submodule "third_party/mruby"]
-	path = third_party/mruby
+	path = 3rd/mruby
 	url = git@github.com:mruby/mruby.git
 [submodule "third_party/cmdline"]
-	path = third_party/cmdline
+	path = 3rd/cmdline
 	url = git@github.com:tanakh/cmdline.git
 [submodule "third_party/timidity"]
-	path = third_party/timidity
+	path = 3rd/timidity
 	url = https://git.code.sf.net/p/timidity/git
+[submodule "third_party/lvgl"]
+	path = 3rd/lvgl
+	url = https://github.com/lvgl/lvgl.git
+[submodule "third_party/glog"]
+	path = 3rd/glog
+	url = https://github.com/google/glog.git
+[submodule "3rd/gflags"]
+	path = 3rd/gflags
+	url = https://github.com/gflags/gflags.git
