@@ -19,3 +19,15 @@
 [submodule "3rd/gflags"]
 	path = 3rd/gflags
 	url = https://github.com/gflags/gflags.git
+[submodule "3rd/mgem-list"]
+	path = 3rd/mgem-list
+	url = https://github.com/mruby/mgem-list.git
+[submodule "3rd/mruby-marshal"]
+	path = 3rd/mruby-marshal
+	url = https://github.com/take-cheeze/mruby-marshal.git
+[submodule "3rd/mruby-onig-regexp"]
+	path = 3rd/mruby-onig-regexp
+	url = https://github.com/mattn/mruby-onig-regexp.git
+[submodule "3rd/mruby-stringio"]
+	path = 3rd/mruby-stringio
+	url = https://github.com/ksss/mruby-stringio.git

@@ -13,7 +13,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_subdirectory(3rd/lvgl)
 
 set(WITH_GTEST OFF)
-set(WITH_GFLAGS ON CACHE BOOL "" FORCE)
+set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
 set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
 set(old_build_testing ${BUILD_TESTING})
 set(BUILD_TESTING OFF)
@@ -23,16 +23,23 @@ set(BUILD_TESTING ${old_build_testing})
 
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
 add_library(mruby STATIC IMPORTED)
-set(LIBMRUBY_A "${MRUBY_PREFIX}/build/host/lib/libmruby.a")
+set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
+set(LIBMRUBY_A "${MRUBY_BUILD_DIR}/host/lib/libmruby.a")
 set_target_properties(
   mruby PROPERTIES
   IMPORTED_LOCATION "${LIBMRUBY_A}"
   )
-set(ADDITIONAL_CLEAN_FILES "${MRUBY_PREFIX}/build")
+list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
-  COMMAND MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb rake
+  COMMAND
+    mkdir -p ${MRUBY_BUILD_DIR}/repos/host &&
+    ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list ${MRUBY_BUILD_DIR}/repos/host/mgem-list &&
+    MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
+    MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
+    BUILD_DIR=${MRUBY_BUILD_DIR}
+    rake -v
   WORKING_DIRECTORY "${MRUBY_PREFIX}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb"
   )
