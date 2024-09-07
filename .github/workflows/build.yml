@@ -27,20 +27,20 @@ jobs:
         with:
           submodules: recursive      
 
-      - name: setup
-        run: |
-          sudo apt install cmake ninja-build build-essential ruby libsdl2-dev
+      - uses: nixbuild/nix-quick-install-action@v27
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v5
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
       - name: cmake
         run: |
-          mkdir build
-          cd build
-          cmake -GNinja ..
+          nix develop -c cmake -S . -B build
 
       - name: build
         run: |
-          ninja -C build
+          nix develop -c cmake --build build
 
       - name: test
         run: |
-          ninja -C build test
+          nix develop -c cmake --build build -t test

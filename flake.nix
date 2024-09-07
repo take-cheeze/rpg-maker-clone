@@ -11,7 +11,10 @@
         {
           packages = rec {
             build = pkgs.stdenv.mkDerivation {
-              name = "builder";
+              name = "rpg-maker-clone";
+              srcs = [
+                ./.
+              ];
               nativeBuildInputs = with pkgs; [
                 ninja
                 cmake
