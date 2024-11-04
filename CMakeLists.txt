@@ -10,15 +10,15 @@ find_package(Ruby REQUIRED)
 find_package(SDL2 REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-add_subdirectory(3rd/lvgl)
+add_subdirectory(3rd/lvgl EXCLUDE_FROM_ALL)
 
 set(WITH_GTEST OFF)
 set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
 set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
 set(old_build_testing ${BUILD_TESTING})
 set(BUILD_TESTING OFF)
-add_subdirectory(3rd/gflags)
-add_subdirectory(3rd/glog)
+add_subdirectory(3rd/gflags EXCLUDE_FROM_ALL)
+add_subdirectory(3rd/glog EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
