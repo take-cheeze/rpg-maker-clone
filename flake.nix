@@ -25,6 +25,7 @@
                 SDL2
               ];
               CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
+              CMAKE_BUILD_TYPE = "RelWithDebInfo";
             };
             default = build;
           };
