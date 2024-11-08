@@ -26,6 +26,10 @@
               ];
               CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
               CMAKE_BUILD_TYPE = "RelWithDebInfo";
+              CTEST_OUTPUT_ON_FAILURE = "1";
+              shellHook = ''
+                export CTEST_PARALLEL_LEVEL=$NIX_BUILD_CORES
+              '';
             };
             default = build;
           };
