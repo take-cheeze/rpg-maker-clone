@@ -62,5 +62,7 @@ int main(int argc, char** argv) {
     frame++;
   }
 
+  gflags::ShutDownCommandLineFlags();
+
   return EXIT_SUCCESS;
 }
