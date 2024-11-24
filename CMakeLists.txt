@@ -54,6 +54,7 @@ add_dependencies(mruby mruby_build)
 
 add_executable(${PROJECT_NAME} src/main.cc)
 target_link_libraries(${PROJECT_NAME} mruby lvgl glog SDL2::SDL2 gflags)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
 
 enable_testing()
 
@@ -64,4 +65,7 @@ add_test(
 
 add_test(
   NAME exe_open
-  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100)
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
+    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

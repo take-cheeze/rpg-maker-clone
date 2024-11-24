@@ -22,6 +22,8 @@
                 ccache
                 clang-tools
                 git
+                wget
+                unzip
               ];
               buildInputs = with pkgs; [
                 SDL2

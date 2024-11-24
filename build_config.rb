@@ -11,6 +11,6 @@ MRuby::Build.new do |_conf|
   gem "#{MRUBY_ROOT}/../mruby-marshal"
   gem "#{MRUBY_ROOT}/../mruby-onig-regexp"
 
-  gem "#{MRUBY_ROOT}/../../mruby-rgss"
   gem "#{MRUBY_ROOT}/../../mruby-lcf"
+  gem "#{MRUBY_ROOT}/../../mruby-rgss"
 end
