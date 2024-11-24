@@ -54,6 +54,7 @@ add_dependencies(mruby mruby_build)
 
 add_executable(${PROJECT_NAME} src/main.cc)
 target_link_libraries(${PROJECT_NAME} mruby lvgl glog SDL2::SDL2 gflags)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
 
 enable_testing()
 
