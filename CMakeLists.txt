@@ -31,18 +31,24 @@ set_target_properties(
   )
 list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
+foreach(g mruby-rgss mruby-lcf)
+  file(GLOB cxx ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.cxx)
+  file(GLOB rb ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrblib/*.rb)
+  list(APPEND MRB_FILES ${cxx} ${rb})
+endforeach()
+set(
+  MRB_OPTS 
+  MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
+  MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
+  BUILD_DIR=${MRUBY_BUILD_DIR})
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
     mkdir -p ${MRUBY_BUILD_DIR}/repos/host &&
     ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list ${MRUBY_BUILD_DIR}/repos/host/mgem-list &&
-    MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
-    MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
-    BUILD_DIR=${MRUBY_BUILD_DIR}
-    rake -v
+    ${MRB_OPTS} rake -v
   WORKING_DIRECTORY "${MRUBY_PREFIX}"
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb"
-  )
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb" ${MRB_FILES})
 add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
 add_dependencies(mruby mruby_build)
 
@@ -53,7 +59,7 @@ enable_testing()
 
 add_test(
   NAME mruby_test
-  COMMAND env MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb rake test
+  COMMAND env ${MRB_OPTS} rake test
   WORKING_DIRECTORY "${MRUBY_PREFIX}")
 
 add_test(
