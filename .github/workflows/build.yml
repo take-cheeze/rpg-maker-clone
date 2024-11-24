@@ -34,6 +34,10 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
+      - name: clang-format
+        run: |
+          nix develop -c ./scripts/run-clang-format.bash
+
       - name: cmake
         run: |
           nix develop -c cmake -S . -B build -GNinja
