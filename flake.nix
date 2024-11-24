@@ -20,6 +20,8 @@
                 cmake
                 ruby
                 ccache
+                clang-tools
+                git
               ];
               buildInputs = with pkgs; [
                 SDL2
