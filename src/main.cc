@@ -11,13 +11,29 @@ DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
 DEFINE_int64(height, 240, "height of the window");
 
+namespace {
+
+void* lvallocf(mrb_state *M, void* p, size_t s, void *ud) {
+  if (s == 0) {
+    lv_free(p);
+    return nullptr;
+  } else if (p) {
+    return lv_realloc(p, s);
+  } else {
+    return lv_malloc(s);
+  }
+}
+
+}
+
+
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
-  std::shared_ptr<mrb_state> M(mrb_open(), mrb_close);
-
   lv_init();
+
+  std::shared_ptr<mrb_state> M(mrb_open_allocf(lvallocf, nullptr), mrb_close);
 
   std::shared_ptr<lv_display_t> display(
     lv_sdl_window_create(FLAGS_width, FLAGS_height), [](lv_display_t*) { lv_sdl_quit(); });
