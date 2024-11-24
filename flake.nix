@@ -24,6 +24,7 @@
                 git
                 wget
                 unzip
+                cmake-format
               ];
               buildInputs = with pkgs; [
                 SDL2
