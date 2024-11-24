@@ -65,4 +65,7 @@ add_test(
 
 add_test(
   NAME exe_open
-  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100)
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
+    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

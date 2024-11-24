@@ -46,6 +46,17 @@ jobs:
         run: |
           nix develop -c cmake --build build
 
+      - name: cache test game
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download-nepheshel.bash') }}
+
+      - name: Download game
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ./scripts/download-nepheshel.bash
+
       - name: test
         run: |
           nix develop -c cmake --build build -t test
