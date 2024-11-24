@@ -1,10 +1,10 @@
 
 #include <cstdlib>
-#include <memory>
 #include <filesystem>
+#include <memory>
 
-#include <mruby.h>
 #include <lvgl.h>
+#include <mruby.h>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -72,12 +72,17 @@ int main(int argc, char** argv) {
   stbi__png_to_bgr_palette = true;
   std::string title_path = FLAGS_game_dir + "/Title/Nepheshel_logo.png";
   int w, h, c;
-  std::shared_ptr<uint8_t> img(stbi_load(title_path.c_str(), &w, &h, &c, stbi__png_transparent_palette ? 4 : 3), stbi_image_free);
+  std::shared_ptr<uint8_t> img(stbi_load(title_path.c_str(), &w, &h, &c,
+                                         stbi__png_transparent_palette ? 4 : 3),
+                               stbi_image_free);
   CHECK(img) << stbi_failure_reason();
   LOG(INFO) << "w: " << w << ", h: " << h << ", c: " << c << std::endl;
 
-  std::shared_ptr<lv_obj_t> title(lv_canvas_create(canvas.get()), lv_obj_delete);
-  lv_canvas_set_buffer(title.get(), img.get(), w, h, c == 3 ? LV_COLOR_FORMAT_RGB888 : LV_COLOR_FORMAT_ARGB8888);
+  std::shared_ptr<lv_obj_t> title(lv_canvas_create(canvas.get()),
+                                  lv_obj_delete);
+  lv_canvas_set_buffer(
+      title.get(), img.get(), w, h,
+      c == 3 ? LV_COLOR_FORMAT_RGB888 : LV_COLOR_FORMAT_ARGB8888);
 
   while (true) {
     if (FLAGS_timeout_ms > 0 && (lv_tick_get() - start) > FLAGS_timeout_ms) {
