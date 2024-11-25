@@ -25,6 +25,7 @@
                 wget
                 unzip
                 cmake-format
+                pre-commit
               ];
               buildInputs = with pkgs; [
                 SDL2

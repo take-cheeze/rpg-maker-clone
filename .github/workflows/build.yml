@@ -2,7 +2,7 @@
 
 name: CI
 
-# Controls when the action will run. 
+# Controls when the action will run.
 on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
@@ -34,10 +34,9 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
-      - name: clang-format
+      - name: pre-commit
         run: |
-          nix develop -c ./scripts/run-clang-format.bash
-          nix develop -c ./scripts/run-cmake-format.bash
+          nix develop -c pre-commit run -a
 
       - name: cmake
         run: |
