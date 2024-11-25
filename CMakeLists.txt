@@ -13,8 +13,12 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_subdirectory(3rd/lvgl EXCLUDE_FROM_ALL)
 
 set(WITH_GTEST OFF)
-set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
-set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+set(WITH_GFLAGS
+    OFF
+    CACHE BOOL "" FORCE)
+set(BUILD_STATIC_LIBS
+    ON
+    CACHE BOOL "" FORCE)
 set(old_build_testing ${BUILD_TESTING})
 set(BUILD_TESTING OFF)
 add_subdirectory(3rd/gflags EXCLUDE_FROM_ALL)
@@ -25,10 +29,7 @@ set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
 add_library(mruby STATIC IMPORTED)
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
 set(LIBMRUBY_A "${MRUBY_BUILD_DIR}/host/lib/libmruby.a")
-set_target_properties(
-  mruby PROPERTIES
-  IMPORTED_LOCATION "${LIBMRUBY_A}"
-  )
+set_target_properties(mruby PROPERTIES IMPORTED_LOCATION "${LIBMRUBY_A}")
 list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
 foreach(g mruby-rgss mruby-lcf)
@@ -36,17 +37,14 @@ foreach(g mruby-rgss mruby-lcf)
   file(GLOB rb ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrblib/*.rb)
   list(APPEND MRB_FILES ${cxx} ${rb})
 endforeach()
-set(
-  MRB_OPTS 
-  MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
-  MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
-  BUILD_DIR=${MRUBY_BUILD_DIR})
+set(MRB_OPTS MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
+             MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR} BUILD_DIR=${MRUBY_BUILD_DIR})
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
-    mkdir -p ${MRUBY_BUILD_DIR}/repos/host &&
-    ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list ${MRUBY_BUILD_DIR}/repos/host/mgem-list &&
-    ${MRB_OPTS} rake -v
+    mkdir -p ${MRUBY_BUILD_DIR}/repos/host && ln -sf
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
+    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ${MRB_OPTS} rake -v
   WORKING_DIRECTORY "${MRUBY_PREFIX}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb" ${MRB_FILES})
 add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
@@ -54,7 +52,8 @@ add_dependencies(mruby mruby_build)
 
 add_executable(${PROJECT_NAME} src/main.cc)
 target_link_libraries(${PROJECT_NAME} mruby lvgl glog SDL2::SDL2 gflags)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
+target_include_directories(${PROJECT_NAME}
+                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
 
 enable_testing()
 
@@ -65,7 +64,6 @@ add_test(
 
 add_test(
   NAME exe_open
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
-    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta
+  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
+          --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
