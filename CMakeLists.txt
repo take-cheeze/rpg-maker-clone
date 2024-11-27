@@ -44,12 +44,14 @@ set(MRB_OPTS
     MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
     BUILD_DIR=${MRUBY_BUILD_DIR}
     PROJECT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    "CXX=${CMAKE_CXX_COMPILER}"
     "CXXFLAGS=${CMAKE_CXX_FLAGS}"
     "LDFLAGS=${CMAKE_CXX_FLAGS}")
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
-    mkdir -p ${MRUBY_BUILD_DIR}/repos/host && ln -sf
+    mkdir -p ${MRUBY_BUILD_DIR}/repos/host && rm -f
+    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sf
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
     ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ${MRB_OPTS} rake -v
   WORKING_DIRECTORY "${MRUBY_PREFIX}"
