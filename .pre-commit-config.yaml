@@ -25,3 +25,7 @@ repos:
     #   language: system
     #   entry: "ls"
     #   pass_filename: true
+- repo: https://github.com/NixOS/nixfmt
+  rev: master
+  hooks:
+    - id: nixfmt
