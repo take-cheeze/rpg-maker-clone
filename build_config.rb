@@ -1,5 +1,5 @@
 MRuby::Build.new do |_conf|
-  toolchain
+  toolchain :gcc
 
   enable_test
 
