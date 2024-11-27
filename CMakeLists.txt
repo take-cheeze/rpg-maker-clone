@@ -25,6 +25,8 @@ add_subdirectory(3rd/gflags EXCLUDE_FROM_ALL)
 add_subdirectory(3rd/glog EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
+add_subdirectory(3rd/uni-algo EXCLUDE_FROM_ALL)
+
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
 add_library(mruby STATIC IMPORTED)
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
@@ -37,8 +39,13 @@ foreach(g mruby-rgss mruby-lcf)
   file(GLOB rb ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrblib/*.rb)
   list(APPEND MRB_FILES ${cxx} ${rb})
 endforeach()
-set(MRB_OPTS MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
-             MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR} BUILD_DIR=${MRUBY_BUILD_DIR})
+set(MRB_OPTS
+    MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
+    MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
+    BUILD_DIR=${MRUBY_BUILD_DIR}
+    PROJECT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    "CXXFLAGS=${CMAKE_CXX_FLAGS}"
+    "LDFLAGS=${CMAKE_CXX_FLAGS}")
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
@@ -51,7 +58,14 @@ add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
 add_dependencies(mruby mruby_build)
 
 add_executable(${PROJECT_NAME} src/main.cc)
-target_link_libraries(${PROJECT_NAME} mruby lvgl glog SDL2::SDL2 gflags)
+target_link_libraries(
+  ${PROJECT_NAME}
+  mruby
+  lvgl
+  glog
+  SDL2::SDL2
+  gflags
+  uni-algo::uni-algo)
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
 
