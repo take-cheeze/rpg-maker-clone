@@ -4,42 +4,48 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem
-      (system:
-        let pkgs = nixpkgs.legacyPackages.${system}; in
-        {
-          packages = rec {
-            build = pkgs.stdenv.mkDerivation {
-              name = "rpg-maker-clone";
-              srcs = [
-                ./.
-              ];
-              nativeBuildInputs = with pkgs; [
-                ninja
-                cmake
-                ruby
-                ccache
-                clang-tools
-                git
-                wget
-                unzip
-                cmake-format
-                pre-commit
-              ];
-              buildInputs = with pkgs; [
-                SDL2
-              ];
-              CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
-              CMAKE_BUILD_TYPE = "RelWithDebInfo";
-              CTEST_OUTPUT_ON_FAILURE = "1";
-              GLOG_logtostderr = "1";
-              shellHook = ''
-                export CTEST_PARALLEL_LEVEL=$NIX_BUILD_CORES
-              '';
-            };
-            default = build;
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      {
+        packages = rec {
+          build = pkgs.stdenv.mkDerivation {
+            name = "rpg-maker-clone";
+            srcs = [ ./. ];
+            nativeBuildInputs = with pkgs; [
+              ninja
+              cmake
+              ruby
+              ccache
+              clang-tools
+              git
+              wget
+              unzip
+              cmake-format
+              pre-commit
+              nixfmt-rfc-style
+              cabal-install
+              ghc
+            ];
+            buildInputs = with pkgs; [ SDL2 ];
+            CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
+            CMAKE_BUILD_TYPE = "RelWithDebInfo";
+            CTEST_OUTPUT_ON_FAILURE = "1";
+            GLOG_logtostderr = "1";
+            shellHook = ''
+              export CTEST_PARALLEL_LEVEL=$NIX_BUILD_CORES
+            '';
           };
-        }
-      );
+          default = build;
+        };
+      }
+    );
 }
