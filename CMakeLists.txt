@@ -71,6 +71,8 @@ target_link_libraries(
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/stb)
 
+install(TARGETS ${PROJECT_NAME} RUNTIME)
+
 enable_testing()
 
 add_test(
