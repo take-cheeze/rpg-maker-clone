@@ -14,4 +14,5 @@ MRuby::Build.new do |_conf|
 
   gem "#{MRUBY_ROOT}/../../mruby-lcf"
   gem "#{MRUBY_ROOT}/../../mruby-rgss"
+  gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
 end

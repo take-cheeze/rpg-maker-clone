@@ -5,6 +5,7 @@
 
 #include <lvgl.h>
 #include <mruby.h>
+#include <mruby/variable.h>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -64,7 +65,9 @@ int main(int argc, char** argv) {
   lv_draw_rect_dsc_init(&rect);
   rect.bg_color = LV_COLOR_MAKE(255, 0, 0);
 
-  std::shared_ptr<mrb_state> M(mrb_open_allocf(lvallocf, nullptr), mrb_close);
+  std::shared_ptr<mrb_state> mrb(mrb_open_allocf(lvallocf, nullptr), mrb_close);
+  mrb_state* M = mrb.get();
+  CHECK(!M->exc);
 
   int frame = 0;
 
@@ -76,13 +79,22 @@ int main(int argc, char** argv) {
                                          stbi__png_transparent_palette ? 4 : 3),
                                stbi_image_free);
   CHECK(img) << stbi_failure_reason();
-  LOG(INFO) << "w: " << w << ", h: " << h << ", c: " << c << std::endl;
+  // LOG(INFO) << "w: " << w << ", h: " << h << ", c: " << c << std::endl;
 
   std::shared_ptr<lv_obj_t> title(lv_canvas_create(canvas.get()),
                                   lv_obj_delete);
   lv_canvas_set_buffer(
       title.get(), img.get(), w, h,
       c == 3 ? LV_COLOR_FORMAT_RGB888 : LV_COLOR_FORMAT_ARGB8888);
+
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "GAME_DIR"),
+                mrb_str_new_cstr(M, FLAGS_game_dir.c_str()));
+  CHECK(!M->exc);
+
+  mrb_value obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 0, nullptr);
+  mrb_funcall(M, obj, "start", 0);
+  CHECK(!M->exc);
 
   while (true) {
     if (FLAGS_timeout_ms > 0 && (lv_tick_get() - start) > FLAGS_timeout_ms) {
