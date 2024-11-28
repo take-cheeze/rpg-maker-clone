@@ -20,6 +20,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   file "#{build_dir}/cp932.h" => "#{build_dir}/cp932.cc"
   file "#{build_dir}/cp932.cc" => "#{dir}/cp932_to_unicode.rb" do
     FileUtils.mkdir_p build_dir, verbose: true
+    p ENV["cp932_table"]
     Dir.chdir build_dir do
       sh "#{dir}/cp932_to_unicode.rb"
     end
