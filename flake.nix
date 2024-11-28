@@ -35,6 +35,10 @@
               cabal-install
               ghc
             ];
+            cp932_table = pkgs.fetchurl {
+              url = "https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt";
+              hash = "sha256-JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE=";
+            };
             buildInputs = with pkgs; [ SDL2 ];
             CMAKE_BUILD_TYPE = "RelWithDebInfo";
             CTEST_OUTPUT_ON_FAILURE = "1";

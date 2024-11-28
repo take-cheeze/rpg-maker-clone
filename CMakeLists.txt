@@ -37,7 +37,8 @@ target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
 foreach(g mruby-rgss mruby-lcf)
   file(GLOB cxx ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.cxx)
   file(GLOB rb ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrblib/*.rb)
-  list(APPEND MRB_FILES ${cxx} ${rb})
+  list(APPEND MRB_FILES ${cxx} ${rb}
+       ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrbgem.rake)
 endforeach()
 set(MRB_OPTS
     MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
