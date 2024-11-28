@@ -54,7 +54,7 @@ add_custom_command(
     mkdir -p ${MRUBY_BUILD_DIR}/repos/host && rm -f
     ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sf
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
-    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ${MRB_OPTS} rake -v
+    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ${MRB_OPTS} rake -v --trace
   WORKING_DIRECTORY "${MRUBY_PREFIX}"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb" ${MRB_FILES})
 add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
