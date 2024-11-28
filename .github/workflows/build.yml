@@ -35,8 +35,11 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
       - name: pre-commit
+        env:
+          SKIP: nixfmt
         run: |
           nix develop -c pre-commit run -a
+          git diff --exit-code
 
       - name: cmake
         run: |
