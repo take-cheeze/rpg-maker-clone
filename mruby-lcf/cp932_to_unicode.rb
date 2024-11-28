@@ -27,6 +27,7 @@ File.open("cp932.h", "w") do |f|
 
 #include <utility>
 #include <cstdint>
+#include <cstddef>
 
 extern size_t cp932_table_len;
 extern const std::pair<uint16_t, uint16_t> cp932_table[];
