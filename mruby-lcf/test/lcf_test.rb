@@ -22,3 +22,9 @@ assert 'Read BER number' do
     assert_true s.eof?
   end
 end
+
+assert "cp932 to unicode" do
+  assert_equal "あ", LCF.cp932_to_utf8("\x82\xa0")
+  assert_equal "あああ", LCF.cp932_to_utf8("\x82\xa0\x82\xa0\x82\xa0")
+  assert_equal "AあA", LCF.cp932_to_utf8("A\x82\xa0A")
+end

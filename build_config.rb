@@ -2,6 +2,7 @@ MRuby::Build.new do |_conf|
   toolchain :gcc
 
   enable_test
+  enable_debug
 
   gem core: 'mruby-array-ext'
   gem core: 'mruby-hash-ext'
