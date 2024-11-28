@@ -20,10 +20,8 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   file "#{build_dir}/cp932.h" => "#{build_dir}/cp932.cc"
   file "#{build_dir}/cp932.cc" => "#{dir}/cp932_to_unicode.rb" do |t|
     FileUtils.mkdir_p build_dir, verbose: true
-    abs = File.absolute_path t.prereqs.first
-    p abs
     Dir.chdir build_dir do
-      sh abs
+      ruby  t.prereqs.first
     end
   end
 end
