@@ -14,7 +14,9 @@ MRuby::Build.new do |_conf|
 
   gem "#{MRUBY_ROOT}/../mruby-stringio"
   gem "#{MRUBY_ROOT}/../mruby-marshal"
-  gem "#{MRUBY_ROOT}/../mruby-onig-regexp"
+  gem "#{MRUBY_ROOT}/../mruby-onig-regexp" do
+    bundle_onigmo
+  end
 
   gem "#{MRUBY_ROOT}/../../mruby-lcf"
   gem "#{MRUBY_ROOT}/../../mruby-rgss"
