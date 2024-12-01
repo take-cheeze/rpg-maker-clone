@@ -6,7 +6,6 @@ MRuby::Build.new do |_conf|
 
   [cc, cxx].each do |t|
     t.flags = t.flags.flatten.delete_if {|v| v == "-O0" }
-    p t.flags
   end
 
   gem core: 'mruby-array-ext'
