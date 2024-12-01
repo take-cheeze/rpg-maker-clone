@@ -14,12 +14,10 @@ mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "s", &p, &l);
 
   const auto find_utf8 = [](const uint16_t v) -> std::optional<uint16_t> {
-    fprintf(stderr, "%x\n", int(v));
     const auto cmp = [](const std::pair<uint16_t, uint16_t>& l,
                         const uint16_t& r) -> bool { return l.first < r; };
     const auto* e = cp932_table + cp932_table_len;
     const auto* i = std::lower_bound(cp932_table, e, v, cmp);
-    fprintf(stderr, "%x\n", int(i->first));
     if (i < e and i->first == v)
       return i->second;
     else
@@ -34,6 +32,11 @@ mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
     if (u) {
       str.push_back(*u);
       i += 1;
+      continue;
+    }
+    // ASCII characters
+    if (b[0] < 0x80) {
+      str.push_back(b[0]);
       continue;
     }
     u = find_utf8(b[0]);
