@@ -1,46 +1,60 @@
 module RGSS
-    class Bitmap
-    end
+  class Timeout < StandardError; end
 
-    class Color
+  class Bitmap
+    def initialize f, s = nil
+      if f.kind_of? String
+        i = self._init_file(f, s)
+        i = self._init_file("#{GAME_DIR}/#{f}") unless i
+        i = self._init_file("#{GAME_DIR}/#{f}.png") unless i
+        i = self._init_file("#{GAME_DIR}/#{f}.xyz") unless i
+        raise "Failed to init bitmap: #{f}" unless i
+      else
+        self._init_size(w, h)
+      end
     end
+  end
 
-    class Font
-    end
+  class Color
+  end
 
-    class Plane
-    end
+  class Font
+  end
 
-    class Rect
-    end
+  class Plane
+  end
 
-    class Sprite
-    end
+  class Rect
+  end
 
-    class Table
-    end
+  class Sprite
+    attr_reader :bitmap
+  end
 
-    class Tilemap
-    end
+  class Table
+  end
 
-    class Tone
-    end
+  class Tilemap
+  end
 
-    class Viewport
-    end
+  class Tone
+  end
 
-    class Window
-    end
+  class Viewport
+  end
 
-    class RGSSError < StandardError
-    end
+  class Window
+  end
 
-    module Audio
-    end
+  class RGSSError < StandardError
+  end
 
-    module Graphics
-    end
+  module Audio
+  end
 
-    module Input
-    end
+  module Graphics
+  end
+
+  module Input
+  end
 end

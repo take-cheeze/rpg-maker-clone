@@ -1,16 +1,3 @@
-class StringIO
-  def ungetbyte(substr)
-    substr = substr.chr if substr.is_a? Integer
-    ungetc substr
-  end
-
-  def getbyte
-    ret = getc
-    return ret.getbyte 0 if ret
-    ret
-  end
-end
-
 assert 'Read BER number' do
   [
     [0x7f, "\x7f"],
@@ -27,4 +14,5 @@ assert "cp932 to unicode" do
   assert_equal "あ", LCF.cp932_to_utf8("\x82\xa0")
   assert_equal "あああ", LCF.cp932_to_utf8("\x82\xa0\x82\xa0\x82\xa0")
   assert_equal "AあA", LCF.cp932_to_utf8("A\x82\xa0A")
+  assert_equal "LcfDataBase", LCF.cp932_to_utf8("LcfDataBase")
 end
