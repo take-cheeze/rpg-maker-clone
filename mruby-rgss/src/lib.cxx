@@ -8,6 +8,7 @@
 
 #include <lvgl.h>
 
+#include <cstring>
 #include <memory>
 #include <vector>
 
