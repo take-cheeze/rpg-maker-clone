@@ -29,3 +29,4 @@ repos:
   rev: master
   hooks:
     - id: nixfmt
+exclude: "3rd/.*"
