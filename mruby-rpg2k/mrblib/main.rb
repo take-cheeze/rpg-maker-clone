@@ -11,7 +11,9 @@ class RPG2k
     # @map_tree = LCF::MapTree.new "#{GAME_DIR}/RPG_RT.lmt"
 
     @title = Sprite.new
-    @title.bitmap = Bitmap.new "Title/#{@db.system.title}"
+    title = Bitmap.new "Title/#{@db.system.title}"
+    title.draw_text(0, 0, 100, 100, "test テスト")
+    @title.bitmap = title
   end
 
   def start

@@ -5,12 +5,18 @@
 #include <mruby/variable.h>
 
 #include <uni_algo/norm.h>
+#include <uni_algo/ranges.h>
+#include <uni_algo/ranges_conv.h>
 
 #include <lvgl.h>
+
+#include "shinonome.hxx"
 
 #include <cstring>
 #include <memory>
 #include <vector>
+
+#include <iostream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -75,6 +81,63 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   mrb_data_init(self, bmp, &bitmap_type);
   std::memcpy(bmp->buffer.data(), img.get(), bmp->buffer.size());
   return mrb_true_value();
+}
+
+mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
+  mrb_assert(DATA_PTR(self));
+
+  auto& bmp = *reinterpret_cast<Bitmap*>(DATA_PTR(self));
+
+  mrb_int x, y, w, h, len;
+  const char* s;
+  mrb_get_args(M, "iiiis", &x, &y, &w, &h, &s, &len);
+
+  auto find_char = [](char32_t c, const auto* g,
+                      unsigned g_len) -> const auto* {
+    auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
+      return e.codepoint < v;
+    });
+    if (i == (g + g_len))
+      return static_cast<decltype(i)>(nullptr);
+    if (i->codepoint != c)
+      return static_cast<decltype(i)>(nullptr);
+    return i;
+  };
+
+  auto draw = [&x, y, &bmp](const auto& c) {
+    static const uint8_t col[] = {0, 0, 0, 0};
+    const unsigned col_len = lv_color_format_get_size(bmp.format);
+    for (unsigned i = 0; i < c.HEIGHT; ++i) {
+      for (unsigned j = 0; j < c.WIDTH; ++j) {
+        const unsigned idx = i * c.WIDTH + j;
+        if (c.data[idx / 32] & (1 << (idx % 32)))
+          std::memcpy(
+              bmp.buffer.data() + ((y + i) * bmp.width + j + x) * col_len, col,
+              col_len);
+      }
+    }
+    x += c.WIDTH;
+  };
+
+  for (const char32_t c : std::string_view(s, len) | una::views::utf8) {
+    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    if (f) {
+      draw(*f);
+      continue;
+    }
+    auto h = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
+    if (h) {
+      draw(*h);
+      continue;
+    }
+    h = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
+    if (h) {
+      draw(*h);
+      continue;
+    }
+  }
+
+  return self;
 }
 
 mrb_value obj_disposed(mrb_state* M, mrb_value self) {
@@ -208,6 +271,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "draw_text", bmp_draw_text, MRB_ARGS_REQ(5));
   mrb_define_method(M, bmp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
