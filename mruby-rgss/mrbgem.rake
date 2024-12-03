@@ -7,7 +7,8 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
     "#{dir}/../3rd/uni-algo/include" <<
     "#{dir}/../3rd/lvgl" <<
     "#{dir}/../include" <<
-    "#{dir}/../3rd/stb"
+    "#{dir}/../3rd/stb" <<
+    build_dir
   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/uni-algo" << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/lvgl/lib"
   linker.libraries << "uni-algo" << "lvgl"
 

@@ -13,8 +13,10 @@ static constexpr size_t HEIGHT = #{HEIGHT};
 
 template<size_t W>
 struct Char {
+  static constexpr size_t WIDTH = W;
+  static constexpr size_t HEIGHT = shinonome::HEIGHT;
   static constexpr size_t PIXELS = W * HEIGHT;
-  uint32_t unicode;
+  char32_t codepoint;
   std::array<uint32_t, PIXELS / 32 + ((PIXELS % 32) > 0 ? 1 : 0)> data;
 };
 
@@ -94,8 +96,6 @@ EOS
 
   t.sort.to_h.each do |u, b|
     b = b.map(&:strip).reduce(&:+)
-    p b
-    p b.scan(/.{1,32}/)[0].size
     d = b.scan(/.{1,32}/).map do |s|
       v = 0
       s.each_char.each_with_index do |p, idx|
