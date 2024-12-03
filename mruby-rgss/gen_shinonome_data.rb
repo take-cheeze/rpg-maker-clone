@@ -9,25 +9,25 @@ File.write "shinonome.hxx", <<EOS
 
 namespace shinonome {
 
-static constexpr size_t HEIGHT = #{HEIGHT};
+static constexpr unsigned HEIGHT = #{HEIGHT};
 
-template<size_t W>
+template<unsigned W>
 struct Char {
-  static constexpr size_t WIDTH = W;
-  static constexpr size_t HEIGHT = shinonome::HEIGHT;
-  static constexpr size_t PIXELS = W * HEIGHT;
+  static constexpr unsigned WIDTH = W;
+  static constexpr unsigned HEIGHT = shinonome::HEIGHT;
+  static constexpr unsigned PIXELS = W * HEIGHT;
   char32_t codepoint;
   std::array<uint32_t, PIXELS / 32 + ((PIXELS % 32) > 0 ? 1 : 0)> data;
 };
 
 extern const Char<HEIGHT / 2> HANKAKU[];
-extern const size_t HANKAKU_LEN;
+extern const unsigned HANKAKU_LEN;
 extern const Char<HEIGHT / 2> LATIN1[];
-extern const size_t LATIN1_LEN;
+extern const unsigned LATIN1_LEN;
 extern const Char<HEIGHT> GOTHIC[];
-extern const size_t GOTHIC_LEN;
+extern const unsigned GOTHIC_LEN;
 extern const Char<HEIGHT> MINCHO[];
-extern const size_t MINCHO_LEN;
+extern const unsigned MINCHO_LEN;
 
 }
 EOS
@@ -89,7 +89,7 @@ EOS
   end
 
   f.write <<EOS
-const size_t #{name}_LEN = #{t.size};
+const unsigned #{name}_LEN = #{t.size};
 const Char<#{full ? "HEIGHT" : "HEIGHT / 2"}> #{name}[] = {
 EOS
 

@@ -92,7 +92,8 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   const char* s;
   mrb_get_args(M, "iiiis", &x, &y, &w, &h, &s, &len);
 
-  auto find_char = [](char32_t c, const auto* g, size_t g_len) -> const auto* {
+  auto find_char = [](char32_t c, const auto* g,
+                      unsigned g_len) -> const auto* {
     auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
       return e.codepoint < v;
     });
@@ -105,10 +106,10 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
 
   auto draw = [&x, y, &bmp](const auto& c) {
     static const uint8_t col[] = {0, 0, 0, 0};
-    const size_t col_len = lv_color_format_get_size(bmp.format);
-    for (size_t i = 0; i < c.HEIGHT; ++i) {
-      for (size_t j = 0; j < c.WIDTH; ++j) {
-        const size_t idx = i * c.WIDTH + j;
+    const unsigned col_len = lv_color_format_get_size(bmp.format);
+    for (unsigned i = 0; i < c.HEIGHT; ++i) {
+      for (unsigned j = 0; j < c.WIDTH; ++j) {
+        const unsigned idx = i * c.WIDTH + j;
         if (c.data[idx / 32] & (1 << (idx % 32)))
           std::memcpy(
               bmp.buffer.data() + ((y + i) * bmp.width + j + x) * col_len, col,
