@@ -33,7 +33,7 @@ extern const size_t MINCHO_LEN;
 EOS
 
 jis0208_table = {}
-File.read(ENV["jit0208_table"]).each_line do |l|
+File.read(ENV["jis0208_table"], external_encoding: Encoding::UTF_8).each_line do |l|
   s, j, u = l.sub(/#.*/, '').split
   next if s.nil?
   jis0208_table[j.to_i(16)] = u.to_i 16
@@ -56,11 +56,10 @@ EOS
   mincho: ["MINCHO", "JIS0208", true],
 }.each do |k, (name, encoding, full)|
   if File.exists? "#{FONT_DIR}/#{k}/font_src.bit"
-    src = File.read "#{FONT_DIR}/#{k}/font_src.bit"
+    src = File.read "#{FONT_DIR}/#{k}/font_src.bit", external_encoding: Encoding::SJIS
   else
-    src = File.read "#{FONT_DIR}/#{k}/font_src_diff.bit"
+    src = File.read "#{FONT_DIR}/#{k}/font_src_diff.bit", external_encoding: Encoding::SJIS
   end
-  src = src.force_encoding Encoding::SJIS
 
   t = {}
   c = nil
