@@ -26,7 +26,7 @@ Xvfb $DISPLAY &
 
 sleep 0.1
 
-winecfg /v
+winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c/setup.iss"
 
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
