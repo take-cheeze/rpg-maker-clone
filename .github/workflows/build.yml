@@ -17,8 +17,11 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -33,6 +36,12 @@ jobs:
         uses: nix-community/cache-nix-action@v5
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+
+      - run: nix develop -c echo test
+      - run: sudo apt install wine
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      - run: brew install --cask wine@staging
+        if: ${{ startsWith(matrix.os, 'macos') }}
 
       - name: pre-commit
         env:
@@ -59,6 +68,16 @@ jobs:
       - name: Download game
         if: steps.cache.outputs.cache-hit != 'true'
         run: ./scripts/download-nepheshel.bash
+
+      - name: cache rtp
+        uses: actions/cache@v4
+        id: rtp-cache
+        with:
+          path: scripts/2000rtp.zip
+          key: game-${{ hashFiles('./scripts/rtp_install.bash') }}
+
+      - name: Download RTP
+        run: ./scripts/rtp-install.bash
 
       - name: test
         run: |

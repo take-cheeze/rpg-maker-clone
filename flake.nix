@@ -29,6 +29,7 @@
               git
               wget
               unzip
+              unzrip
               cmake-format
               pre-commit
               nixfmt-rfc-style
