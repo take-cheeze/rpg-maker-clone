@@ -35,3 +35,6 @@
 [submodule "3rd/uni-algo"]
 	path = 3rd/uni-algo
 	url = https://github.com/uni-algo/uni-algo.git
+[submodule "3rd/inicpp"]
+	path = 3rd/inicpp
+	url = https://github.com/dujingning/inicpp.git
