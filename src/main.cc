@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <regex>
 
 #include <lvgl.h>
 #include <mruby.h>
@@ -10,6 +11,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <inicpp.hpp>
 
 DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
@@ -29,6 +31,23 @@ void* lvallocf(mrb_state* M, void* p, size_t s, void* ud) {
   } else {
     return lv_malloc(s);
   }
+}
+
+fs::path rtp_path() {
+  const char* prefix_env = std::getenv("WINEPREFIX");
+  fs::path wine_prefix =
+      prefix_env ? prefix_env : fs::path(std::getenv("HOME")) / ".wine";
+  inicpp::IniManager ini(wine_prefix / "user.reg");
+  std::string rtp =
+      ini["Software\\\\ASCII\\\\RPG2000"]["\"RuntimePackagePath\""];
+  rtp = std::regex_replace(rtp, std::regex("\\\\\\\\"), "/");
+  rtp = std::regex_replace(rtp, std::regex("^\"|\"$"), "");
+  if (rtp.size() >= 2 && rtp[1] == ':') {
+    const char drive_letter = std::tolower(rtp[0]);
+    rtp = wine_prefix / "dosdevices" / (drive_letter + std::string(":")) /
+          rtp.substr(3);
+  }
+  return rtp;
 }
 
 }  // namespace
@@ -60,6 +79,8 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "GAME_DIR"),
                 mrb_str_new_cstr(M, FLAGS_game_dir.c_str()));
+  mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
+                mrb_str_new_cstr(M, rtp_path().c_str()));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
