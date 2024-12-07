@@ -31,8 +31,6 @@ cp setup.iss "${WINEPREFIX}/drive_c/setup.iss"
 
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
 
-find "$WINEPREFIX/drive_c"
-
 ls "$WINEPREFIX/drive_c/Program Files (x86)/ASCII"
 
 kill %1
