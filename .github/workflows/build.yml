@@ -87,7 +87,7 @@ jobs:
 
       - name: Download RTP
         run: |
-          nix develop -c ./scripts/rtp_install.bash
+          nix develop -c xvfb-run ./scripts/rtp_install.bash
           ls "$HOME/.wine/drive_c/Program Files (x86)/ASCII"
 
       - name: test
