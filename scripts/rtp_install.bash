@@ -20,6 +20,7 @@ if [ ! -v WINEPREFIX ] ; then
   export WINEPREFIX=$HOME/.wine
 fi
 
+mkdir -p "${WINEPREFIX}/drive_c"
 cp setup.iss "${WINEPREFIX}/drive_c/setup.iss"
 
 wine "${RTP_EXE}" /s /a /s /f1C:\\setup.iss
