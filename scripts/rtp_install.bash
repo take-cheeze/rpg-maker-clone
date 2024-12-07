@@ -24,12 +24,11 @@ fi
 export DISPLAY=:1024
 Xvfb $DISPLAY &
 
-mkdir -p "${WINEPREFIX}/drive_c"
+winecfg /v win11
 cp setup.iss "${WINEPREFIX}/drive_c/setup.iss"
 
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
 
-ls "$WINEPREFIX/drive_c/Program Files (x86)"
-ls "$WINEPREFIX/drive_c/Program Files (x86)/ASCII" || ls "$WINEPREFIX/drive_c/Program Files/ASCII"
+ls "$WINEPREFIX/drive_c/Program Files (x86)/ASCII"
 
 kill %1
