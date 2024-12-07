@@ -24,7 +24,9 @@ fi
 export DISPLAY=:1024
 Xvfb $DISPLAY &
 
-winecfg /v win11
+sleep 0.1
+
+winecfg /v
 cp setup.iss "${WINEPREFIX}/drive_c/setup.iss"
 
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
