@@ -54,7 +54,8 @@
           };
         };
         devShell = self.packages.${system}.build.overrideAttrs {
-          CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
+          CMAKE_C_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
+          CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
         };
       }
     );

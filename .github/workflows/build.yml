@@ -38,7 +38,10 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
       - run: nix develop -c echo test
-      - run: sudo apt install wine
+      - run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install wine32 wine
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
       - run: brew install --cask wine@staging
         if: ${{ startsWith(matrix.os, 'macos') }}
@@ -49,6 +52,12 @@ jobs:
         run: |
           nix develop -c pre-commit run -a
           git diff --exit-code
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ccache ~/Library/Caches/ccache
+          key: ${{ runner.os }}-ccache-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-ccache-
 
       - name: cmake
         run: |
