@@ -12,9 +12,9 @@ if [ ! -d RTP* ] ; then
   unzrip -O Shift_JIS 2000rtp.zip
 fi
 
-RTP_EXE=$(find -name RPG2000RTP.exe)
-
 export LANG=ja_JP.UTF-8
+
+RTP_EXE=$(find -name RPG2000RTP.exe)
 
 if [ ! -v WINEPREFIX ] ; then
   export WINEPREFIX=$HOME/.wine
