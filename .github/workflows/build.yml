@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         os:
-          # - ubuntu-24.04
+          - ubuntu-24.04
           - macos-latest
     # The type of runner that the job will run on
     runs-on: ${{ matrix.os }}
@@ -43,7 +43,7 @@ jobs:
       - run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install wine32 wine fonts-wine
+          sudo apt-get install -y wine32 wine fonts-wine
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
       - run: brew install --cask wine@staging
         if: ${{ startsWith(matrix.os, 'macos') }}
