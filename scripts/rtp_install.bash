@@ -22,7 +22,7 @@ if [ ! -v WINEPREFIX ] ; then
 fi
 
 export DISPLAY=:1024
-Xvfb $DISPLAY &
+Xvfb $DISPLAY -screen 0 1920x1080x24 &
 
 sleep 0.1
 

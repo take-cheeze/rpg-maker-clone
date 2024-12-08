@@ -57,7 +57,7 @@ jobs:
 
       - name: Download RTP
         run: |
-          nix develop -c xvfb-run ./scripts/rtp_install.bash
+          nix develop -c ./scripts/rtp_install.bash
 
       - name: pre-commit
         env:
