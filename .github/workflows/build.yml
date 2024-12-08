@@ -17,8 +17,13 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-latest
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -28,11 +33,32 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: nixbuild/nix-quick-install-action@v27
+      - uses: nixbuild/nix-quick-install-action@v29
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v5
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+
+      - run: nix develop -c echo test
+      - run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine32 wine fonts-wine
+          sudo locale-gen ja_JP
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      - run: brew install --cask wine@staging
+        if: ${{ startsWith(matrix.os, 'macos') }}
+
+      - name: cache rtp
+        uses: actions/cache@v4
+        id: rtp-cache
+        with:
+          path: scripts/2000rtp.zip
+          key: game-${{ hashFiles('./scripts/rtp_install.bash') }}
+
+      - name: Download RTP
+        run: |
+          nix develop -c ./scripts/rtp_install.bash
 
       - name: pre-commit
         env:
@@ -40,6 +66,12 @@ jobs:
         run: |
           nix develop -c pre-commit run -a
           git diff --exit-code
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ccache ~/Library/Caches/ccache
+          key: ${{ runner.os }}-ccache-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-ccache-
 
       - name: cmake
         run: |
@@ -58,7 +90,7 @@ jobs:
 
       - name: Download game
         if: steps.cache.outputs.cache-hit != 'true'
-        run: ./scripts/download-nepheshel.bash
+        run: nix develop -c ./scripts/download-nepheshel.bash
 
       - name: test
         run: |

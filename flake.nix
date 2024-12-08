@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=24.05";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=release-24.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -28,12 +28,13 @@
               clang-tools
               git
               wget
-              unzip
+              unar
               cmake-format
               pre-commit
               nixfmt-rfc-style
               cabal-install
               ghc
+              xorg.xvfb
             ];
             cp932_table = pkgs.fetchurl {
               url = "https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt";
@@ -53,7 +54,8 @@
           };
         };
         devShell = self.packages.${system}.build.overrideAttrs {
-          CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
+          CMAKE_C_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
+          CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
         };
       }
     );

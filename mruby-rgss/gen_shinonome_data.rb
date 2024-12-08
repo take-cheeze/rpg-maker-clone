@@ -55,7 +55,7 @@ EOS
   latin1: ["LATIN1", "ISO-8859-1", false],
   mincho: ["MINCHO", "JIS0208", true],
 }.each do |k, (name, encoding, full)|
-  if File.exists? "#{FONT_DIR}/#{k}/font_src.bit"
+  if File.exist? "#{FONT_DIR}/#{k}/font_src.bit"
     src = File.read "#{FONT_DIR}/#{k}/font_src.bit", external_encoding: Encoding::SJIS
   else
     src = File.read "#{FONT_DIR}/#{k}/font_src_diff.bit", external_encoding: Encoding::SJIS
