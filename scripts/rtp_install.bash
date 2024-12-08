@@ -30,7 +30,8 @@ winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c"
 
 export WINEDEBUG=warn+all
-wine cmd.exe /c echo test
+
+env
 
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
 
