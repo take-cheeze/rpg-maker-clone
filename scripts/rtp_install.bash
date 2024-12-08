@@ -24,8 +24,7 @@ fi
 export DISPLAY=:1024
 Xvfb "${DISPLAY}" -screen 0 1920x1080x24 &
 
-export LANG=ja_JP.UTF-8
-export LC_ALL=$LANG
+export LC_ALL=ja_JP.UTF-8
 
 winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c"

@@ -44,6 +44,7 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y wine32 wine fonts-wine
+          sudo locale-gen ja_JP
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
       - run: brew install --cask wine@staging
         if: ${{ startsWith(matrix.os, 'macos') }}
@@ -57,7 +58,6 @@ jobs:
 
       - name: Download RTP
         run: |
-          export WINEPREFIX=$PWD/.wine
           nix develop -c ./scripts/rtp_install.bash
 
       - name: pre-commit
