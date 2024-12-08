@@ -28,8 +28,7 @@
               clang-tools
               git
               wget
-              unzip
-              unzrip
+              unar
               cmake-format
               pre-commit
               nixfmt-rfc-style

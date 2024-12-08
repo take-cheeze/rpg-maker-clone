@@ -11,5 +11,5 @@ if [ ! -f Nepheshel206beta.zip ] ; then
 fi
 
 if [ ! -d Nepheshel206beta ] ; then
-    unzip Nepheshel206beta.zip
+    unar Nepheshel206beta.zip
 fi

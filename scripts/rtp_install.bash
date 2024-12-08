@@ -9,7 +9,7 @@ if [ ! -f 2000rtp.zip ] ; then
 fi
 
 if [ ! -d RTP* ] ; then
-  unzrip -O Shift_JIS 2000rtp.zip
+  unar -e cp932 2000rtp.zip
 fi
 
 export LANG=ja_JP.UTF-8
