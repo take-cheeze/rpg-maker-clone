@@ -90,7 +90,7 @@ jobs:
 
       - name: Download game
         if: steps.cache.outputs.cache-hit != 'true'
-        run: ./scripts/download-nepheshel.bash
+        run: nix develop -c ./scripts/download-nepheshel.bash
 
       - name: test
         run: |

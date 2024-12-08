@@ -29,8 +29,6 @@ export LC_ALL=ja_JP.UTF-8
 winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c"
 
-export WINEDEBUG=warn+all
-
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
 
 ls "${WINEPREFIX}/drive_c/Program Files (x86)/ASCII"
