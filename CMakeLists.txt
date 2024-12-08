@@ -62,7 +62,7 @@ add_custom_command(
 add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
 add_dependencies(mruby mruby_build)
 
-add_executable(${PROJECT_NAME} src/main.cc)
+add_executable(${PROJECT_NAME} src/main.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
