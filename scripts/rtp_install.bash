@@ -25,13 +25,12 @@ export DISPLAY=:1024
 Xvfb "${DISPLAY}" -screen 0 1920x1080x24 &
 
 export LANG=ja_JP.UTF-8
+export LC_ALL=$LANG
 
 winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c"
 
 export WINEDEBUG=warn+all
-
-env
 
 wine ./RPG2000RTP.exe /s /a /s /sms /f1C:\\setup.iss
 
