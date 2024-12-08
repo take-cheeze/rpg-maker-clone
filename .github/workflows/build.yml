@@ -57,6 +57,7 @@ jobs:
 
       - name: Download RTP
         run: |
+          export WINEPREFIX=$PWD/.wine
           nix develop -c ./scripts/rtp_install.bash
 
       - name: pre-commit
