@@ -25,8 +25,9 @@ export LC_ALL=ja_JP.UTF-8
 winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c"
 
-wine ./RPGXP_RTP103/Setup.exe /silent
+wine ./RPGXP_RTP103/Setup.exe /verysilent
 
-ls "${WINEPREFIX}/drive_c/Program Files (x86)/Common Files/Enterbrain/RGSS/Standard"
+ls "${WINEPREFIX}/drive_c/Program Files (x86)/Common Files/Enterbrain/RGSS/Standard" ||
+  ls "${WINEPREFIX}/drive_c/Program Files/Common Files/Enterbrain/RGSS/Standard"
 
 kill %1
