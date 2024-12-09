@@ -40,12 +40,6 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
       - run: nix develop -c echo test
-      - run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y wine32 wine fonts-wine
-          sudo locale-gen ja_JP
-        if: ${{ startsWith(matrix.os, 'ubuntu') }}
       - run: brew install --cask wine@staging
         if: ${{ startsWith(matrix.os, 'macos') }}
 
