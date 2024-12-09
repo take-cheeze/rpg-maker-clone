@@ -37,7 +37,7 @@
                 cabal-install
                 ghc
                 xorg.xvfb
-                mold
+                mold-wrapped
               ]
               ++ (
                 if system == "x86_64-linux" then
@@ -60,7 +60,6 @@
             };
             buildInputs = with pkgs; [ SDL2 ];
             CMAKE_BUILD_TYPE = "RelWithDebInfo";
-            CMAKE_LINKER_TYPE = "MOLD";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
             LOCALE_ARCHIVE =

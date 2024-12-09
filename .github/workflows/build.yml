@@ -37,11 +37,14 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v5
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - run: nix develop -c echo test
-      - run: brew install --cask wine@staging
-        if: ${{ startsWith(matrix.os, 'macos') }}
+
+      # TODO: Restore macos wine if needed
+      # - run: brew install --cask wine@staging
+      #   if: ${{ !startsWith(matrix.os, 'macos') }}
 
       - name: cache rtp
         uses: actions/cache@v4
@@ -49,10 +52,12 @@ jobs:
         with:
           path: scripts/2000rtp.zip
           key: game-${{ hashFiles('./scripts/rtp_install.bash') }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
 
       - name: Download RTP
         run: |
           nix develop -c ./scripts/rtp_install.bash
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
 
       - name: pre-commit
         env:
