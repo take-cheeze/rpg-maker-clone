@@ -37,7 +37,8 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v5
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - run: nix develop -c echo test
       - run: brew install --cask wine@staging
