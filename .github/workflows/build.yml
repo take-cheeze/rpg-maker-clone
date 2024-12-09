@@ -50,13 +50,15 @@ jobs:
         uses: actions/cache@v4
         id: rtp-cache
         with:
-          path: scripts/2000rtp.zip
-          key: game-${{ hashFiles('./scripts/rtp_install.bash') }}
+          path: scripts/*.zip
+          key: rtp-${{ hashFiles('./scripts/rtp*_install.bash') }}
+          restore-keys: rtp-
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
 
       - name: Download RTP
         run: |
           nix develop -c ./scripts/rtp_install.bash
+          nix develop -c ./scripts/rtp_xp_install.bash
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
 
       - name: pre-commit
