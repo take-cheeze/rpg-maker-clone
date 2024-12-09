@@ -50,6 +50,7 @@
             CMAKE_LINKER_TYPE = "MOLD";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
+            LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
             shellHook = ''
               export CTEST_PARALLEL_LEVEL=$NIX_BUILD_CORES
             '';
