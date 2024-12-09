@@ -60,7 +60,6 @@
             };
             buildInputs = with pkgs; [ SDL2 ];
             CMAKE_BUILD_TYPE = "RelWithDebInfo";
-            CMAKE_LINKER_TYPE = "MOLD";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
             LOCALE_ARCHIVE =
