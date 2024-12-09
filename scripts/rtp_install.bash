@@ -24,6 +24,7 @@ fi
 export DISPLAY=:1024
 Xvfb "${DISPLAY}" -screen 0 1920x1080x24 &
 
+export WINEDLLOVERRIDES="mscoree,mshtml="
 export LC_ALL=ja_JP.UTF-8
 
 winecfg /v win10
