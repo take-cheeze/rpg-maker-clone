@@ -37,7 +37,7 @@
                 cabal-install
                 ghc
                 xorg.xvfb
-                mold
+                mold-wrapped
               ]
               ++ (
                 if system == "x86_64-linux" then

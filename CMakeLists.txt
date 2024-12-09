@@ -4,6 +4,10 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
+if(DEFINED ENV{CMAKE_LINKER_TYPE})
+  set(CMAKE_LINKER_TYPE $ENV{CMAKE_LINKER_TYPE})
+endif()
+
 project(rpg_maker_clone CXX)
 
 find_package(Ruby REQUIRED)
@@ -27,6 +31,13 @@ set(BUILD_TESTING ${old_build_testing})
 
 add_subdirectory(3rd/uni-algo EXCLUDE_FROM_ALL)
 
+if(CMAKE_LINKER_TYPE STREQUAL "LLD")
+  set(CUSTOM_LINKER "-fuse-ld=lld")
+elseif(CMAKE_LINKER_TYPE STREQUAL "MOLD")
+  set(CUSTOM_LINKER "-fuse-ld=mold")
+endif()
+message(STATUS "${CMAKE_LINKER_TYPE} linker flag: ${CUSTOM_LINKER}")
+
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
 add_library(mruby STATIC IMPORTED)
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
@@ -49,7 +60,7 @@ set(MRB_OPTS
     "CC=${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER}"
     "CXXFLAGS=${CMAKE_CXX_FLAGS}"
     "CFLAGS=${CMAKE_C_FLAGS}"
-    "LDFLAGS=${CMAKE_CXX_FLAGS}")
+    "LDFLAGS=${CMAKE_CXX_FLAGS} ${CUSTOM_LINKER}")
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
