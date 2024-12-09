@@ -64,7 +64,7 @@
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
             LOCALE_ARCHIVE =
-              if pkgs ? glibcLocales then "${pkgs.glibcLocales}/lib/locale/locale-archive" else null;
+              if system == "x86_64-linux" then "${pkgs.glibcLocales}/lib/locale/locale-archive" else null;
             shellHook = ''
               export CTEST_PARALLEL_LEVEL=$NIX_BUILD_CORES
             '';
