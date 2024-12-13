@@ -33,21 +33,37 @@ void* lvallocf(mrb_state* M, void* p, size_t s, void* ud) {
   }
 }
 
-fs::path rtp_path() {
-  const char* prefix_env = std::getenv("WINEPREFIX");
-  fs::path wine_prefix =
+fs::path wine_prefix() {
+  static const char* prefix_env = std::getenv("WINEPREFIX");
+  static fs::path wine_prefix =
       prefix_env ? prefix_env : fs::path(std::getenv("HOME")) / ".wine";
-  inicpp::IniManager ini(wine_prefix / "user.reg");
-  std::string rtp =
-      ini["Software\\\\ASCII\\\\RPG2000"]["\"RuntimePackagePath\""];
-  rtp = std::regex_replace(rtp, std::regex("\\\\\\\\"), "/");
-  rtp = std::regex_replace(rtp, std::regex("^\"|\"$"), "");
-  if (rtp.size() >= 2 && rtp[1] == ':') {
-    const char drive_letter = std::tolower(rtp[0]);
-    rtp = wine_prefix / "dosdevices" / (drive_letter + std::string(":")) /
-          rtp.substr(3);
+  return wine_prefix;
+}
+
+inicpp::IniManager get_reg(const char* n) {
+  return inicpp::IniManager(wine_prefix() / n);
+}
+
+fs::path reg2path(std::string r) {
+  r = std::regex_replace(r, std::regex("\\\\\\\\"), "/");
+  r = std::regex_replace(r, std::regex("^\"|\"$"), "");
+  if (r.size() >= 2 && r[1] == ':') {
+    const char drive_letter = std::tolower(r[0]);
+    r = wine_prefix() / "dosdevices" / (drive_letter + std::string(":")) /
+        r.substr(3);
   }
-  return rtp;
+  return r;
+}
+
+fs::path rtp_path() {
+  inicpp::IniManager ini = get_reg("user.reg");
+  return reg2path(
+      ini["Software\\\\ASCII\\\\RPG2000"]["\"RuntimePackagePath\""]);
+}
+
+fs::path xp_rtp_path() {
+  inicpp::IniManager ini = get_reg("system.reg");
+  return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
 }
 
 }  // namespace
@@ -89,15 +105,22 @@ int main(int argc, char** argv) {
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
   for (int i = 1; i < argc; ++i)
     mrb_ary_push(M, args, mrb_str_new_cstr(M, argv[i]));
-  mrb_value obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
-  mrb_print_backtrace(M);
-  CHECK(!M->exc);
-  mrb_funcall(M, obj, "start", 0);
+
+  const fs::path game_dir_path = FLAGS_game_dir;
+
+  if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
+    mrb_value obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+    mrb_funcall(M, obj, "start", 0);
+  } else if (fs::exists(game_dir_path / "Game.ini")) {
+    mrb_value obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
+    mrb_funcall(M, obj, "start", 0);
+  } else {
+    CHECK(false) << "Unknown game directory: " << game_dir_path;
+  }
   mrb_print_backtrace(M);
   CHECK(!M->exc);
 
   gflags::ShutDownCommandLineFlags();
-  lv_sdl_quit();
 
   return EXIT_SUCCESS;
 }
