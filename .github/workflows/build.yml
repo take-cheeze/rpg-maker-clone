@@ -95,6 +95,8 @@ jobs:
 
       - name: Take screenshots
         run: |
+          wget https://raw.githubusercontent.com/scottyhardy/docker-wine/master/docker-wine
+          chmod +x docker-wine
           ./scripts/take_title_screenshot.bash
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
       - uses: actions/upload-artifact@v4
