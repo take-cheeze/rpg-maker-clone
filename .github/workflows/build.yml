@@ -97,6 +97,38 @@ jobs:
         run: |
           nix develop -c cmake --build build -t test
 
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: cache test game
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download-nepheshel.bash') }}
+
+      - name: Download game
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: nix develop -c ./scripts/download-nepheshel.bash
+
+      - name: Take screenshots
+        run: |
+          wget https://raw.githubusercontent.com/scottyhardy/docker-wine/master/docker-wine
+          chmod +x docker-wine
+          mkdir -p $HOME/.local/bin
+          mv ./docker-wine $HOME/.local/bin
+          export PATH=$HOME/.local/bin:$PATH
+          ./scripts/take_title_screenshot.bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ss/
+
   flake:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
