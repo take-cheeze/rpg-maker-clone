@@ -38,6 +38,8 @@
                 ghc
                 xorg.xvfb
                 mold-wrapped
+                autoconf
+                automake
               ]
               ++ (
                 if system == "x86_64-linux" then
