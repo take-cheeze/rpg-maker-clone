@@ -5,6 +5,7 @@ set -eux -o pipefail
 cd $(dirname $0)/..
 
 mkdir -p ss
+chmod 777 ss
 
 cat <<EOS > ./scripts/docker_script.bash
 set -eux -o pipefail
