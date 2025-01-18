@@ -29,4 +29,5 @@ docker-wine \
     --local=takecheeze/docker-wine \
     --volume=.:/proj \
     --xvfb=:95,0,320x240x24 \
+    --notty \
     bash /proj/scripts/docker_script.bash
