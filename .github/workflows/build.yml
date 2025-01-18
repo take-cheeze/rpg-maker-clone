@@ -97,6 +97,9 @@ jobs:
         run: |
           wget https://raw.githubusercontent.com/scottyhardy/docker-wine/master/docker-wine
           chmod +x docker-wine
+          mkdir -p $HOME/.local/bin
+          mv ./docker-wine $HOME/.local/bin
+          export PATH=$HOME/.local/bin:$PATH
           ./scripts/take_title_screenshot.bash
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
       - uses: actions/upload-artifact@v4
