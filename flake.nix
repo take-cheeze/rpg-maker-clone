@@ -40,6 +40,7 @@
                 mold-wrapped
                 autoconf
                 automake
+                xorg.libXi
               ]
               ++ (
                 if system == "x86_64-linux" then
