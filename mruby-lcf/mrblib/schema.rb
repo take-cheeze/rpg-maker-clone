@@ -109,8 +109,12 @@ module LCF
           }
         },
         21 => {
-          name: :Term, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%94%A8%E8%AA%9E
+          name: :term, type: :Array1D,
           elements: {
+            114 => { name: :new_game, type: :string },
+            115 => { name: :continue, type: :string },
+            116 => { name: :shutdown, type: :string },
           }
         },
         22 => {

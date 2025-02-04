@@ -30,6 +30,10 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   return mrb_str_new(M, nfd.data(), nfd.size());
 }
 
+struct Rect {
+  int16_t x{0}, y{0}, width{0}, height{0};
+};
+
 struct Bitmap {
   int32_t width, height;
   lv_color_format_t format;
@@ -83,6 +87,17 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   return mrb_true_value();
 }
 
+auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
+  auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
+    return e.codepoint < v;
+  });
+  if (i == (g + g_len))
+    return static_cast<decltype(i)>(nullptr);
+  if (i->codepoint != c)
+    return static_cast<decltype(i)>(nullptr);
+  return i;
+};
+
 mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   mrb_assert(DATA_PTR(self));
 
@@ -91,18 +106,6 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   mrb_int x, y, w, h, len;
   const char* s;
   mrb_get_args(M, "iiiis", &x, &y, &w, &h, &s, &len);
-
-  auto find_char = [](char32_t c, const auto* g,
-                      unsigned g_len) -> const auto* {
-    auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
-      return e.codepoint < v;
-    });
-    if (i == (g + g_len))
-      return static_cast<decltype(i)>(nullptr);
-    if (i->codepoint != c)
-      return static_cast<decltype(i)>(nullptr);
-    return i;
-  };
 
   auto draw = [&x, y, &bmp](const auto& c) {
     static const uint8_t col[] = {0, 0, 0, 0};
@@ -138,6 +141,46 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   }
 
   return self;
+}
+
+mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
+  mrb_int len;
+  const char* s;
+  mrb_get_args(M, "s", &s, &len);
+
+  int w = 0;
+  unsigned height = 0;
+
+  for (const char32_t c : std::string_view(s, len) | una::views::utf8) {
+    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    if (f) {
+      w += f->WIDTH;
+      height = std::max(height, f->HEIGHT);
+      continue;
+    }
+    auto h = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
+    if (h) {
+      w += h->WIDTH;
+      height = std::max(height, h->HEIGHT);
+      continue;
+    }
+    h = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
+    if (h) {
+      w += h->WIDTH;
+      height = std::max(height, h->HEIGHT);
+      continue;
+    }
+  }
+
+  const mrb_value args[] = {
+      mrb_fixnum_value(0),
+      mrb_fixnum_value(0),
+      mrb_fixnum_value(w),
+      mrb_fixnum_value(height),
+  };
+
+  return mrb_obj_new(
+      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
 }
 
 mrb_value obj_disposed(mrb_state* M, mrb_value self) {
@@ -271,12 +314,28 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-  mrb_define_method(M, bmp, "draw_text", bmp_draw_text, MRB_ARGS_REQ(5));
+  mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
+                    MRB_ARGS_REQ(5) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "text_size", bmp_text_size, MRB_ARGS_REQ(1));
   mrb_define_method(M, bmp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
+
+  RClass* rect = mrb_define_class_under(M, m, "Rect", M->object_class);
+  mrb_define_method(M, rect, "initialize", rect_init, MRB_ARGS_OPT(4));
+  mrb_define_method(M, rect, "set", rect_set,
+                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  mrb_define_method)M, rect, "empty", rect_empty, MRB_ARGS_NONE());
+  mrb_define_method(M, rect, "x", rect_x, MRB_ARGS_NONE());
+  mrb_define_method(M, rect, "x=", rect_set_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rect, "y", rect_y, MRB_ARGS_NONE());
+  mrb_define_method(M, rect, "y=", rect_set_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rect, "width", rect_w, MRB_ARGS_NONE());
+  mrb_define_method(M, rect, "width=", rect_set_w, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rect, "height", rect_h, MRB_ARGS_NONE());
+  mrb_define_method(M, rect, "height=", rect_set_h, MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {}
