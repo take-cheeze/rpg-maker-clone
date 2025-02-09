@@ -15,9 +15,9 @@
 [submodule "third_party/lvgl"]
 	path = 3rd/lvgl
 	url = https://github.com/lvgl/lvgl.git
-[submodule "third_party/glog"]
-	path = 3rd/glog
-	url = https://github.com/google/glog.git
+[submodule "third_party/ng-log"]
+	path = 3rd/ng-log
+	url = https://github.com/ng-log/ng-log.git
 [submodule "3rd/gflags"]
 	path = 3rd/gflags
 	url = https://github.com/gflags/gflags.git

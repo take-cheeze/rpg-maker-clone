@@ -22,7 +22,7 @@ set(BUILD_STATIC_LIBS
 set(old_build_testing ${BUILD_TESTING})
 set(BUILD_TESTING OFF)
 add_subdirectory(3rd/gflags EXCLUDE_FROM_ALL)
-add_subdirectory(3rd/glog EXCLUDE_FROM_ALL)
+add_subdirectory(3rd/ng-log EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
 add_subdirectory(3rd/uni-algo EXCLUDE_FROM_ALL)
