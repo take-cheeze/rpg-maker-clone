@@ -30,8 +30,10 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   return mrb_str_new(M, nfd.data(), nfd.size());
 }
 
+using V = ::mrb_value;
+
 struct Rect {
-  int16_t x{0}, y{0}, width{0}, height{0};
+  mrb_int x{0}, y{0}, width{0}, height{0};
 };
 
 struct Bitmap {
@@ -39,7 +41,7 @@ struct Bitmap {
   lv_color_format_t format;
   std::vector<uint8_t> buffer;
 
-  Bitmap(int32_t w, int32_t h, lv_color_format_t f)
+  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f)
       : width(w),
         height(h),
         format(f),
@@ -47,24 +49,39 @@ struct Bitmap {
 };
 
 template <class T>
-void free_cxx_obj(mrb_state* M, void* p) {
-  if (!p)
-    return;
+struct DataType {
+  static void free_obj(mrb_state* M, void* p) {
+    if (!p)
+      return;
 
-  reinterpret_cast<T*>(p)->~T();
-  mrb_free(M, p);
-}
+    std::destroy_at(reinterpret_cast<T*>(p));
+    mrb_free(M, p);
+  }
 
-const mrb_data_type bitmap_type = {"Bitmap", &free_cxx_obj<Bitmap>};
+  static mrb_data_type data_type;
+
+  template <class... Args>
+  static T& alloc_obj(mrb_state* M, V self, Args... args) {
+    mrb_assert(!DATA_PTR(self));
+    void* mem_ptr = mrb_malloc(M, sizeof(T));
+    T* ptr = new (mem_ptr) T{args...};
+    mrb_data_init(self, ptr, &data_type);
+    return *ptr;
+  }
+};
+
+template <class T>
+mrb_data_type DataType<T>::data_type{
+    typeid(T).name(),
+    &DataType<T>::free_obj,
+};
 
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   mrb_int w, h;
   mrb_get_args(M, "ii", &w, &h);
-  mrb_assert(!DATA_PTR(self));
-  void* ptr = mrb_malloc(M, sizeof(Bitmap));
-  mrb_data_init(self, new (ptr) Bitmap(w, h, LV_COLOR_FORMAT_ARGB8888),
-                &bitmap_type);
-  return mrb_true_value();
+
+  DataType<Bitmap>::alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888);
+  return self;
 }
 
 mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
@@ -79,12 +96,11 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
       stbi_image_free);
   if (!img)
     return mrb_nil_value();
-  void* ptr = mrb_malloc(M, sizeof(Bitmap));
-  Bitmap* bmp = new (ptr)
-      Bitmap(w, h, c == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
-  mrb_data_init(self, bmp, &bitmap_type);
-  std::memcpy(bmp->buffer.data(), img.get(), bmp->buffer.size());
-  return mrb_true_value();
+  Bitmap& bmp = DataType<Bitmap>::alloc_obj(
+      M, self, w, h,
+      c == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
+  std::memcpy(bmp.buffer.data(), img.get(), bmp.buffer.size());
+  return self;
 }
 
 auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
@@ -262,11 +278,10 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
 }
 
 mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
-  mrb_value bmp;
+  Bitmap* p;
+  mrb_get_args(M, "d", &p, &DataType<Bitmap>::data_type);
+  V bmp;
   mrb_get_args(M, "o", &bmp);
-  mrb_assert(mrb_type(bmp) == MRB_TT_DATA);
-  mrb_assert(DATA_TYPE(bmp) == &bitmap_type);
-  Bitmap* p = reinterpret_cast<Bitmap*>(DATA_PTR(bmp));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
@@ -324,10 +339,22 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
 
   RClass* rect = mrb_define_class_under(M, m, "Rect", M->object_class);
-  mrb_define_method(M, rect, "initialize", rect_init, MRB_ARGS_OPT(4));
+  mrb_define_method(
+      M, rect, "initialize",
+      [](mrb_state* M, V self) -> V {
+        if (mrb_get_argc(M) == 0) {
+          DataType<Rect>::alloc_obj(M, self);
+        } else {
+          mrb_int x, y, w, h;
+          mrb_get_args(M, "iiii", &x, &y, &w, &h);
+          DataType<Rect>::alloc_obj(M, self, x, y, w, h);
+        }
+        return self;
+      },
+      MRB_ARGS_OPT(4));
   mrb_define_method(M, rect, "set", rect_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-  mrb_define_method)M, rect, "empty", rect_empty, MRB_ARGS_NONE());
+  mrb_define_method(M, rect, "empty", rect_empty, MRB_ARGS_NONE());
   mrb_define_method(M, rect, "x", rect_x, MRB_ARGS_NONE());
   mrb_define_method(M, rect, "x=", rect_set_x, MRB_ARGS_REQ(1));
   mrb_define_method(M, rect, "y", rect_y, MRB_ARGS_NONE());
