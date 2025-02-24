@@ -41,7 +41,7 @@ class RPG2k
 
   def initialize args
     @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
-    @map_tree = LCF::MapTree.new "#{GAME_DIR}/RPG_RT.lmt"
+    @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
     @scenes = []
     push Scene::Title.new self
   end
