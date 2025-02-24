@@ -68,6 +68,10 @@ struct DataType {
     mrb_data_init(self, ptr, &data_type);
     return *ptr;
   }
+
+  static T& get(mrb_state* M, V self) {
+    return *reinterpret_cast<T*>(mrb_data_get_ptr(M, self, &data_type));
+  }
 };
 
 template <class T>
@@ -352,17 +356,84 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
         return self;
       },
       MRB_ARGS_OPT(4));
-  mrb_define_method(M, rect, "set", rect_set,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-  mrb_define_method(M, rect, "empty", rect_empty, MRB_ARGS_NONE());
-  mrb_define_method(M, rect, "x", rect_x, MRB_ARGS_NONE());
-  mrb_define_method(M, rect, "x=", rect_set_x, MRB_ARGS_REQ(1));
-  mrb_define_method(M, rect, "y", rect_y, MRB_ARGS_NONE());
-  mrb_define_method(M, rect, "y=", rect_set_y, MRB_ARGS_REQ(1));
-  mrb_define_method(M, rect, "width", rect_w, MRB_ARGS_NONE());
-  mrb_define_method(M, rect, "width=", rect_set_w, MRB_ARGS_REQ(1));
-  mrb_define_method(M, rect, "height", rect_h, MRB_ARGS_NONE());
-  mrb_define_method(M, rect, "height=", rect_set_h, MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "set",
+      [](mrb_state* M, V self) {
+        if (mrb_get_argc(M) == 1) {
+          V o;
+          mrb_get_args(M, "o", &o);
+          DataType<Rect>::get(M, self) = DataType<Rect>::get(M, o);
+        } else {
+          mrb_int x, y, w, h;
+          mrb_get_args(M, "iiii", &x, &y, &w, &h);
+          DataType<Rect>::get(M, self) = Rect{x, y, w, h};
+        }
+        return self;
+      },
+      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  mrb_define_method(
+      M, rect, "empty",
+      [](mrb_state* M, V self) {
+        DataType<Rect>::get(M, self) = Rect{0, 0, 0, 0};
+        return self;
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "x",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).x);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "y",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).y);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "width",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).width);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "height",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).height);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "x=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).x = x);
+      },
+      MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "y=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).y = x);
+      },
+      MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "width=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).width = x);
+      },
+      MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "height=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).height = x);
+      },
+      MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {}
