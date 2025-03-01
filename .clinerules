@@ -18,15 +18,9 @@ Create ADRs in /docs/adr for:
 
 ## Code Style & Patterns
 
--   Generate API clients using OpenAPI Generator
--   Use TypeScript axios template
--   Place generated code in /src/generated
--   Prefer composition over inheritance
--   Use repository pattern for data access
--   Follow error handling pattern in /src/utils/errors.ts
+- Codes are formatted by precommit. Please run it after code edit finishes
+- Most dependencies are managed by nix flake. See flake.nix for detail
 
 ## Testing Standards
 
--   Unit tests required for business logic
--   Integration tests for API endpoints
--   E2E tests for critical user flows
+- Unit tests are written using Google Test and executed by CTest. Use `cmake --build build -t test` to run it
