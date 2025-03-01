@@ -10,7 +10,7 @@ module RGSS
         i = self._init_file("#{GAME_DIR}/#{f}.xyz") unless i
         raise "Failed to init bitmap: #{f}" unless i
       else
-        self._init_size(w, h)
+        self._init_size(f, s)
       end
     end
   end
