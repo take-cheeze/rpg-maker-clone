@@ -127,9 +127,50 @@ module LCF
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%94%A8%E8%AA%9E
           name: :term, type: :Array1D,
           elements: {
+            # Title Commands
             114 => { name: :new_game, type: :string },
             115 => { name: :continue, type: :string },
-            116 => { name: :shutdown, type: :string },
+            117 => { name: :shutdown, type: :string },
+
+            # Battle Menu Commands
+            101 => { name: :battle_fight, type: :string },
+            102 => { name: :battle_auto, type: :string },
+            103 => { name: :battle_escape, type: :string },
+            104 => { name: :battle_attack, type: :string },
+            105 => { name: :battle_defend, type: :string },
+            106 => { name: :battle_item, type: :string },
+            107 => { name: :battle_skill, type: :string },
+            108 => { name: :battle_equipment, type: :string },
+            110 => { name: :battle_save, type: :string },
+            112 => { name: :battle_end_game, type: :string },
+
+            # Save/Load Related
+            146 => { name: :save_file_select, type: :string },
+            147 => { name: :load_file_select, type: :string },
+            148 => { name: :file, type: :string },
+            151 => { name: :end_game_confirm, type: :string },
+            152 => { name: :yes, type: :string },
+            153 => { name: :no, type: :string },
+
+            # Status Terms
+            123 => { name: :level, type: :string },
+            124 => { name: :hp, type: :string },
+            125 => { name: :mp, type: :string },
+            126 => { name: :normal_status, type: :string },
+            127 => { name: :exp_short, type: :string },
+            128 => { name: :level_short, type: :string },
+            129 => { name: :hp_short, type: :string },
+            130 => { name: :mp_short, type: :string },
+            131 => { name: :mp_cost, type: :string },
+            132 => { name: :attack, type: :string },
+            133 => { name: :defense, type: :string },
+            134 => { name: :mind, type: :string },
+            135 => { name: :agility, type: :string },
+            136 => { name: :weapon, type: :string },
+            137 => { name: :shield, type: :string },
+            138 => { name: :armor, type: :string },
+            139 => { name: :helmet, type: :string },
+            140 => { name: :accessory, type: :string },
           }
         },
         22 => {

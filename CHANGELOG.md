@@ -18,3 +18,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Updated documentation to reflect new title screen functionality
 - Marked "Show window component for title scene" as completed in TODO list
+- Enhanced database term schema with comprehensive RPG Maker 2000/2003 terms:
+  - Added battle menu command terms
+  - Added save/load related terms
+  - Added status and equipment terms
+  - Fixed shutdown term ID (changed from 116 to 117)
