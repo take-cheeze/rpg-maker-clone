@@ -8,3 +8,6 @@
 
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory
+
+## Development flow
+- For basic testing run `clear ; cmake --build build && cmake --build build -t test` to run basic tests
