@@ -25,6 +25,21 @@ module LCF
       },
     }
 
+    BGM = {
+      1 => { name: :file, type: :string },
+      2 => { name: :fade_in, type: :int, default: 0 },
+      3 => { name: :volume, type: :int, default: 100 },
+      4 => { name: :pitch, type: :int, default: 100 },
+      5 => { name: :balance, type: :int, default: 50 },
+    }
+
+    SE = {
+      1 => { name: :file, type: :string },
+      3 => { name: :volume, type: :int, default: 100 },
+      4 => { name: :pitch, type: :int, default: 100 },
+      5 => { name: :balance, type: :int, default: 50 },
+    }
+
     DATABASE = {
       name: :DataBase, type: :Array1D,
       elements: {
@@ -109,8 +124,53 @@ module LCF
           }
         },
         21 => {
-          name: :Term, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%94%A8%E8%AA%9E
+          name: :term, type: :Array1D,
           elements: {
+            # Title Commands
+            114 => { name: :new_game, type: :string },
+            115 => { name: :continue, type: :string },
+            117 => { name: :shutdown, type: :string },
+
+            # Battle Menu Commands
+            101 => { name: :battle_fight, type: :string },
+            102 => { name: :battle_auto, type: :string },
+            103 => { name: :battle_escape, type: :string },
+            104 => { name: :battle_attack, type: :string },
+            105 => { name: :battle_defend, type: :string },
+            106 => { name: :battle_item, type: :string },
+            107 => { name: :battle_skill, type: :string },
+            108 => { name: :battle_equipment, type: :string },
+            110 => { name: :battle_save, type: :string },
+            112 => { name: :battle_end_game, type: :string },
+
+            # Save/Load Related
+            146 => { name: :save_file_select, type: :string },
+            147 => { name: :load_file_select, type: :string },
+            148 => { name: :file, type: :string },
+            151 => { name: :end_game_confirm, type: :string },
+            152 => { name: :yes, type: :string },
+            153 => { name: :no, type: :string },
+
+            # Status Terms
+            123 => { name: :level, type: :string },
+            124 => { name: :hp, type: :string },
+            125 => { name: :mp, type: :string },
+            126 => { name: :normal_status, type: :string },
+            127 => { name: :exp_short, type: :string },
+            128 => { name: :level_short, type: :string },
+            129 => { name: :hp_short, type: :string },
+            130 => { name: :mp_short, type: :string },
+            131 => { name: :mp_cost, type: :string },
+            132 => { name: :attack, type: :string },
+            133 => { name: :defense, type: :string },
+            134 => { name: :mind, type: :string },
+            135 => { name: :agility, type: :string },
+            136 => { name: :weapon, type: :string },
+            137 => { name: :shield, type: :string },
+            138 => { name: :armor, type: :string },
+            139 => { name: :helmet, type: :string },
+            140 => { name: :accessory, type: :string },
           }
         },
         22 => {
@@ -174,6 +234,56 @@ module LCF
         },
       },
     }
+
+    MAP_TREE = [
+      {
+        name: :map_properties, type: :Array2D,
+        elements: {
+          1 => { name: :name, type: :string },
+          2 => { name: :parent_map_id, type: :int },
+          3 => { name: :_reserved, type: :int },
+          4 => { name: :type, type: :int, default: 1 },
+          5 => { name: :x_scroll, type: :bool, default: false },
+          6 => { name: :y_scroll, type: :bool, default: false },
+          7 => { name: :node_extracted, type: :bool, default: false },
+          11 => { name: :bgm_type, type: :int, default: 0 },
+          12 => { name: :bgm, type: :Array1D, elements: BGM },
+          21 => { name: :backdrop_type, type: :int, default: 0 },
+          22 => { name: :backdrop_file, type: :string },
+          31 => { name: :teleport, type: :int, default: 1 },
+          32 => { name: :escape, type: :int, default: 1 },
+          33 => { name: :save, type: :int, default: 1 },
+          41 => { name: :enemy_groups, type: :Array2D, elements: {1 => { name: :enemy_group_id, type: :int }}},
+          44 => { name: :encount_steps, type: :int, default: 25 },
+          51 => { name: :area, type: :Araa },
+        }
+      },
+      {
+        name: :tree,
+        type: :Tree,
+      },
+      {
+        name: :initial,
+        type: :Array1D,
+        elements: {
+          1 => { name: :initial_map_id, type: :int },
+          2 => { name: :initial_x, type: :int },
+          3 => { name: :initial_y, type: :int },
+
+          11 => { name: :boat_map_id, type: :int },
+          12 => { name: :boat_x, type: :int },
+          13 => { name: :boat_y, type: :int },
+
+          21 => { name: :ship_map_id, type: :int },
+          22 => { name: :ship_x, type: :int },
+          23 => { name: :ship_y, type: :int },
+
+          31 => { name: :airship_map_id, type: :int },
+          32 => { name: :airship_x, type: :int },
+          33 => { name: :airship_y, type: :int },
+        },
+      },
+    ]
   end
 
   class File
@@ -182,7 +292,11 @@ module LCF
       h_len = LCF.read_ber io
       h = io.read h_len
       raise "Invalid header: #{h} (expected: #{header})" if h != header
-      @root = LCF.const_get(schema[:type]).new io, schema
+      if schema.is_a? Array
+        @root = LCF.const_get(schema.first[:type]).new io, schema.first
+      else
+        @root = LCF.const_get(schema[:type]).new io, schema
+      end
     end
 
     def header; raise end
@@ -200,7 +314,8 @@ module LCF
 
   class MapTree < File
     def header; "LcfMapTree" end
-    end
+    def schema; LCF::Schema::MAP_TREE end
+  end
 
   class MapUnit < File
     def header; "LcfMapUnit" end

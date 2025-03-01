@@ -30,12 +30,18 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   return mrb_str_new(M, nfd.data(), nfd.size());
 }
 
+using V = ::mrb_value;
+
+struct Rect {
+  mrb_int x{0}, y{0}, width{0}, height{0};
+};
+
 struct Bitmap {
   int32_t width, height;
   lv_color_format_t format;
   std::vector<uint8_t> buffer;
 
-  Bitmap(int32_t w, int32_t h, lv_color_format_t f)
+  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f)
       : width(w),
         height(h),
         format(f),
@@ -43,24 +49,43 @@ struct Bitmap {
 };
 
 template <class T>
-void free_cxx_obj(mrb_state* M, void* p) {
-  if (!p)
-    return;
+struct DataType {
+  static void free_obj(mrb_state* M, void* p) {
+    if (!p)
+      return;
 
-  reinterpret_cast<T*>(p)->~T();
-  mrb_free(M, p);
-}
+    std::destroy_at(reinterpret_cast<T*>(p));
+    mrb_free(M, p);
+  }
 
-const mrb_data_type bitmap_type = {"Bitmap", &free_cxx_obj<Bitmap>};
+  static mrb_data_type data_type;
+
+  template <class... Args>
+  static T& alloc_obj(mrb_state* M, V self, Args... args) {
+    mrb_assert(!DATA_PTR(self));
+    void* mem_ptr = mrb_malloc(M, sizeof(T));
+    T* ptr = new (mem_ptr) T{args...};
+    mrb_data_init(self, ptr, &data_type);
+    return *ptr;
+  }
+
+  static T& get(mrb_state* M, V self) {
+    return *reinterpret_cast<T*>(mrb_data_get_ptr(M, self, &data_type));
+  }
+};
+
+template <class T>
+mrb_data_type DataType<T>::data_type{
+    typeid(T).name(),
+    &DataType<T>::free_obj,
+};
 
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   mrb_int w, h;
   mrb_get_args(M, "ii", &w, &h);
-  mrb_assert(!DATA_PTR(self));
-  void* ptr = mrb_malloc(M, sizeof(Bitmap));
-  mrb_data_init(self, new (ptr) Bitmap(w, h, LV_COLOR_FORMAT_ARGB8888),
-                &bitmap_type);
-  return mrb_true_value();
+
+  DataType<Bitmap>::alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888);
+  return self;
 }
 
 mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
@@ -75,13 +100,23 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
       stbi_image_free);
   if (!img)
     return mrb_nil_value();
-  void* ptr = mrb_malloc(M, sizeof(Bitmap));
-  Bitmap* bmp = new (ptr)
-      Bitmap(w, h, c == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
-  mrb_data_init(self, bmp, &bitmap_type);
-  std::memcpy(bmp->buffer.data(), img.get(), bmp->buffer.size());
-  return mrb_true_value();
+  Bitmap& bmp = DataType<Bitmap>::alloc_obj(
+      M, self, w, h,
+      c == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
+  std::memcpy(bmp.buffer.data(), img.get(), bmp.buffer.size());
+  return self;
 }
+
+auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
+  auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
+    return e.codepoint < v;
+  });
+  if (i == (g + g_len))
+    return static_cast<decltype(i)>(nullptr);
+  if (i->codepoint != c)
+    return static_cast<decltype(i)>(nullptr);
+  return i;
+};
 
 mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   mrb_assert(DATA_PTR(self));
@@ -91,18 +126,6 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   mrb_int x, y, w, h, len;
   const char* s;
   mrb_get_args(M, "iiiis", &x, &y, &w, &h, &s, &len);
-
-  auto find_char = [](char32_t c, const auto* g,
-                      unsigned g_len) -> const auto* {
-    auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
-      return e.codepoint < v;
-    });
-    if (i == (g + g_len))
-      return static_cast<decltype(i)>(nullptr);
-    if (i->codepoint != c)
-      return static_cast<decltype(i)>(nullptr);
-    return i;
-  };
 
   auto draw = [&x, y, &bmp](const auto& c) {
     static const uint8_t col[] = {0, 0, 0, 0};
@@ -138,6 +161,46 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   }
 
   return self;
+}
+
+mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
+  mrb_int len;
+  const char* s;
+  mrb_get_args(M, "s", &s, &len);
+
+  int w = 0;
+  unsigned height = 0;
+
+  for (const char32_t c : std::string_view(s, len) | una::views::utf8) {
+    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    if (f) {
+      w += f->WIDTH;
+      height = std::max(height, f->HEIGHT);
+      continue;
+    }
+    auto h = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
+    if (h) {
+      w += h->WIDTH;
+      height = std::max(height, h->HEIGHT);
+      continue;
+    }
+    h = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
+    if (h) {
+      w += h->WIDTH;
+      height = std::max(height, h->HEIGHT);
+      continue;
+    }
+  }
+
+  const mrb_value args[] = {
+      mrb_fixnum_value(0),
+      mrb_fixnum_value(0),
+      mrb_fixnum_value(w),
+      mrb_fixnum_value(height),
+  };
+
+  return mrb_obj_new(
+      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
 }
 
 mrb_value obj_disposed(mrb_state* M, mrb_value self) {
@@ -219,11 +282,10 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
 }
 
 mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
-  mrb_value bmp;
+  Bitmap* p;
+  mrb_get_args(M, "d", &p, &DataType<Bitmap>::data_type);
+  V bmp;
   mrb_get_args(M, "o", &bmp);
-  mrb_assert(mrb_type(bmp) == MRB_TT_DATA);
-  mrb_assert(DATA_TYPE(bmp) == &bitmap_type);
-  Bitmap* p = reinterpret_cast<Bitmap*>(DATA_PTR(bmp));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
@@ -271,12 +333,107 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-  mrb_define_method(M, bmp, "draw_text", bmp_draw_text, MRB_ARGS_REQ(5));
+  mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
+                    MRB_ARGS_REQ(5) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "text_size", bmp_text_size, MRB_ARGS_REQ(1));
   mrb_define_method(M, bmp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
+
+  RClass* rect = mrb_define_class_under(M, m, "Rect", M->object_class);
+  mrb_define_method(
+      M, rect, "initialize",
+      [](mrb_state* M, V self) -> V {
+        if (mrb_get_argc(M) == 0) {
+          DataType<Rect>::alloc_obj(M, self);
+        } else {
+          mrb_int x, y, w, h;
+          mrb_get_args(M, "iiii", &x, &y, &w, &h);
+          DataType<Rect>::alloc_obj(M, self, x, y, w, h);
+        }
+        return self;
+      },
+      MRB_ARGS_OPT(4));
+  mrb_define_method(
+      M, rect, "set",
+      [](mrb_state* M, V self) {
+        if (mrb_get_argc(M) == 1) {
+          V o;
+          mrb_get_args(M, "o", &o);
+          DataType<Rect>::get(M, self) = DataType<Rect>::get(M, o);
+        } else {
+          mrb_int x, y, w, h;
+          mrb_get_args(M, "iiii", &x, &y, &w, &h);
+          DataType<Rect>::get(M, self) = Rect{x, y, w, h};
+        }
+        return self;
+      },
+      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  mrb_define_method(
+      M, rect, "empty",
+      [](mrb_state* M, V self) {
+        DataType<Rect>::get(M, self) = Rect{0, 0, 0, 0};
+        return self;
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "x",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).x);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "y",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).y);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "width",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).width);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "height",
+      [](mrb_state* M, V self) {
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).height);
+      },
+      MRB_ARGS_NONE());
+  mrb_define_method(
+      M, rect, "x=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).x = x);
+      },
+      MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "y=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).y = x);
+      },
+      MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "width=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).width = x);
+      },
+      MRB_ARGS_REQ(1));
+  mrb_define_method(
+      M, rect, "height=",
+      [](mrb_state* M, V self) {
+        mrb_int x;
+        mrb_get_args(M, "i", &x);
+        return mrb_fixnum_value(DataType<Rect>::get(M, self).height = x);
+      },
+      MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {}

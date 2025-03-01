@@ -34,12 +34,10 @@ set(LIBMRUBY_A "${MRUBY_BUILD_DIR}/host/lib/libmruby.a")
 set_target_properties(mruby PROPERTIES IMPORTED_LOCATION "${LIBMRUBY_A}")
 list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
-foreach(g mruby-rgss mruby-lcf mruby-rpg2k)
-  file(GLOB cxx ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.cxx)
-  file(GLOB rb ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrblib/*.rb)
-  list(APPEND MRB_FILES ${cxx} ${rb}
-       ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrbgem.rake)
-endforeach()
+file(GLOB cxx CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mruby-*/src/*.cxx)
+file(GLOB rb CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mruby-*/mrblib/*.rb)
+file(GLOB mrb CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mruby-*/mrbgem.rake)
+set(MRB_FILES ${cxx} ${rb} ${mrb})
 set(MRB_OPTS
     MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
     MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}

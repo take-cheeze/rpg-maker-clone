@@ -22,6 +22,15 @@ module LCF
     [ret].pack('L').unpack1('l')
   end
 
+  class Tree
+    def initialize(selected_id, maps)
+      @selected_id = selected_id
+      @maps = maps
+    end
+
+    attr_reader :selected_id, :maps
+  end
+
   def to_rb d, s
     return s[:default] unless d
 
@@ -33,6 +42,13 @@ module LCF
       raise "invalid bool size: #{d.size}" if d.size != 0
       return d.bytes[0] != 0
     when :string ; return LCF.cp932_to_utf8 d
+    when :Tree
+      s = StringIO.new(d)
+      map_count = read_ber s
+      maps = []
+      (0...map_count).each { maps.push read_ber s }
+      selected_id = read_ber s
+      return Tree.new(selected_id, maps)
     end
 
     raise "Unsupported type: #{s[:type]}"
