@@ -2,6 +2,22 @@ class Object
   include RGSS
 end
 
+module RGSS
+  class Window
+    attr_accessor :contents
+
+    def initialize(x = 0, y = 0, width = 0, height = 0)
+      @x = x
+      @y = y
+      @width = width
+      @height = height
+      @contents = nil
+    end
+
+    attr_accessor :x, :y, :width, :height
+  end
+end
+
 class RPG2k
   WIDTH = 320
   HEIGHT = 240
