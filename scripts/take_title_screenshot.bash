@@ -24,6 +24,7 @@ fi
 
 ffmpeg \
     -loglevel panic -y \
+    -thread_queue_size 1024 \
     -f x11grab -framerate 60 -video_size ${display_size} -i ${display_name} \
     -f pulse -ac 2 -i default \
     -c:v libx264rgb -crf 0 -preset ultrafast -color_range 2 \
