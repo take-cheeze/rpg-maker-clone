@@ -97,6 +97,45 @@ jobs:
         run: |
           nix develop -c cmake --build build -t test
 
+  wasm:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: nixbuild/nix-quick-install-action@v29
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v5
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ~/.emscripten_cache
+          key: ${{ runner.os }}-emcc-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-emcc-
+
+      - name: cmake
+        run: |
+          nix develop -c emcmake cmake -S . -B wasm-build -GNinja
+
+      - name: build
+        run: |
+          nix develop -c cmake --build wasm-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: |
+            wasm-build/index.html
+            wasm-build/index.js
+            wasm-build/index.wasm
+
   screenshots:
     runs-on: ubuntu-latest
     steps:
