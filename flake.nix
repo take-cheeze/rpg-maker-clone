@@ -41,6 +41,7 @@
                 autoconf
                 automake
                 xorg.libXi
+                emscripten
               ]
               ++ (
                 if system == "x86_64-linux" then
