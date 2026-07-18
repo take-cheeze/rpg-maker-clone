@@ -72,7 +72,8 @@ fs::path xp_rtp_path() {
 }
 
 #ifdef __EMSCRIPTEN__
-// Trampoline for emscripten_set_main_loop, which takes a plain function pointer.
+// Trampoline for emscripten_set_main_loop, which takes a plain function
+// pointer.
 std::function<void()> main_loop_;
 void main_loop() {
   main_loop_();
@@ -144,9 +145,10 @@ int main(int argc, char** argv) {
   // Instead we register a per-frame callback that runs a single iteration.
   //
   // emscripten_set_main_loop(..., simulate_infinite_loop=1) unwinds the C stack
-  // without running destructors, so `mrb`, `display` and `game_obj` intentionally
-  // outlive main(). Keep `game_obj` reachable from the GC and capture handles by
-  // value so the callback stays valid after main() returns to the browser.
+  // without running destructors, so `mrb`, `display` and `game_obj`
+  // intentionally outlive main(). Keep `game_obj` reachable from the GC and
+  // capture handles by value so the callback stays valid after main() returns
+  // to the browser.
   mrb_gc_register(M, game_obj);
   main_loop_ = [M, game_obj]() {
     mrb_funcall(M, game_obj, "main_loop", 0);

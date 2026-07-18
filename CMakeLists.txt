@@ -42,11 +42,11 @@ if(EMSCRIPTEN)
   # The native "host" build only produces mrbc; the app links the cross build.
   set(MRUBY_TARGET_NAME "emscripten")
   # mruby-onig-regexp normally extracts onigmo's objects into libmruby.a, but
-  # under emscripten that fails: the bundled onigmo builds its libonigmo.a with a
-  # host ranlib whose symbol table llvm-ar/wasm-ld cannot read (bulk extraction
-  # fails on the "/" member and produces corrupt objects). The pristine per-file
-  # wasm objects are still emitted next to the archive, so re-archive those with
-  # emar and link the result. Version tracks the pin in
+  # under emscripten that fails: the bundled onigmo builds its libonigmo.a with
+  # a host ranlib whose symbol table llvm-ar/wasm-ld cannot read (bulk
+  # extraction fails on the "/" member and produces corrupt objects). The
+  # pristine per-file wasm objects are still emitted next to the archive, so
+  # re-archive those with emar and link the result. Version tracks the pin in
   # 3rd/mruby-onig-regexp/mrbgem.rake.
   set(ONIGMO_DIR
       "${MRUBY_BUILD_DIR}/emscripten/mrbgems/mruby-onig-regexp/onigmo-6.2.0")
@@ -121,12 +121,11 @@ target_include_directories(${PROJECT_NAME}
 if(EMSCRIPTEN)
   # Emit a runnable page (index.html + .js + .wasm) with a growable heap so the
   # interpreter and game assets fit.
-  set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html"
-                                                   OUTPUT_NAME "index")
+  set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html" OUTPUT_NAME
+                                                                  "index")
   add_dependencies(${PROJECT_NAME} onigmo_clean)
-  target_link_options(
-    ${PROJECT_NAME} PRIVATE "-sALLOW_MEMORY_GROWTH=1" "-sEXIT_RUNTIME=0"
-    "-sFORCE_FILESYSTEM=1" "${ONIGMO_A}")
+  target_link_options(${PROJECT_NAME} PRIVATE "-sALLOW_MEMORY_GROWTH=1"
+                      "-sEXIT_RUNTIME=0" "-sFORCE_FILESYSTEM=1" "${ONIGMO_A}")
   # Optionally bake a game directory into the virtual filesystem at /game so the
   # page runs a real game. Pass -DWASM_GAME_DIR=/abs/path/to/game at configure
   # time; then the page auto-loads it via --game_dir=/game.
