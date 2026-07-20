@@ -27,6 +27,7 @@ jobs:
 
     env:
       SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
