@@ -23,25 +23,26 @@
             nativeBuildInputs =
               with pkgs;
               [
-                ninja
-                cmake
-                ruby
-                sccache
-                clang-tools
-                git
-                wget
-                unar
-                cmake-format
-                pre-commit
-                nixfmt-rfc-style
-                cabal-install
-                ghc
-                xorg.xvfb
-                mold-wrapped
                 autoconf
                 automake
-                xorg.libXi
+                cabal-install
+                clang-tools
+                cmake
+                cmake-format
                 emscripten
+                ghc
+                git
+                libXi
+                mold
+                ninja
+                nixfmt
+                pre-commit
+                ruby
+                sccache
+                unar
+                wget
+                xvfb
+                xvfb-run
               ]
               ++ (
                 if system == "x86_64-linux" then
