@@ -26,7 +26,7 @@
                 ninja
                 cmake
                 ruby
-                ccache
+                sccache
                 clang-tools
                 git
                 wget
@@ -73,8 +73,8 @@
           };
         };
         devShell = self.packages.${system}.build.overrideAttrs {
-          CMAKE_C_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
-          CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
+          CMAKE_C_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
+          CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
         };
       }
     );
