@@ -1,6 +1,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <regex>
 
@@ -12,6 +13,10 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <inicpp.hpp>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
@@ -66,6 +71,15 @@ fs::path xp_rtp_path() {
   return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
 }
 
+#ifdef __EMSCRIPTEN__
+// Trampoline for emscripten_set_main_loop, which takes a plain function
+// pointer.
+std::function<void()> main_loop_;
+void main_loop() {
+  main_loop_();
+}
+#endif
+
 }  // namespace
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
@@ -95,8 +109,16 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "GAME_DIR"),
                 mrb_str_new_cstr(M, FLAGS_game_dir.c_str()));
+#ifdef __EMSCRIPTEN__
+  // The wine registry (used to locate the RTP) does not exist in the browser
+  // filesystem, so leave RTP_DIR empty; games are expected to be self-contained
+  // in the preloaded game directory.
+  mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
+                mrb_str_new_cstr(M, ""));
+#else
   mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
                 mrb_str_new_cstr(M, rtp_path().c_str()));
+#endif
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
@@ -108,19 +130,44 @@ int main(int argc, char** argv) {
 
   const fs::path game_dir_path = FLAGS_game_dir;
 
+  mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
-    mrb_value obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
-    mrb_funcall(M, obj, "start", 0);
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
-    mrb_value obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
-    mrb_funcall(M, obj, "start", 0);
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
   } else {
     CHECK(false) << "Unknown game directory: " << game_dir_path;
   }
-  mrb_print_backtrace(M);
+  CHECK(!M->exc);
+
+#ifdef __EMSCRIPTEN__
+  // The browser owns the event loop, so we cannot block in a Ruby `loop`.
+  // Instead we register a per-frame callback that runs a single iteration.
+  //
+  // emscripten_set_main_loop(..., simulate_infinite_loop=1) unwinds the C stack
+  // without running destructors, so `mrb`, `display` and `game_obj`
+  // intentionally outlive main(). Keep `game_obj` reachable from the GC and
+  // capture handles by value so the callback stays valid after main() returns
+  // to the browser.
+  mrb_gc_register(M, game_obj);
+  main_loop_ = [M, game_obj]() {
+    mrb_funcall(M, game_obj, "main_loop", 0);
+    if (M->exc) {
+      mrb_print_backtrace(M);
+      emscripten_cancel_main_loop();
+    }
+  };
+  emscripten_set_main_loop(main_loop, 0, 1);
+  return EXIT_SUCCESS;  // not reached; the call above unwinds the stack
+#else
+  mrb_funcall(M, game_obj, "start", 0);
+  if (M->exc) {
+    mrb_print_backtrace(M);
+  }
   CHECK(!M->exc);
 
   gflags::ShutDownCommandLineFlags();
 
   return EXIT_SUCCESS;
+#endif
 }

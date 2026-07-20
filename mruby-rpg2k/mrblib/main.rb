@@ -135,11 +135,15 @@ class RPG2k
     @scenes.push scene
   end
 
+  def main_loop
+    @scenes.last.update
+    Input.update
+    Graphics.update
+  end
+
   def start
     loop do
-      @scenes.last.update
-      Input.update
-      Graphics.update
+      main_loop
     end
   rescue RGSS::Timeout
   end
