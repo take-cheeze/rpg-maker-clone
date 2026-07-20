@@ -62,6 +62,11 @@
               hash = "sha256-HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc=";
             };
             buildInputs = with pkgs; [ SDL2 ];
+            # The package build only builds; tests are run separately via CTest.
+            # Prevents nixpkgs' pytest check hook from hijacking the check phase
+            # (it collects no tests and fails with exit code 5).
+            doCheck = false;
+            dontUsePytestCheck = true;
             CMAKE_BUILD_TYPE = "RelWithDebInfo";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
