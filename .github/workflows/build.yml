@@ -77,9 +77,7 @@ jobs:
 
       - name: cmake
         run: |
-          nix develop -c cmake -S . -B build -GNinja \
-            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_PATH" \
-            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_PATH"
+          nix develop -c cmake -S . -B build -GNinja
 
       - name: build
         run: |
