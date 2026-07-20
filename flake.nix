@@ -29,6 +29,7 @@
                 clang-tools
                 cmake
                 cmake-format
+                emscripten
                 ghc
                 git
                 libXi
