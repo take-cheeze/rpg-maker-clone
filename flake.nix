@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=release-24.11";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=release-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -26,7 +26,7 @@
                 ninja
                 cmake
                 ruby
-                ccache
+                sccache
                 clang-tools
                 git
                 wget
@@ -62,6 +62,11 @@
               hash = "sha256-HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc=";
             };
             buildInputs = with pkgs; [ SDL2 ];
+            # The package build only builds; tests are run separately via CTest.
+            # Prevents nixpkgs' pytest check hook from hijacking the check phase
+            # (it collects no tests and fails with exit code 5).
+            doCheck = false;
+            dontUsePytestCheck = true;
             CMAKE_BUILD_TYPE = "RelWithDebInfo";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
@@ -73,8 +78,8 @@
           };
         };
         devShell = self.packages.${system}.build.overrideAttrs {
-          CMAKE_C_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
-          CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.ccache}/bin/ccache";
+          CMAKE_C_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
+          CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
         };
       }
     );
