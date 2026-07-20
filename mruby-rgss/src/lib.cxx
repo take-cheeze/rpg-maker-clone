@@ -12,6 +12,7 @@
 
 #include "shinonome.hxx"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <vector>
