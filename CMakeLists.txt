@@ -88,9 +88,9 @@ add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
     mkdir -p ${MRUBY_BUILD_DIR}/repos/host
-    ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME} && ln -sf
+    ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME} && ln -sfn
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
-    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sf
+    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sfn
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
     ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME}/mgem-list && ${MRB_OPTS} rake
     -v
