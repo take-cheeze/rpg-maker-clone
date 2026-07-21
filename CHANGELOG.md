@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Expanded the `mruby-rgss` RGSS built-in class library:
+  - `RGSS::Color` — floating point RGBA color with clamping, `set`, `==`,
+    `to_s` and Marshal (`_dump`/`_load`) support
+  - `RGSS::Tone` — red/green/blue/gray tone with clamping, `set`, `==`,
+    `to_s` and Marshal support
+  - `RGSS::Table` — 1/2/3 dimensional 16bit integer array (`[]`, `[]=`,
+    `xsize`/`ysize`/`zsize`/`dim`, `resize`) with the RGSS Marshal format,
+    used for map/tile data
+  - `RGSS::Bitmap` — added `width`, `height`, `rect`, `clear`, `fill_rect`,
+    `get_pixel`, `set_pixel`, `blt` (with opacity alpha-blending) and
+    font-aware, alignment-aware `draw_text`
+  - `RGSS::Rect` — added `==`, `to_s`, Marshal support and fixed the instance
+    type so `Rect.new` no longer trips the DATA assertion
+  - `RGSS::Font` — name/size/bold/italic/color plus class-level defaults and
+    `Font.exist?`; `Bitmap#font`/`Bitmap#font=` accessors
+  - `RGSS::Audio` — inert stubs for the standard bgm/bgs/me/se API
+  - `RGSS::Graphics` — `frame_count` (advanced by `update`), `frame_rate`,
+    `freeze`, `transition`, `frame_reset`
+  - Tests covering the new value classes, bitmap pixel operations and Marshal
+    round-trips
 - Title screen menu implementation
   - Added window component to display menu items (New Game, Continue, Shutdown)
   - Implemented menu navigation with keyboard input (up/down arrows)

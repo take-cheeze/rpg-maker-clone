@@ -1,6 +1,8 @@
 module RGSS
   class Timeout < StandardError; end
 
+  # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
+
   class Bitmap
     def initialize f, s = nil
       if f.kind_of? String
@@ -13,34 +15,55 @@ module RGSS
         self._init_size(f, s)
       end
     end
+
+    # Font used by #draw_text. Created lazily from the current defaults.
+    def font
+      @font ||= Font.new
+    end
+
+    def font=(f)
+      @font = f
+    end
   end
 
-  class Color
-  end
-
+  # RGSS Font. Rendering currently uses the built-in shinonome bitmap font, so
+  # only the attributes that scripts read/write are modelled here.
   class Font
+    @default_name = "Arial"
+    @default_size = 22
+    @default_bold = false
+    @default_italic = false
+    @default_color = Color.new(255, 255, 255, 255)
+
+    class << self
+      attr_accessor :default_name, :default_size, :default_bold,
+                    :default_italic, :default_color
+
+      def exist?(name)
+        true
+      end
+    end
+
+    attr_accessor :name, :size, :bold, :italic, :color
+
+    def initialize(name = Font.default_name, size = Font.default_size)
+      @name = name
+      @size = size
+      @bold = Font.default_bold
+      @italic = Font.default_italic
+      @color = Color.new(Font.default_color.red, Font.default_color.green,
+                         Font.default_color.blue, Font.default_color.alpha)
+    end
   end
 
   class Plane
-  end
-
-  class Rect
   end
 
   class Sprite
     attr_reader :bitmap
   end
 
-  class Table
-  end
-
   class Tilemap
-  end
-
-  class Tone
-  end
-
-  class Viewport
   end
 
   class Window
@@ -49,10 +72,42 @@ module RGSS
   class RGSSError < StandardError
   end
 
+  # RGSS Audio module. Playback back-ends are not wired up yet, so these are
+  # inert stubs that keep scripts calling the standard API from crashing.
   module Audio
+    class << self
+      def bgm_play(filename, volume = 100, pitch = 100); end
+      def bgm_stop; end
+      def bgm_fade(time); end
+      def bgm_pos; 0; end
+
+      def bgs_play(filename, volume = 100, pitch = 100); end
+      def bgs_stop; end
+      def bgs_fade(time); end
+      def bgs_pos; 0; end
+
+      def me_play(filename, volume = 100, pitch = 100); end
+      def me_stop; end
+      def me_fade(time); end
+
+      def se_play(filename, volume = 100, pitch = 100); end
+      def se_stop; end
+    end
   end
 
   module Graphics
+    @frame_count = 0
+    @frame_rate = 40
+
+    class << self
+      attr_accessor :frame_count, :frame_rate
+
+      def freeze; end
+
+      def transition(duration = 8, filename = nil, vague = 40); end
+
+      def frame_reset; end
+    end
   end
 
   module Input
