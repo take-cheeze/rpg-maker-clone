@@ -1,4 +1,5 @@
 
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
@@ -8,6 +9,7 @@
 #include <lvgl.h>
 #include <mruby.h>
 #include <mruby/array.h>
+#include <mruby/string.h>
 #include <mruby/variable.h>
 
 #include <gflags/gflags.h>
@@ -84,10 +86,39 @@ void main_loop() {
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
+// Report an mruby exception (class, message, and Ruby backtrace) and bail out
+// of main(). Preferred over glog's CHECK: it prints the actual mruby error
+// detail, and under Emscripten glog's fatal path traps anyway (it formats
+// through std::ios callbacks that don't survive the wasm function-pointer
+// table), so we use mruby's own stdio-based printer, which also reaches the
+// browser console.
+#define CHECK_NO_EXC(M)                                                        \
+  do {                                                                         \
+    if ((M)->exc) {                                                            \
+      mrb_value exc__ = mrb_obj_value((M)->exc);                               \
+      (M)->exc = nullptr;                                                      \
+      mrb_value msg__ = mrb_funcall(M, exc__, "message", 0);                   \
+      std::fprintf(stderr, "mruby error: %s: %s\n",                            \
+                   mrb_obj_classname(M, exc__),                                \
+                   mrb_string_value_cstr(M, &msg__));                          \
+      /* mrb_print_backtrace reads mrb->exc, so restore it around the call. */ \
+      (M)->exc = mrb_obj_ptr(exc__);                                           \
+      mrb_print_backtrace(M);                                                  \
+      (M)->exc = nullptr;                                                      \
+      return EXIT_FAILURE;                                                     \
+    }                                                                          \
+  } while (0)
+
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_game_dir.empty()) {
+#ifdef __EMSCRIPTEN__
+    // A game directory is baked into the virtual filesystem at /game (see the
+    // WASM_GAME_DIR option in CMakeLists.txt).
+    FLAGS_game_dir = "/game";
+#else
     FLAGS_game_dir = fs::current_path();
+#endif
   }
   google::InitGoogleLogging(argv[0]);
 
@@ -100,9 +131,19 @@ int main(int argc, char** argv) {
   lv_sdl_window_set_resizeable(display.get(), false);
   lv_sdl_window_set_zoom(display.get(), 2.f);
 
+#ifdef __EMSCRIPTEN__
+  // mruby uses word boxing, which stores the type tag in the low 3 bits of each
+  // heap pointer and therefore requires 8-byte-aligned objects. lvgl's TLSF
+  // only aligns to 4 bytes on 32-bit (wasm32), so objects at 4-mod-8 addresses
+  // read back as "immediate" and every mrb_*_p type predicate fails, corrupting
+  // core init. Use mruby's default allocator (emscripten malloc is 16-byte
+  // aligned).
+  std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
+#else
   std::shared_ptr<mrb_state> mrb(mrb_open_allocf(lvallocf, nullptr), mrb_close);
+#endif
   mrb_state* M = mrb.get();
-  CHECK(!M->exc);
+  CHECK_NO_EXC(M);
 
   rgss_set_display(M, display.get());
 
@@ -122,7 +163,7 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
-  CHECK(!M->exc);
+  CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
   for (int i = 1; i < argc; ++i)
@@ -138,7 +179,7 @@ int main(int argc, char** argv) {
   } else {
     CHECK(false) << "Unknown game directory: " << game_dir_path;
   }
-  CHECK(!M->exc);
+  CHECK_NO_EXC(M);
 
 #ifdef __EMSCRIPTEN__
   // The browser owns the event loop, so we cannot block in a Ruby `loop`.
