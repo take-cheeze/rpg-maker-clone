@@ -7,9 +7,13 @@ module RGSS
     def initialize f, s = nil
       if f.kind_of? String
         i = self._init_file(f, s)
-        i = self._init_file("#{GAME_DIR}/#{f}") unless i
-        i = self._init_file("#{GAME_DIR}/#{f}.png") unless i
-        i = self._init_file("#{GAME_DIR}/#{f}.xyz") unless i
+        [GAME_DIR, RTP_DIR].each do |d|
+          next if d.nil? || d.empty?
+          i = self._init_file("#{d}/#{f}") unless i
+          [:png, :xyz, :bmp].each do |ext|
+            i = self._init_file("#{d}/#{f}.#{ext}") unless i
+          end
+        end
         raise "Failed to init bitmap: #{f}" unless i
       else
         self._init_size(f, s)
@@ -33,26 +37,35 @@ module RGSS
     @default_size = 22
     @default_bold = false
     @default_italic = false
+    @default_shadow = false
+    @default_outline = true
     @default_color = Color.new(255, 255, 255, 255)
+    @default_out_color = Color.new(0, 0, 0, 128)
 
     class << self
       attr_accessor :default_name, :default_size, :default_bold,
-                    :default_italic, :default_color
+                    :default_italic, :default_shadow, :default_outline,
+                    :default_color, :default_out_color
 
       def exist?(name)
         true
       end
     end
 
-    attr_accessor :name, :size, :bold, :italic, :color
+    attr_accessor :name, :size, :bold, :italic, :outline, :shadow,
+                  :color, :out_color
 
     def initialize(name = Font.default_name, size = Font.default_size)
       @name = name
       @size = size
       @bold = Font.default_bold
       @italic = Font.default_italic
-      @color = Color.new(Font.default_color.red, Font.default_color.green,
-                         Font.default_color.blue, Font.default_color.alpha)
+      @shadow = Font.default_shadow
+      @outline = Font.default_outline
+      c = Font.default_color
+      @color = Color.new(c.red, c.green, c.blue, c.alpha)
+      oc = Font.default_out_color
+      @out_color = Color.new(oc.red, oc.green, oc.blue, oc.alpha)
     end
   end
 
@@ -61,6 +74,7 @@ module RGSS
 
   class Sprite
     attr_reader :bitmap
+    attr_reader :x, :y, :z
   end
 
   class Tilemap

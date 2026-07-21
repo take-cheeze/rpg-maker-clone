@@ -1,4 +1,5 @@
 #include <mruby.h>
+#include <mruby/array.h>
 #include <mruby/class.h>
 #include <mruby/data.h>
 #include <mruby/string.h>
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -436,8 +438,17 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   std::shared_ptr<uint8_t> img(
       stbi_load(f, &w, &h, &c, stbi__png_transparent_palette ? 4 : 3),
       stbi_image_free);
-  if (!img)
-    return mrb_nil_value();
+  if (!img) {
+    // Some archives store filenames in NFD form while the game data refers to
+    // them in NFC (or vice versa); retry with the decomposed form before giving
+    // up so accented paths still resolve.
+    const std::string nfd_f = una::norm::to_nfd_utf8(f);
+    img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c,
+                        stbi__png_transparent_palette ? 4 : 3),
+              stbi_image_free);
+    if (!img)
+      return mrb_nil_value();
+  }
   Bitmap& bmp = DataType<Bitmap>::alloc_obj(
       M, self, w, h,
       c == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
@@ -732,6 +743,23 @@ mrb_value obj_dispose(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
+// Array of top-level display objects (Sprites) whose stacking order is driven
+// by their `z` attribute. Populated lazily by rgss_set_display / add_root_obj.
+mrb_value root_objs(mrb_state* M) {
+  const mrb_value mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+  const mrb_value ret = mrb_const_get(M, mod, mrb_intern_lit(M, "_roots"));
+  mrb_assert(mrb_array_p(ret));
+  return ret;
+}
+
+// Flag the module so the next Graphics.update reshuffles LVGL sibling order to
+// match the objects' `z` values. Reordering every frame would be wasteful, so
+// callers only mark it dirty when a `z` (or the root set) actually changes.
+void update_z(mrb_state* M) {
+  const mrb_value mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+  mrb_iv_set(M, mod, mrb_intern_lit(M, "_z_updated"), mrb_true_value());
+}
+
 mrb_value gfx_update(mrb_state* M, mrb_value self) {
   const uint32_t frame_start = lv_tick_get();
   const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
@@ -751,6 +779,30 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
                  mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Timeout"),
                  "Timeout");
     }
+  }
+
+  // Reapply z ordering when something changed since the last frame. LVGL draws
+  // siblings in child order, so we sort the live roots by their `z` and move
+  // them to the foreground from lowest to highest, leaving the greatest `z` on
+  // top. Disposed sprites (null DATA_PTR) are dropped from the root set here so
+  // it does not grow unbounded.
+  if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
+    const mrb_value roots = root_objs(M);
+    const mrb_value live = mrb_ary_new(M);
+    std::multimap<mrb_int, lv_obj_t*> orders;
+    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
+      const mrb_value v = RARRAY_PTR(roots)[i];
+      if (!DATA_PTR(v))
+        continue;
+      mrb_ary_push(M, live, v);
+      const mrb_value z = mrb_iv_get(M, v, mrb_intern_lit(M, "@z"));
+      mrb_assert(mrb_fixnum_p(z));
+      orders.insert({mrb_fixnum(z), reinterpret_cast<lv_obj_t*>(DATA_PTR(v))});
+    }
+    mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_roots"), live);
+    for (const auto& order : orders)
+      lv_obj_move_foreground(order.second);
+    mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"), mrb_false_value());
   }
 
   lv_timer_handler();
@@ -795,12 +847,22 @@ lv_obj_t* parent_object(mrb_state* M, mrb_value vp) {
   return reinterpret_cast<lv_obj_t*>(DATA_PTR(vp));
 }
 
+// Register a display object as a z-ordered root and give it a default z of 0.
+void add_root_obj(mrb_state* M, mrb_value v) {
+  mrb_ary_push(M, root_objs(M), v);
+  mrb_iv_set(M, v, mrb_intern_lit(M, "@x"), mrb_fixnum_value(0));
+  mrb_iv_set(M, v, mrb_intern_lit(M, "@y"), mrb_fixnum_value(0));
+  mrb_iv_set(M, v, mrb_intern_lit(M, "@z"), mrb_fixnum_value(0));
+  update_z(M);
+}
+
 mrb_value spr_init(mrb_state* M, mrb_value self) {
   mrb_value vp = mrb_nil_value();
   mrb_get_args(M, "|o", &vp);
 
   lv_obj_t* p = lv_canvas_create(parent_object(M, vp));
   mrb_data_init(self, p, &obj_type);
+  add_root_obj(M, self);
   return self;
 }
 
@@ -814,6 +876,34 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   lv_canvas_set_buffer(obj, p->buffer.data(), p->width, p->height, p->format);
   return bmp;
+}
+
+mrb_value obj_set_x(mrb_state* M, mrb_value self) {
+  mrb_int x;
+  mrb_get_args(M, "i", &x);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_x(obj, x);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@x"), mrb_fixnum_value(x));
+  return self;
+}
+
+mrb_value obj_set_y(mrb_state* M, mrb_value self) {
+  mrb_int y;
+  mrb_get_args(M, "i", &y);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_y(obj, y);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@y"), mrb_fixnum_value(y));
+  return self;
+}
+
+mrb_value obj_set_z(mrb_state* M, mrb_value self) {
+  mrb_int z;
+  mrb_get_args(M, "i", &z);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
+  update_z(M);
+  return self;
 }
 
 mrb_value vp_init(mrb_state* M, mrb_value self) {
@@ -978,6 +1068,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));
+  mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_roots"),
+                mrb_ary_new(M));
 
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
@@ -991,6 +1083,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "bitmap=", spr_set_bmp, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "disposed?", obj_disposed, MRB_ARGS_NONE());
+  mrb_define_method(M, spr, "x=", obj_set_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "y=", obj_set_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "z=", obj_set_z, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);

@@ -70,6 +70,7 @@
             doCheck = false;
             dontUsePytestCheck = true;
             CMAKE_BUILD_TYPE = "RelWithDebInfo";
+            CMAKE_GENERATOR = "Ninja";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
             LOCALE_ARCHIVE =
