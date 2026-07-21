@@ -26,6 +26,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+// Defined in sixel.cxx (same gem).  A no-op unless the game was started with
+// --sixel; forwards terminal keyboard input to RGSS::Input.
+extern "C" void rgss_terminal_poll(mrb_state* M);
+
 namespace {
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
@@ -763,6 +767,8 @@ void update_z(mrb_state* M) {
 mrb_value gfx_update(mrb_state* M, mrb_value self) {
   const uint32_t frame_start = lv_tick_get();
   const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+
+  rgss_terminal_poll(M);
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
                         mrb_intern_lit(M, "TIMEOUT_MS"))) {

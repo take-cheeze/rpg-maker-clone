@@ -15,6 +15,15 @@
 - Menu items are drawn using the game's font system
 - Selection is highlighted with a cursor
 
+### Terminal gaming (sixel)
+- Alternative display backend that renders each frame to the terminal using the
+  DEC sixel protocol, enabled with the `--sixel` flag
+- Lets the runtime be played on hosts without a windowing system (headless
+  servers, SSH sessions, embedded boards with a serial console)
+- Reads keyboard input directly from the terminal and forwards it to
+  `RGSS::Input`
+- See `docs/adr/0001-terminal-gaming-sixel.md` for the design rationale
+
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory
 
