@@ -4,7 +4,9 @@ end
 
 module RGSS
   class Window
-    attr_accessor :contents
+    # Windows are drawn above ordinary background sprites (which default to
+    # z == 0), so give the backing sprite a high z by default.
+    DEFAULT_Z = 100
 
     def initialize(x = 0, y = 0, width = 0, height = 0)
       @x = x
@@ -12,9 +14,35 @@ module RGSS
       @width = width
       @height = height
       @contents = nil
+      # Back the window with a Sprite so its contents are actually drawn.
+      @sprite = Sprite.new
+      @sprite.x = x
+      @sprite.y = y
+      @sprite.z = DEFAULT_Z
     end
 
-    attr_accessor :x, :y, :width, :height
+    attr_reader :x, :y, :contents
+    attr_accessor :width, :height
+
+    def x=(v)
+      @x = v
+      @sprite.x = v
+    end
+
+    def y=(v)
+      @y = v
+      @sprite.y = v
+    end
+
+    def contents=(bmp)
+      @contents = bmp
+      @sprite.bitmap = bmp if bmp
+      bmp
+    end
+
+    def dispose
+      @sprite.dispose
+    end
   end
 end
 
