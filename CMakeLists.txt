@@ -84,6 +84,16 @@ foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp)
   list(APPEND MRB_FILES ${src} ${rb}
        ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrbgem.rake)
 endforeach()
+
+# Also rebuild libmruby.a when mruby's own core changes. These sources live in
+# the 3rd/mruby submodule; CONFIGURE_DEPENDS keeps the list current as the
+# submodule is checked out or updated to a new revision.
+file(GLOB_RECURSE mruby_core CONFIGURE_DEPENDS
+     ${MRUBY_PREFIX}/src/*.c
+     ${MRUBY_PREFIX}/src/*.h
+     ${MRUBY_PREFIX}/mrblib/*.rb
+     ${MRUBY_PREFIX}/include/*.h)
+list(APPEND MRB_FILES ${mruby_core})
 set(MRB_OPTS
     MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
     MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
