@@ -121,12 +121,12 @@ mrb_data_type DataType<T>::data_type{
 };
 
 // Generic floating point component getter/setter usable by Color and Tone.
-template <class T, double T::*Field>
+template <class T, double T::* Field>
 mrb_value component_get(mrb_state* M, V self) {
   return mrb_float_value(M, DataType<T>::get(M, self).*Field);
 }
 
-template <class T, double T::*Field, int Lo, int Hi>
+template <class T, double T::* Field, int Lo, int Hi>
 mrb_value component_set(mrb_state* M, V self) {
   mrb_float v;
   mrb_get_args(M, "f", &v);
