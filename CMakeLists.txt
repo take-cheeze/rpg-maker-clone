@@ -65,13 +65,15 @@ list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
 # Collect the source of each local mrbgem so libmruby.a rebuilds when any of it
 # changes. GLOB_RECURSE also picks up files in nested subdirectories, and
-# CONFIGURE_DEPENDS makes CMake re-run the glob at build time: adding or removing
-# a source file triggers a reconfigure (and thus a libmruby rebuild) on the next
-# `make`, with no manual `cmake` re-run. Header changes under src/ are caught too
-# so an edit to a private header still forces the archive to be rebuilt.
+# CONFIGURE_DEPENDS makes CMake re-run the glob at build time: adding or
+# removing a source file triggers a reconfigure (and thus a libmruby rebuild) on
+# the next `make`, with no manual `cmake` re-run. Header changes under src/ are
+# caught too so an edit to a private header still forces the archive to be
+# rebuilt.
 foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp)
   file(
-    GLOB_RECURSE src
+    GLOB_RECURSE
+    src
     CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.c
     ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.cxx
@@ -88,11 +90,14 @@ endforeach()
 # Also rebuild libmruby.a when mruby's own core changes. These sources live in
 # the 3rd/mruby submodule; CONFIGURE_DEPENDS keeps the list current as the
 # submodule is checked out or updated to a new revision.
-file(GLOB_RECURSE mruby_core CONFIGURE_DEPENDS
-     ${MRUBY_PREFIX}/src/*.c
-     ${MRUBY_PREFIX}/src/*.h
-     ${MRUBY_PREFIX}/mrblib/*.rb
-     ${MRUBY_PREFIX}/include/*.h)
+file(
+  GLOB_RECURSE
+  mruby_core
+  CONFIGURE_DEPENDS
+  ${MRUBY_PREFIX}/src/*.c
+  ${MRUBY_PREFIX}/src/*.h
+  ${MRUBY_PREFIX}/mrblib/*.rb
+  ${MRUBY_PREFIX}/include/*.h)
 list(APPEND MRB_FILES ${mruby_core})
 set(MRB_OPTS
     MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
