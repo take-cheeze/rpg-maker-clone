@@ -84,6 +84,13 @@ if(EMSCRIPTEN)
   # compilers to build mrbc with (CC/CXX above point at emcc/em++).
   list(APPEND MRB_OPTS MRUBY_TARGET=emscripten "HOST_CC=cc" "HOST_CXX=c++")
 endif()
+# Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks in
+# its repos/ dir so it resolves gems locally instead of cloning from GitHub. Use
+# `ln -sfn`, not `ln -sf`: once these links exist, a plain `ln -sf` would
+# dereference the existing symlink-to-directory and drop a new link *inside*
+# 3rd/mgem-list (a self-referential 3rd/mgem-list/mgem-list), dirtying the
+# submodule. `-n` (no-dereference; portable across GNU and BSD/macOS) replaces
+# the symlink in place instead.
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
