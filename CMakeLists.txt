@@ -11,6 +11,11 @@ if(EMSCRIPTEN)
   # (needed while compiling lvgl's SDL driver) and the library at link time.
   add_compile_options("-sUSE_SDL=2")
   add_link_options("-sUSE_SDL=2")
+  # mruby is built with MRB_USE_CXX_EXCEPTION and throws real C++ exceptions for
+  # its internal control flow, so exception support must be enabled across the
+  # whole binary; otherwise the first throw aborts in the catch machinery.
+  add_compile_options("-fexceptions")
+  add_link_options("-fexceptions")
   # Provide a stand-in for the SDL2::SDL2 target the executable links against.
   add_library(SDL2::SDL2 INTERFACE IMPORTED)
 else()
@@ -79,13 +84,20 @@ if(EMSCRIPTEN)
   # compilers to build mrbc with (CC/CXX above point at emcc/em++).
   list(APPEND MRB_OPTS MRUBY_TARGET=emscripten "HOST_CC=cc" "HOST_CXX=c++")
 endif()
+# Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks in
+# its repos/ dir so it resolves gems locally instead of cloning from GitHub. Use
+# `ln -sfn`, not `ln -sf`: once these links exist, a plain `ln -sf` would
+# dereference the existing symlink-to-directory and drop a new link *inside*
+# 3rd/mgem-list (a self-referential 3rd/mgem-list/mgem-list), dirtying the
+# submodule. `-n` (no-dereference; portable across GNU and BSD/macOS) replaces
+# the symlink in place instead.
 add_custom_command(
   OUTPUT "${LIBMRUBY_A}"
   COMMAND
     mkdir -p ${MRUBY_BUILD_DIR}/repos/host
-    ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME} && ln -sf
+    ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME} && ln -sfn
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
-    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sf
+    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sfn
     ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
     ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME}/mgem-list && ${MRB_OPTS} rake
     -v
@@ -96,12 +108,16 @@ add_dependencies(mruby mruby_build)
 
 if(EMSCRIPTEN)
   # Re-archive onigmo's pristine per-file wasm objects (see ONIGMO_A above).
+  # Depend on the mruby_build TARGET, not the ${LIBMRUBY_A} file: a file-level
+  # DEPENDS makes CMake copy the libmruby.a recipe into onigmo_clean.dir too, so
+  # `make -j` runs rake twice concurrently and the two runs corrupt onigmo's
+  # generated config.status. A target dependency just orders us after it.
   add_custom_command(
     OUTPUT "${ONIGMO_A}"
     COMMAND
       sh -c
       "${CMAKE_AR} crs '${ONIGMO_A}' $(find '${ONIGMO_DIR}' -name '*.o' -not -path '*/.libs/*')"
-    DEPENDS "${LIBMRUBY_A}"
+    DEPENDS mruby_build
     VERBATIM)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
@@ -124,12 +140,36 @@ if(EMSCRIPTEN)
   set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html" OUTPUT_NAME
                                                                   "index")
   add_dependencies(${PROJECT_NAME} onigmo_clean)
-  target_link_options(${PROJECT_NAME} PRIVATE "-sALLOW_MEMORY_GROWTH=1"
-                      "-sEXIT_RUNTIME=0" "-sFORCE_FILESYSTEM=1" "${ONIGMO_A}")
+  target_link_options(
+    ${PROJECT_NAME}
+    PRIVATE
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sEXIT_RUNTIME=0"
+    "-sFORCE_FILESYSTEM=1"
+    # mruby recurses deeply during init and unwinds via C++ exceptions; the
+    # default 64 KB wasm stack overflows and corrupts memory (surfacing as "null
+    # function"/out-of-bounds/signature-mismatch traps), so give it room.
+    "-sSTACK_SIZE=8388608"
+    # Debug info + runtime checks for the browser: keep DWARF in the wasm,
+    # verbose assertions, heap-access validation, and stack-overflow detection
+    # to catch the mruby init corruption early instead of as an opaque trap.
+    "-g3"
+    # Emit index.wasm.map so Chrome symbolicates wasm frames to file:line in
+    # console stack traces (DWARF alone only feeds the debugger UI, not the
+    # printed trace text). The file:line text resolves from the map with no base
+    # URL needed; serving the sources is only required to view the code. C++
+    # exception throw sites get real stack traces too.
+    "-gsource-map"
+    "-sEXCEPTION_STACK_TRACES=1"
+    "-sASSERTIONS=2"
+    "-sSAFE_HEAP=1"
+    "-sSTACK_OVERFLOW_CHECK=2"
+    "${ONIGMO_A}")
   # Optionally bake a game directory into the virtual filesystem at /game so the
   # page runs a real game. Pass -DWASM_GAME_DIR=/abs/path/to/game at configure
   # time; then the page auto-loads it via --game_dir=/game.
   if(WASM_GAME_DIR)
+    file(REAL_PATH ${WASM_GAME_DIR} WASM_GAME_DIR)
     target_link_options(${PROJECT_NAME} PRIVATE
                         "--preload-file=${WASM_GAME_DIR}@/game")
   endif()

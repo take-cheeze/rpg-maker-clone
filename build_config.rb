@@ -33,9 +33,16 @@ MRuby::Build.new do |conf|
     conf.cxx.command = ENV['HOST_CXX'] || 'c++'
     conf.linker.command = ENV['HOST_CXX'] || 'c++'
 
-    # Only the compiler toolchain is needed on the host.
-    conf.gem core: 'mruby-compiler'
     conf.gem core: 'mruby-bin-mrbc'
+    rpg_maker_gems(conf)
+
+    # The host mrbc pre-interns symbols (presym) while compiling the target's
+    # Ruby sources, baking symbol *indices* into the bytecode. The host and
+    # emscripten builds pull slightly different dependency gems, so their presym
+    # tables diverge and the target mruby then reads bytecode symbols at the
+    # wrong indices and corrupts its init. Disabling presym makes the bytecode
+    # reference symbols by name, which is portable across the two builds.
+    conf.disable_presym
   else
     enable_test
 
@@ -65,8 +72,18 @@ if emscripten
 
     enable_debug
 
+    # Must match the host build so the (name-based) bytecode mrbc emits is
+    # loadable here; see the note on the host build above.
+    conf.disable_presym
+
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == "-O0" }
+      # Raise the maximum string length to 4 MiB. On native platforms mruby
+      # defaults MRB_STR_LENGTH_MAX to 0 (unlimited), but Emscripten defines
+      # none of __linux__/__APPLE__/__*BSD__, so string.c falls through to the
+      # 1 MiB cap and rejects larger strings with "string too long". Game data
+      # (maps, images loaded as strings) can exceed 1 MiB, so bump it to 4 MiB.
+      t.defines << 'MRB_STR_LENGTH_MAX=4194304'
     end
 
     rpg_maker_gems(conf)
