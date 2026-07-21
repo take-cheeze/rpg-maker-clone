@@ -3,6 +3,9 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   spec.author = 'take-cheeze'
   spec.summary = 'RGSS implementation in mruby'
 
+  # Color, Tone and Table provide RGSS-compatible Marshal (_dump/_load) support.
+  add_dependency 'mruby-marshal'
+
   cxx.include_paths <<
     "#{dir}/../3rd/uni-algo/include" <<
     "#{dir}/../3rd/lvgl" <<

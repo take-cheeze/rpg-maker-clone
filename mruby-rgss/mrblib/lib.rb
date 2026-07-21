@@ -1,6 +1,18 @@
 module RGSS
   class Timeout < StandardError; end
 
+  # Emit a warning the first time an unimplemented stub method is called.
+  # Warning on every call would flood the log from within the game loop, so
+  # each method name is reported only once.
+  @warned_stubs = {}
+  def self.warn_stub(name)
+    return if @warned_stubs[name]
+    @warned_stubs[name] = true
+    $stderr.puts "[RGSS] #{name} is not implemented yet (stub, does nothing)"
+  end
+
+  # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
+
   class Bitmap
     def initialize f, s = nil
       if f.kind_of? String
@@ -17,26 +29,57 @@ module RGSS
         self._init_size(f, s)
       end
     end
+
+    # Font used by #draw_text. Created lazily from the current defaults.
+    def font
+      @font ||= Font.new
+    end
+
+    def font=(f)
+      @font = f
+    end
   end
 
-  class Color
-  end
-
+  # RGSS Font. Rendering currently uses the built-in shinonome bitmap font, so
+  # only the attributes that scripts read/write are modelled here.
   class Font
-    attr_accessor :name, :size, :bold, :italic, :outline, :shadow,
-                  :color, :out_color
+    @default_name = "Arial"
+    @default_size = 22
+    @default_bold = false
+    @default_italic = false
+    @default_shadow = false
+    @default_outline = true
+    @default_color = Color.new(255, 255, 255, 255)
+    @default_out_color = Color.new(0, 0, 0, 128)
 
     class << self
       attr_accessor :default_name, :default_size, :default_bold,
                     :default_italic, :default_shadow, :default_outline,
                     :default_color, :default_out_color
+
+      def exist?(name)
+        true
+      end
+    end
+
+    attr_accessor :name, :size, :bold, :italic, :outline, :shadow,
+                  :color, :out_color
+
+    def initialize(name = Font.default_name, size = Font.default_size)
+      @name = name
+      @size = size
+      @bold = Font.default_bold
+      @italic = Font.default_italic
+      @shadow = Font.default_shadow
+      @outline = Font.default_outline
+      c = Font.default_color
+      @color = Color.new(c.red, c.green, c.blue, c.alpha)
+      oc = Font.default_out_color
+      @out_color = Color.new(oc.red, oc.green, oc.blue, oc.alpha)
     end
   end
 
   class Plane
-  end
-
-  class Rect
   end
 
   class Sprite
@@ -44,16 +87,7 @@ module RGSS
     attr_reader :x, :y, :z
   end
 
-  class Table
-  end
-
   class Tilemap
-  end
-
-  class Tone
-  end
-
-  class Viewport
   end
 
   class Window
@@ -62,10 +96,85 @@ module RGSS
   class RGSSError < StandardError
   end
 
+  # RGSS Audio module. Playback back-ends are not wired up yet, so these are
+  # inert stubs that keep scripts calling the standard API from crashing.
   module Audio
+    class << self
+      def bgm_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.bgm_play")
+      end
+
+      def bgm_stop
+        RGSS.warn_stub("Audio.bgm_stop")
+      end
+
+      def bgm_fade(time)
+        RGSS.warn_stub("Audio.bgm_fade")
+      end
+
+      def bgm_pos
+        RGSS.warn_stub("Audio.bgm_pos")
+        0
+      end
+
+      def bgs_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.bgs_play")
+      end
+
+      def bgs_stop
+        RGSS.warn_stub("Audio.bgs_stop")
+      end
+
+      def bgs_fade(time)
+        RGSS.warn_stub("Audio.bgs_fade")
+      end
+
+      def bgs_pos
+        RGSS.warn_stub("Audio.bgs_pos")
+        0
+      end
+
+      def me_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.me_play")
+      end
+
+      def me_stop
+        RGSS.warn_stub("Audio.me_stop")
+      end
+
+      def me_fade(time)
+        RGSS.warn_stub("Audio.me_fade")
+      end
+
+      def se_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.se_play")
+      end
+
+      def se_stop
+        RGSS.warn_stub("Audio.se_stop")
+      end
+    end
   end
 
   module Graphics
+    @frame_count = 0
+    @frame_rate = 40
+
+    class << self
+      attr_accessor :frame_count, :frame_rate
+
+      def freeze
+        RGSS.warn_stub("Graphics.freeze")
+      end
+
+      def transition(duration = 8, filename = nil, vague = 40)
+        RGSS.warn_stub("Graphics.transition")
+      end
+
+      def frame_reset
+        RGSS.warn_stub("Graphics.frame_reset")
+      end
+    end
   end
 
   module Input
