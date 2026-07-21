@@ -69,8 +69,11 @@ jobs:
         env:
           SKIP: nixfmt
         run: |
-          nix develop -c pre-commit run -a
-          git diff --exit-code
+          nix develop -c pre-commit run -a || (
+            echo "pre-commit failed" ;
+            git diff --exit-code ;
+            false
+          )
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.9
