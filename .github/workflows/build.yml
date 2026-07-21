@@ -70,7 +70,6 @@ jobs:
           SKIP: nixfmt
         run: |
           nix develop -c pre-commit run -a || (
-            echo "pre-commit failed" ;
             git diff --exit-code ;
             false
           )
