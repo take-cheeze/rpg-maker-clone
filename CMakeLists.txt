@@ -157,7 +157,7 @@ target_link_libraries(
   ${PROJECT_NAME}
   mruby
   lvgl
-  glog
+  ng-log::ng-log
   SDL2::SDL2
   gflags
   uni-algo::uni-algo)

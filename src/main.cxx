@@ -13,7 +13,7 @@
 #include <mruby/variable.h>
 
 #include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <ng-log/logging.h>
 #include <inicpp.hpp>
 
 #ifdef __EMSCRIPTEN__
@@ -87,8 +87,8 @@ void main_loop() {
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
-// of main(). Preferred over glog's CHECK: it prints the actual mruby error
-// detail, and under Emscripten glog's fatal path traps anyway (it formats
+// of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
+// detail, and under Emscripten ng-log's fatal path traps anyway (it formats
 // through std::ios callbacks that don't survive the wasm function-pointer
 // table), so we use mruby's own stdio-based printer, which also reaches the
 // browser console.
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     FLAGS_game_dir = fs::current_path();
 #endif
   }
-  google::InitGoogleLogging(argv[0]);
+  nglog::InitializeLogging(argv[0]);
 
   lv_init();
 
