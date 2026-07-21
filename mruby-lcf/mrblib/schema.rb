@@ -177,7 +177,10 @@ module LCF
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0
           name: :system, type: :Array1D,
           elements: {
-            17 => { name: :title, type: :string }
+            17 => { name: :title, type: :string },
+            # System/ graphic that supplies the window skin (background, frame
+            # border and selection cursor).
+            19 => { name: :system_graphic, type: :string }
           }
         },
         23 => {

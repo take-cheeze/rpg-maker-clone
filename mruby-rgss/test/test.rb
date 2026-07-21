@@ -133,6 +133,18 @@ assert "RGSS::Bitmap blt" do
   assert_equal 0.0, dst.get_pixel(0, 0).alpha # untouched
 end
 
+assert "RGSS::Bitmap stretch_blt" do
+  src = RGSS::Bitmap.new(2, 2)
+  src.fill_rect(0, 0, 2, 2, RGSS::Color.new(0, 0, 255, 255))
+  dst = RGSS::Bitmap.new(8, 8)
+  # Stretch the 2x2 source across a 4x4 destination region.
+  dst.stretch_blt(RGSS::Rect.new(2, 2, 4, 4), src, RGSS::Rect.new(0, 0, 2, 2))
+  assert_equal 255.0, dst.get_pixel(2, 2).blue
+  assert_equal 255.0, dst.get_pixel(5, 5).blue
+  assert_equal 0.0, dst.get_pixel(0, 0).alpha # outside the destination rect
+  assert_equal 0.0, dst.get_pixel(6, 6).alpha
+end
+
 assert "RGSS::Font defaults" do
   f = RGSS::Font.new
   assert_equal RGSS::Font.default_name, f.name
