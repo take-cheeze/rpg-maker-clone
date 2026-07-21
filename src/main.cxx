@@ -16,6 +16,8 @@
 #include <ng-log/logging.h>
 #include <inicpp.hpp>
 
+#include "sixel.hxx"
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -24,6 +26,13 @@ DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
 DEFINE_int64(height, 240, "height of the window");
 DEFINE_string(game_dir, "", "Game directory");
+DEFINE_bool(sixel,
+            false,
+            "Render to the terminal using the sixel protocol instead of "
+            "opening an SDL window");
+DEFINE_int32(sixel_scale,
+             2,
+             "Integer upscale factor for the sixel terminal output");
 
 namespace {
 
@@ -124,12 +133,20 @@ int main(int argc, char** argv) {
 
   lv_init();
 
-  std::shared_ptr<lv_display_t> display(
-      lv_sdl_window_create(FLAGS_width, FLAGS_height),
-      [](lv_display_t*) { lv_sdl_quit(); });
-  CHECK(display);
-  lv_sdl_window_set_resizeable(display.get(), false);
-  lv_sdl_window_set_zoom(display.get(), 2.f);
+  std::shared_ptr<lv_display_t> display;
+  if (FLAGS_sixel) {
+    display = std::shared_ptr<lv_display_t>(
+        sixel_display_create(FLAGS_width, FLAGS_height, FLAGS_sixel_scale),
+        [](lv_display_t*) {});
+    CHECK(display);
+  } else {
+    display = std::shared_ptr<lv_display_t>(
+        lv_sdl_window_create(FLAGS_width, FLAGS_height),
+        [](lv_display_t*) { lv_sdl_quit(); });
+    CHECK(display);
+    lv_sdl_window_set_resizeable(display.get(), false);
+    lv_sdl_window_set_zoom(display.get(), 2.f);
+  }
 
 #ifdef __EMSCRIPTEN__
   // mruby uses word boxing, which stores the type tag in the low 3 bits of each

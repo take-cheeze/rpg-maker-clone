@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Terminal gaming support using the DEC sixel graphics protocol
+  - Added `--sixel` flag to render frames to a sixel-capable terminal instead
+    of opening an SDL window, plus `--sixel_scale` for integer upscaling
+  - Implemented a windowless LVGL display backend with a sixel flush callback
+    and a monotonic-clock tick/delay source (`mruby-rgss/src/sixel.cxx`)
+  - Wired terminal keyboard input (arrows/WASD, confirm, cancel, quit) into the
+    RGSS::Input module via `Graphics.update`
+  - Documented the decision in `docs/adr/0001-terminal-gaming-sixel.md`
 - Expanded the `mruby-rgss` RGSS built-in class library:
   - `RGSS::Color` — floating point RGBA color with clamping, `set`, `==`,
     `to_s` and Marshal (`_dump`/`_load`) support
