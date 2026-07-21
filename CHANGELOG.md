@@ -20,9 +20,11 @@ All notable changes to this project will be documented in this file.
     type so `Rect.new` no longer trips the DATA assertion
   - `RGSS::Font` — name/size/bold/italic/color plus class-level defaults and
     `Font.exist?`; `Bitmap#font`/`Bitmap#font=` accessors
-  - `RGSS::Audio` — inert stubs for the standard bgm/bgs/me/se API
+  - `RGSS::Audio` — inert stubs for the standard bgm/bgs/me/se API that warn
+    (once per method) to stderr when called
   - `RGSS::Graphics` — `frame_count` (advanced by `update`), `frame_rate`,
-    `freeze`, `transition`, `frame_reset`
+    and `freeze`/`transition`/`frame_reset` stubs that warn (once per method)
+    to stderr when called
   - Tests covering the new value classes, bitmap pixel operations and Marshal
     round-trips
 - Title screen menu implementation

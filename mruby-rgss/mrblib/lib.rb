@@ -1,6 +1,16 @@
 module RGSS
   class Timeout < StandardError; end
 
+  # Emit a warning the first time an unimplemented stub method is called.
+  # Warning on every call would flood the log from within the game loop, so
+  # each method name is reported only once.
+  @warned_stubs = {}
+  def self.warn_stub(name)
+    return if @warned_stubs[name]
+    @warned_stubs[name] = true
+    $stderr.puts "[RGSS] #{name} is not implemented yet (stub, does nothing)"
+  end
+
   # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
 
   class Bitmap
@@ -90,22 +100,59 @@ module RGSS
   # inert stubs that keep scripts calling the standard API from crashing.
   module Audio
     class << self
-      def bgm_play(filename, volume = 100, pitch = 100); end
-      def bgm_stop; end
-      def bgm_fade(time); end
-      def bgm_pos; 0; end
+      def bgm_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.bgm_play")
+      end
 
-      def bgs_play(filename, volume = 100, pitch = 100); end
-      def bgs_stop; end
-      def bgs_fade(time); end
-      def bgs_pos; 0; end
+      def bgm_stop
+        RGSS.warn_stub("Audio.bgm_stop")
+      end
 
-      def me_play(filename, volume = 100, pitch = 100); end
-      def me_stop; end
-      def me_fade(time); end
+      def bgm_fade(time)
+        RGSS.warn_stub("Audio.bgm_fade")
+      end
 
-      def se_play(filename, volume = 100, pitch = 100); end
-      def se_stop; end
+      def bgm_pos
+        RGSS.warn_stub("Audio.bgm_pos")
+        0
+      end
+
+      def bgs_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.bgs_play")
+      end
+
+      def bgs_stop
+        RGSS.warn_stub("Audio.bgs_stop")
+      end
+
+      def bgs_fade(time)
+        RGSS.warn_stub("Audio.bgs_fade")
+      end
+
+      def bgs_pos
+        RGSS.warn_stub("Audio.bgs_pos")
+        0
+      end
+
+      def me_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.me_play")
+      end
+
+      def me_stop
+        RGSS.warn_stub("Audio.me_stop")
+      end
+
+      def me_fade(time)
+        RGSS.warn_stub("Audio.me_fade")
+      end
+
+      def se_play(filename, volume = 100, pitch = 100)
+        RGSS.warn_stub("Audio.se_play")
+      end
+
+      def se_stop
+        RGSS.warn_stub("Audio.se_stop")
+      end
     end
   end
 
@@ -116,11 +163,17 @@ module RGSS
     class << self
       attr_accessor :frame_count, :frame_rate
 
-      def freeze; end
+      def freeze
+        RGSS.warn_stub("Graphics.freeze")
+      end
 
-      def transition(duration = 8, filename = nil, vague = 40); end
+      def transition(duration = 8, filename = nil, vague = 40)
+        RGSS.warn_stub("Graphics.transition")
+      end
 
-      def frame_reset; end
+      def frame_reset
+        RGSS.warn_stub("Graphics.frame_reset")
+      end
     end
   end
 
