@@ -78,6 +78,12 @@ if emscripten
 
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == "-O0" }
+      # Raise the maximum string length to 4 MiB. On native platforms mruby
+      # defaults MRB_STR_LENGTH_MAX to 0 (unlimited), but Emscripten defines
+      # none of __linux__/__APPLE__/__*BSD__, so string.c falls through to the
+      # 1 MiB cap and rejects larger strings with "string too long". Game data
+      # (maps, images loaded as strings) can exceed 1 MiB, so bump it to 4 MiB.
+      t.defines << 'MRB_STR_LENGTH_MAX=4194304'
     end
 
     rpg_maker_gems(conf)
