@@ -233,6 +233,18 @@ void encode_frame(int w, int h, const uint16_t* pix) {
   std::string& s = g_out;
   s.clear();
   s += "\x1b[H";  // cursor home: overdraw the previous frame in place
+
+  // Reserve the top text row for a one-line key reference, then start the image
+  // one row lower.  Terminals place a sixel at the current cursor position, so
+  // drawing the legend first (and emitting CR/LF) pins it above the picture
+  // where it can never be overdrawn -- unlike positioning it after the image,
+  // whose end-cursor location is not portable and left the legend overlapping
+  // the bottom of the frame.  \x1b[K clears any stale text from the previous
+  // frame and the dim SGR keeps the legend visually secondary to the game.
+  s += "\x1b[K\x1b[2m";
+  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q";
+  s += "\x1b[0m\r\n";
+
   s += "\x1bPq";  // enter sixel mode
   s += "\"1;1;";  // raster attributes: 1:1 aspect ratio
   s += std::to_string(out_w);
@@ -283,17 +295,6 @@ void encode_frame(int w, int h, const uint16_t* pix) {
   }
 
   s += "\x1b\\";  // exit sixel mode
-
-  // Draw a one-line key reference directly beneath the image.  Every frame
-  // begins with a cursor-home + sixel overdraw, and sixel output leaves the
-  // cursor on the line below the picture, so re-emitting the legend here keeps
-  // it pinned under the game view.  \r moves to column 0, \x1b[K clears any
-  // stale text, and the dim SGR keeps it visually secondary to the game.
-  s += "\r\x1b[K\x1b[2m";
-  s += "Move: Arrows/WASD  Confirm: Z/Enter/Space  Cancel: X/Esc  "
-       "A: C  Quit: Q/Ctrl-C";
-  s += "\x1b[0m";
-
   write_all(s.data(), s.size());
 }
 
