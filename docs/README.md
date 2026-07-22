@@ -15,18 +15,28 @@
 - Menu items are drawn using the game's font system
 - Selection is highlighted with a cursor
 
-### Terminal gaming (sixel)
-- Alternative display backend that renders each frame to the terminal using the
-  DEC sixel protocol, enabled with the `--sixel` flag
+### Terminal gaming (sixel / iTerm2)
+- Alternative display backends that render each frame to the terminal instead of
+  opening a window: the DEC sixel protocol (`--sixel`) and iTerm2's inline-image
+  protocol (`--iterm`)
 - Lets the runtime be played on hosts without a windowing system (headless
-  servers, SSH sessions, embedded boards with a serial console)
+  servers, SSH sessions, embedded boards with a serial console); `--iterm` also
+  covers terminals that lack sixel support, notably VS Code's integrated
+  terminal
+- Both backends share the same windowless terminal core
+  (`mruby-rgss/src/terminal.cxx`: raw-mode input, monotonic tick/delay source,
+  alternate-screen handling) and differ only in the frame encoder
+  (`sixel.cxx` / `iterm.cxx`)
 - Reads keyboard input directly from the terminal and forwards it to
   `RGSS::Input`
-- Output is throughput-bound: 320×240 at 60 Hz needs roughly 20 Mbaud (up to
-  ~70 Mbaud worst case), far beyond a real serial UART, so the backend targets a
-  local PTY or SSH pipe
-- See `docs/adr/0001-terminal-gaming-sixel.md` for the design rationale and a
-  full bandwidth breakdown
+- Output is throughput-bound: the sixel path for 320×240 at 60 Hz needs roughly
+  20 Mbaud (up to ~70 Mbaud worst case); the iTerm2 path PNG-compresses each
+  frame, which shrinks flat tile/sprite regions substantially but spends CPU on
+  encoding. Either way the backend targets a local PTY or SSH pipe, not a real
+  serial UART
+- See `docs/adr/0001-terminal-gaming-sixel.md` and
+  `docs/adr/0002-terminal-gaming-iterm2.md` for the design rationale and a full
+  bandwidth breakdown
 
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory

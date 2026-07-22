@@ -7,18 +7,27 @@
 - Shows a menu with options for New Game, Continue, and Shutdown
 - Supports keyboard navigation (up/down) and selection (enter/Z)
 
-### Terminal gaming (sixel)
-- Render the game to any sixel-capable terminal instead of an SDL window
+### Terminal gaming
+- Render the game to a terminal instead of an SDL window, using either the DEC
+  **sixel** protocol or **iTerm2's inline-image** protocol
 - Run with `--sixel` (optionally `--sixel_scale=N` to upscale the picture):
 
   ```sh
   ./rpg_maker_clone --sixel --sixel_scale=2 --game_dir path/to/game
   ```
 
+- Or with `--iterm` (optionally `--iterm_scale=N`), which encodes each frame as
+  a PNG and works in terminals that don't speak sixel — including **VS Code's
+  integrated terminal**:
+
+  ```sh
+  ./rpg_maker_clone --iterm --iterm_scale=2 --game_dir path/to/game
+  ```
+
 - Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm,
   `X`/`Esc` to cancel, `Q` or `Ctrl-C` to quit
-- Works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm and
-  Windows Terminal
+- `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
+  and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
 
 ## TODO
 - Run zip file directly

@@ -16,6 +16,7 @@
 #include <ng-log/logging.h>
 #include <inicpp.hpp>
 
+#include "iterm.hxx"
 #include "sixel.hxx"
 
 #ifdef __EMSCRIPTEN__
@@ -33,6 +34,14 @@ DEFINE_bool(sixel,
 DEFINE_int32(sixel_scale,
              1,
              "Integer upscale factor for the sixel terminal output");
+DEFINE_bool(iterm,
+            false,
+            "Render to the terminal using iTerm2's inline-image protocol "
+            "instead of opening an SDL window (works in iTerm2, WezTerm and "
+            "VS Code's integrated terminal)");
+DEFINE_int32(iterm_scale,
+             1,
+             "Integer upscale factor for the iTerm2 terminal output");
 
 namespace {
 
@@ -144,10 +153,19 @@ int main(int argc, char** argv) {
 
   lv_init();
 
+  CHECK(!(FLAGS_sixel && FLAGS_iterm))
+      << "--sixel and --iterm are mutually exclusive; pick one terminal "
+         "backend";
+
   std::shared_ptr<lv_display_t> display;
   if (FLAGS_sixel) {
     display = std::shared_ptr<lv_display_t>(
         sixel_display_create(FLAGS_width, FLAGS_height, FLAGS_sixel_scale),
+        [](lv_display_t*) {});
+    CHECK(display);
+  } else if (FLAGS_iterm) {
+    display = std::shared_ptr<lv_display_t>(
+        iterm_display_create(FLAGS_width, FLAGS_height, FLAGS_iterm_scale),
         [](lv_display_t*) {});
     CHECK(display);
   } else {

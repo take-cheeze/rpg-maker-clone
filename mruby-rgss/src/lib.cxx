@@ -26,8 +26,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-// Defined in sixel.cxx (same gem).  A no-op unless the game was started with
-// --sixel; forwards terminal keyboard input to RGSS::Input.
+// Defined in terminal.cxx (same gem).  A no-op unless the game was started with
+// a terminal backend (--sixel / --iterm); forwards terminal keyboard input to
+// RGSS::Input.
 extern "C" void rgss_terminal_poll(mrb_state* M);
 
 namespace {
