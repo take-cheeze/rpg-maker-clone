@@ -21,7 +21,22 @@
 - Lets the runtime be played on hosts without a windowing system (headless
   servers, SSH sessions, embedded boards with a serial console)
 - Reads keyboard input directly from the terminal and forwards it to
-  `RGSS::Input`
+  `RGSS::Input`. Key reference:
+
+  | Key(s)                    | `RGSS::Input` action |
+  | ------------------------- | -------------------- |
+  | `↑` / `W`                 | `UP`                 |
+  | `↓` / `S`                 | `DOWN`               |
+  | `←` / `A`                 | `LEFT`               |
+  | `→` / `D`                 | `RIGHT`              |
+  | `Z` / `Enter` / `Space`   | `C` (confirm)        |
+  | `X` / `Esc`               | `B` (cancel)         |
+  | `C`                       | `A`                  |
+  | `Q` / `Ctrl-C`            | quit the runtime     |
+
+  Terminals do not report key-release events, so a key is treated as held for
+  a short window (`HOLD_MS`) after its last byte; the terminal's own
+  auto-repeat sustains movement while a key stays down.
 - Output is throughput-bound: 320×240 at 60 Hz needs roughly 20 Mbaud (up to
   ~70 Mbaud worst case), far beyond a real serial UART, so the backend targets a
   local PTY or SSH pipe

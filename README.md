@@ -15,8 +15,8 @@
   ./rpg_maker_clone --sixel --sixel_scale=2 --game_dir path/to/game
   ```
 
-- Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm,
-  `X`/`Esc` to cancel, `Q` or `Ctrl-C` to quit
+- Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm (C),
+  `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit
 - Works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm and
   Windows Terminal
 
