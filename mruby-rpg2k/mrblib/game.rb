@@ -343,7 +343,7 @@ module Game
   # plus the global switches and variables.
   class State
     attr_reader :party, :switches, :variables
-    attr_accessor :map, :map_id, :x, :y, :direction
+    attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -354,14 +354,29 @@ module Game
       @map = nil
       @switches = Switches.new
       @variables = Variables.new
+      @timer_frames = 0
+      @timer_running = false
     end
+
+    # Advance the countdown timer one frame (call once per frame). Returns true
+    # on the frame the timer reaches zero.
+    def tick_timer
+      return false unless @timer_running && @timer_frames > 0
+      @timer_frames -= 1
+      @timer_running = false if @timer_frames <= 0
+      @timer_frames <= 0
+    end
+
+    # Remaining timer seconds (assuming 60 fps).
+    def timer_seconds; @timer_frames / 60; end
 
     # Serialise to a plain hash of primitives (Marshal-friendly) for saving. The
     # map itself is not stored; it is reloaded from map_id on load.
     def to_h
       { map_id: @map_id, x: @x, y: @y, direction: @direction,
         switches: @switches.to_h, variables: @variables.to_h,
-        party: @party.to_h }
+        party: @party.to_h, timer_frames: @timer_frames,
+        timer_running: @timer_running }
     end
 
     # Rebuild a State from a saved hash. Actors are re-created from the database
@@ -374,6 +389,8 @@ module Game
       state.direction = h[:direction] || 2
       state.switches.replace(h[:switches] || {})
       state.variables.replace(h[:variables] || {})
+      state.timer_frames = h[:timer_frames] || 0
+      state.timer_running = h[:timer_running] || false
       state
     end
   end

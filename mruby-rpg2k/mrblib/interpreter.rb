@@ -18,6 +18,7 @@ module Game
       CHOICE_END       = 20141
       CONTROL_SWITCHES = 10210
       CONTROL_VARS     = 10220
+      TIMER_OPERATION  = 10230
       CHANGE_GOLD      = 10310
       CHANGE_ITEMS     = 10320
       CHANGE_PARTY     = 10330
@@ -107,6 +108,7 @@ module Game
       when Cmd::CHOICE_END       then nil
       when Cmd::CONTROL_SWITCHES then do_control_switches cmd
       when Cmd::CONTROL_VARS     then do_control_vars cmd
+      when Cmd::TIMER_OPERATION  then do_timer cmd
       when Cmd::CHANGE_GOLD      then do_change_gold cmd
       when Cmd::CHANGE_ITEMS     then do_change_items cmd
       when Cmd::CHANGE_PARTY     then do_change_party cmd
@@ -227,6 +229,17 @@ module Game
       when 4 then val == 0 ? cur : cur / val
       when 5 then val == 0 ? cur : cur % val
       else cur
+      end
+    end
+
+    # Timer: op 0 set (seconds), 1 start, 2 stop.
+    def do_timer(cmd)
+      case cmd.param(0)
+      when 0
+        sec = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
+        @state.timer_frames = sec * 60
+      when 1 then @state.timer_running = true
+      when 2 then @state.timer_running = false
       end
     end
 

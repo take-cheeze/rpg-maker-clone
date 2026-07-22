@@ -271,6 +271,7 @@ class RPG2k
       end
 
       def update
+        @state.tick_timer # the timer keeps counting during events too
         if event_busy?
           drive_event
         else
