@@ -8,6 +8,20 @@ All notable changes to this project will be documented in this file.
 - Honour `RPG_RT.ini`'s `[RPG_RT] FullPackageFlag`: when set to `1` the game is
   treated as a self-contained ("full") package and RTP lookups are disabled by
   clearing `RTP_DIR`, so bitmaps are resolved only from the game directory
+- Populated the LCF map, map tree and save data schemas from the VIPRPG 200X
+  analysis notes (`mruby-lcf/mrblib/schema.rb`):
+  - `MAP_UNIT` (`LcfMapUnit`) — chipset/size, scroll and parallax settings, the
+    lower/upper tile layers and the full map event tree (events → pages →
+    appearance condition and move route)
+  - `SAVE_DATA` (`LcfSaveData`) — save title (file-select screen fields), the
+    system block (scene, switches/variables, message/face settings, BGM/SE
+    overrides, transitions, permissions) and hero/vehicle positions
+  - Map tree: fixed the area-rect field (was a typo `type: :Araa`), renamed the
+    editor-only chunk 3 to `indentation` and gave encounters an enemy-group
+    default; the reader now loads all three map-tree sections (properties, tree
+    order and initial positions) instead of only the first
+- Verified by parsing the bundled Nepheshel `RPG_RT.lmt` and all 543 `Map*.lmu`
+  files across both game variants (tile layers match `width * height`).
 - Terminal gaming support using the DEC sixel graphics protocol
   - Added `--sixel` flag to render frames to a sixel-capable terminal instead
     of opening an SDL window, plus `--sixel_scale` for integer upscaling
@@ -62,6 +76,13 @@ All notable changes to this project will be documented in this file.
   - Added key constants (UP, DOWN, LEFT, RIGHT, A, B, C, etc.)
   - Implemented input state tracking (press, trigger, repeat)
   - Added directional input helpers (dir4, dir8)
+
+### Fixed
+- LCF reader (`mruby-lcf/mrblib/lcf.rb`): booleans are read as their real
+  1-byte encoding (previously required a 0-byte chunk and always returned
+  `true`); nested `Array2D`/`Array1D` sections wrap a `String` in `StringIO`
+  correctly (the old `kind_of? IO` check failed for `StringIO`); added the
+  `:int16_array` element type used by the tile layers and the area rect.
 
 ### Changed
 - Updated documentation to reflect new title screen functionality

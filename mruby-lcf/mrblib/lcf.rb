@@ -31,6 +31,47 @@ module LCF
     attr_reader :selected_id, :maps
   end
 
+  # Holds the sequential sections of a multi-section file (e.g. the map tree,
+  # which is a map-properties table followed by the tree order and the initial
+  # party/vehicle positions). Sections are reachable by their schema name;
+  # #[] indexes into the first section for convenience.
+  class Sections
+    def initialize
+      @by_name = {}
+      @list = []
+    end
+
+    def add name, value
+      @by_name[name] = value
+      @list.push value
+    end
+
+    def [] idx ; @list.first[idx] end
+
+    def method_missing sym, *args
+      return @by_name[sym] if @by_name.key? sym
+      super
+    end
+
+    def respond_to_missing? sym, include_private = false
+      @by_name.key?(sym) || super
+    end
+  end
+
+  # Read one section of a file sequentially from the stream +io+.
+  def read_section io, s
+    case s[:type]
+    when :Array2D ; Array2D.new io, s
+    when :Array1D ; Array1D.new io, s
+    when :Tree
+      map_count = read_ber io
+      maps = Array.new(map_count) { read_ber io }
+      Tree.new read_ber(io), maps
+    else
+      raise "Unsupported section type: #{s[:type]}"
+    end
+  end
+
   def to_rb d, s
     return s[:default] unless d
 
@@ -39,8 +80,14 @@ module LCF
     when :Array2D ; return Array2D.new d, s
     when :int ; return read_ber StringIO.new(d)
     when :bool
-      raise "invalid bool size: #{d.size}" if d.size != 0
+      raise "invalid bool size: #{d.size}" if d.size != 1
       return d.bytes[0] != 0
+    when :int16_array
+      vals = d.unpack('s<*')
+      return vals unless s[:order]
+      h = {}
+      s[:order].each_with_index { |name, i| h[name] = vals[i] }
+      return h
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree
       s = StringIO.new(d)
@@ -54,7 +101,7 @@ module LCF
     raise "Unsupported type: #{s[:type]}"
   end
 
-  module_function :read_ber, :to_rb
+  module_function :read_ber, :to_rb, :read_section
 
   MODE = 2000 # 2003
 
@@ -69,7 +116,7 @@ module LCF
 
   class Array1D
     def initialize s, schema
-      s = StringIO.new s unless s.kind_of? IO
+      s = StringIO.new s if s.is_a? String
 
       @data = []
       @schema = schema
@@ -106,6 +153,8 @@ module LCF
 
   class Array2D
     def initialize s, schema
+      s = StringIO.new s if s.is_a? String
+
       @data = []
       @scheme = schema
 
