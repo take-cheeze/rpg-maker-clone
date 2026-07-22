@@ -15,39 +15,91 @@ on:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # Formatting / lint checks.  These need no compiler or Nix devshell, so they
-  # run as a lightweight uv-powered job instead of inside the heavy build:
-  # `astral-sh/setup-uv` provisions a Python toolchain in seconds and pre-commit
-  # plus the clang-format / cmake-format binaries all come from PyPI via uv.
-  lint:
-    runs-on: ubuntu-latest
+  # This workflow contains a single job called "build"
+  build:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-latest
+    # The type of runner that the job will run on
+    runs-on: ${{ matrix.os }}
+
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v4
-        # Formatters only touch first-party files (pre-commit excludes 3rd/.*),
-        # so the submodules are not needed here.
+        with:
+          submodules: recursive
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+      - uses: nixbuild/nix-quick-install-action@v29
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v5
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - name: Install formatters used by the system pre-commit hooks
+      - run: nix develop -c echo test
+
+      # TODO: Restore macos wine if needed
+      # - run: brew install --cask wine@staging
+      #   if: ${{ !startsWith(matrix.os, 'macos') }}
+
+      - name: cache rtp
+        uses: actions/cache@v4
+        id: rtp-cache
+        with:
+          path: scripts/*.zip
+          key: rtp-${{ hashFiles('./scripts/rtp*_install.bash') }}
+          restore-keys: rtp-
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+
+      - name: Download RTP
         run: |
-          # Pinned so a new upstream release can never silently reformat the
-          # tree and turn this job red out of nowhere.
-          uv tool install clang-format==22.1.8
-          uv tool install cmakelang==0.6.13
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          nix develop -c ./scripts/rtp_install.bash
+          nix develop -c ./scripts/rtp_xp_install.bash
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
 
       - name: pre-commit
         env:
-          # nixfmt needs Nix, which this job intentionally does not provide.
           SKIP: nixfmt
-        run: uvx pre-commit run --all-files --show-diff-on-failure
+        run: |
+          nix develop -c pre-commit run -a || (
+            git diff --exit-code ;
+            false
+          )
 
-  # Cross build.  The application's canonical cross-compilation target is
-  # WebAssembly via Emscripten: it compiles the full C++/mruby stack for a
-  # non-host triple, which is why it replaces the old native (ubuntu + macOS)
-  # build matrix as the primary build gate.  Native compilation is still
-  # exercised by the flake job below, and end-to-end behaviour by screenshots.
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: cmake
+        run: |
+          nix develop -c cmake -S . -B build -GNinja
+
+      - name: build
+        run: |
+          nix develop -c cmake --build build
+
+      - name: cache test game
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download-nepheshel.bash') }}
+
+      - name: Download game
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: nix develop -c ./scripts/download-nepheshel.bash
+
+      - name: test
+        run: |
+          nix develop -c cmake --build build -t test
+
   wasm:
     runs-on: ubuntu-24.04
     steps:
