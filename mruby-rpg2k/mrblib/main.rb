@@ -254,11 +254,13 @@ class RPG2k
       end
 
       def update
-        if Input.trigger?(Input::DOWN) && @selected_index < @menu_items.length - 1
-          @selected_index += 1
+        # Cursor movement wraps around the ends and honours auto-repeat, so a
+        # held UP/DOWN keeps scrolling the selection like RPG Maker's menus.
+        if menu_move?(Input::DOWN)
+          @selected_index = (@selected_index + 1) % @menu_items.length
           refresh_cursor
-        elsif Input.trigger?(Input::UP) && @selected_index > 0
-          @selected_index -= 1
+        elsif menu_move?(Input::UP)
+          @selected_index = (@selected_index - 1) % @menu_items.length
           refresh_cursor
         end
 
@@ -277,6 +279,13 @@ class RPG2k
       end
 
       private
+
+      # A direction counts as "moved" on the initial press and on every
+      # auto-repeat tick while the key is held. Input.repeat? does not fire on
+      # the first frame in this engine, so trigger? covers that case.
+      def menu_move?(key)
+        Input.trigger?(key) || Input.repeat?(key)
+      end
 
       # Load the System/ windowskin declared in the database. Returns nil when
       # it is missing so the Window falls back to a plain panel instead of

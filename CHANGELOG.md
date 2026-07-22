@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Title menu cursor navigation now wraps around the top/bottom of the list and
+  honours key auto-repeat, so holding UP/DOWN keeps scrolling the selection
+
 ### Added
 - Terminal gaming support using the DEC sixel graphics protocol
   - Added `--sixel` flag to render frames to a sixel-capable terminal instead

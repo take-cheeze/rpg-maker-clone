@@ -11,7 +11,8 @@
 ### Title Screen
 - Displays the title image from the game's data
 - Shows a menu with options for New Game, Continue, and Shutdown
-- Supports keyboard navigation (up/down) and selection (enter/Z)
+- Supports keyboard navigation (up/down, wrapping at the ends and repeating
+  while held) and selection (enter/Z)
 - Menu items are drawn using the game's font system
 - Selection is highlighted with a cursor
 
