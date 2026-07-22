@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Honour `RPG_RT.ini`'s `[RPG_RT] FullPackageFlag`: when set to `1` the game is
+  treated as a self-contained ("full") package and RTP lookups are disabled by
+  clearing `RTP_DIR`, so bitmaps are resolved only from the game directory
 - Terminal gaming support using the DEC sixel graphics protocol
   - Added `--sixel` flag to render frames to a sixel-capable terminal instead
     of opening an SDL window, plus `--sixel_scale` for integer upscaling
