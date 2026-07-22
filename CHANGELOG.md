@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Filled in the LCF database schemas (`mruby-lcf/mrblib/schema.rb`) from the
+  VIPRPG 200X analysis notes: skills, items, enemies, enemy groups, terrain,
+  attributes, states, battle animations, classes, and the full terminology and
+  system sections, plus switches/variables
+  - Documented the decision in `docs/adr/0002-lcf-database-schema-fields.md`
 - Honour `RPG_RT.ini`'s `[RPG_RT] FullPackageFlag`: when set to `1` the game is
   treated as a self-contained ("full") package and RTP lookups are disabled by
   clearing `RTP_DIR`, so bitmaps are resolved only from the game directory
