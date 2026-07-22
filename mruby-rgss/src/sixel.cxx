@@ -95,12 +95,26 @@ void show_cursor() {
   write_all(seq, sizeof(seq) - 1);
 }
 
+// True once the alternate screen buffer has been entered, so teardown only
+// leaves it if init actually switched to it.
+bool g_alt_screen = false;
+
 void restore_terminal() {
+  // Undo the visual state first (while still in raw mode), then hand the
+  // terminal back to the shell.  Leaving the alternate screen buffer restores
+  // the exact pre-game screen contents and cursor position; the explicit
+  // erase covers the few terminals that keep sixel output in a layer that
+  // survives the screen switch.
+  show_cursor();
+  if (g_alt_screen) {
+    static const char leave_alt[] = "\x1b[2J\x1b[?1049l";
+    write_all(leave_alt, sizeof(leave_alt) - 1);
+    g_alt_screen = false;
+  }
   if (g_termios_saved) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios);
     g_termios_saved = false;
   }
-  show_cursor();
 }
 
 void signal_handler(int sig) {
@@ -127,6 +141,14 @@ void init_terminal() {
   std::atexit(restore_terminal);
   for (int sig : {SIGINT, SIGTERM, SIGHUP, SIGQUIT})
     signal(sig, signal_handler);
+
+  // Switch to the alternate screen buffer so the game does not scribble sixels
+  // over the user's shell history; leaving it on exit restores what was there
+  // before.  Sixels painted here belong to the alt buffer and are discarded on
+  // switch-back in the common terminals (xterm, foot, WezTerm, mlterm, ...).
+  static const char enter_alt[] = "\x1b[?1049h";
+  write_all(enter_alt, sizeof(enter_alt) - 1);
+  g_alt_screen = true;
 
   static const char hide_cursor[] = "\x1b[?25l";
   write_all(hide_cursor, sizeof(hide_cursor) - 1);
@@ -211,6 +233,18 @@ void encode_frame(int w, int h, const uint16_t* pix) {
   std::string& s = g_out;
   s.clear();
   s += "\x1b[H";  // cursor home: overdraw the previous frame in place
+
+  // Reserve the top text row for a one-line key reference, then start the image
+  // one row lower.  Terminals place a sixel at the current cursor position, so
+  // drawing the legend first (and emitting CR/LF) pins it above the picture
+  // where it can never be overdrawn -- unlike positioning it after the image,
+  // whose end-cursor location is not portable and left the legend overlapping
+  // the bottom of the frame.  \x1b[K clears any stale text from the previous
+  // frame and the dim SGR keeps the legend visually secondary to the game.
+  s += "\x1b[K\x1b[2m";
+  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q";
+  s += "\x1b[0m\r\n";
+
   s += "\x1bPq";  // enter sixel mode
   s += "\"1;1;";  // raster attributes: 1:1 aspect ratio
   s += std::to_string(out_w);

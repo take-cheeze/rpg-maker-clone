@@ -82,6 +82,17 @@ fs::path xp_rtp_path() {
   return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
 }
 
+// Read the [RPG_RT] FullPackageFlag from RPG_RT.ini in the game directory. When
+// set to 1 the game bundles every asset it needs ("full package") and must not
+// fall back to the RTP, so the runtime disables RTP lookups entirely.
+bool full_package_flag(const fs::path& game_dir) {
+  const fs::path ini_path = game_dir / "RPG_RT.ini";
+  if (!fs::exists(ini_path))
+    return false;
+  return inicpp::IniManager(ini_path.string())["RPG_RT"].toInt(
+             "FullPackageFlag") == 1;
+}
+
 #ifdef __EMSCRIPTEN__
 // Trampoline for emscripten_set_main_loop, which takes a plain function
 // pointer.
@@ -174,8 +185,12 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
                 mrb_str_new_cstr(M, ""));
 #else
+  // RPG_RT.ini's FullPackageFlag=1 marks a self-contained game; honour it by
+  // clearing RTP_DIR so bitmap lookups never reach into the installed RTP.
+  const std::string rtp_dir =
+      full_package_flag(FLAGS_game_dir) ? std::string() : rtp_path().string();
   mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
-                mrb_str_new_cstr(M, rtp_path().c_str()));
+                mrb_str_new_cstr(M, rtp_dir.c_str()));
 #endif
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),

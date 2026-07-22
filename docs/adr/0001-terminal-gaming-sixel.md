@@ -45,6 +45,47 @@ at runtime with the `--sixel` flag (`--sixel_scale` controls integer upscaling):
   sustains held movement keys. Input is forwarded to `RGSS::Input` from
   `Graphics.update` through the exported `rgss_terminal_poll` hook.
 
+## Bandwidth
+
+Because the flush callback writes a full sixel frame to the terminal every
+update, the output side is throughput-bound. The cost of one 320×240 frame
+(`--sixel_scale 1`) with this encoder breaks down as:
+
+- **Fixed header** (`ESC[H`, `ESC P q`, raster attributes, `ESC \`): ~30 bytes.
+- **Palette**: the full 216-entry `6×6×6` cube is re-emitted every frame as
+  `#i;2;r;g;b` definitions, ~3.2 KB.
+- **Band data**: 40 bands of 6 rows. In each band a column emits one sixel data
+  byte per *distinct* colour it contains (up to 6), so the ceiling is
+  `6 × 320 × 40 = 76,800` bytes ≈ 1 byte per pixel. Run-length encoding
+  (`!count`) only reduces this.
+- **Colour-select overhead**: one `#n` per colour per band, plus `$`/`-`
+  separators — up to a few tens of KB when bands are highly multi-coloured.
+
+That gives roughly **15–40 KB** for a typical game frame (large flat
+tile/sprite regions compress well) and up to **~120 KB** worst case.
+
+At 60 Hz, and counting 10 bits/byte for 8N1 serial framing
+(`baud = bytes/frame × 10 × 60`):
+
+| Frame size | Baud (8N1) | Raw bits/s |
+| ---------- | ---------- | ---------- |
+| ~30 KB (typical) | ~18 Mbaud | ~14 Mbit/s |
+| ~60 KB (heavy)   | ~36 Mbaud | ~29 Mbit/s |
+| ~120 KB (worst)  | ~72 Mbaud | ~58 Mbit/s |
+
+So sustaining 320×240 at 60 Hz needs on the order of **20 Mbaud typical, up to
+~70 Mbaud worst case**. A conventional 115,200-baud serial console carries only
+~11.5 KB/s — enough for ~0.3–0.7 fps, i.e. 150–600× too slow. The sixel backend
+therefore targets a local PTY or an SSH pipe (effectively Mbit/s–Gbit/s), not a
+real UART; on a genuinely slow link the frame rate must be dropped or the
+resolution reduced. Note that `--sixel_scale` multiplies the byte count by
+`scale²`.
+
+Cheap levers if the link is the bottleneck: the palette is ~3.2 KB of *fixed*
+overhead resent every frame (~190 KB/s at 60 Hz) and could be defined once per
+session on terminals that persist colour registers across sixel sequences; and
+lowering the frame rate scales the requirement linearly.
+
 ## Consequences
 
 - The runtime can now be played on hosts without a GUI, advancing the
