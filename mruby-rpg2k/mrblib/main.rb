@@ -197,12 +197,28 @@ class RPG2k
   module Scene
     class Base
       def initialize parent
+        @parent = parent
         @db = parent.db
         @map_tree = parent.map_tree
       end
       def update ; end
 
-      attr_reader :db, :map_tree
+      attr_reader :parent, :db, :map_tree
+    end
+
+    # Play scene that hosts a loaded map, the party and (eventually) the tilemap
+    # and player renderer. For now it only holds the freshly built game state:
+    # the map/character rendering and movement are the next step on the critical
+    # path (see docs/TODO.md), so update is intentionally a no-op placeholder.
+    class Map < Base
+      def initialize parent, state
+        super parent
+        @state = state
+      end
+
+      attr_reader :state
+
+      def update; end
     end
 
     class Title < Base
@@ -265,9 +281,9 @@ class RPG2k
         if Input.trigger?(Input::C)  # C is usually the confirm button (Enter/Z)
           case @selected_index
           when 0  # New Game
-            # TODO: Implement new game logic
+            parent.start_new_game
           when 1  # Continue
-            # TODO: Implement continue game logic
+            parent.continue_game
           when 2  # Shutdown
             exit
           end
@@ -308,6 +324,36 @@ class RPG2k
 
   def push scene
     @scenes.push scene
+  end
+
+  # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...
+  def load_map id
+    num = id.to_s
+    num = "0#{num}" while num.size < 4
+    path = "#{GAME_DIR}/Map#{num}.lmu"
+    Game::Map.new id, LCF::MapUnit.new(File.open(path))
+  end
+
+  # New Game: build the initial party from the database, read the start
+  # position from the map tree, load the starting map and enter the map scene.
+  # The map/player renderer is not wired up yet, so this establishes the running
+  # game state and transitions scenes without drawing the map.
+  def start_new_game
+    init = map_tree.initial
+    state = Game::State.new Game::Party.new(@db), init.initial_map_id,
+                            init.initial_x, init.initial_y
+    state.map = load_map state.map_id
+    push Scene::Map.new(self, state)
+  rescue StandardError => e
+    # Never let a data problem crash the title screen; report and stay put.
+    $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+  end
+
+  # Continue: loading a saved game (LcfSaveData) is not implemented yet — the
+  # save schema and load path are still to be written (see docs/TODO.md). Warn
+  # once so selecting Continue is an explicit no-op rather than a silent gap.
+  def continue_game
+    RGSS.warn_stub "Continue (load saved game)"
   end
 
   def main_loop

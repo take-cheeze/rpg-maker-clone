@@ -3,8 +3,10 @@
 ## RPG Maker 2k
 - Support all data schema of LCF
 - ✅ Show window component for title scene
-- Implement New Game functionality
-- Implement Continue functionality
+- 🚧 Implement New Game functionality — builds the initial party from the
+  database, reads the start position from the map tree and loads the starting
+  map into a `Scene::Map`; the map/player renderer is the remaining piece
+- Implement Continue functionality (blocked on `LCF::SaveData` schema)
 
 ### Issue items needed to run Nepheshel
 
@@ -20,14 +22,17 @@ The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
 
 #### Boot into gameplay (unblocks everything)
-- LMU map parsing — add a `MAP_UNIT` schema (`LCF::MapUnit` has a header but no
-  schema; `schema.rb` only defines `DATABASE` and `MAP_TREE`): dimensions,
-  lower/upper tile layers, events, encounter data
-- New Game logic — build the party from the database, read the start position
-  from the map tree, and transfer to the starting map (replaces the TODO in
+- ✅ LMU map parsing — `MAP_UNIT` schema in `schema.rb` (`LCF::MapUnit`):
+  dimensions, chipset id, lower/upper tile layers and events. Also fixed
+  multi-part file parsing so the map tree exposes its `initial` start position,
+  fixed nested `Array2D` fields (e.g. the actor table), and implemented the
+  `int16_array`/`short_array` element types. Covered by `mruby-lcf/test`.
+- ✅ New Game logic — `RPG2k#start_new_game` builds the party from the database
+  (`Game::Party`/`Game::Actor`), reads the start position from the map tree,
+  loads the starting map and pushes `Scene::Map` (replaces the TODO in
   `Scene::Title#update`)
-- Map scene (`Scene::Map`) — the play loop hosting the tilemap, player and
-  events
+- 🚧 Map scene (`Scene::Map`) — created as a placeholder that holds the running
+  `Game::State`; still needs to host the tilemap, player and events (renderer)
 
 #### Map & characters
 - Tilemap rendering — real `RGSS::Tilemap`: chipset lower/upper layers, tile

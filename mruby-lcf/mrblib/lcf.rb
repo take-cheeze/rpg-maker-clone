@@ -31,6 +31,41 @@ module LCF
     attr_reader :selected_id, :maps
   end
 
+  # Read a tree structure (used by the map tree's `tree` element) from a live
+  # stream: a BER-encoded count, that many BER map ids, then the selected id.
+  def read_tree s
+    map_count = read_ber s
+    maps = []
+    (0...map_count).each { maps.push read_ber s }
+    selected_id = read_ber s
+    Tree.new(selected_id, maps)
+  end
+
+  # Decode a packed sequence of little-endian 16bit integers (as used by map
+  # tile layers and chipset passability tables). `signed` interprets values
+  # >= 0x8000 as negative; tile ids are unsigned while some tables are signed.
+  def unpack_shorts d, signed = false
+    bytes = d.bytes
+    out = []
+    (0...(bytes.size / 2)).each do |i|
+      v = bytes[i * 2] | (bytes[i * 2 + 1] << 8)
+      v -= 0x10000 if signed && v >= 0x8000
+      out.push v
+    end
+    out
+  end
+
+  # Parse a single top-level element of a multi-part file (see LCF::File) from a
+  # live stream, dispatching on the structural type.
+  def parse_stream s, schema
+    case schema[:type]
+    when :Array1D ; Array1D.new s, schema
+    when :Array2D ; Array2D.new s, schema
+    when :Tree ; read_tree s
+    else raise "Unsupported top-level type: #{schema[:type]}"
+    end
+  end
+
   def to_rb d, s
     return s[:default] unless d
 
@@ -42,19 +77,21 @@ module LCF
       raise "invalid bool size: #{d.size}" if d.size != 0
       return d.bytes[0] != 0
     when :string ; return LCF.cp932_to_utf8 d
-    when :Tree
-      s = StringIO.new(d)
-      map_count = read_ber s
-      maps = []
-      (0...map_count).each { maps.push read_ber s }
-      selected_id = read_ber s
-      return Tree.new(selected_id, maps)
+    when :Tree ; return read_tree StringIO.new(d)
+    when :short_array ; return unpack_shorts(d, false)
+    when :int16_array
+      vals = unpack_shorts(d, true)
+      order = s[:order]
+      return vals unless order
+      h = {}
+      order.each_with_index { |k, i| h[k] = vals[i] }
+      return h
     end
 
     raise "Unsupported type: #{s[:type]}"
   end
 
-  module_function :read_ber, :to_rb
+  module_function :read_ber, :read_tree, :unpack_shorts, :parse_stream, :to_rb
 
   MODE = 2000 # 2003
 
@@ -69,7 +106,7 @@ module LCF
 
   class Array1D
     def initialize s, schema
-      s = StringIO.new s unless s.kind_of? IO
+      s = StringIO.new s if s.is_a? String
 
       @data = []
       @schema = schema
@@ -106,6 +143,11 @@ module LCF
 
   class Array2D
     def initialize s, schema
+      # Nested Array2D fields (e.g. the database's actor table) arrive as a raw
+      # byte string, while top-level tables are read from a live stream; wrap
+      # strings so both work.
+      s = StringIO.new s if s.is_a? String
+
       @data = []
       @scheme = schema
 
@@ -115,5 +157,14 @@ module LCF
     end
 
     def [] idx ; @data[idx] end
+
+    # Iterate over defined (id, Array1D) entries; useful for walking event or
+    # actor tables that are sparsely populated.
+    def each
+      @data.each_with_index do |v, i|
+        yield i, v unless v.nil?
+      end
+    end
+    include Enumerable
   end
 end

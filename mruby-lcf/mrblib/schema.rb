@@ -180,7 +180,10 @@ module LCF
             17 => { name: :title, type: :string },
             # System/ graphic that supplies the window skin (background, frame
             # border and selection cursor).
-            19 => { name: :system_graphic, type: :string }
+            19 => { name: :system_graphic, type: :string },
+            # Initial party: a packed list of actor ids present when a new game
+            # starts.
+            22 => { name: :party, type: :short_array },
           }
         },
         23 => {
@@ -287,6 +290,66 @@ module LCF
         },
       },
     ]
+    # Conditions that gate whether an event page is active. Modelled minimally;
+    # unknown chunks are still skipped correctly during parsing.
+    EVENT_PAGE_CONDITION = {
+      1 => { name: :flags, type: :int, default: 0 },
+      2 => { name: :switch_a_id, type: :int, default: 1 },
+      3 => { name: :switch_b_id, type: :int, default: 1 },
+      4 => { name: :variable_id, type: :int, default: 1 },
+      5 => { name: :variable_value, type: :int, default: 0 },
+      6 => { name: :item_id, type: :int, default: 1 },
+      7 => { name: :actor_id, type: :int, default: 1 },
+    }
+
+    EVENT_PAGE = {
+      2 => { name: :condition, type: :Array1D, elements: EVENT_PAGE_CONDITION },
+      21 => { name: :character_name, type: :string, default: '' },
+      22 => { name: :character_index, type: :int, default: 0 },
+      23 => { name: :character_direction, type: :int, default: 2 },
+      24 => { name: :character_pattern, type: :int, default: 1 },
+      25 => { name: :character_transparent, type: :bool, default: false },
+      31 => { name: :move_type, type: :int, default: 0 },
+      32 => { name: :move_frequency, type: :int, default: 3 },
+      33 => { name: :trigger, type: :int, default: 0 },
+      34 => { name: :layer, type: :int, default: 0 },
+      35 => { name: :overlap, type: :bool, default: false },
+      36 => { name: :animation_type, type: :int, default: 0 },
+      37 => { name: :move_speed, type: :int, default: 3 },
+    }
+
+    EVENT = {
+      1 => { name: :name, type: :string, default: '' },
+      2 => { name: :x, type: :int, default: 0 },
+      3 => { name: :y, type: :int, default: 0 },
+      5 => { name: :pages, type: :Array2D, elements: EVENT_PAGE },
+    }
+
+    # LcfMapUnit (.lmu): a single chunk-tagged block describing one map. The
+    # lower/upper tile layers are packed 16bit tile ids (width*height each) and
+    # events is a sparse id => Event table.
+    MAP_UNIT = {
+      name: :Map, type: :Array1D,
+      elements: {
+        1 => { name: :chipset_id, type: :int, default: 1 },
+        2 => { name: :width, type: :int, default: 20 },
+        3 => { name: :height, type: :int, default: 15 },
+        11 => { name: :scroll_type, type: :int, default: 0 },
+        31 => { name: :parallax_flag, type: :bool, default: false },
+        32 => { name: :parallax_name, type: :string, default: '' },
+        33 => { name: :parallax_loop_x, type: :bool, default: false },
+        34 => { name: :parallax_loop_y, type: :bool, default: false },
+        35 => { name: :parallax_auto_loop_x, type: :bool, default: false },
+        36 => { name: :parallax_sx, type: :int, default: 0 },
+        37 => { name: :parallax_auto_loop_y, type: :bool, default: false },
+        38 => { name: :parallax_sy, type: :int, default: 0 },
+        71 => { name: :lower_layer, type: :short_array },
+        72 => { name: :upper_layer, type: :short_array },
+        81 => { name: :events, type: :Array2D, elements: EVENT },
+        91 => { name: :save_count_2k3e, type: :int, default: 0 },
+        92 => { name: :save_count, type: :int, default: 0 },
+      },
+    }
   end
 
   class File
@@ -296,7 +359,11 @@ module LCF
       h = io.read h_len
       raise "Invalid header: #{h} (expected: #{header})" if h != header
       if schema.is_a? Array
-        @root = LCF.const_get(schema.first[:type]).new io, schema.first
+        # A multi-part file: each element is parsed sequentially from the same
+        # stream and exposed by name (e.g. the map tree's map_properties, tree
+        # and initial blocks).
+        @roots = {}
+        schema.each { |elem| @roots[elem[:name]] = LCF.parse_stream io, elem }
       else
         @root = LCF.const_get(schema[:type]).new io, schema
       end
@@ -306,7 +373,9 @@ module LCF
     def schema; raise end
 
     def method_missing sym, *args
-      @root.send sym, *args
+      return @roots[sym] if @roots && @roots.key?(sym) && args.empty?
+      return @root.send sym, *args if @root
+      super
     end
   end
 
@@ -322,7 +391,8 @@ module LCF
 
   class MapUnit < File
     def header; "LcfMapUnit" end
-    end
+    def schema; LCF::Schema::MAP_UNIT end
+  end
 
   class SaveData < File
     def header; "LcfSaveData" end

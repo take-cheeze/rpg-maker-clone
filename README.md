@@ -23,4 +23,6 @@
 ## TODO
 - Run zip file directly
 - Editor with [imgui](https://github.com/ocornut/imgui)
-- Implement New Game and Continue functionality
+- Finish New Game: the party, start position and starting map are now loaded on
+  "New Game"; the map/player renderer (`Scene::Map`) is still to come
+- Implement Continue functionality (needs the `LCF::SaveData` schema)

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- LCF map (`.lmu`) parsing: a `MAP_UNIT` schema for `LCF::MapUnit` covering
+  dimensions, chipset id, the lower/upper tile layers and the event table
+- New Game now boots into gameplay setup: `RPG2k#start_new_game` builds the
+  initial party from the database (`Game::Party`/`Game::Actor`), reads the start
+  position from the map tree, loads the starting map and enters a new
+  `Scene::Map` (the tilemap/player renderer is still to come). Selecting
+  "Continue" warns that saved-game loading is not implemented yet
+- `System.party` (the initial party actor id list) to the database schema, and
+  the `int16_array`/`short_array` LCF element types (used by actor stats, map
+  tile layers and packed id lists)
+
+### Fixed
+- `LCF::MapTree` now parses all three parts of the map tree (map properties,
+  tree, and the `initial` start-position block) instead of only the first, so
+  the New Game start map/position are available
+- Nested `Array2D` fields (such as the database's actor table) parse correctly:
+  raw-string tables are now wrapped in a stream like `Array1D` already did,
+  instead of raising
+
 - Honour `RPG_RT.ini`'s `[RPG_RT] FullPackageFlag`: when set to `1` the game is
   treated as a self-contained ("full") package and RTP lookups are disabled by
   clearing `RTP_DIR`, so bitmaps are resolved only from the game directory
