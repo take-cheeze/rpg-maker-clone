@@ -21,7 +21,7 @@ module LCF
         name: :event_size, type: :int
       },
       22 => {
-        name: :event, type: :event
+        name: :event_commands, type: :event_command_list
       },
     }
 
@@ -321,6 +321,7 @@ module LCF
       35 => { name: :overlap, type: :bool, default: false },
       36 => { name: :animation_type, type: :int, default: 0 },
       37 => { name: :move_speed, type: :int, default: 3 },
+      51 => { name: :event_commands, type: :event_command_list },
     }
 
     EVENT = {

@@ -48,13 +48,16 @@ The work below is roughly ordered by the critical path to a walkable game
   animation and edge/tile/event collision. Move-route processing still to come
 
 #### Event system
-- Event pages — page conditions (switch/variable/item) and trigger types
-  (action / touch / auto-start / parallel)
-- Event command interpreter — the ~100+ RPG2000 commands (Show Message,
-  Choices, switches/variables, conditional branches, Teleport, Move Event,
-  Change Items/Party, ...)
-- Message window — text with control codes (`\v`, `\n`, `\c`, `\.`), face
-  graphics, choice cursor
+- 🚧 Event pages — page conditions (switch/variable/item/actor) are implemented
+  (`Game::EventPage`), and action-button + auto-start triggers run; touch,
+  event-touch and parallel triggers plus move routes are still to come
+- 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
+  Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
+  Conditional Branch/Else/End, Teleport, Wait, Play BGM/SE, End Event); the
+  remaining ~100 commands (Move Event, pictures, screen effects, battles, ...)
+  and loops/labels/call-event are TODO
+- 🚧 Message window — renders text lines and a choice cursor; control codes
+  (`\v`, `\n`, `\c`, `\.`), face graphics and gradual text reveal are TODO
 - Common events — parallel and auto-start common events
 - Screen effects — transitions/fade, tint, flash, shake, Show Picture,
   weather, timer

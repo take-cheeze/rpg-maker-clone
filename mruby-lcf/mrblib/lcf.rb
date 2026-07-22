@@ -31,6 +31,44 @@ module LCF
     attr_reader :selected_id, :maps
   end
 
+  # One decoded RPG2000 event command: an opcode, an indent level (used for
+  # branch/loop nesting), an optional string argument and an integer parameter
+  # list.
+  class EventCommand
+    attr_reader :code, :indent, :string, :parameters
+
+    def initialize(code, indent, string, parameters)
+      @code = code
+      @indent = indent
+      @string = string
+      @parameters = parameters
+    end
+
+    # Parameters are frequently accessed past the end of short lists; treat
+    # missing parameters as 0 to match RPG2000's behaviour.
+    def param(i); @parameters[i] || 0; end
+  end
+
+  # Decode a packed event command list (an event page's or common event's command
+  # list). Each command is: code, indent, string (length-prefixed, cp932), then a
+  # count-prefixed list of integer parameters. The list runs to the end of the
+  # blob.
+  def parse_event_commands d
+    s = StringIO.new d
+    cmds = []
+    until s.eof?
+      code = read_ber s
+      indent = read_ber s
+      slen = read_ber s
+      str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+      pcount = read_ber s
+      params = []
+      (0...pcount).each { params.push read_ber s }
+      cmds.push EventCommand.new(code, indent, str, params)
+    end
+    cmds
+  end
+
   # Read a tree structure (used by the map tree's `tree` element) from a live
   # stream: a BER-encoded count, that many BER map ids, then the selected id.
   def read_tree s
@@ -79,6 +117,7 @@ module LCF
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree ; return read_tree StringIO.new(d)
     when :short_array ; return unpack_shorts(d, false)
+    when :event_command_list ; return parse_event_commands(d)
     when :int16_array
       vals = unpack_shorts(d, true)
       order = s[:order]
@@ -91,7 +130,8 @@ module LCF
     raise "Unsupported type: #{s[:type]}"
   end
 
-  module_function :read_ber, :read_tree, :unpack_shorts, :parse_stream, :to_rb
+  module_function :read_ber, :read_tree, :unpack_shorts, :parse_stream,
+                  :parse_event_commands, :to_rb
 
   MODE = 2000 # 2003
 

@@ -89,6 +89,21 @@ assert "LCF::MapTree multi-part parse exposes start position" do
   assert_equal "MAP1", lmt.map_properties[1].name
 end
 
+assert "LCF.parse_event_commands decodes an event command list" do
+  def lcf_command(code, indent, str, params)
+    lcf_ber(code) + lcf_ber(indent) + lcf_ber(str.bytesize) + str +
+      lcf_ber(params.size) + params.map { |p| lcf_ber(p) }.join
+  end
+  blob = lcf_command(10110, 0, "Hi", [1, 2]) + lcf_command(10210, 1, "", [0, 3, 3, 0])
+  cmds = LCF.parse_event_commands(blob)
+  assert_equal 2, cmds.size
+  assert_equal 10110, cmds[0].code
+  assert_equal "Hi", cmds[0].string
+  assert_equal [1, 2], cmds[0].parameters
+  assert_equal 1, cmds[1].indent
+  assert_equal 0, cmds[1].param(9) # missing parameters read as 0
+end
+
 assert "LCF::MapUnit parses layers and nested events" do
   page = lcf_array1d([lcf_str_field(21, "hero"), lcf_int_field(23, 4)])
   event = lcf_array1d([lcf_str_field(1, "NPC"), lcf_int_field(2, 1),

@@ -82,6 +82,25 @@ module Game
     end
   end
 
+  # Game switches: a 1-indexed set of booleans, defaulting to false.
+  class Switches
+    def initialize; @data = {}; end
+    def [](id); @data[id] || false; end
+    def []=(id, v); @data[id] = v ? true : false; end
+    def flip(id); self[id] = !self[id]; end
+    def to_h; @data; end
+    def replace(h); @data = h || {}; end
+  end
+
+  # Game variables: a 1-indexed set of integers, defaulting to 0.
+  class Variables
+    def initialize; @data = {}; end
+    def [](id); @data[id] || 0; end
+    def []=(id, v); @data[id] = v; end
+    def to_h; @data; end
+    def replace(h); @data = h || {}; end
+  end
+
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
     attr_reader :id, :name, :level, :charset_name, :charset_index
@@ -115,16 +134,46 @@ module Game
   class Party
     include Enumerable
 
-    attr_reader :actors
+    attr_reader :actors, :items, :gold
 
     def initialize(db)
+      @db = db
       ids = db.system.party || []
       @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| Actor.new(db, i) }
+      @items = {}  # item id => count
+      @gold = 0
     end
 
     def each(&blk); @actors.each(&blk); end
     def size; @actors.size; end
     def leader; @actors.first; end
+
+    def include_actor?(id); @actors.any? { |a| a.id == id }; end
+
+    def add_actor(id)
+      return if include_actor?(id)
+      @actors.push Actor.new(@db, id)
+    end
+
+    def remove_actor(id); @actors.reject! { |a| a.id == id }; end
+
+    def item_count(id); @items[id] || 0; end
+    def has_item?(id); item_count(id) > 0; end
+
+    def gain_item(id, n = 1)
+      c = item_count(id) + n
+      c = 0 if c < 0
+      c = 99 if c > 99
+      @items[id] = c
+    end
+
+    def lose_item(id, n = 1); gain_item(id, -n); end
+
+    def gain_gold(n)
+      @gold += n
+      @gold = 0 if @gold < 0
+      @gold = 999_999 if @gold > 999_999
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
@@ -157,11 +206,49 @@ module Game
     end
   end
 
-  # The overall running-game state: who is in the party and where they are.
-  # The current Map is attached once loaded; direction follows RPG2000's numpad
-  # convention (2 down, 4 left, 6 right, 8 up).
+  # Evaluation of RPG2000 event-page conditions and page selection. A page is
+  # active when every sub-condition enabled in its `flags` bitfield holds; the
+  # active page for an event is the highest-numbered active page.
+  module EventPage
+    # flags bits (chunk 1 of the page condition).
+    SWITCH_A = 0x01
+    SWITCH_B = 0x02
+    VARIABLE = 0x04
+    ITEM     = 0x08
+    ACTOR    = 0x10
+
+    def self.active?(cond, switches, variables, party)
+      return true if cond.nil?
+      flags = cond.flags || 0
+      return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
+      return false if (flags & SWITCH_B) != 0 && !switches[cond.switch_b_id]
+      if (flags & VARIABLE) != 0
+        return false if variables[cond.variable_id] < cond.variable_value
+      end
+      if (flags & ITEM) != 0
+        return false unless party && party.has_item?(cond.item_id)
+      end
+      if (flags & ACTOR) != 0
+        return false unless party && party.include_actor?(cond.actor_id)
+      end
+      true
+    end
+
+    # Return [id, page] of the active page for an event, or nil when none apply.
+    def self.select(pages, switches, variables, party)
+      return nil if pages.nil?
+      chosen = nil
+      pages.each do |id, page|
+        chosen = [id, page] if active?(page.condition, switches, variables, party)
+      end
+      chosen
+    end
+  end
+
+  # The overall running-game state: who is in the party and where they are,
+  # plus the global switches and variables.
   class State
-    attr_reader :party
+    attr_reader :party, :switches, :variables
     attr_accessor :map, :map_id, :x, :y, :direction
 
     def initialize(party, map_id, x, y)
@@ -171,6 +258,8 @@ module Game
       @y = y
       @direction = 2
       @map = nil
+      @switches = Switches.new
+      @variables = Variables.new
     end
   end
 end

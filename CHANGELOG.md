@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Event system: events on the map now run. `Game::Interpreter` executes a
+  decoded RPG2000 command list — Show Message/Choices, Control
+  Switches/Variables, Change Gold/Items/Party, Conditional Branch/Else/End,
+  Teleport, Wait, Play BGM/SE and End Event — backed by global
+  `Game::Switches`/`Game::Variables` and party inventory. `Game::EventPage`
+  selects the active page from switch/variable/item/actor conditions. In
+  `Scene::Map`, action-button and auto-start events trigger, a message/choice
+  window renders over the map, and Teleport transfers between maps
+- Event command list parsing (`LCF.parse_event_commands` / `LCF::EventCommand`)
+  wired into event pages (chunk 51) and common events; all of the above logic is
+  covered by tests (`mruby-lcf/test` and the host harness)
 - Playable map scene (`Scene::Map`): after "New Game" the party leader can walk
   around the starting map. It renders the lower/upper tile layers (as colour
   blocks derived from tile ids, pending real chipset blitting), draws the leader

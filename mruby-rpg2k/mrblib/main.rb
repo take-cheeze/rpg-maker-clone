@@ -229,7 +229,13 @@ class RPG2k
         @map = state.map
         @chipset = build_chipset
         @charset = load_charset
-        @event_tiles = collect_event_tiles
+        @windowskin = load_windowskin
+        @interpreter = Game::Interpreter.new(@state)
+        @started_auto = {}
+        build_events
+        @message = nil
+        @wait_timer = nil
+        @choice_index = 0
 
         # Player pixel position and step state.
         @moving = false
@@ -246,13 +252,24 @@ class RPG2k
       attr_reader :state
 
       def dispose
+        close_message
         [@lower_sprite, @upper_sprite, @player_sprite].each do |s|
           s.dispose if s
         end
       end
 
       def update
-        step_movement
+        if event_busy?
+          drive_event
+        else
+          start_autostart
+          if event_busy?
+            drive_event
+          else
+            step_movement
+            try_action_trigger
+          end
+        end
         render
       end
 
@@ -299,13 +316,176 @@ class RPG2k
         nil
       end
 
-      def collect_event_tiles
-        tiles = {}
-        evs = @map.unit.events
-        evs.each { |_id, ev| tiles[[ev.x, ev.y]] = true } if evs
-        tiles
+      # Load the System/ windowskin for message windows (nil -> plain panel).
+      def load_windowskin
+        name = @db.system.system_graphic
+        return nil if name.nil? || name.empty?
+        Bitmap.new "System/#{name}"
       rescue StandardError
-        {}
+        nil
+      end
+
+      # Build the runtime event list for the current map: the active page of
+      # each event (per switch/variable/party conditions) plus the tiles events
+      # occupy (used for collision and markers).
+      def build_events
+        @events = []
+        @event_tiles = {}
+        evs = @map.unit.events
+        return unless evs
+        evs.each do |_id, ev|
+          selected = Game::EventPage.select(ev.pages, @state.switches,
+                                            @state.variables, @state.party)
+          next unless selected
+          page = selected[1]
+          @events.push(x: ev.x, y: ev.y, trigger: page_trigger(page),
+                       commands: page_commands(page))
+          @event_tiles[[ev.x, ev.y]] = true
+        end
+      rescue StandardError
+        @events = []
+        @event_tiles = {}
+      end
+
+      def page_trigger(page); page.trigger; rescue StandardError; 0; end
+      def page_commands(page); page.event_commands; rescue StandardError; nil; end
+
+      # -- event execution ----------------------------------------------------
+
+      def event_busy?
+        @message || @interpreter.running? || @interpreter.waiting?
+      end
+
+      # Start the first not-yet-run autostart (trigger 3) event. Each is started
+      # at most once per visit so an ungated autostart cannot hard-loop.
+      def start_autostart
+        ev = @events.find do |e|
+          e[:trigger] == 3 && e[:commands] && !@started_auto[[e[:x], e[:y]]]
+        end
+        return unless ev
+        @started_auto[[ev[:x], ev[:y]]] = true
+        @interpreter.start(ev[:commands])
+      end
+
+      # On the action button, run the event the player is facing (trigger 0).
+      def try_action_trigger
+        return unless Input.trigger?(Input::C)
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        ev = @events.find do |e|
+          e[:x] == fx && e[:y] == fy && e[:trigger] == 0 && e[:commands]
+        end
+        @interpreter.start(ev[:commands]) if ev
+      end
+
+      def drive_event
+        if @message
+          drive_message
+          return
+        end
+
+        if @interpreter.waiting?
+          case @interpreter.wait_kind
+          when :message then open_message(@interpreter.message_lines, false)
+          when :choice then open_message(@interpreter.choice_labels, true)
+          when :wait then drive_wait
+          when :teleport then perform_teleport(@interpreter.teleport)
+          end
+        else
+          @interpreter.update
+        end
+      end
+
+      def drive_wait
+        if @wait_timer.nil?
+          fr = Graphics.frame_rate
+          fr = 60 if fr.nil? || fr <= 0
+          @wait_timer = @interpreter.wait_frames * fr / 10
+        end
+        if @wait_timer <= 0
+          @wait_timer = nil
+          @interpreter.resume
+        else
+          @wait_timer -= 1
+        end
+      end
+
+      def perform_teleport(t)
+        map_id, x, y, dir = t
+        @map = @parent.load_map(map_id)
+        @state.map = @map
+        @state.map_id = map_id
+        @state.x = x
+        @state.y = y
+        @state.direction = dir if dir && dir > 0
+        @chipset = build_chipset
+        @started_auto = {}
+        build_events
+        @moving = false
+        @move_count = 0
+        @last_frame = nil
+        @interpreter.stop
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Teleport failed: #{e.message}"
+        @interpreter.stop
+      end
+
+      # -- message / choice window --------------------------------------------
+
+      MSG_LINE_H = 14
+
+      def open_message(lines, choice)
+        return if @message
+        lines = (lines || []).map { |l| l.to_s }
+        lines = [''] if lines.empty?
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = lines.length * MSG_LINE_H
+        win = Window.new(10, SCREEN_H - (inner_h + Window::BORDER * 2) - 6,
+                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+
+        contents = Bitmap.new(inner_w, inner_h)
+        contents.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |line, i|
+          contents.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
+        end
+        win.contents = contents
+
+        @message = { window: win, choice: choice, count: lines.length }
+        @choice_index = 0
+        set_choice_cursor if choice
+      end
+
+      def set_choice_cursor
+        return unless @message
+        @message[:window].cursor_rect =
+          Rect.new(0, @choice_index * MSG_LINE_H,
+                   @message[:window].contents.width, MSG_LINE_H)
+      end
+
+      def drive_message
+        if @message[:choice]
+          if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
+            @choice_index += 1
+            set_choice_cursor
+          elsif Input.trigger?(Input::UP) && @choice_index > 0
+            @choice_index -= 1
+            set_choice_cursor
+          elsif Input.trigger?(Input::C)
+            index = @choice_index
+            close_message
+            @interpreter.choose(index)
+          end
+        elsif Input.trigger?(Input::C) || Input.trigger?(Input::B)
+          close_message
+          @interpreter.resume
+        end
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
       end
 
       def step_movement
