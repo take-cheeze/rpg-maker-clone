@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
     and a monotonic-clock tick/delay source (`mruby-rgss/src/sixel.cxx`)
   - Wired terminal keyboard input (arrows/WASD, confirm, cancel, quit) into the
     RGSS::Input module via `Graphics.update`
+  - Switched to the terminal's alternate screen buffer while a game is running
+    so it no longer scribbles sixels over the shell history; on exit (including
+    fatal signals) the pre-game screen contents and cursor are restored
   - Documented the decision in `docs/adr/0001-terminal-gaming-sixel.md`
 - Expanded the `mruby-rgss` RGSS built-in class library:
   - `RGSS::Color` — floating point RGBA color with clamping, `set`, `==`,
