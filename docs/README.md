@@ -22,7 +22,11 @@
   servers, SSH sessions, embedded boards with a serial console)
 - Reads keyboard input directly from the terminal and forwards it to
   `RGSS::Input`
-- See `docs/adr/0001-terminal-gaming-sixel.md` for the design rationale
+- Output is throughput-bound: 320×240 at 60 Hz needs roughly 20 Mbaud (up to
+  ~70 Mbaud worst case), far beyond a real serial UART, so the backend targets a
+  local PTY or SSH pipe
+- See `docs/adr/0001-terminal-gaming-sixel.md` for the design rationale and a
+  full bandwidth breakdown
 
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory
