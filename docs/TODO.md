@@ -3,20 +3,22 @@
 ## RPG Maker 2k
 - Support all data schema of LCF
 - ✅ Show window component for title scene
-- 🚧 Implement New Game functionality — builds the initial party from the
-  database, reads the start position from the map tree and loads the starting
-  map into a `Scene::Map`; the map/player renderer is the remaining piece
-- Implement Continue functionality (blocked on `LCF::SaveData` schema)
+- ✅ Implement New Game functionality — builds the party, loads the start map
+  and enters a walkable `Scene::Map` with events
+- ✅ Implement Continue functionality — loads a saved game (portable `Marshal`
+  save; the LCF `.lsd` format is a later refinement)
 
 ### Issue items needed to run Nepheshel
 
-Today the runtime boots only to the title screen: `RPG2k` loads the database
-(`RPG_RT.ldb`) and map tree (`RPG_RT.lmt`), shows the title image plus the
-New Game / Continue / Shutdown menu, and stops there. "New Game" and
-"Continue" are TODO stubs (`mruby-rpg2k/mrblib/main.rb`). The RGSS primitives
-(`Bitmap`, `Window`, `Sprite`, `Font`, `Input`) exist, but `Tilemap` is an
-empty stub, `Audio`/`Graphics` are warn-once stubs, and there is no LMU (map)
-schema, event interpreter, or battle code.
+The runtime now boots past the title into gameplay: "New Game" builds the party,
+loads the starting map and enters a walkable `Scene::Map` where the player can
+move, talk to / trigger events (a working event-command interpreter with
+messages, choices, switches/variables, party/gold/item changes, conditionals and
+teleport), open a menu, save, and continue. The remaining work is mostly **the
+parts that need the native build + real game assets to develop and verify**:
+authentic chipset/charset rendering, audio, and the battle system. Everything
+landed so far is exercised by unit tests (`mruby-lcf/test` and a host harness),
+since the full SDL/mruby binary can't be built or run in this environment.
 
 The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
@@ -64,8 +66,10 @@ The work below is roughly ordered by the critical path to a walkable game
   (`Game::CommonEvent`), gated by their switch when `need_flag` is set; true
   concurrent parallel execution (running every frame alongside the player) is
   still simplified to a once-per-visit start
-- Screen effects — transitions/fade, tint, flash, shake, Show Picture,
-  weather, timer
+- 🚧 Screen effects — the game **timer** works (Timer Operation command +
+  `Game::State` countdown); transitions/fade, tint, flash, shake, Show Picture
+  and weather remain. Most of these need new `RGSS::Sprite`/`Viewport` support
+  in C++ (opacity, tone, flash) before they can be driven from Ruby
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
@@ -77,14 +81,17 @@ The work below is roughly ordered by the critical path to a walkable game
   is still TODO
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
-  battle)
+  battle). Needs real assets + the native build to develop against
+- Item / Skill / Equip / Status menu screens — the menu framework and party
+  data are in place; these screens still need building
 
 #### Assets & infrastructure
 - Audio playback — replace the inert `RGSS::Audio` stubs with real
-  BGM/BGS/ME/SE (WAV/MIDI)
-- RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
-  `FullPackageFlag=1` disables RTP; resource lookup must fall back between the
-  game directory and the RTP
+  BGM/BGS/ME/SE (WAV/MIDI). Needs a C++ audio backend (SDL/`3rd/timidity`) that
+  can only be built and verified natively
+- ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
+  `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
+  from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)
 
 ## RPG Maker with RGSS
 - Support game library features of RGSS which could be found in https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/

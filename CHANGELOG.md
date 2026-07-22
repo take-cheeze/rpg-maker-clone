@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Message control-code expansion (`\v[n]` variable, `\n[n]` actor name, `\\`;
+  colour/speed/wait codes consumed) and the RPG2000 countdown timer (Timer
+  Operation event command + `Game::State` tick, saved with the game)
 - Common events (`Game::CommonEvent`): auto-start and parallel common events run
   on the map, gated by their switch when `need_flag` is set
 - Main menu (`Scene::Menu`), opened over the map with the cancel button: shows

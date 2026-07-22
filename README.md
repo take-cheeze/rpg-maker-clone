@@ -15,6 +15,17 @@
   camera that follows the player
 - Tiles are currently drawn as colour blocks (real chipset rendering is planned)
 
+### Events, menu & saving
+- Map events run through an event-command interpreter: messages and choices,
+  switches/variables, party/gold/item changes, conditional branches, teleport,
+  waits and BGM/SE playback; action-button and auto-start/parallel (common)
+  events trigger, gated by their page/switch conditions
+- Message text expands the common control codes (`\v[n]` variable, `\n[n]`
+  actor name, `\\`)
+- A countdown timer can be set/started/stopped from events
+- Press the cancel button to open a menu (party status, Save, End Game); "New
+  Game" state can be saved and reloaded from the title's "Continue"
+
 ### Terminal gaming (sixel)
 - Render the game to any sixel-capable terminal instead of an SDL window
 - Run with `--sixel` (optionally `--sixel_scale=N` to upscale the picture):
@@ -33,4 +44,5 @@
 - Editor with [imgui](https://github.com/ocornut/imgui)
 - Real chipset tile rendering (lower/upper chip graphics, autotiles, tile
   animation); the map scene currently draws placeholder colour-block tiles
-- Implement Continue functionality (needs the `LCF::SaveData` schema)
+- Battle system and the item/skill/equip/status menu screens
+- Real audio playback (the `RGSS::Audio` back-end is still a stub)
