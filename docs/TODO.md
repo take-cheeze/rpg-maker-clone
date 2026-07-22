@@ -63,10 +63,13 @@ The work below is roughly ordered by the critical path to a walkable game
   weather, timer
 
 #### Menus, save, battle
-- Menu scene — item / skill / equip / status / save, driven by the already
-  parsed `term` and item/skill/actor data
-- Save & Continue — `LCF::SaveData` has a header but no schema/logic; needed
-  for the Continue path
+- 🚧 Menu scene — opens over the map (cancel button); shows party status and a
+  command list. Save and End Game work; item / skill / equip / status are
+  placeholders still to be built from the parsed `term`/item/skill/actor data
+- 🚧 Save & Continue — implemented with a portable `Marshal` save of the game
+  state (`Game::State#to_h` / `State.load`) written via the menu's Save command;
+  "Continue" reloads it. Reading/writing the real `LCF::SaveData` (`.lsd`) format
+  is still TODO
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle)

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Main menu (`Scene::Menu`), opened over the map with the cancel button: shows
+  party status and a command list. Save and End Game (return to title) work;
+  item/skill/equip/status are placeholders
+- Save & Continue: the game state (position, switches, variables, party,
+  inventory, gold, hp/mp) serialises to a portable `Marshal` save
+  (`Game::State#to_h` / `State.load`), written by the menu's Save command and
+  reloaded by the title's "Continue" (the LCF `.lsd` format is still TODO).
+  Round-trip covered by the host harness
 - Event system: events on the map now run. `Game::Interpreter` executes a
   decoded RPG2000 command list — Show Message/Choices, Control
   Switches/Variables, Change Gold/Items/Party, Conditional Branch/Else/End,

@@ -205,6 +205,16 @@ class RPG2k
       def dispose ; end
 
       attr_reader :parent, :db, :map_tree
+
+      # Load the System/ windowskin declared in the database (nil when missing,
+      # so Window falls back to a plain panel).
+      def make_windowskin
+        name = @db.system.system_graphic
+        return nil if name.nil? || name.empty?
+        Bitmap.new "System/#{name}"
+      rescue StandardError
+        nil
+      end
     end
 
     # Play scene: renders the loaded map and lets the party leader walk around
@@ -268,6 +278,7 @@ class RPG2k
           else
             step_movement
             try_action_trigger
+            try_open_menu
           end
         end
         render
@@ -375,6 +386,12 @@ class RPG2k
           e[:x] == fx && e[:y] == fy && e[:trigger] == 0 && e[:commands]
         end
         @interpreter.start(ev[:commands]) if ev
+      end
+
+      # The cancel button opens the main menu over the map.
+      def try_open_menu
+        return unless Input.trigger?(Input::B)
+        @parent.push Scene::Menu.new(@parent, @state)
       end
 
       def drive_event
@@ -603,6 +620,118 @@ class RPG2k
       end
     end
 
+    # Main menu, opened over the map with the cancel button. Shows party status
+    # and a command list. Save and End Game are wired up; the item/skill/equip/
+    # status screens are placeholders that report they are not implemented.
+    class Menu < Base
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      LINE_H = 16
+      COMMANDS = ["Item", "Skill", "Equip", "Status", "Save", "End Game"].freeze
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @index = 0
+        @message = nil
+        @skin = make_windowskin
+        build_windows
+      end
+
+      def dispose
+        close_message
+        @command.dispose if @command
+        @status.dispose if @status
+      end
+
+      def update
+        return drive_message if @message
+
+        if Input.trigger?(Input::DOWN) && @index < COMMANDS.size - 1
+          @index += 1
+          refresh_cursor
+        elsif Input.trigger?(Input::UP) && @index > 0
+          @index -= 1
+          refresh_cursor
+        elsif Input.trigger?(Input::B)
+          @parent.pop
+        elsif Input.trigger?(Input::C)
+          select_command
+        end
+      end
+
+      private
+
+      def build_windows
+        cw = 108
+        @command = Window.new(0, 0, cw, COMMANDS.size * LINE_H + Window::BORDER * 2)
+        @command.z = 400
+        @command.windowskin = @skin
+        cc = Bitmap.new(cw - Window::BORDER * 2, COMMANDS.size * LINE_H)
+        cc.font.color = Color.new(255, 255, 255, 255)
+        COMMANDS.each_with_index do |c, i|
+          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, c
+        end
+        @command.contents = cc
+        refresh_cursor
+
+        @status = Window.new(cw, 0, SCREEN_W - cw, SCREEN_H)
+        @status.z = 400
+        @status.windowskin = @skin
+        sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
+        sc.font.color = Color.new(255, 255, 255, 255)
+        @state.party.actors.each_with_index do |a, i|
+          y = i * 40
+          sc.draw_text 0, y, sc.width, 14, a.name.to_s
+          sc.draw_text 0, y + 16, sc.width, 14,
+                       "Lv #{a.level}  HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+        end
+        @status.contents = sc
+      end
+
+      def refresh_cursor
+        @command.cursor_rect =
+          Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
+      end
+
+      def select_command
+        case COMMANDS[@index]
+        when "Save"
+          show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+        when "End Game"
+          show_message("Returning to title...", :end_game)
+        else
+          show_message("#{COMMANDS[@index]} is not implemented yet.")
+        end
+      end
+
+      def drive_message
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        done = @message[:done]
+        close_message
+        @parent.return_to_title if done == :end_game
+      end
+
+      def show_message(text, done = nil)
+        return if @message
+        w = SCREEN_W - 40
+        win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
+        win.z = 500
+        win.windowskin = @skin
+        c = Bitmap.new(w - Window::BORDER * 2, 14)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, 14, text
+        win.contents = c
+        @message = { window: win, done: done }
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
+      end
+    end
+
     class Title < Base
       # Height of one selectable line. The shinonome font is 12px tall; the
       # extra space gives a little breathing room between entries.
@@ -713,6 +842,20 @@ class RPG2k
     @scenes.push scene
   end
 
+  # Pop the top scene (e.g. closing the menu), disposing it. The base scene is
+  # never popped so the loop always has something to update.
+  def pop
+    return if @scenes.size <= 1
+    scene = @scenes.pop
+    scene.dispose if scene.respond_to?(:dispose)
+  end
+
+  # Tear down all scenes and return to a fresh title screen.
+  def return_to_title
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
+    @scenes = [Scene::Title.new(self)]
+  end
+
   # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...
   def load_map id
     num = id.to_s
@@ -740,11 +883,43 @@ class RPG2k
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
   end
 
-  # Continue: loading a saved game (LcfSaveData) is not implemented yet — the
-  # save schema and load path are still to be written (see docs/TODO.md). Warn
-  # once so selecting Continue is an explicit no-op rather than a silent gap.
+  # Save file path for a slot. We use our own portable Marshal format rather
+  # than the LCF .lsd save schema (which is not modelled yet).
+  def save_path slot = 1
+    "#{GAME_DIR}/save#{slot}.mrb"
+  end
+
+  def save_exists? slot = 1
+    File.exist? save_path(slot)
+  rescue StandardError
+    false
+  end
+
+  # Persist the running game state to a slot.
+  def save_game state, slot = 1
+    data = Marshal.dump state.to_h
+    File.open(save_path(slot), "wb") { |f| f.write data }
+    true
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] Failed to save: #{e.message}"
+    false
+  end
+
+  # Continue: load the most recent save (our Marshal format) and resume on its
+  # map. Warns and stays on the title when there is no save to load.
   def continue_game
-    RGSS.warn_stub "Continue (load saved game)"
+    unless save_exists?
+      RGSS.warn_stub "Continue (no save data found)"
+      return
+    end
+    data = File.open(save_path, "rb") { |f| f.read }
+    state = Game::State.load(@db, Marshal.load(data))
+    state.map = load_map state.map_id
+    scene = Scene::Map.new(self, state)
+    @scenes.last.dispose
+    @scenes = [scene]
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] Failed to continue: #{e.message}"
   end
 
   def main_loop

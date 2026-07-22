@@ -136,12 +136,33 @@ module Game
 
     attr_reader :actors, :items, :gold
 
-    def initialize(db)
+    def initialize(db, ids = nil)
       @db = db
-      ids = db.system.party || []
+      ids ||= db.system.party || []
       @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| Actor.new(db, i) }
       @items = {}  # item id => count
       @gold = 0
+    end
+
+    # Serialise the mutable party state (see State#to_h).
+    def to_h
+      hp = {}
+      mp = {}
+      @actors.each { |a| hp[a.id] = a.hp; mp[a.id] = a.mp }
+      { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
+        hp: hp, mp: mp }
+    end
+
+    # Restore item/gold and per-actor hp/mp from a saved party hash.
+    def load_state(data)
+      @items = data[:items] || {}
+      @gold = data[:gold] || 0
+      hp = data[:hp] || {}
+      mp = data[:mp] || {}
+      @actors.each do |a|
+        a.hp = hp[a.id] if hp[a.id]
+        a.mp = mp[a.id] if mp[a.id]
+      end
     end
 
     def each(&blk); @actors.each(&blk); end
@@ -260,6 +281,27 @@ module Game
       @map = nil
       @switches = Switches.new
       @variables = Variables.new
+    end
+
+    # Serialise to a plain hash of primitives (Marshal-friendly) for saving. The
+    # map itself is not stored; it is reloaded from map_id on load.
+    def to_h
+      { map_id: @map_id, x: @x, y: @y, direction: @direction,
+        switches: @switches.to_h, variables: @variables.to_h,
+        party: @party.to_h }
+    end
+
+    # Rebuild a State from a saved hash. Actors are re-created from the database
+    # by the saved ids, then their mutable state is restored.
+    def self.load(db, h)
+      pdata = h[:party] || {}
+      party = Party.new(db, pdata[:actor_ids] || [])
+      party.load_state(pdata)
+      state = new(party, h[:map_id], h[:x], h[:y])
+      state.direction = h[:direction] || 2
+      state.switches.replace(h[:switches] || {})
+      state.variables.replace(h[:variables] || {})
+      state
     end
   end
 end
