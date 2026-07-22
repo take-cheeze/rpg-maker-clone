@@ -34,6 +34,9 @@
   | `C`                       | `A`                  |
   | `Q` / `Ctrl-C`            | quit the runtime     |
 
+  The same reference is drawn as a one-line legend directly beneath the game
+  image in the terminal, so the controls are always visible while playing.
+
   Terminals do not report key-release events, so a key is treated as held for
   a short window (`HOLD_MS`) after its last byte; the terminal's own
   auto-repeat sustains movement while a key stays down.

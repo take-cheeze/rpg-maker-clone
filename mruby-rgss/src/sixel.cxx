@@ -283,6 +283,17 @@ void encode_frame(int w, int h, const uint16_t* pix) {
   }
 
   s += "\x1b\\";  // exit sixel mode
+
+  // Draw a one-line key reference directly beneath the image.  Every frame
+  // begins with a cursor-home + sixel overdraw, and sixel output leaves the
+  // cursor on the line below the picture, so re-emitting the legend here keeps
+  // it pinned under the game view.  \r moves to column 0, \x1b[K clears any
+  // stale text, and the dim SGR keeps it visually secondary to the game.
+  s += "\r\x1b[K\x1b[2m";
+  s += "Move: Arrows/WASD  Confirm: Z/Enter/Space  Cancel: X/Esc  "
+       "A: C  Quit: Q/Ctrl-C";
+  s += "\x1b[0m";
+
   write_all(s.data(), s.size());
 }
 
