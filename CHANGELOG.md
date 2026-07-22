@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Title menu cursor navigation now wraps around the top/bottom of the list and
   honours key auto-repeat, so holding UP/DOWN keeps scrolling the selection
+- The selection cursor is now nine-sliced from the windowskin's cursor region
+  (the authentic RPG2k selection graphic) instead of a synthetic blue box; the
+  frame and cursor now share one nine-slice helper. The blue box remains only
+  as a fallback when no windowskin is loaded
 
 ### Added
 - Terminal gaming support using the DEC sixel graphics protocol

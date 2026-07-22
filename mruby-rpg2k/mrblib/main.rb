@@ -8,6 +8,7 @@ module RGSS
   #
   #   (0, 0, 32, 32)   background fill (stretched over the interior)
   #   (32, 0, 32, 32)  8px-thick frame border, split into 4 corners and 4 edges
+  #   (64, 0, 32, 32)  selection cursor, nine-sliced the same way as the frame
   #
   # Background, frame, the selection cursor and the window contents are all
   # composited into a single Bitmap that backs one Sprite.
@@ -18,6 +19,11 @@ module RGSS
 
     # Thickness of the RPG2k frame border, in pixels.
     BORDER = 8
+
+    # Origin of the selection cursor region within the windowskin (the third
+    # 32px column, after the background and the frame).
+    CURSOR_SX = 64
+    CURSOR_SY = 0
 
     def initialize(x = 0, y = 0, width = 0, height = 0)
       @x = x
@@ -132,24 +138,42 @@ module RGSS
     end
 
     def draw_frame
-      w = @width
-      h = @height
+      # The frame is a hollow nine-slice: the interior is left to
+      # draw_background, so do not fill the centre here.
+      draw_nine_slice 0, 0, @width, @height, 32, 0, false
+    end
+
+    # Nine-slice a 32x32 windowskin region (rooted at sx, sy, with 8px corners)
+    # to cover the rectangle (x, y, w, h): the four corners are blitted 1:1
+    # while the edges — and, when fill_center is set, the middle — are stretched
+    # along their free axes. Shared by the window frame and the selection
+    # cursor. stretch_blt ignores zero-sized pieces, so a rect as short as one
+    # 16px row (where the centre and side edges collapse) renders correctly.
+    def draw_nine_slice(x, y, w, h, sx, sy, fill_center)
       b = BORDER
       sk = @windowskin
 
       # Corners (8x8, drawn 1:1).
-      @skin.blt 0, 0, sk, Rect.new(32, 0, b, b)
-      @skin.blt w - b, 0, sk, Rect.new(56, 0, b, b)
-      @skin.blt 0, h - b, sk, Rect.new(32, 24, b, b)
-      @skin.blt w - b, h - b, sk, Rect.new(56, 24, b, b)
+      @skin.blt x, y, sk, Rect.new(sx, sy, b, b)
+      @skin.blt x + w - b, y, sk, Rect.new(sx + 24, sy, b, b)
+      @skin.blt x, y + h - b, sk, Rect.new(sx, sy + 24, b, b)
+      @skin.blt x + w - b, y + h - b, sk, Rect.new(sx + 24, sy + 24, b, b)
 
       # Edges (stretched along the free axis).
-      @skin.stretch_blt Rect.new(b, 0, w - 2 * b, b), sk, Rect.new(40, 0, 16, b)
-      @skin.stretch_blt Rect.new(b, h - b, w - 2 * b, b), sk,
-                        Rect.new(40, 24, 16, b)
-      @skin.stretch_blt Rect.new(0, b, b, h - 2 * b), sk, Rect.new(32, 8, b, 16)
-      @skin.stretch_blt Rect.new(w - b, b, b, h - 2 * b), sk,
-                        Rect.new(56, 8, b, 16)
+      @skin.stretch_blt Rect.new(x + b, y, w - 2 * b, b), sk,
+                        Rect.new(sx + 8, sy, 16, b)
+      @skin.stretch_blt Rect.new(x + b, y + h - b, w - 2 * b, b), sk,
+                        Rect.new(sx + 8, sy + 24, 16, b)
+      @skin.stretch_blt Rect.new(x, y + b, b, h - 2 * b), sk,
+                        Rect.new(sx, sy + 8, b, 16)
+      @skin.stretch_blt Rect.new(x + w - b, y + b, b, h - 2 * b), sk,
+                        Rect.new(sx + 24, sy + 8, b, 16)
+
+      return unless fill_center
+
+      # Centre: the translucent selection glass behind the highlighted item.
+      @skin.stretch_blt Rect.new(x + b, y + b, w - 2 * b, h - 2 * b), sk,
+                        Rect.new(sx + 8, sy + 8, 16, 16)
     end
 
     # Used when no windowskin could be loaded: a plain dark panel with a light
@@ -163,24 +187,33 @@ module RGSS
       @skin.fill_rect @width - 1, 0, 1, @height, edge
     end
 
-    # Highlight box behind the selected item. cursor_rect is expressed in
+    # Selection cursor behind the highlighted item. cursor_rect is expressed in
     # contents coordinates, so it is offset by the border thickness.
     def draw_cursor
       return unless @active
       r = @cursor_rect
       return if r.width <= 0 || r.height <= 0
 
-      # fill_rect overwrites (it does not alpha-blend onto the window
-      # background), so use an opaque highlight: a solid blue bar with a
-      # brighter border, matching the reference title screen's selection box.
       x = BORDER + r.x
       y = BORDER + r.y
-      @skin.fill_rect x, y, r.width, r.height, Color.new(24, 40, 176, 255)
+      if @windowskin
+        # Draw the authentic RPG2k cursor nine-sliced from the windowskin.
+        draw_nine_slice x, y, r.width, r.height, CURSOR_SX, CURSOR_SY, true
+      else
+        draw_fallback_cursor x, y, r.width, r.height
+      end
+    end
+
+    # Used when no windowskin is available: fill_rect overwrites (it does not
+    # alpha-blend onto the window background), so use an opaque highlight — a
+    # solid blue bar with a brighter border.
+    def draw_fallback_cursor(x, y, w, h)
+      @skin.fill_rect x, y, w, h, Color.new(24, 40, 176, 255)
       border = Color.new(180, 200, 255, 255)
-      @skin.fill_rect x, y, r.width, 1, border
-      @skin.fill_rect x, y + r.height - 1, r.width, 1, border
-      @skin.fill_rect x, y, 1, r.height, border
-      @skin.fill_rect x + r.width - 1, y, 1, r.height, border
+      @skin.fill_rect x, y, w, 1, border
+      @skin.fill_rect x, y + h - 1, w, 1, border
+      @skin.fill_rect x, y, 1, h, border
+      @skin.fill_rect x + w - 1, y, 1, h, border
     end
 
     def draw_contents

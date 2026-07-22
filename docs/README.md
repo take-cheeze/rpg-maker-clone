@@ -14,7 +14,8 @@
 - Supports keyboard navigation (up/down, wrapping at the ends and repeating
   while held) and selection (enter/Z)
 - Menu items are drawn using the game's font system
-- Selection is highlighted with a cursor
+- Selection is highlighted with the windowskin's cursor graphic (nine-sliced
+  from the System set, matching the RPG2k look)
 
 ### Terminal gaming (sixel)
 - Alternative display backend that renders each frame to the terminal using the
