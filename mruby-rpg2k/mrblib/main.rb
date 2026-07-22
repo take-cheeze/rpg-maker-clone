@@ -463,9 +463,20 @@ class RPG2k
 
       MSG_LINE_H = 14
 
+      # Look up an actor name by id for the \n[] message control code.
+      def actor_name(id)
+        a = @db.player[id]
+        a ? a.name.to_s : ''
+      rescue StandardError
+        ''
+      end
+
       def open_message(lines, choice)
         return if @message
-        lines = (lines || []).map { |l| l.to_s }
+        names = ->(id) { actor_name(id) }
+        lines = (lines || []).map do |l|
+          Game::Message.expand(l.to_s, @state.variables, names)
+        end
         lines = [''] if lines.empty?
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
         inner_h = lines.length * MSG_LINE_H

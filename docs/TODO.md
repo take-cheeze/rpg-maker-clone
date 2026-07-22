@@ -56,8 +56,10 @@ The work below is roughly ordered by the critical path to a walkable game
   Conditional Branch/Else/End, Teleport, Wait, Play BGM/SE, End Event); the
   remaining ~100 commands (Move Event, pictures, screen effects, battles, ...)
   and loops/labels/call-event are TODO
-- 🚧 Message window — renders text lines and a choice cursor; control codes
-  (`\v`, `\n`, `\c`, `\.`), face graphics and gradual text reveal are TODO
+- 🚧 Message window — renders text lines and a choice cursor and expands the
+  common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
+  colour/speed/wait codes are consumed). Face graphics, per-code colour changes
+  and gradual text reveal are still TODO
 - 🚧 Common events — auto-start and parallel common events run on the map
   (`Game::CommonEvent`), gated by their switch when `need_flag` is set; true
   concurrent parallel execution (running every frame alongside the player) is

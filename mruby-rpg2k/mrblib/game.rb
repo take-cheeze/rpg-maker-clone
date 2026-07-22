@@ -30,6 +30,47 @@ module Game
     end
   end
 
+  # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
+  # `\n[n]` the name of actor n, `\\` a literal backslash; the display-only codes
+  # (`\c`/`\s` colour/speed, `\.`/`\|`/`\!` waits, `\>`/`\<`, `\^`, `\_`, `\$`)
+  # are consumed. `names` may be a Hash or any object responding to `[]`.
+  module Message
+    def self.expand(text, variables, names)
+      return '' if text.nil?
+      out = ''
+      i = 0
+      n = text.length
+      while i < n
+        ch = text[i]
+        if ch == "\\" && i + 1 < n
+          code = text[i + 1]
+          i += 2
+          arg, i = read_bracket(text, i)
+          case code
+          when 'v', 'V' then out << variables[arg.to_i].to_s if arg
+          when 'n', 'N' then out << (names[arg.to_i] || '').to_s if arg
+          when "\\"     then out << "\\"
+          # colour/speed/wait/etc. produce no visible characters: dropped.
+          end
+        else
+          out << ch
+          i += 1
+        end
+      end
+      out
+    end
+
+    # Read an optional "[digits]" argument at position i; returns [value, new_i].
+    def self.read_bracket(text, i)
+      return [nil, i] unless i < text.length && text[i] == '['
+      j = i + 1
+      j += 1 while j < text.length && text[j] != ']'
+      val = text[(i + 1)...j]
+      j += 1 if j < text.length # consume ']'
+      [val, j]
+    end
+  end
+
   def self.clamp(v, lo, hi)
     return lo if v < lo
     return hi if v > hi
