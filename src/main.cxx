@@ -31,7 +31,7 @@ DEFINE_bool(sixel,
             "Render to the terminal using the sixel protocol instead of "
             "opening an SDL window");
 DEFINE_int32(sixel_scale,
-             2,
+             1,
              "Integer upscale factor for the sixel terminal output");
 
 namespace {
