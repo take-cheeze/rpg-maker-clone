@@ -1,3 +1,13 @@
+# Schemas for the LCF binary formats (RPG_RT.ldb / .lmt / ...).
+#
+# Chunk IDs and field layouts are transcribed from the VIPRPG 200X analysis
+# notes: https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81
+#
+# Type vocabulary understood by the reader (see lcf.rb): :int, :bool, :string,
+# :Array1D, :Array2D, :Tree.  A few chunks hold packed homogeneous arrays that
+# the reader does not decode yet; those are annotated with a descriptive type
+# (:int8_array / :int16_array / :int32_array / :event) so the layout is still
+# documented, matching the pre-existing :int16_array convention.
 module LCF
   module Schema
     COMMON_EVENT = {
@@ -40,10 +50,24 @@ module LCF
       5 => { name: :balance, type: :int, default: 50 },
     }
 
+    # A single "skill learned at level" entry (used by actors and classes).
+    LEARNING = {
+      1 => { name: :level, type: :int, default: 1 },
+      2 => { name: :skill_id, type: :int, default: 1 },
+    }
+
+    # Battler-animation attachment (使用者アニメ) shared by skills and items.
+    BATTLER_ANIMATION = {
+      5 => { name: :movement, type: :int, default: 0 },
+      6 => { name: :after_image, type: :bool, default: false },
+      14 => { name: :battle_animation_id, type: :int, default: 3 },
+    }
+
     DATABASE = {
       name: :DataBase, type: :Array1D,
       elements: {
         11 => {
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E4%B8%BB%E4%BA%BA%E5%85%AC
           name: :player, type: :Array2D,
           elements: {
             1 => { name: :name, type: :string, default: '' },
@@ -59,9 +83,10 @@ module LCF
             15 => { name: :faceset_name, type: :string, default: '' },
             16 => { name: :faceset_index, type: :int, default: 0 },
 
-            21 => { name: :double_hand, type: :bool, default: false },
-            22 => { name: :force_auto_move, type: :bool, default: false },
-            23 => { name: :strong_defence, type: :bool, default: false },
+            21 => { name: :double_hand, type: :bool, default: false },       # 二刀流
+            22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
+            23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
+            24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
 
             31 => { name: :status, type: :int16_array, order: [:max_hp, :max_mp, :atk, :def, :int, :agi] },
 
@@ -69,170 +94,669 @@ module LCF
             42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
             43 => { name: :exp_correction, type: :int, default: -> { LCF.exp_default } },
 
-            44 => { name: :initial_equipment, type: :int16_array, order: [:weapon, :shield, :armor, :head, :other] },
+            51 => { name: :initial_equipment, type: :int16_array, order: [:weapon, :shield, :armor, :helmet, :accessory] },
+
+            56 => { name: :unarmed_animation, type: :int, default: 0 },      # 素手戦闘アニメID
+            57 => { name: :class_id, type: :int, default: 0 },               # 職業ID (2003)
+            59 => { name: :battle_x, type: :int, default: 0 },               # 手動配置X (2003)
+            60 => { name: :battle_y, type: :int, default: 0 },               # 手動配置Y (2003)
+            62 => { name: :battler_animation, type: :int, default: 0 },      # 戦闘アニメ (2003)
+            63 => { name: :skills, type: :Array2D, elements: LEARNING },     # 習得する特殊技能
+            66 => { name: :custom_battle_command, type: :bool, default: false }, # 独自戦闘コマンド有効 (2000)
+            67 => { name: :custom_battle_command_name, type: :string },      # 独自戦闘コマンド名称 (2000)
+
+            71 => { name: :state_ranks_size, type: :int, default: 0 },       # 状態有効度データ数
+            72 => { name: :state_ranks, type: :int8_array },                 # 状態有効度 (byte[])
+            73 => { name: :attribute_ranks_size, type: :int, default: 0 },   # 属性有効度データ数
+            74 => { name: :attribute_ranks, type: :int8_array },             # 属性有効度 (byte[])
+
+            80 => { name: :battle_commands, type: :int32_array },            # 戦闘コマンド (int[7], 2003)
           }
         },
         12 => {
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%89%B9%E6%AE%8A%E6%8A%80%E8%83%BD
           name: :skill, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :description, type: :string, default: '' },
+            3 => { name: :using_message1, type: :string, default: '' },
+            4 => { name: :using_message2, type: :string, default: '' },
+            7 => { name: :failure_message, type: :int, default: 0 },
+            8 => { name: :type, type: :int, default: 0 },
+            9 => { name: :sp_type, type: :int, default: 0 },
+            10 => { name: :sp_percent, type: :int, default: 1 },
+            11 => { name: :sp_cost, type: :int, default: 0 },
+            12 => { name: :scope, type: :int, default: 0 },
+            14 => { name: :animation_id, type: :int, default: 1 },
+            20 => { name: :reverse_state_effect, type: :bool, default: false },
+            21 => { name: :physical_rate, type: :int, default: 0 },
+            22 => { name: :magical_rate, type: :int, default: 3 },
+            23 => { name: :variance, type: :int, default: 4 },
+            24 => { name: :power, type: :int, default: 0 },
+            25 => { name: :hit, type: :int, default: 100 },
+            31 => { name: :affect_hp, type: :bool, default: false },
+            32 => { name: :affect_sp, type: :bool, default: false },
+            33 => { name: :affect_attack, type: :bool, default: false },
+            34 => { name: :affect_defense, type: :bool, default: false },
+            35 => { name: :affect_spirit, type: :bool, default: false },
+            36 => { name: :affect_agility, type: :bool, default: false },
+            37 => { name: :absorb_damage, type: :bool, default: false },
+            38 => { name: :ignore_defense, type: :bool, default: false },
+            41 => { name: :state_effects_size, type: :int, default: 0 },
+            42 => { name: :state_effects, type: :int8_array },              # bool[]
+            43 => { name: :attribute_effects_size, type: :int, default: 0 },
+            44 => { name: :attribute_effects, type: :int8_array },          # bool[]
+            45 => { name: :affect_attr_defence, type: :bool, default: false },
+            49 => { name: :battler_animation_data_size, type: :int, default: 0 },
+            50 => { name: :battler_animation_data, type: :Array2D, elements: BATTLER_ANIMATION },
           }
         },
         13 => {
-          name: :Item, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%A2%E3%82%A4%E3%83%86%E3%83%A0
+          name: :item, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :description, type: :string, default: '' },
+            3 => { name: :type, type: :int, default: 0 },
+            5 => { name: :price, type: :int, default: 0 },
+            6 => { name: :uses, type: :int, default: 1 },
+            11 => { name: :atk_points1, type: :int, default: 0 },
+            12 => { name: :def_points1, type: :int, default: 0 },
+            13 => { name: :spi_points1, type: :int, default: 0 },
+            14 => { name: :agi_points1, type: :int, default: 0 },
+            15 => { name: :two_handed, type: :int, default: 0 },
+            16 => { name: :sp_cost, type: :int, default: 0 },
+            17 => { name: :hit, type: :int, default: 0 },
+            18 => { name: :critical_hit, type: :int, default: 0 },
+            20 => { name: :animation_id, type: :int, default: 1 },
+            21 => { name: :preemptive, type: :bool, default: false },
+            22 => { name: :dual_attack, type: :bool, default: false },
+            23 => { name: :attack_all, type: :bool, default: false },
+            24 => { name: :ignore_evasion, type: :bool, default: false },
+            29 => { name: :cursed, type: :bool, default: false },
+            31 => { name: :scope, type: :int, default: 0 },
+            32 => { name: :recover_hp_rate, type: :int, default: 0 },
+            33 => { name: :recover_hp, type: :int, default: 0 },
+            34 => { name: :recover_sp_rate, type: :int, default: 0 },
+            35 => { name: :recover_sp, type: :int, default: 0 },
+            37 => { name: :occasion_field1, type: :bool, default: false },
+            38 => { name: :ko_only, type: :bool, default: false },
+            41 => { name: :max_hp_points, type: :int, default: 0 },
+            42 => { name: :max_sp_points, type: :int, default: 0 },
+            43 => { name: :atk_points2, type: :int, default: 0 },
+            44 => { name: :def_points2, type: :int, default: 0 },
+            45 => { name: :spi_points2, type: :int, default: 0 },
+            46 => { name: :agi_points2, type: :int, default: 0 },
+            51 => { name: :using_message, type: :int, default: 0 },
+            53 => { name: :skill_id, type: :int, default: 1 },
+            55 => { name: :switch_id, type: :int, default: 1 },
+            57 => { name: :occasion_field2, type: :bool, default: true },
+            58 => { name: :occasion_battle, type: :bool, default: false },
+            61 => { name: :actor_set_size, type: :int, default: 0 },
+            62 => { name: :actor_set, type: :int8_array },                  # bool[]
+            63 => { name: :state_set_size, type: :int, default: 0 },
+            64 => { name: :state_set, type: :int8_array },                  # bool[]
+            65 => { name: :attribute_set_size, type: :int, default: 0 },
+            66 => { name: :attribute_set, type: :int8_array },              # bool[]
+            67 => { name: :state_chance, type: :int, default: 0 },
+            68 => { name: :reverse_state_effect, type: :bool, default: false },
+            69 => { name: :animation_data_size, type: :int, default: 0 },
+            70 => { name: :animation_data, type: :Array2D, elements: BATTLER_ANIMATION },
+            71 => { name: :use_skill, type: :bool, default: false },
+            72 => { name: :class_set_size, type: :int, default: 0 },
+            73 => { name: :class_set, type: :int8_array },                  # bool[]
           }
         },
         14 => {
-          name: :Enemy, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%95%B5%E3%82%AD%E3%83%A3%E3%83%A9
+          name: :enemy, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :battler_name, type: :string, default: '' },
+            3 => { name: :battler_hue, type: :int, default: 0 },
+            4 => { name: :max_hp, type: :int, default: 10 },
+            5 => { name: :max_sp, type: :int, default: 10 },
+            6 => { name: :attack, type: :int, default: 10 },
+            7 => { name: :defense, type: :int, default: 10 },
+            8 => { name: :spirit, type: :int, default: 10 },
+            9 => { name: :agility, type: :int, default: 10 },
+            10 => { name: :transparent, type: :bool, default: false },
+            11 => { name: :exp, type: :int, default: 0 },
+            12 => { name: :gold, type: :int, default: 0 },
+            13 => { name: :drop_id, type: :int, default: 0 },
+            14 => { name: :drop_prob, type: :int, default: 100 },
+            21 => { name: :critical_hit, type: :bool, default: false },
+            22 => { name: :critical_hit_chance, type: :int, default: 30 },
+            26 => { name: :miss, type: :bool, default: false },
+            28 => { name: :levitate, type: :bool, default: false },
+            31 => { name: :state_ranks_size, type: :int, default: 0 },
+            32 => { name: :state_ranks, type: :int8_array },               # byte[]
+            33 => { name: :attribute_ranks_size, type: :int, default: 0 },
+            34 => { name: :attribute_ranks, type: :int8_array },           # byte[]
+            42 => {
+              name: :actions, type: :Array2D,
+              elements: {
+                1 => { name: :kind, type: :int, default: 0 },
+                2 => { name: :basic, type: :int, default: 0 },
+                3 => { name: :skill_id, type: :int, default: 1 },
+                4 => { name: :enemy_id, type: :int, default: 1 },
+                5 => { name: :condition_type, type: :int, default: 0 },
+                6 => { name: :condition_param1, type: :int, default: 0 },
+                7 => { name: :condition_param2, type: :int, default: 0 },
+                8 => { name: :switch_id, type: :int, default: 1 },
+                9 => { name: :switch_on, type: :bool, default: false },
+                10 => { name: :switch_on_id, type: :int, default: 1 },
+                11 => { name: :switch_off, type: :bool, default: false },
+                12 => { name: :switch_off_id, type: :int, default: 1 },
+                13 => { name: :rating, type: :int, default: 50 },
+              }
+            },
           }
         },
         15 => {
-          name: :EnemyGroup, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%95%B5%E3%82%B0%E3%83%AB%E3%83%BC%E3%83%97
+          name: :enemy_group, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => {
+              name: :members, type: :Array2D,
+              elements: {
+                1 => { name: :enemy_id, type: :int, default: 1 },
+                2 => { name: :x, type: :int, default: 0 },
+                3 => { name: :y, type: :int, default: 0 },
+                4 => { name: :invisible, type: :bool, default: false },
+              }
+            },
+            4 => { name: :terrain_data_size, type: :int, default: 0 },
+            5 => { name: :terrain_set, type: :int8_array },                # bool[]
+            11 => {
+              name: :pages, type: :Array2D,
+              elements: {
+                2 => {
+                  name: :condition, type: :Array1D,
+                  elements: {
+                    1 => { name: :flags, type: :int, default: 0 },
+                    2 => { name: :switch_a_id, type: :int, default: 1 },
+                    3 => { name: :switch_b_id, type: :int, default: 1 },
+                    4 => { name: :variable_id, type: :int, default: 1 },
+                    5 => { name: :variable_value, type: :int, default: 0 },
+                    6 => { name: :turn_a, type: :int, default: 0 },
+                    7 => { name: :turn_b, type: :int, default: 0 },
+                    8 => { name: :fatigue_min, type: :int, default: 0 },
+                    9 => { name: :fatigue_max, type: :int, default: 100 },
+                    10 => { name: :enemy_id, type: :int, default: 0 },
+                    11 => { name: :enemy_hp_min, type: :int, default: 0 },
+                    12 => { name: :enemy_hp_max, type: :int, default: 100 },
+                    13 => { name: :actor_id, type: :int, default: 1 },
+                    14 => { name: :actor_hp_min, type: :int, default: 0 },
+                    15 => { name: :actor_hp_max, type: :int, default: 100 },
+                    16 => { name: :turn_enemy_id, type: :int, default: 0 },
+                    17 => { name: :turn_enemy_a, type: :int, default: 0 },
+                    18 => { name: :turn_enemy_b, type: :int, default: 0 },
+                    19 => { name: :turn_actor_id, type: :int, default: 1 },
+                    20 => { name: :turn_actor_a, type: :int, default: 0 },
+                    21 => { name: :turn_actor_b, type: :int, default: 0 },
+                    22 => { name: :command_actor_id, type: :int, default: 1 },
+                    23 => { name: :command_id, type: :int, default: 1 },
+                  }
+                },
+                11 => { name: :event_size, type: :int, default: 4 },
+                12 => { name: :event, type: :event },
+              }
+            },
           }
         },
         16 => {
-          name: :Terrain, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E5%9C%B0%E5%BD%A2
+          name: :terrain, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :damage, type: :int, default: 0 },
+            3 => { name: :encounter_rate, type: :int, default: 100 },
+            4 => { name: :background_name, type: :string, default: '' },
+            5 => { name: :boat_pass, type: :bool, default: false },
+            6 => { name: :ship_pass, type: :bool, default: false },
+            7 => { name: :airship_pass, type: :bool, default: true },
+            9 => { name: :airship_land, type: :bool, default: true },
+            11 => { name: :bush_depth, type: :int, default: 0 },
+            15 => { name: :footstep, type: :string, default: '' },
+            16 => { name: :on_damage_se, type: :bool, default: false },
+            17 => { name: :background_type, type: :int, default: 0 },
+            21 => { name: :background_a_name, type: :string, default: '' },
+            22 => { name: :background_a_scrollh, type: :bool, default: false },
+            23 => { name: :background_a_scrollv, type: :bool, default: false },
+            24 => { name: :background_a_scrollh_speed, type: :int, default: 0 },
+            25 => { name: :background_a_scrollv_speed, type: :int, default: 0 },
+            30 => { name: :background_b, type: :bool, default: false },
+            31 => { name: :background_b_name, type: :string, default: '' },
+            32 => { name: :background_b_scrollh, type: :bool, default: false },
+            33 => { name: :background_b_scrollv, type: :bool, default: false },
+            34 => { name: :background_b_scrollh_speed, type: :int, default: 0 },
+            35 => { name: :background_b_scrollv_speed, type: :int, default: 0 },
+            40 => { name: :special_flags, type: :int, default: 0 },
+            41 => { name: :special_back_party, type: :int, default: 15 },
+            42 => { name: :special_back_enemies, type: :int, default: 10 },
+            43 => { name: :special_lateral_party, type: :int, default: 10 },
+            44 => { name: :special_lateral_enemies, type: :int, default: 5 },
+            45 => { name: :grid_location, type: :int, default: 0 },
+            46 => { name: :grid_top_y, type: :int, default: 0 },
+            47 => { name: :grid_elongation, type: :int, default: 375 },
+            48 => { name: :grid_inclination, type: :int, default: 16400 },
           }
         },
         17 => {
-          name: :Property, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E5%B1%9E%E6%80%A7
+          name: :property, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :type, type: :int, default: 0 },      # 0: weapon, 1: magic
+            11 => { name: :a_rate, type: :int, default: 300 },
+            12 => { name: :b_rate, type: :int, default: 200 },
+            13 => { name: :c_rate, type: :int, default: 100 },
+            14 => { name: :d_rate, type: :int, default: 50 },
+            15 => { name: :e_rate, type: :int, default: 0 },
           }
         },
         18 => {
-          name: :Situation, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%8A%B6%E6%85%8B
+          name: :situation, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :type, type: :int, default: 0 },      # 0: battle only, 1: also on map
+            3 => { name: :color, type: :int, default: 6 },
+            4 => { name: :priority, type: :int, default: 50 },
+            5 => { name: :restriction, type: :int, default: 0 },
+            11 => { name: :a_rate, type: :int, default: 100 },
+            12 => { name: :b_rate, type: :int, default: 80 },
+            13 => { name: :c_rate, type: :int, default: 60 },
+            14 => { name: :d_rate, type: :int, default: 30 },
+            15 => { name: :e_rate, type: :int, default: 0 },
+            21 => { name: :hold_turn, type: :int, default: 0 },
+            22 => { name: :auto_release_prob, type: :int, default: 0 },
+            23 => { name: :release_by_attack, type: :int, default: 0 },
+            30 => { name: :affect_type, type: :int, default: 2 },   # 0 halve/1 double/2 no change
+            31 => { name: :affect_attack, type: :bool, default: false },
+            32 => { name: :affect_defense, type: :bool, default: false },
+            33 => { name: :affect_spirit, type: :bool, default: false },
+            34 => { name: :affect_agility, type: :bool, default: false },
+            35 => { name: :reduce_hit_ratio, type: :int, default: 100 },
+            36 => { name: :avoid_attacks, type: :bool, default: false },      # 2003
+            37 => { name: :reflect_magic, type: :bool, default: false },      # 2003
+            38 => { name: :cursed, type: :bool, default: false },             # 2003
+            39 => { name: :battler_animation_id, type: :int, default: 6 },    # 2003
+            41 => { name: :restrict_skill, type: :bool, default: false },
+            42 => { name: :restrict_skill_level, type: :int, default: 0 },
+            43 => { name: :restrict_magic, type: :bool, default: false },
+            44 => { name: :restrict_magic_level, type: :int, default: 0 },
+            45 => { name: :hp_change_type, type: :int, default: 0 },          # 2003
+            46 => { name: :sp_change_type, type: :int, default: 0 },          # 2003
+            51 => { name: :message_actor, type: :string, default: '' },       # 2000
+            52 => { name: :message_enemy, type: :string, default: '' },       # 2000
+            53 => { name: :message_already, type: :string, default: '' },     # 2000
+            54 => { name: :message_affected, type: :string, default: '' },    # 2000
+            55 => { name: :message_recovery, type: :string, default: '' },    # 2000
+            61 => { name: :hp_change_max, type: :int, default: 0 },
+            62 => { name: :hp_change_val, type: :int, default: 0 },
+            63 => { name: :hp_change_map_steps, type: :int, default: 0 },
+            64 => { name: :hp_change_map_val, type: :int, default: 0 },
+            65 => { name: :sp_change_max, type: :int, default: 0 },
+            66 => { name: :sp_change_val, type: :int, default: 0 },
+            67 => { name: :sp_change_map_steps, type: :int, default: 0 },
+            68 => { name: :sp_change_map_val, type: :int, default: 0 },
           }
         },
         19 => {
-          name: :BattleAnime, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1
+          name: :battle_anime, type: :Array2D,
           elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :animation_name, type: :string, default: '' },
+            3 => { name: :large, type: :int, default: 0 },     # 2003; 0: 480x480, 1: 640x640
+            6 => {
+              name: :timings, type: :Array2D,
+              elements: {
+                1 => { name: :frame, type: :int, default: 0 },
+                2 => { name: :se, type: :Array1D, elements: SE },
+                3 => { name: :flash_scope, type: :int, default: 0 },   # 0 none/1 target/2 screen
+                4 => { name: :flash_red, type: :int, default: 31 },
+                5 => { name: :flash_green, type: :int, default: 31 },
+                6 => { name: :flash_blue, type: :int, default: 31 },
+                7 => { name: :flash_power, type: :int, default: 0 },
+                8 => { name: :screen_shaking, type: :int, default: 0 }, # 2003
+              }
+            },
+            9 => { name: :scope, type: :int, default: 0 },     # 0: single, 1: all
+            10 => { name: :position, type: :int, default: 1 }, # 0 head/1 center/2 feet
+            11 => { name: :grid, type: :bool, default: true },
+            12 => {
+              name: :frames, type: :Array2D,
+              elements: {
+                1 => {
+                  name: :cells, type: :Array2D,
+                  elements: {
+                    1 => { name: :visible, type: :bool, default: true },
+                    2 => { name: :cell_id, type: :int, default: 0 },
+                    3 => { name: :x, type: :int, default: 0 },
+                    4 => { name: :y, type: :int, default: 0 },
+                    5 => { name: :zoom, type: :int, default: 100 },
+                    6 => { name: :tone_red, type: :int, default: 100 },
+                    7 => { name: :tone_green, type: :int, default: 100 },
+                    8 => { name: :tone_blue, type: :int, default: 100 },
+                    9 => { name: :tone_gray, type: :int, default: 100 },
+                    10 => { name: :transparency, type: :int, default: 0 },
+                  }
+                },
+              }
+            },
           }
         },
         20 => {
-          name: :ChipSet, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%83%81%E3%83%83%E3%83%97%E3%82%BB%E3%83%83%E3%83%88
+          name: :chipset, type: :Array2D,
           elements: {
-            1 => {
-              name: :name, type: :string, default: ''
-            },
-            2 => {
-              name: :chipset_name, type: :string, default: ''
-            }
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :chipset_name, type: :string, default: '' },
+            3 => { name: :terrain_data, type: :int16_array },        # 地形ID (short[162])
+            4 => { name: :passable_data_lower, type: :int8_array },  # 下層通行 (byte[162])
+            5 => { name: :passable_data_upper, type: :int8_array },  # 上層通行 (byte[144])
+            11 => { name: :animation_type, type: :int, default: 0 }, # 水アニメパターン
+            12 => { name: :animation_speed, type: :int, default: 0 }, # 水アニメ速度
           }
         },
         21 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%94%A8%E8%AA%9E
           name: :term, type: :Array1D,
           elements: {
-            # Title Commands
-            114 => { name: :new_game, type: :string },
-            115 => { name: :continue, type: :string },
-            117 => { name: :shutdown, type: :string },
+            # Battle messages
+            1 => { name: :encounter, type: :string, default: '' },
+            2 => { name: :special_combat, type: :string, default: '' },
+            3 => { name: :escape_success, type: :string, default: '' },
+            4 => { name: :escape_failure, type: :string, default: '' },
+            5 => { name: :victory, type: :string, default: '' },
+            6 => { name: :defeat, type: :string, default: '' },
+            7 => { name: :exp_received, type: :string, default: '' },
+            8 => { name: :gold_received_a, type: :string, default: '' },
+            9 => { name: :gold_received_b, type: :string, default: '' },
+            10 => { name: :item_received, type: :string, default: '' },
+            11 => { name: :attacking, type: :string, default: '' },
+            12 => { name: :actor_critical, type: :string, default: '' },
+            13 => { name: :enemy_critical, type: :string, default: '' },
+            14 => { name: :defending, type: :string, default: '' },
+            15 => { name: :observing, type: :string, default: '' },
+            16 => { name: :focus, type: :string, default: '' },
+            17 => { name: :autodestruction, type: :string, default: '' },
+            18 => { name: :enemy_escape, type: :string, default: '' },
+            19 => { name: :enemy_transform, type: :string, default: '' },
+            20 => { name: :enemy_damaged, type: :string, default: '' },
+            21 => { name: :enemy_undamaged, type: :string, default: '' },
+            22 => { name: :actor_damaged, type: :string, default: '' },
+            23 => { name: :actor_undamaged, type: :string, default: '' },
+            24 => { name: :skill_failure_a, type: :string, default: '' },
+            25 => { name: :skill_failure_b, type: :string, default: '' },
+            26 => { name: :skill_failure_c, type: :string, default: '' },
+            27 => { name: :dodge, type: :string, default: '' },
+            28 => { name: :use_item, type: :string, default: '' },
+            29 => { name: :hp_recovery, type: :string, default: '' },
+            30 => { name: :parameter_increase, type: :string, default: '' },
+            31 => { name: :parameter_decrease, type: :string, default: '' },
+            32 => { name: :enemy_hp_absorbed, type: :string, default: '' },
+            33 => { name: :actor_hp_absorbed, type: :string, default: '' },
+            34 => { name: :resistance_increase, type: :string, default: '' },
+            35 => { name: :resistance_decrease, type: :string, default: '' },
+            36 => { name: :level_up, type: :string, default: '' },
+            37 => { name: :skill_learned, type: :string, default: '' },
+            38 => { name: :battle_start, type: :string, default: '' },  # 2003
+            39 => { name: :miss, type: :string, default: '' },          # 2003
 
-            # Battle Menu Commands
-            101 => { name: :battle_fight, type: :string },
-            102 => { name: :battle_auto, type: :string },
-            103 => { name: :battle_escape, type: :string },
-            104 => { name: :battle_attack, type: :string },
-            105 => { name: :battle_defend, type: :string },
-            106 => { name: :battle_item, type: :string },
-            107 => { name: :battle_skill, type: :string },
-            108 => { name: :battle_equipment, type: :string },
-            110 => { name: :battle_save, type: :string },
-            112 => { name: :battle_end_game, type: :string },
+            # Shop A
+            41 => { name: :shop_greeting1, type: :string, default: '' },
+            42 => { name: :shop_regreeting1, type: :string, default: '' },
+            43 => { name: :shop_buy1, type: :string, default: '' },
+            44 => { name: :shop_sell1, type: :string, default: '' },
+            45 => { name: :shop_leave1, type: :string, default: '' },
+            46 => { name: :shop_buy_select1, type: :string, default: '' },
+            47 => { name: :shop_buy_number1, type: :string, default: '' },
+            48 => { name: :shop_purchased1, type: :string, default: '' },
+            49 => { name: :shop_sell_select1, type: :string, default: '' },
+            50 => { name: :shop_sell_number1, type: :string, default: '' },
+            51 => { name: :shop_sold1, type: :string, default: '' },
 
-            # Save/Load Related
-            146 => { name: :save_file_select, type: :string },
-            147 => { name: :load_file_select, type: :string },
-            148 => { name: :file, type: :string },
-            151 => { name: :end_game_confirm, type: :string },
-            152 => { name: :yes, type: :string },
-            153 => { name: :no, type: :string },
+            # Shop B
+            54 => { name: :shop_greeting2, type: :string, default: '' },
+            55 => { name: :shop_regreeting2, type: :string, default: '' },
+            56 => { name: :shop_buy2, type: :string, default: '' },
+            57 => { name: :shop_sell2, type: :string, default: '' },
+            58 => { name: :shop_leave2, type: :string, default: '' },
+            59 => { name: :shop_buy_select2, type: :string, default: '' },
+            60 => { name: :shop_buy_number2, type: :string, default: '' },
+            61 => { name: :shop_purchased2, type: :string, default: '' },
+            62 => { name: :shop_sell_select2, type: :string, default: '' },
+            63 => { name: :shop_sell_number2, type: :string, default: '' },
+            64 => { name: :shop_sold2, type: :string, default: '' },
 
-            # Status Terms
-            123 => { name: :level, type: :string },
-            124 => { name: :hp, type: :string },
-            125 => { name: :mp, type: :string },
-            126 => { name: :normal_status, type: :string },
-            127 => { name: :exp_short, type: :string },
-            128 => { name: :level_short, type: :string },
-            129 => { name: :hp_short, type: :string },
-            130 => { name: :mp_short, type: :string },
-            131 => { name: :mp_cost, type: :string },
-            132 => { name: :attack, type: :string },
-            133 => { name: :defense, type: :string },
-            134 => { name: :mind, type: :string },
-            135 => { name: :agility, type: :string },
-            136 => { name: :weapon, type: :string },
-            137 => { name: :shield, type: :string },
-            138 => { name: :armor, type: :string },
-            139 => { name: :helmet, type: :string },
-            140 => { name: :accessory, type: :string },
+            # Shop C
+            67 => { name: :shop_greeting3, type: :string, default: '' },
+            68 => { name: :shop_regreeting3, type: :string, default: '' },
+            69 => { name: :shop_buy3, type: :string, default: '' },
+            70 => { name: :shop_sell3, type: :string, default: '' },
+            71 => { name: :shop_leave3, type: :string, default: '' },
+            72 => { name: :shop_buy_select3, type: :string, default: '' },
+            73 => { name: :shop_buy_number3, type: :string, default: '' },
+            74 => { name: :shop_purchased3, type: :string, default: '' },
+            75 => { name: :shop_sell_select3, type: :string, default: '' },
+            76 => { name: :shop_sell_number3, type: :string, default: '' },
+            77 => { name: :shop_sold3, type: :string, default: '' },
+
+            # Inn A
+            80 => { name: :inn_a_greeting_1, type: :string, default: '' },
+            81 => { name: :inn_a_greeting_2, type: :string, default: '' },
+            82 => { name: :inn_a_greeting_3, type: :string, default: '' },
+            83 => { name: :inn_a_accept, type: :string, default: '' },
+            84 => { name: :inn_a_cancel, type: :string, default: '' },
+
+            # Inn B
+            85 => { name: :inn_b_greeting_1, type: :string, default: '' },
+            86 => { name: :inn_b_greeting_2, type: :string, default: '' },
+            87 => { name: :inn_b_greeting_3, type: :string, default: '' },
+            88 => { name: :inn_b_accept, type: :string, default: '' },
+            89 => { name: :inn_b_cancel, type: :string, default: '' },
+
+            # Item / currency labels
+            92 => { name: :possessed_items, type: :string, default: '' },
+            93 => { name: :equipped_items, type: :string, default: '' },
+            95 => { name: :gold, type: :string, default: '' },
+
+            # Battle command menu
+            101 => { name: :battle_fight, type: :string, default: '' },
+            102 => { name: :battle_auto, type: :string, default: '' },
+            103 => { name: :battle_escape, type: :string, default: '' },
+            104 => { name: :battle_attack, type: :string, default: '' },
+            105 => { name: :battle_defend, type: :string, default: '' },
+            106 => { name: :battle_item, type: :string, default: '' },
+            107 => { name: :battle_skill, type: :string, default: '' },
+            108 => { name: :battle_equipment, type: :string, default: '' },
+            110 => { name: :battle_save, type: :string, default: '' },
+            112 => { name: :battle_end_game, type: :string, default: '' },
+
+            # Title menu
+            114 => { name: :new_game, type: :string, default: '' },
+            115 => { name: :continue, type: :string, default: '' },
+            117 => { name: :shutdown, type: :string, default: '' },
+
+            # Main menu (2003)
+            118 => { name: :status, type: :string, default: '' },
+            119 => { name: :row, type: :string, default: '' },
+            120 => { name: :order, type: :string, default: '' },
+            121 => { name: :wait_on, type: :string, default: '' },
+            122 => { name: :wait_off, type: :string, default: '' },
+
+            # Status terms
+            123 => { name: :level, type: :string, default: '' },
+            124 => { name: :hp, type: :string, default: '' },
+            125 => { name: :mp, type: :string, default: '' },
+            126 => { name: :normal_status, type: :string, default: '' },
+            127 => { name: :exp_short, type: :string, default: '' },
+            128 => { name: :level_short, type: :string, default: '' },
+            129 => { name: :hp_short, type: :string, default: '' },
+            130 => { name: :mp_short, type: :string, default: '' },
+            131 => { name: :mp_cost, type: :string, default: '' },
+            132 => { name: :attack, type: :string, default: '' },
+            133 => { name: :defense, type: :string, default: '' },
+            134 => { name: :mind, type: :string, default: '' },
+            135 => { name: :agility, type: :string, default: '' },
+            136 => { name: :weapon, type: :string, default: '' },
+            137 => { name: :shield, type: :string, default: '' },
+            138 => { name: :armor, type: :string, default: '' },
+            139 => { name: :helmet, type: :string, default: '' },
+            140 => { name: :accessory, type: :string, default: '' },
+
+            # Save / load
+            146 => { name: :save_file_select, type: :string, default: '' },
+            147 => { name: :load_file_select, type: :string, default: '' },
+            148 => { name: :file, type: :string, default: '' },
+            151 => { name: :end_game_confirm, type: :string, default: '' },
+            152 => { name: :yes, type: :string, default: '' },
+            153 => { name: :no, type: :string, default: '' },
           }
         },
         22 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0
           name: :system, type: :Array1D,
           elements: {
-            17 => { name: :title, type: :string },
-            # System/ graphic that supplies the window skin (background, frame
+            10 => { name: :maker_version, type: :int },                    # 使用ツクールバージョン
+            11 => { name: :boat_name, type: :string, default: '' },
+            12 => { name: :ship_name, type: :string, default: '' },
+            13 => { name: :airship_name, type: :string, default: '' },
+            14 => { name: :boat_index, type: :int, default: 0 },
+            15 => { name: :ship_index, type: :int, default: 0 },
+            16 => { name: :airship_index, type: :int, default: 0 },
+            17 => { name: :title, type: :string, default: '' },            # タイトルグラフィック
+            18 => { name: :gameover_name, type: :string, default: '' },
+            # System graphic that supplies the window skin (background, frame
             # border and selection cursor).
-            19 => { name: :system_graphic, type: :string }
+            19 => { name: :system_graphic, type: :string },                # システムグラフィック
+            20 => { name: :system2_name, type: :string, default: '' },     # 2003
+            21 => { name: :party_size, type: :int, default: 0 },
+            22 => { name: :party, type: :int16_array },                    # 初期パーティ (short[])
+            26 => { name: :menu_commands_size, type: :int, default: 0 },   # 2003
+            27 => { name: :menu_commands, type: :int16_array },            # 2003
+
+            # BGM
+            31 => { name: :title_music, type: :Array1D, elements: BGM },
+            32 => { name: :battle_music, type: :Array1D, elements: BGM },
+            33 => { name: :battle_end_music, type: :Array1D, elements: BGM },
+            34 => { name: :inn_music, type: :Array1D, elements: BGM },
+            35 => { name: :boat_music, type: :Array1D, elements: BGM },
+            36 => { name: :ship_music, type: :Array1D, elements: BGM },
+            37 => { name: :airship_music, type: :Array1D, elements: BGM },
+            38 => { name: :gameover_music, type: :Array1D, elements: BGM },
+
+            # Sound effects
+            41 => { name: :cursor_se, type: :Array1D, elements: SE },
+            42 => { name: :decision_se, type: :Array1D, elements: SE },
+            43 => { name: :cancel_se, type: :Array1D, elements: SE },
+            44 => { name: :buzzer_se, type: :Array1D, elements: SE },
+            45 => { name: :battle_se, type: :Array1D, elements: SE },
+            46 => { name: :escape_se, type: :Array1D, elements: SE },
+            47 => { name: :enemy_attack_se, type: :Array1D, elements: SE },
+            48 => { name: :enemy_damaged_se, type: :Array1D, elements: SE },
+            49 => { name: :actor_damaged_se, type: :Array1D, elements: SE },
+            50 => { name: :dodge_se, type: :Array1D, elements: SE },
+            51 => { name: :enemy_death_se, type: :Array1D, elements: SE },
+            52 => { name: :item_se, type: :Array1D, elements: SE },
+
+            # Transitions
+            61 => { name: :transition_out, type: :int, default: 0 },
+            62 => { name: :transition_in, type: :int, default: 0 },
+            63 => { name: :battle_start_fadeout, type: :int, default: 0 },
+            64 => { name: :battle_start_fadein, type: :int, default: 0 },
+            65 => { name: :battle_end_fadeout, type: :int, default: 0 },
+            66 => { name: :battle_end_fadein, type: :int, default: 0 },
+
+            # System graphic settings
+            71 => { name: :message_stretch, type: :int, default: 0 },
+            72 => { name: :font_id, type: :int, default: 0 },
+
+            # Battle animation editor leftovers
+            81 => { name: :selected_condition, type: :int, default: 1 },
+            82 => { name: :selected_hero, type: :int, default: 1 },
+
+            # Battle test
+            84 => { name: :battle_test_background, type: :string, default: '' },
+            85 => {
+              name: :battle_test_data, type: :Array2D,
+              elements: {
+                1 => { name: :actor_id, type: :int, default: 1 },
+                2 => { name: :level, type: :int, default: 1 },
+                11 => { name: :weapon_id, type: :int, default: 0 },
+                12 => { name: :shield_id, type: :int, default: 0 },
+                13 => { name: :armor_id, type: :int, default: 0 },
+                14 => { name: :helmet_id, type: :int, default: 0 },
+                15 => { name: :accessory_id, type: :int, default: 0 },
+              }
+            },
+
+            91 => { name: :saved_times, type: :int, default: 0 },
+
+            # Battle test position (2003)
+            94 => { name: :battle_test_terrain, type: :int, default: 0 },
+            95 => { name: :battle_test_formation, type: :int, default: 0 },
+            96 => { name: :battle_test_condition, type: :int, default: 0 },
+
+            # Decorative window (2003)
+            99 => { name: :show_frame, type: :bool, default: false },
+            100 => { name: :frame_name, type: :string, default: '' },
+            101 => { name: :invert_animations, type: :bool, default: false },
+
+            111 => { name: :show_title, type: :bool, default: true },
           }
         },
         23 => {
-          name: :Switch, type: :Array2D,
+          name: :switch, type: :Array2D,
           elements: {
-            1 => {
-              name: :name, type: :string, default: ''
-            }
+            1 => { name: :name, type: :string, default: '' },
           }
         },
         24 => {
-          name: :Variable, type: :Array2D,
+          name: :variable, type: :Array2D,
           elements: {
-            1 => {
-              name: :name, type: :string, default: ''
-            }
+            1 => { name: :name, type: :string, default: '' },
           }
         },
-        26 => {
-          name: :CommonEvent, type: :Array2D,
-          elements: COMMON_EVENT
-        },
-        27 => {
-          name: :CommonEvent2, type: :Array2D,
-          elements: COMMON_EVENT
-        },
-        28 => {
-          name: :CommonEvent3, type: :Array2D,
-          elements: COMMON_EVENT
-        },
-        29 => {
-          name: :CommonEvent4, type: :Array2D,
+        25 => {
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B3%E3%83%A2%E3%83%B3%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88
+          name: :common_event, type: :Array2D,
           elements: COMMON_EVENT
         },
         30 => {
-          name: :BattleCommand, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E8%81%B7%E6%A5%AD
+          name: :job, type: :Array2D,
           elements: {
-          }
-        },
-        31 => {
-          name: :Job, type: :Array2D,
-          elements: {
+            1 => { name: :name, type: :string, default: '' },
+            21 => { name: :double_hand, type: :bool, default: false },       # 二刀流
+            22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
+            23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
+            24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
+            31 => { name: :parameters, type: :int16_array },                 # 能力値 (short[6][level])
+            41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
+            42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
+            43 => { name: :exp_correction, type: :int, default: 0 },
+            62 => { name: :battler_animation, type: :int, default: 1 },
+            63 => { name: :skills, type: :Array2D, elements: LEARNING },
+            71 => { name: :state_ranks_size, type: :int, default: 0 },
+            72 => { name: :state_ranks, type: :int8_array },
+            73 => { name: :attribute_ranks_size, type: :int, default: 0 },
+            74 => { name: :attribute_ranks, type: :int8_array },
+            80 => { name: :battle_commands, type: :int32_array },
           }
         },
         32 => {
-          name: :Job, type: :Array2D,
+          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1%EF%BC%92
+          name: :battle_anime2, type: :Array2D,
           elements: {
-          }
-        },
-        33 => {
-          name: :BattleAnime2, type: :Array2D,
-          elements: {
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :battler_name, type: :string, default: '' },
+            3 => { name: :speed, type: :int, default: 0 },
           }
         },
       },

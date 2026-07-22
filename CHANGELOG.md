@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Filled in the LCF database schemas (`mruby-lcf/mrblib/schema.rb`) from the
+  VIPRPG 200X analysis notes: skills, items, enemies, enemy groups, terrain,
+  attributes, states, battle animations, classes, and the full terminology and
+  system sections, plus switches/variables
+  - Documented the decision in `docs/adr/0002-lcf-database-schema-fields.md`
 - Terminal gaming support using the DEC sixel graphics protocol
   - Added `--sixel` flag to render frames to a sixel-capable terminal instead
     of opening an SDL window, plus `--sixel_scale` for integer upscaling
