@@ -40,6 +40,18 @@ All notable changes to this project will be documented in this file.
   - Implemented menu navigation with keyboard input (up/down arrows)
   - Added selection highlighting with cursor
   - Implemented basic menu item selection functionality
+- RPG Maker 2000 style windows
+  - `RGSS::Window` now renders a real windowskin: a stretched 32x32 background
+    tile plus the 8px frame border (corners and edges) taken from the System
+    graphic, with the selection cursor and contents composited on top
+  - Falls back to a plain dark panel with a light border when no windowskin can
+    be loaded
+  - Parsed the System graphic name (`system_graphic`, LDB chunk 19) from the
+    database and used it as the title menu windowskin
+  - Sized and centred the title menu window to fit its labels, matching the
+    reference title layout
+  - Added `RGSS::Bitmap#stretch_blt` (nearest-neighbour scaled blit with
+    opacity alpha-blending) plus a test
 - Input module implementation
   - Added key constants (UP, DOWN, LEFT, RIGHT, A, B, C, etc.)
   - Implemented input state tracking (press, trigger, repeat)

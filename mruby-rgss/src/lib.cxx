@@ -607,6 +607,57 @@ mrb_value bmp_blt(mrb_state* M, V self) {
   return self;
 }
 
+// Copy src_rect from `src` into dest_rect of self, scaling with nearest
+// neighbour sampling. Mirrors RGSS's Bitmap#stretch_blt and is used to stretch
+// the small windowskin pieces (32x32 background, 16x8/8x16 border edges) over
+// an arbitrarily sized window.
+mrb_value bmp_stretch_blt(mrb_state* M, V self) {
+  V drect_v, srect_v;
+  Bitmap* src;
+  mrb_int opacity = 255;
+  mrb_get_args(M, "odo|i", &drect_v, &src, &DataType<Bitmap>::data_type,
+               &srect_v, &opacity);
+  Bitmap& dst = bmp_self(M, self);
+  Rect& dr = DataType<Rect>::get(M, drect_v);
+  Rect& sr = DataType<Rect>::get(M, srect_v);
+  if (opacity < 0)
+    opacity = 0;
+  if (opacity > 255)
+    opacity = 255;
+  if (dr.width <= 0 || dr.height <= 0 || sr.width <= 0 || sr.height <= 0)
+    return self;
+  for (mrb_int j = 0; j < dr.height; ++j) {
+    const mrb_int dy = dr.y + j;
+    if (dy < 0 || dy >= dst.height)
+      continue;
+    const mrb_int sy = sr.y + j * sr.height / dr.height;
+    for (mrb_int i = 0; i < dr.width; ++i) {
+      const mrb_int dx = dr.x + i;
+      if (dx < 0 || dx >= dst.width)
+        continue;
+      const mrb_int sx = sr.x + i * sr.width / dr.width;
+      if (sx < 0 || sy < 0 || sx >= src->width || sy >= src->height)
+        continue;
+      int r, g, bl, a;
+      bmp_read(*src, sx, sy, r, g, bl, a);
+      const int alpha = a * opacity / 255;
+      if (alpha <= 0)
+        continue;
+      if (alpha >= 255) {
+        bmp_put(dst, dx, dy, r, g, bl, 255);
+        continue;
+      }
+      int dr2, dg, db, da;
+      bmp_read(dst, dx, dy, dr2, dg, db, da);
+      const int inv = 255 - alpha;
+      bmp_put(dst, dx, dy, (r * alpha + dr2 * inv) / 255,
+              (g * alpha + dg * inv) / 255, (bl * alpha + db * inv) / 255,
+              std::max(da, alpha));
+    }
+  }
+  return self;
+}
+
 auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
   auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
     return e.codepoint < v;
@@ -1107,6 +1158,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
+                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
                     MRB_ARGS_REQ(5) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "text_size", bmp_text_size, MRB_ARGS_REQ(1));
