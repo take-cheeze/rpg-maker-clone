@@ -113,14 +113,19 @@ module LCF
           }
         },
         20 => {
-          name: :ChipSet, type: :Array2D,
+          name: :chipset, type: :Array2D,
           elements: {
             1 => {
               name: :name, type: :string, default: ''
             },
             2 => {
               name: :chipset_name, type: :string, default: ''
-            }
+            },
+            # Terrain id per chip and the lower/upper passability bit tables
+            # (bit 0 down, 1 left, 2 right, 3 up; a set bit means passable).
+            3 => { name: :terrain_data, type: :short_array },
+            4 => { name: :passable_data_lower, type: :short_array },
+            5 => { name: :passable_data_upper, type: :short_array },
           }
         },
         21 => {

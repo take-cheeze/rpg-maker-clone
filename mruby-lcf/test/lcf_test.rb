@@ -67,6 +67,15 @@ assert "LCF::Database nested Array2D actor table + int16_array status" do
   assert_equal 60, st[:agi]
 end
 
+assert "LCF::Database chipset passability table" do
+  chip = lcf_array1d([lcf_str_field(2, "World"),
+                      lcf_shorts_field(4, [0x0f, 0x00, 0x08])])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(20, lcf_array2d([[1, chip]]))])))
+  assert_equal "World", db.chipset[1].chipset_name
+  assert_equal [0x0f, 0x00, 0x08], db.chipset[1].passable_data_lower
+end
+
 assert "LCF::MapTree multi-part parse exposes start position" do
   props = lcf_array2d([[1, lcf_array1d([lcf_str_field(1, "MAP1")])]])
   tree = lcf_tree([1], 1)

@@ -7,6 +7,14 @@
 - Shows a menu with options for New Game, Continue, and Shutdown
 - Supports keyboard navigation (up/down) and selection (enter/Z)
 
+### Map exploration
+- "New Game" builds the initial party from the database, reads the start
+  position from the map tree, loads the starting map and enters the map scene
+- Walk the party leader around the map with the arrow keys / `WASD`: grid
+  movement with smooth stepping, walk animation, tile/edge/event collision and a
+  camera that follows the player
+- Tiles are currently drawn as colour blocks (real chipset rendering is planned)
+
 ### Terminal gaming (sixel)
 - Render the game to any sixel-capable terminal instead of an SDL window
 - Run with `--sixel` (optionally `--sixel_scale=N` to upscale the picture):
@@ -23,6 +31,6 @@
 ## TODO
 - Run zip file directly
 - Editor with [imgui](https://github.com/ocornut/imgui)
-- Finish New Game: the party, start position and starting map are now loaded on
-  "New Game"; the map/player renderer (`Scene::Map`) is still to come
+- Real chipset tile rendering (lower/upper chip graphics, autotiles, tile
+  animation); the map scene currently draws placeholder colour-block tiles
 - Implement Continue functionality (needs the `LCF::SaveData` schema)

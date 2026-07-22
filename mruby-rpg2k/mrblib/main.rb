@@ -202,23 +202,225 @@ class RPG2k
         @map_tree = parent.map_tree
       end
       def update ; end
+      def dispose ; end
 
       attr_reader :parent, :db, :map_tree
     end
 
-    # Play scene that hosts a loaded map, the party and (eventually) the tilemap
-    # and player renderer. For now it only holds the freshly built game state:
-    # the map/character rendering and movement are the next step on the critical
-    # path (see docs/TODO.md), so update is intentionally a no-op placeholder.
+    # Play scene: renders the loaded map and lets the party leader walk around
+    # it. Tiles are drawn as solid colour blocks derived from their tile id (a
+    # placeholder until real chipset blitting lands — see docs/TODO.md); the
+    # player is drawn from its real CharSet graphic. Movement is grid based with
+    # smooth pixel interpolation, walk animation, tile/edge/event collision and
+    # a camera that follows the player and clamps to the map edges.
     class Map < Base
+      TILE = Game::TILE
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      # Visible tiles plus a one-tile margin so partially scrolled edges show.
+      COLS = SCREEN_W / TILE + 1
+      ROWS = SCREEN_H / TILE + 1
+      # Pixels moved per frame while stepping between tiles (must divide TILE).
+      SPEED = 2
+
       def initialize parent, state
         super parent
         @state = state
+        @map = state.map
+        @chipset = build_chipset
+        @charset = load_charset
+        @event_tiles = collect_event_tiles
+
+        # Player pixel position and step state.
+        @moving = false
+        @move_count = 0
+        @dest_x = @state.x
+        @dest_y = @state.y
+        @tile_colors = {}
+        @last_frame = nil
+
+        setup_sprites
+        render
       end
 
       attr_reader :state
 
-      def update; end
+      def dispose
+        [@lower_sprite, @upper_sprite, @player_sprite].each do |s|
+          s.dispose if s
+        end
+      end
+
+      def update
+        step_movement
+        render
+      end
+
+      private
+
+      def setup_sprites
+        @lower_sprite = Sprite.new
+        @lower_sprite.z = 0
+        @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @lower_sprite.bitmap = @lower_bmp
+
+        @upper_sprite = Sprite.new
+        @upper_sprite.z = 200
+        @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_sprite.bitmap = @upper_bmp
+
+        @player_sprite = Sprite.new
+        @player_sprite.z = 100
+        @player_bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+        @player_sprite.bitmap = @player_bmp
+        # Fallback marker when the CharSet graphic is unavailable.
+        unless @charset
+          @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
+                                Color.new(240, 240, 80, 255)
+        end
+      end
+
+      def build_chipset
+        Game::ChipSet.new(@db, @map.chipset_id)
+      rescue StandardError
+        nil
+      end
+
+      # Load the leader's CharSet graphic. Returns nil (falling back to a marker)
+      # when there is no party or the file is missing.
+      def load_charset
+        leader = @state.party.leader
+        return nil if leader.nil?
+        name = leader.charset_name
+        @charset_index = leader.charset_index || 0
+        return nil if name.nil? || name.empty?
+        Bitmap.new "CharSet/#{name}"
+      rescue StandardError
+        nil
+      end
+
+      def collect_event_tiles
+        tiles = {}
+        evs = @map.unit.events
+        evs.each { |_id, ev| tiles[[ev.x, ev.y]] = true } if evs
+        tiles
+      rescue StandardError
+        {}
+      end
+
+      def step_movement
+        if @moving
+          @move_count += SPEED
+          if @move_count >= TILE
+            @state.x = @dest_x
+            @state.y = @dest_y
+            @moving = false
+            @move_count = 0
+          end
+          return
+        end
+
+        dir = Input.dir4
+        return if dir == 0
+
+        @state.direction = dir
+        nx, ny = target_tile(@state.x, @state.y, dir)
+        return unless passable?(nx, ny, dir)
+
+        @dest_x = nx
+        @dest_y = ny
+        @moving = true
+        @move_count = 0
+      end
+
+      def target_tile(x, y, dir)
+        case dir
+        when 2 then [x, y + 1]
+        when 4 then [x - 1, y]
+        when 6 then [x + 1, y]
+        when 8 then [x, y - 1]
+        else [x, y]
+        end
+      end
+
+      def passable?(x, y, dir)
+        return false unless @map.in_bounds?(x, y)
+        return false if @event_tiles[[x, y]]
+        return true if @chipset.nil?
+        @chipset.passable?(@map.lower(x, y), dir)
+      end
+
+      # Current player position in map pixels, interpolated during a step.
+      def player_pixel
+        if @moving
+          [@state.x * TILE + (@dest_x - @state.x) * @move_count,
+           @state.y * TILE + (@dest_y - @state.y) * @move_count]
+        else
+          [@state.x * TILE, @state.y * TILE]
+        end
+      end
+
+      def render
+        px, py = player_pixel
+        cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
+        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+
+        draw_layers cam_x, cam_y
+
+        @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+        @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE)
+        draw_player_frame
+      end
+
+      def draw_layers cam_x, cam_y
+        @lower_bmp.clear
+        @upper_bmp.clear
+        first_tx = cam_x / TILE
+        first_ty = cam_y / TILE
+        ox = cam_x % TILE
+        oy = cam_y % TILE
+
+        (0...ROWS).each do |ry|
+          (0...COLS).each do |rx|
+            tx = first_tx + rx
+            ty = first_ty + ry
+            dx = rx * TILE - ox
+            dy = ry * TILE - oy
+
+            lower = @map.lower(tx, ty)
+            @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
+
+            upper = @map.upper(tx, ty)
+            @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
+
+            if @event_tiles[[tx, ty]]
+              @lower_bmp.fill_rect dx + 3, dy + 3, TILE - 6, TILE - 6,
+                                   Color.new(230, 90, 90, 255)
+            end
+          end
+        end
+      end
+
+      def draw_player_frame
+        return unless @charset
+        pat = @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
+        frame = [@state.direction, pat]
+        return if frame == @last_frame
+        @last_frame = frame
+
+        rx, ry, rw, rh = Game::CharSet.frame_rect(@charset_index, @state.direction, pat)
+        @player_bmp.clear
+        @player_bmp.blt 0, 0, @charset, Rect.new(rx, ry, rw, rh)
+      end
+
+      # Deterministic, memoised colour for a tile id so distinct tiles read as
+      # distinct blocks. Empty (0/nil) tiles are a dark "void".
+      def tile_color id
+        return (@void ||= Color.new(16, 16, 28, 255)) if id.nil? || id == 0
+        @tile_colors[id] ||= Color.new(40 + (id * 37) % 180,
+                                       40 + (id * 71) % 180,
+                                       60 + (id * 143) % 160, 255)
+      end
     end
 
     class Title < Base
@@ -292,6 +494,11 @@ class RPG2k
         @window.update
       end
 
+      def dispose
+        @title.dispose
+        @window.dispose
+      end
+
       private
 
       # Load the System/ windowskin declared in the database. Returns nil when
@@ -343,7 +550,11 @@ class RPG2k
     state = Game::State.new Game::Party.new(@db), init.initial_map_id,
                             init.initial_x, init.initial_y
     state.map = load_map state.map_id
-    push Scene::Map.new(self, state)
+    # Build the play scene first; only tear down the title once it succeeds so a
+    # data problem leaves the title intact instead of a blank screen.
+    scene = Scene::Map.new(self, state)
+    @scenes.last.dispose
+    @scenes = [scene]
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"

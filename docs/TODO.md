@@ -31,15 +31,21 @@ The work below is roughly ordered by the critical path to a walkable game
   (`Game::Party`/`Game::Actor`), reads the start position from the map tree,
   loads the starting map and pushes `Scene::Map` (replaces the TODO in
   `Scene::Title#update`)
-- 🚧 Map scene (`Scene::Map`) — created as a placeholder that holds the running
-  `Game::State`; still needs to host the tilemap, player and events (renderer)
+- ✅ Map scene (`Scene::Map`) — hosts the running `Game::State`, renders the
+  lower/upper tile layers, draws the party leader from their CharSet graphic,
+  and supports grid movement with pixel interpolation, walk animation,
+  edge/tile/event collision and an edge-clamped follow camera
 
 #### Map & characters
-- Tilemap rendering — real `RGSS::Tilemap`: chipset lower/upper layers, tile
-  animation, and passability/terrain lookup
-- Character sprites — charset graphics (8-direction, walk frames) for the
-  player and NPCs
-- Movement & collision — player walking, tile collision, move-route processing
+- 🚧 Tilemap rendering — `Scene::Map` currently draws each tile as a solid
+  colour block derived from its tile id (a navigable placeholder) and reads
+  chipset passability for collision; real chipset blitting (lower/upper chip
+  graphics, autotile assembly, tile animation) is the remaining work
+- 🚧 Character sprites — the party leader renders from its CharSet graphic
+  (`Game::CharSet`, 4-direction, 3 walk frames); NPC/event sprites are drawn as
+  markers for now
+- ✅ Movement & collision — grid movement with pixel interpolation, walk
+  animation and edge/tile/event collision. Move-route processing still to come
 
 #### Event system
 - Event pages — page conditions (switch/variable/item) and trigger types

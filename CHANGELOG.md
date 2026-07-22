@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Playable map scene (`Scene::Map`): after "New Game" the party leader can walk
+  around the starting map. It renders the lower/upper tile layers (as colour
+  blocks derived from tile ids, pending real chipset blitting), draws the leader
+  from their `CharSet` graphic, and supports grid movement with pixel
+  interpolation, walk animation, edge/tile/event collision and an edge-clamped
+  follow camera. Chipset passability (`ChipSet/*` `passable_data_lower`) drives
+  tile collision; the title screen is disposed on transition
 - LCF map (`.lmu`) parsing: a `MAP_UNIT` schema for `LCF::MapUnit` covering
   dimensions, chipset id, the lower/upper tile layers and the event table
 - New Game now boots into gameplay setup: `RPG2k#start_new_game` builds the

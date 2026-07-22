@@ -5,9 +5,86 @@
 # "New Game" logic (building a party and locating the start map) independent of
 # the not-yet-implemented map renderer, and unit-testable on its own.
 module Game
+  TILE = 16 # tile size in pixels
+
+  # Pixel geometry of a character-set (CharSet/*.png) graphic. A charset holds
+  # 4x2 = 8 character templates; each template is 3 walk frames wide by 4
+  # directions tall, and each frame is 24x32. `pattern` is the walk frame (the
+  # standing pose is 1); direction uses RPG2000's numpad convention.
+  module CharSet
+    WIDTH = 24
+    HEIGHT = 32
+    # numpad direction -> row within a character template (top to bottom:
+    # up, right, down, left).
+    DIR_ROW = { 8 => 0, 6 => 1, 2 => 2, 4 => 3 }.freeze
+    # Walk animation: middle, right, middle, left.
+    WALK_PATTERNS = [1, 2, 1, 0].freeze
+
+    # Source rectangle [x, y, w, h] of one frame for character `index` (0..7).
+    def self.frame_rect(index, dir, pattern)
+      col = index % 4
+      row = index / 4
+      bx = col * (WIDTH * 3)
+      by = row * (HEIGHT * 4)
+      [bx + pattern * WIDTH, by + (DIR_ROW[dir] || 2) * HEIGHT, WIDTH, HEIGHT]
+    end
+  end
+
+  def self.clamp(v, lo, hi)
+    return lo if v < lo
+    return hi if v > hi
+    v
+  end
+
+  # Top-left pixel of the view so the player is centred, clamped so the camera
+  # never scrolls past the edges of a map smaller/larger than the screen.
+  def self.camera_offset(player_px, screen_px, map_px)
+    max = map_px - screen_px
+    max = 0 if max < 0
+    clamp(player_px - screen_px / 2, 0, max)
+  end
+
+  # A chipset: its tile graphic name plus the lower-layer passability table.
+  # Passability is keyed by a chip index derived from the tile id following the
+  # EasyRPG block layout; unknown/out-of-range tiles are treated as passable so
+  # collision degrades safely.
+  class ChipSet
+    # numpad direction -> passability bit.
+    DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
+
+    attr_reader :name, :graphic
+
+    def initialize(db, id)
+      c = db.chipset[id]
+      @name = c ? c.name : ''
+      @graphic = c ? c.chipset_name : ''
+      @passable_lower = c ? c.passable_data_lower : nil
+    end
+
+    # Chip index into the lower passability table for a lower-layer tile id.
+    def self.lower_index(tile_id)
+      return nil if tile_id.nil?
+      if tile_id >= 10000 then 18 + (tile_id - 10000)
+      elsif tile_id >= 5000 then 6 + (tile_id - 5000) / 50
+      elsif tile_id >= 3000 then 3 + (tile_id - 3000) / 50
+      else tile_id / 1000
+      end
+    end
+
+    # Can a character enter a tile with the given lower-layer id moving in `dir`?
+    def passable?(tile_id, dir)
+      return true if @passable_lower.nil?
+      idx = ChipSet.lower_index(tile_id)
+      return true if idx.nil? || idx < 0 || idx >= @passable_lower.size
+      flags = @passable_lower[idx]
+      return true if flags.nil?
+      (flags & (DIR_BIT[dir] || 0)) != 0
+    end
+  end
+
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
-    attr_reader :id, :name, :level
+    attr_reader :id, :name, :level, :charset_name, :charset_index
     attr_accessor :hp, :mp
     attr_reader :max_hp, :max_mp, :atk, :def, :int, :agi
 
@@ -17,6 +94,8 @@ module Game
       raise "No such actor: #{id}" if a.nil?
 
       @name = a.name
+      @charset_name = a.charset_name
+      @charset_index = a.charset_index
       @level = a.initial_level
       st = a.status || {}
       @max_hp = st[:max_hp] || 0
