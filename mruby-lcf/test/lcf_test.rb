@@ -89,6 +89,15 @@ assert "LCF::MapTree multi-part parse exposes start position" do
   assert_equal "MAP1", lmt.map_properties[1].name
 end
 
+assert "LCF decodes boolean chunks (1 byte 0/1)" do
+  ce = lcf_array1d([lcf_int_field(11, 3), lcf_field(12, "\x01"),
+                    lcf_int_field(13, 7)])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(26, lcf_array2d([[1, ce]]))])))
+  assert_true db.common_events[1].need_flag
+  assert_equal 3, db.common_events[1].start_term
+end
+
 assert "LCF.parse_event_commands decodes an event command list" do
   def lcf_command(code, indent, str, params)
     lcf_ber(code) + lcf_ber(indent) + lcf_ber(str.bytesize) + str +

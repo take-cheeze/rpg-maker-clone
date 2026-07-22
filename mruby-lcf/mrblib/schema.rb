@@ -208,7 +208,7 @@ module LCF
           }
         },
         26 => {
-          name: :CommonEvent, type: :Array2D,
+          name: :common_events, type: :Array2D,
           elements: COMMON_EVENT
         },
         27 => {

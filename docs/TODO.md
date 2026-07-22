@@ -58,7 +58,10 @@ The work below is roughly ordered by the critical path to a walkable game
   and loops/labels/call-event are TODO
 - 🚧 Message window — renders text lines and a choice cursor; control codes
   (`\v`, `\n`, `\c`, `\.`), face graphics and gradual text reveal are TODO
-- Common events — parallel and auto-start common events
+- 🚧 Common events — auto-start and parallel common events run on the map
+  (`Game::CommonEvent`), gated by their switch when `need_flag` is set; true
+  concurrent parallel execution (running every frame alongside the player) is
+  still simplified to a once-per-visit start
 - Screen effects — transitions/fade, tint, flash, shake, Show Picture,
   weather, timer
 

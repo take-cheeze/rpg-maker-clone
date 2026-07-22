@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Common events (`Game::CommonEvent`): auto-start and parallel common events run
+  on the map, gated by their switch when `need_flag` is set
 - Main menu (`Scene::Menu`), opened over the map with the cancel button: shows
   party status and a command list. Save and End Game (return to title) work;
   item/skill/equip/status are placeholders
@@ -43,6 +45,8 @@ All notable changes to this project will be documented in this file.
   tile layers and packed id lists)
 
 ### Fixed
+- Boolean LCF chunks now decode correctly (a single 0/1 byte) instead of
+  raising on any non-empty flag chunk
 - `LCF::MapTree` now parses all three parts of the map tree (map properties,
   tree, and the `initial` start-position block) instead of only the first, so
   the New Game start map/position are available

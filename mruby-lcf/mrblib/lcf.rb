@@ -112,8 +112,10 @@ module LCF
     when :Array2D ; return Array2D.new d, s
     when :int ; return read_ber StringIO.new(d)
     when :bool
-      raise "invalid bool size: #{d.size}" if d.size != 0
-      return d.bytes[0] != 0
+      # LCF stores a boolean as a single byte (0/1). A zero-length chunk (just
+      # the flag being present) is treated as true.
+      return true if d.empty?
+      return d.bytes.any? { |b| b != 0 }
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree ; return read_tree StringIO.new(d)
     when :short_array ; return unpack_shorts(d, false)

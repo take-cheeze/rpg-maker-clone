@@ -242,6 +242,8 @@ class RPG2k
         @windowskin = load_windowskin
         @interpreter = Game::Interpreter.new(@state)
         @started_auto = {}
+        @started_common = {}
+        @common = Game::CommonEvent.load(@db)
         build_events
         @message = nil
         @wait_timer = nil
@@ -367,15 +369,25 @@ class RPG2k
         @message || @interpreter.running? || @interpreter.waiting?
       end
 
-      # Start the first not-yet-run autostart (trigger 3) event. Each is started
-      # at most once per visit so an ungated autostart cannot hard-loop.
+      # Start the first eligible not-yet-run auto-start/parallel process: map
+      # events with an auto-start trigger, then eligible common events. Each is
+      # started at most once per visit so an ungated process cannot hard-loop.
       def start_autostart
         ev = @events.find do |e|
           e[:trigger] == 3 && e[:commands] && !@started_auto[[e[:x], e[:y]]]
         end
-        return unless ev
-        @started_auto[[ev[:x], ev[:y]]] = true
-        @interpreter.start(ev[:commands])
+        if ev
+          @started_auto[[ev[:x], ev[:y]]] = true
+          @interpreter.start(ev[:commands])
+          return
+        end
+
+        ce = Game::CommonEvent.eligible(@common, @state.switches).find do |c|
+          c[:commands] && !@started_common[c[:id]]
+        end
+        return unless ce
+        @started_common[ce[:id]] = true
+        @interpreter.start(ce[:commands])
       end
 
       # On the action button, run the event the player is facing (trigger 0).
@@ -436,6 +448,7 @@ class RPG2k
         @state.direction = dir if dir && dir > 0
         @chipset = build_chipset
         @started_auto = {}
+        @started_common = {}
         build_events
         @moving = false
         @move_count = 0

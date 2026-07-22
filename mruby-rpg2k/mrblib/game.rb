@@ -266,6 +266,38 @@ module Game
     end
   end
 
+  # Common events: shared command lists that can auto-start or run in parallel.
+  # start_term selects how they run (3 auto-start, 4 parallel, 5 called only);
+  # when need_flag is set a common event is gated on switch_id.
+  module CommonEvent
+    AUTO_START = 3
+    PARALLEL   = 4
+
+    # Load the common events from the database into plain hashes.
+    def self.load(db)
+      list = []
+      ce = db.common_events
+      return list unless ce
+      ce.each do |id, c|
+        list.push(id: id, trigger: c.start_term, need_flag: c.need_flag,
+                  switch_id: c.switch_id, commands: c.event_commands)
+      end
+      list
+    rescue StandardError
+      []
+    end
+
+    # Common events eligible to run now (auto-start or parallel, and — when
+    # gated — their switch is on).
+    def self.eligible(events, switches)
+      events.select do |e|
+        next false unless e[:trigger] == AUTO_START || e[:trigger] == PARALLEL
+        next true unless e[:need_flag]
+        switches[e[:switch_id]]
+      end
+    end
+  end
+
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
   class State
