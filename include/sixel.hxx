@@ -17,8 +17,10 @@ typedef struct _lv_display_t lv_display_t;
 // in a terminal.  The created display is registered as LVGL's default display.
 //
 // As a side effect the controlling terminal is switched into raw mode so that
-// keyboard input can be read without line buffering; it is restored
-// automatically on process exit.
+// keyboard input can be read without line buffering, and into the alternate
+// screen buffer so the game does not overwrite the user's shell history.  Both
+// are restored automatically on process exit (and on fatal signals), returning
+// the terminal to its pre-game contents.
 lv_display_t* sixel_display_create(int32_t hor_res, int32_t ver_res, int scale);
 
 // Poll the terminal for keyboard input and forward it to the RGSS::Input
