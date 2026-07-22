@@ -26,6 +26,10 @@ module Game
       ELSE_BRANCH      = 22010
       END_BRANCH       = 22011
       LABEL            = 12110
+      JUMP_TO_LABEL    = 12120
+      LOOP             = 12210
+      BREAK_LOOP       = 12220
+      END_LOOP         = 22210
       COMMENT          = 12410
       COMMENT_2        = 22410
       END_EVENT        = 12310
@@ -55,13 +59,20 @@ module Game
       reset_waits
     end
 
+    # Upper bound on commands run in a single update, so a malformed loop cannot
+    # hang the game loop.
+    MAX_STEPS = 1_000_000
+
     # Advance through commands until the list ends or a command asks to wait.
     def update
       return unless @running
+      steps = 0
       while @index < @list.size && !@waiting
         cmd = @list[@index]
         @index += 1
         execute cmd
+        steps += 1
+        break if steps >= MAX_STEPS
       end
       @running = false if @index >= @list.size && !@waiting
     end
@@ -115,6 +126,10 @@ module Game
       when Cmd::CONDITIONAL      then do_conditional cmd
       when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
       when Cmd::END_BRANCH       then nil
+      when Cmd::JUMP_TO_LABEL    then do_jump_label cmd
+      when Cmd::LOOP             then nil # marker; body runs, END_LOOP loops back
+      when Cmd::BREAK_LOOP       then do_break_loop cmd
+      when Cmd::END_LOOP         then do_end_loop cmd
       when Cmd::TELEPORT         then do_teleport cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
@@ -138,6 +153,43 @@ module Game
     # Step past the command @index currently points at (a matched marker).
     def consume
       @index += 1 if @index < @list.size
+    end
+
+    # Jump to the (first) label command with the given id.
+    def do_jump_label(cmd)
+      target = cmd.param(0)
+      @list.each_with_index do |c, j|
+        if c.code == Cmd::LABEL && c.param(0) == target
+          @index = j
+          return
+        end
+      end
+    end
+
+    # End of loop: jump back to just after the matching Loop marker (same indent).
+    def do_end_loop(cmd)
+      j = @index - 2 # scan back from before this End Loop
+      while j >= 0
+        c = @list[j]
+        if c.indent == cmd.indent && c.code == Cmd::LOOP
+          @index = j + 1
+          return
+        end
+        j -= 1
+      end
+    end
+
+    # Break Loop: jump past the enclosing loop's End Loop marker.
+    def do_break_loop(cmd)
+      j = @index
+      while j < @list.size
+        c = @list[j]
+        if c.code == Cmd::END_LOOP && c.indent < cmd.indent
+          @index = j + 1
+          return
+        end
+        j += 1
+      end
     end
 
     # -- message / choices ----------------------------------------------------

@@ -55,9 +55,10 @@ The work below is roughly ordered by the critical path to a walkable game
   event-touch and parallel triggers plus move routes are still to come
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Conditional Branch/Else/End, Teleport, Wait, Play BGM/SE, End Event); the
-  remaining ~100 commands (Move Event, pictures, screen effects, battles, ...)
-  and loops/labels/call-event are TODO
+  Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
+  Wait, Play BGM/SE, End Event) with a per-frame step cap so a bad loop can't
+  hang; the remaining ~90 commands (Move Event, pictures, screen effects,
+  battles, actor stat changes, Call Event, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes
