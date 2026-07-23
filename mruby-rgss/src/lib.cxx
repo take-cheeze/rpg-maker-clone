@@ -425,6 +425,75 @@ mrb_value table_load(mrb_state* M, V self) {
 
 // ---- Bitmap ---------------------------------------------------------------
 
+// Decode an RPG Maker 2000/2003 XYZ image. The format is a tiny header
+//
+//   "XYZ1"                     4-byte magic
+//   uint16 LE width, height    picture dimensions
+//   zlib stream                768-byte RGB palette + width*height indices
+//
+// which stb_image does not understand, so games that ship their System
+// (windowskin) or other graphics as .xyz would otherwise fail to load. On
+// success returns a freshly stb-allocated buffer (free with stbi_image_free)
+// of width*height*4 bytes in LVGL's B, G, R, A byte order and sets *w/*h/*c;
+// returns nullptr when `f` is not a readable XYZ file. When `trans` is set the
+// first palette entry is treated as the transparent colour, matching stb's
+// transparent-palette handling for PNGs.
+static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return nullptr;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz < 8) {
+    std::fclose(fp);
+    return nullptr;
+  }
+  std::vector<uint8_t> data((size_t)sz);
+  const size_t got = std::fread(data.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  if (got != (size_t)sz || std::memcmp(data.data(), "XYZ1", 4) != 0)
+    return nullptr;
+
+  const int width = data[4] | (data[5] << 8);
+  const int height = data[6] | (data[7] << 8);
+  if (width <= 0 || height <= 0)
+    return nullptr;
+
+  int outlen = 0;
+  char* raw = stbi_zlib_decode_malloc(
+      reinterpret_cast<const char*>(data.data() + 8), (int)(sz - 8), &outlen);
+  if (!raw)
+    return nullptr;
+
+  // A 768-byte (256*3) RGB palette followed by one index per pixel.
+  const long expected = 768L + (long)width * height;
+  if ((long)outlen < expected) {
+    stbi_image_free(raw);
+    return nullptr;
+  }
+  const uint8_t* pal = reinterpret_cast<const uint8_t*>(raw);
+  const uint8_t* idx = pal + 768;
+
+  uint8_t* out = (uint8_t*)stbi__malloc((size_t)width * height * 4);
+  if (!out) {
+    stbi_image_free(raw);
+    return nullptr;
+  }
+  for (int i = 0; i < width * height; ++i) {
+    const uint8_t p = idx[i];
+    out[i * 4 + 0] = pal[p * 3 + 2];  // B
+    out[i * 4 + 1] = pal[p * 3 + 1];  // G
+    out[i * 4 + 2] = pal[p * 3 + 0];  // R
+    out[i * 4 + 3] = (trans && p == 0) ? 0 : 255;  // A
+  }
+  stbi_image_free(raw);
+  *w = width;
+  *h = height;
+  *c = 4;
+  return out;
+}
+
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   mrb_int w, h;
   mrb_get_args(M, "ii", &w, &h);
@@ -443,6 +512,8 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   std::shared_ptr<uint8_t> img(
       stbi_load(f, &w, &h, &c, stbi__png_transparent_palette ? 4 : 3),
       stbi_image_free);
+  if (!img)
+    img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
   if (!img) {
     // Some archives store filenames in NFD form while the game data refers to
     // them in NFC (or vice versa); retry with the decomposed form before giving
@@ -451,6 +522,8 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
     img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c,
                         stbi__png_transparent_palette ? 4 : 3),
               stbi_image_free);
+    if (!img)
+      img.reset(load_xyz(nfd_f.c_str(), &w, &h, &c, trans), stbi_image_free);
     if (!img)
       return mrb_nil_value();
   }

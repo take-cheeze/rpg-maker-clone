@@ -152,3 +152,46 @@ assert "RGSS::Font defaults" do
   assert_true f.color.is_a?(RGSS::Color)
   assert_true RGSS::Font.exist?("Arial")
 end
+
+assert "RGSS::Bitmap loads RPG Maker XYZ images" do
+  # A 3x2 XYZ picture: "XYZ1" + uint16 LE width/height + a zlib stream holding
+  # a 768-byte RGB palette then one index per pixel. Palette 0 = (10,20,30),
+  # 1 = (255,0,0), 2 = (0,255,0); pixels are 0,1,2 / 2,1,0.
+  bytes = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xe3\x12\x91\xfb\xcf\xc0" \
+          "\xc0\x00\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00\xb4" \
+          "\x8b\x02\x41"
+  path = "test-windowskin.xyz"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    b = RGSS::Bitmap.new(path)
+    assert_equal 3, b.width
+    assert_equal 2, b.height
+    # Top-left pixel is palette index 0 -> (10, 20, 30), opaque.
+    px = b.get_pixel(0, 0)
+    assert_equal 10.0, px.red
+    assert_equal 20.0, px.green
+    assert_equal 30.0, px.blue
+    assert_equal 255.0, px.alpha
+    # (1,0) is palette index 1 (red), (2,0) is index 2 (green).
+    assert_equal 255.0, b.get_pixel(1, 0).red
+    assert_equal 255.0, b.get_pixel(2, 0).green
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap keys the XYZ transparent colour when requested" do
+  bytes = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xe3\x12\x91\xfb\xcf\xc0" \
+          "\xc0\x00\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00\xb4" \
+          "\x8b\x02\x41"
+  path = "test-windowskin-trans.xyz"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    b = RGSS::Bitmap.new(path, true)
+    # Palette index 0 becomes fully transparent, other indices stay opaque.
+    assert_equal 0.0, b.get_pixel(0, 0).alpha
+    assert_equal 255.0, b.get_pixel(1, 0).alpha
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end

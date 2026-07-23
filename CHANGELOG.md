@@ -126,6 +126,12 @@ All notable changes to this project will be documented in this file.
   - Added directional input helpers (dir4, dir8)
 
 ### Fixed
+- Windowskin loading now works for games whose System graphic is stored in RPG
+  Maker's native XYZ format. `RGSS::Bitmap` already searched for `.xyz` files,
+  but stb_image could not decode them, so an XYZ windowskin silently fell back
+  to the plain panel. Added an XYZ decoder (`"XYZ1"` header + zlib-compressed
+  palette and indices) to `bmp_init_file` that also honours the transparent
+  colour-key flag
 - LCF `File#method_missing` delegates field access with `__send__` instead of
   `send`, so parsed fields (`db.player`, `map_tree.initial`, ...) resolve on
   mruby builds where `Kernel#send` is not exposed on objects that define their
