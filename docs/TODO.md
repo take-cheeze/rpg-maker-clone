@@ -69,8 +69,9 @@ The work below is roughly ordered by the critical path to a walkable game
   still simplified to a once-per-visit start
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
   `Game::State` countdown); transitions/fade, tint, flash, shake, Show Picture
-  and weather remain. Most of these need new `RGSS::Sprite`/`Viewport` support
-  in C++ (opacity, tone, flash) before they can be driven from Ruby
+  and weather remain. `RGSS::Viewport` now exists (position/clip/scroll/z), but
+  most of these still need more `RGSS::Sprite`/`Viewport` support in C++
+  (opacity, tone, flash) before they can be driven from Ruby
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
