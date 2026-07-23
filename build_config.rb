@@ -3,6 +3,7 @@ def rpg_maker_gems(conf)
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
   conf.gem core: 'mruby-io'
+  conf.gem core: 'mruby-print'
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
