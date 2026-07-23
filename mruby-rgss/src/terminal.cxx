@@ -223,8 +223,8 @@ void terminal_set_stats(bool enabled) {
 
 void terminal_append_legend(std::string& s) {
   // Reserve the top text row for a one-line key reference, then start the image
-  // one row lower.  Terminals place the frame at the current cursor position, so
-  // drawing the legend first (and emitting CR/LF) pins it above the picture
+  // one row lower.  Terminals place the frame at the current cursor position,
+  // so drawing the legend first (and emitting CR/LF) pins it above the picture
   // where it can never be overdrawn -- unlike positioning it after the image,
   // whose end-cursor location is not portable and left the legend overlapping
   // the bottom of the frame.  \x1b[K clears any stale text from the previous

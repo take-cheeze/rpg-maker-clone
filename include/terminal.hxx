@@ -22,7 +22,10 @@ void terminal_append_legend(std::string& s);
 // and emitting it with `terminal_write`.  The sixel and iTerm2 backends differ
 // only in this function; everything else (raw mode, input, timing, the LVGL
 // display/buffer wiring) is shared.
-using terminal_encode_fn = void (*)(int w, int h, int scale, const uint16_t* pix);
+using terminal_encode_fn = void (*)(int w,
+                                    int h,
+                                    int scale,
+                                    const uint16_t* pix);
 
 // Create a windowless LVGL display that renders each frame to the controlling
 // terminal via `encode`, instead of opening a desktop window.
@@ -33,8 +36,8 @@ using terminal_encode_fn = void (*)(int w, int h, int scale, const uint16_t* pix
 //
 // As a side effect the controlling terminal is switched into raw mode (so
 // keyboard input can be read without line buffering) and into the alternate
-// screen buffer (so the game does not overwrite the user's shell history), and a
-// monotonic tick/delay source is installed so LVGL runs without SDL.  The
+// screen buffer (so the game does not overwrite the user's shell history), and
+// a monotonic tick/delay source is installed so LVGL runs without SDL.  The
 // terminal state is restored automatically on process exit and on fatal
 // signals.
 lv_display_t* terminal_display_create(int32_t hor_res,

@@ -88,8 +88,9 @@ void iterm_encode_frame(int w, int h, int scale, const uint16_t* pix) {
   // `size` lets the terminal show a progress indicator; width/height in px pin
   // the on-screen size to the encoded resolution; preserveAspectRatio=0 avoids
   // extra letterboxing since the two already match.  A leading cursor-home plus
-  // the shared control legend lets each frame overdraw the previous one in place
-  // with the key reference pinned on the top row, matching the sixel backend.
+  // the shared control legend lets each frame overdraw the previous one in
+  // place with the key reference pinned on the top row, matching the sixel
+  // backend.
   std::string& s = g_out;
   s.clear();
   s += "\x1b[H";
