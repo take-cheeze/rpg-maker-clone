@@ -1,4 +1,4 @@
-# 2. Terminal gaming with the iTerm2 inline-image protocol
+# 3. Terminal gaming with the iTerm2 inline-image protocol
 
 Date: 2026-07-22
 
@@ -48,6 +48,9 @@ new **`mruby-rgss/src/terminal.cxx`** (declared in `include/terminal.hxx`):
   restoration on exit and fatal signals.
 - Keyboard polling (arrows/WASD, confirm, cancel, quit) forwarded to
   `RGSS::Input`, exported as `rgss_terminal_poll`.
+- The one-line control legend drawn on the top row above the frame, exposed as
+  `terminal_append_legend` so both encoders emit the identical hint (added for
+  sixel on `master`; the shared helper lets the iTerm2 path draw it too).
 
 `terminal_display_create(w, h, scale, encode)` takes a per-protocol encoder
 callback; `sixel.cxx` and `iterm.cxx` now contain *only* their encoder plus a

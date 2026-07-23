@@ -2,11 +2,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 // Forward declarations to avoid pulling heavy headers into every includer.
 struct mrb_state;
 struct _lv_display_t;
 typedef struct _lv_display_t lv_display_t;
+
+// Append the one-line control legend (dim, cleared to end of line, terminated
+// with CR/LF) that every terminal backend draws on the top row, just above the
+// game image.  Encoders call this right after homing the cursor so the legend
+// is pinned above the picture and can never be overdrawn.  Shared so the sixel
+// and iTerm2 backends stay identical.
+void terminal_append_legend(std::string& s);
 
 // A per-protocol frame encoder.  It is handed one finished frame as an RGB565
 // buffer at the logical game resolution (`w`x`h`) plus the integer upscale

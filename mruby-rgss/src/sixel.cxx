@@ -92,6 +92,7 @@ void sixel_encode_frame(int w, int h, int scale, const uint16_t* pix) {
   std::string& s = g_out;
   s.clear();
   s += "\x1b[H";  // cursor home: overdraw the previous frame in place
+  terminal_append_legend(s);  // one-line key reference pinned above the image
   s += "\x1bPq";  // enter sixel mode
   s += "\"1;1;";  // raster attributes: 1:1 aspect ratio
   s += std::to_string(out_w);

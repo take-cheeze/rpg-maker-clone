@@ -27,8 +27,26 @@
   (`mruby-rgss/src/terminal.cxx`: raw-mode input, monotonic tick/delay source,
   alternate-screen handling) and differ only in the frame encoder
   (`sixel.cxx` / `iterm.cxx`)
-- Reads keyboard input directly from the terminal and forwards it to
-  `RGSS::Input`
+  `RGSS::Input`. Key reference:
+
+  | Key(s)                    | `RGSS::Input` action |
+  | ------------------------- | -------------------- |
+  | `↑` / `W`                 | `UP`                 |
+  | `↓` / `S`                 | `DOWN`               |
+  | `←` / `A`                 | `LEFT`               |
+  | `→` / `D`                 | `RIGHT`              |
+  | `Z` / `Enter` / `Space`   | `C` (confirm)        |
+  | `X` / `Esc`               | `B` (cancel)         |
+  | `C`                       | `A`                  |
+  | `Q` / `Ctrl-C`            | quit the runtime     |
+
+  The same reference is drawn as a one-line legend on the top row of the
+  terminal, just above the game image (on both backends), so the controls are
+  always visible while playing.
+
+  Terminals do not report key-release events, so a key is treated as held for
+  a short window (`HOLD_MS`) after its last byte; the terminal's own
+  auto-repeat sustains movement while a key stays down.
 - Prints an emit-rate report (frame size, MB/s, fps) to stderr about once a
   second so the real per-frame byte cost can be measured; on by default,
   disabled with `--noterm_stats`
@@ -38,7 +56,7 @@
   encoding. Either way the backend targets a local PTY or SSH pipe, not a real
   serial UART
 - See `docs/adr/0001-terminal-gaming-sixel.md` and
-  `docs/adr/0002-terminal-gaming-iterm2.md` for the design rationale and a full
+  `docs/adr/0003-terminal-gaming-iterm2.md` for the design rationale and a full
   bandwidth breakdown
 
 ## Third party libraries

@@ -24,8 +24,10 @@
   ./rpg_maker_clone --iterm --iterm_scale=2 --game_dir path/to/game
   ```
 
-- Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm,
-  `X`/`Esc` to cancel, `Q` or `Ctrl-C` to quit
+- Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm (C),
+  `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit. The
+  same reference is drawn as a one-line legend on the top row above the game
+  image
 - `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
   and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
 - Either backend prints its emit rate (frame size, MB/s, fps) to stderr about

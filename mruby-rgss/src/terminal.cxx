@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <string>
 #include <vector>
 
 #include <termios.h>
@@ -218,6 +219,19 @@ void hold_key(mrb_state* M, int key, uint32_t now) {
 // ---------------------------------------------------------------------------
 void terminal_set_stats(bool enabled) {
   g_stats = enabled;
+}
+
+void terminal_append_legend(std::string& s) {
+  // Reserve the top text row for a one-line key reference, then start the image
+  // one row lower.  Terminals place the frame at the current cursor position, so
+  // drawing the legend first (and emitting CR/LF) pins it above the picture
+  // where it can never be overdrawn -- unlike positioning it after the image,
+  // whose end-cursor location is not portable and left the legend overlapping
+  // the bottom of the frame.  \x1b[K clears any stale text from the previous
+  // frame and the dim SGR keeps the legend visually secondary to the game.
+  s += "\x1b[K\x1b[2m";
+  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q";
+  s += "\x1b[0m\r\n";
 }
 
 void terminal_write(const char* p, size_t n) {
