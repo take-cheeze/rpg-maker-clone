@@ -15,12 +15,18 @@
 - Menu items are drawn using the game's font system
 - Selection is highlighted with a cursor
 
-### Terminal gaming (sixel)
-- Alternative display backend that renders each frame to the terminal using the
-  DEC sixel protocol, enabled with the `--sixel` flag
+### Terminal gaming (sixel / iTerm2)
+- Alternative display backends that render each frame to the terminal instead of
+  opening a window: the DEC sixel protocol (`--sixel`) and iTerm2's inline-image
+  protocol (`--iterm`)
 - Lets the runtime be played on hosts without a windowing system (headless
-  servers, SSH sessions, embedded boards with a serial console)
-- Reads keyboard input directly from the terminal and forwards it to
+  servers, SSH sessions, embedded boards with a serial console); `--iterm` also
+  covers terminals that lack sixel support, notably VS Code's integrated
+  terminal
+- Both backends share the same windowless terminal core
+  (`mruby-rgss/src/terminal.cxx`: raw-mode input, monotonic tick/delay source,
+  alternate-screen handling) and differ only in the frame encoder
+  (`sixel.cxx` / `iterm.cxx`)
   `RGSS::Input`. Key reference:
 
   | Key(s)                    | `RGSS::Input` action |
@@ -35,17 +41,23 @@
   | `Q` / `Ctrl-C`            | quit the runtime     |
 
   The same reference is drawn as a one-line legend on the top row of the
-  terminal, just above the game image, so the controls are always visible
-  while playing.
+  terminal, just above the game image (on both backends), so the controls are
+  always visible while playing.
 
   Terminals do not report key-release events, so a key is treated as held for
   a short window (`HOLD_MS`) after its last byte; the terminal's own
   auto-repeat sustains movement while a key stays down.
-- Output is throughput-bound: 320×240 at 60 Hz needs roughly 20 Mbaud (up to
-  ~70 Mbaud worst case), far beyond a real serial UART, so the backend targets a
-  local PTY or SSH pipe
-- See `docs/adr/0001-terminal-gaming-sixel.md` for the design rationale and a
-  full bandwidth breakdown
+- Draws an emit-rate report (frame size, MB/s, fps) on-screen just under the
+  control legend, refreshed about once a second, so the real per-frame byte cost
+  is visible while playing; on by default, disabled with `--noterm_stats`
+- Output is throughput-bound: the sixel path for 320×240 at 60 Hz needs roughly
+  20 Mbaud (up to ~70 Mbaud worst case); the iTerm2 path PNG-compresses each
+  frame, which shrinks flat tile/sprite regions substantially but spends CPU on
+  encoding. Either way the backend targets a local PTY or SSH pipe, not a real
+  serial UART
+- See `docs/adr/0001-terminal-gaming-sixel.md` and
+  `docs/adr/0003-terminal-gaming-iterm2.md` for the design rationale and a full
+  bandwidth breakdown
 
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory

@@ -1,0 +1,67 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+// Forward declarations to avoid pulling heavy headers into every includer.
+struct mrb_state;
+struct _lv_display_t;
+typedef struct _lv_display_t lv_display_t;
+
+// Append the one-line control legend (dim, cleared to end of line, terminated
+// with CR/LF) that every terminal backend draws on the top row, just above the
+// game image.  Encoders call this right after homing the cursor so the legend
+// is pinned above the picture and can never be overdrawn.  Shared so the sixel
+// and iTerm2 backends stay identical.
+void terminal_append_legend(std::string& s);
+
+// Append the emit-rate report row (frame size, MB/s, fps) drawn just under the
+// legend, in the same dim/cleared/CR-LF style.  Encoders call this right after
+// terminal_append_legend.  The text is refreshed about once a second; a no-op
+// when --term_stats is disabled.
+void terminal_append_stats(std::string& s);
+
+// A per-protocol frame encoder.  It is handed one finished frame as an RGB565
+// buffer at the logical game resolution (`w`x`h`) plus the integer upscale
+// factor `scale`, and is responsible for turning it into a terminal byte stream
+// and emitting it with `terminal_write`.  The sixel and iTerm2 backends differ
+// only in this function; everything else (raw mode, input, timing, the LVGL
+// display/buffer wiring) is shared.
+using terminal_encode_fn = void (*)(int w,
+                                    int h,
+                                    int scale,
+                                    const uint16_t* pix);
+
+// Create a windowless LVGL display that renders each frame to the controlling
+// terminal via `encode`, instead of opening a desktop window.
+//
+// `hor_res`/`ver_res` are the logical game resolution; `scale` upscales the
+// emitted image by an integer nearest-neighbour factor so pixel-art is legible
+// in a terminal.  The created display is registered as LVGL's default display.
+//
+// As a side effect the controlling terminal is switched into raw mode (so
+// keyboard input can be read without line buffering) and into the alternate
+// screen buffer (so the game does not overwrite the user's shell history), and
+// a monotonic tick/delay source is installed so LVGL runs without SDL.  The
+// terminal state is restored automatically on process exit and on fatal
+// signals.
+lv_display_t* terminal_display_create(int32_t hor_res,
+                                      int32_t ver_res,
+                                      int scale,
+                                      terminal_encode_fn encode);
+
+// Poll the terminal for keyboard input and forward it to the RGSS::Input
+// module.  Safe to call unconditionally: it is a no-op until a terminal display
+// has been created.  Meant to be invoked once per frame from Graphics.update.
+void terminal_poll(mrb_state* M);
+
+// Write raw bytes to the controlling terminal, handling partial writes and
+// EINTR.  Meant for encoders assembling a frame.
+void terminal_write(const char* p, size_t n);
+
+// Enable or disable the periodic emit-rate report (frame size, MB/s, fps)
+// printed to stderr about once a second while a terminal backend is active.
+// Enabled by default; wired to the --term_stats flag.  Has no effect unless a
+// terminal display was created (the SDL path never calls the encoder).
+void terminal_set_stats(bool enabled);

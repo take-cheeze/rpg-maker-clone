@@ -26,18 +26,32 @@
 - Press the cancel button to open a menu (party status, Save, End Game); "New
   Game" state can be saved and reloaded from the title's "Continue"
 
-### Terminal gaming (sixel)
-- Render the game to any sixel-capable terminal instead of an SDL window
+### Terminal gaming
+- Render the game to a terminal instead of an SDL window, using either the DEC
+  **sixel** protocol or **iTerm2's inline-image** protocol
 - Run with `--sixel` (optionally `--sixel_scale=N` to upscale the picture):
 
   ```sh
   ./rpg_maker_clone --sixel --sixel_scale=2 --game_dir path/to/game
   ```
 
+- Or with `--iterm` (optionally `--iterm_scale=N`), which encodes each frame as
+  a PNG and works in terminals that don't speak sixel — including **VS Code's
+  integrated terminal**:
+
+  ```sh
+  ./rpg_maker_clone --iterm --iterm_scale=2 --game_dir path/to/game
+  ```
+
 - Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm (C),
-  `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit
-- Works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm and
-  Windows Terminal
+  `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit. The
+  same reference is drawn as a one-line legend on the top row above the game
+  image
+- `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
+  and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
+- Either backend draws its emit rate (frame size, MB/s, fps) on-screen just
+  under the control legend, refreshed about once a second; this is on by default
+  and can be turned off with `--noterm_stats`
 
 ## TODO
 - Run zip file directly
