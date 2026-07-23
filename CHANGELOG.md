@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Playable gameplay after "New Game": `RPG2k#start_new_game` builds the party
+  (`Game::Party`/`Game::Actor`) from the database, reads the start position from
+  the map tree, loads the starting map and enters a walkable `Scene::Map`. The
+  map scene renders the lower/upper tile layers (as colour blocks derived from
+  tile ids, pending real chipset blitting), draws the party leader from their
+  `CharSet` graphic, and supports grid movement with pixel interpolation, walk
+  animation, edge/tile/event collision (chipset `passable_data_lower`) and an
+  edge-clamped follow camera
+- Event system: `Game::Interpreter` runs a decoded RPG2000 command list — Show
+  Message/Choices, Control Switches/Variables, Change Gold/Items/Party,
+  Conditional Branch/Else/End, Loop/Break, Label/Jump, Timer, Teleport, Wait,
+  Play BGM/SE and End Event — backed by global `Game::Switches`/`Game::Variables`
+  and party inventory. `Game::EventPage` selects an event's active page from
+  switch/variable/item/actor conditions, and `Game::CommonEvent` runs auto-start
+  and parallel common events. Action-button and auto-start events trigger on the
+  map, a message/choice window renders over it (with `\v[n]`/`\n[n]`/`\\` control
+  codes expanded), and Teleport transfers between maps
+- Main menu (`Scene::Menu`), opened over the map with the cancel button: shows
+  party status with Save and End Game (item/skill/equip/status are placeholders)
+- Save & Continue: the game state (position, switches, variables, party,
+  inventory, gold, hp/mp, timer) serialises to a portable `Marshal` save
+  (`Game::State#to_h` / `State.load`), written by the menu's Save command and
+  reloaded from the title's "Continue"
+- Decoding for the LCF `:event` (event command list, `LCF::EventCommand`),
+  `:int8_array` and `:int32_array` schema types, and `Array2D#each` for walking
+  sparse event/actor tables
 - Filled in the LCF database schemas (`mruby-lcf/mrblib/schema.rb`) from the
   VIPRPG 200X analysis notes: skills, items, enemies, enemy groups, terrain,
   attributes, states, battle animations, classes, and the full terminology and
@@ -100,6 +126,10 @@ All notable changes to this project will be documented in this file.
   - Added directional input helpers (dir4, dir8)
 
 ### Fixed
+- LCF `File#method_missing` delegates field access with `__send__` instead of
+  `send`, so parsed fields (`db.player`, `map_tree.initial`, ...) resolve on
+  mruby builds where `Kernel#send` is not exposed on objects that define their
+  own `method_missing`
 - LCF reader (`mruby-lcf/mrblib/lcf.rb`): booleans are read as their real
   1-byte encoding (previously required a 0-byte chunk and always returned
   `true`); nested `Array2D`/`Array1D` sections wrap a `String` in `StringIO`

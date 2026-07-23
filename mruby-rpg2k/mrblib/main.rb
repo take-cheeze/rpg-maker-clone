@@ -197,12 +197,564 @@ class RPG2k
   module Scene
     class Base
       def initialize parent
+        @parent = parent
         @db = parent.db
         @map_tree = parent.map_tree
       end
       def update ; end
+      def dispose ; end
 
-      attr_reader :db, :map_tree
+      attr_reader :parent, :db, :map_tree
+
+      # Load the System/ windowskin declared in the database (nil when missing,
+      # so Window falls back to a plain panel).
+      def make_windowskin
+        name = @db.system.system_graphic
+        return nil if name.nil? || name.empty?
+        Bitmap.new "System/#{name}"
+      rescue StandardError
+        nil
+      end
+    end
+
+    # Play scene: renders the loaded map and lets the party leader walk around
+    # it. Tiles are drawn as solid colour blocks derived from their tile id (a
+    # placeholder until real chipset blitting lands — see docs/TODO.md); the
+    # player is drawn from its real CharSet graphic. Movement is grid based with
+    # smooth pixel interpolation, walk animation, tile/edge/event collision and
+    # a camera that follows the player and clamps to the map edges.
+    class Map < Base
+      TILE = Game::TILE
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      # Visible tiles plus a one-tile margin so partially scrolled edges show.
+      COLS = SCREEN_W / TILE + 1
+      ROWS = SCREEN_H / TILE + 1
+      # Pixels moved per frame while stepping between tiles (must divide TILE).
+      SPEED = 2
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @map = state.map
+        @chipset = build_chipset
+        @charset = load_charset
+        @windowskin = load_windowskin
+        @interpreter = Game::Interpreter.new(@state)
+        @started_auto = {}
+        @started_common = {}
+        @common = Game::CommonEvent.load(@db)
+        build_events
+        @message = nil
+        @wait_timer = nil
+        @choice_index = 0
+
+        # Player pixel position and step state.
+        @moving = false
+        @move_count = 0
+        @dest_x = @state.x
+        @dest_y = @state.y
+        @tile_colors = {}
+        @last_frame = nil
+
+        setup_sprites
+        render
+      end
+
+      attr_reader :state
+
+      def dispose
+        close_message
+        [@lower_sprite, @upper_sprite, @player_sprite].each do |s|
+          s.dispose if s
+        end
+      end
+
+      def update
+        @state.tick_timer # the timer keeps counting during events too
+        if event_busy?
+          drive_event
+        else
+          start_autostart
+          if event_busy?
+            drive_event
+          else
+            step_movement
+            try_action_trigger
+            try_open_menu
+          end
+        end
+        render
+      end
+
+      private
+
+      def setup_sprites
+        @lower_sprite = Sprite.new
+        @lower_sprite.z = 0
+        @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @lower_sprite.bitmap = @lower_bmp
+
+        @upper_sprite = Sprite.new
+        @upper_sprite.z = 200
+        @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_sprite.bitmap = @upper_bmp
+
+        @player_sprite = Sprite.new
+        @player_sprite.z = 100
+        @player_bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+        @player_sprite.bitmap = @player_bmp
+        # Fallback marker when the CharSet graphic is unavailable.
+        unless @charset
+          @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
+                                Color.new(240, 240, 80, 255)
+        end
+      end
+
+      def build_chipset
+        Game::ChipSet.new(@db, @map.chipset_id)
+      rescue StandardError
+        nil
+      end
+
+      # Load the leader's CharSet graphic. Returns nil (falling back to a marker)
+      # when there is no party or the file is missing.
+      def load_charset
+        leader = @state.party.leader
+        return nil if leader.nil?
+        name = leader.charset_name
+        @charset_index = leader.charset_index || 0
+        return nil if name.nil? || name.empty?
+        Bitmap.new "CharSet/#{name}"
+      rescue StandardError
+        nil
+      end
+
+      # Load the System/ windowskin for message windows (nil -> plain panel).
+      def load_windowskin
+        name = @db.system.system_graphic
+        return nil if name.nil? || name.empty?
+        Bitmap.new "System/#{name}"
+      rescue StandardError
+        nil
+      end
+
+      # Build the runtime event list for the current map: the active page of
+      # each event (per switch/variable/party conditions) plus the tiles events
+      # occupy (used for collision and markers).
+      def build_events
+        @events = []
+        @event_tiles = {}
+        evs = @map.unit.events
+        return unless evs
+        evs.each do |_id, ev|
+          selected = Game::EventPage.select(ev.pages, @state.switches,
+                                            @state.variables, @state.party)
+          next unless selected
+          page = selected[1]
+          @events.push(x: ev.x, y: ev.y, trigger: page_trigger(page),
+                       commands: page_commands(page))
+          @event_tiles[[ev.x, ev.y]] = true
+        end
+      rescue StandardError
+        @events = []
+        @event_tiles = {}
+      end
+
+      def page_trigger(page); page.trigger; rescue StandardError; 0; end
+      def page_commands(page); page.event_commands; rescue StandardError; nil; end
+
+      # -- event execution ----------------------------------------------------
+
+      def event_busy?
+        @message || @interpreter.running? || @interpreter.waiting?
+      end
+
+      # Start the first eligible not-yet-run auto-start/parallel process: map
+      # events with an auto-start trigger, then eligible common events. Each is
+      # started at most once per visit so an ungated process cannot hard-loop.
+      def start_autostart
+        ev = @events.find do |e|
+          e[:trigger] == 3 && e[:commands] && !@started_auto[[e[:x], e[:y]]]
+        end
+        if ev
+          @started_auto[[ev[:x], ev[:y]]] = true
+          @interpreter.start(ev[:commands])
+          return
+        end
+
+        ce = Game::CommonEvent.eligible(@common, @state.switches).find do |c|
+          c[:commands] && !@started_common[c[:id]]
+        end
+        return unless ce
+        @started_common[ce[:id]] = true
+        @interpreter.start(ce[:commands])
+      end
+
+      # On the action button, run the event the player is facing (trigger 0).
+      def try_action_trigger
+        return unless Input.trigger?(Input::C)
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        ev = @events.find do |e|
+          e[:x] == fx && e[:y] == fy && e[:trigger] == 0 && e[:commands]
+        end
+        @interpreter.start(ev[:commands]) if ev
+      end
+
+      # The cancel button opens the main menu over the map.
+      def try_open_menu
+        return unless Input.trigger?(Input::B)
+        @parent.push Scene::Menu.new(@parent, @state)
+      end
+
+      def drive_event
+        if @message
+          drive_message
+          return
+        end
+
+        if @interpreter.waiting?
+          case @interpreter.wait_kind
+          when :message then open_message(@interpreter.message_lines, false)
+          when :choice then open_message(@interpreter.choice_labels, true)
+          when :wait then drive_wait
+          when :teleport then perform_teleport(@interpreter.teleport)
+          end
+        else
+          @interpreter.update
+        end
+      end
+
+      def drive_wait
+        if @wait_timer.nil?
+          fr = Graphics.frame_rate
+          fr = 60 if fr.nil? || fr <= 0
+          @wait_timer = @interpreter.wait_frames * fr / 10
+        end
+        if @wait_timer <= 0
+          @wait_timer = nil
+          @interpreter.resume
+        else
+          @wait_timer -= 1
+        end
+      end
+
+      def perform_teleport(t)
+        map_id, x, y, dir = t
+        @map = @parent.load_map(map_id)
+        @state.map = @map
+        @state.map_id = map_id
+        @state.x = x
+        @state.y = y
+        @state.direction = dir if dir && dir > 0
+        @chipset = build_chipset
+        @started_auto = {}
+        @started_common = {}
+        build_events
+        @moving = false
+        @move_count = 0
+        @last_frame = nil
+        @interpreter.stop
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Teleport failed: #{e.message}"
+        @interpreter.stop
+      end
+
+      # -- message / choice window --------------------------------------------
+
+      MSG_LINE_H = 14
+
+      # Look up an actor name by id for the \n[] message control code.
+      def actor_name(id)
+        a = @db.player[id]
+        a ? a.name.to_s : ''
+      rescue StandardError
+        ''
+      end
+
+      def open_message(lines, choice)
+        return if @message
+        names = ->(id) { actor_name(id) }
+        lines = (lines || []).map do |l|
+          Game::Message.expand(l.to_s, @state.variables, names)
+        end
+        lines = [''] if lines.empty?
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = lines.length * MSG_LINE_H
+        win = Window.new(10, SCREEN_H - (inner_h + Window::BORDER * 2) - 6,
+                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+
+        contents = Bitmap.new(inner_w, inner_h)
+        contents.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |line, i|
+          contents.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
+        end
+        win.contents = contents
+
+        @message = { window: win, choice: choice, count: lines.length }
+        @choice_index = 0
+        set_choice_cursor if choice
+      end
+
+      def set_choice_cursor
+        return unless @message
+        @message[:window].cursor_rect =
+          Rect.new(0, @choice_index * MSG_LINE_H,
+                   @message[:window].contents.width, MSG_LINE_H)
+      end
+
+      def drive_message
+        if @message[:choice]
+          if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
+            @choice_index += 1
+            set_choice_cursor
+          elsif Input.trigger?(Input::UP) && @choice_index > 0
+            @choice_index -= 1
+            set_choice_cursor
+          elsif Input.trigger?(Input::C)
+            index = @choice_index
+            close_message
+            @interpreter.choose(index)
+          end
+        elsif Input.trigger?(Input::C) || Input.trigger?(Input::B)
+          close_message
+          @interpreter.resume
+        end
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
+      end
+
+      def step_movement
+        if @moving
+          @move_count += SPEED
+          if @move_count >= TILE
+            @state.x = @dest_x
+            @state.y = @dest_y
+            @moving = false
+            @move_count = 0
+          end
+          return
+        end
+
+        dir = Input.dir4
+        return if dir == 0
+
+        @state.direction = dir
+        nx, ny = target_tile(@state.x, @state.y, dir)
+        return unless passable?(nx, ny, dir)
+
+        @dest_x = nx
+        @dest_y = ny
+        @moving = true
+        @move_count = 0
+      end
+
+      def target_tile(x, y, dir)
+        case dir
+        when 2 then [x, y + 1]
+        when 4 then [x - 1, y]
+        when 6 then [x + 1, y]
+        when 8 then [x, y - 1]
+        else [x, y]
+        end
+      end
+
+      def passable?(x, y, dir)
+        return false unless @map.in_bounds?(x, y)
+        return false if @event_tiles[[x, y]]
+        return true if @chipset.nil?
+        @chipset.passable?(@map.lower(x, y), dir)
+      end
+
+      # Current player position in map pixels, interpolated during a step.
+      def player_pixel
+        if @moving
+          [@state.x * TILE + (@dest_x - @state.x) * @move_count,
+           @state.y * TILE + (@dest_y - @state.y) * @move_count]
+        else
+          [@state.x * TILE, @state.y * TILE]
+        end
+      end
+
+      def render
+        px, py = player_pixel
+        cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
+        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+
+        draw_layers cam_x, cam_y
+
+        @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+        @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE)
+        draw_player_frame
+      end
+
+      def draw_layers cam_x, cam_y
+        @lower_bmp.clear
+        @upper_bmp.clear
+        first_tx = cam_x / TILE
+        first_ty = cam_y / TILE
+        ox = cam_x % TILE
+        oy = cam_y % TILE
+
+        (0...ROWS).each do |ry|
+          (0...COLS).each do |rx|
+            tx = first_tx + rx
+            ty = first_ty + ry
+            dx = rx * TILE - ox
+            dy = ry * TILE - oy
+
+            lower = @map.lower(tx, ty)
+            @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
+
+            upper = @map.upper(tx, ty)
+            @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
+
+            if @event_tiles[[tx, ty]]
+              @lower_bmp.fill_rect dx + 3, dy + 3, TILE - 6, TILE - 6,
+                                   Color.new(230, 90, 90, 255)
+            end
+          end
+        end
+      end
+
+      def draw_player_frame
+        return unless @charset
+        pat = @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
+        frame = [@state.direction, pat]
+        return if frame == @last_frame
+        @last_frame = frame
+
+        rx, ry, rw, rh = Game::CharSet.frame_rect(@charset_index, @state.direction, pat)
+        @player_bmp.clear
+        @player_bmp.blt 0, 0, @charset, Rect.new(rx, ry, rw, rh)
+      end
+
+      # Deterministic, memoised colour for a tile id so distinct tiles read as
+      # distinct blocks. Empty (0/nil) tiles are a dark "void".
+      def tile_color id
+        return (@void ||= Color.new(16, 16, 28, 255)) if id.nil? || id == 0
+        @tile_colors[id] ||= Color.new(40 + (id * 37) % 180,
+                                       40 + (id * 71) % 180,
+                                       60 + (id * 143) % 160, 255)
+      end
+    end
+
+    # Main menu, opened over the map with the cancel button. Shows party status
+    # and a command list. Save and End Game are wired up; the item/skill/equip/
+    # status screens are placeholders that report they are not implemented.
+    class Menu < Base
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      LINE_H = 16
+      COMMANDS = ["Item", "Skill", "Equip", "Status", "Save", "End Game"].freeze
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @index = 0
+        @message = nil
+        @skin = make_windowskin
+        build_windows
+      end
+
+      def dispose
+        close_message
+        @command.dispose if @command
+        @status.dispose if @status
+      end
+
+      def update
+        return drive_message if @message
+
+        if Input.trigger?(Input::DOWN) && @index < COMMANDS.size - 1
+          @index += 1
+          refresh_cursor
+        elsif Input.trigger?(Input::UP) && @index > 0
+          @index -= 1
+          refresh_cursor
+        elsif Input.trigger?(Input::B)
+          @parent.pop
+        elsif Input.trigger?(Input::C)
+          select_command
+        end
+      end
+
+      private
+
+      def build_windows
+        cw = 108
+        @command = Window.new(0, 0, cw, COMMANDS.size * LINE_H + Window::BORDER * 2)
+        @command.z = 400
+        @command.windowskin = @skin
+        cc = Bitmap.new(cw - Window::BORDER * 2, COMMANDS.size * LINE_H)
+        cc.font.color = Color.new(255, 255, 255, 255)
+        COMMANDS.each_with_index do |c, i|
+          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, c
+        end
+        @command.contents = cc
+        refresh_cursor
+
+        @status = Window.new(cw, 0, SCREEN_W - cw, SCREEN_H)
+        @status.z = 400
+        @status.windowskin = @skin
+        sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
+        sc.font.color = Color.new(255, 255, 255, 255)
+        @state.party.actors.each_with_index do |a, i|
+          y = i * 40
+          sc.draw_text 0, y, sc.width, 14, a.name.to_s
+          sc.draw_text 0, y + 16, sc.width, 14,
+                       "Lv #{a.level}  HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+        end
+        @status.contents = sc
+      end
+
+      def refresh_cursor
+        @command.cursor_rect =
+          Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
+      end
+
+      def select_command
+        case COMMANDS[@index]
+        when "Save"
+          show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+        when "End Game"
+          show_message("Returning to title...", :end_game)
+        else
+          show_message("#{COMMANDS[@index]} is not implemented yet.")
+        end
+      end
+
+      def drive_message
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        done = @message[:done]
+        close_message
+        @parent.return_to_title if done == :end_game
+      end
+
+      def show_message(text, done = nil)
+        return if @message
+        w = SCREEN_W - 40
+        win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
+        win.z = 500
+        win.windowskin = @skin
+        c = Bitmap.new(w - Window::BORDER * 2, 14)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, 14, text
+        win.contents = c
+        @message = { window: win, done: done }
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
+      end
     end
 
     class Title < Base
@@ -265,15 +817,20 @@ class RPG2k
         if Input.trigger?(Input::C)  # C is usually the confirm button (Enter/Z)
           case @selected_index
           when 0  # New Game
-            # TODO: Implement new game logic
+            parent.start_new_game
           when 1  # Continue
-            # TODO: Implement continue game logic
+            parent.continue_game
           when 2  # Shutdown
             exit
           end
         end
 
         @window.update
+      end
+
+      def dispose
+        @title.dispose
+        @window.dispose
       end
 
       private
@@ -308,6 +865,86 @@ class RPG2k
 
   def push scene
     @scenes.push scene
+  end
+
+  # Pop the top scene (e.g. closing the menu), disposing it. The base scene is
+  # never popped so the loop always has something to update.
+  def pop
+    return if @scenes.size <= 1
+    scene = @scenes.pop
+    scene.dispose if scene.respond_to?(:dispose)
+  end
+
+  # Tear down all scenes and return to a fresh title screen.
+  def return_to_title
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
+    @scenes = [Scene::Title.new(self)]
+  end
+
+  # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...
+  def load_map id
+    num = id.to_s
+    num = "0#{num}" while num.size < 4
+    path = "#{GAME_DIR}/Map#{num}.lmu"
+    Game::Map.new id, LCF::MapUnit.new(File.open(path))
+  end
+
+  # New Game: build the initial party from the database, read the start
+  # position from the map tree, load the starting map and enter the map scene.
+  # The map/player renderer is not wired up yet, so this establishes the running
+  # game state and transitions scenes without drawing the map.
+  def start_new_game
+    init = map_tree.initial
+    state = Game::State.new Game::Party.new(@db), init.initial_map_id,
+                            init.initial_x, init.initial_y
+    state.map = load_map state.map_id
+    # Build the play scene first; only tear down the title once it succeeds so a
+    # data problem leaves the title intact instead of a blank screen.
+    scene = Scene::Map.new(self, state)
+    @scenes.last.dispose
+    @scenes = [scene]
+  rescue StandardError => e
+    # Never let a data problem crash the title screen; report and stay put.
+    $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+  end
+
+  # Save file path for a slot. We use our own portable Marshal format rather
+  # than the LCF .lsd save schema (which is not modelled yet).
+  def save_path slot = 1
+    "#{GAME_DIR}/save#{slot}.mrb"
+  end
+
+  def save_exists? slot = 1
+    File.exist? save_path(slot)
+  rescue StandardError
+    false
+  end
+
+  # Persist the running game state to a slot.
+  def save_game state, slot = 1
+    data = Marshal.dump state.to_h
+    File.open(save_path(slot), "wb") { |f| f.write data }
+    true
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] Failed to save: #{e.message}"
+    false
+  end
+
+  # Continue: load the most recent save (our Marshal format) and resume on its
+  # map. Warns and stays on the title when there is no save to load.
+  def continue_game
+    unless save_exists?
+      RGSS.warn_stub "Continue (no save data found)"
+      return
+    end
+    data = File.open(save_path, "rb") { |f| f.read }
+    state = Game::State.load(@db, Marshal.load(data))
+    state.map = load_map state.map_id
+    scene = Scene::Map.new(self, state)
+    @scenes.last.dispose
+    @scenes = [scene]
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] Failed to continue: #{e.message}"
   end
 
   def main_loop

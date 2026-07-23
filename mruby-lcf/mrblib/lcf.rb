@@ -31,6 +31,44 @@ module LCF
     attr_reader :selected_id, :maps
   end
 
+  # One decoded RPG2000 event command: an opcode, an indent level (used for
+  # branch/loop nesting), an optional string argument and an integer parameter
+  # list.
+  class EventCommand
+    attr_reader :code, :indent, :string, :parameters
+
+    def initialize(code, indent, string, parameters)
+      @code = code
+      @indent = indent
+      @string = string
+      @parameters = parameters
+    end
+
+    # Parameters are frequently accessed past the end of short lists; treat
+    # missing parameters as 0 to match RPG2000's behaviour.
+    def param(i); @parameters[i] || 0; end
+  end
+
+  # Decode a packed event command list (the `:event` schema type, used by event
+  # pages, common events and move routes). Each command is: code, indent, string
+  # (length-prefixed, cp932), then a count-prefixed list of integer parameters.
+  # The list runs to the end of the blob.
+  def parse_event_commands d
+    s = StringIO.new d
+    cmds = []
+    until s.eof?
+      code = read_ber s
+      indent = read_ber s
+      slen = read_ber s
+      str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+      pcount = read_ber s
+      params = []
+      (0...pcount).each { params.push read_ber s }
+      cmds.push EventCommand.new(code, indent, str, params)
+    end
+    cmds
+  end
+
   # Holds the sequential sections of a multi-section file (e.g. the map tree,
   # which is a map-properties table followed by the tree order and the initial
   # party/vehicle positions). Sections are reachable by their schema name;
@@ -88,6 +126,9 @@ module LCF
       h = {}
       s[:order].each_with_index { |name, i| h[name] = vals[i] }
       return h
+    when :int8_array ; return d.bytes
+    when :int32_array ; return unpack_int32(d)
+    when :event ; return parse_event_commands(d)
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree
       s = StringIO.new(d)
@@ -101,7 +142,21 @@ module LCF
     raise "Unsupported type: #{s[:type]}"
   end
 
-  module_function :read_ber, :to_rb, :read_section
+  # Decode a packed sequence of little-endian signed 32bit integers.
+  def unpack_int32 d
+    bytes = d.bytes
+    out = []
+    (0...(bytes.size / 4)).each do |i|
+      b = i * 4
+      v = bytes[b] | (bytes[b + 1] << 8) | (bytes[b + 2] << 16) | (bytes[b + 3] << 24)
+      v -= 0x1_0000_0000 if v >= 0x8000_0000
+      out.push v
+    end
+    out
+  end
+
+  module_function :read_ber, :to_rb, :read_section, :parse_event_commands,
+                  :unpack_int32
 
   MODE = 2000 # 2003
 
@@ -164,5 +219,14 @@ module LCF
     end
 
     def [] idx ; @data[idx] end
+
+    # Iterate over defined (id, Array1D) entries; useful for walking event or
+    # actor tables that are sparsely populated.
+    def each
+      @data.each_with_index do |v, i|
+        yield i, v unless v.nil?
+      end
+    end
+    include Enumerable
   end
 end

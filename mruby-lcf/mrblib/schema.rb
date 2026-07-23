@@ -1017,7 +1017,10 @@ module LCF
     def schema; raise end
 
     def method_missing sym, *args
-      @root.send sym, *args
+      # Use __send__ rather than send: some mruby builds do not expose Kernel#send
+      # on objects that define their own method_missing (Array1D / Sections),
+      # which routes `send` into method_missing and breaks field access.
+      @root.__send__ sym, *args
     end
   end
 
