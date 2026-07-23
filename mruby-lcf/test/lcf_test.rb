@@ -50,12 +50,6 @@ end
 
 def lcf_file(hdr, body); StringIO.new(lcf_ber(hdr.bytesize) + hdr + body); end
 
-assert "LCF.unpack_shorts" do
-  packed = [1, 2, 65535].pack('v*')
-  assert_equal [1, 2, 65535], LCF.unpack_shorts(packed, false)
-  assert_equal [1, 2, -1], LCF.unpack_shorts(packed, true)
-end
-
 assert "LCF::Database nested Array2D actor table + int16_array status" do
   actor = lcf_array1d([lcf_str_field(1, "Hero"),
                        lcf_field(31, [10, 20, 30, 40, 50, 60].pack('v*'))])
@@ -67,9 +61,9 @@ assert "LCF::Database nested Array2D actor table + int16_array status" do
   assert_equal 60, st[:agi]
 end
 
-assert "LCF::Database chipset passability table" do
+assert "LCF::Database chipset passability table (int8_array)" do
   chip = lcf_array1d([lcf_str_field(2, "World"),
-                      lcf_shorts_field(4, [0x0f, 0x00, 0x08])])
+                      lcf_field(4, "\x0f\x00\x08")])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(20, lcf_array2d([[1, chip]]))])))
   assert_equal "World", db.chipset[1].chipset_name
@@ -94,8 +88,8 @@ assert "LCF decodes boolean chunks (1 byte 0/1)" do
                     lcf_int_field(13, 7)])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(26, lcf_array2d([[1, ce]]))])))
-  assert_true db.common_events[1].need_flag
-  assert_equal 3, db.common_events[1].start_term
+  assert_true db.common_event[1].need_flag
+  assert_equal 3, db.common_event[1].start_term
 end
 
 assert "LCF.parse_event_commands decodes an event command list" do
@@ -113,8 +107,10 @@ assert "LCF.parse_event_commands decodes an event command list" do
   assert_equal 0, cmds[1].param(9) # missing parameters read as 0
 end
 
-assert "LCF::MapUnit parses layers and nested events" do
-  page = lcf_array1d([lcf_str_field(21, "hero"), lcf_int_field(23, 4)])
+assert "LCF::MapUnit parses layers, nested events and event commands" do
+  cmds = lcf_ber(10110) + lcf_ber(0) + lcf_ber("Hi".bytesize) + "Hi" + lcf_ber(0)
+  page = lcf_array1d([lcf_str_field(21, "hero"), lcf_int_field(23, 4),
+                      lcf_int_field(33, 0), lcf_field(52, cmds)])
   event = lcf_array1d([lcf_str_field(1, "NPC"), lcf_int_field(2, 1),
                        lcf_int_field(3, 1),
                        lcf_field(5, lcf_array2d([[1, page]]))])
@@ -129,8 +125,11 @@ assert "LCF::MapUnit parses layers and nested events" do
   assert_equal 2, lmu.height
   assert_equal [1, 2, 3, 4, 5, 6, 7, 8], lmu.lower_layer
   assert_equal "NPC", lmu.events[1].name
-  assert_equal "hero", lmu.events[1].pages[1].character_name
-  assert_equal 4, lmu.events[1].pages[1].character_direction
+  page1 = lmu.events[1].pages[1]
+  assert_equal "hero", page1.charset_name
+  assert_equal 4, page1.direction
+  assert_equal 10110, page1.event_commands[0].code
+  assert_equal "Hi", page1.event_commands[0].string
 
   collected = []
   lmu.events.each { |id, ev| collected << [id, ev.name] }

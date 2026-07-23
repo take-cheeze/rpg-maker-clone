@@ -317,11 +317,11 @@ module Game
     # Load the common events from the database into plain hashes.
     def self.load(db)
       list = []
-      ce = db.common_events
+      ce = db.common_event
       return list unless ce
       ce.each do |id, c|
         list.push(id: id, trigger: c.start_term, need_flag: c.need_flag,
-                  switch_id: c.switch_id, commands: c.event_commands)
+                  switch_id: c.switch_id, commands: c.event)
       end
       list
     rescue StandardError

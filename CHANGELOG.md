@@ -5,61 +5,54 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Message control-code expansion (`\v[n]` variable, `\n[n]` actor name, `\\`;
-  colour/speed/wait codes consumed) and the RPG2000 countdown timer (Timer
-  Operation event command + `Game::State` tick, saved with the game)
-- Common events (`Game::CommonEvent`): auto-start and parallel common events run
-  on the map, gated by their switch when `need_flag` is set
+- Playable gameplay after "New Game": `RPG2k#start_new_game` builds the party
+  (`Game::Party`/`Game::Actor`) from the database, reads the start position from
+  the map tree, loads the starting map and enters a walkable `Scene::Map`. The
+  map scene renders the lower/upper tile layers (as colour blocks derived from
+  tile ids, pending real chipset blitting), draws the party leader from their
+  `CharSet` graphic, and supports grid movement with pixel interpolation, walk
+  animation, edge/tile/event collision (chipset `passable_data_lower`) and an
+  edge-clamped follow camera
+- Event system: `Game::Interpreter` runs a decoded RPG2000 command list — Show
+  Message/Choices, Control Switches/Variables, Change Gold/Items/Party,
+  Conditional Branch/Else/End, Loop/Break, Label/Jump, Timer, Teleport, Wait,
+  Play BGM/SE and End Event — backed by global `Game::Switches`/`Game::Variables`
+  and party inventory. `Game::EventPage` selects an event's active page from
+  switch/variable/item/actor conditions, and `Game::CommonEvent` runs auto-start
+  and parallel common events. Action-button and auto-start events trigger on the
+  map, a message/choice window renders over it (with `\v[n]`/`\n[n]`/`\\` control
+  codes expanded), and Teleport transfers between maps
 - Main menu (`Scene::Menu`), opened over the map with the cancel button: shows
-  party status and a command list. Save and End Game (return to title) work;
-  item/skill/equip/status are placeholders
+  party status with Save and End Game (item/skill/equip/status are placeholders)
 - Save & Continue: the game state (position, switches, variables, party,
-  inventory, gold, hp/mp) serialises to a portable `Marshal` save
+  inventory, gold, hp/mp, timer) serialises to a portable `Marshal` save
   (`Game::State#to_h` / `State.load`), written by the menu's Save command and
-  reloaded by the title's "Continue" (the LCF `.lsd` format is still TODO).
-  Round-trip covered by the host harness
-- Event system: events on the map now run. `Game::Interpreter` executes a
-  decoded RPG2000 command list — Show Message/Choices, Control
-  Switches/Variables, Change Gold/Items/Party, Conditional Branch/Else/End,
-  Teleport, Wait, Play BGM/SE and End Event — backed by global
-  `Game::Switches`/`Game::Variables` and party inventory. `Game::EventPage`
-  selects the active page from switch/variable/item/actor conditions. In
-  `Scene::Map`, action-button and auto-start events trigger, a message/choice
-  window renders over the map, and Teleport transfers between maps
-- Event command list parsing (`LCF.parse_event_commands` / `LCF::EventCommand`)
-  wired into event pages (chunk 51) and common events; all of the above logic is
-  covered by tests (`mruby-lcf/test` and the host harness)
-- Playable map scene (`Scene::Map`): after "New Game" the party leader can walk
-  around the starting map. It renders the lower/upper tile layers (as colour
-  blocks derived from tile ids, pending real chipset blitting), draws the leader
-  from their `CharSet` graphic, and supports grid movement with pixel
-  interpolation, walk animation, edge/tile/event collision and an edge-clamped
-  follow camera. Chipset passability (`ChipSet/*` `passable_data_lower`) drives
-  tile collision; the title screen is disposed on transition
-- LCF map (`.lmu`) parsing: a `MAP_UNIT` schema for `LCF::MapUnit` covering
-  dimensions, chipset id, the lower/upper tile layers and the event table
-- New Game now boots into gameplay setup: `RPG2k#start_new_game` builds the
-  initial party from the database (`Game::Party`/`Game::Actor`), reads the start
-  position from the map tree, loads the starting map and enters a new
-  `Scene::Map` (the tilemap/player renderer is still to come). Selecting
-  "Continue" warns that saved-game loading is not implemented yet
-- `System.party` (the initial party actor id list) to the database schema, and
-  the `int16_array`/`short_array` LCF element types (used by actor stats, map
-  tile layers and packed id lists)
-
-### Fixed
-- Boolean LCF chunks now decode correctly (a single 0/1 byte) instead of
-  raising on any non-empty flag chunk
-- `LCF::MapTree` now parses all three parts of the map tree (map properties,
-  tree, and the `initial` start-position block) instead of only the first, so
-  the New Game start map/position are available
-- Nested `Array2D` fields (such as the database's actor table) parse correctly:
-  raw-string tables are now wrapped in a stream like `Array1D` already did,
-  instead of raising
-
+  reloaded from the title's "Continue"
+- Decoding for the LCF `:event` (event command list, `LCF::EventCommand`),
+  `:int8_array` and `:int32_array` schema types, and `Array2D#each` for walking
+  sparse event/actor tables
+- Filled in the LCF database schemas (`mruby-lcf/mrblib/schema.rb`) from the
+  VIPRPG 200X analysis notes: skills, items, enemies, enemy groups, terrain,
+  attributes, states, battle animations, classes, and the full terminology and
+  system sections, plus switches/variables
+  - Documented the decision in `docs/adr/0002-lcf-database-schema-fields.md`
 - Honour `RPG_RT.ini`'s `[RPG_RT] FullPackageFlag`: when set to `1` the game is
   treated as a self-contained ("full") package and RTP lookups are disabled by
   clearing `RTP_DIR`, so bitmaps are resolved only from the game directory
+- Populated the LCF map, map tree and save data schemas from the VIPRPG 200X
+  analysis notes (`mruby-lcf/mrblib/schema.rb`):
+  - `MAP_UNIT` (`LcfMapUnit`) — chipset/size, scroll and parallax settings, the
+    lower/upper tile layers and the full map event tree (events → pages →
+    appearance condition and move route)
+  - `SAVE_DATA` (`LcfSaveData`) — save title (file-select screen fields), the
+    system block (scene, switches/variables, message/face settings, BGM/SE
+    overrides, transitions, permissions) and hero/vehicle positions
+  - Map tree: fixed the area-rect field (was a typo `type: :Araa`), renamed the
+    editor-only chunk 3 to `indentation` and gave encounters an enemy-group
+    default; the reader now loads all three map-tree sections (properties, tree
+    order and initial positions) instead of only the first
+- Verified by parsing the bundled Nepheshel `RPG_RT.lmt` and all 543 `Map*.lmu`
+  files across both game variants (tile layers match `width * height`).
 - Terminal gaming support using the DEC sixel graphics protocol
   - Added `--sixel` flag to render frames to a sixel-capable terminal instead
     of opening an SDL window, plus `--sixel_scale` for integer upscaling
@@ -114,6 +107,13 @@ All notable changes to this project will be documented in this file.
   - Added key constants (UP, DOWN, LEFT, RIGHT, A, B, C, etc.)
   - Implemented input state tracking (press, trigger, repeat)
   - Added directional input helpers (dir4, dir8)
+
+### Fixed
+- LCF reader (`mruby-lcf/mrblib/lcf.rb`): booleans are read as their real
+  1-byte encoding (previously required a 0-byte chunk and always returned
+  `true`); nested `Array2D`/`Array1D` sections wrap a `String` in `StringIO`
+  correctly (the old `kind_of? IO` check failed for `StringIO`); added the
+  `:int16_array` element type used by the tile layers and the area rect.
 
 ### Changed
 - Updated documentation to reflect new title screen functionality

@@ -49,10 +49,10 @@ module LCF
     def param(i); @parameters[i] || 0; end
   end
 
-  # Decode a packed event command list (an event page's or common event's command
-  # list). Each command is: code, indent, string (length-prefixed, cp932), then a
-  # count-prefixed list of integer parameters. The list runs to the end of the
-  # blob.
+  # Decode a packed event command list (the `:event` schema type, used by event
+  # pages, common events and move routes). Each command is: code, indent, string
+  # (length-prefixed, cp932), then a count-prefixed list of integer parameters.
+  # The list runs to the end of the blob.
   def parse_event_commands d
     s = StringIO.new d
     cmds = []
@@ -69,38 +69,44 @@ module LCF
     cmds
   end
 
-  # Read a tree structure (used by the map tree's `tree` element) from a live
-  # stream: a BER-encoded count, that many BER map ids, then the selected id.
-  def read_tree s
-    map_count = read_ber s
-    maps = []
-    (0...map_count).each { maps.push read_ber s }
-    selected_id = read_ber s
-    Tree.new(selected_id, maps)
-  end
-
-  # Decode a packed sequence of little-endian 16bit integers (as used by map
-  # tile layers and chipset passability tables). `signed` interprets values
-  # >= 0x8000 as negative; tile ids are unsigned while some tables are signed.
-  def unpack_shorts d, signed = false
-    bytes = d.bytes
-    out = []
-    (0...(bytes.size / 2)).each do |i|
-      v = bytes[i * 2] | (bytes[i * 2 + 1] << 8)
-      v -= 0x10000 if signed && v >= 0x8000
-      out.push v
+  # Holds the sequential sections of a multi-section file (e.g. the map tree,
+  # which is a map-properties table followed by the tree order and the initial
+  # party/vehicle positions). Sections are reachable by their schema name;
+  # #[] indexes into the first section for convenience.
+  class Sections
+    def initialize
+      @by_name = {}
+      @list = []
     end
-    out
+
+    def add name, value
+      @by_name[name] = value
+      @list.push value
+    end
+
+    def [] idx ; @list.first[idx] end
+
+    def method_missing sym, *args
+      return @by_name[sym] if @by_name.key? sym
+      super
+    end
+
+    def respond_to_missing? sym, include_private = false
+      @by_name.key?(sym) || super
+    end
   end
 
-  # Parse a single top-level element of a multi-part file (see LCF::File) from a
-  # live stream, dispatching on the structural type.
-  def parse_stream s, schema
-    case schema[:type]
-    when :Array1D ; Array1D.new s, schema
-    when :Array2D ; Array2D.new s, schema
-    when :Tree ; read_tree s
-    else raise "Unsupported top-level type: #{schema[:type]}"
+  # Read one section of a file sequentially from the stream +io+.
+  def read_section io, s
+    case s[:type]
+    when :Array2D ; Array2D.new io, s
+    when :Array1D ; Array1D.new io, s
+    when :Tree
+      map_count = read_ber io
+      maps = Array.new(map_count) { read_ber io }
+      Tree.new read_ber(io), maps
+    else
+      raise "Unsupported section type: #{s[:type]}"
     end
   end
 
@@ -112,28 +118,45 @@ module LCF
     when :Array2D ; return Array2D.new d, s
     when :int ; return read_ber StringIO.new(d)
     when :bool
-      # LCF stores a boolean as a single byte (0/1). A zero-length chunk (just
-      # the flag being present) is treated as true.
-      return true if d.empty?
-      return d.bytes.any? { |b| b != 0 }
-    when :string ; return LCF.cp932_to_utf8 d
-    when :Tree ; return read_tree StringIO.new(d)
-    when :short_array ; return unpack_shorts(d, false)
-    when :event_command_list ; return parse_event_commands(d)
+      raise "invalid bool size: #{d.size}" if d.size != 1
+      return d.bytes[0] != 0
     when :int16_array
-      vals = unpack_shorts(d, true)
-      order = s[:order]
-      return vals unless order
+      vals = d.unpack('s<*')
+      return vals unless s[:order]
       h = {}
-      order.each_with_index { |k, i| h[k] = vals[i] }
+      s[:order].each_with_index { |name, i| h[name] = vals[i] }
       return h
+    when :int8_array ; return d.bytes
+    when :int32_array ; return unpack_int32(d)
+    when :event ; return parse_event_commands(d)
+    when :string ; return LCF.cp932_to_utf8 d
+    when :Tree
+      s = StringIO.new(d)
+      map_count = read_ber s
+      maps = []
+      (0...map_count).each { maps.push read_ber s }
+      selected_id = read_ber s
+      return Tree.new(selected_id, maps)
     end
 
     raise "Unsupported type: #{s[:type]}"
   end
 
-  module_function :read_ber, :read_tree, :unpack_shorts, :parse_stream,
-                  :parse_event_commands, :to_rb
+  # Decode a packed sequence of little-endian signed 32bit integers.
+  def unpack_int32 d
+    bytes = d.bytes
+    out = []
+    (0...(bytes.size / 4)).each do |i|
+      b = i * 4
+      v = bytes[b] | (bytes[b + 1] << 8) | (bytes[b + 2] << 16) | (bytes[b + 3] << 24)
+      v -= 0x1_0000_0000 if v >= 0x8000_0000
+      out.push v
+    end
+    out
+  end
+
+  module_function :read_ber, :to_rb, :read_section, :parse_event_commands,
+                  :unpack_int32
 
   MODE = 2000 # 2003
 
@@ -185,9 +208,6 @@ module LCF
 
   class Array2D
     def initialize s, schema
-      # Nested Array2D fields (e.g. the database's actor table) arrive as a raw
-      # byte string, while top-level tables are read from a live stream; wrap
-      # strings so both work.
       s = StringIO.new s if s.is_a? String
 
       @data = []
