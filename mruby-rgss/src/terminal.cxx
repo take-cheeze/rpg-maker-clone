@@ -233,8 +233,10 @@ void terminal_append_legend(std::string& s) {
   // where it can never be overdrawn -- unlike positioning it after the image,
   // whose end-cursor location is not portable and left the legend overlapping
   // the bottom of the frame.  \x1b[K clears any stale text from the previous
-  // frame and the dim SGR keeps the legend visually secondary to the game.
-  s += "\x1b[K\x1b[2m";
+  // frame; reverse video (SGR 7) renders the row as a status bar that stays
+  // legible on any terminal background -- a dim foreground (SGR 2) was too
+  // faint to read on light themes.
+  s += "\x1b[K\x1b[7m";
   s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q";
   s += "\x1b[0m\r\n";
 }
@@ -246,10 +248,11 @@ void terminal_append_stats(std::string& s) {
   // dropped).  No-op when stats are disabled so the row is not reserved.  The
   // row is always emitted once stats are on -- with a placeholder for the first
   // second before a rate has been measured -- so the image never shifts down a
-  // row when the first sample arrives.
+  // row when the first sample arrives.  Reverse video (SGR 7) matches the
+  // legend so both stay legible on any terminal background.
   if (!g_stats)
     return;
-  s += "\x1b[K\x1b[2m";
+  s += "\x1b[K\x1b[7m";
   s += g_stats_line.empty() ? "term_stats: measuring..." : g_stats_line;
   s += "\x1b[0m\r\n";
 }
