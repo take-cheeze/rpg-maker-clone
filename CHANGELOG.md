@@ -109,6 +109,10 @@ All notable changes to this project will be documented in this file.
   - Added directional input helpers (dir4, dir8)
 
 ### Fixed
+- LCF `File#method_missing` delegates field access with `__send__` instead of
+  `send`, so parsed fields (`db.player`, `map_tree.initial`, ...) resolve on
+  mruby builds where `Kernel#send` is not exposed on objects that define their
+  own `method_missing`
 - LCF reader (`mruby-lcf/mrblib/lcf.rb`): booleans are read as their real
   1-byte encoding (previously required a 0-byte chunk and always returned
   `true`); nested `Array2D`/`Array1D` sections wrap a `String` in `StringIO`
