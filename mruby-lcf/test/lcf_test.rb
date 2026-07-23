@@ -87,7 +87,7 @@ assert "LCF decodes boolean chunks (1 byte 0/1)" do
   ce = lcf_array1d([lcf_int_field(11, 3), lcf_field(12, "\x01"),
                     lcf_int_field(13, 7)])
   db = LCF::Database.new(lcf_file("LcfDataBase",
-    lcf_array1d([lcf_field(26, lcf_array2d([[1, ce]]))])))
+    lcf_array1d([lcf_field(25, lcf_array2d([[1, ce]]))]))) # common_event = chunk 25
   assert_true db.common_event[1].need_flag
   assert_equal 3, db.common_event[1].start_term
 end
