@@ -1082,8 +1082,8 @@ void vp_apply(mrb_state* M, mrb_value self) {
   lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!outer)
     return;
-  Rect& r = DataType<Rect>::get(
-      M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  Rect& r =
+      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
   const mrb_int w = std::max<mrb_int>(r.width, 0);
   const mrb_int h = std::max<mrb_int>(r.height, 0);
   lv_obj_set_pos(outer, r.x, r.y);
