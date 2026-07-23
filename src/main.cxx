@@ -43,11 +43,12 @@ DEFINE_bool(iterm,
 DEFINE_int32(iterm_scale,
              1,
              "Integer upscale factor for the iTerm2 terminal output");
-DEFINE_bool(term_stats,
-            true,
-            "While a terminal backend (--sixel/--iterm) is active, print the "
-            "emit rate (frame size, MB/s, fps) to stderr about once a second; "
-            "redirect stderr (2>stats.log) to keep it off the game screen");
+DEFINE_bool(
+    term_stats,
+    true,
+    "While a terminal backend (--sixel/--iterm) is active, draw the "
+    "emit rate (frame size, MB/s, fps) on-screen just under the control "
+    "legend, refreshed about once a second");
 
 namespace {
 

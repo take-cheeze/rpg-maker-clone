@@ -16,6 +16,12 @@ typedef struct _lv_display_t lv_display_t;
 // and iTerm2 backends stay identical.
 void terminal_append_legend(std::string& s);
 
+// Append the emit-rate report row (frame size, MB/s, fps) drawn just under the
+// legend, in the same dim/cleared/CR-LF style.  Encoders call this right after
+// terminal_append_legend.  The text is refreshed about once a second; a no-op
+// when --term_stats is disabled.
+void terminal_append_stats(std::string& s);
+
 // A per-protocol frame encoder.  It is handed one finished frame as an RGB565
 // buffer at the logical game resolution (`w`x`h`) plus the integer upscale
 // factor `scale`, and is responsible for turning it into a terminal byte stream

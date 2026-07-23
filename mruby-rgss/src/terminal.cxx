@@ -50,13 +50,15 @@ bool g_termios_saved = false;
 std::vector<uint8_t> g_fb;
 
 // Emit-rate statistics: how many bytes the active encoder pushes to the
-// terminal, printed to stderr about once a second.  On by default; toggled with
-// --term_stats.
+// terminal, recomputed about once a second and drawn on-screen just under the
+// control legend.  On by default; toggled with --term_stats.
 bool g_stats = true;
 uint64_t g_stats_bytes = 0;   // bytes written to the terminal this interval
 uint32_t g_stats_frames = 0;  // frames emitted this interval
 uint32_t g_stats_last_ms = 0;
 bool g_stats_started = false;
+std::string
+    g_stats_line;  // last formatted report, drawn by terminal_append_stats
 
 struct KeyState {
   bool pressed = false;
@@ -148,10 +150,10 @@ void init_terminal() {
   terminal_write(hide_cursor, sizeof(hide_cursor) - 1);
 }
 
-// Once per ~second, print the emit rate (bytes the encoder pushed to the
-// terminal) to stderr and reset the interval counters.  stderr is used so the
-// numbers do not land in the stdout image stream; redirect it (2>stats.log) to
-// keep them off the game screen.
+// Once per ~second, recompute the emit rate (bytes the encoder pushed to the
+// terminal) into g_stats_line and reset the interval counters.  The line is
+// drawn into each frame by terminal_append_stats, so it never lands in the
+// stdout image stream or scrolls the alternate screen.
 void maybe_report_stats(uint32_t now) {
   if (!g_stats)
     return;
@@ -170,8 +172,11 @@ void maybe_report_stats(uint32_t now) {
       g_stats_frames
           ? static_cast<double>(g_stats_bytes) / g_stats_frames / 1024.0
           : 0.0;
-  std::fprintf(stderr, "[term_stats] %.1f KB/frame  %.2f MB/s  %.1f fps\n",
-               kb_per_frame, mbps, fps);
+  char buf[128];
+  std::snprintf(buf, sizeof(buf),
+                "term_stats: %.1f KB/frame  %.2f MB/s  %.1f fps", kb_per_frame,
+                mbps, fps);
+  g_stats_line.assign(buf);
   g_stats_bytes = 0;
   g_stats_frames = 0;
   g_stats_last_ms = now;
@@ -231,6 +236,21 @@ void terminal_append_legend(std::string& s) {
   // frame and the dim SGR keeps the legend visually secondary to the game.
   s += "\x1b[K\x1b[2m";
   s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q";
+  s += "\x1b[0m\r\n";
+}
+
+void terminal_append_stats(std::string& s) {
+  // Draw the emit-rate report on its own row just under the legend, using the
+  // same cursor-home overdraw model so it refreshes in place instead of
+  // scrolling the alternate screen (the reason the old stderr print was
+  // dropped).  No-op when stats are disabled so the row is not reserved.  The
+  // row is always emitted once stats are on -- with a placeholder for the first
+  // second before a rate has been measured -- so the image never shifts down a
+  // row when the first sample arrives.
+  if (!g_stats)
+    return;
+  s += "\x1b[K\x1b[2m";
+  s += g_stats_line.empty() ? "term_stats: measuring..." : g_stats_line;
   s += "\x1b[0m\r\n";
 }
 

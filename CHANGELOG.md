@@ -49,12 +49,12 @@ All notable changes to this project will be documented in this file.
     monotonic tick/delay source, alternate-screen handling); each protocol is
     now just a frame encoder (`sixel.cxx` / `iterm.cxx`)
   - Documented the decision in `docs/adr/0003-terminal-gaming-iterm2.md`
-- Added a `--term_stats` flag (on by default) that prints the terminal emit
-  rate — frame size, MB/s and fps — to stderr about once a second while a
-  terminal backend is active, so the real per-frame byte cost can be measured
-  against the estimated bandwidth. Disable with `--noterm_stats`; the counter
-  lives in the shared `terminal.cxx`, so both the sixel and iTerm2 backends
-  report it
+- Added a `--term_stats` flag (on by default) that draws the terminal emit
+  rate — frame size, MB/s and fps — on-screen just under the control legend,
+  refreshed about once a second while a terminal backend is active, so the real
+  per-frame byte cost is visible against the estimated bandwidth. Disable with
+  `--noterm_stats`; the counter lives in the shared `terminal.cxx`, so both the
+  sixel and iTerm2 backends report it
 - Expanded the `mruby-rgss` RGSS built-in class library:
   - `RGSS::Color` — floating point RGBA color with clamping, `set`, `==`,
     `to_s` and Marshal (`_dump`/`_load`) support

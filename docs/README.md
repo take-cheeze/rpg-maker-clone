@@ -47,9 +47,9 @@
   Terminals do not report key-release events, so a key is treated as held for
   a short window (`HOLD_MS`) after its last byte; the terminal's own
   auto-repeat sustains movement while a key stays down.
-- Prints an emit-rate report (frame size, MB/s, fps) to stderr about once a
-  second so the real per-frame byte cost can be measured; on by default,
-  disabled with `--noterm_stats`
+- Draws an emit-rate report (frame size, MB/s, fps) on-screen just under the
+  control legend, refreshed about once a second, so the real per-frame byte cost
+  is visible while playing; on by default, disabled with `--noterm_stats`
 - Output is throughput-bound: the sixel path for 320×240 at 60 Hz needs roughly
   20 Mbaud (up to ~70 Mbaud worst case); the iTerm2 path PNG-compresses each
   frame, which shrinks flat tile/sprite regions substantially but spends CPU on
