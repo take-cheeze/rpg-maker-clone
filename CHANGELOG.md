@@ -38,6 +38,23 @@ All notable changes to this project will be documented in this file.
     so it no longer scribbles sixels over the shell history; on exit (including
     fatal signals) the pre-game screen contents and cursor are restored
   - Documented the decision in `docs/adr/0001-terminal-gaming-sixel.md`
+- Terminal gaming support using iTerm2's inline-image protocol
+  - Added `--iterm` flag to render frames to the terminal via the OSC 1337
+    `File=` sequence, plus `--iterm_scale` for integer upscaling. Each frame is
+    PNG-encoded (via stb_image_write) and emitted base64-encoded, so it renders
+    in terminals that don't support sixel — including VS Code's integrated
+    terminal, iTerm2 and WezTerm
+  - Refactored the windowless terminal backend so both the sixel and iTerm2
+    encoders share one core (`mruby-rgss/src/terminal.cxx`: raw-mode input,
+    monotonic tick/delay source, alternate-screen handling); each protocol is
+    now just a frame encoder (`sixel.cxx` / `iterm.cxx`)
+  - Documented the decision in `docs/adr/0003-terminal-gaming-iterm2.md`
+- Added a `--term_stats` flag (on by default) that draws the terminal emit
+  rate — frame size, MB/s and fps — on-screen just under the control legend,
+  refreshed about once a second while a terminal backend is active, so the real
+  per-frame byte cost is visible against the estimated bandwidth. Disable with
+  `--noterm_stats`; the counter lives in the shared `terminal.cxx`, so both the
+  sixel and iTerm2 backends report it
 - Expanded the `mruby-rgss` RGSS built-in class library:
   - `RGSS::Color` — floating point RGBA color with clamping, `set`, `==`,
     `to_s` and Marshal (`_dump`/`_load`) support
