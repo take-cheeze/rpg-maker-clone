@@ -18,6 +18,7 @@
 
 #include "iterm.hxx"
 #include "sixel.hxx"
+#include "terminal.hxx"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -42,6 +43,11 @@ DEFINE_bool(iterm,
 DEFINE_int32(iterm_scale,
              1,
              "Integer upscale factor for the iTerm2 terminal output");
+DEFINE_bool(term_stats,
+            true,
+            "While a terminal backend (--sixel/--iterm) is active, print the "
+            "emit rate (frame size, MB/s, fps) to stderr about once a second; "
+            "redirect stderr (2>stats.log) to keep it off the game screen");
 
 namespace {
 
@@ -156,6 +162,8 @@ int main(int argc, char** argv) {
   CHECK(!(FLAGS_sixel && FLAGS_iterm))
       << "--sixel and --iterm are mutually exclusive; pick one terminal "
          "backend";
+
+  terminal_set_stats(FLAGS_term_stats);
 
   std::shared_ptr<lv_display_t> display;
   if (FLAGS_sixel) {

@@ -29,6 +29,9 @@
   (`sixel.cxx` / `iterm.cxx`)
 - Reads keyboard input directly from the terminal and forwards it to
   `RGSS::Input`
+- Prints an emit-rate report (frame size, MB/s, fps) to stderr about once a
+  second so the real per-frame byte cost can be measured; on by default,
+  disabled with `--noterm_stats`
 - Output is throughput-bound: the sixel path for 320×240 at 60 Hz needs roughly
   20 Mbaud (up to ~70 Mbaud worst case); the iTerm2 path PNG-compresses each
   frame, which shrinks flat tile/sprite regions substantially but spends CPU on

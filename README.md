@@ -28,6 +28,13 @@
   `X`/`Esc` to cancel, `Q` or `Ctrl-C` to quit
 - `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
   and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
+- Either backend prints its emit rate (frame size, MB/s, fps) to stderr about
+  once a second; this is on by default and can be turned off with
+  `--noterm_stats`. Redirect stderr to keep the numbers off the game screen:
+
+  ```sh
+  ./rpg_maker_clone --iterm --game_dir path/to/game 2>stats.log
+  ```
 
 ## TODO
 - Run zip file directly

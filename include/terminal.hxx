@@ -42,3 +42,9 @@ void terminal_poll(mrb_state* M);
 // Write raw bytes to the controlling terminal, handling partial writes and
 // EINTR.  Meant for encoders assembling a frame.
 void terminal_write(const char* p, size_t n);
+
+// Enable or disable the periodic emit-rate report (frame size, MB/s, fps)
+// printed to stderr about once a second while a terminal backend is active.
+// Enabled by default; wired to the --term_stats flag.  Has no effect unless a
+// terminal display was created (the SDL path never calls the encoder).
+void terminal_set_stats(bool enabled);

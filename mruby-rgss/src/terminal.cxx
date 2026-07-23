@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -46,6 +47,15 @@ bool g_termios_saved = false;
 
 // Full-screen render buffer handed to LVGL (RENDER_MODE_FULL, RGB565).
 std::vector<uint8_t> g_fb;
+
+// Emit-rate statistics: how many bytes the active encoder pushes to the
+// terminal, printed to stderr about once a second.  On by default; toggled with
+// --term_stats.
+bool g_stats = true;
+uint64_t g_stats_bytes = 0;   // bytes written to the terminal this interval
+uint32_t g_stats_frames = 0;  // frames emitted this interval
+uint32_t g_stats_last_ms = 0;
+bool g_stats_started = false;
 
 struct KeyState {
   bool pressed = false;
@@ -137,11 +147,42 @@ void init_terminal() {
   terminal_write(hide_cursor, sizeof(hide_cursor) - 1);
 }
 
+// Once per ~second, print the emit rate (bytes the encoder pushed to the
+// terminal) to stderr and reset the interval counters.  stderr is used so the
+// numbers do not land in the stdout image stream; redirect it (2>stats.log) to
+// keep them off the game screen.
+void maybe_report_stats(uint32_t now) {
+  if (!g_stats)
+    return;
+  if (!g_stats_started) {  // anchor the first interval; don't report a partial
+    g_stats_started = true;
+    g_stats_last_ms = now;
+    return;
+  }
+  const uint32_t dt = now - g_stats_last_ms;
+  if (dt < 1000)
+    return;
+  const double secs = dt / 1000.0;
+  const double mbps = static_cast<double>(g_stats_bytes) / secs / (1024 * 1024);
+  const double fps = g_stats_frames / secs;
+  const double kb_per_frame =
+      g_stats_frames
+          ? static_cast<double>(g_stats_bytes) / g_stats_frames / 1024.0
+          : 0.0;
+  std::fprintf(stderr, "[term_stats] %.1f KB/frame  %.2f MB/s  %.1f fps\n",
+               kb_per_frame, mbps, fps);
+  g_stats_bytes = 0;
+  g_stats_frames = 0;
+  g_stats_last_ms = now;
+}
+
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   if (lv_display_flush_is_last(disp) && g_encode) {
     const int w = lv_area_get_width(area);
     const int h = lv_area_get_height(area);
     g_encode(w, h, g_scale, reinterpret_cast<const uint16_t*>(px_map));
+    ++g_stats_frames;
+    maybe_report_stats(now_ms());
   }
   lv_display_flush_ready(disp);
 }
@@ -175,7 +216,13 @@ void hold_key(mrb_state* M, int key, uint32_t now) {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+void terminal_set_stats(bool enabled) {
+  g_stats = enabled;
+}
+
 void terminal_write(const char* p, size_t n) {
+  if (g_stats)
+    g_stats_bytes += n;
   while (n > 0) {
     const ssize_t w = ::write(STDOUT_FILENO, p, n);
     if (w <= 0) {
