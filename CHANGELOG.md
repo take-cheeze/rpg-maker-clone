@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV Canvas2D rendering bridge, first slice (milestone M4): `document`,
+  `HTMLCanvasElement` and a `CanvasRenderingContext2D` backed by native RGBA8
+  buffers (`mruby-mvjs/src/mvcanvas.cxx`). `getContext('2d')` returns the shim
+  and `getContext('webgl')` returns `null`, so PIXI.js falls back to its Canvas
+  renderer. Implements the drawing subset that renderer uses — `fillRect`
+  (with `fillStyle` `#rgb`/`#rrggbb`/`rgba()` and `globalAlpha`), `clearRect`,
+  nearest-neighbour scaled `drawImage` (canvas→canvas), `getImageData`, and
+  `measureText` — with path/transform/text operations stubbed for now. Canvas
+  buffers are display-independent, so the primitives are unit-tested by reading
+  pixels back (`mruby-mvjs/test/canvas_test.rb`). On-screen present and PNG
+  `Image` loading follow.
 - MV JavaScript host environment, first slice (milestone M3): `MV::JS.eval` now
   runs against a **persistent** quickjs-ng runtime/context (state carries across
   calls, as the MV engine expects) instead of a throwaway per call, and the

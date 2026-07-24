@@ -27,6 +27,8 @@
 
 #include <quickjs.h>
 
+#include "mvhost.hxx"
+
 namespace {
 
 // Read a whole file into `out`. Returns false if it cannot be opened.
@@ -326,6 +328,9 @@ void install_host_globals(JSContext* ctx) {
   JSValue r = JS_Eval(ctx, kHostPreamble, std::strlen(kHostPreamble),
                       "<mv-host-preamble>", JS_EVAL_TYPE_GLOBAL);
   JS_FreeValue(ctx, r);
+
+  // The Canvas2D bridge (document/canvas/context), defined in mvcanvas.cxx.
+  mv_install_canvas(ctx);
 }
 
 // -- the persistent host -----------------------------------------------------

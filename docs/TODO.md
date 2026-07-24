@@ -137,6 +137,15 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `Scene_Title`.
 - 🚧 **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
   renderer, so the title screen and map actually draw through `mruby-rgss`.
+  - ✅ `document`/`HTMLCanvasElement`/`CanvasRenderingContext2D` backed by native
+    RGBA buffers (`mvcanvas.cxx`): `fillRect`/`clearRect`/`drawImage`/
+    `getImageData`/`globalAlpha`/`fillStyle`, WebGL absent so PIXI uses canvas.
+    Unit-tested by pixel readback.
+  - Remaining: PNG `Image` loading (via stb, reusing mruby-rgss's
+    `STB_IMAGE_IMPLEMENTATION`), `putImageData`/typed-array `ImageData`, then
+    present the main canvas each frame by copying it into a `Sprite`'s
+    `RGSS::Bitmap`, and flip `MV.runtime_available?` so a real game boots to
+    `Scene_Title`.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
   in the SDL window and the sixel/iTerm2 terminals.
