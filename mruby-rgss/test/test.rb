@@ -257,6 +257,63 @@ assert "RGSS::Bitmap reports a detailed reason when an XYZ fails to decode" do
   end
 end
 
+assert "RGSS::Profiler is inert until enabled" do
+  # The standalone test binary never calls profiler_configure, so profiling is
+  # off by default: query methods report the disabled state and the block-timing
+  # helpers still run their block and return its value transparently.
+  assert_false RGSS::Profiler.enabled?
+  assert_nil RGSS::Profiler.stats
+
+  ran = false
+  result = RGSS::Profiler.section("noop") do
+    ran = true
+    123
+  end
+  assert_true ran, "section must always run its block"
+  assert_equal 123, result
+
+  ran = false
+  result = RGSS::Profiler.frame do
+    ran = true
+    "ok"
+  end
+  assert_true ran, "frame must always run its block"
+  assert_equal "ok", result
+end
+
+assert "RGSS::Profiler aggregates frames and sections when enabled" do
+  RGSS::Profiler.enabled = true
+  begin
+    RGSS::Profiler.reset
+    assert_true RGSS::Profiler.enabled?
+
+    3.times do
+      RGSS::Profiler.frame do
+        RGSS::Profiler.section("work") { 100.times { |i| i * i } }
+      end
+    end
+
+    st = RGSS::Profiler.stats
+    assert_true st.is_a?(Hash)
+    assert_equal 3, st[:frames]
+    assert_true st[:fps] >= 0.0
+    assert_true st[:frame_avg_ms] >= 0.0
+
+    sections = st[:sections]
+    assert_true sections.is_a?(Hash)
+    assert_true sections.key?("work"), "expected a 'work' section"
+    assert_equal 3, sections["work"][:calls]
+    assert_true sections["work"][:avg_ms] >= 0.0
+
+    # report and reset must not raise; reset clears the interval.
+    RGSS::Profiler.report
+    RGSS::Profiler.reset
+    assert_equal 0, RGSS::Profiler.stats[:frames]
+  ensure
+    RGSS::Profiler.enabled = false
+  end
+end
+
 assert "RGSS::Bitmap loads a PNG whose deflate stream trips \"bad dist\"" do
   # A 4x1 grayscale PNG hand-encoded so its IDAT references a zero pre-history
   # window (distance-too-far-back). stb_image and strict zlib reject it with

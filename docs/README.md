@@ -59,6 +59,31 @@
   `docs/adr/0003-terminal-gaming-iterm2.md` for the design rationale and a full
   bandwidth breakdown
 
+### Profiling (`--profile`)
+- A built-in CPU/memory profiler for locating frame-time bottlenecks, off by
+  default and enabled with `--profile` (report cadence via
+  `--profile_interval_ms`, default 1000ms)
+- Implemented in `mruby-rgss/src/profiler.cxx` behind `include/profiler.hxx`.
+  The whole subsystem is inert until enabled, so the default build pays only a
+  single predicted branch per frame and per section
+- Frame timing: the game loop is one `Graphics.update` per iteration, so the
+  frame is bounded from Ruby by `RGSS::Profiler.frame` around `main_loop`.
+  `Graphics.update` reports its fps-cap sleep via `profiler_note_idle`, so the
+  reported per-frame **work** figure is CPU cost, not time spent sleeping
+- Sub-section timing: `scene.update` and `input.update` are wrapped in
+  `main_loop`, and the `gfx.*` phases (z-ordering, bitmap invalidation, LVGL
+  handling) are wrapped inside `gfx_update` with the `ProfilerScope` RAII
+  helper. Any Ruby code can add its own with
+  `RGSS::Profiler.section("name") { ... }`
+- Memory sampling: process RSS (from `/proc/self/statm` on Linux), the LVGL
+  heap pool via `lv_mem_monitor` (guarded by `lv_is_initialized`), and mruby
+  allocation activity — the native build routes mruby's allocator through
+  `profiler_allocf` to count live blocks and allocation churn (the Emscripten
+  build opens mruby without a custom allocator, so those counters read zero
+  there)
+- `RGSS::Profiler.stats` returns the current interval as a Hash for tests and
+  ad-hoc measurement; `report`/`reset` force or clear an interval
+
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory
 

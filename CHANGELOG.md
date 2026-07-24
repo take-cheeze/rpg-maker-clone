@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
+  `--profile` (report cadence tunable via `--profile_interval_ms`, default
+  1000ms). Once a second it prints a summary line to stderr with the measured
+  frame rate, per-frame CPU **work** time (the frame span minus the fps-cap
+  sleep) and a breakdown of named sub-sections — `scene.update`, `input.update`
+  and the `gfx.*` phases of `Graphics.update` (z-ordering, bitmap invalidation,
+  LVGL handling) — each with its average/max time and share of the frame, plus
+  memory use: process RSS, the LVGL heap pool (used bytes + fragmentation) and
+  mruby allocation activity (live blocks and allocations/sec). Custom sections
+  can be timed from Ruby with `RGSS::Profiler.section("name") { ... }`, and
+  `RGSS::Profiler.stats` returns the current interval as a Hash. When
+  `--profile` is off the profiler does no work — every timing/sampling entry
+  point returns on a single predicted branch — so the default build is
+  unaffected
 - `RGSS::Viewport` is now a functional display object rather than a stub: it
   wraps an LVGL container that positions and **clips** its sprites to a `rect`,
   scrolls their content by `ox`/`oy`, hides via `visible`, and takes part in

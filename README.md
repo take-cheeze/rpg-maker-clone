@@ -53,6 +53,32 @@
   under the control legend, refreshed about once a second; this is on by default
   and can be turned off with `--noterm_stats`
 
+### Profiling
+
+- Measure where frame time goes with the built-in CPU/memory profiler, enabled
+  with `--profile`:
+
+  ```sh
+  ./rpg_maker_clone --profile --game_dir path/to/game
+  ```
+
+- About once a second (tune with `--profile_interval_ms=N`) it prints a summary
+  line to stderr, e.g.:
+
+  ```
+  [profiler] fps=60.0 frame(work) avg=3.21ms max=8.40ms n=60 | mem rss=45.20MB lv_used=1.83MB lv_frag=12% live_blocks=48213 allocs/s=91234 | sections: scene.update avg=1.90ms max=6.10ms n=60 (59%) gfx.lvgl avg=0.80ms max=1.20ms n=60 (25%) gfx.zorder avg=0.20ms max=0.90ms n=17 (6%)
+  ```
+
+- `frame(work)` is per-frame CPU time (the frame span minus the fps-cap sleep);
+  the `sections` list is the bottleneck breakdown — `scene.update`,
+  `input.update` and the `gfx.*` phases of `Graphics.update` — sorted hottest
+  first, each with its average/max time and share of the frame. The memory
+  fields cover process RSS, the LVGL heap pool and mruby allocation churn (live
+  blocks and allocations/sec; the allocation counters need the native build)
+- Game/engine Ruby code can time its own hot spots with
+  `RGSS::Profiler.section("name") { ... }`, and read the live numbers back as a
+  Hash with `RGSS::Profiler.stats`
+
 ## TODO
 - Run zip file directly
 - Editor with [imgui](https://github.com/ocornut/imgui)

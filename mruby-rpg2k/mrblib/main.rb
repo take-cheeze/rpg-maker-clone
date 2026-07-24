@@ -982,9 +982,11 @@ class RPG2k
   end
 
   def main_loop
-    @scenes.last.update
-    Input.update
-    Graphics.update
+    RGSS::Profiler.frame do
+      RGSS::Profiler.section("scene.update") { @scenes.last.update }
+      RGSS::Profiler.section("input.update") { Input.update }
+      Graphics.update
+    end
   end
 
   def start

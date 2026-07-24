@@ -1,0 +1,82 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+// Forward declaration to avoid pulling <mruby.h> into every includer.
+struct mrb_state;
+
+// A lightweight, always-linked performance profiler for the game loop. It
+// measures per-frame CPU time and named sub-sections (the "where does the frame
+// go" bottleneck breakdown) and samples memory use (process RSS, the LVGL heap
+// pool and mruby allocation activity), then prints a one-line summary to stderr
+// about once per reporting interval.
+//
+// The whole subsystem is inert until profiler_configure() enables it, so the
+// default (unprofiled) build pays only a single predicted branch per frame and
+// per section. Enabled from main() via the --profile flag.
+
+// Type of an mruby allocator function, identical to mruby's mrb_allocf. Kept
+// here so main() can hand its allocator to the profiler without including
+// <mruby.h> from the profiler header.
+using profiler_allocf_t = void* (*)(mrb_state* mrb,
+                                    void* ptr,
+                                    size_t size,
+                                    void* ud);
+
+// Enable profiling and set how often (in milliseconds) a summary line is
+// emitted. Call once from main() after flag parsing and, so the allocator hook
+// observes the right state, before mrb_open_allocf(). A non-positive
+// interval_ms falls back to 1000ms.
+void profiler_configure(bool enabled, int32_t interval_ms);
+
+// Whether profiling is currently enabled.
+bool profiler_enabled();
+
+// Allocation-tracking hook. Install it as mruby's allocator (in place of the
+// real one) and register the real allocator as the downstream via
+// profiler_set_downstream_allocf(): the hook counts allocation activity and
+// forwards every call unchanged. Safe to leave installed when disabled -- it
+// then only forwards. Do NOT use under a build that opens mruby without an
+// allocf (e.g. Emscripten); there the hook is simply never installed and memory
+// stats fall back to the LVGL pool monitor.
+void profiler_set_downstream_allocf(profiler_allocf_t downstream);
+void* profiler_allocf(mrb_state* mrb, void* ptr, size_t size, void* ud);
+
+// Game-loop frame boundaries. A frame spans one main_loop iteration and is
+// driven from Ruby via RGSS::Profiler.frame { ... }, which calls frame_begin()
+// before the iteration and frame_end() after it. frame_end() records the
+// frame's "work" time -- the wall-clock span minus any idle reported through
+// profiler_note_idle() -- and, once per interval, prints the summary line.
+void profiler_frame_begin();
+void profiler_frame_end();
+
+// Report an idle wait (in milliseconds) that happened inside the current frame,
+// e.g. the fps-cap sleep in Graphics.update. Subtracted from the frame's work
+// time so the profiler reports CPU cost rather than time spent sleeping.
+void profiler_note_idle(uint32_t idle_ms);
+
+// Named-section timing primitives. profiler_section_begin() returns an opaque
+// start stamp to hand back to profiler_section_end(); the elapsed time is
+// aggregated under `name` for the current interval. `name` must outlive the
+// call (a string literal is ideal). No-ops when profiling is disabled.
+uint64_t profiler_section_begin();
+void profiler_section_end(const char* name, uint64_t start);
+
+// RAII helper that times the enclosing C++ scope as section `name`.
+class ProfilerScope {
+ public:
+  explicit ProfilerScope(const char* name);
+  ~ProfilerScope();
+
+  ProfilerScope(const ProfilerScope&) = delete;
+  ProfilerScope& operator=(const ProfilerScope&) = delete;
+
+ private:
+  const char* name_;
+  uint64_t start_;
+};
+
+// Register the RGSS::Profiler Ruby module and its methods. Called from the
+// mruby-rgss gem init.
+void profiler_init(mrb_state* mrb);
