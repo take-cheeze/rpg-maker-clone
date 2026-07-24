@@ -74,12 +74,13 @@ struct ConsoleLine {
   std::string text;
 };
 
-bool g_console = false;   // wired to --term_console
-int g_console_lines = 5;  // reserved message rows (wired to --term_console_lines)
+bool g_console = false;  // wired to --term_console
+// Reserved message rows, wired to --term_console_lines.
+int g_console_lines = 5;
 // A few more than g_console_lines are retained so raising the row count (or a
 // burst arriving between frames) still has scrollback to show.
 constexpr size_t CONSOLE_HISTORY = 256;
-std::mutex g_console_mutex;         // guards g_console_buf (sink vs. render thread)
+std::mutex g_console_mutex;  // guards g_console_buf (sink vs. render thread)
 std::deque<ConsoleLine> g_console_buf;
 
 struct KeyState {
@@ -205,8 +206,8 @@ void maybe_report_stats(uint32_t now) {
 }
 
 // Current terminal width in columns, so console rows can be truncated to avoid
-// line-wrap (which would push the game image down a row).  Falls back to 80 when
-// the size is unknown (e.g. output is not a tty).
+// line-wrap (which would push the game image down a row).  Falls back to 80
+// when the size is unknown (e.g. output is not a tty).
 int term_cols() {
   winsize ws{};
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
@@ -226,8 +227,8 @@ void append_sanitised(std::string& out, const char* msg, size_t n) {
   }
 }
 
-// SGR foreground colour for a log row, keyed by ng-log severity.  INFO is dim so
-// it recedes; warnings/errors escalate to yellow/red so they stand out.
+// SGR foreground colour for a log row, keyed by ng-log severity.  INFO is dim
+// so it recedes; warnings/errors escalate to yellow/red so they stand out.
 const char* severity_color(int severity) {
   switch (severity) {
     case 1:
@@ -345,10 +346,10 @@ void terminal_console_push(int severity,
 }
 
 void terminal_append_console(std::string& s) {
-  // Reserve a fixed block (header + g_console_lines rows) regardless of how many
-  // messages exist, so the image never shifts as logs arrive: empty slots are
-  // drawn as blank cleared rows.  The newest messages sit at the bottom of the
-  // block, right above the image, tailing like a real console.  Same
+  // Reserve a fixed block (header + g_console_lines rows) regardless of how
+  // many messages exist, so the image never shifts as logs arrive: empty slots
+  // are drawn as blank cleared rows.  The newest messages sit at the bottom of
+  // the block, right above the image, tailing like a real console.  Same
   // cursor-home overdraw + reverse-video header style as the legend/stats rows.
   if (!g_console)
     return;

@@ -72,8 +72,8 @@ void terminal_set_stats(bool enabled);
 // A TUI log panel that mirrors ng-log output on-screen, drawn above the game
 // image just like the legend and stats rows.  Because a terminal backend paints
 // each frame onto the alternate screen with cursor-home overdraw, anything
-// ng-log wrote to stderr would scribble over the picture; the console reserves a
-// fixed block of rows for the last few messages instead, tailing them like a
+// ng-log wrote to stderr would scribble over the picture; the console reserves
+// a fixed block of rows for the last few messages instead, tailing them like a
 // real console (newest at the bottom, nearest the image).
 //
 // The pieces are split across the executable and this gem so the gem keeps no

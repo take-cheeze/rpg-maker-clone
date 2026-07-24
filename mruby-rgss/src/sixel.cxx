@@ -92,11 +92,11 @@ void sixel_encode_frame(int w, int h, int scale, const uint16_t* pix) {
   std::string& s = g_out;
   s.clear();
   s += "\x1b[H";  // cursor home: overdraw the previous frame in place
-  terminal_append_legend(s);  // one-line key reference pinned above the image
-  terminal_append_stats(s);   // emit-rate report row (no-op if --noterm_stats)
-  terminal_append_console(s);  // ng-log console block (no-op if --noterm_console)
-  s += "\x1bPq";              // enter sixel mode
-  s += "\"1;1;";              // raster attributes: 1:1 aspect ratio
+  terminal_append_legend(s);   // one-line key reference pinned above the image
+  terminal_append_stats(s);    // emit-rate report row (no-op if --noterm_stats)
+  terminal_append_console(s);  // ng-log console block (no-op if disabled)
+  s += "\x1bPq";               // enter sixel mode
+  s += "\"1;1;";               // raster attributes: 1:1 aspect ratio
   s += std::to_string(out_w);
   s += ';';
   s += std::to_string(out_h);
