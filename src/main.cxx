@@ -71,9 +71,9 @@ namespace fs = std::filesystem;
 #ifndef __EMSCRIPTEN__
 // mruby's heap is routed through lvgl's memory pool so both are accounted under
 // one allocator. mruby 4.0 removed per-state allocators (mrb_open_allocf); a
-// program now customizes allocation by overriding the global mrb_basic_alloc_func
-// (see below), whose (ptr, size) contract this matches: size 0 frees, a non-null
-// ptr reallocs, otherwise it allocates.
+// program now customizes allocation by overriding the global
+// mrb_basic_alloc_func (see below), whose (ptr, size) contract this matches:
+// size 0 frees, a non-null ptr reallocs, otherwise it allocates.
 void* lvallocf(void* p, size_t s) {
   if (s == 0) {
     lv_free(p);
@@ -150,14 +150,16 @@ void main_loop() {
 #ifndef __EMSCRIPTEN__
 // mruby 4.0 has no per-state allocator hook; a program overrides the global
 // mrb_basic_alloc_func to supply its own allocator. Defining it here means the
-// linker never pulls mruby's default from libmruby.a. Route mruby's heap through
-// lvgl's pool (via lvallocf), optionally counting through the profiler.
+// linker never pulls mruby's default from libmruby.a. Route mruby's heap
+// through lvgl's pool (via lvallocf), optionally counting through the profiler.
 //
-// The Emscripten build deliberately does NOT override it (see the mrb_open() note
-// in main): lvgl's TLSF pool only aligns to 4 bytes on wasm32, which breaks
-// mruby's word boxing, so there mruby keeps its default 16-byte-aligned malloc.
+// The Emscripten build deliberately does NOT override it (see the mrb_open()
+// note in main): lvgl's TLSF pool only aligns to 4 bytes on wasm32, which
+// breaks mruby's word boxing, so there mruby keeps its default 16-byte-aligned
+// malloc.
 extern "C" void* mrb_basic_alloc_func(void* p, size_t size) {
-  return g_alloc_through_profiler ? profiler_allocf(p, size) : lvallocf(p, size);
+  return g_alloc_through_profiler ? profiler_allocf(p, size)
+                                  : lvallocf(p, size);
 }
 #endif
 

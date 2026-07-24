@@ -16,10 +16,10 @@ struct mrb_state;
 // default (unprofiled) build pays only a single predicted branch per frame and
 // per section. Enabled from main() via the --profile flag.
 
-// Type of an allocator function, matching mruby 4.0's global mrb_basic_alloc_func
-// (ptr, size) contract: size 0 frees, a non-null ptr reallocs, otherwise it
-// allocates. Kept here so main() can hand its allocator to the profiler without
-// including <mruby.h> from the profiler header.
+// Type of an allocator function, matching mruby 4.0's global
+// mrb_basic_alloc_func (ptr, size) contract: size 0 frees, a non-null ptr
+// reallocs, otherwise it allocates. Kept here so main() can hand its allocator
+// to the profiler without including <mruby.h> from the profiler header.
 using profiler_allocf_t = void* (*)(void*, size_t);
 
 // Enable profiling and set how often (in milliseconds) a summary line is
@@ -31,13 +31,13 @@ void profiler_configure(bool enabled, int32_t interval_ms);
 // Whether profiling is currently enabled.
 bool profiler_enabled();
 
-// Allocation-tracking hook. Have mruby's global allocator (mrb_basic_alloc_func)
-// call it and register the real allocator as the downstream via
-// profiler_set_downstream_allocf(): the hook counts allocation activity and
-// forwards every call unchanged. Safe to leave installed when disabled -- it
-// then only forwards. Do NOT use under a build that keeps mruby's default
-// allocator (e.g. Emscripten); there the hook is simply never installed and
-// memory stats fall back to the LVGL pool monitor.
+// Allocation-tracking hook. Have mruby's global allocator
+// (mrb_basic_alloc_func) call it and register the real allocator as the
+// downstream via profiler_set_downstream_allocf(): the hook counts allocation
+// activity and forwards every call unchanged. Safe to leave installed when
+// disabled -- it then only forwards. Do NOT use under a build that keeps
+// mruby's default allocator (e.g. Emscripten); there the hook is simply never
+// installed and memory stats fall back to the LVGL pool monitor.
 void profiler_set_downstream_allocf(profiler_allocf_t downstream);
 void* profiler_allocf(void* ptr, size_t size);
 
