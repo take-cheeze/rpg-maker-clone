@@ -220,9 +220,18 @@ if(NOT EMSCRIPTEN)
     COMMAND env ${MRB_OPTS} rake test
     WORKING_DIRECTORY "${MRUBY_PREFIX}")
 
+  set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
+                   --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)
+  # The SDL window backend needs a real display. Linux CI runners are headless,
+  # so run under a virtual X server (xvfb-run is provided by the dev shell).
+  # Older LVGL silently tolerated a failed SDL_CreateWindow; v9.5.0 correctly
+  # errors out when no window can be created, which would abort this smoke test.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(exe_open_cmd xvfb-run -a "--server-args=-screen 0 640x480x24"
+                     ${exe_open_cmd})
+  endif()
   add_test(
     NAME exe_open
-    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
-            --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta
+    COMMAND ${exe_open_cmd}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
