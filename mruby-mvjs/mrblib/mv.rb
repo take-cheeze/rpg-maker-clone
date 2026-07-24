@@ -131,6 +131,10 @@ class MV
       path = "#{@game_dir}/#{script}"
       MV::JS.eval_file(path) if File.exist?(path)
     end
+    # MV registers its entry point on window.onload (see the game's main.js);
+    # in a browser the page-load event calls it. Fire it now that every script
+    # is loaded, which runs SceneManager.run(Scene_Boot) and starts the game.
+    MV::JS.eval("if (typeof window.onload === 'function') { window.onload(); }")
   end
 
   # Advance the game's timer/requestAnimationFrame queue by one host frame. Time
