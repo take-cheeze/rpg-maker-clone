@@ -52,9 +52,10 @@ assert 'MV.js_available? is true once the quickjs-ng engine is compiled in' do
   assert_true MV.js_available?
 end
 
-assert 'MV.runtime_available? is false until the game host is wired up' do
-  # The JS *engine* is present (M2), but booting a whole game still needs the
-  # host globals and rendering (M3/M4); until then this stays false and guards
-  # the graceful "under construction" path in MV#start / MV#main_loop.
-  assert_false MV.runtime_available?
+assert 'MV.runtime_available? is true once the engine is compiled in' do
+  # The host globals, IO, event loop, saves and Canvas2D bridge are wired up
+  # (M3/M4), so MV#start now boots the game instead of taking the "under
+  # construction" path. It tracks js_available? (true in the test binary).
+  assert_equal MV.js_available?, MV.runtime_available?
+  assert_true MV.runtime_available?
 end

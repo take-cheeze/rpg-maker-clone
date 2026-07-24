@@ -72,12 +72,12 @@ class MV
       const_defined?(:JS)
     end
 
-    # True once a full MV game can boot end-to-end (host globals, asset IO,
-    # event loop and rendering are wired up — milestones M3/M4). Until then
-    # MV#start reports the pending state instead of failing. Flipped on when the
-    # boot/pump path below is implemented.
+    # True once a full MV game can boot end-to-end. The host globals, asset IO,
+    # event loop, saves and the Canvas2D bridge are wired up (M3/M4), so this
+    # now tracks whether the embedded JS engine is compiled in. On-screen
+    # presentation is still being brought up, so a booted game may not yet draw.
     def runtime_available?
-      false
+      js_available?
     end
   end
 

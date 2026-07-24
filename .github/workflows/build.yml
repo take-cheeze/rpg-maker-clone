@@ -100,6 +100,19 @@ jobs:
         run: |
           nix develop -c cmake --build build -t test
 
+      # Boot the RPG Maker MV test bed (KinoAR/Lunatic-Core) through the
+      # embedded JS host as a smoke test. Non-blocking while the MV runtime is
+      # brought up: the step logs the engine's output/errors for iteration but
+      # does not fail the build.
+      - name: Download MV test game
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: nix develop -c ./scripts/download-lunatic-core.bash
+
+      - name: MV boot smoke test
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        run: nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone --timeout_ms=3000 --game_dir data/Lunatic-Core
+
   wasm:
     runs-on: ubuntu-24.04
     steps:
