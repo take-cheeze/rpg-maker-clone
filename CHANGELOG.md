@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Wio Terminal (Seeed, ATSAMD51) port — P1 hardware bring-up. A new PlatformIO
+  target (`platformio.ini`, `app/wio/`) builds an Arduino firmware around a new
+  LVGL display + input HAL (`mruby-rgss/src/wio.cxx`): the 320×240 ILI9341 LCD is
+  driven in LVGL partial-render mode (a small draw buffer, not a 150 KB full
+  framebuffer that would exhaust the 192 KB SRAM), the tick/delay source comes
+  from Arduino `millis()`/`delay()`, and the three buttons + 5-way switch are
+  scanned into `RGSS::Input` via `rgss_wio_poll` (`wio_input_bridge.cxx`), called
+  from `Graphics.update` next to the SDL/terminal poll hooks. A `wio` mruby ARM
+  cross-build (`MRUBY_TARGET=wio` in `build_config.rb`) and SD-backed newlib
+  syscalls (`app/wio/src/sd_syscalls.cxx`) are scaffolded for the later
+  interpreter/asset slices. All of it is additive and guarded (`WIO_TERMINAL`),
+  so the desktop and wasm builds are unchanged. Design and memory budget in
+  `docs/adr/0005-wio-terminal-port.md`; a CI job compiles the firmware.
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured

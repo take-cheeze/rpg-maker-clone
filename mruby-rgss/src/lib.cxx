@@ -39,6 +39,13 @@ extern "C" void rgss_terminal_poll(mrb_state* M);
 // backend is active and has captured key events; drains them into RGSS::Input.
 extern "C" void rgss_sdl_poll(mrb_state* M);
 
+#if defined(WIO_TERMINAL)
+// Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
+// forwards press/release edges to RGSS::Input.  Guarded so the desktop/wasm
+// builds, which do not compile the Wio backend, need no such symbol.
+extern "C" void rgss_wio_poll(mrb_state* M);
+#endif
+
 namespace {
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
@@ -1392,6 +1399,9 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 
   rgss_terminal_poll(M);
   rgss_sdl_poll(M);
+#if defined(WIO_TERMINAL)
+  rgss_wio_poll(M);
+#endif
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
                         mrb_intern_lit(M, "TIMEOUT_MS"))) {
