@@ -243,7 +243,8 @@ class RPG2k
         name = @db.system.system_graphic
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}"
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
       end
     end
@@ -366,7 +367,8 @@ class RPG2k
         name = @db.system.system_graphic
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}"
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
       end
 
@@ -873,7 +875,8 @@ class RPG2k
         name = db.system.system_graphic
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}"
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
       end
 

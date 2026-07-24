@@ -19,12 +19,19 @@ module RGSS
         i = self._init_file(f, s)
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
-          i = self._init_file("#{d}/#{f}") unless i
+          i = self._init_file("#{d}/#{f}", s) unless i
           [:png, :xyz, :bmp].each do |ext|
-            i = self._init_file("#{d}/#{f}.#{ext}") unless i
+            i = self._init_file("#{d}/#{f}.#{ext}", s) unless i
           end
         end
-        raise "Failed to init bitmap: #{f}" unless i
+        # Surface the decoder's own reason (e.g. an XYZ "bad dist" zlib error)
+        # so failures are diagnosable instead of a bare "Failed to init bitmap".
+        unless i
+          detail = Bitmap._load_error
+          detail = Bitmap._stbi_error if detail.nil? || detail.empty?
+          detail = detail.nil? || detail.empty? ? "" : " (#{detail})"
+          raise "Failed to init bitmap: #{f}#{detail}"
+        end
       else
         self._init_size(f, s)
       end

@@ -15,10 +15,13 @@
 #include "shinonome.hxx"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <iostream>
@@ -429,6 +432,544 @@ mrb_value table_load(mrb_state* M, V self) {
 
 // ---- Bitmap ---------------------------------------------------------------
 
+// Human-readable diagnostic for the most recent Bitmap load that reached (and
+// failed inside) a real decoder. Exposed to Ruby via `Bitmap._load_error` so a
+// failed windowskin/graphic load can report exactly which decoder gave up and
+// why -- e.g. stb's "bad dist" on a corrupt/non-standard XYZ zlib stream --
+// instead of a bare "Failed to init bitmap". Left untouched by plain
+// file-not-found probes so the informative message survives the loader's
+// subsequent extension attempts.
+static std::string g_bitmap_load_error;
+
+static void set_bitmap_load_error(const char* fmt, ...) {
+  char buf[512];
+  va_list ap;
+  va_start(ap, fmt);
+  std::vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  g_bitmap_load_error = buf;
+}
+
+// Decode an RPG Maker 2000/2003 XYZ image. The format is a tiny header
+//
+//   "XYZ1"                     4-byte magic
+//   uint16 LE width, height    picture dimensions
+//   zlib stream                768-byte RGB palette + width*height indices
+//
+// which stb_image does not understand, so games that ship their System
+// (windowskin) or other graphics as .xyz would otherwise fail to load. On
+// success returns a freshly stb-allocated buffer (free with stbi_image_free)
+// of width*height*4 bytes in LVGL's B, G, R, A byte order and sets *w/*h/*c;
+// returns nullptr when `f` is not a readable XYZ file. When `trans` is set the
+// first palette entry is treated as the transparent colour, matching stb's
+// transparent-palette handling for PNGs.
+static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return nullptr;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz < 8) {
+    std::fclose(fp);
+    return nullptr;
+  }
+  std::vector<uint8_t> data((size_t)sz);
+  const size_t got = std::fread(data.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  // Not an XYZ file: stay silent and let the caller keep stb_image's own error.
+  if (got != (size_t)sz || std::memcmp(data.data(), "XYZ1", 4) != 0)
+    return nullptr;
+
+  const int width = data[4] | (data[5] << 8);
+  const int height = data[6] | (data[7] << 8);
+  if (width <= 0 || height <= 0) {
+    set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width,
+                          height, f);
+    return nullptr;
+  }
+
+  const char* stream = reinterpret_cast<const char*>(data.data() + 8);
+  const int stream_len = (int)(sz - 8);
+  // A 768-byte (256*3) RGB palette followed by one index per pixel.
+  const long expected = 768L + (long)width * height;
+
+  int outlen = 0;
+  // RPG Maker writes a standard zlib stream (header byte 0x78). Decode that
+  // first; if stb rejects it -- e.g. "bad dist" on a stream some tools emit as
+  // raw DEFLATE with no zlib header -- retry without the 2-byte header before
+  // giving up, so a wider range of System graphics still loads.
+  char* raw = stbi_zlib_decode_malloc(stream, stream_len, &outlen);
+  if (!raw) {
+    char zerr[128];
+    std::snprintf(zerr, sizeof(zerr), "%s", stbi_failure_reason());
+    raw = stbi_zlib_decode_noheader_malloc(stream, stream_len, &outlen);
+    if (!raw) {
+      set_bitmap_load_error(
+          "XYZ %dx%d '%s': zlib inflate failed (%s); zlib header 0x%02x%02x, "
+          "%d compressed bytes, expected %ld decompressed",
+          width, height, f, zerr, (unsigned)data[8], (unsigned)data[9],
+          stream_len, expected);
+      return nullptr;
+    }
+  }
+
+  if ((long)outlen < expected) {
+    set_bitmap_load_error(
+        "XYZ %dx%d '%s': short data, got %d bytes, expected %ld (768 palette + "
+        "%d pixels)",
+        width, height, f, outlen, expected, width * height);
+    stbi_image_free(raw);
+    return nullptr;
+  }
+  const uint8_t* pal = reinterpret_cast<const uint8_t*>(raw);
+  const uint8_t* idx = pal + 768;
+
+  uint8_t* out = (uint8_t*)stbi__malloc((size_t)width * height * 4);
+  if (!out) {
+    stbi_image_free(raw);
+    return nullptr;
+  }
+  for (int i = 0; i < width * height; ++i) {
+    const uint8_t p = idx[i];
+    out[i * 4 + 0] = pal[p * 3 + 2];               // B
+    out[i * 4 + 1] = pal[p * 3 + 1];               // G
+    out[i * 4 + 2] = pal[p * 3 + 0];               // R
+    out[i * 4 + 3] = (trans && p == 0) ? 0 : 255;  // A
+  }
+  stbi_image_free(raw);
+  *w = width;
+  *h = height;
+  *c = 4;
+  return out;
+}
+
+// ---- Tolerant PNG fallback ------------------------------------------------
+//
+// Some PNGs -- notably RPG Maker System/windowskin graphics -- ship an IDAT
+// deflate stream with back-references that reach before the start of the
+// output. The PNG/zlib spec forbids this, so strict inflaters (stb_image's
+// bundled zlib, and zlib itself) reject them with "bad dist" / "invalid
+// distance too far back". The producers rely on the missing pre-history reading
+// as zeros. This self-contained decoder reproduces that behaviour so those
+// images load instead of falling back to the plain panel. It runs only as a
+// fallback after stb_image has already refused the file.
+namespace png_tol {
+
+struct BitReader {
+  const uint8_t* p;
+  const uint8_t* end;
+  uint32_t buf = 0;
+  int cnt = 0;
+  bool fail = false;
+  int bit() {
+    if (cnt == 0) {
+      if (p >= end) {
+        fail = true;
+        return 0;
+      }
+      buf = *p++;
+      cnt = 8;
+    }
+    int b = buf & 1;
+    buf >>= 1;
+    cnt--;
+    return b;
+  }
+  int bits(int n) {
+    int v = 0;
+    for (int i = 0; i < n; i++)
+      v |= bit() << i;
+    return v;
+  }
+};
+
+struct Huff {
+  short count[16];
+  short symbol[288];
+};
+
+void huff_build(Huff& h, const uint8_t* len, int n) {
+  for (int i = 0; i < 16; i++)
+    h.count[i] = 0;
+  for (int i = 0; i < n; i++)
+    h.count[len[i]]++;
+  h.count[0] = 0;
+  short offs[16];
+  offs[1] = 0;
+  for (int l = 1; l < 15; l++)
+    offs[l + 1] = offs[l] + h.count[l];
+  for (int i = 0; i < n; i++)
+    if (len[i])
+      h.symbol[offs[len[i]]++] = (short)i;
+}
+
+int huff_decode(BitReader& br, const Huff& h) {
+  int code = 0, first = 0, index = 0;
+  for (int len = 1; len <= 15; len++) {
+    code |= br.bit();
+    int count = h.count[len];
+    if (code - count < first)
+      return h.symbol[index + (code - first)];
+    index += count;
+    first += count;
+    first <<= 1;
+    code <<= 1;
+  }
+  return -1;
+}
+
+const short LBASE[29] = {3,  4,  5,  6,   7,   8,   9,   10,  11, 13,
+                         15, 17, 19, 23,  27,  31,  35,  43,  51, 59,
+                         67, 83, 99, 115, 131, 163, 195, 227, 258};
+const short LEXT[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+                        2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+const short DBASE[30] = {1,    2,    3,    4,     5,     7,    9,    13,
+                         17,   25,   33,   49,    65,    97,   129,  193,
+                         257,  385,  513,  769,   1025,  1537, 2049, 3073,
+                         4097, 6145, 8193, 12289, 16385, 24577};
+const short DEXT[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
+                        6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+
+// Inflate `in` into `out` (pre-sized to the expected length). Distances that
+// reach before the start of the output produce zeros rather than an error.
+// Returns the number of bytes produced, or -1 on a hard failure.
+long inflate_tolerant(const uint8_t* in,
+                      size_t in_len,
+                      std::vector<uint8_t>& out) {
+  size_t off = 0;
+  if (in_len >= 2 && (in[0] & 0x0f) == 8 && ((in[0] << 8 | in[1]) % 31) == 0)
+    off = 2;  // skip the 2-byte zlib header when present
+  BitReader br{in + off, in + in_len};
+  size_t outcnt = 0;
+  auto put = [&](int v) {
+    if (outcnt < out.size())
+      out[outcnt] = (uint8_t)v;
+    outcnt++;
+  };
+
+  Huff fixed_l, fixed_d;
+  {
+    uint8_t l[288];
+    for (int i = 0; i < 144; i++)
+      l[i] = 8;
+    for (int i = 144; i < 256; i++)
+      l[i] = 9;
+    for (int i = 256; i < 280; i++)
+      l[i] = 7;
+    for (int i = 280; i < 288; i++)
+      l[i] = 8;
+    huff_build(fixed_l, l, 288);
+    uint8_t d[30];
+    for (int i = 0; i < 30; i++)
+      d[i] = 5;
+    huff_build(fixed_d, d, 30);
+  }
+
+  for (;;) {
+    int last = br.bit();
+    int type = br.bits(2);
+    if (br.fail)
+      return -1;
+    if (type == 0) {  // stored
+      br.buf = 0;
+      br.cnt = 0;  // align to byte boundary
+      if (br.p + 4 > br.end)
+        return -1;
+      int len = br.p[0] | (br.p[1] << 8);
+      br.p += 4;  // LEN + NLEN
+      for (int i = 0; i < len; i++) {
+        if (br.p >= br.end)
+          return -1;
+        put(*br.p++);
+      }
+    } else if (type == 1 || type == 2) {  // fixed or dynamic Huffman
+      Huff dyn_l, dyn_d;
+      const Huff* lc;
+      const Huff* dc;
+      if (type == 1) {
+        lc = &fixed_l;
+        dc = &fixed_d;
+      } else {
+        int hlit = br.bits(5) + 257;
+        int hdist = br.bits(5) + 1;
+        int hclen = br.bits(4) + 4;
+        static const int ord[19] = {16, 17, 18, 0, 8,  7, 9,  6, 10, 5,
+                                    11, 4,  12, 3, 13, 2, 14, 1, 15};
+        uint8_t cl[19] = {0};
+        for (int i = 0; i < hclen; i++)
+          cl[ord[i]] = (uint8_t)br.bits(3);
+        Huff clh;
+        huff_build(clh, cl, 19);
+        uint8_t lens[288 + 32] = {0};
+        int n = 0;
+        while (n < hlit + hdist) {
+          int sym = huff_decode(br, clh);
+          if (sym < 0)
+            return -1;
+          if (sym < 16) {
+            lens[n++] = (uint8_t)sym;
+          } else if (sym == 16) {
+            if (n == 0)
+              return -1;
+            int r = br.bits(2) + 3;
+            uint8_t prev = lens[n - 1];
+            while (r-- && n < hlit + hdist)
+              lens[n++] = prev;
+          } else if (sym == 17) {
+            int r = br.bits(3) + 3;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = 0;
+          } else {
+            int r = br.bits(7) + 11;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = 0;
+          }
+        }
+        huff_build(dyn_l, lens, hlit);
+        huff_build(dyn_d, lens + hlit, hdist);
+        lc = &dyn_l;
+        dc = &dyn_d;
+      }
+      for (;;) {
+        int sym = huff_decode(br, *lc);
+        if (sym < 0)
+          return -1;
+        if (sym == 256)
+          break;
+        if (sym < 256) {
+          put(sym);
+        } else {
+          sym -= 257;
+          if (sym >= 29)
+            return -1;
+          int len = LBASE[sym] + br.bits(LEXT[sym]);
+          int dsym = huff_decode(br, *dc);
+          if (dsym < 0 || dsym >= 30)
+            return -1;
+          long dist = DBASE[dsym] + br.bits(DEXT[dsym]);
+          while (len--) {
+            int v = ((long)outcnt < dist) ? 0 : out[outcnt - dist];
+            put(v);
+          }
+        }
+        if (br.fail)
+          return -1;
+      }
+    } else {
+      return -1;  // reserved block type
+    }
+    if (last)
+      break;
+  }
+  return (long)outcnt;
+}
+
+int paeth(int a, int b, int c) {
+  int p = a + b - c, pa = std::abs(p - a), pb = std::abs(p - b),
+      pc = std::abs(p - c);
+  return (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
+}
+
+uint32_t be32(const uint8_t* p) {
+  return ((uint32_t)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+}
+
+}  // namespace png_tol
+
+// Decode `f` as a PNG using the tolerant inflater above. Returns a freshly
+// stb-allocated (free with stbi_image_free) width*height*4 B, G, R, A buffer
+// and sets *w/*h/*c, or nullptr when the file is not a PNG this fallback
+// handles (non-interlaced; bit depth 8, or indexed 1/2/4). `trans` maps palette
+// index 0 to transparent, matching the primary loader's colour-key handling.
+static uint8_t* load_png_tolerant(const char* f,
+                                  int* wout,
+                                  int* hout,
+                                  int* c,
+                                  bool trans) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return nullptr;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  static const uint8_t sig[8] = {0x89, 0x50, 0x4e, 0x47,
+                                 0x0d, 0x0a, 0x1a, 0x0a};
+  if (sz < 8) {
+    std::fclose(fp);
+    return nullptr;
+  }
+  std::vector<uint8_t> d((size_t)sz);
+  const size_t got = std::fread(d.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  if (got != (size_t)sz || std::memcmp(d.data(), sig, 8) != 0)
+    return nullptr;
+
+  int w = 0, h = 0, depth = 0, ct = 0, interlace = 0;
+  std::vector<uint8_t> idat, plte, trns;
+  size_t i = 8;
+  while (i + 8 <= (size_t)sz) {
+    const uint32_t len = png_tol::be32(d.data() + i);
+    const uint8_t* typ = d.data() + i + 4;
+    const uint8_t* body = d.data() + i + 8;
+    if (i + 12 + len > (size_t)sz)
+      break;
+    if (!std::memcmp(typ, "IHDR", 4) && len >= 13) {
+      w = (int)png_tol::be32(body);
+      h = (int)png_tol::be32(body + 4);
+      depth = body[8];
+      ct = body[9];
+      interlace = body[12];
+    } else if (!std::memcmp(typ, "IDAT", 4)) {
+      idat.insert(idat.end(), body, body + len);
+    } else if (!std::memcmp(typ, "PLTE", 4)) {
+      plte.assign(body, body + len);
+    } else if (!std::memcmp(typ, "tRNS", 4)) {
+      trns.assign(body, body + len);
+    } else if (!std::memcmp(typ, "IEND", 4)) {
+      break;
+    }
+    i += 12 + len;
+  }
+  if (w <= 0 || h <= 0 || interlace != 0)
+    return nullptr;
+  if (depth != 8 && !(ct == 3 && (depth == 1 || depth == 2 || depth == 4)))
+    return nullptr;
+  int channels;
+  switch (ct) {
+    case 0:
+      channels = 1;
+      break;
+    case 2:
+      channels = 3;
+      break;
+    case 3:
+      channels = 1;
+      break;
+    case 4:
+      channels = 2;
+      break;
+    case 6:
+      channels = 4;
+      break;
+    default:
+      return nullptr;
+  }
+  if (ct == 3 && plte.size() < 3)
+    return nullptr;
+
+  const size_t rowbytes = ((size_t)w * channels * depth + 7) / 8;
+  int bpp = (channels * depth + 7) / 8;
+  if (bpp < 1)
+    bpp = 1;
+  std::vector<uint8_t> filt((rowbytes + 1) * (size_t)h, 0);
+  const long need = (long)((rowbytes + 1) * (size_t)h);
+  if (png_tol::inflate_tolerant(idat.data(), idat.size(), filt) < need) {
+    set_bitmap_load_error(
+        "PNG %dx%d depth %d colortype %d '%s': tolerant inflate produced too "
+        "little data",
+        w, h, depth, ct, f);
+    return nullptr;
+  }
+
+  // Reverse the per-scanline filters in place.
+  std::vector<uint8_t> raw((size_t)rowbytes * h);
+  std::vector<uint8_t> prev(rowbytes, 0);
+  for (int r = 0; r < h; r++) {
+    const uint8_t* srow = &filt[(rowbytes + 1) * (size_t)r];
+    const int ft = srow[0];
+    uint8_t* cur = &raw[(size_t)rowbytes * r];
+    for (size_t x = 0; x < rowbytes; x++) {
+      const int a = (x >= (size_t)bpp) ? cur[x - bpp] : 0;
+      const int b = prev[x];
+      const int cc = (x >= (size_t)bpp) ? prev[x - bpp] : 0;
+      int v = srow[1 + x];
+      switch (ft) {
+        case 1:
+          v += a;
+          break;
+        case 2:
+          v += b;
+          break;
+        case 3:
+          v += (a + b) >> 1;
+          break;
+        case 4:
+          v += png_tol::paeth(a, b, cc);
+          break;
+        default:
+          break;
+      }
+      cur[x] = (uint8_t)v;
+    }
+    std::memcpy(prev.data(), cur, rowbytes);
+  }
+
+  uint8_t* out = (uint8_t*)stbi__malloc((size_t)w * h * 4);
+  if (!out)
+    return nullptr;
+  auto set = [&](int px, int R, int G, int B, int A) {
+    out[px * 4 + 0] = (uint8_t)B;
+    out[px * 4 + 1] = (uint8_t)G;
+    out[px * 4 + 2] = (uint8_t)R;
+    out[px * 4 + 3] = (uint8_t)A;
+  };
+  const int palcount = (int)(plte.size() / 3);
+  for (int y = 0; y < h; y++) {
+    const uint8_t* row = &raw[(size_t)rowbytes * y];
+    for (int x = 0; x < w; x++) {
+      const int px = y * w + x;
+      if (ct == 3) {
+        int idx;
+        if (depth == 8) {
+          idx = row[x];
+        } else {
+          const int per = 8 / depth;
+          const int shift = (per - 1 - (x % per)) * depth;
+          idx = (row[x / per] >> shift) & ((1 << depth) - 1);
+        }
+        if (idx >= palcount)
+          idx = palcount ? palcount - 1 : 0;
+        int A = 255;
+        if (trans && idx == 0)
+          A = 0;
+        if ((size_t)idx < trns.size())
+          A = trns[idx];
+        set(px, plte[idx * 3], plte[idx * 3 + 1], plte[idx * 3 + 2], A);
+      } else if (ct == 2) {
+        set(px, row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
+      } else if (ct == 6) {
+        set(px, row[x * 4], row[x * 4 + 1], row[x * 4 + 2], row[x * 4 + 3]);
+      } else if (ct == 0) {
+        const int g = row[x];
+        set(px, g, g, g, 255);
+      } else {  // ct == 4, grayscale + alpha
+        const int g = row[x * 2];
+        set(px, g, g, g, row[x * 2 + 1]);
+      }
+    }
+  }
+  *wout = w;
+  *hout = h;
+  *c = 4;
+  return out;
+}
+
+// Ruby: Bitmap._load_error -> the detailed diagnostic set by the last decoder
+// that opened a file and failed inside it (see g_bitmap_load_error).
+mrb_value bmp_load_error(mrb_state* M, V self) {
+  (void)self;
+  return mrb_str_new_cstr(M, g_bitmap_load_error.c_str());
+}
+
+// Ruby: Bitmap._stbi_error -> stb_image's raw failure reason for the most
+// recent decode attempt (e.g. "bad dist", "unknown image type").
+mrb_value bmp_stbi_error(mrb_state* M, V self) {
+  (void)self;
+  const char* r = stbi_failure_reason();
+  return mrb_str_new_cstr(M, r ? r : "");
+}
+
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   mrb_int w, h;
   mrb_get_args(M, "ii", &w, &h);
@@ -447,6 +988,13 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   std::shared_ptr<uint8_t> img(
       stbi_load(f, &w, &h, &c, stbi__png_transparent_palette ? 4 : 3),
       stbi_image_free);
+  if (!img)
+    img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
+  // stb_image rejects some valid-enough PNGs (e.g. RPG Maker windowskins whose
+  // deflate stream references a zero pre-history, giving "bad dist"); retry
+  // with the tolerant PNG decoder before giving up.
+  if (!img)
+    img.reset(load_png_tolerant(f, &w, &h, &c, trans), stbi_image_free);
   if (!img) {
     // Some archives store filenames in NFD form while the game data refers to
     // them in NFC (or vice versa); retry with the decomposed form before giving
@@ -455,6 +1003,11 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
     img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c,
                         stbi__png_transparent_palette ? 4 : 3),
               stbi_image_free);
+    if (!img)
+      img.reset(load_xyz(nfd_f.c_str(), &w, &h, &c, trans), stbi_image_free);
+    if (!img)
+      img.reset(load_png_tolerant(nfd_f.c_str(), &w, &h, &c, trans),
+                stbi_image_free);
     if (!img)
       return mrb_nil_value();
   }
@@ -1377,6 +1930,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+  mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
+                          MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "height", bmp_height, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "rect", bmp_rect, MRB_ARGS_NONE());
