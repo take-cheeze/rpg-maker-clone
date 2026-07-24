@@ -35,7 +35,7 @@ class MV
     "js/libs/pixi-picture.js",
     "js/libs/fpsmeter.js",
     "js/libs/lz-string.js",
-    "js/libs/iphone-inline-video.js",
+    "js/libs/iphone-inline-video.browser.js",
     "js/rpg_core.js",
     "js/rpg_managers.js",
     "js/rpg_objects.js",
@@ -127,7 +127,7 @@ class MV
   # library files are skipped; the game's own scripts are expected to be present.
   def boot
     @clock = 0.0
-    self.class.core_scripts.each do |script|
+    boot_scripts.each do |script|
       path = "#{@game_dir}/#{script}"
       MV::JS.eval_file(path) if File.exist?(path)
     end
@@ -145,6 +145,21 @@ class MV
     # in a browser the page-load event calls it. Fire it now that every script
     # is loaded, which runs SceneManager.run(Scene_Boot) and starts the game.
     MV::JS.eval("if (typeof window.onload === 'function') { window.onload(); }")
+  end
+
+  # The scripts to evaluate, in order. Prefer the game's own index.html — the
+  # authoritative load list, which varies by MV version and bundled libraries
+  # (e.g. iphone-inline-video.browser.js) — and fall back to CORE_SCRIPTS.
+  def boot_scripts
+    index = "#{@game_dir}/index.html"
+    if File.exist?(index)
+      html = File.open(index, "r") { |f| f.read }
+      srcs = html.scan(/<script[^>]*\bsrc\s*=\s*["']([^"']+)["']/i).flatten
+      return srcs unless srcs.empty?
+    end
+    self.class.core_scripts
+  rescue StandardError
+    self.class.core_scripts
   end
 
   # Advance the game's timer/requestAnimationFrame queue by one host frame. Time
