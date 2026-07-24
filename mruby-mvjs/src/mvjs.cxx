@@ -6,10 +6,12 @@
 //
 //   M2: `MV::JS.eval` proves the engine runs.
 //   M3: a *persistent* host (one runtime/context reused across evals) plus the
-//       first host globals — console, the window/globalThis aliases, and a
-//       synchronous XMLHttpRequest backed by a native file reader (how MV loads
-//       its data/*.json). The event-loop pump and the Canvas2D -> Bitmap bridge
-//       build on top of this in M3/M4.
+//       browser/host globals MV boots against — console, the window/globalThis
+//       aliases, a synchronous XMLHttpRequest (how MV loads data/*.json), the
+//       timer/requestAnimationFrame event loop driven by `MV::JS.pump`, passive
+//       navigator/location/localStorage, and the NW.js `require('fs'|'path')`
+//       used for saves. `MV::JS.eval_file` loads a script file into the host.
+//   M4: the Canvas2D -> mruby-rgss::Bitmap bridge (document/canvas/Image).
 //
 // The mruby state is named `mrb` throughout because the exception-class macros
 // (E_RUNTIME_ERROR, ...) expand to code that references a variable of that
@@ -26,6 +28,19 @@
 #include <quickjs.h>
 
 namespace {
+
+// Read a whole file into `out`. Returns false if it cannot be opened.
+bool read_file(const char* path, std::string& out) {
+  std::FILE* f = std::fopen(path, "rb");
+  if (!f)
+    return false;
+  char buf[4096];
+  size_t n;
+  while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
+    out.append(buf, n);
+  std::fclose(f);
+  return true;
+}
 
 // -- native host functions ---------------------------------------------------
 
@@ -49,8 +64,8 @@ JSValue js_console_log(JSContext* ctx,
 }
 
 // __mv_readFileSync(path) -> the file's contents as a string. Throws a
-// ReferenceError when the file cannot be opened. This backs the XMLHttpRequest
-// polyfill; MV resolves its data/asset paths relative to the game directory.
+// ReferenceError when the file cannot be opened. Backs XMLHttpRequest and the
+// require('fs') shim; MV resolves data/asset paths relative to the game dir.
 JSValue js_read_file(JSContext* ctx,
                      JSValueConst,
                      int argc,
@@ -60,28 +75,68 @@ JSValue js_read_file(JSContext* ctx,
   const char* path = JS_ToCString(ctx, argv[0]);
   if (!path)
     return JS_EXCEPTION;
-  std::FILE* f = std::fopen(path, "rb");
-  if (!f) {
+  std::string data;
+  if (!read_file(path, data)) {
     JSValue err = JS_ThrowReferenceError(
         ctx, "__mv_readFileSync: cannot open '%s'", path);
     JS_FreeCString(ctx, path);
     return err;
   }
   JS_FreeCString(ctx, path);
-  std::string data;
-  char buf[4096];
-  size_t n;
-  while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
-    data.append(buf, n);
-  std::fclose(f);
   return JS_NewStringLen(ctx, data.data(), data.size());
 }
 
-// The host-global bootstrap, evaluated once when the context is created: the
-// window/self/global aliases and a minimal synchronous XMLHttpRequest that
-// reads local files through __mv_readFileSync. Kept close to the small surface
-// MV's DataManager uses (open/setRequestHeader/send/onload/onerror/status/
-// responseText).
+// __mv_writeFileSync(path, data) -> write a string to a file (used by saves).
+JSValue js_write_file(JSContext* ctx,
+                      JSValueConst,
+                      int argc,
+                      JSValueConst* argv) {
+  if (argc < 2)
+    return JS_ThrowTypeError(ctx, "__mv_writeFileSync: path and data required");
+  const char* path = JS_ToCString(ctx, argv[0]);
+  if (!path)
+    return JS_EXCEPTION;
+  size_t dlen = 0;
+  const char* data = JS_ToCStringLen(ctx, &dlen, argv[1]);
+  if (!data) {
+    JS_FreeCString(ctx, path);
+    return JS_EXCEPTION;
+  }
+  std::FILE* f = std::fopen(path, "wb");
+  if (!f) {
+    JSValue err = JS_ThrowReferenceError(
+        ctx, "__mv_writeFileSync: cannot write '%s'", path);
+    JS_FreeCString(ctx, path);
+    JS_FreeCString(ctx, data);
+    return err;
+  }
+  std::fwrite(data, 1, dlen, f);
+  std::fclose(f);
+  JS_FreeCString(ctx, path);
+  JS_FreeCString(ctx, data);
+  return JS_UNDEFINED;
+}
+
+// __mv_existsSync(path) -> whether the path can be opened for reading.
+JSValue js_file_exists(JSContext* ctx,
+                       JSValueConst,
+                       int argc,
+                       JSValueConst* argv) {
+  if (argc < 1)
+    return JS_NewBool(ctx, 0);
+  const char* path = JS_ToCString(ctx, argv[0]);
+  if (!path)
+    return JS_EXCEPTION;
+  std::FILE* f = std::fopen(path, "rb");
+  const bool exists = f != nullptr;
+  if (f)
+    std::fclose(f);
+  JS_FreeCString(ctx, path);
+  return JS_NewBool(ctx, exists);
+}
+
+// The host-global bootstrap, evaluated once when the context is created. Kept
+// close to the small surface MV's DataManager/StorageManager/SceneManager use.
 const char* kHostPreamble = R"MVJS(
 (function (g) {
   g.window = g;
@@ -89,6 +144,7 @@ const char* kHostPreamble = R"MVJS(
   g.global = g;
   if (typeof g.globalThis === 'undefined') g.globalThis = g;
 
+  // --- XMLHttpRequest (synchronous, local-file backed) ---------------------
   function XMLHttpRequest() {
     this.readyState = 0;
     this.status = 0;
@@ -119,7 +175,7 @@ const char* kHostPreamble = R"MVJS(
   };
   g.XMLHttpRequest = XMLHttpRequest;
 
-  // Passive host globals MV touches during boot.
+  // --- passive globals MV touches at boot ----------------------------------
   g.navigator = {
     userAgent: 'RPGMakerClone',
     language: 'en',
@@ -147,10 +203,46 @@ const char* kHostPreamble = R"MVJS(
     };
   })();
 
-  // Timers, requestAnimationFrame and the per-frame pump. The MV game drives
-  // itself with requestAnimationFrame; the host owns the loop and advances this
-  // queue once per frame from MV::JS.pump(nowMs), so the JS game shares the
-  // engine's fixed cadence instead of blocking the process.
+  // --- NW.js style require('fs'|'path') for saves --------------------------
+  // MV treats the presence of `require` as "running under NW.js" and switches
+  // to local-file saves, which is exactly what we want.
+  var modules = {
+    fs: {
+      readFileSync: function (path) { return g.__mv_readFileSync(path); },
+      writeFileSync: function (path, data) {
+        return g.__mv_writeFileSync(path, String(data));
+      },
+      existsSync: function (path) { return g.__mv_existsSync(path); },
+      mkdirSync: function () {},
+      unlinkSync: function () {},
+    },
+    path: {
+      dirname: function (p) {
+        var i = p.lastIndexOf('/');
+        return i >= 0 ? p.slice(0, i) : '.';
+      },
+      basename: function (p) {
+        var i = p.lastIndexOf('/');
+        return i >= 0 ? p.slice(i + 1) : p;
+      },
+      extname: function (p) {
+        var i = p.lastIndexOf('.');
+        return i >= 0 ? p.slice(i) : '';
+      },
+      join: function () {
+        return Array.prototype.slice.call(arguments).join('/');
+      },
+    },
+  };
+  g.require = function (name) {
+    if (Object.prototype.hasOwnProperty.call(modules, name)) return modules[name];
+    throw new Error('require: module not found: ' + name);
+  };
+
+  // --- timers, requestAnimationFrame and the per-frame pump ----------------
+  // The MV game drives itself with requestAnimationFrame; the host owns the
+  // loop and advances this queue once per frame from MV::JS.pump(nowMs), so the
+  // JS game shares the engine's fixed cadence instead of blocking the process.
   var timers = [];
   var raf = [];
   var nextId = 1;
@@ -224,6 +316,11 @@ void install_host_globals(JSContext* ctx) {
 
   JS_SetPropertyStr(ctx, global, "__mv_readFileSync",
                     JS_NewCFunction(ctx, js_read_file, "__mv_readFileSync", 1));
+  JS_SetPropertyStr(
+      ctx, global, "__mv_writeFileSync",
+      JS_NewCFunction(ctx, js_write_file, "__mv_writeFileSync", 2));
+  JS_SetPropertyStr(ctx, global, "__mv_existsSync",
+                    JS_NewCFunction(ctx, js_file_exists, "__mv_existsSync", 1));
   JS_FreeValue(ctx, global);
 
   JSValue r = JS_Eval(ctx, kHostPreamble, std::strlen(kHostPreamble),
@@ -280,9 +377,31 @@ mrb_value js_to_mrb(mrb_state* mrb, JSContext* ctx, JSValueConst v) {
   return r;
 }
 
+// Handle a JS_Eval/JS_Call result: raise RuntimeError (tagged with `what`) on a
+// JS exception, otherwise marshal the value. Consumes `result`.
+mrb_value complete_eval(mrb_state* mrb,
+                        JSContext* ctx,
+                        JSValue result,
+                        const char* what) {
+  if (JS_IsException(result)) {
+    JSValue exc = JS_GetException(ctx);
+    const char* msg = JS_ToCString(ctx, exc);
+    const std::string detail =
+        std::string(what) + " failed: " + (msg ? msg : "JavaScript exception");
+    if (msg)
+      JS_FreeCString(ctx, msg);
+    JS_FreeValue(ctx, exc);
+    JS_FreeValue(ctx, result);
+    mrb_raise(mrb, E_RUNTIME_ERROR, detail.c_str());
+  }
+  const mrb_value ret = js_to_mrb(mrb, ctx, result);
+  JS_FreeValue(ctx, result);
+  return ret;
+}
+
 // MV::JS.eval(source) -> evaluate JavaScript in the persistent host context and
-// return its (scalar) result. Raises RuntimeError on a JS exception. State
-// (globals, defined vars) persists across calls, as the MV engine expects.
+// return its (scalar) result. State (globals, defined vars) persists across
+// calls, as the MV engine expects.
 mrb_value js_eval(mrb_state* mrb, mrb_value self) {
   const char* src;
   mrb_int len;
@@ -294,22 +413,30 @@ mrb_value js_eval(mrb_state* mrb, mrb_value self) {
 
   JSValue result = JS_Eval(ctx, src, static_cast<size_t>(len), "<eval>",
                            JS_EVAL_TYPE_GLOBAL);
+  return complete_eval(mrb, ctx, result, "MV::JS.eval");
+}
 
-  if (JS_IsException(result)) {
-    JSValue exc = JS_GetException(ctx);
-    const char* msg = JS_ToCString(ctx, exc);
-    const std::string detail = std::string("MV::JS.eval failed: ") +
-                               (msg ? msg : "JavaScript exception");
-    if (msg)
-      JS_FreeCString(ctx, msg);
-    JS_FreeValue(ctx, exc);
-    JS_FreeValue(ctx, result);
-    mrb_raise(mrb, E_RUNTIME_ERROR, detail.c_str());
-  }
+// MV::JS.eval_file(path) -> read a script file and evaluate it in the host,
+// using the path as the source name (so exceptions carry a useful location).
+mrb_value js_eval_file(mrb_state* mrb, mrb_value self) {
+  const char* path;
+  mrb_int len;
+  mrb_get_args(mrb, "s", &path, &len);
+  const std::string p(path, len);
 
-  const mrb_value ret = js_to_mrb(mrb, ctx, result);
-  JS_FreeValue(ctx, result);
-  return ret;
+  std::string src;
+  if (!read_file(p.c_str(), src))
+    mrb_raise(
+        mrb, E_RUNTIME_ERROR,
+        (std::string("MV::JS.eval_file: cannot open '") + p + "'").c_str());
+
+  JSContext* ctx = host();
+  if (!ctx)
+    mrb_raise(mrb, E_RUNTIME_ERROR, "MV::JS: failed to create the JS host");
+
+  JSValue result =
+      JS_Eval(ctx, src.data(), src.size(), p.c_str(), JS_EVAL_TYPE_GLOBAL);
+  return complete_eval(mrb, ctx, result, "MV::JS.eval_file");
 }
 
 // MV::JS.pump(now_ms = 0) -> advance the host by one frame: fire due timers and
@@ -372,6 +499,7 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
   mrb_define_class_method(mrb, js, "eval", js_eval, MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, js, "eval_file", js_eval_file, MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, js, "pump", js_pump, MRB_ARGS_OPT(1));
 }
 

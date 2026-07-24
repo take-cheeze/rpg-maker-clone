@@ -88,3 +88,43 @@ assert 'MV host localStorage stores and retrieves values in memory' do
   MV::JS.eval("localStorage.removeItem('save1')")
   assert_nil MV::JS.eval("localStorage.getItem('save1')")
 end
+
+assert 'MV host require("path") provides join/dirname/basename/extname' do
+  assert_equal "a/b/c", MV::JS.eval("require('path').join('a','b','c')")
+  assert_equal "a/b", MV::JS.eval("require('path').dirname('a/b/c.json')")
+  assert_equal "c.json", MV::JS.eval("require('path').basename('a/b/c.json')")
+  assert_equal ".json", MV::JS.eval("require('path').extname('a/b/c.json')")
+end
+
+assert 'MV host require("fs") reads, writes and checks files (save path)' do
+  path = "mvjs_fs_save.txt"
+  File.delete(path) rescue nil
+  begin
+    assert_equal false, MV::JS.eval("require('fs').existsSync('#{path}')")
+    MV::JS.eval("require('fs').writeFileSync('#{path}', 'saved-data')")
+    assert_equal true, MV::JS.eval("require('fs').existsSync('#{path}')")
+    assert_equal true, File.exist?(path)
+    assert_equal "saved-data", MV::JS.eval("require('fs').readFileSync('#{path}', 'utf8')")
+  ensure
+    File.delete(path) rescue nil
+  end
+end
+
+assert 'MV host require rejects unknown modules' do
+  assert_raise(RuntimeError) { MV::JS.eval("require('no_such_module')") }
+end
+
+assert 'MV::JS.eval_file evaluates a script file in the shared host context' do
+  path = "mvjs_script.js"
+  File.open(path, "w") { |f| f.write("globalThis.__fromFile = 40 + 2;") }
+  begin
+    MV::JS.eval_file(path)
+    assert_equal 42, MV::JS.eval("globalThis.__fromFile")
+  ensure
+    File.delete(path) rescue nil
+  end
+end
+
+assert 'MV::JS.eval_file raises for a missing file' do
+  assert_raise(RuntimeError) { MV::JS.eval_file("definitely_missing_script.js") }
+end

@@ -120,15 +120,24 @@ class MV
 
   private
 
-  # M3: install the browser/host globals (window/document/navigator/rAF/XHR/…)
-  # and evaluate the MV core scripts in CORE_SCRIPTS order inside the JS host.
+  # Evaluate the MV engine scripts in order inside the embedded host. The host
+  # globals (window/console/XHR/require/timers/…) are installed when the JS
+  # context is created (mruby-mvjs/src/mvjs.cxx); each script's globals are
+  # visible to the next through the shared persistent context. Missing optional
+  # library files are skipped; the game's own scripts are expected to be present.
   def boot
-    raise NotImplementedError, "MV.boot requires the embedded runtime (M2/M3)"
+    @clock = 0.0
+    self.class.core_scripts.each do |script|
+      path = "#{@game_dir}/#{script}"
+      MV::JS.eval_file(path) if File.exist?(path)
+    end
   end
 
-  # M3: advance the game's requestAnimationFrame/timer queue by one host frame.
+  # Advance the game's timer/requestAnimationFrame queue by one host frame. Time
+  # advances at the engine's nominal 60 fps so MV's frame timing stays sane.
   def pump_frame
-    raise NotImplementedError, "MV.pump_frame requires the embedded runtime (M3)"
+    @clock = (@clock || 0.0) + 1000.0 / 60.0
+    MV::JS.pump(@clock)
   end
 
   # Report the pending runtime once. Emscripten drives main_loop every frame, so

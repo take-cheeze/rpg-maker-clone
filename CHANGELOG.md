@@ -17,8 +17,14 @@ All notable changes to this project will be documented in this file.
   `cancelAnimationFrame` and `performance.now` — driven by a new `MV::JS.pump`
   (`now_ms`) that fires due timers and animation-frame callbacks and drains
   promise microtasks, so the JS game shares the engine's fixed cadence instead
-  of blocking; plus passive `navigator`/`location`/`localStorage` stubs. Covered
-  by `mruby-mvjs/test/host_test.rb`
+  of blocking; plus passive `navigator`/`location`/`localStorage` stubs. Also
+  the NW.js-style `require('fs'|'path')` MV uses for local-file saves (backed by
+  native read/write/exists), and `MV::JS.eval_file(path)` to load a script into
+  the host. `MV#boot` now evaluates the MV core scripts (`MV::CORE_SCRIPTS`) in
+  order via `eval_file`, and `MV#main_loop` advances the host with `MV::JS.pump`
+  at 60 fps — wired but still gated behind `MV.runtime_available?` (false) until
+  the Canvas2D rendering bridge (M4) lands. Covered by
+  `mruby-mvjs/test/host_test.rb`
 - Embedded JavaScript engine for RPG Maker MV support (milestone M2): added
   quickjs-ng as the `3rd/quickjs` git submodule and static-linked its `qjs`
   library into both the main executable and the mruby test binary. `MV::JS.eval` (in

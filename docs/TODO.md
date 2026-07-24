@@ -129,9 +129,12 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `requestAnimationFrame`/`cancelAnimationFrame`, `performance.now`, and a
     `MV::JS.pump(now_ms)` that fires due timers + animation-frame callbacks and
     drains promise microtasks. Passive `navigator`/`location`/`localStorage`.
+  - ✅ NW.js `require('fs'|'path')` (local-file saves), `MV::JS.eval_file`, and
+    `MV#boot`/`MV#main_loop` wired to evaluate `MV::CORE_SCRIPTS` and pump the
+    host (dormant behind `runtime_available?` until M4 rendering).
   - Remaining: `document`/`Image` (canvas-related, land with rendering in M4),
-    `require('fs'|'path')`, then wire `MV#boot`/`MV#main_loop` to evaluate the
-    MV core scripts (`MV::CORE_SCRIPTS`) and pump toward `Scene_Title`.
+    then flip `runtime_available?` on so the boot actually reaches
+    `Scene_Title`.
 - 🚧 **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
   renderer, so the title screen and map actually draw through `mruby-rgss`.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
