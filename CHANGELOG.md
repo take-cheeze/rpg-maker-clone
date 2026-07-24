@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
   into the event-page and common-event `move_route.commands` chunk. Previously
   that chunk was mis-declared as an event-command blob and failed to parse on
   real maps
+- Event-page condition schema now covers its trailing RPG2003 chunks
+  (`timer2_sec`, `compare_operator`), so a real map's condition data parses with
+  no unknown chunks. The RPG2000 runtime still compares variables with `>=`
 - `scripts/lcf_testbed_check.rb`: a host smoke-test that runs the pure-Ruby LCF
   parser (`mruby-lcf/mrblib/{lcf,schema}.rb`) over real downloaded test-bed
   projects — walking every schema field of a game's `RPG_RT.ldb`, `RPG_RT.lmt`

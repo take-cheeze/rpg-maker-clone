@@ -1,7 +1,14 @@
 # TODOs of this project
 
 ## RPG Maker 2k
-- Support all data schema of LCF
+- 🚧 Support all data schema of LCF — the core database, map tree and map-unit
+  chunks needed for boot and gameplay are covered and validated against a real
+  test-bed by `scripts/lcf_testbed_check.rb`. Remaining chunks that appear in
+  real data but are not yet in `schema.rb` (surfaced by walking the test-bed):
+  database items (usage/effect flags 25–28 and `animation_data` sub-chunks),
+  `battle_anime2` frame/timing chunks, skill chunk 16, and a few map-unit
+  chunks (42, 50, 60–62, 90 — save/encounter/parallax metadata). These are
+  editor/battle/2003 details not on the walkable-game critical path
 - ✅ Show window component for title scene
 - ✅ Implement New Game functionality — builds the party, loads the start map
   and enters a walkable `Scene::Map` with events
