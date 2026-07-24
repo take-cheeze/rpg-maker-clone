@@ -145,6 +145,20 @@ assert "RGSS::Bitmap stretch_blt" do
   assert_equal 0.0, dst.get_pixel(6, 6).alpha
 end
 
+assert "RGSS::Viewport API surface" do
+  # Viewport creation needs a live display, which the test binary does not set
+  # up, so only assert the method surface here (exercised for real by the game).
+  %i[rect rect= ox oy ox= oy= z= visible visible= update dispose disposed?].each do |m|
+    assert_true RGSS::Viewport.method_defined?(m), "Viewport##{m} missing"
+  end
+end
+
+assert "RGSS::Sprite API surface" do
+  %i[bitmap= x= y= z= visible visible= dispose disposed?].each do |m|
+    assert_true RGSS::Sprite.method_defined?(m), "Sprite##{m} missing"
+  end
+end
+
 assert "RGSS::Font defaults" do
   f = RGSS::Font.new
   assert_equal RGSS::Font.default_name, f.name

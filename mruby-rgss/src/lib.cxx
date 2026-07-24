@@ -809,11 +809,13 @@ mrb_value obj_dispose(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
-// Array of top-level display objects (Sprites) whose stacking order is driven
-// by their `z` attribute. Populated lazily by rgss_set_display / add_root_obj.
-mrb_value root_objs(mrb_state* M) {
+// Array of z-ordered display objects (Sprites and Viewports). Stacking is
+// resolved per LVGL parent: sprites sharing a parent (the screen, or a
+// Viewport's content layer) are ordered among themselves by their `z`.
+// Populated by register_zobj.
+mrb_value zorder_objs(mrb_state* M) {
   const mrb_value mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-  const mrb_value ret = mrb_const_get(M, mod, mrb_intern_lit(M, "_roots"));
+  const mrb_value ret = mrb_const_get(M, mod, mrb_intern_lit(M, "_zobjs"));
   mrb_assert(mrb_array_p(ret));
   return ret;
 }
@@ -850,26 +852,31 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   }
 
   // Reapply z ordering when something changed since the last frame. LVGL draws
-  // siblings in child order, so we sort the live roots by their `z` and move
-  // them to the foreground from lowest to highest, leaving the greatest `z` on
-  // top. Disposed sprites (null DATA_PTR) are dropped from the root set here so
+  // siblings in child order, so within each LVGL parent we sort that parent's
+  // z-managed objects by `z` and move them to the foreground from lowest to
+  // highest, leaving the greatest `z` on top. Grouping by parent means sprites
+  // that live inside a Viewport are ordered among themselves, while the
+  // Viewport (and top-level sprites) are ordered against each other on the
+  // screen. Disposed objects (null DATA_PTR) are dropped from the set here so
   // it does not grow unbounded.
   if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
-    const mrb_value roots = root_objs(M);
+    const mrb_value objs = zorder_objs(M);
     const mrb_value live = mrb_ary_new(M);
-    std::multimap<mrb_int, lv_obj_t*> orders;
-    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
-      const mrb_value v = RARRAY_PTR(roots)[i];
+    std::map<lv_obj_t*, std::multimap<mrb_int, lv_obj_t*>> by_parent;
+    for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
+      const mrb_value v = RARRAY_PTR(objs)[i];
       if (!DATA_PTR(v))
         continue;
       mrb_ary_push(M, live, v);
+      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
       const mrb_value z = mrb_iv_get(M, v, mrb_intern_lit(M, "@z"));
       mrb_assert(mrb_fixnum_p(z));
-      orders.insert({mrb_fixnum(z), reinterpret_cast<lv_obj_t*>(DATA_PTR(v))});
+      by_parent[lv_obj_get_parent(obj)].insert({mrb_fixnum(z), obj});
     }
-    mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_roots"), live);
-    for (const auto& order : orders)
-      lv_obj_move_foreground(order.second);
+    mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_zobjs"), live);
+    for (const auto& group : by_parent)
+      for (const auto& order : group.second)
+        lv_obj_move_foreground(order.second);
     mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"), mrb_false_value());
   }
 
@@ -879,7 +886,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // cleared only after the whole sweep so a bitmap shared by several sprites
   // invalidates all of them.
   {
-    const mrb_value roots = root_objs(M);
+    const mrb_value roots = zorder_objs(M);
     const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
     for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
       const mrb_value v = RARRAY_PTR(roots)[i];
@@ -939,17 +946,44 @@ lv_display_t* get_display(mrb_state* M) {
 
 const mrb_data_type obj_type = {"lv_obj_t", free_obj};
 
+// LVGL fires LV_EVENT_DELETE when an object is destroyed, including when its
+// parent is deleted and takes the whole subtree with it. Each wrapped object
+// stores its mruby RData in user_data; null the data pointer here so the mruby
+// wrapper (and its later dispose/GC) never calls lv_obj_delete on a freed
+// object. This is what makes it safe to nest Sprites inside a Viewport that
+// owns them: whichever wrapper the GC frees first, the others are invalidated.
+void on_lv_delete(lv_event_t* e) {
+  lv_obj_t* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
+  if (void* ud = lv_obj_get_user_data(obj))
+    static_cast<struct RData*>(ud)->data = nullptr;
+}
+
+// Bind an lv_obj to its mruby wrapper: record the wrapper in user_data and hook
+// the delete event so the wrapper is invalidated if LVGL frees the object.
+void wrap_lv_obj(mrb_state* M, mrb_value self, lv_obj_t* obj) {
+  mrb_data_init(self, obj, &obj_type);
+  lv_obj_set_user_data(obj, mrb_ptr(self));
+  lv_obj_add_event_cb(obj, on_lv_delete, LV_EVENT_DELETE, nullptr);
+}
+
+// A Viewport wraps an outer clipping frame whose sole child is an inner content
+// layer that actually holds the sprites; new sprites parent to that layer so
+// they are clipped to the viewport and scrolled by its ox/oy.
+lv_obj_t* viewport_content(lv_obj_t* outer) {
+  return lv_obj_get_child(outer, 0);
+}
+
 lv_obj_t* parent_object(mrb_state* M, mrb_value vp) {
   if (mrb_nil_p(vp))
     return lv_display_get_screen_active(get_display(M));
 
   mrb_assert(mrb_type(vp) == MRB_TT_DATA && DATA_TYPE(vp) == &obj_type);
-  return reinterpret_cast<lv_obj_t*>(DATA_PTR(vp));
+  return viewport_content(reinterpret_cast<lv_obj_t*>(DATA_PTR(vp)));
 }
 
-// Register a display object as a z-ordered root and give it a default z of 0.
-void add_root_obj(mrb_state* M, mrb_value v) {
-  mrb_ary_push(M, root_objs(M), v);
+// Register a display object for z-ordering and give it a default z of 0.
+void register_zobj(mrb_state* M, mrb_value v) {
+  mrb_ary_push(M, zorder_objs(M), v);
   mrb_iv_set(M, v, mrb_intern_lit(M, "@x"), mrb_fixnum_value(0));
   mrb_iv_set(M, v, mrb_intern_lit(M, "@y"), mrb_fixnum_value(0));
   mrb_iv_set(M, v, mrb_intern_lit(M, "@z"), mrb_fixnum_value(0));
@@ -961,8 +995,10 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "|o", &vp);
 
   lv_obj_t* p = lv_canvas_create(parent_object(M, vp));
-  mrb_data_init(self, p, &obj_type);
-  add_root_obj(M, self);
+  wrap_lv_obj(M, self, p);
+  register_zobj(M, self);
+  // Keep the viewport alive as long as the sprite refers to it.
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
   return self;
 }
 
@@ -1009,10 +1045,144 @@ mrb_value obj_set_z(mrb_state* M, mrb_value self) {
   return self;
 }
 
-mrb_value vp_init(mrb_state* M, mrb_value self) {
-  lv_obj_t* p = lv_canvas_create(lv_display_get_screen_active(get_display(M)));
-  mrb_data_init(self, p, &obj_type);
+// Shared visible= for Sprite and Viewport: LVGL's HIDDEN flag also hides the
+// whole child subtree, so hiding a Viewport hides everything drawn in it.
+mrb_value obj_set_visible(mrb_state* M, mrb_value self) {
+  mrb_bool v;
+  mrb_get_args(M, "b", &v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  if (v)
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  else
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
   return self;
+}
+
+mrb_value obj_visible(mrb_state* M, mrb_value self) {
+  mrb_value v = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  return mrb_nil_p(v) ? mrb_true_value() : v;
+}
+
+// ---- Viewport -------------------------------------------------------------
+
+// Build an RGSS::Rect value.
+mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h) {
+  const mrb_value args[] = {mrb_fixnum_value(x), mrb_fixnum_value(y),
+                            mrb_fixnum_value(w), mrb_fixnum_value(h)};
+  return mrb_obj_new(
+      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+}
+
+// Push the stored @rect / @ox / @oy onto the underlying LVGL objects: the outer
+// frame takes the rect's position and size (and clips to it), while the inner
+// content layer is shifted by (-ox, -oy) to scroll its sprites.
+void vp_apply(mrb_state* M, mrb_value self) {
+  lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!outer)
+    return;
+  Rect& r =
+      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  const mrb_int w = std::max<mrb_int>(r.width, 0);
+  const mrb_int h = std::max<mrb_int>(r.height, 0);
+  lv_obj_set_pos(outer, r.x, r.y);
+  lv_obj_set_size(outer, w, h);
+
+  lv_obj_t* inner = viewport_content(outer);
+  const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  const mrb_value oy = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  lv_obj_set_pos(inner, -(mrb_fixnum_p(ox) ? mrb_fixnum(ox) : 0),
+                 -(mrb_fixnum_p(oy) ? mrb_fixnum(oy) : 0));
+  lv_obj_set_size(inner, w, h);
+}
+
+mrb_value vp_init(mrb_state* M, mrb_value self) {
+  // Viewport.new(x, y, width, height) | Viewport.new(rect) | Viewport.new
+  // (the last covering the whole screen, matching RGSS).
+  mrb_int x = 0, y = 0, w = 0, h = 0;
+  const mrb_int argc = mrb_get_argc(M);
+  if (argc == 1) {
+    mrb_value rv;
+    mrb_get_args(M, "o", &rv);
+    Rect& r = DataType<Rect>::get(M, rv);
+    x = r.x;
+    y = r.y;
+    w = r.width;
+    h = r.height;
+  } else if (argc >= 4) {
+    mrb_get_args(M, "iiii", &x, &y, &w, &h);
+  } else {
+    lv_display_t* d = get_display(M);
+    w = lv_display_get_horizontal_resolution(d);
+    h = lv_display_get_vertical_resolution(d);
+  }
+
+  lv_obj_t* screen = lv_display_get_screen_active(get_display(M));
+  lv_obj_t* outer = lv_obj_create(screen);
+  lv_obj_remove_style_all(outer);
+  lv_obj_remove_flag(outer, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(outer, LV_SCROLLBAR_MODE_OFF);
+
+  // Inner content layer: children beyond the viewport bounds must survive here
+  // (only the outer frame clips), so let it overflow.
+  lv_obj_t* inner = lv_obj_create(outer);
+  lv_obj_remove_style_all(inner);
+  lv_obj_remove_flag(inner, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(inner, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
+  wrap_lv_obj(M, self, outer);
+  register_zobj(M, self);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@rect"), make_rect(M, x, y, w, h));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_true_value());
+  vp_apply(M, self);
+  return self;
+}
+
+mrb_value vp_rect(mrb_state* M, mrb_value self) {
+  return mrb_iv_get(M, self, mrb_intern_lit(M, "@rect"));
+}
+
+mrb_value vp_set_rect(mrb_state* M, mrb_value self) {
+  mrb_value rv;
+  mrb_get_args(M, "o", &rv);
+  Rect& r = DataType<Rect>::get(M, rv);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@rect"),
+             make_rect(M, r.x, r.y, r.width, r.height));
+  vp_apply(M, self);
+  return rv;
+}
+
+mrb_value vp_ox(mrb_state* M, mrb_value self) {
+  return mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+}
+
+mrb_value vp_oy(mrb_state* M, mrb_value self) {
+  return mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+}
+
+mrb_value vp_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  vp_apply(M, self);
+  return mrb_fixnum_value(v);
+}
+
+mrb_value vp_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  vp_apply(M, self);
+  return mrb_fixnum_value(v);
+}
+
+// Present so the game loop can drive per-frame behaviour (flash, etc.); no
+// animated viewport effects are modelled yet, so this is a no-op.
+mrb_value vp_update(mrb_state* M, mrb_value self) {
+  return mrb_nil_value();
 }
 
 // Register x/y/width/height accessors for the Rect class.
@@ -1171,12 +1341,22 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));
-  mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_roots"),
+  mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_zobjs"),
                 mrb_ary_new(M));
 
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
-  mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_OPT(4));
+  mrb_define_method(M, vp, "rect", vp_rect, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "rect=", vp_set_rect, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "ox", vp_ox, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "oy", vp_oy, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "ox=", vp_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "oy=", vp_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "update", vp_update, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
@@ -1189,6 +1369,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "x=", obj_set_x, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "y=", obj_set_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, spr, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);

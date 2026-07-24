@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `RGSS::Viewport` is now a functional display object rather than a stub: it
+  wraps an LVGL container that positions and **clips** its sprites to a `rect`,
+  scrolls their content by `ox`/`oy`, hides via `visible`, and takes part in
+  `z` ordering against top-level sprites. Sprites created with
+  `Sprite.new(viewport)` are parented to it, and z ordering is now resolved
+  per LVGL parent so sprites inside a viewport stack among themselves while the
+  viewport stacks on the screen. LVGL delete events invalidate the mruby
+  wrappers so a viewport can safely own (and free) its child sprites
+- `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
+
+### Changed
+- `RGSS::Window` is now assembled from three layered sprites inside a viewport
+  (windowskin background+frame, selection cursor, and contents/text) instead of
+  compositing everything into one sprite's bitmap. The viewport clips the layers
+  to the window rectangle, and updating the cursor or text no longer re-blits
+  the windowskin
 - Playable gameplay after "New Game": `RPG2k#start_new_game` builds the party
   (`Game::Party`/`Game::Actor`) from the database, reads the start position from
   the map tree, loads the starting map and enters a walkable `Scene::Map`. The
