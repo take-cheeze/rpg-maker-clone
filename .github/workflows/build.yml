@@ -190,6 +190,14 @@ jobs:
         with:
           submodules: recursive
 
+      # quickjs-ng pins a nested `test262` submodule with `update = none`, so the
+      # recursive checkout above skips it. `nix build '.?submodules=1'` still
+      # recurses into every nested submodule and fails to fetch test262 when it
+      # is absent, so materialise it here (shallow). It is only needed to satisfy
+      # nix's recursive fetch; nothing in the build uses it.
+      - name: Materialize quickjs test262 submodule for the flake build
+        run: git -C 3rd/quickjs -c submodule.test262.update=checkout submodule update --init --depth 1 test262
+
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7

@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Embedded JavaScript engine for RPG Maker MV support (milestone M2): vendored
-  quickjs-ng at `3rd/quickjs` and static-linked its `qjs` library into both the
-  main executable and the mruby test binary. `MV::JS.eval` (in
+- Embedded JavaScript engine for RPG Maker MV support (milestone M2): added
+  quickjs-ng as the `3rd/quickjs` git submodule and static-linked its `qjs`
+  library into both the main executable and the mruby test binary. `MV::JS.eval` (in
   `mruby-mvjs/src/mvjs.cxx`) evaluates JavaScript and marshals scalar results
   (Integer/Float/String/true/false/nil) back to mruby, raising `RuntimeError` on
   a JS exception; `MV.js_available?` reports that the engine is compiled in.
