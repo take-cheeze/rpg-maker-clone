@@ -8,14 +8,12 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   add_dependency 'mruby-rgss'
   add_dependency 'mruby-io'
 
-  # --- Milestone M2 (embedded quickjs-ng runtime) -------------------------
-  # When the JavaScript host lands, vendor quickjs-ng as `3rd/quickjs` and wire
-  # it in here, mirroring how mruby-lcf/mruby-rgss pull in their C++ deps:
-  #
-  #   cxx.include_paths << "#{dir}/../3rd/quickjs"
-  #   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/quickjs"
-  #   linker.libraries << "quickjs"
-  #
-  # The C++ sources under this gem's `src/` are then picked up automatically by
-  # the `foreach(g ...)` glob in CMakeLists.txt (mruby-mvjs is already listed).
+  # The embedded JavaScript engine (quickjs-ng, vendored at 3rd/quickjs). The
+  # header is needed to compile src/mvjs.cxx in every build (native and wasm);
+  # the static `qjs` library — built by the top-level CMake, which also links it
+  # into the main executable — is linked into the mruby test binary here, along
+  # with the C libraries quickjs depends on (libm and pthreads).
+  cxx.include_paths << "#{dir}/../3rd/quickjs"
+  linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/quickjs"
+  linker.libraries << "qjs" << "m" << "pthread"
 end

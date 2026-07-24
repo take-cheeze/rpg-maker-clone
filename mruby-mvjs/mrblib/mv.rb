@@ -64,11 +64,20 @@ class MV
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }
     end
 
-    # True once the embedded JavaScript runtime is available (defined by the
-    # gem's C++ side in milestone M2). Until then the Ruby layer can be loaded
-    # and tested, but a game cannot actually run.
-    def runtime_available?
+    # True once the embedded JavaScript engine (`MV::JS`) is compiled into the
+    # binary — i.e. the gem's C++ side (quickjs-ng, milestone M2) is present.
+    # This proves JavaScript can be evaluated; it does not by itself mean a
+    # whole game can boot (that needs the host globals + rendering of M3/M4).
+    def js_available?
       const_defined?(:JS)
+    end
+
+    # True once a full MV game can boot end-to-end (host globals, asset IO,
+    # event loop and rendering are wired up — milestones M3/M4). Until then
+    # MV#start reports the pending state instead of failing. Flipped on when the
+    # boot/pump path below is implemented.
+    def runtime_available?
+      false
     end
   end
 

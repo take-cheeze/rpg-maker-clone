@@ -112,9 +112,12 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `src/main.cxx` (`js/rpg_core.js` + `data/System.json`). Host-runnable specs
   for the pure logic. No JS engine yet, so an MV game is detected but reports the
   runtime as pending instead of misbehaving.
-- 🚧 **M2 — Engine host.** Vendor quickjs-ng as `3rd/quickjs`, static-link it,
-  expose a minimal `MV::JS` (open runtime, eval a script, marshal basic values).
-  Verified by a spec that evaluates JavaScript and checks the result.
+- ✅ **M2 — Engine host.** quickjs-ng vendored as `3rd/quickjs` and static-linked
+  (`qjs` target) into the executable and the mruby test binary. `MV::JS.eval`
+  opens a runtime/context, evaluates JavaScript and marshals scalar results
+  (Integer/Float/String/true/false/nil), raising `RuntimeError` on a JS
+  exception. `MV.js_available?` reports the engine's presence; `runtime_available?`
+  stays false until the game host (M3/M4) lands. Covered by `mruby-mvjs/test`.
 - 🚧 **M3 — Boot to title.** Host-global shims (`window`/`document`/`navigator`/
   `location`/`requestAnimationFrame`/`setTimeout`/`XMLHttpRequest`/`Image`/
   `localStorage`/`require('fs'|'path')`), the asset/JSON IO bridge, and the

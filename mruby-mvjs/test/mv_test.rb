@@ -46,8 +46,15 @@ assert 'MV.core_scripts keeps the MV engine module order' do
   assert_equal order, order.sort
 end
 
-assert 'MV.runtime_available? is false until the JS host is embedded' do
-  # Milestone M1 ships no JS runtime, so a game cannot run yet; this guards the
-  # graceful "under construction" path in MV#start / MV#main_loop.
+assert 'MV.js_available? is true once the quickjs-ng engine is compiled in' do
+  # The full test binary compiles the gem's C++ (src/mvjs.cxx), so the embedded
+  # engine — and thus MV::JS — is present.
+  assert_true MV.js_available?
+end
+
+assert 'MV.runtime_available? is false until the game host is wired up' do
+  # The JS *engine* is present (M2), but booting a whole game still needs the
+  # host globals and rendering (M3/M4); until then this stays false and guards
+  # the graceful "under construction" path in MV#start / MV#main_loop.
   assert_false MV.runtime_available?
 end
