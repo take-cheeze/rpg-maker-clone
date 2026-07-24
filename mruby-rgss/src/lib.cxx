@@ -886,7 +886,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // cleared only after the whole sweep so a bitmap shared by several sprites
   // invalidates all of them.
   {
-    const mrb_value roots = root_objs(M);
+    const mrb_value roots = zorder_objs(M);
     const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
     for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
       const mrb_value v = RARRAY_PTR(roots)[i];
