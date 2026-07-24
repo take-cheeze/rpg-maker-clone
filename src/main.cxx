@@ -17,6 +17,7 @@
 #include <inicpp.hpp>
 
 #include "iterm.hxx"
+#include "profiler.hxx"
 #include "sixel.hxx"
 #include "terminal.hxx"
 
@@ -49,6 +50,19 @@ DEFINE_bool(
     "While a terminal backend (--sixel/--iterm) is active, draw the "
     "emit rate (frame size, MB/s, fps) on-screen just under the control "
     "legend, refreshed about once a second");
+DEFINE_bool(profile,
+            false,
+            "Enable the CPU/memory profiler: measure per-frame work time and "
+            "named sub-sections (scene/input/graphics) plus memory use "
+            "(process RSS, the LVGL heap pool and mruby allocation activity), "
+            "and print a summary line to stderr about once a second");
+DEFINE_int32(profile_interval_ms,
+             1000,
+             "How often (ms) the --profile summary line is printed");
+DEFINE_string(profile_trace,
+              "",
+              "Stream a Chrome trace (chrome://tracing / Perfetto JSON) of "
+              "every frame and section to this file. Implies --profile");
 
 namespace {
 
@@ -122,6 +136,10 @@ void main_loop() {
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
+// Installs the SDL keyboard watch that feeds RGSS::Input (src/sdl_input.cxx).
+// Only meaningful for the SDL window backend.
+extern "C" void rgss_sdl_input_init(void);
+
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
 // of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
 // detail, and under Emscripten ng-log's fatal path traps anyway (it formats
@@ -158,6 +176,14 @@ int main(int argc, char** argv) {
   }
   nglog::InitializeLogging(argv[0]);
 
+  // Configure profiling before mruby is opened so the allocator hook, if it is
+  // installed below, sees the right enabled state from its first call. A
+  // requested trace implies profiling.
+  const bool profiling = FLAGS_profile || !FLAGS_profile_trace.empty();
+  profiler_configure(profiling, FLAGS_profile_interval_ms);
+  if (!FLAGS_profile_trace.empty())
+    profiler_trace_start(FLAGS_profile_trace.c_str());
+
   lv_init();
 
   CHECK(!(FLAGS_sixel && FLAGS_iterm))
@@ -184,6 +210,9 @@ int main(int argc, char** argv) {
     CHECK(display);
     lv_sdl_window_set_resizeable(display.get(), false);
     lv_sdl_window_set_zoom(display.get(), 2.f);
+    // SDL is initialised by lv_sdl_window_create above; install the keyboard
+    // watch now so key events reach RGSS::Input.
+    rgss_sdl_input_init();
   }
 
 #ifdef __EMSCRIPTEN__
@@ -195,7 +224,15 @@ int main(int argc, char** argv) {
   // aligned).
   std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
 #else
-  std::shared_ptr<mrb_state> mrb(mrb_open_allocf(lvallocf, nullptr), mrb_close);
+  // With profiling on, route mruby's allocator through the profiler so it can
+  // count allocation activity; it forwards every call to lvallocf. Off by
+  // default, so the unprofiled build allocates through lvallocf directly.
+  profiler_allocf_t allocf = lvallocf;
+  if (profiling) {
+    profiler_set_downstream_allocf(lvallocf);
+    allocf = profiler_allocf;
+  }
+  std::shared_ptr<mrb_state> mrb(mrb_open_allocf(allocf, nullptr), mrb_close);
 #endif
   mrb_state* M = mrb.get();
   CHECK_NO_EXC(M);

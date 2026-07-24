@@ -12,13 +12,17 @@
 
 #include <lvgl.h>
 
+#include "profiler.hxx"
 #include "shinonome.hxx"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <iostream>
@@ -30,6 +34,10 @@
 // a terminal backend (--sixel / --iterm); forwards terminal keyboard input to
 // RGSS::Input.
 extern "C" void rgss_terminal_poll(mrb_state* M);
+
+// Defined in input_bridge.cxx (same gem).  A no-op unless the SDL window
+// backend is active and has captured key events; drains them into RGSS::Input.
+extern "C" void rgss_sdl_poll(mrb_state* M);
 
 namespace {
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
@@ -429,6 +437,544 @@ mrb_value table_load(mrb_state* M, V self) {
 
 // ---- Bitmap ---------------------------------------------------------------
 
+// Human-readable diagnostic for the most recent Bitmap load that reached (and
+// failed inside) a real decoder. Exposed to Ruby via `Bitmap._load_error` so a
+// failed windowskin/graphic load can report exactly which decoder gave up and
+// why -- e.g. stb's "bad dist" on a corrupt/non-standard XYZ zlib stream --
+// instead of a bare "Failed to init bitmap". Left untouched by plain
+// file-not-found probes so the informative message survives the loader's
+// subsequent extension attempts.
+static std::string g_bitmap_load_error;
+
+static void set_bitmap_load_error(const char* fmt, ...) {
+  char buf[512];
+  va_list ap;
+  va_start(ap, fmt);
+  std::vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  g_bitmap_load_error = buf;
+}
+
+// Decode an RPG Maker 2000/2003 XYZ image. The format is a tiny header
+//
+//   "XYZ1"                     4-byte magic
+//   uint16 LE width, height    picture dimensions
+//   zlib stream                768-byte RGB palette + width*height indices
+//
+// which stb_image does not understand, so games that ship their System
+// (windowskin) or other graphics as .xyz would otherwise fail to load. On
+// success returns a freshly stb-allocated buffer (free with stbi_image_free)
+// of width*height*4 bytes in LVGL's B, G, R, A byte order and sets *w/*h/*c;
+// returns nullptr when `f` is not a readable XYZ file. When `trans` is set the
+// first palette entry is treated as the transparent colour, matching stb's
+// transparent-palette handling for PNGs.
+static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return nullptr;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz < 8) {
+    std::fclose(fp);
+    return nullptr;
+  }
+  std::vector<uint8_t> data((size_t)sz);
+  const size_t got = std::fread(data.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  // Not an XYZ file: stay silent and let the caller keep stb_image's own error.
+  if (got != (size_t)sz || std::memcmp(data.data(), "XYZ1", 4) != 0)
+    return nullptr;
+
+  const int width = data[4] | (data[5] << 8);
+  const int height = data[6] | (data[7] << 8);
+  if (width <= 0 || height <= 0) {
+    set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width,
+                          height, f);
+    return nullptr;
+  }
+
+  const char* stream = reinterpret_cast<const char*>(data.data() + 8);
+  const int stream_len = (int)(sz - 8);
+  // A 768-byte (256*3) RGB palette followed by one index per pixel.
+  const long expected = 768L + (long)width * height;
+
+  int outlen = 0;
+  // RPG Maker writes a standard zlib stream (header byte 0x78). Decode that
+  // first; if stb rejects it -- e.g. "bad dist" on a stream some tools emit as
+  // raw DEFLATE with no zlib header -- retry without the 2-byte header before
+  // giving up, so a wider range of System graphics still loads.
+  char* raw = stbi_zlib_decode_malloc(stream, stream_len, &outlen);
+  if (!raw) {
+    char zerr[128];
+    std::snprintf(zerr, sizeof(zerr), "%s", stbi_failure_reason());
+    raw = stbi_zlib_decode_noheader_malloc(stream, stream_len, &outlen);
+    if (!raw) {
+      set_bitmap_load_error(
+          "XYZ %dx%d '%s': zlib inflate failed (%s); zlib header 0x%02x%02x, "
+          "%d compressed bytes, expected %ld decompressed",
+          width, height, f, zerr, (unsigned)data[8], (unsigned)data[9],
+          stream_len, expected);
+      return nullptr;
+    }
+  }
+
+  if ((long)outlen < expected) {
+    set_bitmap_load_error(
+        "XYZ %dx%d '%s': short data, got %d bytes, expected %ld (768 palette + "
+        "%d pixels)",
+        width, height, f, outlen, expected, width * height);
+    stbi_image_free(raw);
+    return nullptr;
+  }
+  const uint8_t* pal = reinterpret_cast<const uint8_t*>(raw);
+  const uint8_t* idx = pal + 768;
+
+  uint8_t* out = (uint8_t*)stbi__malloc((size_t)width * height * 4);
+  if (!out) {
+    stbi_image_free(raw);
+    return nullptr;
+  }
+  for (int i = 0; i < width * height; ++i) {
+    const uint8_t p = idx[i];
+    out[i * 4 + 0] = pal[p * 3 + 2];               // B
+    out[i * 4 + 1] = pal[p * 3 + 1];               // G
+    out[i * 4 + 2] = pal[p * 3 + 0];               // R
+    out[i * 4 + 3] = (trans && p == 0) ? 0 : 255;  // A
+  }
+  stbi_image_free(raw);
+  *w = width;
+  *h = height;
+  *c = 4;
+  return out;
+}
+
+// ---- Tolerant PNG fallback ------------------------------------------------
+//
+// Some PNGs -- notably RPG Maker System/windowskin graphics -- ship an IDAT
+// deflate stream with back-references that reach before the start of the
+// output. The PNG/zlib spec forbids this, so strict inflaters (stb_image's
+// bundled zlib, and zlib itself) reject them with "bad dist" / "invalid
+// distance too far back". The producers rely on the missing pre-history reading
+// as zeros. This self-contained decoder reproduces that behaviour so those
+// images load instead of falling back to the plain panel. It runs only as a
+// fallback after stb_image has already refused the file.
+namespace png_tol {
+
+struct BitReader {
+  const uint8_t* p;
+  const uint8_t* end;
+  uint32_t buf = 0;
+  int cnt = 0;
+  bool fail = false;
+  int bit() {
+    if (cnt == 0) {
+      if (p >= end) {
+        fail = true;
+        return 0;
+      }
+      buf = *p++;
+      cnt = 8;
+    }
+    int b = buf & 1;
+    buf >>= 1;
+    cnt--;
+    return b;
+  }
+  int bits(int n) {
+    int v = 0;
+    for (int i = 0; i < n; i++)
+      v |= bit() << i;
+    return v;
+  }
+};
+
+struct Huff {
+  short count[16];
+  short symbol[288];
+};
+
+void huff_build(Huff& h, const uint8_t* len, int n) {
+  for (int i = 0; i < 16; i++)
+    h.count[i] = 0;
+  for (int i = 0; i < n; i++)
+    h.count[len[i]]++;
+  h.count[0] = 0;
+  short offs[16];
+  offs[1] = 0;
+  for (int l = 1; l < 15; l++)
+    offs[l + 1] = offs[l] + h.count[l];
+  for (int i = 0; i < n; i++)
+    if (len[i])
+      h.symbol[offs[len[i]]++] = (short)i;
+}
+
+int huff_decode(BitReader& br, const Huff& h) {
+  int code = 0, first = 0, index = 0;
+  for (int len = 1; len <= 15; len++) {
+    code |= br.bit();
+    int count = h.count[len];
+    if (code - count < first)
+      return h.symbol[index + (code - first)];
+    index += count;
+    first += count;
+    first <<= 1;
+    code <<= 1;
+  }
+  return -1;
+}
+
+const short LBASE[29] = {3,  4,  5,  6,   7,   8,   9,   10,  11, 13,
+                         15, 17, 19, 23,  27,  31,  35,  43,  51, 59,
+                         67, 83, 99, 115, 131, 163, 195, 227, 258};
+const short LEXT[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+                        2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+const short DBASE[30] = {1,    2,    3,    4,     5,     7,    9,    13,
+                         17,   25,   33,   49,    65,    97,   129,  193,
+                         257,  385,  513,  769,   1025,  1537, 2049, 3073,
+                         4097, 6145, 8193, 12289, 16385, 24577};
+const short DEXT[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
+                        6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+
+// Inflate `in` into `out` (pre-sized to the expected length). Distances that
+// reach before the start of the output produce zeros rather than an error.
+// Returns the number of bytes produced, or -1 on a hard failure.
+long inflate_tolerant(const uint8_t* in,
+                      size_t in_len,
+                      std::vector<uint8_t>& out) {
+  size_t off = 0;
+  if (in_len >= 2 && (in[0] & 0x0f) == 8 && ((in[0] << 8 | in[1]) % 31) == 0)
+    off = 2;  // skip the 2-byte zlib header when present
+  BitReader br{in + off, in + in_len};
+  size_t outcnt = 0;
+  auto put = [&](int v) {
+    if (outcnt < out.size())
+      out[outcnt] = (uint8_t)v;
+    outcnt++;
+  };
+
+  Huff fixed_l, fixed_d;
+  {
+    uint8_t l[288];
+    for (int i = 0; i < 144; i++)
+      l[i] = 8;
+    for (int i = 144; i < 256; i++)
+      l[i] = 9;
+    for (int i = 256; i < 280; i++)
+      l[i] = 7;
+    for (int i = 280; i < 288; i++)
+      l[i] = 8;
+    huff_build(fixed_l, l, 288);
+    uint8_t d[30];
+    for (int i = 0; i < 30; i++)
+      d[i] = 5;
+    huff_build(fixed_d, d, 30);
+  }
+
+  for (;;) {
+    int last = br.bit();
+    int type = br.bits(2);
+    if (br.fail)
+      return -1;
+    if (type == 0) {  // stored
+      br.buf = 0;
+      br.cnt = 0;  // align to byte boundary
+      if (br.p + 4 > br.end)
+        return -1;
+      int len = br.p[0] | (br.p[1] << 8);
+      br.p += 4;  // LEN + NLEN
+      for (int i = 0; i < len; i++) {
+        if (br.p >= br.end)
+          return -1;
+        put(*br.p++);
+      }
+    } else if (type == 1 || type == 2) {  // fixed or dynamic Huffman
+      Huff dyn_l, dyn_d;
+      const Huff* lc;
+      const Huff* dc;
+      if (type == 1) {
+        lc = &fixed_l;
+        dc = &fixed_d;
+      } else {
+        int hlit = br.bits(5) + 257;
+        int hdist = br.bits(5) + 1;
+        int hclen = br.bits(4) + 4;
+        static const int ord[19] = {16, 17, 18, 0, 8,  7, 9,  6, 10, 5,
+                                    11, 4,  12, 3, 13, 2, 14, 1, 15};
+        uint8_t cl[19] = {0};
+        for (int i = 0; i < hclen; i++)
+          cl[ord[i]] = (uint8_t)br.bits(3);
+        Huff clh;
+        huff_build(clh, cl, 19);
+        uint8_t lens[288 + 32] = {0};
+        int n = 0;
+        while (n < hlit + hdist) {
+          int sym = huff_decode(br, clh);
+          if (sym < 0)
+            return -1;
+          if (sym < 16) {
+            lens[n++] = (uint8_t)sym;
+          } else if (sym == 16) {
+            if (n == 0)
+              return -1;
+            int r = br.bits(2) + 3;
+            uint8_t prev = lens[n - 1];
+            while (r-- && n < hlit + hdist)
+              lens[n++] = prev;
+          } else if (sym == 17) {
+            int r = br.bits(3) + 3;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = 0;
+          } else {
+            int r = br.bits(7) + 11;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = 0;
+          }
+        }
+        huff_build(dyn_l, lens, hlit);
+        huff_build(dyn_d, lens + hlit, hdist);
+        lc = &dyn_l;
+        dc = &dyn_d;
+      }
+      for (;;) {
+        int sym = huff_decode(br, *lc);
+        if (sym < 0)
+          return -1;
+        if (sym == 256)
+          break;
+        if (sym < 256) {
+          put(sym);
+        } else {
+          sym -= 257;
+          if (sym >= 29)
+            return -1;
+          int len = LBASE[sym] + br.bits(LEXT[sym]);
+          int dsym = huff_decode(br, *dc);
+          if (dsym < 0 || dsym >= 30)
+            return -1;
+          long dist = DBASE[dsym] + br.bits(DEXT[dsym]);
+          while (len--) {
+            int v = ((long)outcnt < dist) ? 0 : out[outcnt - dist];
+            put(v);
+          }
+        }
+        if (br.fail)
+          return -1;
+      }
+    } else {
+      return -1;  // reserved block type
+    }
+    if (last)
+      break;
+  }
+  return (long)outcnt;
+}
+
+int paeth(int a, int b, int c) {
+  int p = a + b - c, pa = std::abs(p - a), pb = std::abs(p - b),
+      pc = std::abs(p - c);
+  return (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
+}
+
+uint32_t be32(const uint8_t* p) {
+  return ((uint32_t)p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+}
+
+}  // namespace png_tol
+
+// Decode `f` as a PNG using the tolerant inflater above. Returns a freshly
+// stb-allocated (free with stbi_image_free) width*height*4 B, G, R, A buffer
+// and sets *w/*h/*c, or nullptr when the file is not a PNG this fallback
+// handles (non-interlaced; bit depth 8, or indexed 1/2/4). `trans` maps palette
+// index 0 to transparent, matching the primary loader's colour-key handling.
+static uint8_t* load_png_tolerant(const char* f,
+                                  int* wout,
+                                  int* hout,
+                                  int* c,
+                                  bool trans) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return nullptr;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  static const uint8_t sig[8] = {0x89, 0x50, 0x4e, 0x47,
+                                 0x0d, 0x0a, 0x1a, 0x0a};
+  if (sz < 8) {
+    std::fclose(fp);
+    return nullptr;
+  }
+  std::vector<uint8_t> d((size_t)sz);
+  const size_t got = std::fread(d.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  if (got != (size_t)sz || std::memcmp(d.data(), sig, 8) != 0)
+    return nullptr;
+
+  int w = 0, h = 0, depth = 0, ct = 0, interlace = 0;
+  std::vector<uint8_t> idat, plte, trns;
+  size_t i = 8;
+  while (i + 8 <= (size_t)sz) {
+    const uint32_t len = png_tol::be32(d.data() + i);
+    const uint8_t* typ = d.data() + i + 4;
+    const uint8_t* body = d.data() + i + 8;
+    if (i + 12 + len > (size_t)sz)
+      break;
+    if (!std::memcmp(typ, "IHDR", 4) && len >= 13) {
+      w = (int)png_tol::be32(body);
+      h = (int)png_tol::be32(body + 4);
+      depth = body[8];
+      ct = body[9];
+      interlace = body[12];
+    } else if (!std::memcmp(typ, "IDAT", 4)) {
+      idat.insert(idat.end(), body, body + len);
+    } else if (!std::memcmp(typ, "PLTE", 4)) {
+      plte.assign(body, body + len);
+    } else if (!std::memcmp(typ, "tRNS", 4)) {
+      trns.assign(body, body + len);
+    } else if (!std::memcmp(typ, "IEND", 4)) {
+      break;
+    }
+    i += 12 + len;
+  }
+  if (w <= 0 || h <= 0 || interlace != 0)
+    return nullptr;
+  if (depth != 8 && !(ct == 3 && (depth == 1 || depth == 2 || depth == 4)))
+    return nullptr;
+  int channels;
+  switch (ct) {
+    case 0:
+      channels = 1;
+      break;
+    case 2:
+      channels = 3;
+      break;
+    case 3:
+      channels = 1;
+      break;
+    case 4:
+      channels = 2;
+      break;
+    case 6:
+      channels = 4;
+      break;
+    default:
+      return nullptr;
+  }
+  if (ct == 3 && plte.size() < 3)
+    return nullptr;
+
+  const size_t rowbytes = ((size_t)w * channels * depth + 7) / 8;
+  int bpp = (channels * depth + 7) / 8;
+  if (bpp < 1)
+    bpp = 1;
+  std::vector<uint8_t> filt((rowbytes + 1) * (size_t)h, 0);
+  const long need = (long)((rowbytes + 1) * (size_t)h);
+  if (png_tol::inflate_tolerant(idat.data(), idat.size(), filt) < need) {
+    set_bitmap_load_error(
+        "PNG %dx%d depth %d colortype %d '%s': tolerant inflate produced too "
+        "little data",
+        w, h, depth, ct, f);
+    return nullptr;
+  }
+
+  // Reverse the per-scanline filters in place.
+  std::vector<uint8_t> raw((size_t)rowbytes * h);
+  std::vector<uint8_t> prev(rowbytes, 0);
+  for (int r = 0; r < h; r++) {
+    const uint8_t* srow = &filt[(rowbytes + 1) * (size_t)r];
+    const int ft = srow[0];
+    uint8_t* cur = &raw[(size_t)rowbytes * r];
+    for (size_t x = 0; x < rowbytes; x++) {
+      const int a = (x >= (size_t)bpp) ? cur[x - bpp] : 0;
+      const int b = prev[x];
+      const int cc = (x >= (size_t)bpp) ? prev[x - bpp] : 0;
+      int v = srow[1 + x];
+      switch (ft) {
+        case 1:
+          v += a;
+          break;
+        case 2:
+          v += b;
+          break;
+        case 3:
+          v += (a + b) >> 1;
+          break;
+        case 4:
+          v += png_tol::paeth(a, b, cc);
+          break;
+        default:
+          break;
+      }
+      cur[x] = (uint8_t)v;
+    }
+    std::memcpy(prev.data(), cur, rowbytes);
+  }
+
+  uint8_t* out = (uint8_t*)stbi__malloc((size_t)w * h * 4);
+  if (!out)
+    return nullptr;
+  auto set = [&](int px, int R, int G, int B, int A) {
+    out[px * 4 + 0] = (uint8_t)B;
+    out[px * 4 + 1] = (uint8_t)G;
+    out[px * 4 + 2] = (uint8_t)R;
+    out[px * 4 + 3] = (uint8_t)A;
+  };
+  const int palcount = (int)(plte.size() / 3);
+  for (int y = 0; y < h; y++) {
+    const uint8_t* row = &raw[(size_t)rowbytes * y];
+    for (int x = 0; x < w; x++) {
+      const int px = y * w + x;
+      if (ct == 3) {
+        int idx;
+        if (depth == 8) {
+          idx = row[x];
+        } else {
+          const int per = 8 / depth;
+          const int shift = (per - 1 - (x % per)) * depth;
+          idx = (row[x / per] >> shift) & ((1 << depth) - 1);
+        }
+        if (idx >= palcount)
+          idx = palcount ? palcount - 1 : 0;
+        int A = 255;
+        if (trans && idx == 0)
+          A = 0;
+        if ((size_t)idx < trns.size())
+          A = trns[idx];
+        set(px, plte[idx * 3], plte[idx * 3 + 1], plte[idx * 3 + 2], A);
+      } else if (ct == 2) {
+        set(px, row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
+      } else if (ct == 6) {
+        set(px, row[x * 4], row[x * 4 + 1], row[x * 4 + 2], row[x * 4 + 3]);
+      } else if (ct == 0) {
+        const int g = row[x];
+        set(px, g, g, g, 255);
+      } else {  // ct == 4, grayscale + alpha
+        const int g = row[x * 2];
+        set(px, g, g, g, row[x * 2 + 1]);
+      }
+    }
+  }
+  *wout = w;
+  *hout = h;
+  *c = 4;
+  return out;
+}
+
+// Ruby: Bitmap._load_error -> the detailed diagnostic set by the last decoder
+// that opened a file and failed inside it (see g_bitmap_load_error).
+mrb_value bmp_load_error(mrb_state* M, V self) {
+  (void)self;
+  return mrb_str_new_cstr(M, g_bitmap_load_error.c_str());
+}
+
+// Ruby: Bitmap._stbi_error -> stb_image's raw failure reason for the most
+// recent decode attempt (e.g. "bad dist", "unknown image type").
+mrb_value bmp_stbi_error(mrb_state* M, V self) {
+  (void)self;
+  const char* r = stbi_failure_reason();
+  return mrb_str_new_cstr(M, r ? r : "");
+}
+
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   mrb_int w, h;
   mrb_get_args(M, "ii", &w, &h);
@@ -447,6 +993,13 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   std::shared_ptr<uint8_t> img(
       stbi_load(f, &w, &h, &c, stbi__png_transparent_palette ? 4 : 3),
       stbi_image_free);
+  if (!img)
+    img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
+  // stb_image rejects some valid-enough PNGs (e.g. RPG Maker windowskins whose
+  // deflate stream references a zero pre-history, giving "bad dist"); retry
+  // with the tolerant PNG decoder before giving up.
+  if (!img)
+    img.reset(load_png_tolerant(f, &w, &h, &c, trans), stbi_image_free);
   if (!img) {
     // Some archives store filenames in NFD form while the game data refers to
     // them in NFC (or vice versa); retry with the decomposed form before giving
@@ -455,6 +1008,11 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
     img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c,
                         stbi__png_transparent_palette ? 4 : 3),
               stbi_image_free);
+    if (!img)
+      img.reset(load_xyz(nfd_f.c_str(), &w, &h, &c, trans), stbi_image_free);
+    if (!img)
+      img.reset(load_png_tolerant(nfd_f.c_str(), &w, &h, &c, trans),
+                stbi_image_free);
     if (!img)
       return mrb_nil_value();
   }
@@ -809,11 +1367,13 @@ mrb_value obj_dispose(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
-// Array of top-level display objects (Sprites) whose stacking order is driven
-// by their `z` attribute. Populated lazily by rgss_set_display / add_root_obj.
-mrb_value root_objs(mrb_state* M) {
+// Array of z-ordered display objects (Sprites and Viewports). Stacking is
+// resolved per LVGL parent: sprites sharing a parent (the screen, or a
+// Viewport's content layer) are ordered among themselves by their `z`.
+// Populated by register_zobj.
+mrb_value zorder_objs(mrb_state* M) {
   const mrb_value mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-  const mrb_value ret = mrb_const_get(M, mod, mrb_intern_lit(M, "_roots"));
+  const mrb_value ret = mrb_const_get(M, mod, mrb_intern_lit(M, "_zobjs"));
   mrb_assert(mrb_array_p(ret));
   return ret;
 }
@@ -831,6 +1391,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
 
   rgss_terminal_poll(M);
+  rgss_sdl_poll(M);
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
                         mrb_intern_lit(M, "TIMEOUT_MS"))) {
@@ -850,26 +1411,32 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   }
 
   // Reapply z ordering when something changed since the last frame. LVGL draws
-  // siblings in child order, so we sort the live roots by their `z` and move
-  // them to the foreground from lowest to highest, leaving the greatest `z` on
-  // top. Disposed sprites (null DATA_PTR) are dropped from the root set here so
+  // siblings in child order, so within each LVGL parent we sort that parent's
+  // z-managed objects by `z` and move them to the foreground from lowest to
+  // highest, leaving the greatest `z` on top. Grouping by parent means sprites
+  // that live inside a Viewport are ordered among themselves, while the
+  // Viewport (and top-level sprites) are ordered against each other on the
+  // screen. Disposed objects (null DATA_PTR) are dropped from the set here so
   // it does not grow unbounded.
   if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
-    const mrb_value roots = root_objs(M);
+    ProfilerScope _zscope("gfx.zorder");
+    const mrb_value objs = zorder_objs(M);
     const mrb_value live = mrb_ary_new(M);
-    std::multimap<mrb_int, lv_obj_t*> orders;
-    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
-      const mrb_value v = RARRAY_PTR(roots)[i];
+    std::map<lv_obj_t*, std::multimap<mrb_int, lv_obj_t*>> by_parent;
+    for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
+      const mrb_value v = RARRAY_PTR(objs)[i];
       if (!DATA_PTR(v))
         continue;
       mrb_ary_push(M, live, v);
+      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
       const mrb_value z = mrb_iv_get(M, v, mrb_intern_lit(M, "@z"));
       mrb_assert(mrb_fixnum_p(z));
-      orders.insert({mrb_fixnum(z), reinterpret_cast<lv_obj_t*>(DATA_PTR(v))});
+      by_parent[lv_obj_get_parent(obj)].insert({mrb_fixnum(z), obj});
     }
-    mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_roots"), live);
-    for (const auto& order : orders)
-      lv_obj_move_foreground(order.second);
+    mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_zobjs"), live);
+    for (const auto& group : by_parent)
+      for (const auto& order : group.second)
+        lv_obj_move_foreground(order.second);
     mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"), mrb_false_value());
   }
 
@@ -879,7 +1446,8 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // cleared only after the whole sweep so a bitmap shared by several sprites
   // invalidates all of them.
   {
-    const mrb_value roots = root_objs(M);
+    ProfilerScope _iscope("gfx.invalidate");
+    const mrb_value roots = zorder_objs(M);
     const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
     for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
       const mrb_value v = RARRAY_PTR(roots)[i];
@@ -905,8 +1473,11 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     }
   }
 
-  lv_timer_handler();
-  lv_task_handler();
+  {
+    ProfilerScope _lvscope("gfx.lvgl");
+    lv_timer_handler();
+    lv_task_handler();
+  }
 
   // Advance Graphics.frame_count, matching RGSS semantics.
   V gfx = mrb_obj_value(
@@ -917,6 +1488,10 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 
   const int32_t sleep = 1000 / 60 - lv_tick_elaps(frame_start);
   if (sleep > 0) {
+    // Report the idle wait so the profiler can subtract it: the frame spans the
+    // whole main_loop iteration (see RGSS::Profiler.frame), and we want its
+    // "work" figure to measure CPU cost, not the time spent sleeping here.
+    profiler_note_idle(sleep);
     lv_delay_ms(sleep);
   }
 
@@ -939,17 +1514,44 @@ lv_display_t* get_display(mrb_state* M) {
 
 const mrb_data_type obj_type = {"lv_obj_t", free_obj};
 
+// LVGL fires LV_EVENT_DELETE when an object is destroyed, including when its
+// parent is deleted and takes the whole subtree with it. Each wrapped object
+// stores its mruby RData in user_data; null the data pointer here so the mruby
+// wrapper (and its later dispose/GC) never calls lv_obj_delete on a freed
+// object. This is what makes it safe to nest Sprites inside a Viewport that
+// owns them: whichever wrapper the GC frees first, the others are invalidated.
+void on_lv_delete(lv_event_t* e) {
+  lv_obj_t* obj = static_cast<lv_obj_t*>(lv_event_get_target(e));
+  if (void* ud = lv_obj_get_user_data(obj))
+    static_cast<struct RData*>(ud)->data = nullptr;
+}
+
+// Bind an lv_obj to its mruby wrapper: record the wrapper in user_data and hook
+// the delete event so the wrapper is invalidated if LVGL frees the object.
+void wrap_lv_obj(mrb_state* M, mrb_value self, lv_obj_t* obj) {
+  mrb_data_init(self, obj, &obj_type);
+  lv_obj_set_user_data(obj, mrb_ptr(self));
+  lv_obj_add_event_cb(obj, on_lv_delete, LV_EVENT_DELETE, nullptr);
+}
+
+// A Viewport wraps an outer clipping frame whose sole child is an inner content
+// layer that actually holds the sprites; new sprites parent to that layer so
+// they are clipped to the viewport and scrolled by its ox/oy.
+lv_obj_t* viewport_content(lv_obj_t* outer) {
+  return lv_obj_get_child(outer, 0);
+}
+
 lv_obj_t* parent_object(mrb_state* M, mrb_value vp) {
   if (mrb_nil_p(vp))
     return lv_display_get_screen_active(get_display(M));
 
   mrb_assert(mrb_type(vp) == MRB_TT_DATA && DATA_TYPE(vp) == &obj_type);
-  return reinterpret_cast<lv_obj_t*>(DATA_PTR(vp));
+  return viewport_content(reinterpret_cast<lv_obj_t*>(DATA_PTR(vp)));
 }
 
-// Register a display object as a z-ordered root and give it a default z of 0.
-void add_root_obj(mrb_state* M, mrb_value v) {
-  mrb_ary_push(M, root_objs(M), v);
+// Register a display object for z-ordering and give it a default z of 0.
+void register_zobj(mrb_state* M, mrb_value v) {
+  mrb_ary_push(M, zorder_objs(M), v);
   mrb_iv_set(M, v, mrb_intern_lit(M, "@x"), mrb_fixnum_value(0));
   mrb_iv_set(M, v, mrb_intern_lit(M, "@y"), mrb_fixnum_value(0));
   mrb_iv_set(M, v, mrb_intern_lit(M, "@z"), mrb_fixnum_value(0));
@@ -961,8 +1563,10 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "|o", &vp);
 
   lv_obj_t* p = lv_canvas_create(parent_object(M, vp));
-  mrb_data_init(self, p, &obj_type);
-  add_root_obj(M, self);
+  wrap_lv_obj(M, self, p);
+  register_zobj(M, self);
+  // Keep the viewport alive as long as the sprite refers to it.
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
   return self;
 }
 
@@ -1009,10 +1613,144 @@ mrb_value obj_set_z(mrb_state* M, mrb_value self) {
   return self;
 }
 
-mrb_value vp_init(mrb_state* M, mrb_value self) {
-  lv_obj_t* p = lv_canvas_create(lv_display_get_screen_active(get_display(M)));
-  mrb_data_init(self, p, &obj_type);
+// Shared visible= for Sprite and Viewport: LVGL's HIDDEN flag also hides the
+// whole child subtree, so hiding a Viewport hides everything drawn in it.
+mrb_value obj_set_visible(mrb_state* M, mrb_value self) {
+  mrb_bool v;
+  mrb_get_args(M, "b", &v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  if (v)
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  else
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
   return self;
+}
+
+mrb_value obj_visible(mrb_state* M, mrb_value self) {
+  mrb_value v = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  return mrb_nil_p(v) ? mrb_true_value() : v;
+}
+
+// ---- Viewport -------------------------------------------------------------
+
+// Build an RGSS::Rect value.
+mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h) {
+  const mrb_value args[] = {mrb_fixnum_value(x), mrb_fixnum_value(y),
+                            mrb_fixnum_value(w), mrb_fixnum_value(h)};
+  return mrb_obj_new(
+      M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+}
+
+// Push the stored @rect / @ox / @oy onto the underlying LVGL objects: the outer
+// frame takes the rect's position and size (and clips to it), while the inner
+// content layer is shifted by (-ox, -oy) to scroll its sprites.
+void vp_apply(mrb_state* M, mrb_value self) {
+  lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!outer)
+    return;
+  Rect& r =
+      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  const mrb_int w = std::max<mrb_int>(r.width, 0);
+  const mrb_int h = std::max<mrb_int>(r.height, 0);
+  lv_obj_set_pos(outer, r.x, r.y);
+  lv_obj_set_size(outer, w, h);
+
+  lv_obj_t* inner = viewport_content(outer);
+  const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  const mrb_value oy = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  lv_obj_set_pos(inner, -(mrb_fixnum_p(ox) ? mrb_fixnum(ox) : 0),
+                 -(mrb_fixnum_p(oy) ? mrb_fixnum(oy) : 0));
+  lv_obj_set_size(inner, w, h);
+}
+
+mrb_value vp_init(mrb_state* M, mrb_value self) {
+  // Viewport.new(x, y, width, height) | Viewport.new(rect) | Viewport.new
+  // (the last covering the whole screen, matching RGSS).
+  mrb_int x = 0, y = 0, w = 0, h = 0;
+  const mrb_int argc = mrb_get_argc(M);
+  if (argc == 1) {
+    mrb_value rv;
+    mrb_get_args(M, "o", &rv);
+    Rect& r = DataType<Rect>::get(M, rv);
+    x = r.x;
+    y = r.y;
+    w = r.width;
+    h = r.height;
+  } else if (argc >= 4) {
+    mrb_get_args(M, "iiii", &x, &y, &w, &h);
+  } else {
+    lv_display_t* d = get_display(M);
+    w = lv_display_get_horizontal_resolution(d);
+    h = lv_display_get_vertical_resolution(d);
+  }
+
+  lv_obj_t* screen = lv_display_get_screen_active(get_display(M));
+  lv_obj_t* outer = lv_obj_create(screen);
+  lv_obj_remove_style_all(outer);
+  lv_obj_remove_flag(outer, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(outer, LV_SCROLLBAR_MODE_OFF);
+
+  // Inner content layer: children beyond the viewport bounds must survive here
+  // (only the outer frame clips), so let it overflow.
+  lv_obj_t* inner = lv_obj_create(outer);
+  lv_obj_remove_style_all(inner);
+  lv_obj_remove_flag(inner, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(inner, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
+  wrap_lv_obj(M, self, outer);
+  register_zobj(M, self);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@rect"), make_rect(M, x, y, w, h));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_true_value());
+  vp_apply(M, self);
+  return self;
+}
+
+mrb_value vp_rect(mrb_state* M, mrb_value self) {
+  return mrb_iv_get(M, self, mrb_intern_lit(M, "@rect"));
+}
+
+mrb_value vp_set_rect(mrb_state* M, mrb_value self) {
+  mrb_value rv;
+  mrb_get_args(M, "o", &rv);
+  Rect& r = DataType<Rect>::get(M, rv);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@rect"),
+             make_rect(M, r.x, r.y, r.width, r.height));
+  vp_apply(M, self);
+  return rv;
+}
+
+mrb_value vp_ox(mrb_state* M, mrb_value self) {
+  return mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+}
+
+mrb_value vp_oy(mrb_state* M, mrb_value self) {
+  return mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+}
+
+mrb_value vp_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  vp_apply(M, self);
+  return mrb_fixnum_value(v);
+}
+
+mrb_value vp_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  vp_apply(M, self);
+  return mrb_fixnum_value(v);
+}
+
+// Present so the game loop can drive per-frame behaviour (flash, etc.); no
+// animated viewport effects are modelled yet, so this is a no-op.
+mrb_value vp_update(mrb_state* M, mrb_value self) {
+  return mrb_nil_value();
 }
 
 // Register x/y/width/height accessors for the Rect class.
@@ -1171,12 +1909,22 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));
-  mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_roots"),
+  mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_zobjs"),
                 mrb_ary_new(M));
 
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
-  mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_OPT(4));
+  mrb_define_method(M, vp, "rect", vp_rect, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "rect=", vp_set_rect, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "ox", vp_ox, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "oy", vp_oy, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "ox=", vp_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "oy=", vp_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "update", vp_update, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
@@ -1189,12 +1937,18 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "x=", obj_set_x, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "y=", obj_set_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, spr, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+  mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
+                          MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "height", bmp_height, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "rect", bmp_rect, MRB_ARGS_NONE());
@@ -1311,7 +2065,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
 
+  profiler_init(M);
+
   define_rect(M, m);
 }
 
-extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {}
+extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
+  // Flush and close a Chrome trace still open at shutdown (native path; the
+  // Emscripten loop never returns, but the format tolerates the missing close).
+  profiler_trace_stop();
+}

@@ -63,6 +63,42 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
+  `--profile` (report cadence tunable via `--profile_interval_ms`, default
+  1000ms). Once a second it prints a summary line to stderr with the measured
+  frame rate, per-frame CPU **work** time (the frame span minus the fps-cap
+  sleep) and a breakdown of named sub-sections — `scene.update`, `input.update`
+  and the `gfx.*` phases of `Graphics.update` (z-ordering, bitmap invalidation,
+  LVGL handling) — each with its average/max time and share of the frame, plus
+  memory use: process RSS, the LVGL heap pool (used bytes + fragmentation) and
+  mruby allocation activity (live blocks and allocations/sec). Custom sections
+  can be timed from Ruby with `RGSS::Profiler.section("name") { ... }`, and
+  `RGSS::Profiler.stats` returns the current interval as a Hash. When
+  `--profile` is off the profiler does no work — every timing/sampling entry
+  point returns on a single predicted branch — so the default build is
+  unaffected. A Chrome trace can be exported with `--profile_trace=FILE` (or
+  `RGSS::Profiler.trace_start`/`trace_stop` from Ruby to trace a specific
+  window): every frame and section is streamed as a Chrome Trace Event and each
+  memory sample as counters, producing a file that `chrome://tracing` and
+  Perfetto load as a flame chart with memory graphs. The stream is written
+  incrementally and stays loadable even if the process is killed mid-run
+- Keyboard input now works in the SDL window backend: an SDL event watch (added
+  in `src/sdl_input.cxx`) observes key events without stealing them from LVGL's
+  own event pump, translates them to `RGSS::Input` key ids (arrows;
+  Z/Enter/Space = C, X/Esc = B, C = A; A/S/D = X/Y/Z; Q/PgUp = L, W/PgDn = R;
+  Shift/Ctrl/Alt and F5–F9), and feeds them into `RGSS::Input` from
+  `Graphics.update`, mirroring the existing terminal backend. Previously
+  `RGSS::Input.update` was a stub and games were only controllable under the
+  `--sixel`/`--iterm` terminal backends
+- `RGSS::Viewport` is now a functional display object rather than a stub: it
+  wraps an LVGL container that positions and **clips** its sprites to a `rect`,
+  scrolls their content by `ox`/`oy`, hides via `visible`, and takes part in
+  `z` ordering against top-level sprites. Sprites created with
+  `Sprite.new(viewport)` are parented to it, and z ordering is now resolved
+  per LVGL parent so sprites inside a viewport stack among themselves while the
+  viewport stacks on the screen. LVGL delete events invalidate the mruby
+  wrappers so a viewport can safely own (and free) its child sprites
+- `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
 - Playable gameplay after "New Game": `RPG2k#start_new_game` builds the party
   (`Game::Party`/`Game::Actor`) from the database, reads the start position from
   the map tree, loads the starting map and enters a walkable `Scene::Map`. The
@@ -182,8 +218,40 @@ All notable changes to this project will be documented in this file.
   - Added key constants (UP, DOWN, LEFT, RIGHT, A, B, C, etc.)
   - Implemented input state tracking (press, trigger, repeat)
   - Added directional input helpers (dir4, dir8)
+- GitHub-hosted test-bed download scripts reachable from sandboxed/proxied
+  environments where the tkool CDN is blocked (unlike the existing
+  Nepheshel/Pray-for-You scripts):
+  - `scripts/download-mtf-meido-action.bash` — RPG Maker 2000 game
+    (`data/mtf-meido-action/Debug`: `RPG_RT.ldb`/`.lmt` and 13 `Map*.lmu`)
+  - `scripts/download-opengame-xp.bash` — RPG Maker XP project
+    (`data/OpenGame.exe/Testbed/XP`: full `Data/*.rxdata` set)
+  - Both use a sparse, blob-filtered `git clone`; the CI `build` job now fetches
+    them alongside Nepheshel and keys the game cache off all download scripts
 
 ### Fixed
+- Windowskin (and other graphic) loading now works for PNGs whose `IDAT`
+  deflate stream references data before the start of the output. The PNG/zlib
+  spec forbids this, so stb_image (and zlib itself) reject such files with
+  `bad dist` / "invalid distance too far back" -- but the producers, including
+  RPG Maker System graphics, rely on the missing pre-history reading as zeros.
+  Added a self-contained tolerant PNG decoder (lenient inflate + scanline
+  unfiltering + palette/grayscale/truecolour expansion) in `bmp_init_file` that
+  runs only as a fallback after stb_image refuses a file, so those windowskins
+  load instead of dropping to the plain panel
+- Windowskin loading now works for games whose System graphic is stored in RPG
+  Maker's native XYZ format. `RGSS::Bitmap` already searched for `.xyz` files,
+  but stb_image could not decode them, so an XYZ windowskin silently fell back
+  to the plain panel. Added an XYZ decoder (`"XYZ1"` header + zlib-compressed
+  palette and indices) to `bmp_init_file` that also honours the transparent
+  colour-key flag. If the standard zlib stream is rejected, the decoder retries
+  the payload as raw DEFLATE (no zlib header) before giving up
+- `RGSS::Bitmap` load failures now report the decoder's own reason instead of a
+  bare "Failed to init bitmap". The XYZ decoder records a detailed diagnostic
+  (dimensions, zlib header bytes, compressed/expected sizes and stb's error such
+  as `bad dist`), exposed via `Bitmap._load_error`/`Bitmap._stbi_error` and
+  included in the raised message; windowskin fallbacks log it to stderr rather
+  than swallowing it silently. Bitmap's retry lookups also now forward the
+  transparent-colour flag to every candidate path, not just the first
 - LCF `File#method_missing` delegates field access with `__send__` instead of
   `send`, so parsed fields (`db.player`, `map_tree.initial`, ...) resolve on
   mruby builds where `Kernel#send` is not exposed on objects that define their
@@ -195,6 +263,12 @@ All notable changes to this project will be documented in this file.
   `:int16_array` element type used by the tile layers and the area rect.
 
 ### Changed
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
+- `RGSS::Window` is now assembled from three layered sprites inside a viewport
+  (windowskin background+frame, selection cursor, and contents/text) instead of
+  compositing everything into one sprite's bitmap. The viewport clips the layers
+  to the window rectangle, and updating the cursor or text no longer re-blits
+  the windowskin
 - Updated documentation to reflect new title screen functionality
 - Marked "Show window component for title scene" as completed in TODO list
 - Enhanced database term schema with comprehensive RPG Maker 2000/2003 terms:

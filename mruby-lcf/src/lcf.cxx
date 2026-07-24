@@ -40,8 +40,20 @@ mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
       continue;
     }
     u = find_utf8(b[0]);
-    mrb_assert(u);
-    str.push_back(*u);
+    if (u) {
+      str.push_back(*u);
+      continue;
+    }
+    // Unmappable byte: the best-fit table (used here in reverse as a decoder)
+    // does not cover every valid CP932 code, and the input may contain
+    // truncated multi-byte sequences or invalid bytes. Emit U+FFFD instead of
+    // aborting the whole process. When the byte is a double-byte lead byte and
+    // a trailing byte follows, consume both so the stream stays in sync.
+    str.push_back(0xFFFD);
+    const bool is_dbcs_lead =
+        (b[0] >= 0x81 and b[0] <= 0x9F) or (b[0] >= 0xE0 and b[0] <= 0xFC);
+    if (is_dbcs_lead and (p + l - i) >= 2)
+      i += 1;
   }
   std::string ret = una::utf32to8(str);
 

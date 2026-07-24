@@ -9,15 +9,25 @@ module RGSS
   #   (0, 0, 32, 32)   background fill (stretched over the interior)
   #   (32, 0, 32, 32)  8px-thick frame border, split into 4 corners and 4 edges
   #
-  # Background, frame, the selection cursor and the window contents are all
-  # composited into a single Bitmap that backs one Sprite.
+  # The window is a Viewport that clips its contents to the window rectangle.
+  # Rather than compositing everything into one Bitmap, three separate Sprites
+  # are layered inside the viewport by their `z`: the windowskin (background +
+  # frame), the selection cursor, and the contents (text and other graphics
+  # drawn by callers). Keeping them apart means updating the cursor or the text
+  # no longer forces the skin to be re-blitted.
   class Window
     # Windows are drawn above ordinary background sprites (which default to
-    # z == 0), so give the backing sprite a high z by default.
+    # z == 0), so give the backing viewport a high z by default.
     DEFAULT_Z = 100
 
     # Thickness of the RPG2k frame border, in pixels.
     BORDER = 8
+
+    # z of each layer within the window's viewport (skin at the back, text on
+    # top, cursor highlight sandwiched between them).
+    SKIN_Z = 0
+    CURSOR_Z = 1
+    CONTENTS_Z = 2
 
     def initialize(x = 0, y = 0, width = 0, height = 0)
       @x = x
@@ -29,11 +39,22 @@ module RGSS
       @cursor_rect = Rect.new(0, 0, 0, 0)
       @active = true
       @visible = true
-      # Back the window with a Sprite so its contents are actually drawn.
-      @sprite = Sprite.new
-      @sprite.x = x
-      @sprite.y = y
-      @sprite.z = DEFAULT_Z
+
+      # The viewport groups and clips the three layers to the window rect.
+      @viewport = Viewport.new(x, y, [width, 1].max, [height, 1].max)
+      @viewport.z = DEFAULT_Z
+
+      @skin_sprite = Sprite.new(@viewport)
+      @skin_sprite.z = SKIN_Z
+      @cursor_sprite = Sprite.new(@viewport)
+      @cursor_sprite.z = CURSOR_Z
+      # Contents are drawn inside the frame, so offset the sprite by the border.
+      @contents_sprite = Sprite.new(@viewport)
+      @contents_sprite.z = CONTENTS_Z
+      @contents_sprite.x = BORDER
+      @contents_sprite.y = BORDER
+      @contents_sprite.visible = false
+
       allocate_skin
     end
 
@@ -42,54 +63,57 @@ module RGSS
 
     def x=(v)
       @x = v
-      @sprite.x = v
+      update_rect
     end
 
     def y=(v)
       @y = v
-      @sprite.y = v
+      update_rect
     end
 
     def z=(v)
-      @sprite.z = v
+      @viewport.z = v
     end
 
     def width=(v)
       @width = v
       allocate_skin
+      update_rect
     end
 
     def height=(v)
       @height = v
       allocate_skin
+      update_rect
     end
 
     def windowskin=(bmp)
       @windowskin = bmp
-      redraw
+      draw_skin
       bmp
     end
 
     def contents=(bmp)
       @contents = bmp
-      redraw
+      @contents_sprite.visible = !bmp.nil?
+      @contents_sprite.bitmap = bmp if bmp
       bmp
     end
 
     def cursor_rect=(rect)
       @cursor_rect = rect
-      redraw
+      draw_cursor
       rect
     end
 
     def active=(v)
       @active = v
-      redraw
+      draw_cursor
     end
 
     def visible=(v)
       @visible = v
-      redraw
+      @viewport.visible = v
     end
 
     # Present so the game loop can drive per-frame behaviour (cursor blinking,
@@ -97,38 +121,46 @@ module RGSS
     def update; end
 
     def dispose
-      @sprite.dispose
+      # Dispose the layers before the viewport so each Sprite tears its own
+      # LVGL object down; disposing the viewport then only frees the frame.
+      [@skin_sprite, @cursor_sprite, @contents_sprite].each(&:dispose)
+      @viewport.dispose
     end
 
     private
 
-    # (Re)create the backing bitmap whenever the window is resized, then redraw.
-    def allocate_skin
-      @skin = Bitmap.new([@width, 1].max, [@height, 1].max)
-      @sprite.bitmap = @skin
-      redraw
+    # Move/resize the viewport to track the window rectangle.
+    def update_rect
+      @viewport.rect = Rect.new(@x, @y, [@width, 1].max, [@height, 1].max)
     end
 
-    def redraw
-      @skin.clear
-      return unless @visible
+    # (Re)create the skin and cursor bitmaps whenever the window is resized,
+    # then redraw both layers.
+    def allocate_skin
+      @skin_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
+      @skin_sprite.bitmap = @skin_bmp
+      @cursor_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
+      @cursor_sprite.bitmap = @cursor_bmp
+      draw_skin
+      draw_cursor
+    end
 
+    # Redraw the windowskin layer (background + frame, or the fallback panel).
+    def draw_skin
+      @skin_bmp.clear
       if @windowskin
         draw_background
         draw_frame
       else
         draw_fallback
       end
-
-      draw_cursor
-      draw_contents
     end
 
     # Stretch the 32x32 background tile over the whole window; the frame border
     # is drawn on top of its outer edge afterwards.
     def draw_background
-      @skin.stretch_blt Rect.new(0, 0, @width, @height), @windowskin,
-                        Rect.new(0, 0, 32, 32)
+      @skin_bmp.stretch_blt Rect.new(0, 0, @width, @height), @windowskin,
+                            Rect.new(0, 0, 32, 32)
     end
 
     def draw_frame
@@ -138,34 +170,38 @@ module RGSS
       sk = @windowskin
 
       # Corners (8x8, drawn 1:1).
-      @skin.blt 0, 0, sk, Rect.new(32, 0, b, b)
-      @skin.blt w - b, 0, sk, Rect.new(56, 0, b, b)
-      @skin.blt 0, h - b, sk, Rect.new(32, 24, b, b)
-      @skin.blt w - b, h - b, sk, Rect.new(56, 24, b, b)
+      @skin_bmp.blt 0, 0, sk, Rect.new(32, 0, b, b)
+      @skin_bmp.blt w - b, 0, sk, Rect.new(56, 0, b, b)
+      @skin_bmp.blt 0, h - b, sk, Rect.new(32, 24, b, b)
+      @skin_bmp.blt w - b, h - b, sk, Rect.new(56, 24, b, b)
 
       # Edges (stretched along the free axis).
-      @skin.stretch_blt Rect.new(b, 0, w - 2 * b, b), sk, Rect.new(40, 0, 16, b)
-      @skin.stretch_blt Rect.new(b, h - b, w - 2 * b, b), sk,
-                        Rect.new(40, 24, 16, b)
-      @skin.stretch_blt Rect.new(0, b, b, h - 2 * b), sk, Rect.new(32, 8, b, 16)
-      @skin.stretch_blt Rect.new(w - b, b, b, h - 2 * b), sk,
-                        Rect.new(56, 8, b, 16)
+      @skin_bmp.stretch_blt Rect.new(b, 0, w - 2 * b, b), sk,
+                            Rect.new(40, 0, 16, b)
+      @skin_bmp.stretch_blt Rect.new(b, h - b, w - 2 * b, b), sk,
+                            Rect.new(40, 24, 16, b)
+      @skin_bmp.stretch_blt Rect.new(0, b, b, h - 2 * b), sk,
+                            Rect.new(32, 8, b, 16)
+      @skin_bmp.stretch_blt Rect.new(w - b, b, b, h - 2 * b), sk,
+                            Rect.new(56, 8, b, 16)
     end
 
     # Used when no windowskin could be loaded: a plain dark panel with a light
     # border so the window is still visible.
     def draw_fallback
-      @skin.fill_rect 0, 0, @width, @height, Color.new(8, 8, 40, 224)
+      @skin_bmp.fill_rect 0, 0, @width, @height, Color.new(8, 8, 40, 224)
       edge = Color.new(200, 200, 216, 255)
-      @skin.fill_rect 0, 0, @width, 1, edge
-      @skin.fill_rect 0, @height - 1, @width, 1, edge
-      @skin.fill_rect 0, 0, 1, @height, edge
-      @skin.fill_rect @width - 1, 0, 1, @height, edge
+      @skin_bmp.fill_rect 0, 0, @width, 1, edge
+      @skin_bmp.fill_rect 0, @height - 1, @width, 1, edge
+      @skin_bmp.fill_rect 0, 0, 1, @height, edge
+      @skin_bmp.fill_rect @width - 1, 0, 1, @height, edge
     end
 
-    # Highlight box behind the selected item. cursor_rect is expressed in
-    # contents coordinates, so it is offset by the border thickness.
+    # Highlight box behind the selected item, on its own layer. cursor_rect is
+    # expressed in contents coordinates, so it is offset by the border
+    # thickness (the contents layer carries the same offset).
     def draw_cursor
+      @cursor_bmp.clear
       return unless @active
       r = @cursor_rect
       return if r.width <= 0 || r.height <= 0
@@ -175,17 +211,12 @@ module RGSS
       # brighter border, matching the reference title screen's selection box.
       x = BORDER + r.x
       y = BORDER + r.y
-      @skin.fill_rect x, y, r.width, r.height, Color.new(24, 40, 176, 255)
+      @cursor_bmp.fill_rect x, y, r.width, r.height, Color.new(24, 40, 176, 255)
       border = Color.new(180, 200, 255, 255)
-      @skin.fill_rect x, y, r.width, 1, border
-      @skin.fill_rect x, y + r.height - 1, r.width, 1, border
-      @skin.fill_rect x, y, 1, r.height, border
-      @skin.fill_rect x + r.width - 1, y, 1, r.height, border
-    end
-
-    def draw_contents
-      return unless @contents
-      @skin.blt BORDER, BORDER, @contents, @contents.rect
+      @cursor_bmp.fill_rect x, y, r.width, 1, border
+      @cursor_bmp.fill_rect x, y + r.height - 1, r.width, 1, border
+      @cursor_bmp.fill_rect x, y, 1, r.height, border
+      @cursor_bmp.fill_rect x + r.width - 1, y, 1, r.height, border
     end
   end
 end
@@ -212,7 +243,8 @@ class RPG2k
         name = @db.system.system_graphic
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}"
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
       end
     end
@@ -334,8 +366,9 @@ class RPG2k
       def load_windowskin
         name = @db.system.system_graphic
         return nil if name.nil? || name.empty?
-        Bitmap.new "System/#{name}"
-      rescue StandardError
+        Bitmap.new "System/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
       end
 
@@ -841,8 +874,9 @@ class RPG2k
       def load_windowskin
         name = db.system.system_graphic
         return nil if name.nil? || name.empty?
-        Bitmap.new "System/#{name}"
-      rescue StandardError
+        Bitmap.new "System/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
       end
 
@@ -948,9 +982,11 @@ class RPG2k
   end
 
   def main_loop
-    @scenes.last.update
-    Input.update
-    Graphics.update
+    RGSS::Profiler.frame do
+      RGSS::Profiler.section("scene.update") { @scenes.last.update }
+      RGSS::Profiler.section("input.update") { Input.update }
+      Graphics.update
+    end
   end
 
   def start

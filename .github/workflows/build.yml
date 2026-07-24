@@ -90,11 +90,14 @@ jobs:
         id: cache
         with:
           path: data
-          key: game-${{ hashFiles('./scripts/download-nepheshel.bash') }}
+          key: game-${{ hashFiles('./scripts/download-*.bash') }}
 
       - name: Download game
         if: steps.cache.outputs.cache-hit != 'true'
-        run: nix develop -c ./scripts/download-nepheshel.bash
+        run: |
+          nix develop -c ./scripts/download-nepheshel.bash
+          nix develop -c ./scripts/download-mtf-meido-action.bash
+          nix develop -c ./scripts/download-opengame-xp.bash
 
       - name: test
         run: |
@@ -218,4 +221,4 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
       - name: Build flake
-        run: nix build -L '.?submodules=1#build'
+        run: nix build -L '.#build'

@@ -19,12 +19,19 @@ module RGSS
         i = self._init_file(f, s)
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
-          i = self._init_file("#{d}/#{f}") unless i
+          i = self._init_file("#{d}/#{f}", s) unless i
           [:png, :xyz, :bmp].each do |ext|
-            i = self._init_file("#{d}/#{f}.#{ext}") unless i
+            i = self._init_file("#{d}/#{f}.#{ext}", s) unless i
           end
         end
-        raise "Failed to init bitmap: #{f}" unless i
+        # Surface the decoder's own reason (e.g. an XYZ "bad dist" zlib error)
+        # so failures are diagnosable instead of a bare "Failed to init bitmap".
+        unless i
+          detail = Bitmap._load_error
+          detail = Bitmap._stbi_error if detail.nil? || detail.empty?
+          detail = detail.nil? || detail.empty? ? "" : " (#{detail})"
+          raise "Failed to init bitmap: #{f}#{detail}"
+        end
       else
         self._init_size(f, s)
       end
@@ -206,8 +213,11 @@ module RGSS
     @count = Array.new(20, 0)
 
     def self.update
-      # This would normally be implemented in C++ to read actual input
-      # For now, we'll just have a stub implementation
+      # Key transitions are pushed in from C++ via .press / .release: the SDL
+      # window backend (src/sdl_input.cxx -> rgss_sdl_poll) and the terminal
+      # backends (rgss_terminal_poll) both drain their events during
+      # Graphics.update. This method only advances the per-frame trigger/repeat
+      # bookkeeping over that state.
 
       # Reset triggered state after each frame
       @triggered.each_index do |i|
