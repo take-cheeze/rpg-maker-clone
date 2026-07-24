@@ -75,6 +75,10 @@ struct Bitmap {
   int32_t width, height;
   lv_color_format_t format;
   std::vector<uint8_t> buffer;
+  // Set whenever `buffer` is mutated so Graphics.update can invalidate the
+  // sprites showing this bitmap and have LVGL redraw them. Starts true so the
+  // initial contents are painted on the first frame after assignment.
+  bool dirty = true;
 
   Bitmap(mrb_int w, mrb_int h, lv_color_format_t f)
       : width(w),
@@ -519,6 +523,7 @@ mrb_value bmp_rect(mrb_state* M, V self) {
 mrb_value bmp_clear(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   std::fill(b.buffer.begin(), b.buffer.end(), 0);
+  b.dirty = true;
   return self;
 }
 
@@ -541,6 +546,7 @@ mrb_value bmp_fill_rect(mrb_state* M, V self) {
   for (mrb_int j = y; j < y + h; ++j)
     for (mrb_int i = x; i < x + w; ++i)
       bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
+  b.dirty = true;
   return self;
 }
 
@@ -564,6 +570,7 @@ mrb_value bmp_set_pixel(mrb_state* M, V self) {
   mrb_get_args(M, "iio", &x, &y, &col);
   Color& c = DataType<Color>::get(M, col);
   bmp_put(b, x, y, c.red, c.green, c.blue, c.alpha);
+  b.dirty = true;
   return self;
 }
 
@@ -605,6 +612,7 @@ mrb_value bmp_blt(mrb_state* M, V self) {
               std::max(da, alpha));
     }
   }
+  dst.dirty = true;
   return self;
 }
 
@@ -656,6 +664,7 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
               std::max(da, alpha));
     }
   }
+  dst.dirty = true;
   return self;
 }
 
@@ -763,6 +772,7 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
     }
   }
 
+  bmp.dirty = true;
   return self;
 }
 
@@ -863,6 +873,38 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"), mrb_false_value());
   }
 
+  // Bitmap mutators write straight into the shared pixel buffer, which LVGL
+  // does not observe. Walk the live sprites and invalidate any whose bitmap has
+  // been touched since the last frame so LVGL repaints them below. Flags are
+  // cleared only after the whole sweep so a bitmap shared by several sprites
+  // invalidates all of them.
+  {
+    const mrb_value roots = root_objs(M);
+    const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
+    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
+      const mrb_value v = RARRAY_PTR(roots)[i];
+      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
+      if (!obj)
+        continue;
+      const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
+      if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
+        continue;
+      Bitmap* b = reinterpret_cast<Bitmap*>(DATA_PTR(bmpv));
+      if (b->dirty)
+        lv_obj_invalidate(obj);
+    }
+    // Second pass: clear the flags now that every referencing sprite is marked.
+    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
+      const mrb_value v = RARRAY_PTR(roots)[i];
+      if (!DATA_PTR(v))
+        continue;
+      const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
+      if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
+        continue;
+      reinterpret_cast<Bitmap*>(DATA_PTR(bmpv))->dirty = false;
+    }
+  }
+
   lv_timer_handler();
   lv_task_handler();
 
@@ -933,6 +975,9 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
   lv_canvas_set_buffer(obj, p->buffer.data(), p->width, p->height, p->format);
+  // Repaint the newly assigned bitmap on the next Graphics.update, even if its
+  // contents were drawn before it was attached to this sprite.
+  p->dirty = true;
   return bmp;
 }
 
