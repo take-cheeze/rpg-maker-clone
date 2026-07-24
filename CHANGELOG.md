@@ -48,7 +48,9 @@ All notable changes to this project will be documented in this file.
   `Kernel#p`/`#print` are now in the core and `mruby-io` supplies
   `#print`/`#puts`/`#printf`) and the `disable_presym` calls (presym is always
   enabled in 4.0, and bytecode serializes symbols by name so the host `mrbc`
-  and the emscripten target stay compatible)
+  and the emscripten target stay compatible). `CMakeLists.txt` also exposes
+  mruby's generated build-tree include dir on the `mruby` target, since `mruby.h`
+  now unconditionally pulls in the generated `mruby/presym/id.h`
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers
