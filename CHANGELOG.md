@@ -50,7 +50,10 @@ All notable changes to this project will be documented in this file.
   enabled in 4.0, and bytecode serializes symbols by name so the host `mrbc`
   and the emscripten target stay compatible). `CMakeLists.txt` also exposes
   mruby's generated build-tree include dir on the `mruby` target, since `mruby.h`
-  now unconditionally pulls in the generated `mruby/presym/id.h`
+  now unconditionally pulls in the generated `mruby/presym/id.h`. mruby 4.0 also
+  removed per-state allocators (`mrb_open_allocf`), so the native build now
+  overrides the global `mrb_basic_alloc_func` to share lvgl's heap pool, and the
+  profiler's allocation hook moved to the matching `(ptr, size)` signature
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers

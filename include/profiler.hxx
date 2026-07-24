@@ -16,29 +16,30 @@ struct mrb_state;
 // default (unprofiled) build pays only a single predicted branch per frame and
 // per section. Enabled from main() via the --profile flag.
 
-// Type of an mruby allocator function, identical to mruby's mrb_allocf. Kept
-// here so main() can hand its allocator to the profiler without including
-// <mruby.h> from the profiler header.
-using profiler_allocf_t = void* (*)(mrb_state*, void*, size_t, void*);
+// Type of an allocator function, matching mruby 4.0's global mrb_basic_alloc_func
+// (ptr, size) contract: size 0 frees, a non-null ptr reallocs, otherwise it
+// allocates. Kept here so main() can hand its allocator to the profiler without
+// including <mruby.h> from the profiler header.
+using profiler_allocf_t = void* (*)(void*, size_t);
 
 // Enable profiling and set how often (in milliseconds) a summary line is
 // emitted. Call once from main() after flag parsing and, so the allocator hook
-// observes the right state, before mrb_open_allocf(). A non-positive
+// observes the right state, before mruby is opened. A non-positive
 // interval_ms falls back to 1000ms.
 void profiler_configure(bool enabled, int32_t interval_ms);
 
 // Whether profiling is currently enabled.
 bool profiler_enabled();
 
-// Allocation-tracking hook. Install it as mruby's allocator (in place of the
-// real one) and register the real allocator as the downstream via
+// Allocation-tracking hook. Have mruby's global allocator (mrb_basic_alloc_func)
+// call it and register the real allocator as the downstream via
 // profiler_set_downstream_allocf(): the hook counts allocation activity and
 // forwards every call unchanged. Safe to leave installed when disabled -- it
-// then only forwards. Do NOT use under a build that opens mruby without an
-// allocf (e.g. Emscripten); there the hook is simply never installed and memory
-// stats fall back to the LVGL pool monitor.
+// then only forwards. Do NOT use under a build that keeps mruby's default
+// allocator (e.g. Emscripten); there the hook is simply never installed and
+// memory stats fall back to the LVGL pool monitor.
 void profiler_set_downstream_allocf(profiler_allocf_t downstream);
-void* profiler_allocf(mrb_state* mrb, void* ptr, size_t size, void* ud);
+void* profiler_allocf(void* ptr, size_t size);
 
 // Game-loop frame boundaries. A frame spans one main_loop iteration and is
 // driven from Ruby via RGSS::Profiler.frame { ... }, which calls frame_begin()
