@@ -39,6 +39,3 @@
 [submodule "3rd/inicpp"]
 	path = 3rd/inicpp
 	url = https://github.com/dujingning/inicpp.git
-[submodule "3rd/quickjs"]
-	path = 3rd/quickjs
-	url = https://github.com/quickjs-ng/quickjs.git
