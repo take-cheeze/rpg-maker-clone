@@ -43,6 +43,12 @@ All notable changes to this project will be documented in this file.
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
 
 ### Changed
+- Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
+  snapshot). `build_config.rb` drops the `mruby-print` gem (removed in 4.0;
+  `Kernel#p`/`#print` are now in the core and `mruby-io` supplies
+  `#print`/`#puts`/`#printf`) and the `disable_presym` calls (presym is always
+  enabled in 4.0, and bytecode serializes symbols by name so the host `mrbc`
+  and the emscripten target stay compatible)
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers
