@@ -33,13 +33,13 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - run: git config --global submodule.fetchJobs 4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - uses: nixbuild/nix-quick-install-action@v29
       - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v5
+        uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
@@ -51,7 +51,7 @@ jobs:
       #   if: ${{ !startsWith(matrix.os, 'macos') }}
 
       - name: cache rtp
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: rtp-cache
         with:
           path: scripts/*.zip
@@ -75,7 +75,7 @@ jobs:
           )
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: cmake
         run: |
@@ -86,7 +86,7 @@ jobs:
           nix develop -c cmake --build build
 
       - name: cache test game
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache
         with:
           path: data
@@ -104,18 +104,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - uses: nixbuild/nix-quick-install-action@v29
       - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v5
+        uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.ccache
@@ -131,7 +131,7 @@ jobs:
         run: |
           nix develop -c cmake --build wasm-build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: wasm
           path: |
@@ -143,12 +143,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: git config --global submodule.fetchJobs 4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: cache test game
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache
         with:
           path: data
@@ -156,7 +156,7 @@ jobs:
 
       - uses: nixbuild/nix-quick-install-action@v29
       - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v5
+        uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
@@ -173,7 +173,7 @@ jobs:
           mv ./docker-wine $HOME/.local/bin
           export PATH=$HOME/.local/bin:$PATH
           ./scripts/take_title_screenshot.bash
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: screenshots
           path: ss/
@@ -186,13 +186,13 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - run: git config --global submodule.fetchJobs 4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
-      - uses: nixbuild/nix-quick-install-action@v27
+      - uses: nixbuild/nix-quick-install-action@v29
       - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v5
+        uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
