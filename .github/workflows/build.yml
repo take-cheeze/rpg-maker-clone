@@ -105,6 +105,12 @@ jobs:
 
   wasm:
     runs-on: ubuntu-24.04
+    env:
+      # Cache emcc/em++ compilations with ccache (sccache, the dev-shell default,
+      # does not support emcc and silently compiles uncached). CCACHE_DIR matches
+      # the cached path below so the cache actually survives between runs.
+      CCACHE_DIR: /home/runner/.ccache
+      CCACHE_MAXSIZE: "2G"
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
@@ -128,11 +134,17 @@ jobs:
 
       - name: cmake
         run: |
-          nix develop -c emcmake cmake -S . -B wasm-build -GNinja
+          nix develop -c emcmake cmake -S . -B wasm-build -GNinja \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: build
         run: |
           nix develop -c cmake --build wasm-build
+
+      - name: ccache stats
+        if: always()
+        run: nix develop -c ccache -s
 
       - uses: actions/upload-artifact@v7
         with:
