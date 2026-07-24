@@ -6,7 +6,7 @@
 #include "wio.hxx"
 
 #include <Arduino.h>
-#include <Seeed_Arduino_LCD.h>
+#include <TFT_eSPI.h>  // from Seeed_Arduino_LCD (a TFT_eSPI fork)
 
 namespace {
 
