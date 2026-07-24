@@ -1,0 +1,316 @@
+<!doctype html>
+<!--
+  Custom Emscripten shell for the browser build.
+
+  Adds an on-screen game keypad (plain <button> elements) beneath the game
+  canvas so the game is playable by touch or mouse without a physical keyboard.
+  Each button carries a data-key attribute holding an RGSS::Input key id; its
+  pointer handlers call Module._rgss_wasm_key(id, press) which is exported from
+  src/wasm_keypad.cxx and feeds the same input path as the SDL keyboard watch.
+
+  The keyboard still works exactly as before -- SDL keeps capturing key events
+  through the canvas -- so this only adds an alternative input method.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>RPG Maker Clone</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #111;
+        color: #ddd;
+        font-family: system-ui, sans-serif;
+        /* Stop the browser from treating taps/drags on the page chrome as
+           scroll or double-tap-zoom gestures while playing. */
+        overscroll-behavior: none;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        gap: 12px;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+      #canvas {
+        display: block;
+        border: 0;
+        /* The SDL window sets its own pixel size; keep it crisp and never let
+           it overflow a small screen. */
+        image-rendering: pixelated;
+        max-width: 100%;
+        background: #000;
+        touch-action: none;
+      }
+      #status {
+        font-size: 13px;
+        color: #888;
+        min-height: 1em;
+      }
+
+      /* --- Keypad ------------------------------------------------------- */
+      #keypad {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        width: 100%;
+        max-width: 640px;
+        /* Never intercept a page scroll gesture as anything else. */
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #keypad button {
+        font-family: inherit;
+        font-weight: 600;
+        color: #eee;
+        background: #2a2a2e;
+        border: 1px solid #45454b;
+        border-radius: 10px;
+        cursor: pointer;
+        /* Kill the tap highlight / callout that mobile browsers add. */
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #keypad button.active {
+        background: #4a7cff;
+        border-color: #6f97ff;
+      }
+
+      /* D-pad: a 3x3 grid with only the four arrows filled in. */
+      #dpad {
+        display: grid;
+        grid-template-columns: repeat(3, 56px);
+        grid-template-rows: repeat(3, 56px);
+        gap: 6px;
+      }
+      #dpad button {
+        font-size: 22px;
+      }
+      #btn-up {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      #btn-left {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      #btn-right {
+        grid-column: 3;
+        grid-row: 2;
+      }
+      #btn-down {
+        grid-column: 2;
+        grid-row: 3;
+      }
+
+      /* Action cluster on the right. */
+      #actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      #shoulders,
+      #face,
+      #extras {
+        display: flex;
+        gap: 8px;
+      }
+      #actions button {
+        min-width: 58px;
+        height: 44px;
+        padding: 0 10px;
+        font-size: 14px;
+      }
+      #face button {
+        min-width: 64px;
+        height: 50px;
+      }
+
+      @media (max-width: 480px) {
+        #keypad {
+          gap: 12px;
+        }
+        #dpad {
+          grid-template-columns: repeat(3, 48px);
+          grid-template-rows: repeat(3, 48px);
+        }
+        #actions button {
+          min-width: 48px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas
+      id="canvas"
+      tabindex="-1"
+      oncontextmenu="event.preventDefault()"
+    ></canvas>
+    <div id="status">Loading&hellip;</div>
+
+    <!-- Keys carry the numeric RGSS::Input id (see enum RgssKey in
+         src/sdl_input.cxx): UP=0 DOWN=1 LEFT=2 RIGHT=3 A=4 B=5 C=6 X=7 Y=8
+         Z=9 L=10 R=11 SHIFT=12. -->
+    <div id="keypad">
+      <div id="dpad">
+        <button id="btn-up" type="button" data-key="0" aria-label="Up">
+          &#9650;
+        </button>
+        <button id="btn-left" type="button" data-key="2" aria-label="Left">
+          &#9664;
+        </button>
+        <button id="btn-right" type="button" data-key="3" aria-label="Right">
+          &#9654;
+        </button>
+        <button id="btn-down" type="button" data-key="1" aria-label="Down">
+          &#9660;
+        </button>
+      </div>
+
+      <div id="actions">
+        <div id="shoulders">
+          <button type="button" data-key="10" aria-label="L button">L</button>
+          <button type="button" data-key="11" aria-label="R button">R</button>
+          <button type="button" data-key="12" aria-label="Dash (Shift)">
+            Dash
+          </button>
+        </div>
+        <div id="face">
+          <button type="button" data-key="5" aria-label="Cancel (B)">
+            Cancel
+          </button>
+          <button type="button" data-key="6" aria-label="OK (C)">OK</button>
+        </div>
+        <div id="extras">
+          <button type="button" data-key="4" aria-label="A button">A</button>
+          <button type="button" data-key="7" aria-label="X button">X</button>
+          <button type="button" data-key="8" aria-label="Y button">Y</button>
+          <button type="button" data-key="9" aria-label="Z button">Z</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // The compiled runtime attaches to this Module object. It must exist,
+      // with its canvas resolved, before the generated script below runs.
+      var statusElement = document.getElementById("status");
+      var Module = {
+        canvas: (function () {
+          var canvas = document.getElementById("canvas");
+          // As a mild safety measure, prevent a lost WebGL context from
+          // silently wedging the page.
+          canvas.addEventListener(
+            "webglcontextlost",
+            function (e) {
+              alert("WebGL context lost. You will need to reload the page.");
+              e.preventDefault();
+            },
+            false,
+          );
+          return canvas;
+        })(),
+        print: function (text) {
+          console.log(text);
+        },
+        printErr: function (text) {
+          console.error(text);
+        },
+        setStatus: function (text) {
+          if (statusElement) statusElement.textContent = text;
+        },
+        // Once the wasm runtime is up, drop the loading text.
+        onRuntimeInitialized: function () {
+          if (statusElement) statusElement.textContent = "";
+        },
+      };
+      Module.setStatus("Loading…");
+      window.onerror = function () {
+        Module.setStatus("Exception thrown, see JavaScript console");
+      };
+    </script>
+
+    <script>
+      // Wire the keypad buttons to the exported input bridge. Attaching the
+      // listeners now is safe even before the runtime is ready: send() no-ops
+      // until Module._rgss_wasm_key exists.
+      (function () {
+        function send(key, press) {
+          if (Module && typeof Module._rgss_wasm_key === "function") {
+            Module._rgss_wasm_key(key, press ? 1 : 0);
+          }
+        }
+
+        // Track held state per key so a repeated pointerdown (or the blur
+        // safety net below) never emits an unmatched press/release pair.
+        var held = Object.create(null);
+
+        function press(button) {
+          var key = +button.dataset.key;
+          if (held[key]) return;
+          held[key] = true;
+          button.classList.add("active");
+          send(key, true);
+        }
+
+        function release(button) {
+          var key = +button.dataset.key;
+          if (!held[key]) return;
+          held[key] = false;
+          button.classList.remove("active");
+          send(key, false);
+        }
+
+        var buttons = document.querySelectorAll("#keypad button[data-key]");
+        buttons.forEach(function (button) {
+          button.addEventListener("pointerdown", function (e) {
+            e.preventDefault();
+            // Capture the pointer so a finger/mouse that slides off the button
+            // while held still delivers its pointerup here -- no stuck keys.
+            try {
+              button.setPointerCapture(e.pointerId);
+            } catch (_) {}
+            press(button);
+          });
+          button.addEventListener("pointerup", function (e) {
+            e.preventDefault();
+            release(button);
+          });
+          button.addEventListener("pointercancel", function () {
+            release(button);
+          });
+          button.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+          });
+        });
+
+        // If the tab loses focus mid-press (app switch, alert, etc.), release
+        // everything so keys don't stay stuck down.
+        window.addEventListener("blur", function () {
+          buttons.forEach(function (button) {
+            release(button);
+          });
+        });
+      })();
+    </script>
+
+    {{{ SCRIPT }}}
+  </body>
+</html>

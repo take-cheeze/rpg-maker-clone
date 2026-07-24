@@ -170,6 +170,9 @@ if(EMSCRIPTEN)
   set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html" OUTPUT_NAME
                                                                   "index")
   add_dependencies(${PROJECT_NAME} onigmo_clean)
+  # Browser-only shim exporting Module._rgss_wasm_key, used by the on-screen
+  # keypad in the shell page below to feed RGSS::Input.
+  target_sources(${PROJECT_NAME} PRIVATE src/wasm_keypad.cxx)
   target_link_options(
     ${PROJECT_NAME}
     PRIVATE
@@ -194,7 +197,17 @@ if(EMSCRIPTEN)
     "-sASSERTIONS=2"
     "-sSAFE_HEAP=1"
     "-sSTACK_OVERFLOW_CHECK=2"
+    # Use our own page (canvas + on-screen keypad) instead of Emscripten's
+    # default shell. rgss_wasm_key is exported via EMSCRIPTEN_KEEPALIVE, so it
+    # needs no EXPORTED_FUNCTIONS entry.
+    "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html"
     "${ONIGMO_A}")
+  # Relink the page when the shell template changes (CMake does not track the
+  # --shell-file input on its own).
+  set_property(
+    TARGET ${PROJECT_NAME}
+    APPEND
+    PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html")
   # Optionally bake a game directory into the virtual filesystem at /game so the
   # page runs a real game. Pass -DWASM_GAME_DIR=/abs/path/to/game at configure
   # time; then the page auto-loads it via --game_dir=/game.

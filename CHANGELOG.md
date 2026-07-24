@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- On-screen game keypad for the browser (WebAssembly) build so the game is
+  playable by touch or mouse without a physical keyboard. A custom Emscripten
+  shell page (`src/shell.html`) draws `<button>` elements — a D-pad plus OK (C),
+  Cancel (B), Dash (Shift), the L/R shoulders and the A/X/Y/Z buttons — laid out
+  responsively beneath the game canvas. Each button's pointer handlers call
+  `Module._rgss_wasm_key`, a tiny bridge exported from `src/wasm_keypad.cxx` that
+  feeds the very same input buffer as the SDL keyboard watch, so a tapped button
+  is indistinguishable from a pressed key (including `RGSS::Input` trigger/repeat
+  timing). Pointer capture and a window-blur handler prevent stuck keys, and
+  physical keyboard input keeps working exactly as before. Wired up only for the
+  Emscripten target via `--shell-file` in `CMakeLists.txt`
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured
