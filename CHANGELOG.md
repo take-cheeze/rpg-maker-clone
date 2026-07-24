@@ -53,7 +53,10 @@ All notable changes to this project will be documented in this file.
   now unconditionally pulls in the generated `mruby/presym/id.h`. mruby 4.0 also
   removed per-state allocators (`mrb_open_allocf`), so the native build now
   overrides the global `mrb_basic_alloc_func` to share lvgl's heap pool, and the
-  profiler's allocation hook moved to the matching `(ptr, size)` signature
+  profiler's allocation hook moved to the matching `(ptr, size)` signature. The
+  `mruby-bigint` gem is now enabled: mruby 4.0's compiler encodes integer
+  literals wider than 32 bits (e.g. the `0xFFFFFFFF` masks in the LCF codecs) as
+  bignum literals that need it at runtime
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers

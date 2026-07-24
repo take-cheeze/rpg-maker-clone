@@ -6,6 +6,12 @@ def rpg_maker_gems(conf)
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 
+  # mruby 4.0's compiler emits any integer literal wider than 32 bits (e.g. the
+  # 0xFFFFFFFF masks in the LCF codecs) as a bignum pool entry, and its default
+  # mrb_int is 32-bit, so such literals need mruby-bigint at runtime or they
+  # raise "integer overflow" on load.
+  conf.gem core: 'mruby-bigint'
+
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
   conf.gem "#{MRUBY_ROOT}/../mruby-onig-regexp" do
