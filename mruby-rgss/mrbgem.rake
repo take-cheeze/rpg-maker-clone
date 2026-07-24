@@ -5,6 +5,10 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
 
   # Color, Tone and Table provide RGSS-compatible Marshal (_dump/_load) support.
   add_dependency 'mruby-marshal'
+  # The Bitmap loader tests write fixture images to disk and read them back with
+  # File, so the standalone mrbtest build needs mruby-io. The loader itself
+  # reads files through C stdio, so this is only needed for the tests.
+  add_test_dependency 'mruby-io'
 
   cxx.include_paths <<
     "#{dir}/../3rd/uni-algo/include" <<
