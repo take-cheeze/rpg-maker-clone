@@ -78,6 +78,21 @@
 - Game/engine Ruby code can time its own hot spots with
   `RGSS::Profiler.section("name") { ... }`, and read the live numbers back as a
   Hash with `RGSS::Profiler.stats`
+- For a visual timeline, export a **Chrome trace** with `--profile_trace=FILE`
+  (implies `--profile`):
+
+  ```sh
+  ./rpg_maker_clone --profile_trace=trace.json --game_dir path/to/game
+  ```
+
+  Every frame and section is streamed as a Chrome Trace Event and the memory
+  samples as counters. Open the file in `chrome://tracing` or
+  [ui.perfetto.dev](https://ui.perfetto.dev) to see the frames and their
+  sections as a flame chart with memory graphs underneath. Ruby code can trace a
+  specific window (e.g. one battle) with
+  `RGSS::Profiler.trace_start("trace.json")` / `RGSS::Profiler.trace_stop`. The
+  stream stays loadable even if the process is killed mid-run, so it is safe to
+  trace a long session and stop it with `Ctrl-C`
 
 ## TODO
 - Run zip file directly

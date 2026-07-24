@@ -77,6 +77,21 @@ class ProfilerScope {
   uint64_t start_;
 };
 
+// Chrome trace export. When a trace is open, every frame and named section is
+// streamed to `path` as a Chrome Trace Event ("X" duration) event and the
+// periodic memory sample as counter ("C") events, forming a file that
+// chrome://tracing and https://ui.perfetto.dev load directly. Frames and
+// sections share one thread track so they nest into a flame chart.
+//
+// Starting a trace also enables profiling (there is nothing to record
+// otherwise). The stream is flushed each interval and closed by
+// profiler_trace_stop(); the format tolerates a missing closing bracket, so a
+// trace is still loadable if the process dies mid-run. Starting a trace while
+// one is already open is a no-op. Safe to call with an empty/null path (no-op).
+void profiler_trace_start(const char* path);
+void profiler_trace_stop();
+bool profiler_tracing();
+
 // Register the RGSS::Profiler Ruby module and its methods. Called from the
 // mruby-rgss gem init.
 void profiler_init(mrb_state* mrb);

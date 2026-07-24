@@ -59,6 +59,10 @@ DEFINE_bool(profile,
 DEFINE_int32(profile_interval_ms,
              1000,
              "How often (ms) the --profile summary line is printed");
+DEFINE_string(profile_trace,
+              "",
+              "Stream a Chrome trace (chrome://tracing / Perfetto JSON) of "
+              "every frame and section to this file. Implies --profile");
 
 namespace {
 
@@ -169,8 +173,12 @@ int main(int argc, char** argv) {
   nglog::InitializeLogging(argv[0]);
 
   // Configure profiling before mruby is opened so the allocator hook, if it is
-  // installed below, sees the right enabled state from its first call.
-  profiler_configure(FLAGS_profile, FLAGS_profile_interval_ms);
+  // installed below, sees the right enabled state from its first call. A
+  // requested trace implies profiling.
+  const bool profiling = FLAGS_profile || !FLAGS_profile_trace.empty();
+  profiler_configure(profiling, FLAGS_profile_interval_ms);
+  if (!FLAGS_profile_trace.empty())
+    profiler_trace_start(FLAGS_profile_trace.c_str());
 
   lv_init();
 
@@ -213,7 +221,7 @@ int main(int argc, char** argv) {
   // count allocation activity; it forwards every call to lvallocf. Off by
   // default, so the unprofiled build allocates through lvallocf directly.
   profiler_allocf_t allocf = lvallocf;
-  if (FLAGS_profile) {
+  if (profiling) {
     profiler_set_downstream_allocf(lvallocf);
     allocf = profiler_allocf;
   }

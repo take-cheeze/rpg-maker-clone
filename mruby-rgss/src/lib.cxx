@@ -2065,4 +2065,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   define_rect(M, m);
 }
 
-extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {}
+extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
+  // Flush and close a Chrome trace still open at shutdown (native path; the
+  // Emscripten loop never returns, but the format tolerates the missing close).
+  profiler_trace_stop();
+}

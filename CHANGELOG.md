@@ -18,7 +18,12 @@ All notable changes to this project will be documented in this file.
   `RGSS::Profiler.stats` returns the current interval as a Hash. When
   `--profile` is off the profiler does no work — every timing/sampling entry
   point returns on a single predicted branch — so the default build is
-  unaffected
+  unaffected. A Chrome trace can be exported with `--profile_trace=FILE` (or
+  `RGSS::Profiler.trace_start`/`trace_stop` from Ruby to trace a specific
+  window): every frame and section is streamed as a Chrome Trace Event and each
+  memory sample as counters, producing a file that `chrome://tracing` and
+  Perfetto load as a flame chart with memory graphs. The stream is written
+  incrementally and stays loadable even if the process is killed mid-run
 - `RGSS::Viewport` is now a functional display object rather than a stub: it
   wraps an LVGL container that positions and **clips** its sprites to a `rect`,
   scrolls their content by `ox`/`oy`, hides via `visible`, and takes part in

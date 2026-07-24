@@ -70,6 +70,12 @@ uint64_t g_interval_start = 0;    // now_ns() when the interval opened
 uint64_t g_alloc_calls_mark = 0;  // g_alloc_calls at interval start (for rate)
 bool g_interval_open = false;
 
+// ---- Chrome trace export (streamed) --------------------------------------
+
+std::FILE* g_trace_file = nullptr;  // open while a trace is being recorded
+bool g_trace_first = true;          // has any event been written yet (commas)
+uint64_t g_trace_base_ns = 0;       // zero-point so timestamps start near 0
+
 void reset_interval(uint64_t now) {
   g_frames = FrameAgg{};
   g_sections.clear();
@@ -104,6 +110,102 @@ void append_bytes(std::string& s, char* buf, size_t buflen, double bytes) {
   s += buf;
 }
 
+// ---- Chrome trace writers ------------------------------------------------
+
+std::string json_escape(const char* s) {
+  std::string o;
+  for (const char* p = s; *p; ++p) {
+    const unsigned char c = static_cast<unsigned char>(*p);
+    switch (c) {
+      case '"':
+        o += "\\\"";
+        break;
+      case '\\':
+        o += "\\\\";
+        break;
+      case '\n':
+        o += "\\n";
+        break;
+      case '\r':
+        o += "\\r";
+        break;
+      case '\t':
+        o += "\\t";
+        break;
+      default:
+        if (c < 0x20) {
+          char b[8];
+          std::snprintf(b, sizeof(b), "\\u%04x", c);
+          o += b;
+        } else {
+          o += static_cast<char>(c);
+        }
+    }
+  }
+  return o;
+}
+
+// Timestamp in microseconds relative to the trace start, the unit Chrome's
+// format expects.
+double trace_us(uint64_t ns) {
+  return static_cast<double>(ns - g_trace_base_ns) / 1000.0;
+}
+
+// Append one already-formatted JSON event object to the stream. Events are
+// comma-separated; the trailing bracket is written by profiler_trace_stop(),
+// and the format tolerates its absence so a truncated trace still loads.
+void trace_raw(const std::string& ev) {
+  if (!g_trace_file)
+    return;
+  if (!g_trace_first)
+    std::fputc(',', g_trace_file);
+  std::fputc('\n', g_trace_file);
+  std::fwrite(ev.data(), 1, ev.size(), g_trace_file);
+  g_trace_first = false;
+}
+
+// A complete ("X") duration event on the shared main-loop track (tid 1), so
+// frames and sections nest into a flame chart. `args` is a pre-built JSON
+// object body (may be empty).
+void trace_complete(const char* name,
+                    uint64_t start_ns,
+                    uint64_t end_ns,
+                    const std::string& args) {
+  if (!g_trace_file)
+    return;
+  char num[96];
+  std::string ev = "{\"ph\":\"X\",\"pid\":1,\"tid\":1,\"name\":\"";
+  ev += json_escape(name);
+  ev += "\"";
+  std::snprintf(num, sizeof(num), ",\"ts\":%.3f,\"dur\":%.3f",
+                trace_us(start_ns),
+                static_cast<double>(end_ns - start_ns) / 1000.0);
+  ev += num;
+  if (!args.empty()) {
+    ev += ",\"args\":{";
+    ev += args;
+    ev += "}";
+  }
+  ev += "}";
+  trace_raw(ev);
+}
+
+// A counter ("C") event: `name` is the series group, `args` its named values.
+void trace_counter(const char* name, uint64_t ns, const std::string& args) {
+  if (!g_trace_file)
+    return;
+  char num[64];
+  std::string ev = "{\"ph\":\"C\",\"pid\":1,\"name\":\"";
+  ev += name;
+  ev += "\"";
+  std::snprintf(num, sizeof(num), ",\"ts\":%.3f", trace_us(ns));
+  ev += num;
+  ev += ",\"args\":{";
+  ev += args;
+  ev += "}}";
+  trace_raw(ev);
+}
+
 // ---- Reporting -----------------------------------------------------------
 
 // Format and print the interval summary to stderr, then open a fresh interval.
@@ -125,7 +227,8 @@ void report(uint64_t now) {
                 "fps=%.1f frame(work) avg=%.2fms max=%.2fms n=%u | mem rss=",
                 fps, avg_ms, max_ms, g_frames.frames);
   line += buf;
-  append_bytes(line, buf, sizeof(buf), static_cast<double>(read_rss_bytes()));
+  const double rss = static_cast<double>(read_rss_bytes());
+  append_bytes(line, buf, sizeof(buf), rss);
 
   double lv_used = 0.0;
   unsigned lv_frag = 0;
@@ -173,6 +276,19 @@ void report(uint64_t now) {
   std::fprintf(stderr, "%s\n", line.c_str());
   std::fflush(stderr);
 
+  // Mirror the memory sample into the trace as counter series and flush the
+  // stream so an interval's worth of events is durable if the process dies.
+  if (g_trace_file) {
+    char args[128];
+    std::snprintf(args, sizeof(args), "\"rss_mb\":%.3f,\"lv_used_mb\":%.3f",
+                  rss / (1024.0 * 1024.0), lv_used / (1024.0 * 1024.0));
+    trace_counter("memory_mb", now, args);
+    std::snprintf(args, sizeof(args), "\"live\":%lld",
+                  static_cast<long long>(g_live_blocks));
+    trace_counter("mruby_blocks", now, args);
+    std::fflush(g_trace_file);
+  }
+
   reset_interval(now);
 }
 
@@ -189,6 +305,40 @@ void profiler_configure(bool enabled, int32_t interval_ms) {
 
 bool profiler_enabled() {
   return g_enabled;
+}
+
+void profiler_trace_start(const char* path) {
+  if (g_trace_file || path == nullptr || path[0] == '\0')
+    return;
+  g_trace_file = std::fopen(path, "w");
+  if (!g_trace_file) {
+    std::fprintf(stderr, "[profiler] could not open trace file: %s\n", path);
+    return;
+  }
+  // Tracing is pointless without the timing it records, so turn it on.
+  g_enabled = true;
+  g_trace_first = true;
+  g_trace_base_ns = now_ns();
+  std::fputc('[', g_trace_file);
+  trace_raw(
+      "{\"ph\":\"M\",\"pid\":1,\"name\":\"process_name\",\"args\":"
+      "{\"name\":\"rpg_maker_clone\"}}");
+  trace_raw(
+      "{\"ph\":\"M\",\"pid\":1,\"tid\":1,\"name\":\"thread_name\",\"args\":"
+      "{\"name\":\"main loop\"}}");
+  std::fflush(g_trace_file);
+}
+
+void profiler_trace_stop() {
+  if (!g_trace_file)
+    return;
+  std::fputs("\n]\n", g_trace_file);
+  std::fclose(g_trace_file);
+  g_trace_file = nullptr;
+}
+
+bool profiler_tracing() {
+  return g_trace_file != nullptr;
 }
 
 void profiler_set_downstream_allocf(profiler_allocf_t downstream) {
@@ -234,6 +384,11 @@ void profiler_frame_end() {
   g_frames.work_ns_sum += work;
   g_frames.work_ns_max = std::max(g_frames.work_ns_max, work);
   g_frames.period_ns_sum += period;
+  if (g_trace_file) {
+    char args[48];
+    std::snprintf(args, sizeof(args), "\"work_ms\":%.3f", work / 1e6);
+    trace_complete("frame", g_frame_start, now, args);
+  }
   if (now - g_interval_start >= g_interval_ns)
     report(now);
 }
@@ -245,11 +400,14 @@ uint64_t profiler_section_begin() {
 void profiler_section_end(const char* name, uint64_t start) {
   if (!g_enabled || start == 0)
     return;
-  const double dur = static_cast<double>(now_ns() - start);
+  const uint64_t end = now_ns();
+  const double dur = static_cast<double>(end - start);
   SectionAgg& a = g_sections[name];
   ++a.calls;
   a.ns_sum += dur;
   a.ns_max = std::max(a.ns_max, dur);
+  if (g_trace_file)
+    trace_complete(name, start, end, std::string());
 }
 
 ProfilerScope::ProfilerScope(const char* name)
@@ -377,6 +535,26 @@ mrb_value prof_reset(mrb_state* M, mrb_value) {
   return mrb_nil_value();
 }
 
+// RGSS::Profiler.trace_start(path) -- begin streaming a Chrome trace to `path`
+// (also enables profiling). Lets game code trace a specific window, e.g. one
+// battle, rather than the whole run.
+mrb_value prof_trace_start(mrb_state* M, mrb_value) {
+  const char* path;
+  mrb_get_args(M, "z", &path);
+  profiler_trace_start(path);
+  return mrb_bool_value(profiler_tracing());
+}
+
+// RGSS::Profiler.trace_stop -- finish and close the current trace.
+mrb_value prof_trace_stop(mrb_state* M, mrb_value) {
+  profiler_trace_stop();
+  return mrb_nil_value();
+}
+
+mrb_value prof_tracing_p(mrb_state* M, mrb_value) {
+  return mrb_bool_value(profiler_tracing());
+}
+
 }  // namespace
 
 void profiler_init(mrb_state* M) {
@@ -392,4 +570,10 @@ void profiler_init(mrb_state* M) {
   mrb_define_module_function(M, prof, "stats", prof_stats, MRB_ARGS_NONE());
   mrb_define_module_function(M, prof, "report", prof_report, MRB_ARGS_NONE());
   mrb_define_module_function(M, prof, "reset", prof_reset, MRB_ARGS_NONE());
+  mrb_define_module_function(M, prof, "trace_start", prof_trace_start,
+                             MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, prof, "trace_stop", prof_trace_stop,
+                             MRB_ARGS_NONE());
+  mrb_define_module_function(M, prof, "tracing?", prof_tracing_p,
+                             MRB_ARGS_NONE());
 }

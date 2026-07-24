@@ -77,6 +77,14 @@ branch per frame and per section.
   faked.
 - Instrumentation lives at the loop's seams (`main_loop`, `gfx_update`); new hot
   paths need a `section`/`ProfilerScope` added to show up in the breakdown.
-- The profiler measures; it does not yet render an on-screen overlay or emit a
-  machine-readable trace. Both are possible follow-ups (the on-screen route
-  would reuse the terminal stats row).
+- A machine-readable **Chrome trace** export (`--profile_trace=FILE`, or
+  `RGSS::Profiler.trace_start`/`trace_stop`) reuses the same instrumentation:
+  each frame and section becomes a Chrome Trace Event `X` (complete) event on a
+  shared thread track — nesting into a flame chart in `chrome://tracing` /
+  Perfetto — and each memory sample becomes `C` (counter) events. It is streamed
+  to disk (comma-prefixed events, flushed per interval, closed in
+  `gem_final`); the format's tolerance of a missing closing bracket keeps a
+  crash- or `Ctrl-C`-truncated trace loadable. This gives the per-frame timeline
+  the periodic stderr summary cannot.
+- The profiler does not yet render an on-screen overlay; that remains a possible
+  follow-up (it would reuse the terminal stats row).

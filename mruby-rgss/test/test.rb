@@ -314,6 +314,37 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
   end
 end
 
+assert "RGSS::Profiler streams a Chrome trace" do
+  path = "test-profiler-trace.json"
+  File.delete(path) if File.exist?(path)
+  begin
+    assert_false RGSS::Profiler.tracing?
+    RGSS::Profiler.trace_start(path)
+    assert_true RGSS::Profiler.tracing?
+    assert_true RGSS::Profiler.enabled?  # tracing implies profiling
+
+    3.times do
+      RGSS::Profiler.frame do
+        RGSS::Profiler.section("unit.work") { 50.times { |i| i * i } }
+      end
+    end
+
+    RGSS::Profiler.trace_stop
+    assert_false RGSS::Profiler.tracing?
+
+    json = File.open(path, "r") { |f| f.read }
+    # A well-formed Chrome Trace Event array with the frame and section events.
+    assert_true json.start_with?("["), "trace must be a JSON array"
+    assert_true json.include?("\"ph\":\"X\""), "expected duration events"
+    assert_true json.include?("unit.work"), "expected the section name"
+    assert_true json.include?("\"name\":\"frame\""), "expected frame events"
+  ensure
+    RGSS::Profiler.trace_stop
+    RGSS::Profiler.enabled = false
+    File.delete(path) if File.exist?(path)
+  end
+end
+
 assert "RGSS::Bitmap loads a PNG whose deflate stream trips \"bad dist\"" do
   # A 4x1 grayscale PNG hand-encoded so its IDAT references a zero pre-history
   # window (distance-too-far-back). stb_image and strict zlib reject it with

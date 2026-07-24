@@ -83,6 +83,14 @@
   there)
 - `RGSS::Profiler.stats` returns the current interval as a Hash for tests and
   ad-hoc measurement; `report`/`reset` force or clear an interval
+- Chrome trace export (`--profile_trace=FILE`, or `RGSS::Profiler.trace_start`/
+  `trace_stop`): frames and sections are streamed as Chrome Trace Event `X`
+  (complete) events on one thread track — so they nest into a flame chart in
+  `chrome://tracing` / Perfetto — and each per-interval memory sample as `C`
+  (counter) events. The writer streams events to the file with a comma-prefix
+  scheme and flushes each interval; the format's tolerance of a missing closing
+  bracket means a trace truncated by a crash or `Ctrl-C` still loads. The trace
+  is closed from `mrb_mruby_rgss_gem_final` on the native path
 
 ## Third party libraries
 - Third party libraries is placed to `3rd/` directory
