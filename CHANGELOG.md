@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
 
 ### Changed
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers
