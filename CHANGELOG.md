@@ -131,7 +131,15 @@ All notable changes to this project will be documented in this file.
   but stb_image could not decode them, so an XYZ windowskin silently fell back
   to the plain panel. Added an XYZ decoder (`"XYZ1"` header + zlib-compressed
   palette and indices) to `bmp_init_file` that also honours the transparent
-  colour-key flag
+  colour-key flag. If the standard zlib stream is rejected, the decoder retries
+  the payload as raw DEFLATE (no zlib header) before giving up
+- `RGSS::Bitmap` load failures now report the decoder's own reason instead of a
+  bare "Failed to init bitmap". The XYZ decoder records a detailed diagnostic
+  (dimensions, zlib header bytes, compressed/expected sizes and stb's error such
+  as `bad dist`), exposed via `Bitmap._load_error`/`Bitmap._stbi_error` and
+  included in the raised message; windowskin fallbacks log it to stderr rather
+  than swallowing it silently. Bitmap's retry lookups also now forward the
+  transparent-colour flag to every candidate path, not just the first
 - LCF `File#method_missing` delegates field access with `__send__` instead of
   `send`, so parsed fields (`db.player`, `map_tree.initial`, ...) resolve on
   mruby builds where `Kernel#send` is not exposed on objects that define their

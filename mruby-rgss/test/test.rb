@@ -195,3 +195,43 @@ assert "RGSS::Bitmap keys the XYZ transparent colour when requested" do
     File.delete(path) if File.exist?(path)
   end
 end
+
+assert "RGSS::Bitmap decodes XYZ pixels stored as raw DEFLATE" do
+  # Same 3x2 picture, but the payload is raw DEFLATE with no 2-byte zlib
+  # header; stb's default zlib client rejects it, so this exercises the
+  # no-header inflate fallback.
+  bytes = "\x58\x59\x5a\x31\x03\x00\x02\x00\xe3\x12\x91\xfb\xcf\xc0\xc0\x00" \
+          "\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00"
+  path = "test-windowskin-raw.xyz"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    b = RGSS::Bitmap.new(path)
+    assert_equal 3, b.width
+    assert_equal 255.0, b.get_pixel(1, 0).red
+    assert_equal 255.0, b.get_pixel(2, 0).green
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap reports a detailed reason when an XYZ fails to decode" do
+  # Valid "XYZ1" header and zlib header byte, but a corrupt DEFLATE body.
+  bytes = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xff\xff\xff\xff\xff\xff" \
+          "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+  path = "test-windowskin-bad.xyz"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    err = nil
+    begin
+      RGSS::Bitmap.new(path)
+    rescue => e
+      err = e.message
+    end
+    assert_true !err.nil?, "expected a load failure"
+    # The message carries the parsed dimensions so the failure is diagnosable.
+    assert_true err.include?("XYZ 3x2"), "message: #{err}"
+    assert_true RGSS::Bitmap._load_error.include?("XYZ 3x2")
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end

@@ -15,10 +15,12 @@
 #include "shinonome.hxx"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <iostream>
@@ -425,6 +427,24 @@ mrb_value table_load(mrb_state* M, V self) {
 
 // ---- Bitmap ---------------------------------------------------------------
 
+// Human-readable diagnostic for the most recent Bitmap load that reached (and
+// failed inside) a real decoder. Exposed to Ruby via `Bitmap._load_error` so a
+// failed windowskin/graphic load can report exactly which decoder gave up and
+// why -- e.g. stb's "bad dist" on a corrupt/non-standard XYZ zlib stream --
+// instead of a bare "Failed to init bitmap". Left untouched by plain
+// file-not-found probes so the informative message survives the loader's
+// subsequent extension attempts.
+static std::string g_bitmap_load_error;
+
+static void set_bitmap_load_error(const char* fmt, ...) {
+  char buf[512];
+  va_list ap;
+  va_start(ap, fmt);
+  std::vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  g_bitmap_load_error = buf;
+}
+
 // Decode an RPG Maker 2000/2003 XYZ image. The format is a tiny header
 //
 //   "XYZ1"                     4-byte magic
@@ -452,23 +472,48 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
   std::vector<uint8_t> data((size_t)sz);
   const size_t got = std::fread(data.data(), 1, (size_t)sz, fp);
   std::fclose(fp);
+  // Not an XYZ file: stay silent and let the caller keep stb_image's own error.
   if (got != (size_t)sz || std::memcmp(data.data(), "XYZ1", 4) != 0)
     return nullptr;
 
   const int width = data[4] | (data[5] << 8);
   const int height = data[6] | (data[7] << 8);
-  if (width <= 0 || height <= 0)
+  if (width <= 0 || height <= 0) {
+    set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width, height,
+                          f);
     return nullptr;
+  }
 
-  int outlen = 0;
-  char* raw = stbi_zlib_decode_malloc(
-      reinterpret_cast<const char*>(data.data() + 8), (int)(sz - 8), &outlen);
-  if (!raw)
-    return nullptr;
-
+  const char* stream = reinterpret_cast<const char*>(data.data() + 8);
+  const int stream_len = (int)(sz - 8);
   // A 768-byte (256*3) RGB palette followed by one index per pixel.
   const long expected = 768L + (long)width * height;
+
+  int outlen = 0;
+  // RPG Maker writes a standard zlib stream (header byte 0x78). Decode that
+  // first; if stb rejects it -- e.g. "bad dist" on a stream some tools emit as
+  // raw DEFLATE with no zlib header -- retry without the 2-byte header before
+  // giving up, so a wider range of System graphics still loads.
+  char* raw = stbi_zlib_decode_malloc(stream, stream_len, &outlen);
+  if (!raw) {
+    char zerr[128];
+    std::snprintf(zerr, sizeof(zerr), "%s", stbi_failure_reason());
+    raw = stbi_zlib_decode_noheader_malloc(stream, stream_len, &outlen);
+    if (!raw) {
+      set_bitmap_load_error(
+          "XYZ %dx%d '%s': zlib inflate failed (%s); zlib header 0x%02x%02x, "
+          "%d compressed bytes, expected %ld decompressed",
+          width, height, f, zerr, (unsigned)data[8], (unsigned)data[9],
+          stream_len, expected);
+      return nullptr;
+    }
+  }
+
   if ((long)outlen < expected) {
+    set_bitmap_load_error(
+        "XYZ %dx%d '%s': short data, got %d bytes, expected %ld (768 palette + "
+        "%d pixels)",
+        width, height, f, outlen, expected, width * height);
     stbi_image_free(raw);
     return nullptr;
   }
@@ -492,6 +537,21 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
   *h = height;
   *c = 4;
   return out;
+}
+
+// Ruby: Bitmap._load_error -> the detailed diagnostic set by the last decoder
+// that opened a file and failed inside it (see g_bitmap_load_error).
+mrb_value bmp_load_error(mrb_state* M, V self) {
+  (void)self;
+  return mrb_str_new_cstr(M, g_bitmap_load_error.c_str());
+}
+
+// Ruby: Bitmap._stbi_error -> stb_image's raw failure reason for the most
+// recent decode attempt (e.g. "bad dist", "unknown image type").
+mrb_value bmp_stbi_error(mrb_state* M, V self) {
+  (void)self;
+  const char* r = stbi_failure_reason();
+  return mrb_str_new_cstr(M, r ? r : "");
 }
 
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
@@ -1223,6 +1283,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+  mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
+                          MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "height", bmp_height, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "rect", bmp_rect, MRB_ARGS_NONE());
