@@ -2,6 +2,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=release-26.05";
     flake-utils.url = "github:numtide/flake-utils";
+    self.submodules = true;
   };
 
   outputs =

@@ -60,6 +60,7 @@ All notable changes to this project will be documented in this file.
   bumped to pick up its 4.0 fix (`Marshal.dump` is registered with its real
   arity so mruby 4.0's stricter argument-count check accepts the optional
   port/limit arguments)
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers
