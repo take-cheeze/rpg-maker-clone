@@ -191,6 +191,11 @@ const char* kHostPreamble = R"MVJS(
     hash: '',
     reload: function () {},
   };
+  // Viewport metrics MV reads for its stretch scaling (Graphics._updateRealScale
+  // divides by these); default to the classic MV screen size.
+  g.innerWidth = 816;
+  g.innerHeight = 624;
+  g.devicePixelRatio = 1;
   (function () {
     var store = {};
     g.localStorage = {

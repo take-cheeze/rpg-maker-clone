@@ -131,6 +131,16 @@ class MV
       path = "#{@game_dir}/#{script}"
       MV::JS.eval_file(path) if File.exist?(path)
     end
+    # Our host has no DOM error UI, so route MV's fatal-error printer to the
+    # console (stdout). MV's Graphics.printError draws into an "upper canvas"
+    # that may not exist yet when an early boot error is caught, which otherwise
+    # masks the real error with a secondary crash in Graphics._clearUpperCanvas.
+    MV::JS.eval(
+      "if (typeof Graphics !== 'undefined') { Graphics.printError = " \
+      "function(n, m){ if (typeof console !== 'undefined' && console.error) " \
+      "console.error('[MV] ' + n + ': ' + m); }; }"
+    )
+
     # MV registers its entry point on window.onload (see the game's main.js);
     # in a browser the page-load event calls it. Fire it now that every script
     # is loaded, which runs SceneManager.run(Scene_Boot) and starts the game.
