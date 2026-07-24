@@ -24,6 +24,14 @@ All notable changes to this project will be documented in this file.
   memory sample as counters, producing a file that `chrome://tracing` and
   Perfetto load as a flame chart with memory graphs. The stream is written
   incrementally and stays loadable even if the process is killed mid-run
+- Keyboard input now works in the SDL window backend: an SDL event watch (added
+  in `src/sdl_input.cxx`) observes key events without stealing them from LVGL's
+  own event pump, translates them to `RGSS::Input` key ids (arrows;
+  Z/Enter/Space = C, X/Esc = B, C = A; A/S/D = X/Y/Z; Q/PgUp = L, W/PgDn = R;
+  Shift/Ctrl/Alt and F5–F9), and feeds them into `RGSS::Input` from
+  `Graphics.update`, mirroring the existing terminal backend. Previously
+  `RGSS::Input.update` was a stub and games were only controllable under the
+  `--sixel`/`--iterm` terminal backends
 - `RGSS::Viewport` is now a functional display object rather than a stub: it
   wraps an LVGL container that positions and **clips** its sprites to a `rect`,
   scrolls their content by `ox`/`oy`, hides via `visible`, and takes part in

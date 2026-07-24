@@ -17,6 +17,16 @@ assert "cp932 to unicode" do
   assert_equal "LcfDataBase", LCF.cp932_to_utf8("LcfDataBase")
 end
 
+assert "cp932 to unicode degrades on unmappable bytes instead of crashing" do
+  # A truncated double-byte sequence (lead byte 0x82 with no trailing byte)
+  # must not abort the process; it decodes to the replacement character.
+  assert_equal "�", LCF.cp932_to_utf8("\x82")
+  assert_equal "A�", LCF.cp932_to_utf8("A\x82")
+  # A lead byte followed by more text consumes its (invalid) trailing byte so
+  # the rest of the string is still decoded correctly.
+  assert_equal "�あ", LCF.cp932_to_utf8("\x82\x00\x82\xa0")
+end
+
 # ---- LCF binary format encoders (mirror the on-disk layout) ----------------
 # These let the parser be exercised against synthetic, self-consistent data.
 def lcf_ber(n)
