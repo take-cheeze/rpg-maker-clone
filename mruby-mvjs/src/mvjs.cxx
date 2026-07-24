@@ -382,6 +382,29 @@ mrb_value js_to_mrb(mrb_state* mrb, JSContext* ctx, JSValueConst v) {
   return r;
 }
 
+// Read the current JS exception as "message\n<stack>" (the stack pinpoints the
+// file:line in the game's scripts, which is what makes iteration tractable).
+std::string exception_detail(JSContext* ctx) {
+  JSValue exc = JS_GetException(ctx);
+  const char* msg = JS_ToCString(ctx, exc);
+  std::string out = msg ? msg : "JavaScript exception";
+  if (msg)
+    JS_FreeCString(ctx, msg);
+  JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
+  if (!JS_IsUndefined(stack) && !JS_IsException(stack)) {
+    const char* s = JS_ToCString(ctx, stack);
+    if (s && *s) {
+      out += '\n';
+      out += s;
+    }
+    if (s)
+      JS_FreeCString(ctx, s);
+  }
+  JS_FreeValue(ctx, stack);
+  JS_FreeValue(ctx, exc);
+  return out;
+}
+
 // Handle a JS_Eval/JS_Call result: raise RuntimeError (tagged with `what`) on a
 // JS exception, otherwise marshal the value. Consumes `result`.
 mrb_value complete_eval(mrb_state* mrb,
@@ -389,13 +412,8 @@ mrb_value complete_eval(mrb_state* mrb,
                         JSValue result,
                         const char* what) {
   if (JS_IsException(result)) {
-    JSValue exc = JS_GetException(ctx);
-    const char* msg = JS_ToCString(ctx, exc);
     const std::string detail =
-        std::string(what) + " failed: " + (msg ? msg : "JavaScript exception");
-    if (msg)
-      JS_FreeCString(ctx, msg);
-    JS_FreeValue(ctx, exc);
+        std::string(what) + " failed: " + exception_detail(ctx);
     JS_FreeValue(ctx, result);
     mrb_raise(mrb, E_RUNTIME_ERROR, detail.c_str());
   }
@@ -465,15 +483,8 @@ mrb_value js_pump(mrb_state* mrb, mrb_value self) {
   JS_FreeValue(ctx, global);
 
   std::string error;
-  if (JS_IsException(r)) {
-    JSValue exc = JS_GetException(ctx);
-    const char* msg = JS_ToCString(ctx, exc);
-    error = std::string("MV::JS.pump failed: ") +
-            (msg ? msg : "JavaScript exception");
-    if (msg)
-      JS_FreeCString(ctx, msg);
-    JS_FreeValue(ctx, exc);
-  }
+  if (JS_IsException(r))
+    error = "MV::JS.pump failed: " + exception_detail(ctx);
   JS_FreeValue(ctx, r);
 
   // Drain promise microtasks, unless a frame callback already errored.
@@ -482,15 +493,8 @@ mrb_value js_pump(mrb_state* mrb, mrb_value self) {
     int status;
     while ((status = JS_ExecutePendingJob(g_rt, &job_ctx)) > 0) {
     }
-    if (status < 0) {
-      JSValue exc = JS_GetException(ctx);
-      const char* msg = JS_ToCString(ctx, exc);
-      error = std::string("MV::JS.pump job failed: ") +
-              (msg ? msg : "JavaScript exception");
-      if (msg)
-        JS_FreeCString(ctx, msg);
-      JS_FreeValue(ctx, exc);
-    }
+    if (status < 0)
+      error = "MV::JS.pump job failed: " + exception_detail(ctx);
   }
 
   if (!error.empty())
