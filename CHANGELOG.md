@@ -56,7 +56,10 @@ All notable changes to this project will be documented in this file.
   profiler's allocation hook moved to the matching `(ptr, size)` signature. The
   `mruby-bigint` gem is now enabled: mruby 4.0's compiler encodes integer
   literals wider than 32 bits (e.g. the `0xFFFFFFFF` masks in the LCF codecs) as
-  bignum literals that need it at runtime
+  bignum literals that need it at runtime. The `mruby-marshal` submodule is
+  bumped to pick up its 4.0 fix (`Marshal.dump` is registered with its real
+  arity so mruby 4.0's stricter argument-count check accepts the optional
+  port/limit arguments)
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers
