@@ -19,10 +19,7 @@ struct mrb_state;
 // Type of an mruby allocator function, identical to mruby's mrb_allocf. Kept
 // here so main() can hand its allocator to the profiler without including
 // <mruby.h> from the profiler header.
-using profiler_allocf_t = void* (*)(mrb_state* mrb,
-                                    void* ptr,
-                                    size_t size,
-                                    void* ud);
+using profiler_allocf_t = void* (*)(mrb_state*, void*, size_t, void*);
 
 // Enable profiling and set how often (in milliseconds) a summary line is
 // emitted. Call once from main() after flag parsing and, so the allocator hook
