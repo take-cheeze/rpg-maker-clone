@@ -34,8 +34,8 @@
 // RGSS::Input.
 extern "C" void rgss_terminal_poll(mrb_state* M);
 
-// Defined in input_bridge.cxx (same gem).  A no-op unless the SDL window backend
-// is active and has captured key events; drains them into RGSS::Input.
+// Defined in input_bridge.cxx (same gem).  A no-op unless the SDL window
+// backend is active and has captured key events; drains them into RGSS::Input.
 extern "C" void rgss_sdl_poll(mrb_state* M);
 
 namespace {
