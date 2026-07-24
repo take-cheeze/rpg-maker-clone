@@ -23,6 +23,9 @@ else()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+# LVGL looks for lv_conf.h at the top-level project directory by default; ours
+# lives under include/, so point LVGL's build at that directory explicitly.
+set(LV_BUILD_CONF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE PATH "lv_conf.h location" FORCE)
 add_subdirectory(3rd/lvgl EXCLUDE_FROM_ALL)
 
 set(WITH_GTEST OFF)
