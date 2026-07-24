@@ -213,8 +213,11 @@ module RGSS
     @count = Array.new(20, 0)
 
     def self.update
-      # This would normally be implemented in C++ to read actual input
-      # For now, we'll just have a stub implementation
+      # Key transitions are pushed in from C++ via .press / .release: the SDL
+      # window backend (src/sdl_input.cxx -> rgss_sdl_poll) and the terminal
+      # backends (rgss_terminal_poll) both drain their events during
+      # Graphics.update. This method only advances the per-frame trigger/repeat
+      # bookkeeping over that state.
 
       # Reset triggered state after each frame
       @triggered.each_index do |i|
