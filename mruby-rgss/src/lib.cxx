@@ -480,8 +480,8 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
   const int width = data[4] | (data[5] << 8);
   const int height = data[6] | (data[7] << 8);
   if (width <= 0 || height <= 0) {
-    set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width, height,
-                          f);
+    set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width,
+                          height, f);
     return nullptr;
   }
 
@@ -528,9 +528,9 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
   }
   for (int i = 0; i < width * height; ++i) {
     const uint8_t p = idx[i];
-    out[i * 4 + 0] = pal[p * 3 + 2];  // B
-    out[i * 4 + 1] = pal[p * 3 + 1];  // G
-    out[i * 4 + 2] = pal[p * 3 + 0];  // R
+    out[i * 4 + 0] = pal[p * 3 + 2];               // B
+    out[i * 4 + 1] = pal[p * 3 + 1];               // G
+    out[i * 4 + 2] = pal[p * 3 + 0];               // R
     out[i * 4 + 3] = (trans && p == 0) ? 0 : 255;  // A
   }
   stbi_image_free(raw);
@@ -574,7 +574,8 @@ struct BitReader {
   }
   int bits(int n) {
     int v = 0;
-    for (int i = 0; i < n; i++) v |= bit() << i;
+    for (int i = 0; i < n; i++)
+      v |= bit() << i;
     return v;
   }
 };
@@ -585,14 +586,18 @@ struct Huff {
 };
 
 void huff_build(Huff& h, const uint8_t* len, int n) {
-  for (int i = 0; i < 16; i++) h.count[i] = 0;
-  for (int i = 0; i < n; i++) h.count[len[i]]++;
+  for (int i = 0; i < 16; i++)
+    h.count[i] = 0;
+  for (int i = 0; i < n; i++)
+    h.count[len[i]]++;
   h.count[0] = 0;
   short offs[16];
   offs[1] = 0;
-  for (int l = 1; l < 15; l++) offs[l + 1] = offs[l] + h.count[l];
+  for (int l = 1; l < 15; l++)
+    offs[l + 1] = offs[l] + h.count[l];
   for (int i = 0; i < n; i++)
-    if (len[i]) h.symbol[offs[len[i]]++] = (short)i;
+    if (len[i])
+      h.symbol[offs[len[i]]++] = (short)i;
 }
 
 int huff_decode(BitReader& br, const Huff& h) {
@@ -600,7 +605,8 @@ int huff_decode(BitReader& br, const Huff& h) {
   for (int len = 1; len <= 15; len++) {
     code |= br.bit();
     int count = h.count[len];
-    if (code - count < first) return h.symbol[index + (code - first)];
+    if (code - count < first)
+      return h.symbol[index + (code - first)];
     index += count;
     first += count;
     first <<= 1;
@@ -609,56 +615,68 @@ int huff_decode(BitReader& br, const Huff& h) {
   return -1;
 }
 
-const short LBASE[29] = {3,  4,  5,  6,  7,  8,  9,  10,  11,  13,
-                         15, 17, 19, 23, 27, 31, 35, 43,  51,  59,
+const short LBASE[29] = {3,  4,  5,  6,   7,   8,   9,   10,  11, 13,
+                         15, 17, 19, 23,  27,  31,  35,  43,  51, 59,
                          67, 83, 99, 115, 131, 163, 195, 227, 258};
 const short LEXT[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
                         2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
-const short DBASE[30] = {1,    2,    3,    4,    5,    7,     9,    13,   17,   25,
-                         33,   49,   65,   97,   129,  193,   257,  385,  513,  769,
-                         1025, 1537, 2049, 3073, 4097, 6145,  8193, 12289, 16385, 24577};
+const short DBASE[30] = {1,    2,    3,    4,     5,     7,    9,    13,
+                         17,   25,   33,   49,    65,    97,   129,  193,
+                         257,  385,  513,  769,   1025,  1537, 2049, 3073,
+                         4097, 6145, 8193, 12289, 16385, 24577};
 const short DEXT[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
                         6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
 // Inflate `in` into `out` (pre-sized to the expected length). Distances that
 // reach before the start of the output produce zeros rather than an error.
 // Returns the number of bytes produced, or -1 on a hard failure.
-long inflate_tolerant(const uint8_t* in, size_t in_len, std::vector<uint8_t>& out) {
+long inflate_tolerant(const uint8_t* in,
+                      size_t in_len,
+                      std::vector<uint8_t>& out) {
   size_t off = 0;
   if (in_len >= 2 && (in[0] & 0x0f) == 8 && ((in[0] << 8 | in[1]) % 31) == 0)
     off = 2;  // skip the 2-byte zlib header when present
   BitReader br{in + off, in + in_len};
   size_t outcnt = 0;
   auto put = [&](int v) {
-    if (outcnt < out.size()) out[outcnt] = (uint8_t)v;
+    if (outcnt < out.size())
+      out[outcnt] = (uint8_t)v;
     outcnt++;
   };
 
   Huff fixed_l, fixed_d;
   {
     uint8_t l[288];
-    for (int i = 0; i < 144; i++) l[i] = 8;
-    for (int i = 144; i < 256; i++) l[i] = 9;
-    for (int i = 256; i < 280; i++) l[i] = 7;
-    for (int i = 280; i < 288; i++) l[i] = 8;
+    for (int i = 0; i < 144; i++)
+      l[i] = 8;
+    for (int i = 144; i < 256; i++)
+      l[i] = 9;
+    for (int i = 256; i < 280; i++)
+      l[i] = 7;
+    for (int i = 280; i < 288; i++)
+      l[i] = 8;
     huff_build(fixed_l, l, 288);
     uint8_t d[30];
-    for (int i = 0; i < 30; i++) d[i] = 5;
+    for (int i = 0; i < 30; i++)
+      d[i] = 5;
     huff_build(fixed_d, d, 30);
   }
 
   for (;;) {
     int last = br.bit();
     int type = br.bits(2);
-    if (br.fail) return -1;
+    if (br.fail)
+      return -1;
     if (type == 0) {  // stored
       br.buf = 0;
       br.cnt = 0;  // align to byte boundary
-      if (br.p + 4 > br.end) return -1;
+      if (br.p + 4 > br.end)
+        return -1;
       int len = br.p[0] | (br.p[1] << 8);
       br.p += 4;  // LEN + NLEN
       for (int i = 0; i < len; i++) {
-        if (br.p >= br.end) return -1;
+        if (br.p >= br.end)
+          return -1;
         put(*br.p++);
       }
     } else if (type == 1 || type == 2) {  // fixed or dynamic Huffman
@@ -675,27 +693,33 @@ long inflate_tolerant(const uint8_t* in, size_t in_len, std::vector<uint8_t>& ou
         static const int ord[19] = {16, 17, 18, 0, 8,  7, 9,  6, 10, 5,
                                     11, 4,  12, 3, 13, 2, 14, 1, 15};
         uint8_t cl[19] = {0};
-        for (int i = 0; i < hclen; i++) cl[ord[i]] = (uint8_t)br.bits(3);
+        for (int i = 0; i < hclen; i++)
+          cl[ord[i]] = (uint8_t)br.bits(3);
         Huff clh;
         huff_build(clh, cl, 19);
         uint8_t lens[288 + 32] = {0};
         int n = 0;
         while (n < hlit + hdist) {
           int sym = huff_decode(br, clh);
-          if (sym < 0) return -1;
+          if (sym < 0)
+            return -1;
           if (sym < 16) {
             lens[n++] = (uint8_t)sym;
           } else if (sym == 16) {
-            if (n == 0) return -1;
+            if (n == 0)
+              return -1;
             int r = br.bits(2) + 3;
             uint8_t prev = lens[n - 1];
-            while (r-- && n < hlit + hdist) lens[n++] = prev;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = prev;
           } else if (sym == 17) {
             int r = br.bits(3) + 3;
-            while (r-- && n < hlit + hdist) lens[n++] = 0;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = 0;
           } else {
             int r = br.bits(7) + 11;
-            while (r-- && n < hlit + hdist) lens[n++] = 0;
+            while (r-- && n < hlit + hdist)
+              lens[n++] = 0;
           }
         }
         huff_build(dyn_l, lens, hlit);
@@ -705,28 +729,34 @@ long inflate_tolerant(const uint8_t* in, size_t in_len, std::vector<uint8_t>& ou
       }
       for (;;) {
         int sym = huff_decode(br, *lc);
-        if (sym < 0) return -1;
-        if (sym == 256) break;
+        if (sym < 0)
+          return -1;
+        if (sym == 256)
+          break;
         if (sym < 256) {
           put(sym);
         } else {
           sym -= 257;
-          if (sym >= 29) return -1;
+          if (sym >= 29)
+            return -1;
           int len = LBASE[sym] + br.bits(LEXT[sym]);
           int dsym = huff_decode(br, *dc);
-          if (dsym < 0 || dsym >= 30) return -1;
+          if (dsym < 0 || dsym >= 30)
+            return -1;
           long dist = DBASE[dsym] + br.bits(DEXT[dsym]);
           while (len--) {
             int v = ((long)outcnt < dist) ? 0 : out[outcnt - dist];
             put(v);
           }
         }
-        if (br.fail) return -1;
+        if (br.fail)
+          return -1;
       }
     } else {
       return -1;  // reserved block type
     }
-    if (last) break;
+    if (last)
+      break;
   }
   return (long)outcnt;
 }
@@ -744,11 +774,14 @@ uint32_t be32(const uint8_t* p) {
 }  // namespace png_tol
 
 // Decode `f` as a PNG using the tolerant inflater above. Returns a freshly
-// stb-allocated (free with stbi_image_free) width*height*4 B, G, R, A buffer and
-// sets *w/*h/*c, or nullptr when the file is not a PNG this fallback handles
-// (non-interlaced; bit depth 8, or indexed 1/2/4). `trans` maps palette index 0
-// to transparent, matching the primary loader's colour-key handling.
-static uint8_t* load_png_tolerant(const char* f, int* wout, int* hout, int* c,
+// stb-allocated (free with stbi_image_free) width*height*4 B, G, R, A buffer
+// and sets *w/*h/*c, or nullptr when the file is not a PNG this fallback
+// handles (non-interlaced; bit depth 8, or indexed 1/2/4). `trans` maps palette
+// index 0 to transparent, matching the primary loader's colour-key handling.
+static uint8_t* load_png_tolerant(const char* f,
+                                  int* wout,
+                                  int* hout,
+                                  int* c,
                                   bool trans) {
   std::FILE* fp = std::fopen(f, "rb");
   if (!fp)
@@ -800,12 +833,23 @@ static uint8_t* load_png_tolerant(const char* f, int* wout, int* hout, int* c,
     return nullptr;
   int channels;
   switch (ct) {
-    case 0: channels = 1; break;
-    case 2: channels = 3; break;
-    case 3: channels = 1; break;
-    case 4: channels = 2; break;
-    case 6: channels = 4; break;
-    default: return nullptr;
+    case 0:
+      channels = 1;
+      break;
+    case 2:
+      channels = 3;
+      break;
+    case 3:
+      channels = 1;
+      break;
+    case 4:
+      channels = 2;
+      break;
+    case 6:
+      channels = 4;
+      break;
+    default:
+      return nullptr;
   }
   if (ct == 3 && plte.size() < 3)
     return nullptr;
@@ -837,11 +881,20 @@ static uint8_t* load_png_tolerant(const char* f, int* wout, int* hout, int* c,
       const int cc = (x >= (size_t)bpp) ? prev[x - bpp] : 0;
       int v = srow[1 + x];
       switch (ft) {
-        case 1: v += a; break;
-        case 2: v += b; break;
-        case 3: v += (a + b) >> 1; break;
-        case 4: v += png_tol::paeth(a, b, cc); break;
-        default: break;
+        case 1:
+          v += a;
+          break;
+        case 2:
+          v += b;
+          break;
+        case 3:
+          v += (a + b) >> 1;
+          break;
+        case 4:
+          v += png_tol::paeth(a, b, cc);
+          break;
+        default:
+          break;
       }
       cur[x] = (uint8_t)v;
     }
@@ -934,8 +987,8 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   if (!img)
     img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
   // stb_image rejects some valid-enough PNGs (e.g. RPG Maker windowskins whose
-  // deflate stream references a zero pre-history, giving "bad dist"); retry with
-  // the tolerant PNG decoder before giving up.
+  // deflate stream references a zero pre-history, giving "bad dist"); retry
+  // with the tolerant PNG decoder before giving up.
   if (!img)
     img.reset(load_png_tolerant(f, &w, &h, &c, trans), stbi_image_free);
   if (!img) {
