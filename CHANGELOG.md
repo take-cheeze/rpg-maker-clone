@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `scripts/download-lunatic-core.bash`: fetches a small, complete RPG Maker MV
+  project (KinoAR/Lunatic-Core — full corescript + `data/*.json` + `img/`) into
+  the git-ignored `data/` dir as the MV test bed, mirroring the RPG Maker 2000
+  Nepheshel download. It is detected as an MV game by `src/main.cxx`
+  (`js/rpg_core.js` + `data/System.json`) and is downloaded, never vendored.
 - MV Canvas2D rendering bridge, first slice (milestone M4): `document`,
   `HTMLCanvasElement` and a `CanvasRenderingContext2D` backed by native RGBA8
   buffers (`mruby-mvjs/src/mvcanvas.cxx`). `getContext('2d')` returns the shim
