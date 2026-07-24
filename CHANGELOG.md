@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV JavaScript host environment, first slice (milestone M3): `MV::JS.eval` now
+  runs against a **persistent** quickjs-ng runtime/context (state carries across
+  calls, as the MV engine expects) instead of a throwaway per call, and the
+  context is bootstrapped with the first browser/host globals —
+  `window`/`self`/`global`/`globalThis` aliases, a `console`
+  (`log`/`info`/`warn`/`error`), a native synchronous file reader
+  (`__mv_readFileSync`), and a minimal synchronous `XMLHttpRequest` built on it
+  (how MV's `DataManager` loads `data/*.json`). Covered by
+  `mruby-mvjs/test/host_test.rb`
 - Embedded JavaScript engine for RPG Maker MV support (milestone M2): added
   quickjs-ng as the `3rd/quickjs` git submodule and static-linked its `qjs`
   library into both the main executable and the mruby test binary. `MV::JS.eval` (in

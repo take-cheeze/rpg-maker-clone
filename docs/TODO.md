@@ -122,6 +122,13 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `location`/`requestAnimationFrame`/`setTimeout`/`XMLHttpRequest`/`Image`/
   `localStorage`/`require('fs'|'path')`), the asset/JSON IO bridge, and the
   rAF/event-loop pump — enough to load the core scripts and reach `Scene_Title`.
+  - ✅ Persistent JS host (one runtime/context reused across evals), the
+    `window`/`self`/`global`/`globalThis` aliases, `console`, a native file
+    reader and a synchronous `XMLHttpRequest` (the JSON/asset IO bridge).
+  - Remaining: `document`/`navigator`/`location`/`Image`/`localStorage`,
+    `requestAnimationFrame`/`setTimeout` + the per-frame pump, `require('fs'|
+    'path')`, then evaluate the MV core scripts (`MV::CORE_SCRIPTS`) to
+    `Scene_Title`.
 - 🚧 **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
   renderer, so the title screen and map actually draw through `mruby-rgss`.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
