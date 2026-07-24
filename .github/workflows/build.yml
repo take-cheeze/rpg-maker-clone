@@ -18,6 +18,9 @@ jobs:
   # This workflow contains a single job called "build"
   build:
     strategy:
+      # Don't let a flaky failure on one OS (e.g. a corrupt nix-archive
+      # download in nix-quick-install-action) cancel the other OS's build.
+      fail-fast: false
       matrix:
         os:
           - ubuntu-24.04
