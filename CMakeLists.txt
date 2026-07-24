@@ -152,7 +152,8 @@ if(EMSCRIPTEN)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
 
-add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx)
+add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx
+                               src/log_console.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby

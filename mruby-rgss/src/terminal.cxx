@@ -6,9 +6,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -59,6 +63,24 @@ uint32_t g_stats_last_ms = 0;
 bool g_stats_started = false;
 std::string
     g_stats_line;  // last formatted report, drawn by terminal_append_stats
+
+// ---------------------------------------------------------------------------
+// Log console: a fixed block of rows above the image mirroring ng-log output.
+// ---------------------------------------------------------------------------
+// One captured log message: its ng-log severity (0=INFO..3=FATAL, selects the
+// row colour) and the sanitised single-line text.
+struct ConsoleLine {
+  int severity = 0;
+  std::string text;
+};
+
+bool g_console = false;   // wired to --term_console
+int g_console_lines = 5;  // reserved message rows (wired to --term_console_lines)
+// A few more than g_console_lines are retained so raising the row count (or a
+// burst arriving between frames) still has scrollback to show.
+constexpr size_t CONSOLE_HISTORY = 256;
+std::mutex g_console_mutex;         // guards g_console_buf (sink vs. render thread)
+std::deque<ConsoleLine> g_console_buf;
 
 struct KeyState {
   bool pressed = false;
@@ -182,6 +204,43 @@ void maybe_report_stats(uint32_t now) {
   g_stats_last_ms = now;
 }
 
+// Current terminal width in columns, so console rows can be truncated to avoid
+// line-wrap (which would push the game image down a row).  Falls back to 80 when
+// the size is unknown (e.g. output is not a tty).
+int term_cols() {
+  winsize ws{};
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+    return ws.ws_col;
+  return 80;
+}
+
+// Append `msg` (length `n`) to `out` as a single printable line: control bytes
+// (newlines, tabs, ...) become spaces so one log entry never spans rows.
+void append_sanitised(std::string& out, const char* msg, size_t n) {
+  if (!msg)
+    return;
+  out.reserve(out.size() + n);
+  for (size_t i = 0; i < n; ++i) {
+    const unsigned char c = static_cast<unsigned char>(msg[i]);
+    out += (c < 0x20 || c == 0x7f) ? ' ' : static_cast<char>(c);
+  }
+}
+
+// SGR foreground colour for a log row, keyed by ng-log severity.  INFO is dim so
+// it recedes; warnings/errors escalate to yellow/red so they stand out.
+const char* severity_color(int severity) {
+  switch (severity) {
+    case 1:
+      return "\x1b[33m";  // WARNING -> yellow
+    case 2:
+      return "\x1b[31m";  // ERROR -> red
+    case 3:
+      return "\x1b[1;31m";  // FATAL -> bold red
+    default:
+      return "\x1b[2m";  // INFO -> dim
+  }
+}
+
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   if (lv_display_flush_is_last(disp) && g_encode) {
     const int w = lv_area_get_width(area);
@@ -255,6 +314,74 @@ void terminal_append_stats(std::string& s) {
   s += "\x1b[K\x1b[7m";
   s += g_stats_line.empty() ? "term_stats: measuring..." : g_stats_line;
   s += "\x1b[0m\r\n";
+}
+
+void terminal_set_console(bool enabled, int lines) {
+  g_console = enabled;
+  g_console_lines = lines < 1 ? 1 : lines;
+}
+
+void terminal_console_push(int severity,
+                           const char* file,
+                           int line,
+                           const char* msg,
+                           size_t msg_len) {
+  ConsoleLine entry;
+  entry.severity = severity;
+  // Prefix with the source location (as ng-log's own format does) so the
+  // console is useful for tracing where a message came from.
+  if (file && *file) {
+    entry.text += file;
+    entry.text += ':';
+    entry.text += std::to_string(line);
+    entry.text += "] ";
+  }
+  append_sanitised(entry.text, msg, msg_len);
+
+  std::lock_guard<std::mutex> lock(g_console_mutex);
+  g_console_buf.push_back(std::move(entry));
+  while (g_console_buf.size() > CONSOLE_HISTORY)
+    g_console_buf.pop_front();
+}
+
+void terminal_append_console(std::string& s) {
+  // Reserve a fixed block (header + g_console_lines rows) regardless of how many
+  // messages exist, so the image never shifts as logs arrive: empty slots are
+  // drawn as blank cleared rows.  The newest messages sit at the bottom of the
+  // block, right above the image, tailing like a real console.  Same
+  // cursor-home overdraw + reverse-video header style as the legend/stats rows.
+  if (!g_console)
+    return;
+
+  const int cols = term_cols();
+
+  s += "\x1b[K\x1b[7m";
+  s += "ng-log console";
+  s += "\x1b[0m\r\n";
+
+  std::lock_guard<std::mutex> lock(g_console_mutex);
+  const int have = static_cast<int>(g_console_buf.size());
+  const int shown = have < g_console_lines ? have : g_console_lines;
+  const int blank = g_console_lines - shown;
+  const int first = have - shown;  // index of the oldest shown message
+
+  for (int row = 0; row < g_console_lines; ++row) {
+    s += "\x1b[K";  // clear the whole row first (cursor is at column 0)
+    if (row < blank) {
+      s += "\r\n";  // no message yet for this slot
+      continue;
+    }
+    const ConsoleLine& entry = g_console_buf[first + (row - blank)];
+    s += severity_color(entry.severity);
+    // Truncate to the terminal width so a long line cannot wrap and push the
+    // image down.  Colour escapes have zero display width, so only the visible
+    // text is measured.
+    if (cols > 0 && static_cast<int>(entry.text.size()) > cols)
+      s.append(entry.text, 0, static_cast<size_t>(cols));
+    else
+      s += entry.text;
+    s += "\x1b[0m\r\n";
+  }
 }
 
 void terminal_write(const char* p, size_t n) {
