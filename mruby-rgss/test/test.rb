@@ -1,3 +1,10 @@
+# The Bitmap loader consults the app-provided GAME_DIR/RTP_DIR search roots on
+# every String load (the app sets them at startup in src/main.cxx). Define empty
+# stand-ins so the standalone mrbtest can load fixtures by absolute/relative path
+# without the search roots being defined.
+GAME_DIR = "" unless Object.const_defined?(:GAME_DIR)
+RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
+
 # From: https://github.com/uni-algo/uni-algo?tab=readme-ov-file#normalization-functions
 assert "RGSS.to_nfd" do
   assert_equal RGSS.to_nfd("Ŵ"), "W\u0302"
