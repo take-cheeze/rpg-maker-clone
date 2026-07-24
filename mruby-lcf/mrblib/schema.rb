@@ -830,6 +830,11 @@ module LCF
       6 => { name: :item_id, type: :int, default: 1 },
       7 => { name: :actor_id, type: :int, default: 1 },
       8 => { name: :timer_sec, type: :int, default: 0 },
+      # RPG2003-only: a second timer condition and the variable comparison
+      # operator (0 = >=). The RPG2000 runtime always compares with >=, so these
+      # are carried for schema completeness rather than consumed by EventPage.
+      9 => { name: :timer2_sec, type: :int, default: 0 },
+      10 => { name: :compare_operator, type: :int, default: 0 },
     }
 
     MOVE_ROUTE = {
