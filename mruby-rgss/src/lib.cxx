@@ -12,6 +12,7 @@
 
 #include <lvgl.h>
 
+#include "profiler.hxx"
 #include "shinonome.hxx"
 
 #include <algorithm>
@@ -1418,6 +1419,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // screen. Disposed objects (null DATA_PTR) are dropped from the set here so
   // it does not grow unbounded.
   if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
+    ProfilerScope _zscope("gfx.zorder");
     const mrb_value objs = zorder_objs(M);
     const mrb_value live = mrb_ary_new(M);
     std::map<lv_obj_t*, std::multimap<mrb_int, lv_obj_t*>> by_parent;
@@ -1444,6 +1446,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // cleared only after the whole sweep so a bitmap shared by several sprites
   // invalidates all of them.
   {
+    ProfilerScope _iscope("gfx.invalidate");
     const mrb_value roots = zorder_objs(M);
     const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
     for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
@@ -1470,8 +1473,11 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     }
   }
 
-  lv_timer_handler();
-  lv_task_handler();
+  {
+    ProfilerScope _lvscope("gfx.lvgl");
+    lv_timer_handler();
+    lv_task_handler();
+  }
 
   // Advance Graphics.frame_count, matching RGSS semantics.
   V gfx = mrb_obj_value(
@@ -1482,6 +1488,10 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 
   const int32_t sleep = 1000 / 60 - lv_tick_elaps(frame_start);
   if (sleep > 0) {
+    // Report the idle wait so the profiler can subtract it: the frame spans the
+    // whole main_loop iteration (see RGSS::Profiler.frame), and we want its
+    // "work" figure to measure CPU cost, not the time spent sleeping here.
+    profiler_note_idle(sleep);
     lv_delay_ms(sleep);
   }
 
@@ -2055,7 +2065,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
 
+  profiler_init(M);
+
   define_rect(M, m);
 }
 
-extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {}
+extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
+  // Flush and close a Chrome trace still open at shutdown (native path; the
+  // Emscripten loop never returns, but the format tolerates the missing close).
+  profiler_trace_stop();
+}

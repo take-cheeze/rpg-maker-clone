@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
+  `--profile` (report cadence tunable via `--profile_interval_ms`, default
+  1000ms). Once a second it prints a summary line to stderr with the measured
+  frame rate, per-frame CPU **work** time (the frame span minus the fps-cap
+  sleep) and a breakdown of named sub-sections — `scene.update`, `input.update`
+  and the `gfx.*` phases of `Graphics.update` (z-ordering, bitmap invalidation,
+  LVGL handling) — each with its average/max time and share of the frame, plus
+  memory use: process RSS, the LVGL heap pool (used bytes + fragmentation) and
+  mruby allocation activity (live blocks and allocations/sec). Custom sections
+  can be timed from Ruby with `RGSS::Profiler.section("name") { ... }`, and
+  `RGSS::Profiler.stats` returns the current interval as a Hash. When
+  `--profile` is off the profiler does no work — every timing/sampling entry
+  point returns on a single predicted branch — so the default build is
+  unaffected. A Chrome trace can be exported with `--profile_trace=FILE` (or
+  `RGSS::Profiler.trace_start`/`trace_stop` from Ruby to trace a specific
+  window): every frame and section is streamed as a Chrome Trace Event and each
+  memory sample as counters, producing a file that `chrome://tracing` and
+  Perfetto load as a flame chart with memory graphs. The stream is written
+  incrementally and stays loadable even if the process is killed mid-run
 - Keyboard input now works in the SDL window backend: an SDL event watch (added
   in `src/sdl_input.cxx`) observes key events without stealing them from LVGL's
   own event pump, translates them to `RGSS::Input` key ids (arrows;
