@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- The WebAssembly build now loads an RPG Maker project **at runtime** instead of
+  requiring one to be baked into the page at compile time, so a single build
+  plays any game. A new Emscripten shell (`src/shell.html`) offers a loader that
+  accepts a local `.zip`, a direct `.zip` URL, or a GitHub repository
+  (`owner/repo`, `owner/repo@ref`, or a `github.com` URL, resolved to its
+  `codeload` archive). The zip is unpacked in the browser with the native
+  `DecompressionStream` API — no third-party JavaScript — the folder containing
+  `RPG_RT.ldb` (RPG2k) or `Game.ini` (XP) is located (top-level wrapper folders,
+  as GitHub archives use, are handled) and mounted at `/game`, then the exported
+  `rpg_start_game()` constructs the game and starts the frame loop. Under
+  Emscripten `main()` now sets up the interpreter and display and returns to the
+  browser, deferring game construction until a project is present; a project
+  baked in with `-DWASM_GAME_DIR` still auto-starts. Cross-origin downloads
+  (GitHub, most `.zip` URLs) need a CORS proxy — the loader has an optional
+  field for one — or the always-works local-file path
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured

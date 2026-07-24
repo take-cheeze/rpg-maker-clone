@@ -1,0 +1,394 @@
+<!--
+  Emscripten shell for the RPG Maker clone.
+
+  Unlike the stock shell, this page can load an RPG Maker 2000/2003 (RPG2k) or
+  XP project into the virtual filesystem at runtime, so a single build serves any
+  game instead of one baked in at compile time. The loader accepts:
+
+    * a local .zip file (always works, no network),
+    * a direct URL to a .zip (the host must allow cross-origin fetches), or
+    * a GitHub repository (owner/repo, or a github.com URL), resolved to its
+      codeload .zip archive.
+
+  The zip is unpacked in the browser with the native DecompressionStream API (no
+  third-party code), the directory containing RPG_RT.ldb (RPG2k) or Game.ini
+  (XP) is located and mounted at /game, and the exported rpg_start_game() is
+  called to construct the game and start the frame loop.
+-->
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #14161a;
+    --panel: #1e2127;
+    --border: #333842;
+    --fg: #e6e8eb;
+    --muted: #9aa1ac;
+    --accent: #4f8cff;
+    --accent-fg: #ffffff;
+    --error: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 16px 48px;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 13px; }
+  #game {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  canvas {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    image-rendering: pixelated;
+    /* SDL sets the intrinsic pixel size; lv_sdl_window_set_zoom already scales
+       it, so leave the element's rendered size to the module. */
+  }
+  .panel {
+    width: min(560px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > input[type="text"] { flex: 1 1 240px; }
+  label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  input[type="text"] {
+    background: #12141a;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: inherit;
+    min-width: 0;
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button.secondary { background: #2a2f38; color: var(--fg); }
+  .hint { color: var(--muted); font-size: 12px; margin: 0; }
+  .hint code { background: #12141a; padding: 1px 5px; border-radius: 4px; }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  #status { min-height: 20px; font-size: 13px; }
+  #status.error { color: var(--error); }
+  #status.busy { color: var(--accent); }
+  details { width: min(560px, 100%); }
+  summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  #log {
+    margin-top: 8px;
+    max-height: 180px;
+    overflow: auto;
+    background: #0c0e12;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+
+<h1>RPG Maker clone <small>— load a project to play</small></h1>
+
+<div class="panel" id="loader">
+  <div>
+    <label for="file">Open a local project (.zip)</label>
+    <div class="row" style="margin-top:6px">
+      <input type="file" id="file" accept=".zip,application/zip" />
+    </div>
+  </div>
+
+  <div class="divider">or fetch by URL</div>
+
+  <div>
+    <label for="url">Zip URL or GitHub repo</label>
+    <div class="row" style="margin-top:6px">
+      <input type="text" id="url" placeholder="owner/repo  ·  https://github.com/owner/repo  ·  https://host/game.zip" />
+      <button id="load" disabled>Load</button>
+    </div>
+  </div>
+
+  <details>
+    <summary>Fetching from GitHub / another site not working?</summary>
+    <p class="hint" style="margin-top:8px">
+      Browsers block cross-origin downloads unless the host opts in (CORS).
+      GitHub's archive endpoint does not, so a GitHub repo or an arbitrary
+      <code>.zip</code> URL usually needs a CORS proxy — put its prefix below,
+      or just download the zip and use <em>Open a local project</em> above,
+      which always works.
+    </p>
+    <label for="proxy">CORS proxy prefix (optional)</label>
+    <div class="row" style="margin-top:6px">
+      <input type="text" id="proxy" placeholder="https://corsproxy.io/?url=" />
+    </div>
+  </details>
+
+  <div id="status"></div>
+</div>
+
+<!-- The canvas is present and visible from the start: main() creates the SDL /
+     WebGL context at page load, and a display:none canvas can break context
+     creation in some renderer paths. It just shows black until a game starts. -->
+<div id="game">
+  <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+  <p class="hint">Arrows / WASD to move · Z / Enter confirm · X / Esc cancel · click the canvas to give it focus</p>
+</div>
+
+<details>
+  <summary>Runtime log</summary>
+  <pre id="log"></pre>
+</details>
+
+<script type="text/javascript">
+  var statusEl = document.getElementById('status');
+  var logEl = document.getElementById('log');
+  var loaderEl = document.getElementById('loader');
+  var loadBtn = document.getElementById('load');
+  var urlInput = document.getElementById('url');
+  var proxyInput = document.getElementById('proxy');
+  var fileInput = document.getElementById('file');
+
+  function log(text) {
+    logEl.textContent += text + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = kind || '';
+  }
+
+  // --- Emscripten module wiring -------------------------------------------
+  var runtimeReady = false;
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    print: function (t) { log(t); },
+    printErr: function (t) { log(t); },
+    onRuntimeInitialized: function () {
+      runtimeReady = true;
+      loadBtn.disabled = false;
+      setStatus('Ready — choose a project to load.');
+    },
+  };
+
+  // --- Minimal ZIP reader (central directory + DecompressionStream) -------
+  async function inflateRaw(bytes) {
+    var ds = new DecompressionStream('deflate-raw');
+    var stream = new Response(bytes).body.pipeThrough(ds);
+    var ab = await new Response(stream).arrayBuffer();
+    return new Uint8Array(ab);
+  }
+
+  function decodeName(bytes, flag) {
+    // Bit 11 of the general-purpose flag marks UTF-8 names; otherwise RPG Maker
+    // zips are typically Shift-JIS. Fall back to UTF-8 if the label is unknown.
+    var utf8 = (flag & 0x800) !== 0;
+    try {
+      return new TextDecoder(utf8 ? 'utf-8' : 'shift_jis', { fatal: false }).decode(bytes);
+    } catch (e) {
+      return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    }
+  }
+
+  async function unzip(arrayBuffer) {
+    if (typeof DecompressionStream === 'undefined') {
+      throw new Error('This browser lacks DecompressionStream; please use a current Chrome, Firefox or Safari.');
+    }
+    var bytes = new Uint8Array(arrayBuffer);
+    var dv = new DataView(arrayBuffer);
+
+    // Locate the End Of Central Directory record by scanning back from the end
+    // (its trailing comment is almost always empty, but allow up to 64 KiB).
+    var eocd = -1;
+    var minPos = Math.max(0, bytes.length - (22 + 0xffff));
+    for (var i = bytes.length - 22; i >= minPos; i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('Not a ZIP archive (no end-of-central-directory record).');
+
+    var count = dv.getUint16(eocd + 10, true);
+    var cd = dv.getUint32(eocd + 16, true);
+    if (cd === 0xffffffff || count === 0xffff) {
+      throw new Error('ZIP64 archives are not supported; please repackage the project as a standard zip.');
+    }
+
+    var files = [];
+    for (var n = 0; n < count; n++) {
+      if (dv.getUint32(cd, true) !== 0x02014b50) throw new Error('Corrupt ZIP central directory.');
+      var flag = dv.getUint16(cd + 8, true);
+      var method = dv.getUint16(cd + 10, true);
+      var compSize = dv.getUint32(cd + 20, true);
+      var nameLen = dv.getUint16(cd + 28, true);
+      var extraLen = dv.getUint16(cd + 30, true);
+      var commentLen = dv.getUint16(cd + 32, true);
+      var localOff = dv.getUint32(cd + 42, true);
+      var name = decodeName(bytes.subarray(cd + 46, cd + 46 + nameLen), flag);
+      cd += 46 + nameLen + extraLen + commentLen;
+
+      if (name.endsWith('/')) continue; // directory entry
+      if (dv.getUint32(localOff, true) !== 0x04034b50) {
+        throw new Error('Corrupt ZIP local header for ' + name);
+      }
+      // The local header may carry a different extra field than the central one.
+      var lNameLen = dv.getUint16(localOff + 26, true);
+      var lExtraLen = dv.getUint16(localOff + 28, true);
+      var dataStart = localOff + 30 + lNameLen + lExtraLen;
+      var comp = bytes.subarray(dataStart, dataStart + compSize);
+
+      var data;
+      if (method === 0) data = comp.slice();          // stored
+      else if (method === 8) data = await inflateRaw(comp); // deflate
+      else throw new Error('Unsupported ZIP compression method ' + method + ' in ' + name);
+      files.push({ name: name.replace(/\\/g, '/'), data: data });
+    }
+    return files;
+  }
+
+  // Find the directory prefix that contains the project's marker file, so a
+  // project wrapped in a top-level folder (GitHub archives always are) mounts
+  // its contents directly at /game.
+  function findRootPrefix(files) {
+    var markers = ['rpg_rt.ldb', 'game.ini'];
+    for (var m = 0; m < markers.length; m++) {
+      for (var i = 0; i < files.length; i++) {
+        var parts = files[i].name.split('/');
+        if (parts[parts.length - 1].toLowerCase() === markers[m]) {
+          var slash = files[i].name.lastIndexOf('/');
+          return slash < 0 ? '' : files[i].name.slice(0, slash + 1);
+        }
+      }
+    }
+    return null;
+  }
+
+  function mountAndStart(files) {
+    var prefix = findRootPrefix(files);
+    if (prefix === null) {
+      throw new Error('No RPG_RT.ldb or Game.ini in the archive — is this an RPG Maker 2000/2003 or XP project?');
+    }
+    var FS = Module.FS;
+    FS.mkdirTree('/game');
+    var written = 0;
+    var lower = prefix.toLowerCase();
+    for (var i = 0; i < files.length; i++) {
+      var name = files[i].name;
+      if (name.toLowerCase().indexOf(lower) !== 0) continue; // outside project root
+      var rel = name.slice(prefix.length);
+      if (!rel) continue;
+      var dest = '/game/' + rel;
+      var dir = dest.slice(0, dest.lastIndexOf('/'));
+      if (dir && dir !== '/game') FS.mkdirTree(dir);
+      FS.writeFile(dest, files[i].data);
+      written++;
+    }
+    log('Mounted ' + written + ' file(s) under /game (root: "' + (prefix || './') + '").');
+
+    var rc = Module.ccall('rpg_start_game', 'number', [], []);
+    if (rc !== 0) {
+      throw new Error('The runtime could not start the project (see the runtime log for details).');
+    }
+    loaderEl.hidden = true;
+    setStatus('');
+    Module.canvas.focus();
+  }
+
+  // --- URL resolution ------------------------------------------------------
+  // Turn a GitHub repo reference into its codeload zip URL. Accepts
+  // "owner/repo", "owner/repo@ref", or a github.com URL (optionally /tree/ref).
+  // Anything else (already a .zip or arbitrary URL) is returned unchanged.
+  function resolveUrl(input) {
+    input = input.trim();
+    var m;
+    if ((m = input.match(/github\.com\/([^\/\s]+)\/([^\/\s]+?)(?:\.git)?(?:\/tree\/([^\/\s]+))?\/?$/i))) {
+      return 'https://codeload.github.com/' + m[1] + '/' + m[2] + '/zip/' + (m[3] || 'HEAD');
+    }
+    if ((m = input.match(/^([\w.\-]+)\/([\w.\-]+?)(?:@([\w.\-\/]+))?$/))) {
+      return 'https://codeload.github.com/' + m[1] + '/' + m[2] + '/zip/' + (m[3] || 'HEAD');
+    }
+    return input;
+  }
+
+  async function fetchZip(url) {
+    var proxy = proxyInput.value.trim();
+    var full = proxy ? proxy + encodeURIComponent(url) : url;
+    // A bare proxy prefix without a query separator (e.g. ".../get/") gets the
+    // raw URL appended instead of an encoded query value.
+    if (proxy && !/[?&=]$/.test(proxy)) full = proxy.replace(/\/$/, '') + '/' + url;
+    var res;
+    try {
+      res = await fetch(full);
+    } catch (e) {
+      throw new Error('Network/CORS error fetching ' + full + '. GitHub and most hosts need a CORS proxy — see the note under the URL field, or download the zip and open it locally.');
+    }
+    if (!res.ok) throw new Error('Download failed: HTTP ' + res.status + ' ' + res.statusText);
+    return await res.arrayBuffer();
+  }
+
+  // --- Loader actions ------------------------------------------------------
+  async function loadFrom(getBuffer, label) {
+    if (!runtimeReady) return;
+    loadBtn.disabled = true;
+    fileInput.disabled = true;
+    try {
+      setStatus('Downloading ' + label + '…', 'busy');
+      var buf = await getBuffer();
+      setStatus('Unpacking (' + Math.round(buf.byteLength / 1024) + ' KiB)…', 'busy');
+      var files = await unzip(buf);
+      setStatus('Starting…', 'busy');
+      mountAndStart(files);
+    } catch (e) {
+      log('Error: ' + (e && e.message ? e.message : e));
+      setStatus(e && e.message ? e.message : String(e), 'error');
+      loadBtn.disabled = false;
+      fileInput.disabled = false;
+    }
+  }
+
+  loadBtn.addEventListener('click', function () {
+    var raw = urlInput.value.trim();
+    if (!raw) { setStatus('Enter a zip URL or GitHub repo, or pick a local file.', 'error'); return; }
+    var url = resolveUrl(raw);
+    log('Resolved "' + raw + '" -> ' + url);
+    loadFrom(function () { return fetchZip(url); }, raw);
+  });
+
+  urlInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !loadBtn.disabled) loadBtn.click();
+  });
+
+  fileInput.addEventListener('change', function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    loadFrom(function () { return f.arrayBuffer(); }, f.name);
+  });
+
+  setStatus('Loading runtime…', 'busy');
+</script>
+
+{{{ SCRIPT }}}
