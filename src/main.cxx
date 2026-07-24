@@ -122,6 +122,10 @@ void main_loop() {
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
+// Installs the SDL keyboard watch that feeds RGSS::Input (src/sdl_input.cxx).
+// Only meaningful for the SDL window backend.
+extern "C" void rgss_sdl_input_init(void);
+
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
 // of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
 // detail, and under Emscripten ng-log's fatal path traps anyway (it formats
@@ -184,6 +188,9 @@ int main(int argc, char** argv) {
     CHECK(display);
     lv_sdl_window_set_resizeable(display.get(), false);
     lv_sdl_window_set_zoom(display.get(), 2.f);
+    // SDL is initialised by lv_sdl_window_create above; install the keyboard
+    // watch now so key events reach RGSS::Input.
+    rgss_sdl_input_init();
   }
 
 #ifdef __EMSCRIPTEN__
