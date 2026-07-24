@@ -124,6 +124,15 @@ All notable changes to this project will be documented in this file.
   - Added key constants (UP, DOWN, LEFT, RIGHT, A, B, C, etc.)
   - Implemented input state tracking (press, trigger, repeat)
   - Added directional input helpers (dir4, dir8)
+- GitHub-hosted test-bed download scripts reachable from sandboxed/proxied
+  environments where the tkool CDN is blocked (unlike the existing
+  Nepheshel/Pray-for-You scripts):
+  - `scripts/download-mtf-meido-action.bash` — RPG Maker 2000 game
+    (`data/mtf-meido-action/Debug`: `RPG_RT.ldb`/`.lmt` and 13 `Map*.lmu`)
+  - `scripts/download-opengame-xp.bash` — RPG Maker XP project
+    (`data/OpenGame.exe/Testbed/XP`: full `Data/*.rxdata` set)
+  - Both use a sparse, blob-filtered `git clone`; the CI `build` job now fetches
+    them alongside Nepheshel and keys the game cache off all download scripts
 
 ### Fixed
 - LCF `File#method_missing` delegates field access with `__send__` instead of
