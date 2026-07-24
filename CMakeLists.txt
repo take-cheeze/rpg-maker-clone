@@ -4,7 +4,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
-project(rpg_maker_clone CXX)
+project(rpg_maker_clone C CXX)
 
 if(EMSCRIPTEN)
   # Emscripten ships SDL2 as a "port": -sUSE_SDL=2 provides both the headers
