@@ -18,7 +18,11 @@ teleport), open a menu, save, and continue. The remaining work is mostly **the
 parts that need the native build + real game assets to develop and verify**:
 authentic chipset/charset rendering, audio, and the battle system. Everything
 landed so far is exercised by unit tests (`mruby-lcf/test` and a host harness),
-since the full SDL/mruby binary can't be built or run in this environment.
+since the full SDL/mruby binary can't be built or run in this environment. The
+LCF loaders are additionally smoke-tested against real downloaded test-bed
+projects (`scripts/lcf_testbed_check.rb`, run in CI after the download step),
+which parses a genuine game's `RPG_RT.ldb`/`.lmt`/`Map*.lmu` end to end and
+catches format surprises the synthetic unit tests can't.
 
 The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
@@ -47,7 +51,10 @@ The work below is roughly ordered by the critical path to a walkable game
   (`Game::CharSet`, 4-direction, 3 walk frames); NPC/event sprites are drawn as
   markers for now
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
-  animation and edge/tile/event collision. Move-route processing still to come
+  animation and edge/tile/event collision. Move-route *data* now decodes
+  (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and
+  common-event `move_route` schema); driving events from those routes at runtime
+  is still to come
 
 #### Event system
 - 🚧 Event pages — page conditions (switch/variable/item/actor) are implemented

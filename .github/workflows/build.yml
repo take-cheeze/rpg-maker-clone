@@ -99,6 +99,10 @@ jobs:
           nix develop -c ./scripts/download-mtf-meido-action.bash
           nix develop -c ./scripts/download-opengame-xp.bash
 
+      - name: LCF test-bed smoke check
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: nix develop -c ruby scripts/lcf_testbed_check.rb
+
       - name: test
         run: |
           nix develop -c cmake --build build -t test

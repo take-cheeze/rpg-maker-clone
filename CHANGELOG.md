@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Move-route command decoding for the LCF loaders: `LCF.parse_move_commands`
+  and `LCF::MoveCommand` decode the compact move-command layout (bare commands
+  plus the string/integer parameters that Switch On/Off, Change Graphic and Play
+  Sound Effect carry), exposed through a new `:move_commands` schema type wired
+  into the event-page and common-event `move_route.commands` chunk. Previously
+  that chunk was mis-declared as an event-command blob and failed to parse on
+  real maps
+- `scripts/lcf_testbed_check.rb`: a host smoke-test that runs the pure-Ruby LCF
+  parser (`mruby-lcf/mrblib/{lcf,schema}.rb`) over real downloaded test-bed
+  projects — walking every schema field of a game's `RPG_RT.ldb`, `RPG_RT.lmt`
+  and `Map*.lmu` and asserting structural invariants (layer sizes match the map
+  dimensions, move-command ids are in range, events iterate). It auto-discovers
+  games under `data/` and now runs in CI after the test-bed download step,
+  exercising the loaders against genuine editor output rather than only the
+  synthetic blobs the unit tests use
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured
@@ -41,6 +56,11 @@ All notable changes to this project will be documented in this file.
   viewport stacks on the screen. LVGL delete events invalidate the mruby
   wrappers so a viewport can safely own (and free) its child sprites
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
+
+### Fixed
+- LCF map-tree `scrollbar_x` / `scrollbar_y` (chunks 5/6) are now read as signed
+  ints instead of booleans; real games store multi-byte scrollbar positions
+  there, which raised `invalid bool size` when parsing an actual `RPG_RT.lmt`
 
 ### Changed
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
