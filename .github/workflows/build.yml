@@ -200,4 +200,4 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
       - name: Build flake
-        run: nix build -L '.?submodules=1#build'
+        run: nix build -L '.#build'
