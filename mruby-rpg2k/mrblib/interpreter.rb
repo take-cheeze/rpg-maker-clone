@@ -372,9 +372,16 @@ module Game
       name = cmd.string
       return if name.nil? || name.empty?
       if kind == :bgm
-        RGSS::Audio.bgm_play(name)
+        # PlayBGM parameters: [fade_in, volume, tempo, balance]. Volume/tempo
+        # default to 100 when the command carries a shorter list.
+        volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
+        pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
+        RGSS::Audio.bgm_play(name, volume, pitch)
       else
-        RGSS::Audio.se_play(name)
+        # PlaySE parameters: [volume, tempo, balance].
+        volume = cmd.parameters.size > 0 ? cmd.param(0) : 100
+        pitch = cmd.parameters.size > 1 ? cmd.param(1) : 100
+        RGSS::Audio.se_play(name, volume, pitch)
       end
     rescue StandardError
       nil

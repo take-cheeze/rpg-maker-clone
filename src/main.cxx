@@ -140,6 +140,12 @@ extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 // Only meaningful for the SDL window backend.
 extern "C" void rgss_sdl_input_init(void);
 
+// Opens the audio device and installs the SDL_mixer backend for RGSS::Audio
+// (src/sdl_audio.cxx). A no-op if audio cannot be initialised. rgss_audio_
+// shutdown tears it down on the native exit path.
+extern "C" void rgss_audio_init(void);
+extern "C" void rgss_audio_shutdown(void);
+
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
 // of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
 // detail, and under Emscripten ng-log's fatal path traps anyway (it formats
@@ -214,6 +220,10 @@ int main(int argc, char** argv) {
     // watch now so key events reach RGSS::Input.
     rgss_sdl_input_init();
   }
+
+  // Bring up audio for every backend (SDL_mixer initialises the SDL audio
+  // subsystem itself, so this works under the terminal backends too).
+  rgss_audio_init();
 
 #ifdef __EMSCRIPTEN__
   // mruby uses word boxing, which stores the type tag in the low 3 bits of each
@@ -303,6 +313,7 @@ int main(int argc, char** argv) {
   }
   CHECK(!M->exc);
 
+  rgss_audio_shutdown();
   gflags::ShutDownCommandLineFlags();
 
   return EXIT_SUCCESS;

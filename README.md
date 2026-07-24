@@ -94,10 +94,24 @@
   stream stays loadable even if the process is killed mid-run, so it is safe to
   trace a long session and stop it with `Ctrl-C`
 
+### Audio
+
+- `RGSS::Audio` plays real music and sound through an
+  [SDL_mixer](https://github.com/libsdl-org/SDL_mixer) back-end: looping **BGM**
+  and **BGS**, one-shot **ME** (music effects that interrupt the BGM and then let
+  it resume) and overlapping **SE** sound effects, with per-channel volume
+- Filenames from the game data are resolved the same way graphics are — under
+  `GAME_DIR`/`RTP_DIR`, in the `Music/`, `Sound/` and `Audio/*` sub-folders, and
+  with the usual extensions (`.ogg`, `.wav`, `.mid`, `.mp3`, `.flac`) — so the
+  event interpreter's *Play BGM* / *Play SE* commands are audible
+- Playable formats depend on the SDL_mixer build (WAV/OGG everywhere; MIDI needs
+  a synth such as Timidity/FluidSynth). Pitch/tempo is accepted for API
+  compatibility but not applied (SDL_mixer has no pitch control)
+
 ## TODO
 - Run zip file directly
 - Editor with [imgui](https://github.com/ocornut/imgui)
 - Real chipset tile rendering (lower/upper chip graphics, autotiles, tile
   animation); the map scene currently draws placeholder colour-block tiles
 - Battle system and the item/skill/equip/status menu screens
-- Real audio playback (the `RGSS::Audio` back-end is still a stub)
+- Audio pitch/tempo control and a guaranteed MIDI synth in the build

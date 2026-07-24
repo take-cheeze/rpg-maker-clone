@@ -88,9 +88,11 @@ The work below is roughly ordered by the critical path to a walkable game
   data are in place; these screens still need building
 
 #### Assets & infrastructure
-- Audio playback — replace the inert `RGSS::Audio` stubs with real
-  BGM/BGS/ME/SE (WAV/MIDI). Needs a C++ audio backend (SDL/`3rd/timidity`) that
-  can only be built and verified natively
+- ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
+  SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
+  `Music/`/`Sound/`/`Audio/*`. Remaining polish: pitch/tempo control (SDL_mixer
+  exposes none) and guaranteeing a MIDI synth in the build (depends on the
+  SDL_mixer build's MIDI support; WAV/OGG work everywhere)
 - ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)
