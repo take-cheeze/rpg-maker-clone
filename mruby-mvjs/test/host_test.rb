@@ -46,3 +46,45 @@ assert 'MV host XMLHttpRequest fires onload with the response text' do
     File.delete(path) rescue nil
   end
 end
+
+assert 'MV host setTimeout fires from pump only once its delay elapses' do
+  MV::JS.eval("globalThis.__to = 0; setTimeout(function(){ globalThis.__to = 7; }, 100);")
+  MV::JS.pump(50.0)  # not due yet
+  assert_equal 0, MV::JS.eval("globalThis.__to")
+  MV::JS.pump(150.0) # due
+  assert_equal 7, MV::JS.eval("globalThis.__to")
+end
+
+assert 'MV host clearTimeout cancels a pending timer' do
+  MV::JS.eval("globalThis.__ct = 0; globalThis.__id = setTimeout(function(){ globalThis.__ct = 1; }, 10); clearTimeout(globalThis.__id);")
+  MV::JS.pump(100.0)
+  assert_equal 0, MV::JS.eval("globalThis.__ct")
+end
+
+assert 'MV host requestAnimationFrame runs once per pump' do
+  MV::JS.eval("globalThis.__raf = 0; requestAnimationFrame(function(){ globalThis.__raf++; });")
+  MV::JS.pump(16.0)
+  assert_equal 1, MV::JS.eval("globalThis.__raf")
+  MV::JS.pump(32.0)  # not re-queued
+  assert_equal 1, MV::JS.eval("globalThis.__raf")
+end
+
+assert 'MV host drains promise microtasks on pump' do
+  MV::JS.eval("globalThis.__pr = 0; Promise.resolve().then(function(){ globalThis.__pr = 5; });")
+  MV::JS.pump(0.0)
+  assert_equal 5, MV::JS.eval("globalThis.__pr")
+end
+
+assert 'MV host provides navigator/location/performance' do
+  assert_equal "string", MV::JS.eval("typeof navigator.userAgent")
+  assert_equal "string", MV::JS.eval("typeof location.href")
+  assert_equal "number", MV::JS.eval("typeof performance.now()")
+end
+
+assert 'MV host localStorage stores and retrieves values in memory' do
+  MV::JS.eval("localStorage.setItem('save1', 'data')")
+  assert_equal "data", MV::JS.eval("localStorage.getItem('save1')")
+  assert_nil MV::JS.eval("localStorage.getItem('missing')")
+  MV::JS.eval("localStorage.removeItem('save1')")
+  assert_nil MV::JS.eval("localStorage.getItem('save1')")
+end

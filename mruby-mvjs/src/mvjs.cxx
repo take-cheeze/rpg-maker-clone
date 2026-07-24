@@ -118,6 +118,92 @@ const char* kHostPreamble = R"MVJS(
     }
   };
   g.XMLHttpRequest = XMLHttpRequest;
+
+  // Passive host globals MV touches during boot.
+  g.navigator = {
+    userAgent: 'RPGMakerClone',
+    language: 'en',
+    platform: 'rpgmakerclone',
+    appVersion: '',
+  };
+  g.location = {
+    href: 'app://index.html',
+    protocol: 'app:',
+    search: '',
+    hash: '',
+    reload: function () {},
+  };
+  (function () {
+    var store = {};
+    g.localStorage = {
+      getItem: function (k) {
+        return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null;
+      },
+      setItem: function (k, v) { store[k] = String(v); },
+      removeItem: function (k) { delete store[k]; },
+      clear: function () { store = {}; },
+      key: function (i) { return Object.keys(store)[i] || null; },
+      get length() { return Object.keys(store).length; },
+    };
+  })();
+
+  // Timers, requestAnimationFrame and the per-frame pump. The MV game drives
+  // itself with requestAnimationFrame; the host owns the loop and advances this
+  // queue once per frame from MV::JS.pump(nowMs), so the JS game shares the
+  // engine's fixed cadence instead of blocking the process.
+  var timers = [];
+  var raf = [];
+  var nextId = 1;
+  var clock = 0;
+  g.performance = {
+    now: function () {
+      return typeof Date !== 'undefined' && Date.now ? Date.now() : clock;
+    },
+  };
+  g.setTimeout = function (cb, ms) {
+    var id = nextId++;
+    timers.push({ id: id, cb: cb, due: clock + (ms || 0), interval: 0 });
+    return id;
+  };
+  g.setInterval = function (cb, ms) {
+    var id = nextId++;
+    timers.push({ id: id, cb: cb, due: clock + (ms || 0), interval: ms || 0 });
+    return id;
+  };
+  g.clearTimeout = function (id) {
+    timers = timers.filter(function (t) { return t.id !== id; });
+  };
+  g.clearInterval = g.clearTimeout;
+  g.requestAnimationFrame = function (cb) {
+    var id = nextId++;
+    raf.push({ id: id, cb: cb });
+    return id;
+  };
+  g.cancelAnimationFrame = function (id) {
+    raf = raf.filter(function (r) { return r.id !== id; });
+  };
+  // Advance one frame: fire due timers (re-queuing intervals), then run the
+  // animation-frame callbacks queued so far exactly once.
+  g.__mv_runFrame = function (now) {
+    clock = now || 0;
+    var due = [];
+    var keep = [];
+    for (var i = 0; i < timers.length; i++) {
+      if (timers[i].due <= clock) due.push(timers[i]);
+      else keep.push(timers[i]);
+    }
+    timers = keep;
+    for (var i = 0; i < due.length; i++) {
+      var t = due[i];
+      try { t.cb(); } catch (e) { if (g.console) console.error(e); }
+      if (t.interval > 0) { t.due = clock + t.interval; timers.push(t); }
+    }
+    var frame = raf;
+    raf = [];
+    for (var i = 0; i < frame.length; i++) {
+      try { frame[i].cb(clock); } catch (e) { if (g.console) console.error(e); }
+    }
+  };
 })(this);
 )MVJS";
 
@@ -226,12 +312,67 @@ mrb_value js_eval(mrb_state* mrb, mrb_value self) {
   return ret;
 }
 
+// MV::JS.pump(now_ms = 0) -> advance the host by one frame: fire due timers and
+// the queued requestAnimationFrame callbacks (via __mv_runFrame), then drain
+// the JS job queue (promise microtasks). Raises RuntimeError if a callback
+// throws.
+mrb_value js_pump(mrb_state* mrb, mrb_value self) {
+  mrb_float now = 0;
+  mrb_get_args(mrb, "|f", &now);
+
+  JSContext* ctx = host();
+  if (!ctx)
+    mrb_raise(mrb, E_RUNTIME_ERROR, "MV::JS: failed to create the JS host");
+
+  JSValue global = JS_GetGlobalObject(ctx);
+  JSValue fn = JS_GetPropertyStr(ctx, global, "__mv_runFrame");
+  JSValue arg = JS_NewFloat64(ctx, now);
+  JSValue r = JS_Call(ctx, fn, global, 1, &arg);
+  JS_FreeValue(ctx, arg);
+  JS_FreeValue(ctx, fn);
+  JS_FreeValue(ctx, global);
+
+  std::string error;
+  if (JS_IsException(r)) {
+    JSValue exc = JS_GetException(ctx);
+    const char* msg = JS_ToCString(ctx, exc);
+    error = std::string("MV::JS.pump failed: ") +
+            (msg ? msg : "JavaScript exception");
+    if (msg)
+      JS_FreeCString(ctx, msg);
+    JS_FreeValue(ctx, exc);
+  }
+  JS_FreeValue(ctx, r);
+
+  // Drain promise microtasks, unless a frame callback already errored.
+  if (error.empty()) {
+    JSContext* job_ctx;
+    int status;
+    while ((status = JS_ExecutePendingJob(g_rt, &job_ctx)) > 0) {
+    }
+    if (status < 0) {
+      JSValue exc = JS_GetException(ctx);
+      const char* msg = JS_ToCString(ctx, exc);
+      error = std::string("MV::JS.pump job failed: ") +
+              (msg ? msg : "JavaScript exception");
+      if (msg)
+        JS_FreeCString(ctx, msg);
+      JS_FreeValue(ctx, exc);
+    }
+  }
+
+  if (!error.empty())
+    mrb_raise(mrb, E_RUNTIME_ERROR, error.c_str());
+  return mrb_nil_value();
+}
+
 }  // namespace
 
 extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
   mrb_define_class_method(mrb, js, "eval", js_eval, MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, js, "pump", js_pump, MRB_ARGS_OPT(1));
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}

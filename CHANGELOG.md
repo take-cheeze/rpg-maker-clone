@@ -12,8 +12,13 @@ All notable changes to this project will be documented in this file.
   `window`/`self`/`global`/`globalThis` aliases, a `console`
   (`log`/`info`/`warn`/`error`), a native synchronous file reader
   (`__mv_readFileSync`), and a minimal synchronous `XMLHttpRequest` built on it
-  (how MV's `DataManager` loads `data/*.json`). Covered by
-  `mruby-mvjs/test/host_test.rb`
+  (how MV's `DataManager` loads `data/*.json`). Also the event-loop machinery —
+  `setTimeout`/`setInterval`/`clearTimeout`, `requestAnimationFrame`/
+  `cancelAnimationFrame` and `performance.now` — driven by a new `MV::JS.pump`
+  (`now_ms`) that fires due timers and animation-frame callbacks and drains
+  promise microtasks, so the JS game shares the engine's fixed cadence instead
+  of blocking; plus passive `navigator`/`location`/`localStorage` stubs. Covered
+  by `mruby-mvjs/test/host_test.rb`
 - Embedded JavaScript engine for RPG Maker MV support (milestone M2): added
   quickjs-ng as the `3rd/quickjs` git submodule and static-linked its `qjs`
   library into both the main executable and the mruby test binary. `MV::JS.eval` (in
