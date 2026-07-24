@@ -111,6 +111,16 @@ jobs:
       # the cached path below so the cache actually survives between runs.
       CCACHE_DIR: /home/runner/.ccache
       CCACHE_MAXSIZE: "2G"
+      # Make cache entries reproducible across runs so the warm cache actually
+      # hits. Without this the RelWithDebInfo (-g) objects embed the absolute
+      # build path and the hash keys on the compiler mtime, both of which cost
+      # hits; BASEDIR+NOHASHDIR strip the paths, COMPILERCHECK=content ignores
+      # the (nix-store) compiler timestamp, and the sloppiness flags stop
+      # freshly-checked-out header mtimes and __DATE__/__TIME__ from missing.
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_COMPILERCHECK: content
+      CCACHE_SLOPPINESS: "time_macros,include_file_ctime,include_file_mtime,system_headers,locale,pch_defines"
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
