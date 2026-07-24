@@ -98,3 +98,31 @@ The work below is roughly ordered by the critical path to a walkable game
 - Support game library features of RGSS which could be found in https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 
 ## RPG Maker with JavaScript
+
+Support the JavaScript makers (RPG Maker **MV**, then **MZ**) by embedding a real
+JavaScript engine (**quickjs-ng**) and running each game's own scripts
+unmodified, rather than reimplementing the engine in mruby. MV is targeted first
+because it can render through PIXI.js's Canvas2D path, which maps onto the
+existing `mruby-rgss::Bitmap` blit primitives; MZ is WebGL-only and follows.
+Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
+
+- ✅ **M1 — Foundation.** New `mruby-mvjs` gem (thin Ruby orchestration layer:
+  MV project detection, canonical script load order, boot/pump handshake with a
+  clearly-marked seam for the JS host). MV directory sniffing wired into
+  `src/main.cxx` (`js/rpg_core.js` + `data/System.json`). Host-runnable specs
+  for the pure logic. No JS engine yet, so an MV game is detected but reports the
+  runtime as pending instead of misbehaving.
+- 🚧 **M2 — Engine host.** Vendor quickjs-ng as `3rd/quickjs`, static-link it,
+  expose a minimal `MV::JS` (open runtime, eval a script, marshal basic values).
+  Verified by a spec that evaluates JavaScript and checks the result.
+- 🚧 **M3 — Boot to title.** Host-global shims (`window`/`document`/`navigator`/
+  `location`/`requestAnimationFrame`/`setTimeout`/`XMLHttpRequest`/`Image`/
+  `localStorage`/`require('fs'|'path')`), the asset/JSON IO bridge, and the
+  rAF/event-loop pump — enough to load the core scripts and reach `Scene_Title`.
+- 🚧 **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
+  renderer, so the title screen and map actually draw through `mruby-rgss`.
+- 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
+  `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
+  in the SDL window and the sixel/iTerm2 terminals.
+- 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
+  on the same foundation (`js/rmmz_*.js`).

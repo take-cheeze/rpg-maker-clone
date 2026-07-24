@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Groundwork for JavaScript RPG Maker (MV) support (approach: embed a real
+  JavaScript engine and run the game's own scripts, rather than reimplement the
+  engine in mruby):
+  - New `mruby-mvjs` gem — a thin Ruby orchestration layer (`MV`) that detects
+    an MV project (`js/rpg_core.js` + `data/System.json`), knows the canonical
+    MV script load order, and defines the boot/pump handshake with a
+    clearly-marked seam where the embedded runtime plugs in. The runtime
+    (quickjs-ng) is not built into the binary yet, so an MV game is detected but
+    reports that support is under construction instead of misbehaving
+  - `src/main.cxx` now sniffs the MV directory layout and instantiates `MV`,
+    alongside the existing RPG2k/RPGXP detection
+  - Host-runnable specs (`mruby-mvjs/test`) covering project detection and the
+    script load order
+  - Documented the decision, layered architecture and milestone roadmap in
+    `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
 - Playable gameplay after "New Game": `RPG2k#start_new_game` builds the party
   (`Game::Party`/`Game::Actor`) from the database, reads the start position from
   the map tree, loads the starting map and enters a walkable `Scene::Map`. The

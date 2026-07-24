@@ -70,7 +70,7 @@ target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
 # the next `make`, with no manual `cmake` re-run. Header changes under src/ are
 # caught too so an edit to a private header still forces the archive to be
 # rebuilt.
-foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp)
+foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-mvjs)
   file(
     GLOB_RECURSE
     src

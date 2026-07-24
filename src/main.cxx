@@ -233,6 +233,11 @@ int main(int argc, char** argv) {
   mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+  } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
+             fs::exists(game_dir_path / "data" / "System.json")) {
+    // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
+    // See docs/adr/0004-javascript-maker-mv-quickjs.md.
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
   } else {
