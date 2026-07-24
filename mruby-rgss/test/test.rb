@@ -235,3 +235,27 @@ assert "RGSS::Bitmap reports a detailed reason when an XYZ fails to decode" do
     File.delete(path) if File.exist?(path)
   end
 end
+
+assert "RGSS::Bitmap loads a PNG whose deflate stream trips \"bad dist\"" do
+  # A 4x1 grayscale PNG hand-encoded so its IDAT references a zero pre-history
+  # window (distance-too-far-back). stb_image and strict zlib reject it with
+  # "bad dist"; the tolerant fallback resolves the out-of-range reference to
+  # zeros. Pixels decode to grayscale 0, 0, 0, 9.
+  bytes = "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
+          "\x00\x00\x00\x04\x00\x00\x00\x01\x08\x00\x00\x00\x00\xdc\x57\x50" \
+          "\x11\x00\x00\x00\x0b\x49\x44\x41\x54\x78\x01\x63\x00\x62\x4e\x00" \
+          "\x00\x0e\x00\x0a\x61\xd4\xa9\x6f\x00\x00\x00\x00\x49\x45\x4e\x44" \
+          "\xae\x42\x60\x82"
+  path = "test-baddist.png"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    b = RGSS::Bitmap.new(path)
+    assert_equal 4, b.width
+    assert_equal 1, b.height
+    assert_equal 0.0, b.get_pixel(0, 0).red
+    assert_equal 9.0, b.get_pixel(3, 0).red
+    assert_equal 255.0, b.get_pixel(3, 0).alpha
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end

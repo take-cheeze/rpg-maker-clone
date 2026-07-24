@@ -126,6 +126,15 @@ All notable changes to this project will be documented in this file.
   - Added directional input helpers (dir4, dir8)
 
 ### Fixed
+- Windowskin (and other graphic) loading now works for PNGs whose `IDAT`
+  deflate stream references data before the start of the output. The PNG/zlib
+  spec forbids this, so stb_image (and zlib itself) reject such files with
+  `bad dist` / "invalid distance too far back" -- but the producers, including
+  RPG Maker System graphics, rely on the missing pre-history reading as zeros.
+  Added a self-contained tolerant PNG decoder (lenient inflate + scanline
+  unfiltering + palette/grayscale/truecolour expansion) in `bmp_init_file` that
+  runs only as a fallback after stb_image refuses a file, so those windowskins
+  load instead of dropping to the plain panel
 - Windowskin loading now works for games whose System graphic is stored in RPG
   Maker's native XYZ format. `RGSS::Bitmap` already searched for `.xyz` files,
   but stb_image could not decode them, so an XYZ windowskin silently fell back
