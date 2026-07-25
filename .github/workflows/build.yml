@@ -105,22 +105,6 @@ jobs:
 
   wasm:
     runs-on: ubuntu-24.04
-    env:
-      # Cache emcc/em++ compilations with ccache (sccache, the dev-shell default,
-      # does not support emcc and silently compiles uncached). CCACHE_DIR matches
-      # the cached path below so the cache actually survives between runs.
-      CCACHE_DIR: /home/runner/.ccache
-      CCACHE_MAXSIZE: "2G"
-      # Make cache entries reproducible across runs so the warm cache actually
-      # hits. Without this the RelWithDebInfo (-g) objects embed the absolute
-      # build path and the hash keys on the compiler mtime, both of which cost
-      # hits; BASEDIR+NOHASHDIR strip the paths, COMPILERCHECK=content ignores
-      # the (nix-store) compiler timestamp, and the sloppiness flags stop
-      # freshly-checked-out header mtimes and __DATE__/__TIME__ from missing.
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_COMPILERCHECK: content
-      CCACHE_SLOPPINESS: "time_macros,include_file_ctime,include_file_mtime,system_headers,locale,pch_defines"
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
@@ -136,9 +120,7 @@ jobs:
 
       - uses: actions/cache@v6
         with:
-          path: |
-            ~/.ccache
-            ~/.emscripten_cache
+          path: ~/.emscripten_cache
           key: ${{ runner.os }}-emcc-${{ github.run_id }}
           restore-keys: ${{ runner.os }}-emcc-
 
@@ -153,18 +135,12 @@ jobs:
       - name: cmake
         run: |
           nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
-            emcmake cmake -S . -B wasm-build -GNinja \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            emcmake cmake -S . -B wasm-build -GNinja
 
       - name: build
         run: |
           nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
-
-      - name: ccache stats
-        if: always()
-        run: nix develop -c ccache -s
 
       - uses: actions/upload-artifact@v7
         with:
