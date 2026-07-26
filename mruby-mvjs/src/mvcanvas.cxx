@@ -392,11 +392,12 @@ const char* kCanvasPreamble = R"MVJS(
 
   // Image: MV's Bitmap loads PNGs with `new Image()` + `.src = url`. We decode
   // synchronously (stb_image, via __mv_imageLoad) into a canvas handle, but fire
-  // onload/onerror asynchronously (on the next frame, via setTimeout) to match
+  // onload/onerror on the next host frame (via requestAnimationFrame) to match
   // the browser contract MV's loader relies on — handlers are attached after src
-  // is set, and MV polls ImageManager.isReady() across frames. The decoded
-  // canvas handle is exposed as `__h`, so drawImage(image, ...) works through the
-  // same srcHandle() path a canvas does.
+  // is set, and MV polls ImageManager.isReady() across frames. rAF is used
+  // rather than setTimeout so the deferral is independent of the host clock. The
+  // decoded canvas handle is exposed as `__h`, so drawImage(image, ...) works
+  // through the same srcHandle() path a canvas does.
   function ImageEl() {
     this.__h = 0;
     this.width = 0;
@@ -413,7 +414,7 @@ const char* kCanvasPreamble = R"MVJS(
       this._src = v;
       this.complete = false;
       var h = g.__mv_imageLoad(v);
-      g.setTimeout(function () {
+      g.requestAnimationFrame(function () {
         if (h) {
           self.__h = h;
           self.width = g.__mv_canvasWidth(h);
@@ -423,7 +424,7 @@ const char* kCanvasPreamble = R"MVJS(
         } else if (typeof self.onerror === 'function') {
           self.onerror(new Error('image load failed: ' + v));
         }
-      }, 0);
+      });
     },
   });
   ImageEl.prototype.addEventListener = function (type, cb) {

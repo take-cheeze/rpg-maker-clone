@@ -63,10 +63,13 @@ assert 'MV Image decodes a PNG and serves as a drawImage source' do
   begin
     MV::JS.base_dir = ""
     # onload is async (browser-like): not fired until the host pumps a frame.
+    # It fires from requestAnimationFrame, so a plain pump advances it (the
+    # timestamp is irrelevant — kept small so the shared host clock is not
+    # perturbed for later timer tests).
     MV::JS.eval("globalThis.IMG=new Image(); globalThis.IMG_ok=false; " \
                 "IMG.onload=function(){IMG_ok=true;}; IMG.src='#{path}';")
     assert_equal false, MV::JS.eval("IMG_ok")
-    MV::JS.pump(1_000_000_000.0)
+    MV::JS.pump(0.0)
     assert_equal true, MV::JS.eval("IMG_ok")
     assert_equal 2, MV::JS.eval("IMG.width")
     assert_equal 2, MV::JS.eval("IMG.height")
@@ -84,6 +87,6 @@ assert 'MV Image fires onerror for a missing file' do
   MV::JS.base_dir = ""
   MV::JS.eval("globalThis.IE=new Image(); globalThis.IE_err=false; " \
               "IE.onerror=function(){IE_err=true;}; IE.src='definitely_missing_image.png';")
-  MV::JS.pump(1_000_000_000.0)
+  MV::JS.pump(0.0)
   assert_equal true, MV::JS.eval("IE_err")
 end
