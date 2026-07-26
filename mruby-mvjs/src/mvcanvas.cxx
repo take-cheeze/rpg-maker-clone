@@ -16,7 +16,12 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
+
+// stb_image is compiled (STB_IMAGE_IMPLEMENTATION) by mruby-rgss (lib.cxx), so
+// we include only the declarations here and the decode symbols resolve at link.
+#include <stb_image.h>
 
 namespace {
 
@@ -204,6 +209,37 @@ JSValue js_get_pixel(JSContext* ctx,
   return arr;
 }
 
+// __mv_imageLoad(path) -> a canvas handle holding the decoded image (0 on
+// failure). MV's Bitmap loads PNGs through `new Image()`; we decode them with
+// stb_image (RGBA8) straight into a canvas so the result can be used as a
+// drawImage source, exactly like a canvas. The path is game-relative and rooted
+// via mv_resolve_path.
+JSValue js_image_load(JSContext* ctx,
+                      JSValueConst,
+                      int argc,
+                      JSValueConst* argv) {
+  if (argc < 1)
+    return JS_NewInt32(ctx, 0);
+  const char* path = JS_ToCString(ctx, argv[0]);
+  if (!path)
+    return JS_NewInt32(ctx, 0);
+  const std::string resolved = mv_resolve_path(path);
+  JS_FreeCString(ctx, path);
+
+  int w = 0, h = 0, comp = 0;
+  unsigned char* data = stbi_load(resolved.c_str(), &w, &h, &comp, 4);
+  if (!data)
+    return JS_NewInt32(ctx, 0);
+
+  Canvas* c = new Canvas();
+  c->resize(w, h);
+  std::memcpy(c->px.data(), data,
+              static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+  stbi_image_free(data);
+  g_canvases.push_back(c);
+  return JS_NewInt32(ctx, static_cast<int>(g_canvases.size()));
+}
+
 // The Canvas2D JavaScript shim: document, HTMLCanvasElement and the 2D context.
 const char* kCanvasPreamble = R"MVJS(
 (function (g) {
@@ -353,6 +389,49 @@ const char* kCanvasPreamble = R"MVJS(
     documentElement: { style: {} },
     head: { appendChild: function () {} },
   };
+
+  // Image: MV's Bitmap loads PNGs with `new Image()` + `.src = url`. We decode
+  // synchronously (stb_image, via __mv_imageLoad) into a canvas handle, but fire
+  // onload/onerror asynchronously (on the next frame, via setTimeout) to match
+  // the browser contract MV's loader relies on — handlers are attached after src
+  // is set, and MV polls ImageManager.isReady() across frames. The decoded
+  // canvas handle is exposed as `__h`, so drawImage(image, ...) works through the
+  // same srcHandle() path a canvas does.
+  function ImageEl() {
+    this.__h = 0;
+    this.width = 0;
+    this.height = 0;
+    this.onload = null;
+    this.onerror = null;
+    this.complete = false;
+    this._src = '';
+  }
+  Object.defineProperty(ImageEl.prototype, 'src', {
+    get: function () { return this._src; },
+    set: function (v) {
+      var self = this;
+      this._src = v;
+      this.complete = false;
+      var h = g.__mv_imageLoad(v);
+      g.setTimeout(function () {
+        if (h) {
+          self.__h = h;
+          self.width = g.__mv_canvasWidth(h);
+          self.height = g.__mv_canvasHeight(h);
+          self.complete = true;
+          if (typeof self.onload === 'function') self.onload();
+        } else if (typeof self.onerror === 'function') {
+          self.onerror(new Error('image load failed: ' + v));
+        }
+      }, 0);
+    },
+  });
+  ImageEl.prototype.addEventListener = function (type, cb) {
+    if (type === 'load') this.onload = cb;
+    else if (type === 'error') this.onerror = cb;
+  };
+  ImageEl.prototype.removeEventListener = function () {};
+  g.Image = ImageEl;
 })(this);
 )MVJS";
 
@@ -376,6 +455,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasClearRect", js_clear_rect, 5);
   install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 11);
   install(ctx, global, "__mv_canvasGetPixel", js_get_pixel, 3);
+  install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   JS_FreeValue(ctx, global);
 
   JSValue r = JS_Eval(ctx, kCanvasPreamble, std::strlen(kCanvasPreamble),

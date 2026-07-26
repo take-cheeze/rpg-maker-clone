@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV PNG image loading and asset path rooting (milestone M4): `new Image()` now
+  decodes a game PNG through stb_image (`__mv_imageLoad` in `mvcanvas.cxx`)
+  straight into a native RGBA canvas, exposing `width`/`height` and firing
+  `onload`/`onerror` asynchronously (on the next host frame) as the browser
+  contract MV's `Bitmap` loader expects; the decoded image is a first-class
+  `drawImage` source. Because the process is not chdir'd into the game dir,
+  MV's game-relative asset requests (`data/*.json`, `img/*.png`, saves) are now
+  rooted at the game directory via a shared `mv_resolve_path`, configured from
+  Ruby with `MV::JS.base_dir=` at boot. Covered by `mruby-mvjs/test`
+  (`canvas_test.rb` image decode/draw, `host_test.rb` base-dir resolution).
 - `scripts/download-lunatic-core.bash`: fetches a small, complete RPG Maker MV
   project (KinoAR/Lunatic-Core — full corescript + `data/*.json` + `img/`) into
   the git-ignored `data/` dir as the MV test bed, mirroring the RPG Maker 2000

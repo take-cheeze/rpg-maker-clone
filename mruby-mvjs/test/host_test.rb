@@ -36,6 +36,29 @@ assert 'MV host XMLHttpRequest reports status 404 for a missing file' do
   assert_equal 404, status
 end
 
+assert 'MV::JS.base_dir roots game-relative asset paths' do
+  path = "mvjs_base_probe.json"
+  File.open(path, "w") { |f| f.write('{"v":7}') }
+  begin
+    # With no base dir, a bare relative path resolves from the cwd and is found.
+    MV::JS.base_dir = ""
+    ok = MV::JS.eval("var x=new XMLHttpRequest(); x.open('GET','#{path}'); x.send(); x.status")
+    assert_equal 200, ok
+    # Setting a base dir prefixes bare paths, so the same name now resolves
+    # under it and misses (proving the rooting is applied)...
+    MV::JS.base_dir = "no_such_dir"
+    missed = MV::JS.eval("var y=new XMLHttpRequest(); y.open('GET','#{path}'); y.send(); y.status")
+    assert_equal 404, missed
+    # ...while a path already rooted at the base dir is not prefixed twice.
+    MV::JS.base_dir = "."
+    v = MV::JS.eval("var z=new XMLHttpRequest(); z.open('GET','./#{path}'); z.send(); JSON.parse(z.responseText).v")
+    assert_equal 7, v
+  ensure
+    MV::JS.base_dir = ""
+    File.delete(path) rescue nil
+  end
+end
+
 assert 'MV host XMLHttpRequest fires onload with the response text' do
   path = "mvjs_xhr_onload.json"
   File.open(path, "w") { |f| f.write('[1,2,3]') }

@@ -31,6 +31,11 @@
 
 namespace {
 
+// The game's base directory (see mv_resolve_path). Empty until Ruby sets it via
+// `MV::JS.base_dir=` at boot; while empty, paths pass through untouched (so the
+// host specs, which read fixtures by their own paths, are unaffected).
+std::string g_base_dir;
+
 // Read a whole file into `out`. Returns false if it cannot be opened.
 bool read_file(const char* path, std::string& out) {
   std::FILE* f = std::fopen(path, "rb");
@@ -77,14 +82,13 @@ JSValue js_read_file(JSContext* ctx,
   const char* path = JS_ToCString(ctx, argv[0]);
   if (!path)
     return JS_EXCEPTION;
-  std::string data;
-  if (!read_file(path, data)) {
-    JSValue err = JS_ThrowReferenceError(
-        ctx, "__mv_readFileSync: cannot open '%s'", path);
-    JS_FreeCString(ctx, path);
-    return err;
-  }
+  const std::string resolved = mv_resolve_path(path);
   JS_FreeCString(ctx, path);
+  std::string data;
+  if (!read_file(resolved.c_str(), data)) {
+    return JS_ThrowReferenceError(ctx, "__mv_readFileSync: cannot open '%s'",
+                                  resolved.c_str());
+  }
   return JS_NewStringLen(ctx, data.data(), data.size());
 }
 
@@ -98,23 +102,20 @@ JSValue js_write_file(JSContext* ctx,
   const char* path = JS_ToCString(ctx, argv[0]);
   if (!path)
     return JS_EXCEPTION;
+  const std::string resolved = mv_resolve_path(path);
+  JS_FreeCString(ctx, path);
   size_t dlen = 0;
   const char* data = JS_ToCStringLen(ctx, &dlen, argv[1]);
-  if (!data) {
-    JS_FreeCString(ctx, path);
+  if (!data)
     return JS_EXCEPTION;
-  }
-  std::FILE* f = std::fopen(path, "wb");
+  std::FILE* f = std::fopen(resolved.c_str(), "wb");
   if (!f) {
-    JSValue err = JS_ThrowReferenceError(
-        ctx, "__mv_writeFileSync: cannot write '%s'", path);
-    JS_FreeCString(ctx, path);
     JS_FreeCString(ctx, data);
-    return err;
+    return JS_ThrowReferenceError(ctx, "__mv_writeFileSync: cannot write '%s'",
+                                  resolved.c_str());
   }
   std::fwrite(data, 1, dlen, f);
   std::fclose(f);
-  JS_FreeCString(ctx, path);
   JS_FreeCString(ctx, data);
   return JS_UNDEFINED;
 }
@@ -129,12 +130,25 @@ JSValue js_file_exists(JSContext* ctx,
   const char* path = JS_ToCString(ctx, argv[0]);
   if (!path)
     return JS_EXCEPTION;
-  std::FILE* f = std::fopen(path, "rb");
+  const std::string resolved = mv_resolve_path(path);
+  JS_FreeCString(ctx, path);
+  std::FILE* f = std::fopen(resolved.c_str(), "rb");
   const bool exists = f != nullptr;
   if (f)
     std::fclose(f);
-  JS_FreeCString(ctx, path);
   return JS_NewBool(ctx, exists);
+}
+
+// MV::JS.base_dir=(path) -> set the game root that game-relative asset paths
+// (data/*.json, img/*.png, saves) are resolved against. Set once at boot.
+mrb_value js_set_base_dir(mrb_state* mrb, mrb_value self) {
+  const char* p;
+  mrb_int len;
+  mrb_get_args(mrb, "s", &p, &len);
+  g_base_dir.assign(p, static_cast<size_t>(len));
+  while (!g_base_dir.empty() && g_base_dir.back() == '/')
+    g_base_dir.pop_back();
+  return mrb_nil_value();
 }
 
 // The host-global bootstrap, evaluated once when the context is created. Kept
@@ -509,12 +523,28 @@ mrb_value js_pump(mrb_state* mrb, mrb_value self) {
 
 }  // namespace
 
+// Root a game-relative path at the configured base dir. Declared in mvhost.hxx
+// and shared with the Canvas2D image loader (mvcanvas.cxx). Kept at file scope
+// (external linkage) so it can reach the anonymous-namespace `g_base_dir`.
+std::string mv_resolve_path(const std::string& p) {
+  if (p.empty() || p[0] == '/' || g_base_dir.empty())
+    return p;
+  // Already rooted at the base dir (e.g. a path the Ruby side pre-joined)?
+  if (p.size() > g_base_dir.size() &&
+      p.compare(0, g_base_dir.size(), g_base_dir) == 0 &&
+      p[g_base_dir.size()] == '/')
+    return p;
+  return g_base_dir + "/" + p;
+}
+
 extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
   mrb_define_class_method(mrb, js, "eval", js_eval, MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, js, "eval_file", js_eval_file, MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, js, "pump", js_pump, MRB_ARGS_OPT(1));
+  mrb_define_class_method(mrb, js, "base_dir=", js_set_base_dir,
+                          MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}

@@ -48,3 +48,42 @@ assert 'MV canvas getImageData reads back a region' do
   assert_equal 8, MV::JS.eval("ID.data.length")
   assert_equal "1,2,3,255", MV::JS.eval("ID.data.slice(0,4).join(',')")
 end
+
+# A 2x2 RGBA PNG: pixel (0,0) is opaque red, the other three opaque green.
+MV_IMAGE_PNG =
+  "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
+  "\x00\x00\x00\x02\x00\x00\x00\x02\x08\x06\x00\x00\x00\x72\xb6\x0d" \
+  "\x24\x00\x00\x00\x11\x49\x44\x41\x54\x78\xda\x63\xf8\xcf\xc0\xf0" \
+  "\x1f\x0c\xa1\xd4\x7f\x00\x44\xcd\x07\xf9\x8c\x5e\x33\x5b\x00\x00" \
+  "\x00\x00\x49\x45\x4e\x44\xae\x42\x60\x82"
+
+assert 'MV Image decodes a PNG and serves as a drawImage source' do
+  path = "mvjs_image_fixture.png"
+  File.open(path, "wb") { |f| f.write(MV_IMAGE_PNG) }
+  begin
+    MV::JS.base_dir = ""
+    # onload is async (browser-like): not fired until the host pumps a frame.
+    MV::JS.eval("globalThis.IMG=new Image(); globalThis.IMG_ok=false; " \
+                "IMG.onload=function(){IMG_ok=true;}; IMG.src='#{path}';")
+    assert_equal false, MV::JS.eval("IMG_ok")
+    MV::JS.pump(1_000_000_000.0)
+    assert_equal true, MV::JS.eval("IMG_ok")
+    assert_equal 2, MV::JS.eval("IMG.width")
+    assert_equal 2, MV::JS.eval("IMG.height")
+    # Draw the decoded image into a canvas and read pixels back.
+    MV::JS.eval("globalThis.IC=document.createElement('canvas'); IC.width=2; " \
+                "IC.height=2; IC.getContext('2d').drawImage(IMG,0,0);")
+    assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(IC.__h,0,0).join(',')")
+    assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(IC.__h,1,1).join(',')")
+  ensure
+    File.delete(path) rescue nil
+  end
+end
+
+assert 'MV Image fires onerror for a missing file' do
+  MV::JS.base_dir = ""
+  MV::JS.eval("globalThis.IE=new Image(); globalThis.IE_err=false; " \
+              "IE.onerror=function(){IE_err=true;}; IE.src='definitely_missing_image.png';")
+  MV::JS.pump(1_000_000_000.0)
+  assert_equal true, MV::JS.eval("IE_err")
+end

@@ -14,6 +14,10 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # into the main executable — is linked into the mruby test binary here, along
   # with the C libraries quickjs depends on (libm and pthreads).
   cxx.include_paths << "#{dir}/../3rd/quickjs"
+  # stb_image.h for PNG decoding in the Image loader (mvcanvas.cxx). The
+  # implementation (STB_IMAGE_IMPLEMENTATION) is compiled by mruby-rgss, so only
+  # the header is needed here; the decode symbols resolve at link.
+  cxx.include_paths << "#{dir}/../3rd/stb"
   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/quickjs"
   linker.libraries << "qjs" << "m" << "pthread"
 end

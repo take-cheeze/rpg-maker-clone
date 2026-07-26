@@ -127,6 +127,10 @@ class MV
   # library files are skipped; the game's own scripts are expected to be present.
   def boot
     @clock = 0.0
+    # MV's own scripts request data/assets with game-relative paths (e.g.
+    # `data/System.json`, `img/system/Window.png`); root them at the game dir
+    # since the process is not chdir'd into it.
+    MV::JS.base_dir = @game_dir
     boot_scripts.each do |script|
       path = "#{@game_dir}/#{script}"
       MV::JS.eval_file(path) if File.exist?(path)
