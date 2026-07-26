@@ -83,7 +83,16 @@ endif()
 set(LIBMRUBY_A "${MRUBY_BUILD_DIR}/${MRUBY_TARGET_NAME}/lib/libmruby.a")
 set_target_properties(mruby PROPERTIES IMPORTED_LOCATION "${LIBMRUBY_A}")
 list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
-target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
+# mruby 4.0 always enables presym, so <mruby.h> unconditionally pulls in
+# <mruby/presym.h> and its generated mruby/presym/id.h. That header lives in the
+# build tree (produced by the mruby build below), not in the source include dir,
+# so expose it too. Create it now so CMake's imported-target check — which
+# requires INTERFACE include dirs to exist at configure time — passes before the
+# build populates it.
+set(MRUBY_GEN_INCLUDE "${MRUBY_BUILD_DIR}/${MRUBY_TARGET_NAME}/include")
+file(MAKE_DIRECTORY "${MRUBY_GEN_INCLUDE}")
+target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include"
+                                           "${MRUBY_GEN_INCLUDE}")
 # Collect the source of each local mrbgem so libmruby.a rebuilds when any of it
 # changes. GLOB_RECURSE also picks up files in nested subdirectories, and
 # CONFIGURE_DEPENDS makes CMake re-run the glob at build time: adding or

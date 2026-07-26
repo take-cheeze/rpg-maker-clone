@@ -3,7 +3,14 @@ def rpg_maker_gems(conf)
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
   conf.gem core: 'mruby-io'
-  conf.gem core: 'mruby-print'
+  # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
+  # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
+
+  # mruby 4.0's compiler emits any integer literal wider than 32 bits (e.g. the
+  # 0xFFFFFFFF masks in the LCF codecs) as a bignum pool entry, and its default
+  # mrb_int is 32-bit, so such literals need mruby-bigint at runtime or they
+  # raise "integer overflow" on load.
+  conf.gem core: 'mruby-bigint'
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
@@ -37,14 +44,9 @@ MRuby::Build.new do |conf|
 
     conf.gem core: 'mruby-bin-mrbc'
     rpg_maker_gems(conf)
-
-    # The host mrbc pre-interns symbols (presym) while compiling the target's
-    # Ruby sources, baking symbol *indices* into the bytecode. The host and
-    # emscripten builds pull slightly different dependency gems, so their presym
-    # tables diverge and the target mruby then reads bytecode symbols at the
-    # wrong indices and corrupts its init. Disabling presym makes the bytecode
-    # reference symbols by name, which is portable across the two builds.
-    conf.disable_presym
+    # mruby 4.0 always enables presym (MRB_NO_PRESYM / disable_presym were
+    # removed) and serializes bytecode symbols by name, so the host mrbc and the
+    # emscripten target stay compatible even though their presym tables differ.
   else
     enable_test
 
@@ -73,10 +75,6 @@ if emscripten
     conf.host_target = 'wasm32-unknown-linux'
 
     enable_debug
-
-    # Must match the host build so the (name-based) bytecode mrbc emits is
-    # loadable here; see the note on the host build above.
-    conf.disable_presym
 
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == "-O0" }

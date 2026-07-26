@@ -99,6 +99,31 @@ All notable changes to this project will be documented in this file.
   viewport stacks on the screen. LVGL delete events invalidate the mruby
   wrappers so a viewport can safely own (and free) its child sprites
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
+
+### Changed
+- Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
+  snapshot). `build_config.rb` drops the `mruby-print` gem (removed in 4.0;
+  `Kernel#p`/`#print` are now in the core and `mruby-io` supplies
+  `#print`/`#puts`/`#printf`) and the `disable_presym` calls (presym is always
+  enabled in 4.0, and bytecode serializes symbols by name so the host `mrbc`
+  and the emscripten target stay compatible). `CMakeLists.txt` also exposes
+  mruby's generated build-tree include dir on the `mruby` target, since `mruby.h`
+  now unconditionally pulls in the generated `mruby/presym/id.h`. mruby 4.0 also
+  removed per-state allocators (`mrb_open_allocf`), so the native build now
+  overrides the global `mrb_basic_alloc_func` to share lvgl's heap pool, and the
+  profiler's allocation hook moved to the matching `(ptr, size)` signature. The
+  `mruby-bigint` gem is now enabled: mruby 4.0's compiler encodes integer
+  literals wider than 32 bits (e.g. the `0xFFFFFFFF` masks in the LCF codecs) as
+  bignum literals that need it at runtime. The `mruby-marshal` submodule is
+  bumped to pick up its 4.0 fix (`Marshal.dump` is registered with its real
+  arity so mruby 4.0's stricter argument-count check accepts the optional
+  port/limit arguments)
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
+- `RGSS::Window` is now assembled from three layered sprites inside a viewport
+  (windowskin background+frame, selection cursor, and contents/text) instead of
+  compositing everything into one sprite's bitmap. The viewport clips the layers
+  to the window rectangle, and updating the cursor or text no longer re-blits
+  the windowskin
 - Playable gameplay after "New Game": `RPG2k#start_new_game` builds the party
   (`Game::Party`/`Game::Actor`) from the database, reads the start position from
   the map tree, loads the starting map and enters a walkable `Scene::Map`. The

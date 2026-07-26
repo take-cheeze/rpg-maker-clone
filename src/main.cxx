@@ -68,7 +68,13 @@ namespace {
 
 namespace fs = std::filesystem;
 
-void* lvallocf(mrb_state* M, void* p, size_t s, void* ud) {
+#ifndef __EMSCRIPTEN__
+// mruby's heap is routed through lvgl's memory pool so both are accounted under
+// one allocator. mruby 4.0 removed per-state allocators (mrb_open_allocf); a
+// program now customizes allocation by overriding the global
+// mrb_basic_alloc_func (see below), whose (ptr, size) contract this matches:
+// size 0 frees, a non-null ptr reallocs, otherwise it allocates.
+void* lvallocf(void* p, size_t s) {
   if (s == 0) {
     lv_free(p);
     return nullptr;
@@ -78,6 +84,13 @@ void* lvallocf(mrb_state* M, void* p, size_t s, void* ud) {
     return lv_malloc(s);
   }
 }
+
+// When --profile is on, allocations are routed through the profiler so it can
+// count activity (it forwards to lvallocf); otherwise they go straight to
+// lvallocf, so the unprofiled build pays no extra indirection. Set from main()
+// before mruby is opened.
+bool g_alloc_through_profiler = false;
+#endif
 
 fs::path wine_prefix() {
   static const char* prefix_env = std::getenv("WINEPREFIX");
@@ -133,6 +146,22 @@ void main_loop() {
 #endif
 
 }  // namespace
+
+#ifndef __EMSCRIPTEN__
+// mruby 4.0 has no per-state allocator hook; a program overrides the global
+// mrb_basic_alloc_func to supply its own allocator. Defining it here means the
+// linker never pulls mruby's default from libmruby.a. Route mruby's heap
+// through lvgl's pool (via lvallocf), optionally counting through the profiler.
+//
+// The Emscripten build deliberately does NOT override it (see the mrb_open()
+// note in main): lvgl's TLSF pool only aligns to 4 bytes on wasm32, which
+// breaks mruby's word boxing, so there mruby keeps its default 16-byte-aligned
+// malloc.
+extern "C" void* mrb_basic_alloc_func(void* p, size_t size) {
+  return g_alloc_through_profiler ? profiler_allocf(p, size)
+                                  : lvallocf(p, size);
+}
+#endif
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
@@ -224,15 +253,14 @@ int main(int argc, char** argv) {
   // aligned).
   std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
 #else
-  // With profiling on, route mruby's allocator through the profiler so it can
-  // count allocation activity; it forwards every call to lvallocf. Off by
-  // default, so the unprofiled build allocates through lvallocf directly.
-  profiler_allocf_t allocf = lvallocf;
-  if (profiling) {
+  // mruby's allocator is the global mrb_basic_alloc_func override above, which
+  // routes through lvgl's pool. With profiling on, register lvallocf as the
+  // profiler's downstream and have the override count through it; this must
+  // happen before mrb_open() takes the first allocation.
+  if (profiling)
     profiler_set_downstream_allocf(lvallocf);
-    allocf = profiler_allocf;
-  }
-  std::shared_ptr<mrb_state> mrb(mrb_open_allocf(allocf, nullptr), mrb_close);
+  g_alloc_through_profiler = profiling;
+  std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
 #endif
   mrb_state* M = mrb.get();
   CHECK_NO_EXC(M);

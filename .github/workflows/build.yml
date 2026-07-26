@@ -136,19 +136,27 @@ jobs:
 
       - uses: actions/cache@v6
         with:
-          path: |
-            ~/.ccache
-            ~/.emscripten_cache
+          path: ~/.emscripten_cache
           key: ${{ runner.os }}-emcc-${{ github.run_id }}
           restore-keys: ${{ runner.os }}-emcc-
 
+      # Emscripten builds its system libraries (libc/libc++, and the -fexceptions
+      # variant this project forces) on the first emcc call, which costs ~50s of
+      # the configure step. The nixpkgs emscripten setup hook points EM_CACHE at
+      # an ephemeral temp dir, so that work is thrown away every run and the
+      # cached ~/.emscripten_cache is never written. Override EM_CACHE on the
+      # command itself (after the hook runs) so the libraries are built once and
+      # restored on later runs. It must be set for both configure and build,
+      # since emcc runs in both.
       - name: cmake
         run: |
-          nix develop -c emcmake cmake -S . -B wasm-build -GNinja
+          nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+            emcmake cmake -S . -B wasm-build -GNinja
 
       - name: build
         run: |
-          nix develop -c cmake --build wasm-build
+          nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+            cmake --build wasm-build
 
       - uses: actions/upload-artifact@v7
         with:
