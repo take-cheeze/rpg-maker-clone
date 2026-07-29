@@ -52,6 +52,16 @@
 - Either backend draws its emit rate (frame size, MB/s, fps) on-screen just
   under the control legend, refreshed about once a second; this is on by default
   and can be turned off with `--noterm_stats`
+- Both backends also show a **log console** above the game image that mirrors
+  the engine's `ng-log` output on-screen — otherwise those messages would land
+  on `stderr` and scribble over the terminal picture. The last few messages are
+  tailed (newest at the bottom, coloured by severity: dim info, yellow warnings,
+  red errors). On by default; turn it off with `--noterm_console` or change how
+  many rows it reserves with `--term_console_lines=N` (default 5):
+
+  ```sh
+  ./rpg_maker_clone --sixel --term_console_lines=8 --game_dir path/to/game
+  ```
 
 ### Profiling
 

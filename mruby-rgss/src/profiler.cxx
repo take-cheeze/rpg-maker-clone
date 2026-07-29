@@ -345,7 +345,7 @@ void profiler_set_downstream_allocf(profiler_allocf_t downstream) {
   g_downstream_allocf = downstream;
 }
 
-void* profiler_allocf(mrb_state* mrb, void* ptr, size_t size, void* ud) {
+void* profiler_allocf(void* ptr, size_t size) {
   if (g_enabled) {
     ++g_alloc_calls;
     if (ptr == nullptr && size != 0)
@@ -354,7 +354,7 @@ void* profiler_allocf(mrb_state* mrb, void* ptr, size_t size, void* ud) {
       --g_live_blocks;  // free
     // realloc (ptr != null, size != 0) keeps the block count unchanged.
   }
-  return g_downstream_allocf(mrb, ptr, size, ud);
+  return g_downstream_allocf(ptr, size);
 }
 
 void profiler_frame_begin() {

@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file.
   keyboard bridge. With no backend installed every call is a graceful no-op.
   Pitch/tempo is accepted but not applied (SDL_mixer has no pitch control), and
   MIDI playback depends on the SDL_mixer build having a synth; a file that fails
-  to load is logged once and skipped. See ADR 0005
+  to load is logged once and skipped. See ADR 0006
 - The title menu plays the database's cursor-move sound effect (System > cursor
   SE) when the selection moves up or down, the first consumer of the new SE
   playback
@@ -62,8 +62,39 @@ All notable changes to this project will be documented in this file.
   viewport stacks on the screen. LVGL delete events invalidate the mruby
   wrappers so a viewport can safely own (and free) its child sprites
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
+- On-screen **log console** for the `--sixel`/`--iterm` terminal backends: a
+  fixed block of rows drawn above the game image (like the control legend and
+  emit-rate stats) that mirrors the engine's `ng-log` output. The last few
+  messages are tailed newest-at-the-bottom and coloured by severity (dim info,
+  yellow warnings, red errors); rows are truncated to the terminal width so a
+  long line cannot wrap and shift the image. On by default, disabled with
+  `--noterm_console`, and sized with `--term_console_lines=N` (default 5). While
+  a terminal backend is active, `ng-log`'s own `stderr` output is suppressed
+  (down to `FATAL`) so messages appear only in the console instead of scribbling
+  over the picture. The executable installs an `nglog::LogSink`
+  (`src/log_console.cxx`) that feeds the buffer through the shared
+  `terminal.cxx`, so the `mruby-rgss` gem keeps no compile-time dependency on
+  `ng-log`. Documented in `docs/adr/0005-terminal-log-console.md`
 
 ### Changed
+- Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
+  snapshot). `build_config.rb` drops the `mruby-print` gem (removed in 4.0;
+  `Kernel#p`/`#print` are now in the core and `mruby-io` supplies
+  `#print`/`#puts`/`#printf`) and the `disable_presym` calls (presym is always
+  enabled in 4.0, and bytecode serializes symbols by name so the host `mrbc`
+  and the emscripten target stay compatible). `CMakeLists.txt` also exposes
+  mruby's generated build-tree include dir on the `mruby` target, since `mruby.h`
+  now unconditionally pulls in the generated `mruby/presym/id.h`. mruby 4.0 also
+  removed per-state allocators (`mrb_open_allocf`), so the native build now
+  overrides the global `mrb_basic_alloc_func` to share lvgl's heap pool, and the
+  profiler's allocation hook moved to the matching `(ptr, size)` signature. The
+  `mruby-bigint` gem is now enabled: mruby 4.0's compiler encodes integer
+  literals wider than 32 bits (e.g. the `0xFFFFFFFF` masks in the LCF codecs) as
+  bignum literals that need it at runtime. The `mruby-marshal` submodule is
+  bumped to pick up its 4.0 fix (`Marshal.dump` is registered with its real
+  arity so mruby 4.0's stricter argument-count check accepts the optional
+  port/limit arguments)
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers

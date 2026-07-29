@@ -1,4 +1,4 @@
-# 5. Audio playback with SDL_mixer
+# 6. Audio playback with SDL_mixer
 
 Date: 2026-07-24
 
