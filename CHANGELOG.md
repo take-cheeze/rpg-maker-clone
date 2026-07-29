@@ -23,6 +23,9 @@ All notable changes to this project will be documented in this file.
   Pitch/tempo is accepted but not applied (SDL_mixer has no pitch control), and
   MIDI playback depends on the SDL_mixer build having a synth; a file that fails
   to load is logged once and skipped. See ADR 0005
+- The title menu plays the database's cursor-move sound effect (System > cursor
+  SE) when the selection moves up or down, the first consumer of the new SE
+  playback
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured
