@@ -772,8 +772,10 @@ module LCF
           3 => { name: :indentation, type: :int },
           # 0 = root, 1 = normal map, 2 = area.
           4 => { name: :type, type: :int, default: 1 },
-          5 => { name: :x_scroll, type: :bool, default: false },
-          6 => { name: :y_scroll, type: :bool, default: false },
+          # Editor-only scrollbar positions (RPG Maker's map-editor viewport),
+          # stored as signed ints — not booleans.
+          5 => { name: :scrollbar_x, type: :int, default: 0 },
+          6 => { name: :scrollbar_y, type: :int, default: 0 },
           7 => { name: :node_extracted, type: :bool, default: false },
           11 => { name: :bgm_type, type: :int, default: 0 },
           12 => { name: :bgm, type: :Array1D, elements: BGM },
@@ -828,11 +830,16 @@ module LCF
       6 => { name: :item_id, type: :int, default: 1 },
       7 => { name: :actor_id, type: :int, default: 1 },
       8 => { name: :timer_sec, type: :int, default: 0 },
+      # RPG2003-only: a second timer condition and the variable comparison
+      # operator (0 = >=). The RPG2000 runtime always compares with >=, so these
+      # are carried for schema completeness rather than consumed by EventPage.
+      9 => { name: :timer2_sec, type: :int, default: 0 },
+      10 => { name: :compare_operator, type: :int, default: 0 },
     }
 
     MOVE_ROUTE = {
       11 => { name: :command_size, type: :int, default: 0 },
-      12 => { name: :commands, type: :event },
+      12 => { name: :commands, type: :move_commands, default: [] },
       21 => { name: :repeat, type: :bool, default: true },
       22 => { name: :skippable, type: :bool, default: false },
     }

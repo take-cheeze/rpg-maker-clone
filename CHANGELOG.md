@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Move-route command decoding for the LCF loaders: `LCF.parse_move_commands`
+  and `LCF::MoveCommand` decode the compact move-command layout (bare commands
+  plus the string/integer parameters that Switch On/Off, Change Graphic and Play
+  Sound Effect carry), exposed through a new `:move_commands` schema type wired
+  into the event-page and common-event `move_route.commands` chunk. Previously
+  that chunk was mis-declared as an event-command blob and failed to parse on
+  real maps
+- Event-page condition schema now covers its trailing RPG2003 chunks
+  (`timer2_sec`, `compare_operator`), so a real map's condition data parses with
+  no unknown chunks. The RPG2000 runtime still compares variables with `>=`
+- `scripts/lcf_testbed_check.rb`: a host smoke-test that runs the pure-Ruby LCF
+  parser (`mruby-lcf/mrblib/{lcf,schema}.rb`) over real downloaded test-bed
+  projects — walking every schema field of a game's `RPG_RT.ldb`, `RPG_RT.lmt`
+  and `Map*.lmu` and asserting structural invariants (layer sizes match the map
+  dimensions, move-command ids are in range, events iterate). It auto-discovers
+  games under `data/` and now runs in CI after the test-bed download step,
+  exercising the loaders against genuine editor output rather than only the
+  synthetic blobs the unit tests use
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured
@@ -54,6 +72,11 @@ All notable changes to this project will be documented in this file.
   (`src/log_console.cxx`) that feeds the buffer through the shared
   `terminal.cxx`, so the `mruby-rgss` gem keeps no compile-time dependency on
   `ng-log`. Documented in `docs/adr/0005-terminal-log-console.md`
+
+### Fixed
+- LCF map-tree `scrollbar_x` / `scrollbar_y` (chunks 5/6) are now read as signed
+  ints instead of booleans; real games store multi-byte scrollbar positions
+  there, which raised `invalid bool size` when parsing an actual `RPG_RT.lmt`
 
 ### Changed
 - Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
