@@ -41,6 +41,19 @@ All notable changes to this project will be documented in this file.
   viewport stacks on the screen. LVGL delete events invalidate the mruby
   wrappers so a viewport can safely own (and free) its child sprites
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
+- On-screen **log console** for the `--sixel`/`--iterm` terminal backends: a
+  fixed block of rows drawn above the game image (like the control legend and
+  emit-rate stats) that mirrors the engine's `ng-log` output. The last few
+  messages are tailed newest-at-the-bottom and coloured by severity (dim info,
+  yellow warnings, red errors); rows are truncated to the terminal width so a
+  long line cannot wrap and shift the image. On by default, disabled with
+  `--noterm_console`, and sized with `--term_console_lines=N` (default 5). While
+  a terminal backend is active, `ng-log`'s own `stderr` output is suppressed
+  (down to `FATAL`) so messages appear only in the console instead of scribbling
+  over the picture. The executable installs an `nglog::LogSink`
+  (`src/log_console.cxx`) that feeds the buffer through the shared
+  `terminal.cxx`, so the `mruby-rgss` gem keeps no compile-time dependency on
+  `ng-log`. Documented in `docs/adr/0005-terminal-log-console.md`
 
 ### Changed
 - Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
