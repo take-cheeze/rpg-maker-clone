@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Audio playback: `RGSS::Audio` is now backed by SDL_mixer instead of inert
+  stubs, so games play sound. Looping **BGM** and **BGS**, one-shot **ME**
+  (music effects that interrupt the BGM and then let it resume, tracked per
+  frame from `Graphics.update`) and overlapping **SE** sound effects are all
+  supported, with per-channel volume mapped from the RPG 0..100 scale. The
+  public API resolves a game-supplied name to a real file the same way `Bitmap`
+  does — searching `GAME_DIR`/`RTP_DIR` crossed with the `Music/`, `Sound/` and
+  `Audio/*` sub-folders and the known extensions (`.ogg`, `.wav`, `.mid`,
+  `.mp3`, `.flac`) — and the event interpreter's *Play BGM* / *Play SE* commands
+  now forward the command's volume and tempo. SDL is kept out of the
+  `mruby-rgss` gem (which is also built for the terminal-only, Emscripten and
+  standalone-test variants): the gem's native `Audio` primitives call through a
+  plain function table (`include/rgss_audio.hxx`) that the executable fills with
+  the SDL_mixer backend (`src/sdl_audio.cxx`) at startup, mirroring the SDL
+  keyboard bridge. With no backend installed every call is a graceful no-op.
+  Pitch/tempo is accepted but not applied (SDL_mixer has no pitch control), and
+  MIDI playback depends on the SDL_mixer build having a synth; a file that fails
+  to load is logged once and skipped. See ADR 0006
+- The title menu plays the database's cursor-move sound effect (System > cursor
+  SE) when the selection moves up or down, the first consumer of the new SE
+  playback
 - Move-route command decoding for the LCF loaders: `LCF.parse_move_commands`
   and `LCF::MoveCommand` decode the compact move-command layout (bare commands
   plus the string/integer parameters that Switch On/Off, Change Graphic and Play

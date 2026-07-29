@@ -39,6 +39,12 @@ extern "C" void rgss_terminal_poll(mrb_state* M);
 // backend is active and has captured key events; drains them into RGSS::Input.
 extern "C" void rgss_sdl_poll(mrb_state* M);
 
+// Defined in audio.cxx (same gem).  Registers the native RGSS::Audio methods
+// and drives the audio backend's per-frame work (a no-op when no backend is
+// installed).
+void rgss_audio_define(mrb_state* M, RClass* rgss);
+extern "C" void rgss_audio_frame(void);
+
 namespace {
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
@@ -1392,6 +1398,7 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 
   rgss_terminal_poll(M);
   rgss_sdl_poll(M);
+  rgss_audio_frame();
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
                         mrb_intern_lit(M, "TIMEOUT_MS"))) {
@@ -2066,6 +2073,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
 
   profiler_init(M);
+
+  rgss_audio_define(M, m);
 
   define_rect(M, m);
 }

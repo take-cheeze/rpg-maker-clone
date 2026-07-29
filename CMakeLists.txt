@@ -7,19 +7,33 @@ endif()
 project(rpg_maker_clone C CXX)
 
 if(EMSCRIPTEN)
-  # Emscripten ships SDL2 as a "port": -sUSE_SDL=2 provides both the headers
-  # (needed while compiling lvgl's SDL driver) and the library at link time.
-  add_compile_options("-sUSE_SDL=2")
-  add_link_options("-sUSE_SDL=2")
+  # Emscripten ships SDL2 and SDL2_mixer as "ports": -sUSE_SDL=2 /
+  # -sUSE_SDL_MIXER=2 provide both the headers (needed while compiling lvgl's
+  # SDL driver and the audio backend) and the libraries at link time.
+  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
+  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
   # mruby is built with MRB_USE_CXX_EXCEPTION and throws real C++ exceptions for
   # its internal control flow, so exception support must be enabled across the
   # whole binary; otherwise the first throw aborts in the catch machinery.
   add_compile_options("-fexceptions")
   add_link_options("-fexceptions")
-  # Provide a stand-in for the SDL2::SDL2 target the executable links against.
+  # Provide a stand-in for the SDL2::SDL2 target the executable links against;
+  # the ports above supply the real symbols. SDL2_mixer is linked via
+  # ${SDL2_MIXER_LIB}, left empty here as the -sUSE_SDL_MIXER port covers it.
   add_library(SDL2::SDL2 INTERFACE IMPORTED)
+  set(SDL2_MIXER_LIB "")
 else()
   find_package(SDL2 REQUIRED)
+  # SDL2_mixer 2.6+ ships a CMake config exporting SDL2_mixer::SDL2_mixer; fall
+  # back to its pkg-config module (e.g. under the nix build) when it does not.
+  find_package(SDL2_mixer QUIET)
+  if(TARGET SDL2_mixer::SDL2_mixer)
+    set(SDL2_MIXER_LIB SDL2_mixer::SDL2_mixer)
+  else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
+    set(SDL2_MIXER_LIB PkgConfig::SDL2_MIXER)
+  endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -166,7 +180,7 @@ if(EMSCRIPTEN)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
 
-add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx
+add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
                                src/log_console.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
@@ -174,6 +188,7 @@ target_link_libraries(
   lvgl
   ng-log::ng-log
   SDL2::SDL2
+  ${SDL2_MIXER_LIB}
   gflags
   uni-algo::uni-algo)
 target_include_directories(${PROJECT_NAME}

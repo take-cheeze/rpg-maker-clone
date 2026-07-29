@@ -88,7 +88,10 @@
               url = "https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT";
               hash = "sha256-HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc=";
             };
-            buildInputs = with pkgs; [ SDL2 ];
+            buildInputs = with pkgs; [
+              SDL2
+              SDL2_mixer
+            ];
             # The package build only builds; tests are run separately via CTest.
             # Prevents nixpkgs' pytest check hook from hijacking the check phase
             # (it collects no tests and fails with exit code 5).
