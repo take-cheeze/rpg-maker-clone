@@ -897,8 +897,8 @@ class RPG2k
         name = se.file
         return if name.nil? || name.empty?
         Audio.se_play name, se.volume, se.pitch
-      rescue StandardError
-        nil
+      rescue StandardError => e
+        $stderr.puts "[RGSS] cursor SE playback failed: #{e.message}"
       end
     end
   end
