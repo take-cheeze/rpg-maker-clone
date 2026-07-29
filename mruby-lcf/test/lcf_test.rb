@@ -117,6 +117,65 @@ assert "LCF.parse_event_commands decodes an event command list" do
   assert_equal 0, cmds[1].param(9) # missing parameters read as 0
 end
 
+assert "LCF.parse_move_commands decodes bare and parameterised commands" do
+  # face_down (bare), switch_on + id, change_graphic + name/index,
+  # play_sound + name/volume/tempo/balance, move_forward (bare).
+  blob = lcf_ber(14)
+  blob += lcf_ber(32) + lcf_ber(7)
+  blob += lcf_ber(34) + lcf_ber("Hero".bytesize) + "Hero" + lcf_ber(2)
+  blob += lcf_ber(35) + lcf_ber("bell".bytesize) + "bell" +
+          lcf_ber(100) + lcf_ber(80) + lcf_ber(50)
+  blob += lcf_ber(11)
+  cmds = LCF.parse_move_commands(blob)
+  assert_equal 5, cmds.size
+  assert_equal 14, cmds[0].command_id
+  assert_equal 0, cmds[0].parameter_a
+  assert_equal '', cmds[0].parameter_string
+  assert_equal 32, cmds[1].command_id
+  assert_equal 7, cmds[1].parameter_a
+  assert_equal "Hero", cmds[2].parameter_string
+  assert_equal 2, cmds[2].parameter_a
+  assert_equal "bell", cmds[3].parameter_string
+  assert_equal 100, cmds[3].parameter_a
+  assert_equal 80, cmds[3].parameter_b
+  assert_equal 50, cmds[3].parameter_c
+  assert_equal 11, cmds[4].command_id
+end
+
+assert "LCF map-tree scroll bars decode as ints, not booleans" do
+  # These chunks (5/6) hold the editor's signed scrollbar positions; a real game
+  # stores multi-byte BER ints here, which the old :bool schema could not read.
+  props = lcf_array2d([[1, lcf_array1d([lcf_str_field(1, "MAP1"),
+                                        lcf_int_field(5, 320),
+                                        lcf_int_field(6, -48)])]])
+  lmt = LCF::MapTree.new(lcf_file("LcfMapTree",
+    props + lcf_tree([1], 1) +
+    lcf_array1d([lcf_int_field(1, 1), lcf_int_field(2, 0), lcf_int_field(3, 0)])))
+  assert_equal 320, lmt.map_properties[1].scrollbar_x
+  assert_equal(-48, lmt.map_properties[1].scrollbar_y)
+end
+
+assert "LCF::MapUnit event page decodes a move route" do
+  route = lcf_array1d([lcf_int_field(11, 2),
+                       lcf_field(12, lcf_ber(14) + lcf_ber(11)),
+                       lcf_field(21, "\x00"), lcf_field(22, "\x01")])
+  page = lcf_array1d([lcf_str_field(21, "hero"), lcf_field(41, route)])
+  event = lcf_array1d([lcf_str_field(1, "NPC"), lcf_int_field(2, 0),
+                       lcf_int_field(3, 0),
+                       lcf_field(5, lcf_array2d([[1, page]]))])
+  body = lcf_array1d([lcf_int_field(1, 1), lcf_int_field(2, 1),
+                      lcf_int_field(3, 1),
+                      lcf_field(81, lcf_array2d([[1, event]]))])
+  lmu = LCF::MapUnit.new(lcf_file("LcfMapUnit", body))
+  mr = lmu.events[1].pages[1].move_route
+  assert_false mr.repeat
+  assert_true mr.skippable
+  cmds = mr.commands
+  assert_equal 2, cmds.size
+  assert_equal 14, cmds[0].command_id
+  assert_equal 11, cmds[1].command_id
+end
+
 assert "LCF::MapUnit parses layers, nested events and event commands" do
   cmds = lcf_ber(10110) + lcf_ber(0) + lcf_ber("Hi".bytesize) + "Hi" + lcf_ber(0)
   page = lcf_array1d([lcf_str_field(21, "hero"), lcf_int_field(23, 4),
