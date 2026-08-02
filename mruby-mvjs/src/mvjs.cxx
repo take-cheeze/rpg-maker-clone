@@ -162,6 +162,18 @@ const char* kHostPreamble = R"MVJS(
   g.global = g;
   if (typeof g.globalThis === 'undefined') g.globalThis = g;
 
+  // Window-level event/lifecycle methods MV wires up at boot (Graphics
+  // ._setupEventHandlers adds resize/keydown/touchend listeners on `window`,
+  // SceneManager can call window.close). We have no real event source, so these
+  // are inert; input is fed in natively through RGSS::Input.
+  g.addEventListener = function () {};
+  g.removeEventListener = function () {};
+  g.dispatchEvent = function () { return true; };
+  g.close = function () {};
+  g.focus = function () {};
+  g.blur = function () {};
+  g.scrollTo = function () {};
+
   // --- XMLHttpRequest (synchronous, local-file backed) ---------------------
   function XMLHttpRequest() {
     this.readyState = 0;

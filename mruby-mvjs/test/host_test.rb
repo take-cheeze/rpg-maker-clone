@@ -98,6 +98,14 @@ assert 'MV host drains promise microtasks on pump' do
   assert_equal 5, MV::JS.eval("globalThis.__pr")
 end
 
+assert 'MV host window exposes inert event/lifecycle methods' do
+  # Graphics._setupEventHandlers / Input / TouchInput add listeners on window.
+  assert_equal "function", MV::JS.eval("typeof window.addEventListener")
+  assert_equal "function", MV::JS.eval("typeof window.removeEventListener")
+  assert_equal "function", MV::JS.eval("typeof window.close")
+  assert_nil MV::JS.eval("window.addEventListener('resize', function(){}); null")
+end
+
 assert 'MV host provides a silent AudioContext stub (needed by initAudio)' do
   assert_equal true, MV::JS.eval("typeof AudioContext === 'function'")
   assert_equal true, MV::JS.eval("typeof webkitAudioContext === 'function'")

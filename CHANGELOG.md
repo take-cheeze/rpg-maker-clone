@@ -21,7 +21,10 @@ All notable changes to this project will be documented in this file.
   `document.fonts` (`FontFaceSet`) stub reporting the game font ready makes
   `Scene_Boot` advance to the title instead of looping forever on MV's
   measured-text-width font check (which a font-agnostic `measureText` can't
-  satisfy). Covered by `mruby-mvjs/test`.
+  satisfy). `window` also gained the inert event/lifecycle methods MV wires up
+  (`addEventListener`/`removeEventListener`/`dispatchEvent`/`close`), since
+  `Graphics._setupEventHandlers`, `Input` and `TouchInput` register listeners on
+  it. Covered by `mruby-mvjs/test`.
 - MV boot resilience (milestone M4): script evaluation now follows browser
   semantics — a `<script>` that throws while executing is logged and the next
   one still runs, instead of aborting the whole engine. Previously the
