@@ -192,10 +192,16 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: wasm
+          # index.wasm.map lets the deployed page symbolicate wasm stack traces
+          # (the build links with -gsource-map); it is optional but harmless to
+          # ship. All paths sit under wasm-build/, so the artifact stores them at
+          # its root (index.html, index.js, index.wasm[.map]) — ready to publish
+          # as-is.
           path: |
             wasm-build/index.html
             wasm-build/index.js
             wasm-build/index.wasm
+            wasm-build/index.wasm.map
 
   screenshots:
     runs-on: ubuntu-latest
@@ -289,3 +295,88 @@ jobs:
 
       - name: Build flake
         run: nix build -L '.#build'
+
+  # Publish the WebAssembly page to GitHub Pages on every push to master. The
+  # build carries no pthreads/SharedArrayBuffer, so it needs no COOP/COEP
+  # headers and serves fine from Pages. Requires Settings → Pages → "Build and
+  # deployment" → Source = "GitHub Actions" to be enabled once for the repo.
+  deploy-pages:
+    needs: wasm
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # Serialise deploys so an older run can't overwrite a newer one; let the
+    # in-progress publish finish rather than cancelling it half-written.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download wasm page
+        uses: actions/download-artifact@v7
+        with:
+          name: wasm
+          path: site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # Publish a Cloudflare Pages preview deployment for every pull request, so the
+  # branch's build gets a shareable URL before it merges. Requires two repo
+  # secrets — CLOUDFLARE_API_TOKEN (a token with the "Cloudflare Pages: Edit"
+  # permission) and CLOUDFLARE_ACCOUNT_ID — and a Cloudflare Pages project named
+  # "rpg-maker-clone" (create it once in the dashboard as a "Direct Upload"
+  # project). See docs/deploy.md for the one-time setup.
+  preview-cloudflare:
+    needs: wasm
+    # Only PRs from branches in this repo — forks and Dependabot can't read the
+    # secrets, so skip them instead of failing the job.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download wasm page
+        uses: actions/download-artifact@v7
+        with:
+          name: wasm
+          path: site
+      - name: Deploy preview to Cloudflare Pages
+        id: cf
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Any --branch other than the project's production branch is published
+          # as a preview; the PR head branch is never master, so this is always
+          # a preview deployment.
+          command: >-
+            pages deploy site
+            --project-name=rpg-maker-clone
+            --branch=${{ github.head_ref }}
+            --commit-hash=${{ github.event.pull_request.head.sha }}
+            --commit-dirty=true
+      - name: Comment preview URL on the PR
+        if: ${{ steps.cf.outputs.deployment-url != '' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: cloudflare-preview
+          message: |
+            ### ⚡ Cloudflare Pages preview
+
+            | | |
+            | --- | --- |
+            | **Preview URL** | ${{ steps.cf.outputs.deployment-url }} |
+            | **Commit** | ${{ github.event.pull_request.head.sha }} |
+
+            Open the link and load an RPG Maker project with the on-page loader.
