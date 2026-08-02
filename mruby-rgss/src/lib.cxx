@@ -45,6 +45,13 @@ extern "C" void rgss_sdl_poll(mrb_state* M);
 void rgss_audio_define(mrb_state* M, RClass* rgss);
 extern "C" void rgss_audio_frame(void);
 
+#if defined(WIO_TERMINAL)
+// Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
+// forwards press/release edges to RGSS::Input.  Guarded so the desktop/wasm
+// builds, which do not compile the Wio backend, need no such symbol.
+extern "C" void rgss_wio_poll(mrb_state* M);
+#endif
+
 namespace {
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
@@ -1398,6 +1405,9 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 
   rgss_terminal_poll(M);
   rgss_sdl_poll(M);
+#if defined(WIO_TERMINAL)
+  rgss_wio_poll(M);
+#endif
   rgss_audio_frame();
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
