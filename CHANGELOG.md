@@ -19,7 +19,10 @@ All notable changes to this project will be documented in this file.
   browser, deferring game construction until a project is present; a project
   baked in with `-DWASM_GAME_DIR` still auto-starts. Cross-origin downloads
   (GitHub, most `.zip` URLs) need a CORS proxy — the loader has an optional
-  field for one — or the always-works local-file path
+  field for one — or the always-works local-file path. Downloaded archives are
+  cached (Cache Storage, keyed by the resolved URL) so re-loading the same URL
+  or repo skips the network; the loader can force a fresh download or clear the
+  cache
 - Audio playback: `RGSS::Audio` is now backed by SDL_mixer instead of inert
   stubs, so games play sound. Looping **BGM** and **BGS**, one-shot **ME**
   (music effects that interrupt the BGM and then let it resume, tracked per

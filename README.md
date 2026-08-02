@@ -132,6 +132,11 @@
   and most arbitrary `.zip` URLs need a **CORS proxy**: enter its prefix in the
   loader's optional field, or simply download the zip and use the local-file
   path, which needs no network.
+- Downloaded archives are **cached** (via the Cache Storage API, keyed by the
+  resolved URL), so re-loading the same URL or repo skips the network. Tick
+  *Re-download (ignore cache)* to force a fresh copy (e.g. to pick up new commits
+  on a GitHub `HEAD` archive), or *Clear cached archives* to drop the whole
+  cache.
 - A project can still be **baked into the page** at build time with
   `-DWASM_GAME_DIR=/abs/path/to/game`; that page auto-starts the game with no
   interaction (and the loader is skipped).

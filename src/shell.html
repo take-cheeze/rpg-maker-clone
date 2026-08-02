@@ -95,6 +95,9 @@
   .hint code { background: #12141a; padding: 1px 5px; border-radius: 4px; }
   .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
   .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  label.check { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  #clearcache { color: var(--accent); font-size: 12px; text-decoration: none; }
+  #clearcache:hover { text-decoration: underline; }
   #status { min-height: 20px; font-size: 13px; }
   #status.error { color: var(--error); }
   #status.busy { color: var(--accent); }
@@ -132,6 +135,10 @@
     <div class="row" style="margin-top:6px">
       <input type="text" id="url" placeholder="owner/repo  ·  https://github.com/owner/repo  ·  https://host/game.zip" />
       <button id="load" disabled>Load</button>
+    </div>
+    <div class="row" style="margin-top:8px; gap:14px">
+      <label class="check" for="nocache"><input type="checkbox" id="nocache" /> Re-download (ignore cache)</label>
+      <a href="#" id="clearcache">Clear cached archives</a>
     </div>
   </div>
 
@@ -174,6 +181,8 @@
   var urlInput = document.getElementById('url');
   var proxyInput = document.getElementById('proxy');
   var fileInput = document.getElementById('file');
+  var nocacheInput = document.getElementById('nocache');
+  var clearBtn = document.getElementById('clearcache');
 
   function log(text) {
     logEl.textContent += text + '\n';
@@ -334,12 +343,61 @@
     return input;
   }
 
+  // --- Archive cache (Cache Storage, keyed by the resolved URL) ------------
+  // Downloaded archives are kept so re-loading the same URL or GitHub repo
+  // skips the network. The bytes are stored inside a locally-built Response,
+  // which sidesteps the restriction that Cache Storage will not accept opaque
+  // cross-origin responses. Available in secure contexts, which include
+  // http://localhost — where the project is normally served.
+  var ARCHIVE_CACHE = 'rpg2k-archives-v1';
+  var cacheAvailable = typeof caches !== 'undefined';
+
+  async function cacheGet(key) {
+    if (!cacheAvailable) return null;
+    try {
+      var c = await caches.open(ARCHIVE_CACHE);
+      var r = await c.match(key);
+      return r ? await r.arrayBuffer() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  async function cachePut(key, buf) {
+    if (!cacheAvailable) return;
+    try {
+      var c = await caches.open(ARCHIVE_CACHE);
+      await c.put(key, new Response(buf));
+    } catch (e) {
+      log('(could not cache archive: ' + (e && e.message ? e.message : e) + ')');
+    }
+  }
+  async function cacheClear() {
+    if (!cacheAvailable) { setStatus('Archive caching is unavailable in this context.', 'error'); return; }
+    try {
+      await caches.delete(ARCHIVE_CACHE);
+      setStatus('Cleared cached archives.');
+      log('Cleared archive cache.');
+    } catch (e) {
+      setStatus('Could not clear cache: ' + (e && e.message ? e.message : e), 'error');
+    }
+  }
+
+  function kib(buf) { return Math.round(buf.byteLength / 1024); }
+
   async function fetchZip(url) {
+    if (!nocacheInput.checked) {
+      var hit = await cacheGet(url);
+      if (hit) {
+        log('Loaded ' + url + ' from cache (' + kib(hit) + ' KiB).');
+        return hit;
+      }
+    }
     var proxy = proxyInput.value.trim();
     var full = proxy ? proxy + encodeURIComponent(url) : url;
     // A bare proxy prefix without a query separator (e.g. ".../get/") gets the
     // raw URL appended instead of an encoded query value.
     if (proxy && !/[?&=]$/.test(proxy)) full = proxy.replace(/\/$/, '') + '/' + url;
+    setStatus('Downloading…', 'busy');
     var res;
     try {
       res = await fetch(full);
@@ -347,7 +405,10 @@
       throw new Error('Network/CORS error fetching ' + full + '. GitHub and most hosts need a CORS proxy — see the note under the URL field, or download the zip and open it locally.');
     }
     if (!res.ok) throw new Error('Download failed: HTTP ' + res.status + ' ' + res.statusText);
-    return await res.arrayBuffer();
+    var buf = await res.arrayBuffer();
+    log('Downloaded ' + url + ' (' + kib(buf) + ' KiB); cached for next time.');
+    await cachePut(url, buf);
+    return buf;
   }
 
   // --- Loader actions ------------------------------------------------------
@@ -356,9 +417,9 @@
     loadBtn.disabled = true;
     fileInput.disabled = true;
     try {
-      setStatus('Downloading ' + label + '…', 'busy');
+      setStatus('Loading ' + label + '…', 'busy');
       var buf = await getBuffer();
-      setStatus('Unpacking (' + Math.round(buf.byteLength / 1024) + ' KiB)…', 'busy');
+      setStatus('Unpacking (' + kib(buf) + ' KiB)…', 'busy');
       var files = await unzip(buf);
       setStatus('Starting…', 'busy');
       mountAndStart(files);
@@ -386,6 +447,11 @@
     var f = fileInput.files && fileInput.files[0];
     if (!f) return;
     loadFrom(function () { return f.arrayBuffer(); }, f.name);
+  });
+
+  clearBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    cacheClear();
   });
 
   setStatus('Loading runtime…', 'busy');
