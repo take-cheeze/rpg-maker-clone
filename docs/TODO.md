@@ -3,11 +3,14 @@
 ## RPG Maker 2k
 - 🚧 Support all data schema of LCF — the core database, map tree and map-unit
   chunks needed for boot and gameplay are covered and validated against a real
-  test-bed by `scripts/lcf_testbed_check.rb`. Remaining chunks that appear in
-  real data but are not yet in `schema.rb` (surfaced by walking the test-bed):
-  database items (usage/effect flags 25–28 and `animation_data` sub-chunks),
-  `battle_anime2` frame/timing chunks, skill chunk 16, and a few map-unit
-  chunks (42, 50, 60–62, 90 — save/encounter/parallax metadata). These are
+  test-bed by `scripts/lcf_testbed_check.rb`. Transcribed from the 200X共通
+  解析まとめ wiki: item armour-option flags (25–28) and the item/skill
+  `使用時アニメ` weapon fields (the shared `BATTLER_ANIMATION` union),
+  skill switch/occasion chunks (13, 16, 18, 19), and the `battle_anime2`
+  attack-motion + `基本と拡張`/`武器` pose object lists (chunks 2, 10, 11).
+  The remaining map-unit chunks that appear in real data (42, 50, 60–62, 90 —
+  save/encounter/parallax metadata) are **not documented on the wiki's マップ
+  page**, so they still need to be derived from the test-bed walk. These are
   editor/battle/2003 details not on the walkable-game critical path
 - ✅ Show window component for title scene
 - ✅ Implement New Game functionality — builds the party, loads the start map
