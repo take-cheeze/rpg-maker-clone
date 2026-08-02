@@ -358,6 +358,7 @@ class RPG2k
         @world = MapWorld.new(self, @rng)
         build_events
         @interpreter.resolver = build_resolver
+        build_parallels
         @message = nil
         @wait_timer = nil
         @choice_index = 0
@@ -392,6 +393,7 @@ class RPG2k
           if event_busy?
             drive_event
           else
+            step_parallels
             step_events
             step_movement
             try_action_trigger
@@ -523,9 +525,11 @@ class RPG2k
         @message || @interpreter.running? || @interpreter.waiting?
       end
 
-      # Start the first eligible not-yet-run auto-start/parallel process: map
-      # events with an auto-start trigger, then eligible common events. Each is
-      # started at most once per visit so an ungated process cannot hard-loop.
+      # Start the first not-yet-run auto-start process in the foreground: map
+      # events with an auto-start trigger, then auto-start common events (whose
+      # switch gate, if any, is on). Each runs at most once per visit so an
+      # ungated process cannot hard-loop. Parallel processes are driven
+      # separately by #step_parallels.
       def start_autostart
         ev = @events.find do |e|
           e[:trigger] == TRIGGER_AUTO_START && e[:commands] && !@started_auto[e[:id]]
@@ -536,12 +540,82 @@ class RPG2k
           return
         end
 
-        ce = Game::CommonEvent.eligible(@common, @state.switches).find do |c|
-          c[:commands] && !@started_common[c[:id]]
+        ce = @common.find do |c|
+          c[:trigger] == Game::CommonEvent::AUTO_START && c[:commands] &&
+            common_gate_open?(c) && !@started_common[c[:id]]
         end
         return unless ce
         @started_common[ce[:id]] = true
         @interpreter.start(ce[:commands])
+      end
+
+      # A common event's switch gate: open unless it needs a flag that is off.
+      def common_gate_open?(c)
+        return true unless c[:need_flag]
+        @state.switches[c[:switch_id]]
+      end
+
+      # Build the background (parallel-process) interpreters: map events with a
+      # parallel trigger plus parallel common events. Each gets its own
+      # Game::Interpreter, looped by #step_parallels; a common event that needs a
+      # flag carries its gate switch so it only runs while that switch is on.
+      def build_parallels
+        @parallels = []
+        @events.each do |e|
+          next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
+          @parallels.push new_parallel(e[:commands], nil)
+        end
+        @common.each do |c|
+          next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
+          @parallels.push new_parallel(c[:commands], c[:need_flag] ? c[:switch_id] : nil)
+        end
+      rescue StandardError
+        @parallels = []
+      end
+
+      def new_parallel(commands, gate_switch)
+        it = Game::Interpreter.new(@state)
+        it.resolver = @interpreter.resolver
+        it.start(commands)
+        { interp: it, commands: commands, gate_switch: gate_switch, wait_timer: nil }
+      end
+
+      # Advance every background parallel process one frame. They loop their
+      # command list and honour Wait; as background processes they do not drive
+      # the message/choice/teleport UI (those requests are simply resumed so the
+      # process keeps running). Called only while the foreground is idle, so
+      # parallels pause during messages and foreground events.
+      def step_parallels
+        @parallels.each { |p| step_parallel(p) }
+      end
+
+      def step_parallel(p)
+        return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
+        it = p[:interp]
+        if it.waiting?
+          drive_parallel_wait(p, it)
+        elsif it.running?
+          it.update
+        else
+          it.start(p[:commands]) # loop the process
+          it.update
+        end
+      rescue StandardError
+        nil
+      end
+
+      def drive_parallel_wait(p, it)
+        if it.wait_kind == :wait
+          p[:wait_timer] = frames_from_tenths(it.wait_frames) if p[:wait_timer].nil?
+          if p[:wait_timer] <= 0
+            p[:wait_timer] = nil
+            it.resume
+          else
+            p[:wait_timer] -= 1
+          end
+        else
+          it.resume # background: ignore message/choice/teleport requests
+        end
       end
 
       # The event currently standing on tile (x, y), or nil.
@@ -657,17 +731,21 @@ class RPG2k
       end
 
       def drive_wait
-        if @wait_timer.nil?
-          fr = Graphics.frame_rate
-          fr = 60 if fr.nil? || fr <= 0
-          @wait_timer = @interpreter.wait_frames * fr / 10
-        end
+        @wait_timer = frames_from_tenths(@interpreter.wait_frames) if @wait_timer.nil?
         if @wait_timer <= 0
           @wait_timer = nil
           @interpreter.resume
         else
           @wait_timer -= 1
         end
+      end
+
+      # Convert an RPG2000 wait duration (tenths of a second) to a frame count at
+      # the current frame rate (defaulting to 60 fps).
+      def frames_from_tenths(tenths)
+        fr = Graphics.frame_rate
+        fr = 60 if fr.nil? || fr <= 0
+        tenths * fr / 10
       end
 
       def perform_teleport(t)
@@ -683,6 +761,7 @@ class RPG2k
         @started_common = {}
         build_events
         @interpreter.resolver = build_resolver
+        build_parallels
         @moving = false
         @move_count = 0
         @last_frame = nil

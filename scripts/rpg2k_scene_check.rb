@@ -289,6 +289,46 @@ check 'action (trigger 0) does not fire on mere contact' do
   ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
 end
 
+# CONTROL_VARS params to add `by` to variable `id`:
+# [mode 0=single, id, id, op 1=add, operand 0=const, value].
+def add_var_cmd(id, by = 1)
+  ECmd.new(Game::Interpreter::Cmd::CONTROL_VARS, [0, id, id, 1, 0, by])
+end
+
+check 'parallel (trigger 4): a background event runs every frame' do
+  pg = page(trigger: 4)
+  pg.event_commands = [add_var_cmd(1)]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  10.times { scene.update }
+  v = scene.instance_variable_get(:@state).variables[1]
+  ok v >= 8, "parallel event should have looped ~10 times, got #{v}"
+end
+
+check 'parallel common event runs only while its switch gate is on' do
+  ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 2,
+                      event: [add_var_cmd(3)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update }
+  eq 0, st.variables[3], 'gated-off parallel common event must not run'
+  st.switches[2] = true
+  5.times { scene.update }
+  ok st.variables[3] > 0, 'it should run once the gate switch is on'
+end
+
+check 'parallel processes pause while a foreground event is running' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  par = page(trigger: 4)
+  par.event_commands = [add_var_cmd(1)]
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(4, 4, par) })
+  10.times { scene.update }
+  # The autostart event opens a message and waits for input we never give, so
+  # the foreground stays busy and the parallel process never advances.
+  eq 0, scene.instance_variable_get(:@state).variables[1]
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

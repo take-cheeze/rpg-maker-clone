@@ -24,8 +24,9 @@
   switches/variables, party/gold/item changes, conditional branches, teleport,
   waits, BGM/SE playback and Call Event (run a common event / another event's
   page). Events start on the action button, on player touch (walking into them),
-  on event touch (they walk into the player) or auto-start, gated by their
-  page/switch conditions; auto-start/parallel common events also run
+  on event touch (they walk into the player), auto-start, or run continuously as
+  a parallel background process, gated by their page/switch conditions;
+  auto-start and parallel common events run too
 - Message text expands the common control codes (`\v[n]` variable, `\n[n]`
   actor name, `\\`)
 - A countdown timer can be set/started/stopped from events
