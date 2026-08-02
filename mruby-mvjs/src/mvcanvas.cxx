@@ -417,14 +417,26 @@ const char* kCanvasPreamble = R"MVJS(
   Ctx.prototype.measureText = function (t) {
     return { width: (t ? String(t).length : 0) * 6 };
   };
+  // Gradients/patterns: MV's Bitmap.gradientFillRect creates a gradient and
+  // chains .addColorStop on it before assigning it to fillStyle, so these must
+  // return a real object (a no-op returning undefined would throw). The buffer
+  // path doesn't render gradients yet — a gradient fillStyle falls back to
+  // opaque black in parseColor — but the calls no longer crash.
+  Ctx.prototype.createLinearGradient = function () {
+    return { addColorStop: function () {} };
+  };
+  Ctx.prototype.createRadialGradient = function () {
+    return { addColorStop: function () {} };
+  };
+  Ctx.prototype.createPattern = function () { return {}; };
   // Path and text operations MV/PIXI call but that the buffer path does not need
   // yet: accept and ignore. Real implementations land as needed. (Transform ops
   // — save/restore/translate/scale/rotate/transform/setTransform/resetTransform
   // — are implemented above and deliberately excluded here.)
   var noops = ['beginPath', 'closePath', 'moveTo', 'lineTo',
     'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip', 'fillText',
-    'strokeText', 'setLineDash', 'putImageData', 'createLinearGradient',
-    'createRadialGradient', 'createPattern', 'drawFocusIfNeeded', 'scrollPathIntoView'];
+    'strokeText', 'setLineDash', 'putImageData',
+    'drawFocusIfNeeded', 'scrollPathIntoView'];
   noops.forEach(function (m) {
     if (!Ctx.prototype[m]) Ctx.prototype[m] = function () {};
   });

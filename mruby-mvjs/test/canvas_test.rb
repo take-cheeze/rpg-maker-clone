@@ -162,6 +162,20 @@ assert 'MV document head/style shims support the font-loader boot path' do
   assert_equal true, MV::JS.eval("document.fonts.check('10px GameFont')")
 end
 
+assert 'MV canvas gradient factories return chainable objects (gradientFillRect)' do
+  assert_equal "function", MV::JS.eval(
+    "typeof document.createElement('canvas').getContext('2d')" \
+    ".createLinearGradient(0,0,1,1).addColorStop"
+  )
+  # The full Bitmap.gradientFillRect shape must not throw.
+  assert_nil MV::JS.eval(
+    "var x=document.createElement('canvas'); x.width=2; x.height=2; " \
+    "var c=x.getContext('2d'); var g=c.createLinearGradient(0,0,2,0); " \
+    "g.addColorStop(0,'#fff'); g.addColorStop(1,'#000'); c.fillStyle=g; " \
+    "c.fillRect(0,0,2,2); null"
+  )
+end
+
 assert 'MV canvas save/restore round-trips the transform' do
   m = MV::JS.eval("var x=document.createElement('canvas').getContext('2d'); " \
                   "x.save(); x.translate(5,7); x.scale(2,2); x.restore(); x._m.join(',')")
