@@ -484,6 +484,9 @@ const char* kCanvasPreamble = R"MVJS(
       addEventListener: function () {}, removeEventListener: function () {},
       querySelector: function () { return null; },
       querySelectorAll: function () { return []; },
+      // Graphics._disableContextMenu walks document.body.getElementsByTagName('*').
+      getElementsByTagName: function () { return []; },
+      getElementsByClassName: function () { return []; },
       getBoundingClientRect: function () {
         return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
       },

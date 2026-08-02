@@ -151,6 +151,8 @@ assert 'MV document head/style shims support the font-loader boot path' do
                    "document.getElementsByTagName('head')[0].appendChild(s); " \
                    "s.sheet.insertRule('.x{}', 0); 'ok'")
   assert_equal "ok", ok
+  # Graphics._disableContextMenu walks document.body.getElementsByTagName('*').
+  assert_equal 0, MV::JS.eval("document.body.getElementsByTagName('*').length")
 end
 
 assert 'MV canvas save/restore round-trips the transform' do
