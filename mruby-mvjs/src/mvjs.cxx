@@ -28,8 +28,10 @@
 
 #include <quickjs.h>
 
-// stb_image_write's implementation is compiled by mruby-rgss (iterm.cxx); we
-// include only the declarations here so MV::JS.screenshot can encode a PNG.
+// stb_image_write's implementation is compiled by mruby-rgss (iterm.cxx) with
+// STBI_WRITE_NO_STDIO, so only the in-memory *_to_func API exists (the FILE*
+// helpers like stbi_write_png are dropped). Include the declarations here and
+// encode via stbi_write_png_to_func, writing the bytes to the file ourselves.
 #include <stb_image_write.h>
 
 #include "mvhost.hxx"
@@ -683,8 +685,24 @@ mrb_value js_screenshot(mrb_state* mrb, mrb_value self) {
   if (!px || w <= 0 || h <= 0)
     return mrb_false_value();
 
-  const int ok = stbi_write_png(p.c_str(), w, h, 4, px, w * 4);
-  return ok ? mrb_true_value() : mrb_false_value();
+  // Encode to memory (the only stb-write API available here), then write it
+  // out. The sink appends each chunk to the string passed as its context.
+  std::string png;
+  const int ok = stbi_write_png_to_func(
+      [](void* ctx, void* data, int size) {
+        static_cast<std::string*>(ctx)->append(static_cast<const char*>(data),
+                                               static_cast<size_t>(size));
+      },
+      &png, w, h, 4, px, w * 4);
+  if (!ok)
+    return mrb_false_value();
+
+  std::FILE* f = std::fopen(p.c_str(), "wb");
+  if (!f)
+    return mrb_false_value();
+  std::fwrite(png.data(), 1, png.size(), f);
+  std::fclose(f);
+  return mrb_true_value();
 }
 
 }  // namespace
