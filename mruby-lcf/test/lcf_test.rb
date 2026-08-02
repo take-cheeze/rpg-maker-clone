@@ -93,6 +93,60 @@ assert "LCF::MapTree multi-part parse exposes start position" do
   assert_equal "MAP1", lmt.map_properties[1].name
 end
 
+assert "LCF::Database item armour option flags (chunks 25-28) and equip animation" do
+  # 使用時アニメ (chunk 70) is an object list; its weapon fields (3/4/12) come
+  # from the item page, so the shared BATTLER_ANIMATION union must decode them.
+  equip_anim = lcf_array1d([lcf_int_field(3, 2), lcf_int_field(4, 5),
+                            lcf_int_field(12, 4)])
+  item = lcf_array1d([lcf_str_field(1, "Shield"),
+                      lcf_field(25, "\x01"), lcf_field(26, "\x00"),
+                      lcf_field(27, "\x01"), lcf_field(28, "\x01"),
+                      lcf_field(70, lcf_array2d([[1, equip_anim]]))])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(13, lcf_array2d([[1, item]]))]))) # item = chunk 13
+  assert_equal "Shield", db.item[1].name
+  assert_true db.item[1].prevent_critical
+  assert_false db.item[1].raise_evasion
+  assert_true db.item[1].half_sp_cost
+  assert_true db.item[1].no_terrain_damage
+  a = db.item[1].animation_data[1]
+  assert_equal 2, a.weapon_cba
+  assert_equal 5, a.weapon
+  assert_equal 4, a.speed
+end
+
+assert "LCF::Database skill switch/occasion chunks (13, 16, 18, 19)" do
+  se = lcf_array1d([lcf_str_field(1, "Teleport"), lcf_int_field(3, 80)])
+  skill = lcf_array1d([lcf_str_field(1, "Warp"), lcf_int_field(13, 7),
+                       lcf_field(16, se), lcf_field(18, "\x01"),
+                       lcf_field(19, "\x00")])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(12, lcf_array2d([[1, skill]]))]))) # skill = chunk 12
+  assert_equal 7, db.skill[1].switch_id
+  assert_equal "Teleport", db.skill[1].sound_effect.file
+  assert_equal 80, db.skill[1].sound_effect.volume
+  assert_true db.skill[1].occasion_field
+  assert_false db.skill[1].occasion_battle
+end
+
+assert "LCF::Database battle_anime2 attack motion and pose object lists (chunks 2, 10, 11)" do
+  base = lcf_array1d([lcf_str_field(1, "Swing"), lcf_str_field(2, "Sword"),
+                      lcf_int_field(3, 1), lcf_int_field(4, 6)])
+  weapon = lcf_array1d([lcf_str_field(1, "Blade"), lcf_str_field(2, "WpnGfx"),
+                        lcf_int_field(3, 2)])
+  anim = lcf_array1d([lcf_str_field(1, "Fighter"), lcf_int_field(2, 3),
+                      lcf_field(10, lcf_array2d([[1, base]])),
+                      lcf_field(11, lcf_array2d([[1, weapon]]))])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(32, lcf_array2d([[1, anim]]))]))) # battle_anime2 = chunk 32
+  assert_equal "Fighter", db.battle_anime2[1].name
+  assert_equal 3, db.battle_anime2[1].attack_motion
+  b = db.battle_anime2[1].base_data[1]
+  assert_equal "Sword", b.battler_name
+  assert_equal 6, b.animation_id
+  assert_equal "WpnGfx", db.battle_anime2[1].weapon_data[1].battler_name
+end
+
 assert "LCF decodes boolean chunks (1 byte 0/1)" do
   ce = lcf_array1d([lcf_int_field(11, 3), lcf_field(12, "\x01"),
                     lcf_int_field(13, 7)])

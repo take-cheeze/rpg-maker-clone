@@ -56,11 +56,21 @@ module LCF
       2 => { name: :skill_id, type: :int, default: 1 },
     }
 
-    # Battler-animation attachment (使用者アニメ) shared by skills and items.
+    # Battler-animation attachment (使用時アニメ) shared by skills and items.
+    # The アイテム and 特殊技能 pages document different fields of the same
+    # object; this is their union. The weapon/movement fields (3, 4, 7-9, 12,
+    # 13) are from the item page, the basic-CBA field (14) from the skill page.
     BATTLER_ANIMATION = {
-      5 => { name: :movement, type: :int, default: 0 },
-      6 => { name: :after_image, type: :bool, default: false },
-      14 => { name: :battle_animation_id, type: :int, default: 3 },
+      3 => { name: :weapon_cba, type: :int, default: 0 },        # 武器CBAの選択 (2003)
+      4 => { name: :weapon, type: :int, default: 0 },            # 武器 (2003)
+      5 => { name: :movement, type: :int, default: 0 },          # 移動の選択
+      6 => { name: :after_image, type: :bool, default: false },  # 残像の選択
+      7 => { name: :attack_times, type: :int, default: 0 },      # 攻撃の回数 (2003)
+      8 => { name: :ranged_weapon, type: :bool, default: false },# 遠距離武器/使う (2003)
+      9 => { name: :flying_animation, type: :int, default: 0 },  # 飛行中のアニメの選択 (2003)
+      12 => { name: :speed, type: :int, default: 0 },            # 速度 (2003)
+      13 => { name: :extension, type: :int, default: 1 },        # 拡張 (2003)
+      14 => { name: :battle_animation_id, type: :int, default: 3 }, # 基本CBAの選択
     }
 
     DATABASE = {
@@ -127,7 +137,11 @@ module LCF
             10 => { name: :sp_percent, type: :int, default: 1 },
             11 => { name: :sp_cost, type: :int, default: 0 },
             12 => { name: :scope, type: :int, default: 0 },
+            13 => { name: :switch_id, type: :int, default: 1 },              # ONにするスイッチ (種別: スイッチ)
             14 => { name: :animation_id, type: :int, default: 1 },
+            16 => { name: :sound_effect, type: :Array1D, elements: SE },     # 効果音 (種別: テレポート/エスケープ/スイッチ)
+            18 => { name: :occasion_field, type: :bool, default: true },     # 使用可能な場面/フィールド
+            19 => { name: :occasion_battle, type: :bool, default: false },   # 使用可能な場面/バトル
             20 => { name: :reverse_state_effect, type: :bool, default: false },
             21 => { name: :physical_rate, type: :int, default: 0 },
             22 => { name: :magical_rate, type: :int, default: 3 },
@@ -173,6 +187,10 @@ module LCF
             22 => { name: :dual_attack, type: :bool, default: false },
             23 => { name: :attack_all, type: :bool, default: false },
             24 => { name: :ignore_evasion, type: :bool, default: false },
+            25 => { name: :prevent_critical, type: :bool, default: false },  # 必殺(痛恨の一撃)防止 (盾/鎧/兜/装飾品)
+            26 => { name: :raise_evasion, type: :bool, default: false },     # 物理攻撃の回避率アップ
+            27 => { name: :half_sp_cost, type: :bool, default: false },      # MP消費量半分
+            28 => { name: :no_terrain_damage, type: :bool, default: false }, # 地形ダメージ無効
             29 => { name: :cursed, type: :bool, default: false },
             31 => { name: :scope, type: :int, default: 0 },
             32 => { name: :recover_hp_rate, type: :int, default: 0 },
@@ -755,8 +773,29 @@ module LCF
           name: :battle_anime2, type: :Array2D,
           elements: {
             1 => { name: :name, type: :string, default: '' },
-            2 => { name: :battler_name, type: :string, default: '' },
-            3 => { name: :speed, type: :int, default: 0 },
+            2 => { name: :attack_motion, type: :int, default: 0 },     # 攻撃モーション (2003)
+            10 => {
+              # 基本と拡張 — object list, 33 elements by default (2003).
+              name: :base_data, type: :Array2D,
+              elements: {
+                1 => { name: :name, type: :string, default: '' },
+                2 => { name: :battler_name, type: :string, default: '' },   # 戦闘(武器)グラフィック
+                3 => { name: :battler_position, type: :int, default: 0 },   # グラフィック/位置
+                # 戦闘アニメ. The wiki table's type/default cells are garbled
+                # (形式 "0" / 省略時 "空文字列"); it holds the battle-animation id.
+                4 => { name: :animation_id, type: :int, default: 0 },
+                5 => { name: :extension, type: :int, default: 1 },          # 拡張
+              }
+            },
+            11 => {
+              # 武器 — object list, 33 elements by default (2003).
+              name: :weapon_data, type: :Array2D,
+              elements: {
+                1 => { name: :name, type: :string, default: '' },
+                2 => { name: :battler_name, type: :string, default: '' },   # 戦闘(武器)グラフィック
+                3 => { name: :battler_position, type: :int, default: 0 },   # グラフィック/位置
+              }
+            },
           }
         },
       },
