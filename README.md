@@ -13,6 +13,10 @@
 - Walk the party leader around the map with the arrow keys / `WASD`: grid
   movement with smooth stepping, walk animation, tile/edge/event collision and a
   camera that follows the player
+- Events move on their own: each event walks per its page's movement type
+  (random, vertical/horizontal pacing, approaching or fleeing the hero) or runs a
+  custom move route, paced by its move frequency and blocked by terrain, the
+  player and other events
 - Tiles are currently drawn as colour blocks (real chipset rendering is planned)
 
 ### Events, menu & saving
