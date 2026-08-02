@@ -841,9 +841,11 @@ class RPG2k
       def update
         if Input.trigger?(Input::DOWN) && @selected_index < @menu_items.length - 1
           @selected_index += 1
+          play_cursor_se
           refresh_cursor
         elsif Input.trigger?(Input::UP) && @selected_index > 0
           @selected_index -= 1
+          play_cursor_se
           refresh_cursor
         end
 
@@ -884,6 +886,19 @@ class RPG2k
         @window.cursor_rect =
           Rect.new(0, @selected_index * LINE_HEIGHT, @window.contents.width,
                    LINE_HEIGHT)
+      end
+
+      # Play the database's "cursor move" sound effect (System > cursor SE) when
+      # the menu selection changes. A no-op when the game defines no cursor SE,
+      # the file is missing, or no audio backend is installed.
+      def play_cursor_se
+        se = db.system.cursor_se
+        return unless se
+        name = se.file
+        return if name.nil? || name.empty?
+        Audio.se_play name, se.volume, se.pitch
+      rescue StandardError => e
+        $stderr.puts "[RGSS] cursor SE playback failed: #{e.message}"
       end
     end
   end
