@@ -96,6 +96,7 @@ void iterm_encode_frame(int w, int h, int scale, const uint16_t* pix) {
   s += "\x1b[H";
   terminal_append_legend(s);
   terminal_append_stats(s);
+  terminal_append_console(s);
   s += "\x1b]1337;File=inline=1;size=";
   s += std::to_string(g_png.size());
   s += ";width=";

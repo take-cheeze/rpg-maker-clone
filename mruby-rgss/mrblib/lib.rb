@@ -103,62 +103,110 @@ module RGSS
   class RGSSError < StandardError
   end
 
-  # RGSS Audio module. Playback back-ends are not wired up yet, so these are
-  # inert stubs that keep scripts calling the standard API from crashing.
+  # RGSS Audio module. The public methods resolve a game-supplied name to a real
+  # file (mirroring how Bitmap searches GAME_DIR/RTP_DIR) and hand it to the
+  # native SDL_mixer backend defined in src/audio.cxx + src/sdl_audio.cxx. When
+  # no backend is installed (the standalone test build, or a build/host without
+  # an audio device) the native primitives are graceful no-ops.
   module Audio
+    # Sub-folders searched for each kind of audio, relative to GAME_DIR/RTP_DIR.
+    # "" lets a name that already carries its folder (or an absolute path)
+    # resolve as given. RPG2000 keeps music under Music/ and effects under
+    # Sound/; the Audio/* folders cover RPG Maker XP-style layouts.
+    MUSIC_DIRS = ["", "Music", "Audio/BGM", "Audio/BGS", "Audio/ME"].freeze
+    SOUND_DIRS = ["", "Sound", "Audio/SE"].freeze
+    # Tried in order after the name as-is; the data usually omits the extension.
+    EXTS = ["", ".ogg", ".wav", ".mid", ".midi", ".mp3", ".flac"].freeze
+
     class << self
       def bgm_play(filename, volume = 100, pitch = 100)
-        RGSS.warn_stub("Audio.bgm_play")
+        path = resolve(filename, MUSIC_DIRS)
+        _bgm_play(path, volume, pitch) if path
       end
 
       def bgm_stop
-        RGSS.warn_stub("Audio.bgm_stop")
+        _bgm_stop
       end
 
       def bgm_fade(time)
-        RGSS.warn_stub("Audio.bgm_fade")
+        _bgm_fade(time)
       end
 
       def bgm_pos
-        RGSS.warn_stub("Audio.bgm_pos")
-        0
+        _bgm_pos
       end
 
       def bgs_play(filename, volume = 100, pitch = 100)
-        RGSS.warn_stub("Audio.bgs_play")
+        path = resolve(filename, MUSIC_DIRS)
+        _bgs_play(path, volume, pitch) if path
       end
 
       def bgs_stop
-        RGSS.warn_stub("Audio.bgs_stop")
+        _bgs_stop
       end
 
       def bgs_fade(time)
-        RGSS.warn_stub("Audio.bgs_fade")
+        _bgs_fade(time)
       end
 
       def bgs_pos
-        RGSS.warn_stub("Audio.bgs_pos")
-        0
+        _bgs_pos
       end
 
       def me_play(filename, volume = 100, pitch = 100)
-        RGSS.warn_stub("Audio.me_play")
+        path = resolve(filename, MUSIC_DIRS)
+        _me_play(path, volume, pitch) if path
       end
 
       def me_stop
-        RGSS.warn_stub("Audio.me_stop")
+        _me_stop
       end
 
       def me_fade(time)
-        RGSS.warn_stub("Audio.me_fade")
+        _me_fade(time)
       end
 
       def se_play(filename, volume = 100, pitch = 100)
-        RGSS.warn_stub("Audio.se_play")
+        path = resolve(filename, SOUND_DIRS)
+        _se_play(path, volume, pitch) if path
       end
 
       def se_stop
-        RGSS.warn_stub("Audio.se_stop")
+        _se_stop
+      end
+
+      private
+
+      # First existing file for +filename+ under any (root, dir, extension)
+      # combination, or nil. The name is first tried as given (an absolute path
+      # or one relative to the current directory), then under GAME_DIR and
+      # RTP_DIR crossed with +dirs+; an accented name stored decomposed on disk
+      # is retried in NFD form, as Bitmap does.
+      def resolve(filename, dirs)
+        return nil if filename.nil? || filename.empty?
+        found = exist_with_ext(filename)
+        return found if found
+        [GAME_DIR, RTP_DIR].each do |root|
+          next if root.nil? || root.empty?
+          dirs.each do |dir|
+            base = dir.empty? ? "#{root}/#{filename}" : "#{root}/#{dir}/#{filename}"
+            found = exist_with_ext(base)
+            return found if found
+          end
+        end
+        nil
+      end
+
+      # First of +base+ with each known extension appended that exists on disk
+      # (also trying the decomposed NFD form), or nil.
+      def exist_with_ext(base)
+        EXTS.each do |ext|
+          cand = "#{base}#{ext}"
+          return cand if File.exist?(cand)
+          nfd = RGSS.to_nfd(cand)
+          return nfd if nfd != cand && File.exist?(nfd)
+        end
+        nil
       end
     end
   end
