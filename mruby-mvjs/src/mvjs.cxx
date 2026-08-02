@@ -28,6 +28,10 @@
 
 #include <quickjs.h>
 
+// stb_image_write's implementation is compiled by mruby-rgss (iterm.cxx); we
+// include only the declarations here so MV::JS.screenshot can encode a PNG.
+#include <stb_image_write.h>
+
 #include "mvhost.hxx"
 #include "rgss_bitmap.hxx"
 
@@ -650,6 +654,39 @@ mrb_value js_present(mrb_state* mrb, mrb_value self) {
   return mrb_true_value();
 }
 
+// MV::JS.screenshot(path) -> encode the current MV canvas (what PIXI last drew)
+// to a PNG at `path`. Used to capture the rendered frame in CI so the visual
+// output can be inspected. The canvas is straight RGBA8, which is exactly what
+// stbi_write_png expects. Returns true on success.
+mrb_value js_screenshot(mrb_state* mrb, mrb_value self) {
+  const char* path;
+  mrb_int len;
+  mrb_get_args(mrb, "s", &path, &len);
+  const std::string p(path, static_cast<size_t>(len));
+
+  JSContext* ctx = host();
+  if (!ctx)
+    return mrb_false_value();
+
+  JSValue r =
+      JS_Eval(ctx, kMainCanvasHandleExpr, std::strlen(kMainCanvasHandleExpr),
+              "<mv-screenshot>", JS_EVAL_TYPE_GLOBAL);
+  int32_t handle = 0;
+  if (!JS_IsException(r))
+    JS_ToInt32(ctx, &handle, r);
+  JS_FreeValue(ctx, r);
+  if (handle <= 0)
+    return mrb_false_value();
+
+  int w = 0, h = 0;
+  const uint8_t* px = mv_canvas_pixels(handle, &w, &h);
+  if (!px || w <= 0 || h <= 0)
+    return mrb_false_value();
+
+  const int ok = stbi_write_png(p.c_str(), w, h, 4, px, w * 4);
+  return ok ? mrb_true_value() : mrb_false_value();
+}
+
 }  // namespace
 
 // Root a game-relative path at the configured base dir. Declared in mvhost.hxx
@@ -675,6 +712,8 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, js, "base_dir=", js_set_base_dir,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, js, "present", js_present, MRB_ARGS_ARG(1, 1));
+  mrb_define_class_method(mrb, js, "screenshot", js_screenshot,
+                          MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}

@@ -116,11 +116,30 @@ class MV
     pump_frame # M3: run the rAF/timer queue for one frame
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
+    maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
     RGSS::Graphics.update
   end
 
   private
+
+  # If a screenshot path was requested (`--mv_screenshot`), write the rendered
+  # MV frame to it once, a couple of seconds in — enough for the boot to reach
+  # the title and its images to load and draw. Used to capture the visual output
+  # in CI; a no-op during normal play (no path configured).
+  def maybe_screenshot
+    path = (defined?(MV_SCREENSHOT) && MV_SCREENSHOT) || ""
+    return if path.empty? || @shot_taken
+
+    @frames = (@frames || 0) + 1
+    return if @frames < 120
+
+    @shot_taken = true
+    ok = MV::JS.screenshot(path)
+    $stderr.puts "[MV] screenshot #{ok ? "saved" : "failed"}: #{path}"
+  rescue StandardError => e
+    $stderr.puts "[MV] screenshot error: #{e.message}"
+  end
 
   # Log the running scene's class name whenever it changes, so the boot's
   # progress through the scene graph (Scene_Boot -> Scene_Title -> ...) is

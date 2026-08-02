@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV render capture: a `--mv_screenshot=PATH` flag writes a PNG of the rendered
+  MV frame a couple of seconds into the boot (`MV::JS.screenshot` encodes the
+  live PIXI canvas via stb_image_write), and the CI smoke test uploads it as the
+  `mv-screenshot` artifact — so the actual on-screen output can be inspected as
+  the maker is brought up, not just the engine's log. With the boot fixes below,
+  the KinoAR/Lunatic-Core test bed now reaches `Scene_Title` cleanly
+  (`[MV] scene: Scene_Boot -> Scene_Title`).
 - MV boot now reaches PIXI init and continues through `Graphics.initialize`
   (milestone M4/M5): with the JS host in place PIXI 4.x starts in Canvas mode
   against the Canvas2D bridge. Cleared the init-time blockers that followed: the

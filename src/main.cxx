@@ -30,6 +30,11 @@ DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
 DEFINE_int64(height, 240, "height of the window");
 DEFINE_string(game_dir, "", "Game directory");
+DEFINE_string(
+    mv_screenshot,
+    "",
+    "For RPG Maker MV: write a PNG of the rendered frame to this path "
+    "after boot, then keep running (used to capture output in CI)");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -377,6 +382,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MV_SCREENSHOT"),
+                mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);

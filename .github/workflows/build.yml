@@ -138,7 +138,23 @@ jobs:
       - name: MV boot smoke test
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         continue-on-error: true
-        run: nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone --timeout_ms=3000 --game_dir data/Lunatic-Core
+        run: |
+          mkdir -p ss
+          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+            --timeout_ms=5000 --game_dir data/Lunatic-Core \
+            --mv_screenshot=ss/mv_title.png
+
+      # Upload the captured MV frame so the rendered output can be inspected
+      # while the maker is brought up. Best-effort: the boot is non-blocking, so
+      # the screenshot may be missing on some runs.
+      - name: Upload MV screenshot
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mv-screenshot
+          path: ss/mv_title.png
+          if-no-files-found: warn
 
   wasm:
     runs-on: ubuntu-24.04
