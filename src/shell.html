@@ -294,6 +294,33 @@
       var nocacheInput = document.getElementById('nocache');
       var clearBtn = document.getElementById('clearcache');
 
+      // --- Remember the last URL/proxy across reloads -----------------------
+      // Precedence: the ?url=/&proxy= query string (a shareable, bookmarkable
+      // link) wins, and a query-string url auto-loads once the runtime is up.
+      // Otherwise the last values typed are restored from localStorage so they
+      // survive a plain reload. Whatever is loaded is written back into both, so
+      // the address bar always reflects (and can share) the current project.
+      var LS_URL = 'rpg2k.lastUrl';
+      var LS_PROXY = 'rpg2k.lastProxy';
+      function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+      function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+      var qs = new URLSearchParams(location.search);
+      var qsUrl = (qs.get('url') || '').trim();
+      var qsProxy = qs.get('proxy');
+      urlInput.value = qsUrl || lsGet(LS_URL);
+      proxyInput.value = qsProxy !== null ? qsProxy : lsGet(LS_PROXY);
+
+      // Reflect the given url/proxy into the address bar without reloading, so a
+      // refresh or a copied link carries them.
+      function syncQuery(url, proxy) {
+        var p = new URLSearchParams();
+        if (url) p.set('url', url);
+        if (proxy) p.set('proxy', proxy);
+        var s = p.toString();
+        try { history.replaceState(null, '', s ? '?' + s : location.pathname); } catch (e) {}
+      }
+
       function log(text) {
         logEl.textContent += text + '\n';
         logEl.scrollTop = logEl.scrollHeight;
@@ -322,6 +349,8 @@
           runtimeReady = true;
           loadBtn.disabled = false;
           setStatus('Ready — choose a project to load.');
+          // A shared/bookmarked ?url= link loads on its own.
+          if (qsUrl) loadBtn.click();
         },
       };
 
@@ -557,6 +586,12 @@
       loadBtn.addEventListener('click', function () {
         var raw = urlInput.value.trim();
         if (!raw) { setStatus('Enter a zip URL or GitHub repo, or pick a local file.', 'error'); return; }
+        var proxy = proxyInput.value.trim();
+        // Remember what we loaded and put it in the address bar so a reload or a
+        // copied link comes back to this project.
+        lsSet(LS_URL, raw);
+        lsSet(LS_PROXY, proxy);
+        syncQuery(raw, proxy);
         var url = resolveUrl(raw);
         log('Resolved "' + raw + '" -> ' + url);
         loadFrom(function () { return fetchZip(url); }, raw);
@@ -565,6 +600,10 @@
       urlInput.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !loadBtn.disabled) loadBtn.click();
       });
+
+      // Keep the last-typed values so even an un-loaded reload restores them.
+      urlInput.addEventListener('input', function () { lsSet(LS_URL, urlInput.value.trim()); });
+      proxyInput.addEventListener('input', function () { lsSet(LS_PROXY, proxyInput.value.trim()); });
 
       fileInput.addEventListener('change', function () {
         var f = fileInput.files && fileInput.files[0];

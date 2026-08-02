@@ -137,6 +137,11 @@
   *Re-download (ignore cache)* to force a fresh copy (e.g. to pick up new commits
   on a GitHub `HEAD` archive), or *Clear cached archives* to drop the whole
   cache.
+- The URL and proxy fields are **remembered across reloads** and mirrored into
+  the address bar as a `?url=…&proxy=…` query, so the page is bookmarkable and
+  shareable — opening a link with a `?url=` auto-loads that project. (Values are
+  also kept in `localStorage`, so a plain reload restores whatever was last
+  typed even without a query string.)
 - A project can still be **baked into the page** at build time with
   `-DWASM_GAME_DIR=/abs/path/to/game`; that page auto-starts the game with no
   interaction (and the loader is skipped).

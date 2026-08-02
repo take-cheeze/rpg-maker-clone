@@ -22,7 +22,9 @@ All notable changes to this project will be documented in this file.
   field for one — or the always-works local-file path. Downloaded archives are
   cached (Cache Storage, keyed by the resolved URL) so re-loading the same URL
   or repo skips the network; the loader can force a fresh download or clear the
-  cache
+  cache. The URL and CORS-proxy fields persist across reloads (localStorage) and
+  are mirrored into the page's `?url=`/`?proxy=` query string, so a project link
+  is bookmarkable and shareable and a `?url=` link auto-loads
 - On-screen game keypad for the browser (WebAssembly) build so the game is
   playable by touch or mouse without a physical keyboard. A custom Emscripten
   shell page (`src/shell.html`) draws `<button>` elements — a D-pad plus OK (C),
