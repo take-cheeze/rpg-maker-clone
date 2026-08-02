@@ -85,6 +85,17 @@ jobs:
         run: |
           nix develop -c cmake --build build
 
+      - name: sccache stats
+        if: always()
+        run: |
+          {
+            echo "## sccache stats — ${{ matrix.os }}"
+            echo ""
+            echo '```'
+            nix develop -c sccache --show-stats
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: cache test game
         uses: actions/cache@v6
         id: cache
@@ -109,6 +120,13 @@ jobs:
 
   wasm:
     runs-on: ubuntu-24.04
+    env:
+      # Cache emcc compilations across runs. sccache (used by the native build)
+      # does not understand emcc, so the wasm build uses ccache instead, which
+      # wraps emcc as a plain compiler. nixpkgs sets EM_CONFIG via the
+      # environment, so emcc does not pass --em-config on the command line and
+      # ccache does not bail out with "Multiple input files".
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
@@ -128,6 +146,13 @@ jobs:
           key: ${{ runner.os }}-emcc-${{ github.run_id }}
           restore-keys: ${{ runner.os }}-emcc-
 
+      - name: Restore and cache ccache
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: wasm-ccache-${{ github.run_id }}
+          restore-keys: wasm-ccache-
+
       # Emscripten builds its system libraries (libc/libc++, and the -fexceptions
       # variant this project forces) on the first emcc call, which costs ~50s of
       # the configure step. The nixpkgs emscripten setup hook points EM_CACHE at
@@ -137,14 +162,32 @@ jobs:
       # restored on later runs. It must be set for both configure and build,
       # since emcc runs in both.
       - name: cmake
+        # CMAKE_<LANG>_COMPILER_LAUNCHER is initialised from the environment at
+        # configure time and stored in CMakeCache.txt, so setting ccache here is
+        # enough for it to wrap emcc during the build step too. This overrides
+        # the sccache launcher the devShell exports (sccache cannot cache emcc).
         run: |
           nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+            CMAKE_C_COMPILER_LAUNCHER=ccache \
+            CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja
 
       - name: build
         run: |
+          nix develop -c ccache --zero-stats
           nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
+
+      - name: ccache stats
+        if: always()
+        run: |
+          {
+            echo "## ccache stats — wasm"
+            echo ""
+            echo '```'
+            nix develop -c ccache --show-stats
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
