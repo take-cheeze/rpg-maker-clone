@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <mruby.h>
 #include <mruby/string.h>
@@ -656,7 +657,71 @@ mrb_value js_present(mrb_state* mrb, mrb_value self) {
   return mrb_true_value();
 }
 
-// MV::JS.screenshot(path) -> encode the current MV canvas (what PIXI last drew)
+// Standard base64 of a byte string (used for the log thumbnail below).
+std::string base64_encode(const std::string& in) {
+  static const char* t =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((in.size() + 2) / 3) * 4);
+  size_t i = 0;
+  for (; i + 3 <= in.size(); i += 3) {
+    const unsigned v = (static_cast<unsigned char>(in[i]) << 16) |
+                       (static_cast<unsigned char>(in[i + 1]) << 8) |
+                       static_cast<unsigned char>(in[i + 2]);
+    out += t[(v >> 18) & 63];
+    out += t[(v >> 12) & 63];
+    out += t[(v >> 6) & 63];
+    out += t[v & 63];
+  }
+  if (i < in.size()) {
+    unsigned v = static_cast<unsigned char>(in[i]) << 16;
+    if (i + 1 < in.size())
+      v |= static_cast<unsigned char>(in[i + 1]) << 8;
+    out += t[(v >> 18) & 63];
+    out += t[(v >> 12) & 63];
+    out += (i + 1 < in.size()) ? t[(v >> 6) & 63] : '=';
+    out += '=';
+  }
+  return out;
+}
+
+// Append a std::string via the stb write callback.
+void png_string_sink(void* ctx, void* data, int size) {
+  static_cast<std::string*>(ctx)->append(static_cast<const char*>(data),
+                                         static_cast<size_t>(size));
+}
+
+// Emit a small base64 PNG thumbnail of the frame to stderr, wrapped in markers,
+// so the rendered output can be inspected straight from the CI log when the
+// artifact host is blocked by egress policy. Only reached on the screenshot
+// (CI/debug) path, so it never spams normal play.
+void emit_log_thumbnail(const uint8_t* px, int w, int h) {
+  const int tw = w > 128 ? 128 : w;
+  const int th = w > 0 ? h * tw / w : h;
+  if (tw <= 0 || th <= 0)
+    return;
+  std::vector<uint8_t> rgb(static_cast<size_t>(tw) * static_cast<size_t>(th) *
+                           3);
+  for (int y = 0; y < th; ++y) {
+    const int sy = y * h / th;
+    for (int x = 0; x < tw; ++x) {
+      const int sx = x * w / tw;
+      const uint8_t* s = px + (static_cast<size_t>(sy) * w + sx) * 4;
+      uint8_t* d = rgb.data() + (static_cast<size_t>(y) * tw + x) * 3;
+      d[0] = s[0];
+      d[1] = s[1];
+      d[2] = s[2];
+    }
+  }
+  std::string png;
+  if (!stbi_write_png_to_func(png_string_sink, &png, tw, th, 3, rgb.data(),
+                              tw * 3))
+    return;
+  const std::string b64 = base64_encode(png);
+  std::fprintf(stderr, "[MV-THUMB %dx%d]%s[/MV-THUMB]\n", tw, th, b64.c_str());
+}
+
+// MV::JS.screenshot(path) -> bool: encode the main canvas' current frame out
 // to a PNG at `path`. Used to capture the rendered frame in CI so the visual
 // output can be inspected. The canvas is straight RGBA8, which is exactly what
 // stbi_write_png expects. Returns true on success.
@@ -702,6 +767,11 @@ mrb_value js_screenshot(mrb_state* mrb, mrb_value self) {
     return mrb_false_value();
   std::fwrite(png.data(), 1, png.size(), f);
   std::fclose(f);
+
+  // Also emit a small base64 thumbnail to the log so the rendered frame can be
+  // inspected from CI output alone — the uploaded artifact lives on a storage
+  // host our egress policy blocks, so the log line is the only way to see it.
+  emit_log_thumbnail(px, w, h);
   return mrb_true_value();
 }
 
