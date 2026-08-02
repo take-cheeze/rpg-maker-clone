@@ -284,6 +284,31 @@ class RPG2k
       end
     end
 
+    # Resolves the command list a Call Event refers to. Common events are looked
+    # up by id; a map event's page is fetched from the loaded map unit (best
+    # effort — the page index follows the LCF page numbering).
+    class EventResolver
+      def initialize(common_by_id, map_events)
+        @common = common_by_id || {}
+        @map_events = map_events || {}
+      end
+
+      def common_event_commands(id)
+        @common[id]
+      end
+
+      def map_event_commands(id, page_index)
+        ev = @map_events[id]
+        return nil unless ev
+        pages = ev.pages
+        return nil unless pages
+        page = pages[page_index]
+        page && page.event_commands
+      rescue StandardError
+        nil
+      end
+    end
+
     # Play scene: renders the loaded map and lets the party leader walk around
     # it. Tiles are drawn as solid colour blocks derived from their tile id (a
     # placeholder until real chipset blitting lands — see docs/TODO.md); the
@@ -324,6 +349,7 @@ class RPG2k
         @rng = Game::Rng.new(0x2000)
         @world = MapWorld.new(self, @rng)
         build_events
+        @interpreter.resolver = build_resolver
         @message = nil
         @wait_timer = nil
         @choice_index = 0
@@ -454,6 +480,17 @@ class RPG2k
         { id: id, char: ch, trigger: page_trigger(page),
           commands: page_commands(page), move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40 }
+      end
+
+      # Build the Call Event resolver for the current map: common events keyed by
+      # id (they are global) plus this map's raw events for map-event page calls.
+      def build_resolver
+        common = {}
+        @common.each { |c| common[c[:id]] = c[:commands] }
+        map_events = (@map.unit.events rescue nil)
+        EventResolver.new(common, map_events)
+      rescue StandardError
+        EventResolver.new({}, nil)
       end
 
       # Recompute the occupied-tile set from the events' current positions.
@@ -612,6 +649,7 @@ class RPG2k
         @started_auto = {}
         @started_common = {}
         build_events
+        @interpreter.resolver = build_resolver
         @moving = false
         @move_count = 0
         @last_frame = nil

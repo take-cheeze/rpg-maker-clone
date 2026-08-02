@@ -90,9 +90,14 @@ The work below is roughly ordered by the critical path to a walkable game
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
-  Wait, Play BGM/SE, End Event) with a per-frame step cap so a bad loop can't
-  hang; the remaining ~90 commands (Move Event, pictures, screen effects,
-  battles, actor stat changes, Call Event, ...) are TODO
+  Wait, Play BGM/SE, Call Event, End Event) with a per-frame step cap so a bad
+  loop can't hang. **Call Event** suspends the current list, runs the referenced
+  common event (or map-event page) to completion via a resolver + call stack —
+  so call-only common events, which auto-start/parallel never reach, now run —
+  and returns to the caller; recursion is bounded. Conditional Branch covers
+  switch / variable / **timer** / gold / item / actor-in-party conditions. The
+  remaining commands (Move Event, pictures, screen effects, battles, actor stat
+  changes, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes

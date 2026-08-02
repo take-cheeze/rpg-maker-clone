@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- The event interpreter now supports **Call Event**. A Call Event command
+  suspends the current command list and runs a referenced list to completion,
+  then resumes where it left off, via a call stack on `Game::Interpreter` and a
+  resolver the scene supplies (common events by id; a map event's page from the
+  loaded map). This makes *call-only* common events (start condition 5) — which
+  auto-start and parallel processing never reach — actually run, and lets events
+  share logic. Nested calls unwind correctly and recursion is bounded
+  (`MAX_CALL_DEPTH`) so a self-calling event terminates instead of hanging.
+  Conditional Branch also gained the **timer** condition (compare the countdown
+  timer's seconds). `Scene::Map` wires a resolver over its common and map events
+  (refreshed on teleport). Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
 - Events now move on the map. Decoded move routes (`LCF.parse_move_commands`)
   and event-page movement settings, which previously only parsed, now drive
   events at runtime. A new `Game::MoveRoute` executor runs a decoded route

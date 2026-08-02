@@ -108,13 +108,25 @@ def fake_chipset
   OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil)
 end
 
-def fake_db
+def fake_db(common = nil)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: ''),
     chipset: { 1 => fake_chipset },
-    common_event: nil,
+    common_event: common,
     player: {}
   )
+end
+
+# An event command (the interpreter reads code/param/string/indent/parameters).
+class ECmd
+  attr_reader :code, :indent, :string, :parameters
+  def initialize(code, params = [], indent: 0, string: '')
+    @code = code
+    @parameters = params
+    @indent = indent
+    @string = string
+  end
+  def param(i); @parameters[i] || 0; end
 end
 
 # One event page. Defaults: an action-trigger, stationary event with no route.
@@ -157,8 +169,8 @@ def fake_party
   OpenStruct.new(leader: nil, actors: [])
 end
 
-def new_scene(events, player: [0, 0])
-  db = fake_db
+def new_scene(events, player: [0, 0], common: nil)
+  db = fake_db(common)
   state = Game::State.new(fake_party, 1, player[0], player[1])
   state.map = fake_map(1, events)
   RPG2k::Scene::Map.new(fake_parent(db), state)
@@ -220,6 +232,20 @@ check 'two events do not stack on the same tile' do
   end
   # They walk toward each other and end up adjacent on row 2.
   ok (ca.x - cb.x).abs == 1, "expected adjacency, got a=#{ca.x} b=#{cb.x}"
+end
+
+check 'an autostart event Calls a call-only common event through the scene' do
+  ic = Game::Interpreter::Cmd
+  # A common event with start_term 5 (call-only): auto-start/parallel never runs
+  # it, so if switch 7 flips it can only be via Call Event.
+  ce = OpenStruct.new(start_term: 5, need_flag: false, switch_id: 1,
+                      event: [ECmd.new(ic::CONTROL_SWITCHES, [0, 7, 7, 0])])
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::CALL_EVENT, [0, 1, 0])] # call common event 1
+  scene = new_scene({ 1 => event(2, 2, pg) }, common: { 1 => ce })
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[7], 'call-only common event ran via Call Event'
 end
 
 # -- summary ------------------------------------------------------------------
