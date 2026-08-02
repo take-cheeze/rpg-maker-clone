@@ -22,8 +22,10 @@
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
   switches/variables, party/gold/item changes, conditional branches, teleport,
-  waits and BGM/SE playback; action-button and auto-start/parallel (common)
-  events trigger, gated by their page/switch conditions
+  waits, BGM/SE playback and Call Event (run a common event / another event's
+  page). Events start on the action button, on player touch (walking into them),
+  on event touch (they walk into the player) or auto-start, gated by their
+  page/switch conditions; auto-start/parallel common events also run
 - Message text expands the common control codes (`\v[n]` variable, `\n[n]`
   actor name, `\\`)
 - A countdown timer can be set/started/stopped from events

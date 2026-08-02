@@ -81,12 +81,15 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Event system
 - 🚧 Event pages — page conditions (switch/variable/item/actor) are implemented
-  (`Game::EventPage`), action-button + auto-start triggers run, and a page's
-  autonomous move type / custom move route now drives the event at runtime (see
-  Movement & collision). Touch, event-touch and parallel triggers are still to
-  come, as is the interpreter's *Set Move Route* (Move Event) command — the
-  runtime engine exists, but decoding a route embedded in an event command's
-  parameters is not wired up yet
+  (`Game::EventPage`), and the start triggers now run: **action button**
+  (trigger 0), **player touch** (1, walking into the event), **event touch**
+  (2, the event walking into the player) and **auto-start** (3). A page's
+  autonomous move type / custom move route also drives the event at runtime (see
+  Movement & collision). Still to come: true **parallel** process events
+  (trigger 4 — needs a background interpreter per event, currently not run), and
+  the interpreter's *Set Move Route* (Move Event) command — the runtime engine
+  exists, but decoding a route embedded in an event command's parameters is not
+  wired up yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,

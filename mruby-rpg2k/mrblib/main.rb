@@ -333,6 +333,14 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
+      # Event-page start conditions (the page `trigger` field): how the event's
+      # command list is set off.
+      TRIGGER_ACTION       = 0 # player presses the action button facing it
+      TRIGGER_PLAYER_TOUCH = 1 # player walks into it
+      TRIGGER_EVENT_TOUCH  = 2 # it walks into the player
+      TRIGGER_AUTO_START   = 3 # runs automatically once on the map
+      TRIGGER_PARALLEL     = 4 # runs continuously in the background
+
       def initialize parent, state
         super parent
         @state = state
@@ -520,7 +528,7 @@ class RPG2k
       # started at most once per visit so an ungated process cannot hard-loop.
       def start_autostart
         ev = @events.find do |e|
-          e[:trigger] == 3 && e[:commands] && !@started_auto[e[:id]]
+          e[:trigger] == TRIGGER_AUTO_START && e[:commands] && !@started_auto[e[:id]]
         end
         if ev
           @started_auto[ev[:id]] = true
@@ -536,17 +544,25 @@ class RPG2k
         @interpreter.start(ce[:commands])
       end
 
-      # On the action button, run the event the player is facing (trigger 0).
-      # The faced event turns toward the player before its commands run.
+      # The event currently standing on tile (x, y), or nil.
+      def event_at(x, y)
+        @event_tiles[[x, y]]
+      end
+
+      # Turn `ev` to face the player and run its command list.
+      def start_event(ev)
+        ev[:char].face(ev[:char].direction_toward(@state.x, @state.y))
+        @interpreter.start(ev[:commands])
+      end
+
+      # On the action button, run the trigger-0 event the player is facing. The
+      # faced event turns toward the player before its commands run.
       def try_action_trigger
+        return if event_busy?
         return unless Input.trigger?(Input::C)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        ev = @events.find do |e|
-          e[:char].x == fx && e[:char].y == fy && e[:trigger] == 0 && e[:commands]
-        end
-        return unless ev
-        ev[:char].face(Game::Character::TURN_180[@state.direction] || 2)
-        @interpreter.start(ev[:commands])
+        ev = event_at(fx, fy)
+        start_event(ev) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
       end
 
       # Advance autonomous / custom-route event movement one frame. Skipped
@@ -556,6 +572,7 @@ class RPG2k
       end
 
       def step_event(e)
+        return if event_busy? # an event fired earlier this frame; hold the rest
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
@@ -566,12 +583,27 @@ class RPG2k
           e[:route].step(ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
-          # Bumping into an obstacle still turns the event to face it.
-          @world.passable?(ch, dir) ? ch.move(dir) : ch.face(dir) if dir
+          move_autonomous(e, dir) if dir
         end
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
       rescue StandardError
         nil
+      end
+
+      # Move an autonomous event one step in `dir`. Walking into the player fires
+      # an event-touch (trigger 2) event instead of moving; any other obstacle
+      # just turns the event to face it.
+      def move_autonomous(e, dir)
+        ch = e[:char]
+        nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
+        if nx == @state.x && ny == @state.y
+          ch.face(dir)
+          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+        elsif @world.passable?(ch, dir)
+          ch.move(dir)
+        else
+          ch.face(dir)
+        end
       end
 
       # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
@@ -601,6 +633,7 @@ class RPG2k
 
       # The cancel button opens the main menu over the map.
       def try_open_menu
+        return if event_busy?
         return unless Input.trigger?(Input::B)
         @parent.push Scene::Menu.new(@parent, @state)
       end
@@ -741,11 +774,20 @@ class RPG2k
           return
         end
 
+        return if event_busy? # don't start a new move while an event runs
         dir = Input.dir4
         return if dir == 0
 
         @state.direction = dir
         nx, ny = target_tile(@state.x, @state.y, dir)
+
+        # Walking into a player-touch (trigger 1) event runs it instead of moving.
+        touched = event_at(nx, ny)
+        if touched && touched[:trigger] == TRIGGER_PLAYER_TOUCH && touched[:commands]
+          start_event(touched)
+          return
+        end
+
         return unless passable?(nx, ny, dir)
 
         @dest_x = nx

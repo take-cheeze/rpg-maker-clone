@@ -51,11 +51,16 @@ module RGSS
     def dispose; end
   end
 
-  # No input: the player never moves, no buttons are pressed.
+  # Scriptable input: tests set `dir_value` (a numpad direction held down) and
+  # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
     C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6
-    def self.trigger?(_); false; end
-    def self.dir4; 0; end
+    class << self
+      attr_accessor :dir_value, :triggered
+    end
+    def self.reset; @dir_value = 0; @triggered = []; end
+    def self.trigger?(k); Array(@triggered).include?(k); end
+    def self.dir4; @dir_value || 0; end
     def self.update; end
   end
 
@@ -85,6 +90,7 @@ $checks = 0
 
 def check(name)
   $checks += 1
+  RGSS::Input.reset # each check starts from a clean input state
   yield
 rescue StandardError => e
   $failures += 1
@@ -246,6 +252,41 @@ check 'an autostart event Calls a call-only common event through the scene' do
   10.times { scene.update }
   st = scene.instance_variable_get(:@state)
   ok st.switches[7], 'call-only common event ran via Call Event'
+end
+
+check 'player-touch (trigger 1): walking into an event runs it, no move' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 1) # player touch
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[6], 'player-touch event ran'
+  eq [0, 0], [st.x, st.y], 'player did not step onto the event'
+end
+
+check 'event-touch (trigger 2): an event walking into the player runs it' do
+  ic = Game::Interpreter::Cmd
+  pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  scene = new_scene({ 1 => event(3, 0, pg) }, player: [0, 0])
+  ch = chars(scene)[1]
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[5], 'event-touch event ran'
+  eq [1, 0], [ch.x, ch.y], 'event stopped adjacent, did not enter the player'
+end
+
+check 'action (trigger 0) does not fire on mere contact' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0) # needs the action button
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # walk into it, but do not press the action button
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
 end
 
 # -- summary ------------------------------------------------------------------
