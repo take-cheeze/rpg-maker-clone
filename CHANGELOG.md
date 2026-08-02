@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV boot resilience (milestone M4): script evaluation now follows browser
+  semantics — a `<script>` that throws while executing is logged and the next
+  one still runs, instead of aborting the whole engine. Previously the
+  `iphone-inline-video` library (an iOS-only inline-video shim MV bundles) threw
+  `invalid 'in' operand` under quickjs and took the entire boot down with it.
+  `MV#boot` now catches and logs each script's (and `window.onload`'s) errors and
+  carries on, and installs a no-op `makeVideoPlayableInline` fallback so video
+  creation can't crash later on this (video-less) host.
 - MV transform-aware canvas drawing (milestone M4): the `CanvasRenderingContext2D`
   shim now tracks the full 2D transform — `save`/`restore`, `translate`/`scale`/
   `rotate`/`transform`/`setTransform`/`resetTransform` — and `drawImage` honours

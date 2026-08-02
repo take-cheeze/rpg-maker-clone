@@ -135,8 +135,26 @@ class MV
     create_screen
     boot_scripts.each do |script|
       path = "#{@game_dir}/#{script}"
-      MV::JS.eval_file(path) if File.exist?(path)
+      next unless File.exist?(path)
+      begin
+        MV::JS.eval_file(path)
+      rescue StandardError => e
+        # In a browser, a script that throws while executing is reported to the
+        # console and the *next* <script> still runs — one bad script never
+        # aborts the page. Mirror that: log and continue, so a non-critical
+        # library (e.g. iphone-inline-video's iOS-only inline-video shim, which
+        # throws under our host) can't take down the whole boot.
+        $stderr.puts "[MV] error loading #{script}: #{e.message}"
+      end
     end
+    # iphone-inline-video exposes makeVideoPlayableInline, which MV calls from
+    # Graphics._createVideo. If that library was absent or threw before defining
+    # it, install a no-op so video creation doesn't later crash — we have no
+    # inline-video workaround to apply on this host anyway.
+    MV::JS.eval(
+      "if (typeof makeVideoPlayableInline === 'undefined') { " \
+      "globalThis.makeVideoPlayableInline = function(){}; }"
+    )
     # Our host has no DOM error UI, so route MV's fatal-error printer to the
     # console (stdout). MV's Graphics.printError draws into an "upper canvas"
     # that may not exist yet when an early boot error is caught, which otherwise
@@ -150,7 +168,13 @@ class MV
     # MV registers its entry point on window.onload (see the game's main.js);
     # in a browser the page-load event calls it. Fire it now that every script
     # is loaded, which runs SceneManager.run(Scene_Boot) and starts the game.
-    MV::JS.eval("if (typeof window.onload === 'function') { window.onload(); }")
+    # Guard it like the browser does — a throw here is logged, not fatal — so
+    # the run loop still starts and later frames can surface the real problem.
+    begin
+      MV::JS.eval("if (typeof window.onload === 'function') { window.onload(); }")
+    rescue StandardError => e
+      $stderr.puts "[MV] error in window.onload: #{e.message}"
+    end
   end
 
   # The scripts to evaluate, in order. Prefer the game's own index.html — the
