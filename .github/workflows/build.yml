@@ -75,7 +75,7 @@ jobs:
           )
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: cmake
         run: |
