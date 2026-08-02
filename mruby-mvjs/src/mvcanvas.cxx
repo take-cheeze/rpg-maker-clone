@@ -460,27 +460,59 @@ const char* kCanvasPreamble = R"MVJS(
   };
   g.HTMLCanvasElement = Canvas;
 
+  // A permissive stand-in for a DOM element. MV attaches error printers, font
+  // <style> rules, the mode box and video elements to the document during
+  // Graphics.initialize, so the surface here is what that init path touches:
+  // child insertion (returning the child, as the DOM does), a CSSStyleSheet with
+  // insertRule (font loader), classList, and the usual accessors.
   function stubElement(tag) {
-    return {
-      tagName: tag, style: {}, dataset: {}, className: '',
+    var el = {
+      tagName: ('' + tag).toUpperCase(),
+      style: {}, dataset: {}, className: '', id: '', innerHTML: '', textContent: '',
+      // <style> elements expose a .sheet whose insertRule the font loader calls.
+      sheet: { insertRule: function () {}, deleteRule: function () {}, cssRules: [] },
+      classList: { add: function () {}, remove: function () {}, toggle: function () {},
+                   contains: function () { return false; } },
       getContext: function () { return null; },
-      appendChild: function () {}, removeChild: function () {},
+      appendChild: function (c) { return c; },
+      insertBefore: function (c) { return c; },
+      removeChild: function (c) { return c; },
+      remove: function () {},
+      cloneNode: function () { return stubElement(tag); },
       setAttribute: function () {}, getAttribute: function () { return null; },
+      removeAttribute: function () {}, hasAttribute: function () { return false; },
       addEventListener: function () {}, removeEventListener: function () {},
+      querySelector: function () { return null; },
+      querySelectorAll: function () { return []; },
+      getBoundingClientRect: function () {
+        return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+      },
+      focus: function () {}, blur: function () {}, click: function () {},
     };
+    return el;
   }
+  var docHead = stubElement('head');
+  var docBody = stubElement('body');
   g.document = {
     createElement: function (tag) {
       tag = ('' + tag).toLowerCase();
       return tag === 'canvas' ? new Canvas() : stubElement(tag);
     },
+    createTextNode: function () { return stubElement('#text'); },
     getElementById: function () { return null; },
-    getElementsByTagName: function () { return []; },
+    getElementsByTagName: function (tag) {
+      tag = ('' + tag).toLowerCase();
+      if (tag === 'head') return [docHead];
+      if (tag === 'body') return [docBody];
+      return [];
+    },
+    querySelector: function () { return null; },
+    querySelectorAll: function () { return []; },
     createEvent: function () { return { initEvent: function () {} }; },
     addEventListener: function () {}, removeEventListener: function () {},
-    body: { appendChild: function () {}, style: {}, addEventListener: function () {} },
-    documentElement: { style: {} },
-    head: { appendChild: function () {} },
+    body: docBody,
+    documentElement: stubElement('html'),
+    head: docHead,
   };
 
   // Image: MV's Bitmap loads PNGs with `new Image()` + `.src = url`. We decode

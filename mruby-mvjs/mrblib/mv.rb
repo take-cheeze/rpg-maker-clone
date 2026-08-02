@@ -155,6 +155,17 @@ class MV
       "if (typeof makeVideoPlayableInline === 'undefined') { " \
       "globalThis.makeVideoPlayableInline = function(){}; }"
     )
+    # FPSMeter is a debug FPS-overlay library MV bundles and instantiates in
+    # Graphics._createFPSMeter; it throws on our host (it expects a real DOM to
+    # attach to), which aborts Graphics.initialize before the run loop starts.
+    # Replace it with a no-op exposing the methods MV drives it with each frame
+    # (tick/tickStart/show/hide/...); we don't draw an FPS overlay anyway.
+    MV::JS.eval(
+      "(function(g){ function FM(){} " \
+      "['tick','tickStart','show','hide','showFps','showDuration','set'," \
+      "'destroy'].forEach(function(m){ FM.prototype[m] = " \
+      "function(){ return this; }; }); g.FPSMeter = FM; })(globalThis);"
+    )
     # Our host has no DOM error UI, so route MV's fatal-error printer to the
     # console (stdout). MV's Graphics.printError draws into an "upper canvas"
     # that may not exist yet when an early boot error is caught, which otherwise

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV boot now reaches PIXI init and continues through `Graphics.initialize`
+  (milestone M4/M5): with the JS host in place PIXI 4.x starts in Canvas mode
+  against the Canvas2D bridge. Cleared the init-time blockers that followed: the
+  bundled **FPSMeter** debug overlay (which throws when instantiated on this
+  host) is replaced with a no-op exposing the tick/show/hide methods MV drives
+  each frame; the **document/element shim** gained the surface
+  `Graphics._createFontLoader` needs (`getElementsByTagName('head')`, a
+  `<style>.sheet.insertRule`, child-returning `appendChild`, `classList`); and a
+  silent **`AudioContext`** stub lets `SceneManager.initAudio` succeed (real
+  Web Audio → `RGSS::Audio` is a later milestone). Covered by `mruby-mvjs/test`.
 - MV boot resilience (milestone M4): script evaluation now follows browser
   semantics — a `<script>` that throws while executing is logged and the next
   one still runs, instead of aborting the whole engine. Previously the

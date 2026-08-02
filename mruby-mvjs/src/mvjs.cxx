@@ -226,6 +226,52 @@ const char* kHostPreamble = R"MVJS(
     };
   })();
 
+  // --- Web Audio (silent stub) ---------------------------------------------
+  // MV's SceneManager.initAudio requires WebAudio.initialize to succeed, which
+  // needs an AudioContext; without one it throws and the boot never reaches the
+  // run loop. Provide a no-op context so audio is silently disabled (real audio
+  // via RGSS::Audio is a later milestone). The surface is what MV's WebAudio and
+  // Html5Audio touch: gain/buffer-source graph nodes, decodeAudioData, resume.
+  (function () {
+    function node() {
+      return {
+        gain: { value: 1, setValueAtTime: function () {},
+                linearRampToValueAtTime: function () {} },
+        buffer: null, loop: false, loopStart: 0, loopEnd: 0,
+        playbackRate: { value: 1, setValueAtTime: function () {} },
+        onended: null,
+        connect: function () {}, disconnect: function () {},
+        start: function () {}, stop: function () {},
+      };
+    }
+    function AudioContextStub() {
+      this.state = 'running';
+      this.currentTime = 0;
+      this.sampleRate = 44100;
+      this.destination = node();
+      this.listener = {};
+    }
+    AudioContextStub.prototype.createGain = node;
+    AudioContextStub.prototype.createBufferSource = node;
+    AudioContextStub.prototype.createDynamicsCompressor = node;
+    AudioContextStub.prototype.createBiquadFilter = node;
+    AudioContextStub.prototype.createPanner = node;
+    AudioContextStub.prototype.createBuffer = function () {
+      return { getChannelData: function () { return []; } };
+    };
+    AudioContextStub.prototype.decodeAudioData = function (data, ok) {
+      // No decoding on this host; leave the sound perpetually "loading".
+      return typeof Promise !== 'undefined' ? Promise.resolve() : undefined;
+    };
+    AudioContextStub.prototype.resume = function () {
+      return typeof Promise !== 'undefined' ? Promise.resolve() : undefined;
+    };
+    AudioContextStub.prototype.suspend = AudioContextStub.prototype.resume;
+    AudioContextStub.prototype.close = AudioContextStub.prototype.resume;
+    g.AudioContext = AudioContextStub;
+    g.webkitAudioContext = AudioContextStub;
+  })();
+
   // --- NW.js style require('fs'|'path') for saves --------------------------
   // MV treats the presence of `require` as "running under NW.js" and switches
   // to local-file saves, which is exactly what we want.

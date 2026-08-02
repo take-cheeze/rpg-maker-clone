@@ -143,6 +143,16 @@ assert 'MV canvas translate offsets a fillRect' do
   assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(FR.__h,0,0).join(',')")
 end
 
+assert 'MV document head/style shims support the font-loader boot path' do
+  # Graphics._createFontLoader does getElementsByTagName('head')[0].appendChild(
+  # style) then style.sheet.insertRule(...); both must exist so boot survives.
+  assert_equal 1, MV::JS.eval("document.getElementsByTagName('head').length")
+  ok = MV::JS.eval("var s=document.createElement('style'); " \
+                   "document.getElementsByTagName('head')[0].appendChild(s); " \
+                   "s.sheet.insertRule('.x{}', 0); 'ok'")
+  assert_equal "ok", ok
+end
+
 assert 'MV canvas save/restore round-trips the transform' do
   m = MV::JS.eval("var x=document.createElement('canvas').getContext('2d'); " \
                   "x.save(); x.translate(5,7); x.scale(2,2); x.restore(); x._m.join(',')")

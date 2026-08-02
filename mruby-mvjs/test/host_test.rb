@@ -98,6 +98,15 @@ assert 'MV host drains promise microtasks on pump' do
   assert_equal 5, MV::JS.eval("globalThis.__pr")
 end
 
+assert 'MV host provides a silent AudioContext stub (needed by initAudio)' do
+  assert_equal true, MV::JS.eval("typeof AudioContext === 'function'")
+  assert_equal true, MV::JS.eval("typeof webkitAudioContext === 'function'")
+  assert_equal "running", MV::JS.eval("new AudioContext().state")
+  # The gain/buffer-source graph nodes MV's WebAudio wires up must be connectable.
+  assert_equal "function", MV::JS.eval("typeof new AudioContext().createGain().connect")
+  assert_equal "function", MV::JS.eval("typeof new AudioContext().createBufferSource().start")
+end
+
 assert 'MV host provides navigator/location/performance' do
   assert_equal "string", MV::JS.eval("typeof navigator.userAgent")
   assert_equal "string", MV::JS.eval("typeof location.href")
