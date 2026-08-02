@@ -447,7 +447,8 @@ module Game
         pitch = cmd.parameters.size > 1 ? cmd.param(1) : 100
         RGSS::Audio.se_play(name, volume, pitch)
       end
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] #{kind} playback failed for '#{name}': #{e.message}"
       nil
     end
   end
