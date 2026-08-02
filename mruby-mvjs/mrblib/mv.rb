@@ -128,8 +128,17 @@ class MV
   # the title and its images to load and draw. Used to capture the visual output
   # in CI; a no-op during normal play (no path configured).
   def maybe_screenshot
-    path = (defined?(MV_SCREENSHOT) && MV_SCREENSHOT) || ""
-    return if path.empty? || @shot_taken
+    return if @shot_taken
+
+    # MV_SCREENSHOT is set by the native launcher (main.cxx); `defined?` isn't
+    # usable here (mruby treats it as a method call), so read it directly and
+    # treat an unset constant as "no screenshot".
+    path = begin
+      MV_SCREENSHOT
+    rescue StandardError
+      ""
+    end
+    return if path.nil? || path.empty?
 
     @frames = (@frames || 0) + 1
     return if @frames < 120
