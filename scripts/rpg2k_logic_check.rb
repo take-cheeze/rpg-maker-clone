@@ -406,6 +406,111 @@ check 'interpreter pauses on a message and resumes' do
   eq true, st.switches[2] # ran the command after the message
 end
 
+# A Call Event resolver stub: maps common-event id -> command list, and
+# (map event id, page) -> command list.
+class FakeResolver
+  def initialize(common: {}, maps: {})
+    @common = common
+    @maps = maps
+  end
+  def common_event_commands(id); @common[id]; end
+  def map_event_commands(id, page); (@maps[id] || {})[page]; end
+end
+
+check 'Call Event runs a common event then returns to the caller' do
+  st = new_state
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])] # switch 9 = ON
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: { 5 => called })
+  it.start([
+    FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),          # call common event 5
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0]), # then switch 1 = ON
+  ])
+  it.update
+  eq true, st.switches[9], 'the called common event ran'
+  eq true, st.switches[1], 'control returned to the caller'
+  ok !it.running?, 'the whole process finished'
+end
+
+check 'Call Event as the last command returns cleanly (nested unwinds)' do
+  st = new_state
+  inner = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])]
+  # common event 5 is: set switch 2, then call common event 6 (its last command)
+  middle = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0]),
+            FakeCmd.new(IC::CALL_EVENT, [0, 6, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: { 5 => middle, 6 => inner })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0])]) # call 5 as the only command
+  it.update
+  eq true, st.switches[2]
+  eq true, st.switches[3]
+  ok !it.running?, 'both nested calls unwound and the process ended'
+end
+
+check 'a missing Call Event target is a no-op and the caller continues' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: {}) # id 5 not defined
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq true, st.switches[1]
+  ok !it.running?
+end
+
+check 'a self-calling common event terminates instead of hanging' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  self_call = [FakeCmd.new(IC::CALL_EVENT, [0, 1, 0])] # calls itself
+  it.resolver = FakeResolver.new(common: { 1 => self_call })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 1, 0])])
+  it.update # must return (bounded by MAX_CALL_DEPTH), not loop forever
+  ok !it.running?, 'recursion was bounded and the process ended'
+end
+
+check 'Call Event with no resolver set is a safe no-op' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq true, st.switches[1]
+end
+
+check 'a message inside a called event pauses and resumes across the boundary' do
+  st = new_state
+  called = [FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'hi'),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 8, 8, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: { 7 => called })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 7, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'paused on the message inside the called event'
+  eq ['hi'], it.message_lines
+  it.resume
+  it.update
+  eq true, st.switches[8], 'finished the called event after the message'
+  eq true, st.switches[1], 'returned to and finished the caller'
+end
+
+check 'conditional branch on the timer' do
+  st = new_state
+  st.timer_frames = 30 * 60 # 30 seconds remaining
+  it = Game::Interpreter.new(st)
+  cmds = [
+    FakeCmd.new(IC::CONDITIONAL, [2, 10, 0], indent: 0), # timer >= 10s ?
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 4, 4, 0], indent: 1),
+    FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 1),
+    FakeCmd.new(IC::END_BRANCH, [], indent: 0),
+  ]
+  it.start(cmds)
+  it.update
+  eq true, st.switches[4], 'timer >= 10s branch taken'
+  eq false, st.switches[5]
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

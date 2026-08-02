@@ -33,17 +33,24 @@ module Game
       COMMENT          = 12410
       COMMENT_2        = 22410
       END_EVENT        = 12310
+      CALL_EVENT       = 12330
       TELEPORT         = 10810
       WAIT             = 11410
       PLAY_BGM         = 11510
       PLAY_SE          = 11550
     end
 
+    # Upper bound on nested Call Event depth, so a common event that (directly or
+    # indirectly) calls itself unwinds instead of growing the stack without end.
+    MAX_CALL_DEPTH = 100
+
     def initialize(state)
       @state = state
       @list = []
       @index = 0
       @running = false
+      @call_stack = []
+      @resolver = nil
       reset_waits
     end
 
@@ -51,11 +58,15 @@ module Game
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
                 :teleport
+    # Resolves the command list a Call Event refers to (a common event, or a page
+    # of a map event). Set by the owning scene; nil disables Call Event.
+    attr_accessor :resolver
 
     def start(commands)
       @list = commands || []
       @index = 0
       @running = true
+      @call_stack = []
       reset_waits
     end
 
@@ -64,17 +75,37 @@ module Game
     MAX_STEPS = 1_000_000
 
     # Advance through commands until the list ends or a command asks to wait.
+    # When the current (possibly called) list runs out, control returns to the
+    # caller via the call stack; the process ends only once the outermost list is
+    # exhausted.
     def update
       return unless @running
       steps = 0
-      while @index < @list.size && !@waiting
+      until @waiting
+        # Unwind any exhausted called lists back to a caller with commands left.
+        return_from_call while @index >= @list.size && !@call_stack.empty?
+        break if @index >= @list.size # nothing left anywhere
         cmd = @list[@index]
         @index += 1
         execute cmd
         steps += 1
         break if steps >= MAX_STEPS
       end
-      @running = false if @index >= @list.size && !@waiting
+      @running = false if finished?
+    end
+
+    # True when nothing is left to run: the current list is exhausted, no caller
+    # is waiting on the stack, and we are not paused on a UI/map request.
+    def finished?
+      @index >= @list.size && @call_stack.empty? && !@waiting
+    end
+
+    # Resume the caller that a finished called-list returned to; returns false
+    # when there is no caller (the outermost list is done).
+    def return_from_call
+      return false if @call_stack.empty?
+      @list, @index = @call_stack.pop
+      true
     end
 
     # Resume after a message/wait/teleport request has been handled.
@@ -82,10 +113,12 @@ module Game
       reset_waits
     end
 
-    # Abandon the rest of the current command list (e.g. after a teleport).
+    # Abandon the rest of the current command list (e.g. after a teleport),
+    # including any pending callers.
     def stop
       @running = false
       @index = @list.size
+      @call_stack = []
       reset_waits
     end
 
@@ -134,9 +167,37 @@ module Game
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::END_EVENT        then @index = @list.size
       else nil # unimplemented / no-op (labels, comments, ...)
       end
+    end
+
+    # Call Event: suspend the current list and run a referenced command list to
+    # completion, then resume where we left off. param0 selects what is called:
+    #   0 – common event: param1 = common event id
+    #   1 – map event:    param1 = event id, param2 = page number
+    #   2 – map event, ids taken indirectly from variables
+    # A missing/empty target is a no-op; recursion is bounded by MAX_CALL_DEPTH.
+    def do_call_event(cmd)
+      return unless @resolver
+      cmds = resolve_call(cmd)
+      return if cmds.nil? || cmds.empty?
+      return if @call_stack.size >= MAX_CALL_DEPTH
+      @call_stack.push [@list, @index]
+      @list = cmds
+      @index = 0
+    end
+
+    def resolve_call(cmd)
+      case cmd.param(0)
+      when 0 then @resolver.common_event_commands(cmd.param(1))
+      when 1 then @resolver.map_event_commands(cmd.param(1), cmd.param(2))
+      when 2 then @resolver.map_event_commands(variables[cmd.param(1)],
+                                               variables[cmd.param(2)])
+      end
+    rescue StandardError
+      nil
     end
 
     # -- flow helpers ---------------------------------------------------------
@@ -331,6 +392,9 @@ module Game
       when 1 # variable: param1 id, param2 operand type, param3 operand, param4 comparison
         rhs = cmd.param(2) == 0 ? cmd.param(3) : variables[cmd.param(3)]
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
+      when 2 # timer: param1 seconds, param2 comparison (0 >=, 1 <=)
+        cmd.param(2) == 0 ? @state.timer_seconds >= cmd.param(1) \
+                          : @state.timer_seconds <= cmd.param(1)
       when 3 # gold: param1 amount, param2 comparison (0 >=, 1 <=)
         cmd.param(2) == 0 ? party.gold >= cmd.param(1) : party.gold <= cmd.param(1)
       when 4 # item: param1 id, param2 (0 has / 1 not)
