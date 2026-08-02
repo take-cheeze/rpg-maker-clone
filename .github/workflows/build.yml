@@ -345,14 +345,32 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    # Job-level env can read secrets (job-level `if` cannot), so expose whether
+    # Cloudflare is configured to a step that gates the deploy. This keeps the
+    # PR green when the optional Cloudflare setup hasn't been done yet, instead
+    # of failing the required check on a missing secret.
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      - name: Check for Cloudflare credentials
+        id: creds
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Cloudflare secrets not set — skipping the preview deployment. See docs/deploy.md for the one-time setup."
+          fi
       - name: Download wasm page
+        if: steps.creds.outputs.configured == 'true'
         uses: actions/download-artifact@v7
         with:
           name: wasm
           path: site
       - name: Deploy preview to Cloudflare Pages
         id: cf
+        if: steps.creds.outputs.configured == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

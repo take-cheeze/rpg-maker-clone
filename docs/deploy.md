@@ -48,5 +48,10 @@ Once the secrets exist, every pull request from a branch in this repo gets a
 fresh preview deployment and a sticky PR comment with its URL. Pull requests
 from forks are skipped because forked runs cannot read the secrets.
 
+Until the secrets are set, the `preview-cloudflare` job **skips the deploy and
+still passes** (it logs a notice pointing here), so a missing Cloudflare setup
+never blocks a PR — the preview is an optional add-on to the GitHub Pages
+deploy.
+
 > Renaming the Cloudflare project? Update `--project-name` in the
 > `preview-cloudflare` job to match.
