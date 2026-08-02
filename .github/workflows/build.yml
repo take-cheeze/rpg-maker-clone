@@ -114,6 +114,12 @@ jobs:
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: nix develop -c ruby scripts/lcf_testbed_check.rb
 
+      - name: RPG2k game-logic checks
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: |
+          nix develop -c ruby scripts/rpg2k_logic_check.rb
+          nix develop -c ruby scripts/rpg2k_scene_check.rb
+
       - name: test
         run: |
           nix develop -c cmake --build build -t test

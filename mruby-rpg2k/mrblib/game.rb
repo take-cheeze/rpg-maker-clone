@@ -268,6 +268,345 @@ module Game
     end
   end
 
+  # A tiny deterministic pseudo-random generator. mruby is built here without
+  # the `mruby-random` gem (see build_config.rb), so `Kernel#rand` is not
+  # available; move routes and autonomous movement need *some* randomness, so we
+  # supply our own. This is a small LCG (multiplier 75, modulus the prime 65537)
+  # whose arithmetic stays within a signed 32-bit `mrb_int` — no value ever
+  # reaches 2**31 — so it never has to promote to a bigint on this target. The
+  # period (65536) and quality are more than enough for picking a walk
+  # direction, and seeding it makes NPC wandering reproducible.
+  class Rng
+    def initialize(seed = 1)
+      @state = (seed & 0xFFFF) + 1
+    end
+
+    def next_int
+      @state = (@state * 75 + 74) % 65537
+    end
+
+    # An integer in 0...n (0 when n <= 0).
+    def random(n)
+      return 0 if n <= 0
+      next_int % n
+    end
+  end
+
+  # A movable map entity: its tile position, facing and the movement-related
+  # flags a move route can toggle. Nothing here draws — Scene::Map reads the
+  # position/direction to place the sprite. Directions use RPG2000's numpad
+  # convention (2 = down, 4 = left, 6 = right, 8 = up).
+  class Character
+    # numpad direction -> [dx, dy] step in tiles.
+    DIR_DELTA = { 8 => [0, -1], 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0] }.freeze
+    # 90-degree clockwise / counter-clockwise rotations and the 180-degree flip.
+    TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8 }.freeze
+    TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8 }.freeze
+    TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4 }.freeze
+    # The four cardinal directions, indexable for random selection.
+    CARDINALS = [2, 4, 6, 8].freeze
+
+    attr_accessor :x, :y, :direction, :move_speed, :move_frequency
+    attr_accessor :through, :facing_locked, :animation_stopped, :transparency
+    attr_reader :graphic_name, :graphic_index
+
+    def initialize(x = 0, y = 0, direction = 2)
+      @x = x
+      @y = y
+      @direction = direction
+      @move_speed = 3
+      @move_frequency = 3
+      @through = false          # ignore collision while moving
+      @facing_locked = false    # keep facing fixed while moving
+      @animation_stopped = false
+      @transparency = 0         # 0 opaque .. 7 fully transparent
+      @graphic_name = nil
+      @graphic_index = 0
+    end
+
+    def set_graphic(name, index)
+      @graphic_name = name
+      @graphic_index = index
+    end
+
+    # Tile [x, y] one step from (px, py) in numpad direction `dir`.
+    def self.step_tile(px, py, dir)
+      dx, dy = DIR_DELTA[dir] || [0, 0]
+      [px + dx, py + dy]
+    end
+
+    # The tile immediately ahead of the character in the given direction
+    # (its current facing by default).
+    def front_tile(dir = @direction)
+      Character.step_tile(@x, @y, dir)
+    end
+
+    # Turn to face `dir` without moving (a no-op while facing is locked).
+    def face(dir)
+      @direction = dir unless @facing_locked || dir.nil?
+    end
+
+    # Move one tile in `dir`, updating facing (subject to the lock).
+    def move(dir)
+      face(dir)
+      dx, dy = DIR_DELTA[dir] || [0, 0]
+      @x += dx
+      @y += dy
+    end
+
+    # Move one tile diagonally, combining a horizontal and a vertical direction.
+    # RPG2000 keeps a cardinal facing on diagonals, so we face the vertical part.
+    def move_diagonal(horizontal, vertical)
+      face(vertical)
+      hx, = DIR_DELTA[horizontal] || [0, 0]
+      _, vy = DIR_DELTA[vertical] || [0, 0]
+      @x += hx
+      @y += vy
+    end
+
+    def turn_right;  @direction = TURN_RIGHT[@direction] || @direction; end
+    def turn_left;   @direction = TURN_LEFT[@direction]  || @direction; end
+    def turn_around; @direction = TURN_180[@direction]   || @direction; end
+
+    # Direction pointing from this character toward (tx, ty). Ties (and equal
+    # distance) resolve to the horizontal axis, matching RPG2000's toward-hero
+    # behaviour; returns the current facing when already on the tile.
+    def direction_toward(tx, ty)
+      dx = tx - @x
+      dy = ty - @y
+      if dx.abs >= dy.abs && dx != 0
+        dx > 0 ? 6 : 4
+      elsif dy != 0
+        dy > 0 ? 2 : 8
+      else
+        @direction
+      end
+    end
+
+    # Direction pointing away from (tx, ty): the opposite of #direction_toward.
+    def direction_away(tx, ty)
+      TURN_180[direction_toward(tx, ty)] || @direction
+    end
+  end
+
+  # Runtime execution of a decoded LCF move route (an array of LCF::MoveCommand,
+  # as produced by LCF.parse_move_commands and stored on an event page's
+  # `move_route`). A MoveRoute is a cursor over that list: `step` runs the
+  # command under the cursor against a Character and advances. Movement commands
+  # ask the `world` whether the destination is passable; parameterised commands
+  # apply their side effect through the world (switches, sound). A non-repeating
+  # route reports `done?` once every command has run; a repeating route wraps.
+  #
+  # `world` is any object responding to:
+  #   passable?(character, dir) -> can the character step one tile in `dir`?
+  #   hero_position             -> [x, y] of the player (toward/away/face hero)
+  #   set_switch(id, on)        -> apply a switch side effect
+  #   play_sound(name, volume, tempo, balance)
+  #   random(n)                 -> integer in 0...n
+  class MoveRoute
+    # Move-command ids (RPG2000 move-route opcodes). 0..11 move, 12..22 turn,
+    # 23..25 wait/jump, 26..41 toggle a character flag or apply a side effect.
+    MOVE_UP = 0; MOVE_RIGHT = 1; MOVE_DOWN = 2; MOVE_LEFT = 3
+    MOVE_UPRIGHT = 4; MOVE_DOWNRIGHT = 5; MOVE_DOWNLEFT = 6; MOVE_UPLEFT = 7
+    MOVE_RANDOM = 8; MOVE_TOWARD_HERO = 9; MOVE_AWAY_HERO = 10; MOVE_FORWARD = 11
+    FACE_UP = 12; FACE_RIGHT = 13; FACE_DOWN = 14; FACE_LEFT = 15
+    TURN_RIGHT = 16; TURN_LEFT = 17; TURN_180 = 18; TURN_RANDOM = 19
+    FACE_RANDOM = 20; FACE_HERO = 21; FACE_AWAY_HERO = 22
+    WAIT = 23; BEGIN_JUMP = 24; END_JUMP = 25
+    LOCK_FACING = 26; UNLOCK_FACING = 27
+    SPEED_UP = 28; SPEED_DOWN = 29; FREQ_UP = 30; FREQ_DOWN = 31
+    SWITCH_ON = 32; SWITCH_OFF = 33; CHANGE_GRAPHIC = 34; PLAY_SOUND = 35
+    THROUGH_ON = 36; THROUGH_OFF = 37; STOP_ANIM = 38; START_ANIM = 39
+    TRANSP_UP = 40; TRANSP_DOWN = 41
+
+    # move-command id -> numpad direction, for the four cardinal moves.
+    MOVE_DIR = { MOVE_UP => 8, MOVE_RIGHT => 6, MOVE_DOWN => 2, MOVE_LEFT => 4 }.freeze
+    # diagonal move-command id -> [horizontal dir, vertical dir].
+    DIAGONAL = { MOVE_UPRIGHT => [6, 8], MOVE_DOWNRIGHT => [6, 2],
+                 MOVE_DOWNLEFT => [4, 2], MOVE_UPLEFT => [4, 8] }.freeze
+    # face-command id -> direction to face.
+    FACE_DIR = { FACE_UP => 8, FACE_RIGHT => 6, FACE_DOWN => 2, FACE_LEFT => 4 }.freeze
+
+    def initialize(commands, repeat: true, skippable: false)
+      @commands = commands || []
+      @repeat = repeat ? true : false
+      @skippable = skippable ? true : false
+      @index = 0
+      @done = @commands.empty?
+    end
+
+    attr_reader :index
+
+    def done?; @done; end
+    def empty?; @commands.empty?; end
+    def repeat?; @repeat; end
+    def skippable?; @skippable; end
+
+    # Build a MoveRoute from an event page's parsed `move_route` field (an
+    # LCF::Array1D exposing commands/repeat/skippable), or nil when the page
+    # carries no custom route.
+    def self.from_page(route)
+      return nil if route.nil?
+      cmds = route.commands
+      return nil if cmds.nil? || cmds.empty?
+      new(cmds, repeat: route.repeat, skippable: route.skippable)
+    rescue StandardError
+      nil
+    end
+
+    # Run the command under the cursor against `character`. Returns a status
+    # symbol: :moved, :blocked, :turned, :waited, :effect or :done. A blocked
+    # move on a non-skippable route stays on the same command so the next `step`
+    # retries it (it still turns to face the obstacle) and returns :blocked; a
+    # skippable route advances past a blocked move instead.
+    def step(character, world)
+      return :done if @done
+      status, advance = execute(@commands[@index], character, world)
+      advance_cursor if advance
+      status
+    end
+
+    private
+
+    def advance_cursor
+      @index += 1
+      return if @index < @commands.size
+      if @repeat
+        @index = 0
+      else
+        @done = true
+      end
+    end
+
+    def execute(cmd, character, world)
+      id = cmd.command_id
+      case id
+      when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT
+        do_move(character, world, MOVE_DIR[id])
+      when MOVE_UPRIGHT, MOVE_DOWNRIGHT, MOVE_DOWNLEFT, MOVE_UPLEFT
+        do_diagonal(character, world, id)
+      when MOVE_RANDOM
+        do_move(character, world, Character::CARDINALS[world.random(4)])
+      when MOVE_TOWARD_HERO
+        do_move(character, world, toward_hero(character, world))
+      when MOVE_AWAY_HERO
+        do_move(character, world, away_hero(character, world))
+      when MOVE_FORWARD
+        do_move(character, world, character.direction)
+      when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT
+        character.face(FACE_DIR[id]); [:turned, true]
+      when TURN_RIGHT then character.turn_right;  [:turned, true]
+      when TURN_LEFT  then character.turn_left;   [:turned, true]
+      when TURN_180   then character.turn_around; [:turned, true]
+      when TURN_RANDOM
+        world.random(2) == 0 ? character.turn_right : character.turn_left
+        [:turned, true]
+      when FACE_RANDOM
+        character.face(Character::CARDINALS[world.random(4)]); [:turned, true]
+      when FACE_HERO      then character.face(toward_hero(character, world)); [:turned, true]
+      when FACE_AWAY_HERO then character.face(away_hero(character, world));  [:turned, true]
+      when WAIT, BEGIN_JUMP, END_JUMP then [:waited, true]
+      when LOCK_FACING   then character.facing_locked = true;  [:effect, true]
+      when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
+      when SPEED_UP   then character.move_speed = [character.move_speed + 1, 6].min; [:effect, true]
+      when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 1].max; [:effect, true]
+      when FREQ_UP    then character.move_frequency = [character.move_frequency + 1, 8].min; [:effect, true]
+      when FREQ_DOWN  then character.move_frequency = [character.move_frequency - 1, 1].max; [:effect, true]
+      when SWITCH_ON  then world.set_switch(cmd.parameter_a, true);  [:effect, true]
+      when SWITCH_OFF then world.set_switch(cmd.parameter_a, false); [:effect, true]
+      when CHANGE_GRAPHIC
+        character.set_graphic(cmd.parameter_string, cmd.parameter_a); [:effect, true]
+      when PLAY_SOUND
+        world.play_sound(cmd.parameter_string, cmd.parameter_a,
+                         cmd.parameter_b, cmd.parameter_c)
+        [:effect, true]
+      when THROUGH_ON  then character.through = true;  [:effect, true]
+      when THROUGH_OFF then character.through = false; [:effect, true]
+      when STOP_ANIM   then character.animation_stopped = true;  [:effect, true]
+      when START_ANIM  then character.animation_stopped = false; [:effect, true]
+      when TRANSP_UP   then character.transparency = [character.transparency + 1, 7].min; [:effect, true]
+      when TRANSP_DOWN then character.transparency = [character.transparency - 1, 0].max; [:effect, true]
+      else [:effect, true] # unknown / unsupported id: no-op, advance past it
+      end
+    end
+
+    # Attempt a one-tile move in `dir`. Returns [status, advance?]: a blocked
+    # move on a non-skippable route returns advance == false so it is retried.
+    def do_move(character, world, dir)
+      return [:turned, true] if dir.nil?
+      if character.through || world.passable?(character, dir)
+        character.move(dir)
+        [:moved, true]
+      else
+        character.face(dir) # an obstructed move still turns to face it
+        @skippable ? [:blocked, true] : [:blocked, false]
+      end
+    end
+
+    def do_diagonal(character, world, id)
+      horizontal, vertical = DIAGONAL[id]
+      character.face(vertical)
+      passable = character.through ||
+                 (world.passable?(character, horizontal) &&
+                  world.passable?(character, vertical))
+      if passable
+        character.move_diagonal(horizontal, vertical)
+        [:moved, true]
+      else
+        @skippable ? [:blocked, true] : [:blocked, false]
+      end
+    end
+
+    def toward_hero(character, world)
+      hx, hy = world.hero_position
+      character.direction_toward(hx, hy)
+    end
+
+    def away_hero(character, world)
+      hx, hy = world.hero_position
+      character.direction_away(hx, hy)
+    end
+  end
+
+  # Autonomous (non-custom) event movement: given a page's `move_type`, pick the
+  # direction the character should try to step next. `random` picks a cardinal;
+  # `vertical`/`horizontal` keep bouncing along one axis, reversing when the way
+  # ahead is blocked; `toward`/`away` chase or flee the hero. Returns a numpad
+  # direction, or nil for "no autonomous movement" (stationary) and for the
+  # custom-route type (which is driven by a MoveRoute instead).
+  module MoveType
+    STATIONARY = 0
+    RANDOM     = 1
+    VERTICAL   = 2
+    HORIZONTAL = 3
+    TOWARD     = 4
+    AWAY       = 5
+    CUSTOM     = 6
+
+    def self.next_direction(type, character, world)
+      case type
+      when RANDOM     then Character::CARDINALS[world.random(4)]
+      when VERTICAL   then bounce(character, world, [8, 2])
+      when HORIZONTAL then bounce(character, world, [4, 6])
+      when TOWARD
+        hx, hy = world.hero_position
+        character.direction_toward(hx, hy)
+      when AWAY
+        hx, hy = world.hero_position
+        character.direction_away(hx, hy)
+      else nil
+      end
+    end
+
+    # Continue along the current axis direction, reversing to the other end of
+    # `pair` when the way ahead is blocked.
+    def self.bounce(character, world, pair)
+      cur = pair.include?(character.direction) ? character.direction : pair[0]
+      return cur if world.passable?(character, cur)
+      cur == pair[0] ? pair[1] : pair[0]
+    end
+  end
+
   # Evaluation of RPG2000 event-page conditions and page selection. A page is
   # active when every sub-condition enabled in its `flags` bitfield holds; the
   # active page for an event is the highest-numbered active page.
