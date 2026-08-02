@@ -69,7 +69,7 @@ if wio
   # host build above supplies mrbc.
   #
   # NOTE: this is the starting point for the P1/P2 work in
-  # docs/adr/0005-wio-terminal-port.md, not a finished, fitting build. The full
+  # docs/adr/0007-wio-terminal-port.md, not a finished, fitting build. The full
   # gem set (onigmo via mruby-onig-regexp, uni-algo) is expected to overrun the
   # 512 KB internal flash; trimming those (P2) is a follow-up. It is only built
   # when MRUBY_TARGET=wio, so it never affects the desktop or wasm builds.

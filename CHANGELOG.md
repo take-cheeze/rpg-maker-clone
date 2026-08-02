@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
   syscalls (`app/wio/src/sd_syscalls.cxx`) are scaffolded for the later
   interpreter/asset slices. All of it is additive and guarded (`WIO_TERMINAL`),
   so the desktop and wasm builds are unchanged. Design and memory budget in
-  `docs/adr/0005-wio-terminal-port.md`; a CI job compiles the firmware.
+  `docs/adr/0007-wio-terminal-port.md`; a CI job compiles the firmware.
 - Audio playback: `RGSS::Audio` is now backed by SDL_mixer instead of inert
   stubs, so games play sound. Looping **BGM** and **BGS**, one-shot **ME**
   (music effects that interrupt the BGM and then let it resume, tracked per

@@ -1,4 +1,4 @@
-# 5. Porting the RPG2k runtime to the Wio Terminal (SAMD51)
+# 7. Porting the RPG2k runtime to the Wio Terminal (SAMD51)
 
 Date: 2026-07-24
 

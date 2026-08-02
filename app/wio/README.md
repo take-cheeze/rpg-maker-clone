@@ -8,7 +8,7 @@ ATSAMD51: Cortex-M4F @120 MHz, 512 KB flash, 192 KB SRAM, 320×240 ILI9341 LCD,
 This is additive to and independent of the desktop CMake build — building the
 firmware does not touch the desktop/wasm builds, and vice versa. The design and
 memory-budget analysis are in
-[`docs/adr/0005-wio-terminal-port.md`](../../docs/adr/0005-wio-terminal-port.md).
+[`docs/adr/0007-wio-terminal-port.md`](../../docs/adr/0007-wio-terminal-port.md).
 
 ## Status: P1 — HAL bring-up
 
