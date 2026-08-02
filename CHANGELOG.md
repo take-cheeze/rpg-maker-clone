@@ -114,6 +114,39 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- The event interpreter now supports **Call Event**. A Call Event command
+  suspends the current command list and runs a referenced list to completion,
+  then resumes where it left off, via a call stack on `Game::Interpreter` and a
+  resolver the scene supplies (common events by id; a map event's page from the
+  loaded map). This makes *call-only* common events (start condition 5) — which
+  auto-start and parallel processing never reach — actually run, and lets events
+  share logic. Nested calls unwind correctly and recursion is bounded
+  (`MAX_CALL_DEPTH`) so a self-calling event terminates instead of hanging.
+  Conditional Branch also gained the **timer** condition (compare the countdown
+  timer's seconds). `Scene::Map` wires a resolver over its common and map events
+  (refreshed on teleport). Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+- Events now move on the map. Decoded move routes (`LCF.parse_move_commands`)
+  and event-page movement settings, which previously only parsed, now drive
+  events at runtime. A new `Game::MoveRoute` executor runs a decoded route
+  against a movable `Game::Character` — all of the RPG2000 move-route commands
+  (cardinal/diagonal/random/toward-hero/away-hero/forward moves, the face and
+  turn commands, wait/jump markers, switch on/off, change graphic, play sound,
+  and the speed/frequency/through/animation/transparency/facing-lock toggles),
+  honouring the route's repeat and skippable flags (a blocked non-skippable move
+  turns to face the obstacle and retries). `Game::MoveType` implements the
+  autonomous walk types (random, vertical/horizontal bounce, approach and flee
+  the hero), and a small `Game::Rng` supplies the randomness they need (mruby is
+  built here without `mruby-random`). `Scene::Map` gives every event a
+  `Game::Character`, steps it each frame per its page's move type or custom move
+  route — paced by the event's move frequency — through a `MapWorld` adapter that
+  reports passability, the hero position and switch/sound side effects, and keeps
+  events from overlapping each other, the player or impassable tiles. Two host
+  harnesses cover the new code under CRuby (the SDL/mruby binary can't run in
+  CI's cheap path): `scripts/rpg2k_logic_check.rb` exercises the pure move-route,
+  movement-type and interpreter logic, and `scripts/rpg2k_scene_check.rb`
+  constructs the actual `Scene::Map` behind RGSS stubs and ticks it to verify the
+  event-movement wiring. Both run in CI next to the LCF test-bed check.
 - Wio Terminal (Seeed, ATSAMD51) port — P1 hardware bring-up. A new PlatformIO
   target (`platformio.ini`, `app/wio/`) builds an Arduino firmware around a new
   LVGL display + input HAL (`mruby-rgss/src/wio.cxx`): the 320×240 ILI9341 LCD is

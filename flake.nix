@@ -51,6 +51,7 @@
                 autoconf
                 automake
                 cabal-install
+                ccache
                 clang-tools
                 cmake
                 cmake-format

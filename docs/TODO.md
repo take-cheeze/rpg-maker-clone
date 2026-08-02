@@ -27,12 +27,16 @@ messages, choices, switches/variables, party/gold/item changes, conditionals and
 teleport), open a menu, save, and continue. The remaining work is mostly **the
 parts that need the native build + real game assets to develop and verify**:
 authentic chipset/charset rendering, audio, and the battle system. Everything
-landed so far is exercised by unit tests (`mruby-lcf/test` and a host harness),
-since the full SDL/mruby binary can't be built or run in this environment. The
-LCF loaders are additionally smoke-tested against real downloaded test-bed
-projects (`scripts/lcf_testbed_check.rb`, run in CI after the download step),
-which parses a genuine game's `RPG_RT.ldb`/`.lmt`/`Map*.lmu` end to end and
-catches format surprises the synthetic unit tests can't.
+landed so far is exercised by unit tests (`mruby-lcf/test`) and by host harnesses
+that load the pure-Ruby sources under CRuby, since the full SDL/mruby binary
+can't be built or run in this environment. The LCF loaders are smoke-tested
+against real downloaded test-bed projects (`scripts/lcf_testbed_check.rb`, run in
+CI after the download step), which parses a genuine game's
+`RPG_RT.ldb`/`.lmt`/`Map*.lmu` end to end and catches format surprises the
+synthetic unit tests can't; the gameplay logic (`game.rb`/`interpreter.rb`) is
+checked by `scripts/rpg2k_logic_check.rb` (pure move-route / interpreter logic)
+and `scripts/rpg2k_scene_check.rb` (the map scene driving event movement behind
+RGSS stubs).
 
 The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
@@ -61,21 +65,39 @@ The work below is roughly ordered by the critical path to a walkable game
   (`Game::CharSet`, 4-direction, 3 walk frames); NPC/event sprites are drawn as
   markers for now
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
-  animation and edge/tile/event collision. Move-route *data* now decodes
+  animation and edge/tile/event collision. Move-route *data* decodes
   (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and
-  common-event `move_route` schema); driving events from those routes at runtime
-  is still to come
+  common-event `move_route` schema) **and now drives events at runtime**: a
+  `Game::MoveRoute` executor walks a decoded route (all cardinal/diagonal/random/
+  toward/away/forward moves, faces and turns, wait/jump, switch on-off, change
+  graphic, play sound, speed/frequency/through/transparency/lock toggles, with
+  repeat + skippable handling) and `Game::Character`/`Game::MoveType` model the
+  movable entity and autonomous walk (random / vertical / horizontal / toward /
+  away). `Scene::Map` gives each event a `Game::Character`, steps it per its page
+  move type or custom route (paced by move frequency) and keeps events off each
+  other, the player and impassable tiles. Covered by
+  `scripts/rpg2k_logic_check.rb` (pure logic) and `scripts/rpg2k_scene_check.rb`
+  (scene integration under host Ruby)
 
 #### Event system
 - 🚧 Event pages — page conditions (switch/variable/item/actor) are implemented
-  (`Game::EventPage`), and action-button + auto-start triggers run; touch,
-  event-touch and parallel triggers plus move routes are still to come
+  (`Game::EventPage`), action-button + auto-start triggers run, and a page's
+  autonomous move type / custom move route now drives the event at runtime (see
+  Movement & collision). Touch, event-touch and parallel triggers are still to
+  come, as is the interpreter's *Set Move Route* (Move Event) command — the
+  runtime engine exists, but decoding a route embedded in an event command's
+  parameters is not wired up yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
-  Wait, Play BGM/SE, End Event) with a per-frame step cap so a bad loop can't
-  hang; the remaining ~90 commands (Move Event, pictures, screen effects,
-  battles, actor stat changes, Call Event, ...) are TODO
+  Wait, Play BGM/SE, Call Event, End Event) with a per-frame step cap so a bad
+  loop can't hang. **Call Event** suspends the current list, runs the referenced
+  common event (or map-event page) to completion via a resolver + call stack —
+  so call-only common events, which auto-start/parallel never reach, now run —
+  and returns to the caller; recursion is bounded. Conditional Branch covers
+  switch / variable / **timer** / gold / item / actor-in-party conditions. The
+  remaining commands (Move Event, pictures, screen effects, battles, actor stat
+  changes, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes

@@ -249,12 +249,74 @@ class RPG2k
       end
     end
 
+    # Adapter that exposes the running map to the movement engine
+    # (Game::MoveRoute / Game::MoveType). It bridges their small `world` protocol
+    # — passability, hero position, switch and sound side effects, randomness —
+    # onto the owning Scene::Map and its Game::State.
+    class MapWorld
+      def initialize(scene, rng)
+        @scene = scene
+        @rng = rng
+      end
+
+      def passable?(character, dir)
+        @scene.char_passable?(character, dir)
+      end
+
+      def hero_position
+        s = @scene.state
+        [s.x, s.y]
+      end
+
+      def set_switch(id, on)
+        @scene.state.switches[id] = on
+      end
+
+      def play_sound(name, volume, tempo, _balance)
+        return if name.nil? || name.empty?
+        RGSS::Audio.se_play(name, volume, tempo)
+      rescue StandardError
+        nil
+      end
+
+      def random(n)
+        @rng.random(n)
+      end
+    end
+
+    # Resolves the command list a Call Event refers to. Common events are looked
+    # up by id; a map event's page is fetched from the loaded map unit (best
+    # effort — the page index follows the LCF page numbering).
+    class EventResolver
+      def initialize(common_by_id, map_events)
+        @common = common_by_id || {}
+        @map_events = map_events || {}
+      end
+
+      def common_event_commands(id)
+        @common[id]
+      end
+
+      def map_event_commands(id, page_index)
+        ev = @map_events[id]
+        return nil unless ev
+        pages = ev.pages
+        return nil unless pages
+        page = pages[page_index]
+        page && page.event_commands
+      rescue StandardError
+        nil
+      end
+    end
+
     # Play scene: renders the loaded map and lets the party leader walk around
     # it. Tiles are drawn as solid colour blocks derived from their tile id (a
     # placeholder until real chipset blitting lands — see docs/TODO.md); the
     # player is drawn from its real CharSet graphic. Movement is grid based with
     # smooth pixel interpolation, walk animation, tile/edge/event collision and
-    # a camera that follows the player and clamps to the map edges.
+    # a camera that follows the player and clamps to the map edges. Events roam
+    # the map per their page's movement type (random / vertical / horizontal /
+    # toward or away from the hero) or run a custom move route.
     class Map < Base
       TILE = Game::TILE
       SCREEN_W = RPG2k::WIDTH
@@ -264,6 +326,12 @@ class RPG2k
       ROWS = SCREEN_H / TILE + 1
       # Pixels moved per frame while stepping between tiles (must divide TILE).
       SPEED = 2
+
+      # Frames waited between autonomous event steps, keyed by RPG2000 move
+      # frequency (1 slowest .. 8 fastest). Placeholder pacing while events are
+      # drawn as markers (no per-step pixel interpolation yet).
+      EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
+                           5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
       def initialize parent, state
         super parent
@@ -276,7 +344,12 @@ class RPG2k
         @started_auto = {}
         @started_common = {}
         @common = Game::CommonEvent.load(@db)
+        # Deterministic RNG (mruby has no Kernel#rand here) and the adapter that
+        # lets move routes / autonomous movement query the map.
+        @rng = Game::Rng.new(0x2000)
+        @world = MapWorld.new(self, @rng)
         build_events
+        @interpreter.resolver = build_resolver
         @message = nil
         @wait_timer = nil
         @choice_index = 0
@@ -311,6 +384,7 @@ class RPG2k
           if event_busy?
             drive_event
           else
+            step_events
             step_movement
             try_action_trigger
             try_open_menu
@@ -373,29 +447,67 @@ class RPG2k
       end
 
       # Build the runtime event list for the current map: the active page of
-      # each event (per switch/variable/party conditions) plus the tiles events
-      # occupy (used for collision and markers).
+      # each event (per switch/variable/party conditions) becomes a movable
+      # Game::Character, tagged with its trigger, command list and how it moves
+      # (autonomous move type, or a custom Game::MoveRoute). @event_tiles caches
+      # the tiles events occupy, for collision and markers.
       def build_events
         @events = []
         @event_tiles = {}
         evs = @map.unit.events
         return unless evs
-        evs.each do |_id, ev|
+        evs.each do |id, ev|
           selected = Game::EventPage.select(ev.pages, @state.switches,
                                             @state.variables, @state.party)
           next unless selected
           page = selected[1]
-          @events.push(x: ev.x, y: ev.y, trigger: page_trigger(page),
-                       commands: page_commands(page))
-          @event_tiles[[ev.x, ev.y]] = true
+          @events.push(build_event(id, ev, page))
         end
+        rebuild_event_tiles
       rescue StandardError
         @events = []
         @event_tiles = {}
       end
 
+      def build_event(id, ev, page)
+        ch = Game::Character.new(ev.x, ev.y, page_direction(page))
+        ch.move_speed = page_move_speed(page)
+        ch.move_frequency = page_move_frequency(page)
+        ch.set_graphic(page_charset_name(page), page_charset_index(page))
+        move_type = page_move_type(page)
+        route = move_type == Game::MoveType::CUSTOM ?
+                Game::MoveRoute.from_page(page_move_route(page)) : nil
+        { id: id, char: ch, trigger: page_trigger(page),
+          commands: page_commands(page), move_type: move_type, route: route,
+          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40 }
+      end
+
+      # Build the Call Event resolver for the current map: common events keyed by
+      # id (they are global) plus this map's raw events for map-event page calls.
+      def build_resolver
+        common = {}
+        @common.each { |c| common[c[:id]] = c[:commands] }
+        map_events = (@map.unit.events rescue nil)
+        EventResolver.new(common, map_events)
+      rescue StandardError
+        EventResolver.new({}, nil)
+      end
+
+      # Recompute the occupied-tile set from the events' current positions.
+      def rebuild_event_tiles
+        @event_tiles = {}
+        @events.each { |e| @event_tiles[[e[:char].x, e[:char].y]] = e }
+      end
+
       def page_trigger(page); page.trigger; rescue StandardError; 0; end
       def page_commands(page); page.event_commands; rescue StandardError; nil; end
+      def page_direction(page); d = page.direction; d && d > 0 ? d : 2; rescue StandardError; 2; end
+      def page_move_type(page); page.move_type || 0; rescue StandardError; 0; end
+      def page_move_speed(page); page.move_speed || 3; rescue StandardError; 3; end
+      def page_move_frequency(page); page.move_frequency || 3; rescue StandardError; 3; end
+      def page_move_route(page); page.move_route; rescue StandardError; nil; end
+      def page_charset_name(page); page.charset_name; rescue StandardError; nil; end
+      def page_charset_index(page); page.charset_index || 0; rescue StandardError; 0; end
 
       # -- event execution ----------------------------------------------------
 
@@ -408,10 +520,10 @@ class RPG2k
       # started at most once per visit so an ungated process cannot hard-loop.
       def start_autostart
         ev = @events.find do |e|
-          e[:trigger] == 3 && e[:commands] && !@started_auto[[e[:x], e[:y]]]
+          e[:trigger] == 3 && e[:commands] && !@started_auto[e[:id]]
         end
         if ev
-          @started_auto[[ev[:x], ev[:y]]] = true
+          @started_auto[ev[:id]] = true
           @interpreter.start(ev[:commands])
           return
         end
@@ -425,14 +537,67 @@ class RPG2k
       end
 
       # On the action button, run the event the player is facing (trigger 0).
+      # The faced event turns toward the player before its commands run.
       def try_action_trigger
         return unless Input.trigger?(Input::C)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = @events.find do |e|
-          e[:x] == fx && e[:y] == fy && e[:trigger] == 0 && e[:commands]
+          e[:char].x == fx && e[:char].y == fy && e[:trigger] == 0 && e[:commands]
         end
-        @interpreter.start(ev[:commands]) if ev
+        return unless ev
+        ev[:char].face(Game::Character::TURN_180[@state.direction] || 2)
+        @interpreter.start(ev[:commands])
       end
+
+      # Advance autonomous / custom-route event movement one frame. Skipped
+      # while an event process is running so the map holds still during messages.
+      def step_events
+        @events.each { |e| step_event(e) }
+      end
+
+      def step_event(e)
+        ch = e[:char]
+        e[:move_timer] -= 1
+        return if e[:move_timer] > 0
+        e[:move_timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 40
+        ox = ch.x
+        oy = ch.y
+        if e[:route]
+          e[:route].step(ch, @world) unless e[:route].done?
+        else
+          dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
+          # Bumping into an obstacle still turns the event to face it.
+          @world.passable?(ch, dir) ? ch.move(dir) : ch.face(dir) if dir
+        end
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+      rescue StandardError
+        nil
+      end
+
+      # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
+      # eagerly (rather than a single end-of-frame rebuild) so an event that has
+      # already moved this frame blocks the next event from stepping onto it.
+      def reoccupy(e, ox, oy)
+        @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
+        @event_tiles[[e[:char].x, e[:char].y]] = e
+      end
+
+      # Collision test for an event stepping one tile in `dir`: in bounds, not
+      # onto the player or another event, and passable per the chipset. A
+      # "through" character ignores all of this. Only the destination tile is
+      # tested, so a character never blocks itself (it stands on its own tile,
+      # not the one ahead).
+      def char_passable?(character, dir)
+        return true if character.through
+        nx, ny = Game::Character.step_tile(character.x, character.y, dir)
+        return false unless @map.in_bounds?(nx, ny)
+        return false if nx == @state.x && ny == @state.y
+        return false if @event_tiles[[nx, ny]]
+        return true if @chipset.nil?
+        @chipset.passable?(@map.lower(nx, ny), dir)
+      end
+      # Called by MapWorld (an external collaborator) with an explicit receiver.
+      public :char_passable?
 
       # The cancel button opens the main menu over the map.
       def try_open_menu
@@ -484,6 +649,7 @@ class RPG2k
         @started_auto = {}
         @started_common = {}
         build_events
+        @interpreter.resolver = build_resolver
         @moving = false
         @move_count = 0
         @last_frame = nil

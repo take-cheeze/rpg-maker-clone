@@ -13,6 +13,10 @@
 - Walk the party leader around the map with the arrow keys / `WASD`: grid
   movement with smooth stepping, walk animation, tile/edge/event collision and a
   camera that follows the player
+- Events move on their own: each event walks per its page's movement type
+  (random, vertical/horizontal pacing, approaching or fleeing the hero) or runs a
+  custom move route, paced by its move frequency and blocked by terrain, the
+  player and other events
 - Tiles are currently drawn as colour blocks (real chipset rendering is planned)
 
 ### Events, menu & saving
@@ -148,6 +152,10 @@
 - The page draws an **on-screen keypad** (D-pad plus OK/Cancel/Dash, the L/R
   shoulders and the A/X/Y/Z buttons) beneath the canvas, so the game is playable
   by touch or mouse without a physical keyboard; the keyboard keeps working too.
+- CI publishes this page automatically: pushes to `master` deploy it to
+  **GitHub Pages**, and every pull request gets a **Cloudflare Pages** preview
+  URL commented on the PR. See [`docs/deploy.md`](docs/deploy.md) for the
+  one-time repo setup (Pages source + Cloudflare secrets).
 
 ### Audio
 
