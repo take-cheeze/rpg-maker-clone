@@ -4,25 +4,44 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
-project(rpg_maker_clone CXX)
+project(rpg_maker_clone C CXX)
 
 if(EMSCRIPTEN)
-  # Emscripten ships SDL2 as a "port": -sUSE_SDL=2 provides both the headers
-  # (needed while compiling lvgl's SDL driver) and the library at link time.
-  add_compile_options("-sUSE_SDL=2")
-  add_link_options("-sUSE_SDL=2")
+  # Emscripten ships SDL2 and SDL2_mixer as "ports": -sUSE_SDL=2 /
+  # -sUSE_SDL_MIXER=2 provide both the headers (needed while compiling lvgl's
+  # SDL driver and the audio backend) and the libraries at link time.
+  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
+  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
   # mruby is built with MRB_USE_CXX_EXCEPTION and throws real C++ exceptions for
   # its internal control flow, so exception support must be enabled across the
   # whole binary; otherwise the first throw aborts in the catch machinery.
   add_compile_options("-fexceptions")
   add_link_options("-fexceptions")
-  # Provide a stand-in for the SDL2::SDL2 target the executable links against.
+  # Provide a stand-in for the SDL2::SDL2 target the executable links against;
+  # the ports above supply the real symbols. SDL2_mixer is linked via
+  # ${SDL2_MIXER_LIB}, left empty here as the -sUSE_SDL_MIXER port covers it.
   add_library(SDL2::SDL2 INTERFACE IMPORTED)
+  set(SDL2_MIXER_LIB "")
 else()
   find_package(SDL2 REQUIRED)
+  # SDL2_mixer 2.6+ ships a CMake config exporting SDL2_mixer::SDL2_mixer; fall
+  # back to its pkg-config module (e.g. under the nix build) when it does not.
+  find_package(SDL2_mixer QUIET)
+  if(TARGET SDL2_mixer::SDL2_mixer)
+    set(SDL2_MIXER_LIB SDL2_mixer::SDL2_mixer)
+  else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
+    set(SDL2_MIXER_LIB PkgConfig::SDL2_MIXER)
+  endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+# LVGL looks for lv_conf.h at the top-level project directory by default; ours
+# lives under include/, so point LVGL's build at that directory explicitly.
+set(LV_BUILD_CONF_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    CACHE PATH "lv_conf.h location" FORCE)
 add_subdirectory(3rd/lvgl EXCLUDE_FROM_ALL)
 
 set(WITH_GTEST OFF)
@@ -62,7 +81,16 @@ endif()
 set(LIBMRUBY_A "${MRUBY_BUILD_DIR}/${MRUBY_TARGET_NAME}/lib/libmruby.a")
 set_target_properties(mruby PROPERTIES IMPORTED_LOCATION "${LIBMRUBY_A}")
 list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
-target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include")
+# mruby 4.0 always enables presym, so <mruby.h> unconditionally pulls in
+# <mruby/presym.h> and its generated mruby/presym/id.h. That header lives in the
+# build tree (produced by the mruby build below), not in the source include dir,
+# so expose it too. Create it now so CMake's imported-target check — which
+# requires INTERFACE include dirs to exist at configure time — passes before the
+# build populates it.
+set(MRUBY_GEN_INCLUDE "${MRUBY_BUILD_DIR}/${MRUBY_TARGET_NAME}/include")
+file(MAKE_DIRECTORY "${MRUBY_GEN_INCLUDE}")
+target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include"
+                                           "${MRUBY_GEN_INCLUDE}")
 # Collect the source of each local mrbgem so libmruby.a rebuilds when any of it
 # changes. GLOB_RECURSE also picks up files in nested subdirectories, and
 # CONFIGURE_DEPENDS makes CMake re-run the glob at build time: adding or
@@ -152,13 +180,15 @@ if(EMSCRIPTEN)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
 
-add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx)
+add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
+                               src/log_console.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
   lvgl
   ng-log::ng-log
   SDL2::SDL2
+  ${SDL2_MIXER_LIB}
   gflags
   uni-algo::uni-algo)
 target_include_directories(${PROJECT_NAME}
@@ -228,9 +258,18 @@ if(NOT EMSCRIPTEN)
     COMMAND env ${MRB_OPTS} rake test
     WORKING_DIRECTORY "${MRUBY_PREFIX}")
 
+  set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
+                   --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)
+  # The SDL window backend needs a real display. Linux CI runners are headless,
+  # so run under a virtual X server (xvfb-run is provided by the dev shell).
+  # Older LVGL silently tolerated a failed SDL_CreateWindow; v9.5.0 correctly
+  # errors out when no window can be created, which would abort this smoke test.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(exe_open_cmd xvfb-run -a "--server-args=-screen 0 640x480x24"
+                     ${exe_open_cmd})
+  endif()
   add_test(
     NAME exe_open
-    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
-            --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta
+    COMMAND ${exe_open_cmd}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()

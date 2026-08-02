@@ -14,17 +14,3 @@ updates:
       github-actions:
         patterns:
           - "*"
-
-  # The project's third-party dependencies are vendored as git submodules under
-  # 3rd/. Watch them for new upstream commits. They are grouped into a single
-  # PR to keep the noise down; review carefully since some (e.g. the mruby
-  # gems) are version-coupled.
-  - package-ecosystem: "gitsubmodule"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    groups:
-      submodules:
-        patterns:
-          - "*"

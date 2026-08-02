@@ -16,6 +16,45 @@ All notable changes to this project will be documented in this file.
   timing). Pointer capture and a window-blur handler prevent stuck keys, and
   physical keyboard input keeps working exactly as before. Wired up only for the
   Emscripten target via `--shell-file` in `CMakeLists.txt`
+- Audio playback: `RGSS::Audio` is now backed by SDL_mixer instead of inert
+  stubs, so games play sound. Looping **BGM** and **BGS**, one-shot **ME**
+  (music effects that interrupt the BGM and then let it resume, tracked per
+  frame from `Graphics.update`) and overlapping **SE** sound effects are all
+  supported, with per-channel volume mapped from the RPG 0..100 scale. The
+  public API resolves a game-supplied name to a real file the same way `Bitmap`
+  does — searching `GAME_DIR`/`RTP_DIR` crossed with the `Music/`, `Sound/` and
+  `Audio/*` sub-folders and the known extensions (`.ogg`, `.wav`, `.mid`,
+  `.mp3`, `.flac`) — and the event interpreter's *Play BGM* / *Play SE* commands
+  now forward the command's volume and tempo. SDL is kept out of the
+  `mruby-rgss` gem (which is also built for the terminal-only, Emscripten and
+  standalone-test variants): the gem's native `Audio` primitives call through a
+  plain function table (`include/rgss_audio.hxx`) that the executable fills with
+  the SDL_mixer backend (`src/sdl_audio.cxx`) at startup, mirroring the SDL
+  keyboard bridge. With no backend installed every call is a graceful no-op.
+  Pitch/tempo is accepted but not applied (SDL_mixer has no pitch control), and
+  MIDI playback depends on the SDL_mixer build having a synth; a file that fails
+  to load is logged once and skipped. See ADR 0006
+- The title menu plays the database's cursor-move sound effect (System > cursor
+  SE) when the selection moves up or down, the first consumer of the new SE
+  playback
+- Move-route command decoding for the LCF loaders: `LCF.parse_move_commands`
+  and `LCF::MoveCommand` decode the compact move-command layout (bare commands
+  plus the string/integer parameters that Switch On/Off, Change Graphic and Play
+  Sound Effect carry), exposed through a new `:move_commands` schema type wired
+  into the event-page and common-event `move_route.commands` chunk. Previously
+  that chunk was mis-declared as an event-command blob and failed to parse on
+  real maps
+- Event-page condition schema now covers its trailing RPG2003 chunks
+  (`timer2_sec`, `compare_operator`), so a real map's condition data parses with
+  no unknown chunks. The RPG2000 runtime still compares variables with `>=`
+- `scripts/lcf_testbed_check.rb`: a host smoke-test that runs the pure-Ruby LCF
+  parser (`mruby-lcf/mrblib/{lcf,schema}.rb`) over real downloaded test-bed
+  projects — walking every schema field of a game's `RPG_RT.ldb`, `RPG_RT.lmt`
+  and `Map*.lmu` and asserting structural invariants (layer sizes match the map
+  dimensions, move-command ids are in range, events iterate). It auto-discovers
+  games under `data/` and now runs in CI after the test-bed download step,
+  exercising the loaders against genuine editor output rather than only the
+  synthetic blobs the unit tests use
 - Built-in CPU/memory profiler for finding performance bottlenecks, enabled with
   `--profile` (report cadence tunable via `--profile_interval_ms`, default
   1000ms). Once a second it prints a summary line to stderr with the measured
@@ -52,8 +91,44 @@ All notable changes to this project will be documented in this file.
   viewport stacks on the screen. LVGL delete events invalidate the mruby
   wrappers so a viewport can safely own (and free) its child sprites
 - `RGSS::Sprite` / `RGSS::Viewport` gained a `visible` / `visible=` accessor
+- On-screen **log console** for the `--sixel`/`--iterm` terminal backends: a
+  fixed block of rows drawn above the game image (like the control legend and
+  emit-rate stats) that mirrors the engine's `ng-log` output. The last few
+  messages are tailed newest-at-the-bottom and coloured by severity (dim info,
+  yellow warnings, red errors); rows are truncated to the terminal width so a
+  long line cannot wrap and shift the image. On by default, disabled with
+  `--noterm_console`, and sized with `--term_console_lines=N` (default 5). While
+  a terminal backend is active, `ng-log`'s own `stderr` output is suppressed
+  (down to `FATAL`) so messages appear only in the console instead of scribbling
+  over the picture. The executable installs an `nglog::LogSink`
+  (`src/log_console.cxx`) that feeds the buffer through the shared
+  `terminal.cxx`, so the `mruby-rgss` gem keeps no compile-time dependency on
+  `ng-log`. Documented in `docs/adr/0005-terminal-log-console.md`
+
+### Fixed
+- LCF map-tree `scrollbar_x` / `scrollbar_y` (chunks 5/6) are now read as signed
+  ints instead of booleans; real games store multi-byte scrollbar positions
+  there, which raised `invalid bool size` when parsing an actual `RPG_RT.lmt`
 
 ### Changed
+- Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
+  snapshot). `build_config.rb` drops the `mruby-print` gem (removed in 4.0;
+  `Kernel#p`/`#print` are now in the core and `mruby-io` supplies
+  `#print`/`#puts`/`#printf`) and the `disable_presym` calls (presym is always
+  enabled in 4.0, and bytecode serializes symbols by name so the host `mrbc`
+  and the emscripten target stay compatible). `CMakeLists.txt` also exposes
+  mruby's generated build-tree include dir on the `mruby` target, since `mruby.h`
+  now unconditionally pulls in the generated `mruby/presym/id.h`. mruby 4.0 also
+  removed per-state allocators (`mrb_open_allocf`), so the native build now
+  overrides the global `mrb_basic_alloc_func` to share lvgl's heap pool, and the
+  profiler's allocation hook moved to the matching `(ptr, size)` signature. The
+  `mruby-bigint` gem is now enabled: mruby 4.0's compiler encodes integer
+  literals wider than 32 bits (e.g. the `0xFFFFFFFF` masks in the LCF codecs) as
+  bignum literals that need it at runtime. The `mruby-marshal` submodule is
+  bumped to pick up its 4.0 fix (`Marshal.dump` is registered with its real
+  arity so mruby 4.0's stricter argument-count check accepts the optional
+  port/limit arguments)
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
 - `RGSS::Window` is now assembled from three layered sprites inside a viewport
   (windowskin background+frame, selection cursor, and contents/text) instead of
   compositing everything into one sprite's bitmap. The viewport clips the layers

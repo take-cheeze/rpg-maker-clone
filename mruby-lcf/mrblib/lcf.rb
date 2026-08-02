@@ -69,6 +69,59 @@ module LCF
     cmds
   end
 
+  # One decoded RPG2000 move-route command: a command id plus the optional
+  # string / integer parameters a handful of commands carry. Move commands use a
+  # different, more compact on-disk layout than event commands.
+  class MoveCommand
+    attr_reader :command_id, :parameter_string,
+                :parameter_a, :parameter_b, :parameter_c
+
+    def initialize(command_id, string, a, b, c)
+      @command_id = command_id
+      @parameter_string = string
+      @parameter_a = a
+      @parameter_b = b
+      @parameter_c = c
+    end
+  end
+
+  # Move-command ids that carry parameters (every other id is a bare command).
+  MOVE_SWITCH_ON = 32       # + switch id
+  MOVE_SWITCH_OFF = 33      # + switch id
+  MOVE_CHANGE_GRAPHIC = 34  # + charset name (string) + charset index
+  MOVE_PLAY_SOUND = 35      # + file name (string) + volume, tempo, balance
+
+  # Decode a packed move-command list (the `:move_commands` schema type used by
+  # event-page and common-event move routes). Unlike event commands, each entry
+  # is a bare command id optionally followed by a length-prefixed cp932 string
+  # and/or a few BER integer parameters, selected by the id. The list runs to
+  # the end of the blob (its length is also stored separately as `command_size`).
+  def parse_move_commands d
+    s = StringIO.new d
+    cmds = []
+    until s.eof?
+      id = read_ber s
+      str = ''
+      a = b = c = 0
+      case id
+      when MOVE_SWITCH_ON, MOVE_SWITCH_OFF
+        a = read_ber s
+      when MOVE_CHANGE_GRAPHIC
+        slen = read_ber s
+        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+        a = read_ber s
+      when MOVE_PLAY_SOUND
+        slen = read_ber s
+        str = slen > 0 ? cp932_to_utf8(s.read(slen)) : ''
+        a = read_ber s
+        b = read_ber s
+        c = read_ber s
+      end
+      cmds.push MoveCommand.new(id, str, a, b, c)
+    end
+    cmds
+  end
+
   # Holds the sequential sections of a multi-section file (e.g. the map tree,
   # which is a map-properties table followed by the tree order and the initial
   # party/vehicle positions). Sections are reachable by their schema name;
@@ -129,6 +182,7 @@ module LCF
     when :int8_array ; return d.bytes
     when :int32_array ; return unpack_int32(d)
     when :event ; return parse_event_commands(d)
+    when :move_commands ; return parse_move_commands(d)
     when :string ; return LCF.cp932_to_utf8 d
     when :Tree
       s = StringIO.new(d)
@@ -156,7 +210,7 @@ module LCF
   end
 
   module_function :read_ber, :to_rb, :read_section, :parse_event_commands,
-                  :unpack_int32
+                  :parse_move_commands, :unpack_int32
 
   MODE = 2000 # 2003
 

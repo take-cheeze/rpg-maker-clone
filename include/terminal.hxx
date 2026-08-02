@@ -65,3 +65,44 @@ void terminal_write(const char* p, size_t n);
 // Enabled by default; wired to the --term_stats flag.  Has no effect unless a
 // terminal display was created (the SDL path never calls the encoder).
 void terminal_set_stats(bool enabled);
+
+// ---------------------------------------------------------------------------
+// Log console
+// ---------------------------------------------------------------------------
+// A TUI log panel that mirrors ng-log output on-screen, drawn above the game
+// image just like the legend and stats rows.  Because a terminal backend paints
+// each frame onto the alternate screen with cursor-home overdraw, anything
+// ng-log wrote to stderr would scribble over the picture; the console reserves
+// a fixed block of rows for the last few messages instead, tailing them like a
+// real console (newest at the bottom, nearest the image).
+//
+// The pieces are split across the executable and this gem so the gem keeps no
+// compile-time dependency on ng-log: the executable installs an nglog::LogSink
+// (see src/log_console.cxx) that forwards each message here through
+// terminal_console_push, and the encoders draw the buffered lines with
+// terminal_append_console.
+
+// Enable the log console and set how many message rows it reserves (a header
+// row is always drawn above them).  `lines` is clamped to at least 1.  Wired to
+// the --term_console / --term_console_lines flags; a no-op visually until an
+// encoder calls terminal_append_console.
+void terminal_set_console(bool enabled, int lines);
+
+// Append one log line to the console's ring buffer.  Thread-safe: ng-log may
+// call the installed sink from whichever thread ran the LOG() statement.
+// `severity` uses ng-log's LogSeverity ordering (0=INFO, 1=WARNING, 2=ERROR,
+// 3=FATAL) and selects the row colour; `file`/`line` are the message's source
+// location (may be null/0).  The message is stored sanitised to a single
+// printable line.  Safe to call before a terminal display exists.
+void terminal_console_push(int severity,
+                           const char* file,
+                           int line,
+                           const char* msg,
+                           size_t msg_len);
+
+// Append the log-console block (header row plus the reserved message rows) to
+// `s` in the same dim/cleared/CR-LF style as the legend and stats rows.
+// Encoders call this right after terminal_append_stats.  A no-op when the
+// console is disabled.  The block is a fixed height so the game image never
+// shifts as messages arrive; missing rows are drawn blank.
+void terminal_append_console(std::string& s);

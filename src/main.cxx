@@ -17,6 +17,7 @@
 #include <inicpp.hpp>
 
 #include "iterm.hxx"
+#include "log_console.hxx"
 #include "profiler.hxx"
 #include "sixel.hxx"
 #include "terminal.hxx"
@@ -50,6 +51,16 @@ DEFINE_bool(
     "While a terminal backend (--sixel/--iterm) is active, draw the "
     "emit rate (frame size, MB/s, fps) on-screen just under the control "
     "legend, refreshed about once a second");
+DEFINE_bool(
+    term_console,
+    true,
+    "While a terminal backend (--sixel/--iterm) is active, draw a log "
+    "console above the game image that mirrors ng-log messages on-screen "
+    "(so they are not scribbled over the picture via stderr); the last "
+    "--term_console_lines messages are tailed, newest at the bottom");
+DEFINE_int32(term_console_lines,
+             5,
+             "Number of ng-log message rows the --term_console panel reserves");
 DEFINE_bool(profile,
             false,
             "Enable the CPU/memory profiler: measure per-frame work time and "
@@ -68,7 +79,13 @@ namespace {
 
 namespace fs = std::filesystem;
 
-void* lvallocf(mrb_state* M, void* p, size_t s, void* ud) {
+#ifndef __EMSCRIPTEN__
+// mruby's heap is routed through lvgl's memory pool so both are accounted under
+// one allocator. mruby 4.0 removed per-state allocators (mrb_open_allocf); a
+// program now customizes allocation by overriding the global
+// mrb_basic_alloc_func (see below), whose (ptr, size) contract this matches:
+// size 0 frees, a non-null ptr reallocs, otherwise it allocates.
+void* lvallocf(void* p, size_t s) {
   if (s == 0) {
     lv_free(p);
     return nullptr;
@@ -78,6 +95,13 @@ void* lvallocf(mrb_state* M, void* p, size_t s, void* ud) {
     return lv_malloc(s);
   }
 }
+
+// When --profile is on, allocations are routed through the profiler so it can
+// count activity (it forwards to lvallocf); otherwise they go straight to
+// lvallocf, so the unprofiled build pays no extra indirection. Set from main()
+// before mruby is opened.
+bool g_alloc_through_profiler = false;
+#endif
 
 fs::path wine_prefix() {
   static const char* prefix_env = std::getenv("WINEPREFIX");
@@ -134,11 +158,33 @@ void main_loop() {
 
 }  // namespace
 
+#ifndef __EMSCRIPTEN__
+// mruby 4.0 has no per-state allocator hook; a program overrides the global
+// mrb_basic_alloc_func to supply its own allocator. Defining it here means the
+// linker never pulls mruby's default from libmruby.a. Route mruby's heap
+// through lvgl's pool (via lvallocf), optionally counting through the profiler.
+//
+// The Emscripten build deliberately does NOT override it (see the mrb_open()
+// note in main): lvgl's TLSF pool only aligns to 4 bytes on wasm32, which
+// breaks mruby's word boxing, so there mruby keeps its default 16-byte-aligned
+// malloc.
+extern "C" void* mrb_basic_alloc_func(void* p, size_t size) {
+  return g_alloc_through_profiler ? profiler_allocf(p, size)
+                                  : lvallocf(p, size);
+}
+#endif
+
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
 // Installs the SDL keyboard watch that feeds RGSS::Input (src/sdl_input.cxx).
 // Only meaningful for the SDL window backend.
 extern "C" void rgss_sdl_input_init(void);
+
+// Opens the audio device and installs the SDL_mixer backend for RGSS::Audio
+// (src/sdl_audio.cxx). A no-op if audio cannot be initialised. rgss_audio_
+// shutdown tears it down on the native exit path.
+extern "C" void rgss_audio_init(void);
+extern "C" void rgss_audio_shutdown(void);
 
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
 // of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
@@ -192,6 +238,21 @@ int main(int argc, char** argv) {
 
   terminal_set_stats(FLAGS_term_stats);
 
+  // The log console mirrors ng-log output on the alternate screen while a
+  // terminal backend paints the game there; without it, ng-log's stderr writes
+  // would scribble over the image.  Configure it always (harmless for the SDL
+  // path, whose encoder never runs), but only install the sink and stop routing
+  // messages to stderr when such a backend is actually active and the console
+  // is enabled.
+  const bool terminal_backend = FLAGS_sixel || FLAGS_iterm;
+  terminal_set_console(FLAGS_term_console, FLAGS_term_console_lines);
+  if (terminal_backend && FLAGS_term_console) {
+    log_console_install();
+    // Keep stderr clean so messages land only in the on-screen console; FATAL
+    // still prints (it aborts and restores the terminal anyway).
+    nglog::SetStderrLogging(nglog::NGLOG_FATAL);
+  }
+
   std::shared_ptr<lv_display_t> display;
   if (FLAGS_sixel) {
     display = std::shared_ptr<lv_display_t>(
@@ -215,6 +276,10 @@ int main(int argc, char** argv) {
     rgss_sdl_input_init();
   }
 
+  // Bring up audio for every backend (SDL_mixer initialises the SDL audio
+  // subsystem itself, so this works under the terminal backends too).
+  rgss_audio_init();
+
 #ifdef __EMSCRIPTEN__
   // mruby uses word boxing, which stores the type tag in the low 3 bits of each
   // heap pointer and therefore requires 8-byte-aligned objects. lvgl's TLSF
@@ -224,15 +289,14 @@ int main(int argc, char** argv) {
   // aligned).
   std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
 #else
-  // With profiling on, route mruby's allocator through the profiler so it can
-  // count allocation activity; it forwards every call to lvallocf. Off by
-  // default, so the unprofiled build allocates through lvallocf directly.
-  profiler_allocf_t allocf = lvallocf;
-  if (profiling) {
+  // mruby's allocator is the global mrb_basic_alloc_func override above, which
+  // routes through lvgl's pool. With profiling on, register lvallocf as the
+  // profiler's downstream and have the override count through it; this must
+  // happen before mrb_open() takes the first allocation.
+  if (profiling)
     profiler_set_downstream_allocf(lvallocf);
-    allocf = profiler_allocf;
-  }
-  std::shared_ptr<mrb_state> mrb(mrb_open_allocf(allocf, nullptr), mrb_close);
+  g_alloc_through_profiler = profiling;
+  std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
 #endif
   mrb_state* M = mrb.get();
   CHECK_NO_EXC(M);
@@ -303,6 +367,7 @@ int main(int argc, char** argv) {
   }
   CHECK(!M->exc);
 
+  rgss_audio_shutdown();
   gflags::ShutDownCommandLineFlags();
 
   return EXIT_SUCCESS;
