@@ -162,9 +162,14 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `STB_IMAGE_IMPLEMENTATION`): `new Image()` decodes into a native canvas and
     is a `drawImage` source, with async `onload`/`onerror`. Game-relative asset
     paths are rooted at the game dir (`mv_resolve_path` / `MV::JS.base_dir=`).
-  - Remaining: `putImageData`/typed-array `ImageData`, then present the main
-    canvas each frame by copying it into a `Sprite`'s `RGSS::Bitmap`, and flip
-    `MV.runtime_available?` so a real game boots to `Scene_Title`.
+  - ✅ On-screen present: `MV#boot` creates one full-screen `RGSS::Sprite`/
+    `Bitmap` and `MV::JS.present` copies the MV canvas into it each frame (R/B
+    swapped for the ARGB8888 layout), via a small `rgss::bitmap_pixels` accessor
+    (`include/rgss_bitmap.hxx`). `MV.runtime_available?` is already on.
+  - Remaining: transform-aware `drawImage` (PIXI's canvas renderer positions
+    sprites with `setTransform`, currently a no-op, so blits land at the origin)
+    — the last piece before the title screen composites correctly — plus
+    `putImageData`/typed-array `ImageData`.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
   in the SDL window and the sixel/iTerm2 terminals.

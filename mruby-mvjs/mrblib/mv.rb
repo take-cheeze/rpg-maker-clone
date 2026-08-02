@@ -114,6 +114,7 @@ class MV
     end
 
     pump_frame # M3: run the rAF/timer queue for one frame
+    present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     RGSS::Input.update
     RGSS::Graphics.update
   end
@@ -131,6 +132,7 @@ class MV
     # `data/System.json`, `img/system/Window.png`); root them at the game dir
     # since the process is not chdir'd into it.
     MV::JS.base_dir = @game_dir
+    create_screen
     boot_scripts.each do |script|
       path = "#{@game_dir}/#{script}"
       MV::JS.eval_file(path) if File.exist?(path)
@@ -164,6 +166,23 @@ class MV
     self.class.core_scripts
   rescue StandardError
     self.class.core_scripts
+  end
+
+  # Create the on-screen surface the MV canvas is presented onto: a single
+  # full-screen sprite whose bitmap we overwrite each frame. Held in instance
+  # variables so neither is garbage-collected while the game runs.
+  def create_screen
+    @screen_bitmap = RGSS::Bitmap.new(WIDTH, HEIGHT)
+    @screen_sprite = RGSS::Sprite.new
+    @screen_sprite.bitmap = @screen_bitmap
+    @screen_sprite.z = 0
+  end
+
+  # Copy MV's current canvas frame onto the on-screen bitmap. MV renders through
+  # PIXI into its canvas during pump; this blits that canvas into the sprite's
+  # bitmap (marking it dirty) so Graphics.update draws it.
+  def present
+    MV::JS.present(@screen_bitmap) if @screen_bitmap
   end
 
   # Advance the game's timer/requestAnimationFrame queue by one host frame. Time

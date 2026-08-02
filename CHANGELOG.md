@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV on-screen present (milestone M4): the MV canvas is now drawn to the screen
+  each frame. `MV#boot` creates one full-screen `RGSS::Sprite`/`Bitmap`, and
+  `MV::JS.present` copies MV's PIXI canvas (resolved from the running game's
+  renderer view / `Graphics._canvas`) into that bitmap — swapping R/B for the
+  RGBA→ARGB8888 layout and marking it dirty so `Graphics.update` repaints it.
+  mruby-rgss gained a small exported accessor (`include/rgss_bitmap.hxx`,
+  `rgss::bitmap_pixels`) so the present blits straight into the bitmap's buffer.
+  Covered by `mruby-mvjs/test/canvas_test.rb`. (Correct sprite positioning still
+  needs transform-aware `drawImage`, which PIXI's canvas renderer relies on.)
 - MV PNG image loading and asset path rooting (milestone M4): `new Image()` now
   decodes a game PNG through stb_image (`__mv_imageLoad` in `mvcanvas.cxx`)
   straight into a native RGBA canvas, exposing `width`/`height` and firing

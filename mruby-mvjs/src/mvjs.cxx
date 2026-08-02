@@ -18,6 +18,7 @@
 // name. The JS host itself is independent of mruby (console/file IO go through
 // C stdio), so it can live for the whole process.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -28,6 +29,7 @@
 #include <quickjs.h>
 
 #include "mvhost.hxx"
+#include "rgss_bitmap.hxx"
 
 namespace {
 
@@ -521,6 +523,75 @@ mrb_value js_pump(mrb_state* mrb, mrb_value self) {
   return mrb_nil_value();
 }
 
+// The handle of MV's on-screen canvas. PIXI's canvas renderer draws into its
+// view (== Graphics._canvas); prefer the renderer's view and fall back to
+// Graphics._canvas. Returns 0 before the renderer exists.
+const char* kMainCanvasHandleExpr = R"MVJS(
+(function () {
+  try {
+    if (typeof Graphics === 'undefined') return 0;
+    var c = (Graphics._renderer && Graphics._renderer.view) || Graphics._canvas;
+    return (c && c.__h) ? c.__h : 0;
+  } catch (e) { return 0; }
+})()
+)MVJS";
+
+// MV::JS.present(bitmap, handle = nil) -> copy the MV canvas onto `bitmap`.
+// With no handle, the on-screen canvas (Graphics' view) is resolved from the
+// running game; an explicit handle is used as-is (for tests). The canvas is
+// RGBA and the Bitmap is LVGL ARGB8888 (B,G,R,A), so R/B are swapped during the
+// copy, clamped to the overlapping region. Marks the Bitmap dirty so the next
+// Graphics.update repaints it. Returns true if pixels were copied.
+mrb_value js_present(mrb_state* mrb, mrb_value self) {
+  mrb_value bmp;
+  mrb_int handle = -1;
+  mrb_get_args(mrb, "o|i", &bmp, &handle);
+
+  int bw = 0, bh = 0;
+  uint8_t* dst = rgss::bitmap_pixels(mrb, bmp, &bw, &bh);
+  if (!dst)
+    return mrb_false_value();
+
+  JSContext* ctx = host();
+  if (!ctx)
+    return mrb_false_value();
+
+  if (handle < 0) {
+    JSValue r =
+        JS_Eval(ctx, kMainCanvasHandleExpr, std::strlen(kMainCanvasHandleExpr),
+                "<mv-present>", JS_EVAL_TYPE_GLOBAL);
+    int32_t v = 0;
+    if (!JS_IsException(r))
+      JS_ToInt32(ctx, &v, r);
+    JS_FreeValue(ctx, r);
+    handle = v;
+  }
+  if (handle <= 0)
+    return mrb_false_value();
+
+  int cw = 0, ch = 0;
+  const uint8_t* src = mv_canvas_pixels(static_cast<int>(handle), &cw, &ch);
+  if (!src)
+    return mrb_false_value();
+
+  const int w = std::min(bw, cw);
+  const int h = std::min(bh, ch);
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* s = src + static_cast<size_t>(y) * cw * 4;
+    uint8_t* d = dst + static_cast<size_t>(y) * bw * 4;
+    for (int x = 0; x < w; ++x) {
+      d[0] = s[2];  // B
+      d[1] = s[1];  // G
+      d[2] = s[0];  // R
+      d[3] = s[3];  // A
+      s += 4;
+      d += 4;
+    }
+  }
+  rgss::bitmap_mark_dirty(mrb, bmp);
+  return mrb_true_value();
+}
+
 }  // namespace
 
 // Root a game-relative path at the configured base dir. Declared in mvhost.hxx
@@ -545,6 +616,7 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, js, "pump", js_pump, MRB_ARGS_OPT(1));
   mrb_define_class_method(mrb, js, "base_dir=", js_set_base_dir,
                           MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, js, "present", js_present, MRB_ARGS_ARG(1, 1));
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}

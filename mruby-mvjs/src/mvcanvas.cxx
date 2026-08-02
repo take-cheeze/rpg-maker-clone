@@ -446,6 +446,19 @@ void install(JSContext* ctx,
 
 }  // namespace
 
+// Expose a canvas's RGBA buffer to the on-screen present path (mvjs.cxx). At
+// file scope but still able to reach the anonymous-namespace registry above.
+const uint8_t* mv_canvas_pixels(int handle, int* w, int* h) {
+  Canvas* c = canvas_get(handle);
+  if (!c)
+    return nullptr;
+  if (w)
+    *w = c->w;
+  if (h)
+    *h = c->h;
+  return c->px.data();
+}
+
 void mv_install_canvas(JSContext* ctx) {
   JSValue global = JS_GetGlobalObject(ctx);
   install(ctx, global, "__mv_canvasCreate", js_create, 2);

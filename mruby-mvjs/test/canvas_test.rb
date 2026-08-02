@@ -90,3 +90,28 @@ assert 'MV Image fires onerror for a missing file' do
   MV::JS.pump(0.0)
   assert_equal true, MV::JS.eval("IE_err")
 end
+
+assert 'MV::JS.present blits a canvas onto an RGSS::Bitmap with correct channels' do
+  # Source canvas: opaque red at (0,0), opaque blue at (1,1). The RGBA canvas
+  # and the ARGB8888 bitmap store channels in a different order, so this also
+  # checks the R/B swap is right (red must read back as red, not blue).
+  h = MV::JS.eval("globalThis.PC=document.createElement('canvas'); PC.width=2; " \
+                  "PC.height=2; var x=PC.getContext('2d'); x.fillStyle='#ff0000'; " \
+                  "x.fillRect(0,0,1,1); x.fillStyle='#0000ff'; x.fillRect(1,1,1,1); PC.__h")
+  bmp = RGSS::Bitmap.new(2, 2)
+  assert_equal true, MV::JS.present(bmp, h)
+  red = bmp.get_pixel(0, 0)
+  assert_equal 255.0, red.red
+  assert_equal 0.0, red.green
+  assert_equal 0.0, red.blue
+  assert_equal 255.0, red.alpha
+  blue = bmp.get_pixel(1, 1)
+  assert_equal 0.0, blue.red
+  assert_equal 255.0, blue.blue
+end
+
+assert 'MV::JS.present returns false for a bad handle or non-Bitmap' do
+  bmp = RGSS::Bitmap.new(2, 2)
+  assert_equal false, MV::JS.present(bmp, 0)          # handle 0 -> no canvas
+  assert_equal false, MV::JS.present("not a bitmap", 1)
+end
