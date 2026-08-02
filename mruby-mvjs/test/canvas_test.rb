@@ -156,6 +156,10 @@ assert 'MV document head/style shims support the font-loader boot path' do
   # Utils.canReadGameFiles reads the last <script>'s src over XHR; expose one.
   assert_equal true, MV::JS.eval("document.getElementsByTagName('script').length >= 1")
   assert_equal "string", MV::JS.eval("typeof document.getElementsByTagName('script')[0].src")
+  # Scene_Boot advances only once the game font reports loaded; the CSS
+  # font-loading path (document.fonts) must report ready/check==true.
+  assert_equal true, MV::JS.eval("!!(document.fonts && document.fonts.ready)")
+  assert_equal true, MV::JS.eval("document.fonts.check('10px GameFont')")
 end
 
 assert 'MV canvas save/restore round-trips the transform' do

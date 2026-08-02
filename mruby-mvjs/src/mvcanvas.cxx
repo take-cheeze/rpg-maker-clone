@@ -496,6 +496,19 @@ const char* kCanvasPreamble = R"MVJS(
   }
   var docHead = stubElement('head');
   var docBody = stubElement('body');
+  // A FontFaceSet stand-in. When document.fonts is present MV takes its CSS
+  // font-loading path (Graphics._cssFontLoading) and detects the game font via
+  // fonts.check() instead of comparing measured text widths — which our
+  // font-agnostic measureText can't distinguish, so Scene_Boot would otherwise
+  // wait forever for the font and never advance to the title. Report the font
+  // as ready so boot proceeds (we render text through the engine, not CSS).
+  var fontFaceSet = {
+    check: function () { return true; },
+    load: function () { return Promise.resolve([]); },
+    add: function () {}, delete: function () {}, clear: function () {},
+    forEach: function () {}, size: 0, status: 'loaded',
+  };
+  fontFaceSet.ready = Promise.resolve(fontFaceSet);
   g.document = {
     createElement: function (tag) {
       tag = ('' + tag).toLowerCase();
@@ -524,6 +537,7 @@ const char* kCanvasPreamble = R"MVJS(
     body: docBody,
     documentElement: stubElement('html'),
     head: docHead,
+    fonts: fontFaceSet,
   };
 
   // Image: MV's Bitmap loads PNGs with `new Image()` + `.src = url`. We decode

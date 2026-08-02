@@ -17,8 +17,11 @@ All notable changes to this project will be documented in this file.
   **`AudioContext`** stub lets `SceneManager.initAudio` succeed (real Web Audio →
   `RGSS::Audio` is a later milestone); and `document.getElementsByTagName('script')`
   now returns a readable entry so `Utils.canReadGameFiles`/`checkFileAccess`
-  passes. The whole `SceneManager.initialize` sequence now completes. Covered by
-  `mruby-mvjs/test`.
+  passes. The whole `SceneManager.initialize` sequence now completes, and a
+  `document.fonts` (`FontFaceSet`) stub reporting the game font ready makes
+  `Scene_Boot` advance to the title instead of looping forever on MV's
+  measured-text-width font check (which a font-agnostic `measureText` can't
+  satisfy). Covered by `mruby-mvjs/test`.
 - MV boot resilience (milestone M4): script evaluation now follows browser
   semantics — a `<script>` that throws while executing is logged and the next
   one still runs, instead of aborting the whole engine. Previously the
