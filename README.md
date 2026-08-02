@@ -140,6 +140,9 @@
 - A project can still be **baked into the page** at build time with
   `-DWASM_GAME_DIR=/abs/path/to/game`; that page auto-starts the game with no
   interaction (and the loader is skipped).
+- The page draws an **on-screen keypad** (D-pad plus OK/Cancel/Dash, the L/R
+  shoulders and the A/X/Y/Z buttons) beneath the canvas, so the game is playable
+  by touch or mouse without a physical keyboard; the keyboard keeps working too.
 
 ### Audio
 
