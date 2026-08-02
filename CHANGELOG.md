@@ -18,6 +18,37 @@ All notable changes to this project will be documented in this file.
   interpreter/asset slices. All of it is additive and guarded (`WIO_TERMINAL`),
   so the desktop and wasm builds are unchanged. Design and memory budget in
   `docs/adr/0007-wio-terminal-port.md`; a CI job compiles the firmware.
+- The WebAssembly build now loads an RPG Maker project **at runtime** instead of
+  requiring one to be baked into the page at compile time, so a single build
+  plays any game. A new Emscripten shell (`src/shell.html`) offers a loader that
+  accepts a local `.zip`, a direct `.zip` URL, or a GitHub repository
+  (`owner/repo`, `owner/repo@ref`, or a `github.com` URL, resolved to its
+  `codeload` archive). The zip is unpacked in the browser with the native
+  `DecompressionStream` API — no third-party JavaScript — the folder containing
+  `RPG_RT.ldb` (RPG2k) or `Game.ini` (XP) is located (top-level wrapper folders,
+  as GitHub archives use, are handled) and mounted at `/game`, then the exported
+  `rpg_start_game()` constructs the game and starts the frame loop. Under
+  Emscripten `main()` now sets up the interpreter and display and returns to the
+  browser, deferring game construction until a project is present; a project
+  baked in with `-DWASM_GAME_DIR` still auto-starts. Cross-origin downloads
+  (GitHub, most `.zip` URLs) need a CORS proxy — the loader has an optional
+  field for one — or the always-works local-file path. Downloaded archives are
+  cached (Cache Storage, keyed by the resolved URL) so re-loading the same URL
+  or repo skips the network; the loader can force a fresh download or clear the
+  cache. The URL and CORS-proxy fields persist across reloads (localStorage) and
+  are mirrored into the page's `?url=`/`?proxy=` query string, so a project link
+  is bookmarkable and shareable and a `?url=` link auto-loads
+- On-screen game keypad for the browser (WebAssembly) build so the game is
+  playable by touch or mouse without a physical keyboard. A custom Emscripten
+  shell page (`src/shell.html`) draws `<button>` elements — a D-pad plus OK (C),
+  Cancel (B), Dash (Shift), the L/R shoulders and the A/X/Y/Z buttons — laid out
+  responsively beneath the game canvas. Each button's pointer handlers call
+  `Module._rgss_wasm_key`, a tiny bridge exported from `src/wasm_keypad.cxx` that
+  feeds the very same input buffer as the SDL keyboard watch, so a tapped button
+  is indistinguishable from a pressed key (including `RGSS::Input` trigger/repeat
+  timing). Pointer capture and a window-blur handler prevent stuck keys, and
+  physical keyboard input keeps working exactly as before. Wired up only for the
+  Emscripten target via `--shell-file` in `CMakeLists.txt`
 - Audio playback: `RGSS::Audio` is now backed by SDL_mixer instead of inert
   stubs, so games play sound. Looping **BGM** and **BGS**, one-shot **ME**
   (music effects that interrupt the BGM and then let it resume, tracked per
