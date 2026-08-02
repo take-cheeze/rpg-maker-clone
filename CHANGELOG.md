@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
+  `strokeText` and `measureText` are backed by stb_truetype against the game's
+  bundled TrueType font (the CSS `GameFont`, auto-discovered under the project's
+  `fonts/` dir), so window/menu/title text — which MV draws through
+  `Bitmap.drawText` → `context.fillText` — actually appears. Horizontal
+  alignment (`textAlign` centre/right, driven by the now-accurate `measureText`),
+  `textBaseline`, the current transform (translate/uniform-scale) and a dilated
+  outline for `strokeText` are all honoured. Previously these were no-ops, so
+  the boot reached the title but drew no text.
 - MV render capture: a `--mv_screenshot=PATH` flag writes a PNG of the rendered
   MV frame a couple of seconds into the boot (`MV::JS.screenshot` encodes the
   live PIXI canvas via stb_image_write), and the CI smoke test uploads it as the

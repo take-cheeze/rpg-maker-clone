@@ -176,6 +176,31 @@ assert 'MV canvas gradient factories return chainable objects (gradientFillRect)
   )
 end
 
+assert 'MV canvas text API is wired (fillText/strokeText/measureText)' do
+  # measureText must return a numeric width; empty text is zero in both the
+  # font-backed and the no-font fallback path, so this holds regardless of
+  # whether a game font is present in the test environment.
+  assert_equal "number", MV::JS.eval(
+    "typeof document.createElement('canvas').getContext('2d')" \
+    ".measureText('hi').width"
+  )
+  assert_equal 0, MV::JS.eval(
+    "document.createElement('canvas').getContext('2d').measureText('').width"
+  )
+  # fill/strokeText are real functions (no longer no-ops) and must not throw for
+  # the full call shape MV uses, even when no font is loaded (they draw nothing).
+  assert_equal "function", MV::JS.eval(
+    "typeof document.createElement('canvas').getContext('2d').fillText"
+  )
+  assert_nil MV::JS.eval(
+    "var x=document.createElement('canvas'); x.width=8; x.height=8; " \
+    "var c=x.getContext('2d'); c.font='10px GameFont'; c.textAlign='center'; " \
+    "c.textBaseline='alphabetic'; c.fillStyle='#ffffff'; " \
+    "c.strokeStyle='rgba(0,0,0,0.5)'; c.lineWidth=4; " \
+    "c.strokeText('Hi', 4, 6, 8); c.fillText('Hi', 4, 6, 8); null"
+  )
+end
+
 assert 'MV canvas save/restore round-trips the transform' do
   m = MV::JS.eval("var x=document.createElement('canvas').getContext('2d'); " \
                   "x.save(); x.translate(5,7); x.scale(2,2); x.restore(); x._m.join(',')")

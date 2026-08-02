@@ -15,6 +15,7 @@
 #include "mvhost.hxx"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -25,7 +26,130 @@
 // we include only the declarations here and the decode symbols resolve at link.
 #include <stb_image.h>
 
+// stb_truetype backs text drawing (fillText/strokeText/measureText). Nothing
+// else compiles its implementation, so we define it here (this is the single
+// implementation TU for it).
+#include <cstdio>
+
+#include <dirent.h>
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <stb_truetype.h>
+
 namespace {
+
+// The game font, loaded once on first text draw. MV renders all window/menu
+// text through the Canvas2D context's fillText using the project's bundled
+// TrueType font (the CSS `GameFont`, typically fonts/mplus-1m-regular.ttf). We
+// find the first .ttf/.otf under the game's fonts/ dir and rasterise glyphs
+// with stb_truetype. Loading is lazy and cached; if no font is found, text
+// draws no-op and measureText falls back to a rough advance estimate.
+struct GameFont {
+  bool tried = false;
+  bool ok = false;
+  std::vector<uint8_t> data;
+  stbtt_fontinfo info{};
+};
+
+std::string font_dir_first_ttf() {
+  const std::string dir = mv_resolve_path("fonts");
+  DIR* d = opendir(dir.c_str());
+  if (!d)
+    return std::string();
+  std::string found;
+  while (dirent* e = readdir(d)) {
+    const std::string name = e->d_name;
+    if (name.size() < 4)
+      continue;
+    std::string ext = name.substr(name.size() - 4);
+    for (char& ch : ext)
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (ext == ".ttf" || ext == ".otf") {
+      found = dir + "/" + name;
+      break;
+    }
+  }
+  closedir(d);
+  return found;
+}
+
+GameFont& game_font() {
+  static GameFont f;
+  if (f.tried)
+    return f;
+  f.tried = true;
+  const std::string path = font_dir_first_ttf();
+  if (path.empty())
+    return f;
+  std::FILE* fp = std::fopen(path.c_str(), "rb");
+  if (!fp)
+    return f;
+  std::fseek(fp, 0, SEEK_END);
+  long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz > 0) {
+    f.data.resize(static_cast<size_t>(sz));
+    if (std::fread(f.data.data(), 1, static_cast<size_t>(sz), fp) ==
+        static_cast<size_t>(sz)) {
+      const int off = stbtt_GetFontOffsetForIndex(f.data.data(), 0);
+      if (off >= 0 && stbtt_InitFont(&f.info, f.data.data(), off))
+        f.ok = true;
+    }
+  }
+  std::fclose(fp);
+  return f;
+}
+
+// Decode the next UTF-8 code point from s[i..n), advancing i. Malformed bytes
+// are passed through as Latin-1 so ASCII text (the common case) is exact.
+uint32_t utf8_next(const unsigned char* s, size_t n, size_t& i) {
+  uint32_t c = s[i++];
+  if (c < 0x80)
+    return c;
+  int extra;
+  uint32_t cp;
+  if ((c & 0xE0) == 0xC0) {
+    cp = c & 0x1F;
+    extra = 1;
+  } else if ((c & 0xF0) == 0xE0) {
+    cp = c & 0x0F;
+    extra = 2;
+  } else if ((c & 0xF8) == 0xF0) {
+    cp = c & 0x07;
+    extra = 3;
+  } else {
+    return c;
+  }
+  for (int k = 0; k < extra && i < n; ++k) {
+    const uint32_t cc = s[i];
+    if ((cc & 0xC0) != 0x80)
+      break;
+    cp = (cp << 6) | (cc & 0x3F);
+    ++i;
+  }
+  return cp;
+}
+
+// Total advance width of `text` at `pixel` em size, in pixels.
+double font_text_width(const std::string& text, double pixel) {
+  GameFont& f = game_font();
+  if (!f.ok)
+    return static_cast<double>(text.size()) * pixel * 0.5;
+  const float scale =
+      stbtt_ScaleForMappingEmToPixels(&f.info, static_cast<float>(pixel));
+  const unsigned char* s = reinterpret_cast<const unsigned char*>(text.data());
+  double w = 0;
+  int prev = 0;
+  for (size_t i = 0; i < text.size();) {
+    const int cp = static_cast<int>(utf8_next(s, text.size(), i));
+    int adv = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(&f.info, cp, &adv, &lsb);
+    if (prev)
+      w += scale * stbtt_GetCodepointKernAdvance(&f.info, prev, cp);
+    w += scale * adv;
+    prev = cp;
+  }
+  return w;
+}
 
 // An RGBA8 canvas, row-major, straight (non-premultiplied) alpha.
 struct Canvas {
@@ -237,6 +361,144 @@ JSValue js_draw_image(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// __mv_fontMeasure(pixelSize, text) -> advance width in pixels. Backs
+// CanvasRenderingContext2D.measureText, which MV's Bitmap.measureTextWidth uses
+// to align (centre/right) and lay out text, so it must reflect the real font.
+JSValue js_measure_text(JSContext* ctx,
+                        JSValueConst,
+                        int argc,
+                        JSValueConst* argv) {
+  const double pixel = ad(ctx, argc, argv, 0, 10);
+  const char* text = argc > 1 ? JS_ToCString(ctx, argv[1]) : nullptr;
+  const double w = text ? font_text_width(text, pixel) : 0.0;
+  if (text)
+    JS_FreeCString(ctx, text);
+  return JS_NewFloat64(ctx, w);
+}
+
+// Blit a glyph coverage bitmap (8-bit alpha, `gw`x`gh`) at device (dx,dy) in
+// solid colour (r,g,b), coverage scaled by `alpha`. When `dilate` > 0 the
+// coverage is spread by that radius (a max filter) to draw a text outline.
+void blit_coverage(Canvas* c,
+                   const uint8_t* cov,
+                   int gw,
+                   int gh,
+                   int dx,
+                   int dy,
+                   int r,
+                   int g,
+                   int b,
+                   int alpha,
+                   int dilate) {
+  for (int j = -dilate; j < gh + dilate; ++j) {
+    const int ty = dy + j;
+    if (ty < 0 || ty >= c->h)
+      continue;
+    for (int i = -dilate; i < gw + dilate; ++i) {
+      const int tx = dx + i;
+      if (tx < 0 || tx >= c->w)
+        continue;
+      int m = 0;
+      if (dilate == 0) {
+        m = cov[j * gw + i];
+      } else {
+        for (int oy = -dilate; oy <= dilate && m < 255; ++oy) {
+          const int sy = j + oy;
+          if (sy < 0 || sy >= gh)
+            continue;
+          for (int ox = -dilate; ox <= dilate; ++ox) {
+            const int sx = i + ox;
+            if (sx < 0 || sx >= gw)
+              continue;
+            if (cov[sy * gw + sx] > m)
+              m = cov[sy * gw + sx];
+          }
+        }
+      }
+      if (m <= 0)
+        continue;
+      blend(&c->px[(static_cast<size_t>(ty) * c->w + tx) * 4], r, g, b,
+            m * alpha / 255);
+    }
+  }
+}
+
+// __mv_canvasDrawText(handle, x, y, text, r, g, b, a, size, dilate, baseline,
+//                     m0, m1, m2, m3, m4, m5)
+// Rasterise `text` at em size `size` with the game font and blend it in colour
+// (r,g,b,a). `baseline` selects where y sits (0 alphabetic, 1 top, 2 middle,
+// 3 bottom). `dilate` > 0 draws an outline (strokeText). The 2D matrix is
+// honoured for translation and uniform scale (MV draws text axis-aligned, so
+// rotation/skew are ignored). Text is pre-aligned by the caller, so this always
+// lays out left-to-right from x.
+JSValue js_draw_text(JSContext* ctx,
+                     JSValueConst,
+                     int argc,
+                     JSValueConst* argv) {
+  Canvas* c = canvas_get(ai(ctx, argc, argv, 0));
+  const char* text = argc > 3 ? JS_ToCString(ctx, argv[3]) : nullptr;
+  if (!c || !text) {
+    if (text)
+      JS_FreeCString(ctx, text);
+    return JS_UNDEFINED;
+  }
+  GameFont& f = game_font();
+  if (!f.ok) {
+    JS_FreeCString(ctx, text);
+    return JS_UNDEFINED;
+  }
+  const double x = ad(ctx, argc, argv, 1, 0), y = ad(ctx, argc, argv, 2, 0);
+  const int r = ai(ctx, argc, argv, 4), g = ai(ctx, argc, argv, 5);
+  const int b = ai(ctx, argc, argv, 6), a = ai(ctx, argc, argv, 7);
+  const double size = ad(ctx, argc, argv, 8, 10);
+  const int dilate = ai(ctx, argc, argv, 9);
+  const int baseline = ai(ctx, argc, argv, 10);
+  const double m0 = ad(ctx, argc, argv, 11, 1), m1 = ad(ctx, argc, argv, 12, 0);
+  const double m2 = ad(ctx, argc, argv, 13, 0), m3 = ad(ctx, argc, argv, 14, 1);
+  const double m4 = ad(ctx, argc, argv, 15, 0), m5 = ad(ctx, argc, argv, 16, 0);
+
+  // Uniform text scale from the matrix (rotation ignored). Device origin of the
+  // baseline point is the matrix applied to (x, y).
+  const double sy = std::sqrt(m2 * m2 + m3 * m3);
+  const double scaleMul = sy > 0 ? sy : 1.0;
+  const float scale = stbtt_ScaleForMappingEmToPixels(
+      &f.info, static_cast<float>(size * scaleMul));
+  int ascent = 0, descent = 0, lineGap = 0;
+  stbtt_GetFontVMetrics(&f.info, &ascent, &descent, &lineGap);
+  double baseY = m1 * x + m3 * y + m5;
+  if (baseline == 1)  // top
+    baseY += scale * ascent;
+  else if (baseline == 2)  // middle
+    baseY += scale * (ascent + descent) / 2.0;
+  else if (baseline == 3)  // bottom
+    baseY += scale * descent;
+  double penX = m0 * x + m2 * y + m4;
+
+  const unsigned char* s = reinterpret_cast<const unsigned char*>(text);
+  const size_t n = std::strlen(text);
+  int prev = 0;
+  for (size_t i = 0; i < n;) {
+    const int cp = static_cast<int>(utf8_next(s, n, i));
+    if (prev)
+      penX += scale * stbtt_GetCodepointKernAdvance(&f.info, prev, cp);
+    int gw = 0, gh = 0, gxoff = 0, gyoff = 0;
+    uint8_t* bmp = stbtt_GetCodepointBitmap(&f.info, scale, scale, cp, &gw, &gh,
+                                            &gxoff, &gyoff);
+    if (bmp) {
+      const int dx = static_cast<int>(std::lround(penX)) + gxoff;
+      const int dy = static_cast<int>(std::lround(baseY)) + gyoff;
+      blit_coverage(c, bmp, gw, gh, dx, dy, r, g, b, a, dilate);
+      stbtt_FreeBitmap(bmp, nullptr);
+    }
+    int adv = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(&f.info, cp, &adv, &lsb);
+    penX += scale * adv;
+    prev = cp;
+  }
+  JS_FreeCString(ctx, text);
+  return JS_UNDEFINED;
+}
+
 // __mv_canvasGetPixel(handle, x, y) -> [r, g, b, a] (used by tests and by the
 // getImageData path). Out-of-range reads return transparent black.
 JSValue js_get_pixel(JSContext* ctx,
@@ -414,8 +676,51 @@ const char* kCanvasPreamble = R"MVJS(
     }
     return { width: w, height: h, data: data };
   };
+  // Pixel (em) size from a CSS font shorthand, e.g. '28px GameFont' -> 28.
+  function fontPx(s) {
+    var m = /([\d.]+)px/.exec(s || '');
+    return m ? parseFloat(m[1]) : 10;
+  }
+  // Map a canvas textBaseline to the native code (0 alphabetic, 1 top,
+  // 2 middle, 3 bottom); ideographic/hanging fall back to the nearest.
+  function baselineCode(b) {
+    if (b === 'top' || b === 'hanging') return 1;
+    if (b === 'middle') return 2;
+    if (b === 'bottom' || b === 'ideographic') return 3;
+    return 0;
+  }
   Ctx.prototype.measureText = function (t) {
-    return { width: (t ? String(t).length : 0) * 6 };
+    return { width: g.__mv_fontMeasure(fontPx(this.font), t == null ? '' : String(t)) };
+  };
+  // Shared layout for fill/strokeText: resolve colour, size and the horizontal
+  // alignment offset, then hand off to the native rasteriser with the current
+  // transform. `dilate` > 0 draws an outline (strokeText).
+  function drawText(self, style, dilate, text, x, y) {
+    if (text == null) return;
+    text = String(text);
+    var col = parseColor(style);
+    var a = Math.round(col[3] * self.globalAlpha);
+    if (a <= 0) return;
+    var size = fontPx(self.font);
+    var ax = x;
+    if (self.textAlign === 'center') {
+      ax -= g.__mv_fontMeasure(size, text) / 2;
+    } else if (self.textAlign === 'right' || self.textAlign === 'end') {
+      ax -= g.__mv_fontMeasure(size, text);
+    }
+    var m = self._m;
+    g.__mv_canvasDrawText(self.__h, ax, y, text, col[0], col[1], col[2], a,
+                          size, dilate, baselineCode(self.textBaseline),
+                          m[0], m[1], m[2], m[3], m[4], m[5]);
+  }
+  Ctx.prototype.fillText = function (text, x, y) {
+    drawText(this, this.fillStyle, 0, text, x, y);
+  };
+  Ctx.prototype.strokeText = function (text, x, y) {
+    var d = Math.round((this.lineWidth || 1) / 2);
+    if (d < 1) d = 1;
+    if (d > 2) d = 2;
+    drawText(this, this.strokeStyle, d, text, x, y);
   };
   // Gradients/patterns: MV's Bitmap.gradientFillRect creates a gradient and
   // chains .addColorStop on it before assigning it to fillStyle, so these must
@@ -434,8 +739,8 @@ const char* kCanvasPreamble = R"MVJS(
   // — save/restore/translate/scale/rotate/transform/setTransform/resetTransform
   // — are implemented above and deliberately excluded here.)
   var noops = ['beginPath', 'closePath', 'moveTo', 'lineTo',
-    'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip', 'fillText',
-    'strokeText', 'setLineDash', 'putImageData',
+    'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip',
+    'setLineDash', 'putImageData',
     'drawFocusIfNeeded', 'scrollPathIntoView'];
   noops.forEach(function (m) {
     if (!Ctx.prototype[m]) Ctx.prototype[m] = function () {};
@@ -631,6 +936,8 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasClearRect", js_clear_rect, 5);
   install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 17);
   install(ctx, global, "__mv_canvasGetPixel", js_get_pixel, 3);
+  install(ctx, global, "__mv_canvasDrawText", js_draw_text, 17);
+  install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   JS_FreeValue(ctx, global);
 
