@@ -104,6 +104,51 @@
   stream stays loadable even if the process is killed mid-run, so it is safe to
   trace a long session and stop it with `Ctrl-C`
 
+### Play in the browser (WebAssembly)
+
+- The runtime cross-compiles to WebAssembly with Emscripten and ships a page
+  (`index.html` + `index.js` + `index.wasm`) that **loads an RPG Maker project at
+  runtime** — one build plays any game, nothing has to be baked in at compile
+  time.
+
+  ```sh
+  emcmake cmake -S . -B wasm-build -GNinja
+  cmake --build wasm-build
+  python3 scripts/serve.py wasm-build --port 8000   # then open localhost:8000
+  ```
+
+- The page's loader accepts three sources for an RPG Maker 2000/2003 (RPG2k) or
+  XP project:
+  - **a local `.zip`** — always works, no network;
+  - **a direct `.zip` URL** — the host must allow cross-origin fetches (CORS);
+  - **a GitHub repository** — `owner/repo`, `owner/repo@ref`, or a
+    `github.com/owner/repo` URL, resolved to its `codeload` zip archive.
+- The zip is unpacked in the browser with the native `DecompressionStream` API
+  (no third-party JavaScript), the folder containing `RPG_RT.ldb` (RPG2k) or
+  `Game.ini` (XP) is located and mounted at `/game` in the virtual filesystem,
+  and the game starts. A zip wrapped in a top-level folder (as GitHub archives
+  always are) is handled automatically.
+- Because browsers block cross-origin downloads unless the host opts in, GitHub
+  and most arbitrary `.zip` URLs need a **CORS proxy**: enter its prefix in the
+  loader's optional field, or simply download the zip and use the local-file
+  path, which needs no network.
+- Downloaded archives are **cached** (via the Cache Storage API, keyed by the
+  resolved URL), so re-loading the same URL or repo skips the network. Tick
+  *Re-download (ignore cache)* to force a fresh copy (e.g. to pick up new commits
+  on a GitHub `HEAD` archive), or *Clear cached archives* to drop the whole
+  cache.
+- The URL and proxy fields are **remembered across reloads** and mirrored into
+  the address bar as a `?url=…&proxy=…` query, so the page is bookmarkable and
+  shareable — opening a link with a `?url=` auto-loads that project. (Values are
+  also kept in `localStorage`, so a plain reload restores whatever was last
+  typed even without a query string.)
+- A project can still be **baked into the page** at build time with
+  `-DWASM_GAME_DIR=/abs/path/to/game`; that page auto-starts the game with no
+  interaction (and the loader is skipped).
+- The page draws an **on-screen keypad** (D-pad plus OK/Cancel/Dash, the L/R
+  shoulders and the A/X/Y/Z buttons) beneath the canvas, so the game is playable
+  by touch or mouse without a physical keyboard; the keyboard keeps working too.
+
 ### Audio
 
 - `RGSS::Audio` plays real music and sound through an
@@ -119,7 +164,6 @@
   compatibility but not applied (SDL_mixer has no pitch control)
 
 ## TODO
-- Run zip file directly
 - Editor with [imgui](https://github.com/ocornut/imgui)
 - Real chipset tile rendering (lower/upper chip graphics, autotiles, tile
   animation); the map scene currently draws placeholder colour-block tiles

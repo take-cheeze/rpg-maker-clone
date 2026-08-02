@@ -209,6 +209,39 @@ jobs:
           name: screenshots
           path: ss/
 
+  wio:
+    # Build the Wio Terminal (SAMD51) bring-up firmware with PlatformIO. This is
+    # the external check for the port's HAL: this environment cannot cross-build
+    # or flash the board, so CI compiles it. Builds the display + input HAL and
+    # the Arduino sketch; the mruby interpreter is layered on in a later slice
+    # (see app/wio/README.md and docs/adr/0005-wio-terminal-port.md).
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # LVGL is vendored as a submodule and linked into the firmware.
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build firmware
+        run: pio run -e wio
+
   flake:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest

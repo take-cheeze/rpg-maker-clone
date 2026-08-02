@@ -244,20 +244,27 @@ if(EMSCRIPTEN)
     "-sASSERTIONS=2"
     "-sSAFE_HEAP=1"
     "-sSTACK_OVERFLOW_CHECK=2"
-    # Use our own page (canvas + on-screen keypad) instead of Emscripten's
-    # default shell. rgss_wasm_key is exported via EMSCRIPTEN_KEEPALIVE, so it
-    # needs no EXPORTED_FUNCTIONS entry.
+    # The shell page needs FS + ccall for the runtime loader, and its two
+    # KEEPALIVE entry points kept in the JS exports past dead-code elimination:
+    # rpg_start_game (start a project unzipped into /game at runtime) and
+    # rgss_wasm_key (the on-screen keypad's key bridge).
+    "-sEXPORTED_FUNCTIONS=['_main','_rpg_start_game','_rgss_wasm_key','_malloc','_free']"
+    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']"
+    # Custom page (src/shell.html): a canvas with an on-screen keypad plus a
+    # loader that fetches/opens a zip or GitHub-hosted RPG2k project and mounts
+    # it under /game.
     "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html"
     "${ONIGMO_A}")
-  # Relink the page when the shell template changes (CMake does not track the
+  # Relink the page when the shell changes (CMake does not track the
   # --shell-file input on its own).
-  set_property(
-    TARGET ${PROJECT_NAME}
-    APPEND
-    PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html")
+  set_target_properties(
+    ${PROJECT_NAME} PROPERTIES LINK_DEPENDS
+                               ${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html)
+
   # Optionally bake a game directory into the virtual filesystem at /game so the
-  # page runs a real game. Pass -DWASM_GAME_DIR=/abs/path/to/game at configure
-  # time; then the page auto-loads it via --game_dir=/game.
+  # page runs a real game with no interaction. Pass
+  # -DWASM_GAME_DIR=/abs/path/to/game at configure time; then main() auto-starts
+  # it. Without it, the page waits for the loader to supply a project.
   if(WASM_GAME_DIR)
     file(REAL_PATH ${WASM_GAME_DIR} WASM_GAME_DIR)
     target_link_options(${PROJECT_NAME} PRIVATE

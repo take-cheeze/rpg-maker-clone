@@ -154,6 +154,14 @@ std::function<void()> main_loop_;
 void main_loop() {
   main_loop_();
 }
+
+// The interpreter, display and constructor args must outlive main() so a game
+// can be constructed later, once the page's loader has unzipped a project into
+// /game at runtime (see rpg_start_game). EXIT_RUNTIME=0 keeps the module alive
+// after main() returns, so these globals stay valid until the tab is closed.
+std::shared_ptr<mrb_state> em_mrb;
+std::shared_ptr<lv_display_t> em_display;
+mrb_value em_args;
 #endif
 
 }  // namespace
@@ -208,6 +216,52 @@ extern "C" void rgss_audio_shutdown(void);
       return EXIT_FAILURE;                                                     \
     }                                                                          \
   } while (0)
+
+#ifdef __EMSCRIPTEN__
+// Construct the game object from whatever now lives under /game and hand a
+// per-frame callback to the browser. Exported so the shell page's loader can
+// call it (via Module.ccall) after unzipping an RPG2k/XP project into the
+// virtual filesystem. Returns 0 on success, 1 when no recognisable game is
+// present or its construction raised a Ruby exception. Safe to call only once:
+// once a game is running the browser owns the frame loop.
+extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
+  mrb_state* M = em_mrb.get();
+  if (M == nullptr)
+    return 1;
+
+  const fs::path game_dir_path = "/game";
+  mrb_value game_obj;
+  if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
+  } else if (fs::exists(game_dir_path / "Game.ini")) {
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
+  } else {
+    std::fprintf(stderr,
+                 "No RPG2k (RPG_RT.ldb) or RPG XP (Game.ini) project "
+                 "found under /game\n");
+    return 1;
+  }
+  if (M->exc) {
+    mrb_print_backtrace(M);
+    M->exc = nullptr;
+    return 1;
+  }
+
+  // Keep the game reachable from the GC and capture handles by value so the
+  // callback stays valid after this function returns. simulate_infinite_loop=0
+  // so control returns cleanly to the JS caller instead of unwinding the stack.
+  mrb_gc_register(M, game_obj);
+  main_loop_ = [M, game_obj]() {
+    mrb_funcall(M, game_obj, "main_loop", 0);
+    if (M->exc) {
+      mrb_print_backtrace(M);
+      emscripten_cancel_main_loop();
+    }
+  };
+  emscripten_set_main_loop(main_loop, 0, 0);
+  return 0;
+}
+#endif
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -331,6 +385,29 @@ int main(int argc, char** argv) {
 
   const fs::path game_dir_path = FLAGS_game_dir;
 
+#ifdef __EMSCRIPTEN__
+  // The browser owns the event loop and a project may not be present yet:
+  // main() sets up the interpreter and display, then returns to the browser.
+  // The shell page's loader unzips an RPG2k/XP project into /game at runtime
+  // and calls rpg_start_game() to construct the game and start the frame loop.
+  // A project baked in at build time (WASM_GAME_DIR) is auto-started here so
+  // that build still "just runs" with no interaction.
+  //
+  // These handles must outlive main(); EXIT_RUNTIME=0 keeps the module alive.
+  em_mrb = mrb;
+  em_display = display;
+  em_args = args;
+  mrb_gc_register(M, em_args);
+  if (fs::exists(game_dir_path / "RPG_RT.ldb") ||
+      fs::exists(game_dir_path / "Game.ini")) {
+    rpg_start_game();
+  } else {
+    std::fprintf(stderr,
+                 "No project baked in; waiting for the page to load one "
+                 "into /game.\n");
+  }
+  return EXIT_SUCCESS;
+#else
   mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
@@ -346,26 +423,6 @@ int main(int argc, char** argv) {
   }
   CHECK_NO_EXC(M);
 
-#ifdef __EMSCRIPTEN__
-  // The browser owns the event loop, so we cannot block in a Ruby `loop`.
-  // Instead we register a per-frame callback that runs a single iteration.
-  //
-  // emscripten_set_main_loop(..., simulate_infinite_loop=1) unwinds the C stack
-  // without running destructors, so `mrb`, `display` and `game_obj`
-  // intentionally outlive main(). Keep `game_obj` reachable from the GC and
-  // capture handles by value so the callback stays valid after main() returns
-  // to the browser.
-  mrb_gc_register(M, game_obj);
-  main_loop_ = [M, game_obj]() {
-    mrb_funcall(M, game_obj, "main_loop", 0);
-    if (M->exc) {
-      mrb_print_backtrace(M);
-      emscripten_cancel_main_loop();
-    }
-  };
-  emscripten_set_main_loop(main_loop, 0, 1);
-  return EXIT_SUCCESS;  // not reached; the call above unwinds the stack
-#else
   mrb_funcall(M, game_obj, "start", 0);
   if (M->exc) {
     mrb_print_backtrace(M);

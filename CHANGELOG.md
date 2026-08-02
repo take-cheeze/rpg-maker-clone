@@ -100,6 +100,39 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- Wio Terminal (Seeed, ATSAMD51) port — P1 hardware bring-up. A new PlatformIO
+  target (`platformio.ini`, `app/wio/`) builds an Arduino firmware around a new
+  LVGL display + input HAL (`mruby-rgss/src/wio.cxx`): the 320×240 ILI9341 LCD is
+  driven in LVGL partial-render mode (a small draw buffer, not a 150 KB full
+  framebuffer that would exhaust the 192 KB SRAM), the tick/delay source comes
+  from Arduino `millis()`/`delay()`, and the three buttons + 5-way switch are
+  scanned into `RGSS::Input` via `rgss_wio_poll` (`wio_input_bridge.cxx`), called
+  from `Graphics.update` next to the SDL/terminal poll hooks. A `wio` mruby ARM
+  cross-build (`MRUBY_TARGET=wio` in `build_config.rb`) and SD-backed newlib
+  syscalls (`app/wio/src/sd_syscalls.cxx`) are scaffolded for the later
+  interpreter/asset slices. All of it is additive and guarded (`WIO_TERMINAL`),
+  so the desktop and wasm builds are unchanged. Design and memory budget in
+  `docs/adr/0007-wio-terminal-port.md`; a CI job compiles the firmware.
+- The WebAssembly build now loads an RPG Maker project **at runtime** instead of
+  requiring one to be baked into the page at compile time, so a single build
+  plays any game. A new Emscripten shell (`src/shell.html`) offers a loader that
+  accepts a local `.zip`, a direct `.zip` URL, or a GitHub repository
+  (`owner/repo`, `owner/repo@ref`, or a `github.com` URL, resolved to its
+  `codeload` archive). The zip is unpacked in the browser with the native
+  `DecompressionStream` API — no third-party JavaScript — the folder containing
+  `RPG_RT.ldb` (RPG2k) or `Game.ini` (XP) is located (top-level wrapper folders,
+  as GitHub archives use, are handled) and mounted at `/game`, then the exported
+  `rpg_start_game()` constructs the game and starts the frame loop. Under
+  Emscripten `main()` now sets up the interpreter and display and returns to the
+  browser, deferring game construction until a project is present; a project
+  baked in with `-DWASM_GAME_DIR` still auto-starts. Cross-origin downloads
+  (GitHub, most `.zip` URLs) need a CORS proxy — the loader has an optional
+  field for one — or the always-works local-file path. Downloaded archives are
+  cached (Cache Storage, keyed by the resolved URL) so re-loading the same URL
+  or repo skips the network; the loader can force a fresh download or clear the
+  cache. The URL and CORS-proxy fields persist across reloads (localStorage) and
+  are mirrored into the page's `?url=`/`?proxy=` query string, so a project link
+  is bookmarkable and shareable and a `?url=` link auto-loads
 - On-screen game keypad for the browser (WebAssembly) build so the game is
   playable by touch or mouse without a physical keyboard. A custom Emscripten
   shell page (`src/shell.html`) draws `<button>` elements — a D-pad plus OK (C),
