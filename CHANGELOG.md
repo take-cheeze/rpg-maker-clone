@@ -13,9 +13,12 @@ All notable changes to this project will be documented in this file.
   each frame; the **document/element shim** gained the surface
   `Graphics.initialize` walks (`getElementsByTagName('head')`, element
   `getElementsByTagName` for `_disableContextMenu`, a `<style>.sheet.insertRule`,
-  `createTextNode`, child-returning `appendChild`, `classList`); and a silent
+  `createTextNode`, child-returning `appendChild`, `classList`); a silent
   **`AudioContext`** stub lets `SceneManager.initAudio` succeed (real Web Audio →
-  `RGSS::Audio` is a later milestone). Covered by `mruby-mvjs/test`.
+  `RGSS::Audio` is a later milestone); and `document.getElementsByTagName('script')`
+  now returns a readable entry so `Utils.canReadGameFiles`/`checkFileAccess`
+  passes. The whole `SceneManager.initialize` sequence now completes. Covered by
+  `mruby-mvjs/test`.
 - MV boot resilience (milestone M4): script evaluation now follows browser
   semantics — a `<script>` that throws while executing is logged and the next
   one still runs, instead of aborting the whole engine. Previously the

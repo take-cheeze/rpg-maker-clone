@@ -153,6 +153,9 @@ assert 'MV document head/style shims support the font-loader boot path' do
   assert_equal "ok", ok
   # Graphics._disableContextMenu walks document.body.getElementsByTagName('*').
   assert_equal 0, MV::JS.eval("document.body.getElementsByTagName('*').length")
+  # Utils.canReadGameFiles reads the last <script>'s src over XHR; expose one.
+  assert_equal true, MV::JS.eval("document.getElementsByTagName('script').length >= 1")
+  assert_equal "string", MV::JS.eval("typeof document.getElementsByTagName('script')[0].src")
 end
 
 assert 'MV canvas save/restore round-trips the transform' do

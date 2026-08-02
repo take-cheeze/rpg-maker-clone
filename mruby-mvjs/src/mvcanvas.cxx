@@ -507,6 +507,14 @@ const char* kCanvasPreamble = R"MVJS(
       tag = ('' + tag).toLowerCase();
       if (tag === 'head') return [docHead];
       if (tag === 'body') return [docBody];
+      if (tag === 'script') {
+        // Utils.canReadGameFiles reads the last <script>'s src over XHR to
+        // verify local-file access; point it at a file that is always present
+        // (rpg_core.js is a required MV marker) so the probe succeeds here.
+        var sc = stubElement('script');
+        sc.src = 'js/rpg_core.js';
+        return [sc];
+      }
       return [];
     },
     querySelector: function () { return null; },
