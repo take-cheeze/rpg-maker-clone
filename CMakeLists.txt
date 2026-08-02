@@ -7,19 +7,33 @@ endif()
 project(rpg_maker_clone C CXX)
 
 if(EMSCRIPTEN)
-  # Emscripten ships SDL2 as a "port": -sUSE_SDL=2 provides both the headers
-  # (needed while compiling lvgl's SDL driver) and the library at link time.
-  add_compile_options("-sUSE_SDL=2")
-  add_link_options("-sUSE_SDL=2")
+  # Emscripten ships SDL2 and SDL2_mixer as "ports": -sUSE_SDL=2 /
+  # -sUSE_SDL_MIXER=2 provide both the headers (needed while compiling lvgl's
+  # SDL driver and the audio backend) and the libraries at link time.
+  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
+  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
   # mruby is built with MRB_USE_CXX_EXCEPTION and throws real C++ exceptions for
   # its internal control flow, so exception support must be enabled across the
   # whole binary; otherwise the first throw aborts in the catch machinery.
   add_compile_options("-fexceptions")
   add_link_options("-fexceptions")
-  # Provide a stand-in for the SDL2::SDL2 target the executable links against.
+  # Provide a stand-in for the SDL2::SDL2 target the executable links against;
+  # the ports above supply the real symbols. SDL2_mixer is linked via
+  # ${SDL2_MIXER_LIB}, left empty here as the -sUSE_SDL_MIXER port covers it.
   add_library(SDL2::SDL2 INTERFACE IMPORTED)
+  set(SDL2_MIXER_LIB "")
 else()
   find_package(SDL2 REQUIRED)
+  # SDL2_mixer 2.6+ ships a CMake config exporting SDL2_mixer::SDL2_mixer; fall
+  # back to its pkg-config module (e.g. under the nix build) when it does not.
+  find_package(SDL2_mixer QUIET)
+  if(TARGET SDL2_mixer::SDL2_mixer)
+    set(SDL2_MIXER_LIB SDL2_mixer::SDL2_mixer)
+  else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
+    set(SDL2_MIXER_LIB PkgConfig::SDL2_MIXER)
+  endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -182,13 +196,15 @@ if(EMSCRIPTEN)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
 
-add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx)
+add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
+                               src/log_console.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
   lvgl
   ng-log::ng-log
   SDL2::SDL2
+  ${SDL2_MIXER_LIB}
   gflags
   uni-algo::uni-algo
   qjs)
@@ -201,6 +217,9 @@ if(EMSCRIPTEN)
   set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html" OUTPUT_NAME
                                                                   "index")
   add_dependencies(${PROJECT_NAME} onigmo_clean)
+  # Browser-only shim exporting Module._rgss_wasm_key, used by the on-screen
+  # keypad in the shell page below to feed RGSS::Input.
+  target_sources(${PROJECT_NAME} PRIVATE src/wasm_keypad.cxx)
   target_link_options(
     ${PROJECT_NAME}
     PRIVATE
@@ -225,7 +244,17 @@ if(EMSCRIPTEN)
     "-sASSERTIONS=2"
     "-sSAFE_HEAP=1"
     "-sSTACK_OVERFLOW_CHECK=2"
+    # Use our own page (canvas + on-screen keypad) instead of Emscripten's
+    # default shell. rgss_wasm_key is exported via EMSCRIPTEN_KEEPALIVE, so it
+    # needs no EXPORTED_FUNCTIONS entry.
+    "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html"
     "${ONIGMO_A}")
+  # Relink the page when the shell template changes (CMake does not track the
+  # --shell-file input on its own).
+  set_property(
+    TARGET ${PROJECT_NAME}
+    APPEND
+    PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/shell.html")
   # Optionally bake a game directory into the virtual filesystem at /game so the
   # page runs a real game. Pass -DWASM_GAME_DIR=/abs/path/to/game at configure
   # time; then the page auto-loads it via --game_dir=/game.

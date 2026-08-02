@@ -345,6 +345,58 @@ assert "RGSS::Profiler streams a Chrome trace" do
   end
 end
 
+assert "RGSS::Audio primitives are inert without a backend" do
+  # The standalone test binary installs no audio backend (that lives in the
+  # executable, src/sdl_audio.cxx), so every native primitive is a safe no-op.
+  assert_nil RGSS::Audio._bgm_play("nope", 80, 90)
+  assert_nil RGSS::Audio._bgm_stop
+  assert_nil RGSS::Audio._bgm_fade(100)
+  assert_equal 0, RGSS::Audio._bgm_pos
+  assert_nil RGSS::Audio._bgs_play("nope")
+  assert_nil RGSS::Audio._bgs_stop
+  assert_nil RGSS::Audio._bgs_fade(100)
+  assert_equal 0, RGSS::Audio._bgs_pos
+  assert_nil RGSS::Audio._me_play("nope")
+  assert_nil RGSS::Audio._me_stop
+  assert_nil RGSS::Audio._me_fade(100)
+  assert_nil RGSS::Audio._se_play("nope")
+  assert_nil RGSS::Audio._se_stop
+  assert_nil RGSS::Audio._update
+end
+
+assert "RGSS::Audio.se_play resolves a name to a real file" do
+  # Capture what the public API forwards to the native primitive so we can
+  # assert the filename was resolved (extension appended) and volume/pitch
+  # passed through.
+  path = "test-se-fixture.wav"
+  File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
+  class << RGSS::Audio
+    alias _se_play_orig _se_play
+    def _se_play(p, v, pi)
+      $audio_se_capture = [p, v, pi]
+      nil
+    end
+  end
+  begin
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-se-fixture", 80, 90)
+    assert_false $audio_se_capture.nil?, "expected _se_play to be called"
+    assert_equal "test-se-fixture.wav", $audio_se_capture[0]
+    assert_equal 80, $audio_se_capture[1]
+    assert_equal 90, $audio_se_capture[2]
+
+    # A name that resolves to nothing skips the native call entirely.
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("no-such-sound-effect")
+    assert_true $audio_se_capture.nil?, "unresolved name must not play"
+  ensure
+    class << RGSS::Audio
+      alias _se_play _se_play_orig
+    end
+    File.delete(path) if File.exist?(path)
+  end
+end
+
 assert "RGSS::Bitmap loads a PNG whose deflate stream trips \"bad dist\"" do
   # A 4x1 grayscale PNG hand-encoded so its IDAT references a zero pre-history
   # window (distance-too-far-back). stb_image and strict zlib reject it with

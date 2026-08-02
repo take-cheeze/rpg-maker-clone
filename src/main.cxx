@@ -17,6 +17,7 @@
 #include <inicpp.hpp>
 
 #include "iterm.hxx"
+#include "log_console.hxx"
 #include "profiler.hxx"
 #include "sixel.hxx"
 #include "terminal.hxx"
@@ -50,6 +51,16 @@ DEFINE_bool(
     "While a terminal backend (--sixel/--iterm) is active, draw the "
     "emit rate (frame size, MB/s, fps) on-screen just under the control "
     "legend, refreshed about once a second");
+DEFINE_bool(
+    term_console,
+    true,
+    "While a terminal backend (--sixel/--iterm) is active, draw a log "
+    "console above the game image that mirrors ng-log messages on-screen "
+    "(so they are not scribbled over the picture via stderr); the last "
+    "--term_console_lines messages are tailed, newest at the bottom");
+DEFINE_int32(term_console_lines,
+             5,
+             "Number of ng-log message rows the --term_console panel reserves");
 DEFINE_bool(profile,
             false,
             "Enable the CPU/memory profiler: measure per-frame work time and "
@@ -169,6 +180,12 @@ extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 // Only meaningful for the SDL window backend.
 extern "C" void rgss_sdl_input_init(void);
 
+// Opens the audio device and installs the SDL_mixer backend for RGSS::Audio
+// (src/sdl_audio.cxx). A no-op if audio cannot be initialised. rgss_audio_
+// shutdown tears it down on the native exit path.
+extern "C" void rgss_audio_init(void);
+extern "C" void rgss_audio_shutdown(void);
+
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
 // of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
 // detail, and under Emscripten ng-log's fatal path traps anyway (it formats
@@ -221,6 +238,21 @@ int main(int argc, char** argv) {
 
   terminal_set_stats(FLAGS_term_stats);
 
+  // The log console mirrors ng-log output on the alternate screen while a
+  // terminal backend paints the game there; without it, ng-log's stderr writes
+  // would scribble over the image.  Configure it always (harmless for the SDL
+  // path, whose encoder never runs), but only install the sink and stop routing
+  // messages to stderr when such a backend is actually active and the console
+  // is enabled.
+  const bool terminal_backend = FLAGS_sixel || FLAGS_iterm;
+  terminal_set_console(FLAGS_term_console, FLAGS_term_console_lines);
+  if (terminal_backend && FLAGS_term_console) {
+    log_console_install();
+    // Keep stderr clean so messages land only in the on-screen console; FATAL
+    // still prints (it aborts and restores the terminal anyway).
+    nglog::SetStderrLogging(nglog::NGLOG_FATAL);
+  }
+
   std::shared_ptr<lv_display_t> display;
   if (FLAGS_sixel) {
     display = std::shared_ptr<lv_display_t>(
@@ -243,6 +275,10 @@ int main(int argc, char** argv) {
     // watch now so key events reach RGSS::Input.
     rgss_sdl_input_init();
   }
+
+  // Bring up audio for every backend (SDL_mixer initialises the SDL audio
+  // subsystem itself, so this works under the terminal backends too).
+  rgss_audio_init();
 
 #ifdef __EMSCRIPTEN__
   // mruby uses word boxing, which stores the type tag in the low 3 bits of each
@@ -336,6 +372,7 @@ int main(int argc, char** argv) {
   }
   CHECK(!M->exc);
 
+  rgss_audio_shutdown();
   gflags::ShutDownCommandLineFlags();
 
   return EXIT_SUCCESS;

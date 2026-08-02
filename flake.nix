@@ -1,17 +1,41 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=release-26.05";
-    flake-utils.url = "github:numtide/flake-utils";
+    # Fetched from the NixOS channel mirror (*.nixos.org) rather than
+    # `github:nixos/nixpkgs` so the flake resolves in sandboxes whose GitHub
+    # access is scoped to the session's own repositories (e.g. Claude Code on
+    # the web), where GitHub archive tarballs for other repos are rejected.
+    # Channel revisions are what cache.nixos.org has prebuilt, so binary-cache
+    # hit rates are as good as or better than tracking the release branch head.
+    nixpkgs.url = "https://channels.nixos.org/nixos-26.05/nixexprs.tar.xz";
     self.submodules = true;
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-    }:
-    flake-utils.lib.eachDefaultSystem (
+    { self, nixpkgs }:
+    let
+      # Minimal inline of flake-utils' `eachDefaultSystem`, dropped as an input
+      # for the same GitHub-scoping reason as nixpkgs above. For each system it
+      # evaluates `f system` and lifts every returned attribute to
+      # `<attr>.<system>`, merging across systems.
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      eachDefaultSystem =
+        f:
+        builtins.foldl' (
+          acc: system:
+          let
+            ret = f system;
+          in
+          builtins.foldl' (
+            acc': key: acc' // { ${key} = (acc'.${key} or { }) // { ${system} = ret.${key}; }; }
+          ) acc (builtins.attrNames ret)
+        ) { } systems;
+    in
+    eachDefaultSystem (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -64,7 +88,10 @@
               url = "https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT";
               hash = "sha256-HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc=";
             };
-            buildInputs = with pkgs; [ SDL2 ];
+            buildInputs = with pkgs; [
+              SDL2
+              SDL2_mixer
+            ];
             # The package build only builds; tests are run separately via CTest.
             # Prevents nixpkgs' pytest check hook from hijacking the check phase
             # (it collects no tests and fails with exit code 5).

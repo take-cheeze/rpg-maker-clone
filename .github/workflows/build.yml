@@ -78,7 +78,7 @@ jobs:
           )
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: cmake
         run: |
@@ -101,6 +101,10 @@ jobs:
           nix develop -c ./scripts/download-nepheshel.bash
           nix develop -c ./scripts/download-mtf-meido-action.bash
           nix develop -c ./scripts/download-opengame-xp.bash
+
+      - name: LCF test-bed smoke check
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: nix develop -c ruby scripts/lcf_testbed_check.rb
 
       - name: test
         run: |
