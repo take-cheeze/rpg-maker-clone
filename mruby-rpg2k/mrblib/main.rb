@@ -275,7 +275,8 @@ class RPG2k
       def play_sound(name, volume, tempo, _balance)
         return if name.nil? || name.empty?
         RGSS::Audio.se_play(name, volume, tempo)
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] event SE '#{name}' playback failed: #{e.message}"
         nil
       end
 
@@ -393,7 +394,8 @@ class RPG2k
 
       def build_chipset
         Game::ChipSet.new(@db, @map.chipset_id)
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] chipset load failed, tiles treated as passable: #{e.message}"
         nil
       end
 
@@ -406,7 +408,8 @@ class RPG2k
         @charset_index = leader.charset_index || 0
         return nil if name.nil? || name.empty?
         Bitmap.new "CharSet/#{name}"
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] party charset load failed, using marker: #{e.message}"
         nil
       end
 
@@ -438,7 +441,8 @@ class RPG2k
           @events.push(build_event(id, ev, page))
         end
         rebuild_event_tiles
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] event setup failed, map runs with no events: #{e.message}"
         @events = []
         @event_tiles = {}
       end
@@ -462,15 +466,27 @@ class RPG2k
         @events.each { |e| @event_tiles[[e[:char].x, e[:char].y]] = e }
       end
 
-      def page_trigger(page); page.trigger; rescue StandardError; 0; end
-      def page_commands(page); page.event_commands; rescue StandardError; nil; end
-      def page_direction(page); d = page.direction; d && d > 0 ? d : 2; rescue StandardError; 2; end
-      def page_move_type(page); page.move_type || 0; rescue StandardError; 0; end
-      def page_move_speed(page); page.move_speed || 3; rescue StandardError; 3; end
-      def page_move_frequency(page); page.move_frequency || 3; rescue StandardError; 3; end
-      def page_move_route(page); page.move_route; rescue StandardError; nil; end
-      def page_charset_name(page); page.charset_name; rescue StandardError; nil; end
-      def page_charset_index(page); page.charset_index || 0; rescue StandardError; 0; end
+      # Read an optional event-page field through a guard that logs (rather than
+      # silently swallowing) any access error before falling back to `default`.
+      # A malformed page then degrades a single field instead of taking out the
+      # whole event list, and the failure still surfaces in the log.
+      def page_field(name, default)
+        yield
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] event page field '#{name}' unavailable " \
+                     "(#{e.message}), using #{default.inspect}"
+        default
+      end
+
+      def page_trigger(page); page_field(:trigger, 0) { page.trigger }; end
+      def page_commands(page); page_field(:commands, nil) { page.event_commands }; end
+      def page_direction(page); page_field(:direction, 2) { d = page.direction; d && d > 0 ? d : 2 }; end
+      def page_move_type(page); page_field(:move_type, 0) { page.move_type || 0 }; end
+      def page_move_speed(page); page_field(:move_speed, 3) { page.move_speed || 3 }; end
+      def page_move_frequency(page); page_field(:move_frequency, 3) { page.move_frequency || 3 }; end
+      def page_move_route(page); page_field(:move_route, nil) { page.move_route }; end
+      def page_charset_name(page); page_field(:charset_name, nil) { page.charset_name }; end
+      def page_charset_index(page); page_field(:charset_index, 0) { page.charset_index || 0 }; end
 
       # -- event execution ----------------------------------------------------
 
@@ -533,7 +549,8 @@ class RPG2k
           @world.passable?(ch, dir) ? ch.move(dir) : ch.face(dir) if dir
         end
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
-      rescue StandardError
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] event ##{e[:id]} movement failed: #{ex.message}"
         nil
       end
 
@@ -629,7 +646,8 @@ class RPG2k
       def actor_name(id)
         a = @db.player[id]
         a ? a.name.to_s : ''
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] actor name ##{id} lookup failed: #{e.message}"
         ''
       end
 
@@ -1093,7 +1111,8 @@ class RPG2k
 
   def save_exists? slot = 1
     File.exist? save_path(slot)
-  rescue StandardError
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] save-slot check failed for slot #{slot}: #{e.message}"
     false
   end
 

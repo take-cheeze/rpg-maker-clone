@@ -165,6 +165,17 @@ All notable changes to this project will be documented in this file.
   there, which raised `invalid bool size` when parsing an actual `RPG_RT.lmt`
 
 ### Changed
+- The RPG2000 runtime no longer silences errors it recovers from. The `rescue`
+  guards added for event movement — asset loads (chipset/charset), optional
+  event-page field reads, common-event and move-route parsing, event-SE/BGM
+  playback, per-event stepping, actor-name lookup and the save-slot check —
+  previously swallowed their exception and returned a fallback with no trace.
+  They now log the failure to `$stderr` (tagged `[RPG2k]`/`[RGSS]`, with the
+  underlying message) before falling back, matching the logging the rest of the
+  runtime already does, so a missing asset or malformed field is visible instead
+  of silently degrading. The optional page-field reads share a single
+  `page_field` guard. `AGENTS.md` gains an "Error Handling" note recording the
+  don't-silence-errors expectation.
 - Bumped the vendored mruby submodule to the 4.0.0 release (from a 3.3.0-era
   snapshot). `build_config.rb` drops the `mruby-print` gem (removed in 4.0;
   `Kernel#p`/`#print` are now in the core and `mruby-io` supplies

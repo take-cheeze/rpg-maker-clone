@@ -450,7 +450,8 @@ module Game
       cmds = route.commands
       return nil if cmds.nil? || cmds.empty?
       new(cmds, repeat: route.repeat, skippable: route.skippable)
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] move route parse failed, event uses no custom route: #{e.message}"
       nil
     end
 
@@ -663,7 +664,8 @@ module Game
                   switch_id: c.switch_id, commands: c.event)
       end
       list
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] common event load failed, none available: #{e.message}"
       []
     end
 
