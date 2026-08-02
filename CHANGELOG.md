@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV transform-aware canvas drawing (milestone M4): the `CanvasRenderingContext2D`
+  shim now tracks the full 2D transform — `save`/`restore`, `translate`/`scale`/
+  `rotate`/`transform`/`setTransform`/`resetTransform` — and `drawImage` honours
+  it. PIXI's canvas renderer positions every sprite by setting the transform and
+  drawing at the origin, so without this all sprites piled up at (0,0); now they
+  land where they belong. `drawImage` rasterises by walking the transformed dest
+  rect's device-space bounding box and inverse-mapping each pixel, so scale,
+  rotation and translation all work with no gaps; `fillRect`/`clearRect` map
+  their rect through the matrix (exact for translate/scale). Covered by
+  `mruby-mvjs/test/canvas_test.rb`.
 - MV on-screen present (milestone M4): the MV canvas is now drawn to the screen
   each frame. `MV#boot` creates one full-screen `RGSS::Sprite`/`Bitmap`, and
   `MV::JS.present` copies MV's PIXI canvas (resolved from the running game's

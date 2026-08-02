@@ -14,6 +14,8 @@
 
 #include "mvhost.hxx"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -71,6 +73,13 @@ int ai(JSContext* ctx, int argc, JSValueConst* argv, int i) {
   int32_t v = 0;
   if (i < argc)
     JS_ToInt32(ctx, &v, argv[i]);
+  return v;
+}
+
+double ad(JSContext* ctx, int argc, JSValueConst* argv, int i, double dflt) {
+  double v = dflt;
+  if (i < argc)
+    JS_ToFloat64(ctx, &v, argv[i]);
   return v;
 }
 
@@ -151,41 +160,77 @@ JSValue js_clear_rect(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
-// __mv_canvasDrawImage(dstH, srcH, sx, sy, sw, sh, dx, dy, dw, dh, alpha)
-// Nearest-neighbour scaled blit of a source rect into a dest rect, modulated by
-// a global alpha (0-255). This is the workhorse PIXI's canvas renderer uses.
+// __mv_canvasDrawImage(dstH, srcH, sx, sy, sw, sh, dx, dy, dw, dh, alpha,
+//                      a, b, c, d, e, f)
+// Nearest-neighbour blit of a source rect into a dest rect, modulated by a
+// global alpha (0-255) and transformed by the current 2D matrix
+// [a b c d e f] (device = (a*u+c*v+e, b*u+d*v+f)). This is the workhorse PIXI's
+// canvas renderer uses: it positions every sprite via setTransform, so
+// honouring the matrix is what makes sprites land where they belong. The matrix
+// defaults to identity, in which case this reduces to a plain scaled blit.
+// Rasterised by walking the transformed dest rect's device-space bounding box
+// and inverse- mapping each pixel back through the matrix and the dest->source
+// scale, so rotation/scale/translation all work and there are no gaps.
 JSValue js_draw_image(JSContext* ctx,
                       JSValueConst,
                       int argc,
                       JSValueConst* argv) {
-  Canvas* d = canvas_get(ai(ctx, argc, argv, 0));
-  Canvas* s = canvas_get(ai(ctx, argc, argv, 1));
-  if (!d || !s)
+  Canvas* dst = canvas_get(ai(ctx, argc, argv, 0));
+  Canvas* src = canvas_get(ai(ctx, argc, argv, 1));
+  if (!dst || !src)
     return JS_UNDEFINED;
-  const int sx = ai(ctx, argc, argv, 2), sy = ai(ctx, argc, argv, 3);
-  const int sw = ai(ctx, argc, argv, 4), sh = ai(ctx, argc, argv, 5);
-  const int dx = ai(ctx, argc, argv, 6), dy = ai(ctx, argc, argv, 7);
-  const int dw = ai(ctx, argc, argv, 8), dh = ai(ctx, argc, argv, 9);
+  const double sx = ad(ctx, argc, argv, 2, 0), sy = ad(ctx, argc, argv, 3, 0);
+  const double sw = ad(ctx, argc, argv, 4, 0), sh = ad(ctx, argc, argv, 5, 0);
+  const double dx = ad(ctx, argc, argv, 6, 0), dy = ad(ctx, argc, argv, 7, 0);
+  const double dw = ad(ctx, argc, argv, 8, 0), dh = ad(ctx, argc, argv, 9, 0);
   const int ga = argc > 10 ? ai(ctx, argc, argv, 10) : 255;
+  const double ma = ad(ctx, argc, argv, 11, 1), mb = ad(ctx, argc, argv, 12, 0);
+  const double mc = ad(ctx, argc, argv, 13, 0), md = ad(ctx, argc, argv, 14, 1);
+  const double me = ad(ctx, argc, argv, 15, 0), mf = ad(ctx, argc, argv, 16, 0);
   if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0)
     return JS_UNDEFINED;
-  for (int oy = 0; oy < dh; ++oy) {
-    const int ty = dy + oy;
-    if (ty < 0 || ty >= d->h)
-      continue;
-    const int syy = sy + oy * sh / dh;
-    if (syy < 0 || syy >= s->h)
-      continue;
-    for (int ox = 0; ox < dw; ++ox) {
-      const int tx = dx + ox;
-      if (tx < 0 || tx >= d->w)
+  const double det = ma * md - mb * mc;
+  if (det == 0)
+    return JS_UNDEFINED;
+  const double invdet = 1.0 / det;
+
+  // Device-space bounding box of the four transformed dest-rect corners.
+  const double cxs[4] = {dx, dx + dw, dx + dw, dx};
+  const double cys[4] = {dy, dy, dy + dh, dy + dh};
+  double minx = 1e18, miny = 1e18, maxx = -1e18, maxy = -1e18;
+  for (int i = 0; i < 4; ++i) {
+    const double X = ma * cxs[i] + mc * cys[i] + me;
+    const double Y = mb * cxs[i] + md * cys[i] + mf;
+    minx = std::min(minx, X);
+    maxx = std::max(maxx, X);
+    miny = std::min(miny, Y);
+    maxy = std::max(maxy, Y);
+  }
+  int x0 = static_cast<int>(std::floor(minx));
+  int y0 = static_cast<int>(std::floor(miny));
+  int x1 = static_cast<int>(std::ceil(maxx));
+  int y1 = static_cast<int>(std::ceil(maxy));
+  x0 = std::max(x0, 0);
+  y0 = std::max(y0, 0);
+  x1 = std::min(x1, dst->w);
+  y1 = std::min(y1, dst->h);
+
+  for (int py = y0; py < y1; ++py) {
+    for (int px = x0; px < x1; ++px) {
+      // Inverse-transform the device pixel back to user space.
+      const double rx = px - me, ry = py - mf;
+      const double u = (md * rx - mc * ry) * invdet;
+      const double v = (-mb * rx + ma * ry) * invdet;
+      if (u < dx || u >= dx + dw || v < dy || v >= dy + dh)
         continue;
-      const int sxx = sx + ox * sw / dw;
-      if (sxx < 0 || sxx >= s->w)
+      const int sxx = static_cast<int>(sx + (u - dx) * sw / dw);
+      const int syy = static_cast<int>(sy + (v - dy) * sh / dh);
+      if (sxx < 0 || sxx >= src->w || syy < 0 || syy >= src->h)
         continue;
-      const uint8_t* sp = &s->px[(static_cast<size_t>(syy) * s->w + sxx) * 4];
+      const uint8_t* sp =
+          &src->px[(static_cast<size_t>(syy) * src->w + sxx) * 4];
       const int a = sp[3] * ga / 255;
-      blend(&d->px[(static_cast<size_t>(ty) * d->w + tx) * 4], sp[0], sp[1],
+      blend(&dst->px[(static_cast<size_t>(py) * dst->w + px) * 4], sp[0], sp[1],
             sp[2], a);
     }
   }
@@ -277,14 +322,62 @@ const char* kCanvasPreamble = R"MVJS(
     this.textBaseline = 'alphabetic';
     this.lineWidth = 1;
     this.imageSmoothingEnabled = true;
+    this._m = [1, 0, 0, 1, 0, 0];  // current transform (a,b,c,d,e,f)
+    this._stack = [];
+  }
+  // Post-multiply the current matrix by T (canvas semantics: new coordinates are
+  // transformed by T first, then the existing matrix).
+  function matMul(M, T) {
+    return [
+      M[0] * T[0] + M[2] * T[1],
+      M[1] * T[0] + M[3] * T[1],
+      M[0] * T[2] + M[2] * T[3],
+      M[1] * T[2] + M[3] * T[3],
+      M[0] * T[4] + M[2] * T[5] + M[4],
+      M[1] * T[4] + M[3] * T[5] + M[5],
+    ];
+  }
+  Ctx.prototype.save = function () {
+    this._stack.push([this._m.slice(), this.globalAlpha, this.fillStyle,
+                      this.strokeStyle, this.globalCompositeOperation]);
+  };
+  Ctx.prototype.restore = function () {
+    var s = this._stack.pop();
+    if (!s) return;
+    this._m = s[0];
+    this.globalAlpha = s[1];
+    this.fillStyle = s[2];
+    this.strokeStyle = s[3];
+    this.globalCompositeOperation = s[4];
+  };
+  Ctx.prototype.translate = function (x, y) { this._m = matMul(this._m, [1, 0, 0, 1, x, y]); };
+  Ctx.prototype.scale = function (x, y) { this._m = matMul(this._m, [x, 0, 0, y, 0, 0]); };
+  Ctx.prototype.rotate = function (r) {
+    var c = Math.cos(r), s = Math.sin(r);
+    this._m = matMul(this._m, [c, s, -s, c, 0, 0]);
+  };
+  Ctx.prototype.transform = function (a, b, c, d, e, f) { this._m = matMul(this._m, [a, b, c, d, e, f]); };
+  Ctx.prototype.setTransform = function (a, b, c, d, e, f) { this._m = [a, b, c, d, e, f]; };
+  Ctx.prototype.resetTransform = function () { this._m = [1, 0, 0, 1, 0, 0]; };
+  // Map the axis-aligned rect (x,y,w,h) through the current matrix to a device
+  // rect. Exact for translate/scale (the common case); for rotation/skew this
+  // is the rect's bounding box, which is enough for the solid fills MV uses.
+  function mapRect(m, x, y, w, h) {
+    var x0 = m[0] * x + m[2] * y + m[4], y0 = m[1] * x + m[3] * y + m[5];
+    var x1 = m[0] * (x + w) + m[2] * (y + h) + m[4];
+    var y1 = m[1] * (x + w) + m[3] * (y + h) + m[5];
+    return [Math.round(Math.min(x0, x1)), Math.round(Math.min(y0, y1)),
+            Math.round(Math.abs(x1 - x0)), Math.round(Math.abs(y1 - y0))];
   }
   Ctx.prototype.fillRect = function (x, y, w, h) {
     var c = parseColor(this.fillStyle);
     var a = Math.round(c[3] * this.globalAlpha);
-    g.__mv_canvasFillRect(this.__h, x | 0, y | 0, w | 0, h | 0, c[0], c[1], c[2], a);
+    var r = mapRect(this._m, x, y, w, h);
+    g.__mv_canvasFillRect(this.__h, r[0], r[1], r[2], r[3], c[0], c[1], c[2], a);
   };
   Ctx.prototype.clearRect = function (x, y, w, h) {
-    g.__mv_canvasClearRect(this.__h, x | 0, y | 0, w | 0, h | 0);
+    var r = mapRect(this._m, x, y, w, h);
+    g.__mv_canvasClearRect(this.__h, r[0], r[1], r[2], r[3]);
   };
   function srcHandle(img) {
     if (!img) return 0;
@@ -296,20 +389,19 @@ const char* kCanvasPreamble = R"MVJS(
     var h = srcHandle(img);
     if (!h) return;
     var iw = img.width || 0, ih = img.height || 0;
-    var a = Math.round(this.globalAlpha * 255);
+    var sx = 0, sy = 0, sw = iw, sh = ih, dx, dy, dw, dh;
     if (arguments.length <= 3) {
-      g.__mv_canvasDrawImage(this.__h, h, 0, 0, iw, ih,
-                             arguments[1] | 0, arguments[2] | 0, iw, ih, a);
+      dx = arguments[1]; dy = arguments[2]; dw = iw; dh = ih;
     } else if (arguments.length <= 5) {
-      g.__mv_canvasDrawImage(this.__h, h, 0, 0, iw, ih, arguments[1] | 0,
-                             arguments[2] | 0, arguments[3] | 0,
-                             arguments[4] | 0, a);
+      dx = arguments[1]; dy = arguments[2]; dw = arguments[3]; dh = arguments[4];
     } else {
-      g.__mv_canvasDrawImage(this.__h, h, arguments[1] | 0, arguments[2] | 0,
-                             arguments[3] | 0, arguments[4] | 0,
-                             arguments[5] | 0, arguments[6] | 0,
-                             arguments[7] | 0, arguments[8] | 0, a);
+      sx = arguments[1]; sy = arguments[2]; sw = arguments[3]; sh = arguments[4];
+      dx = arguments[5]; dy = arguments[6]; dw = arguments[7]; dh = arguments[8];
     }
+    var a = Math.round(this.globalAlpha * 255);
+    var m = this._m;
+    g.__mv_canvasDrawImage(this.__h, h, sx, sy, sw, sh, dx, dy, dw, dh, a,
+                           m[0], m[1], m[2], m[3], m[4], m[5]);
   };
   Ctx.prototype.getImageData = function (x, y, w, h) {
     w = w | 0; h = h | 0;
@@ -325,11 +417,12 @@ const char* kCanvasPreamble = R"MVJS(
   Ctx.prototype.measureText = function (t) {
     return { width: (t ? String(t).length : 0) * 6 };
   };
-  // Path, transform and text operations MV/PIXI call but that the buffer path
-  // does not need yet: accept and ignore. Real implementations land as needed.
-  var noops = ['save', 'restore', 'beginPath', 'closePath', 'moveTo', 'lineTo',
-    'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip', 'translate', 'scale',
-    'rotate', 'transform', 'setTransform', 'resetTransform', 'fillText',
+  // Path and text operations MV/PIXI call but that the buffer path does not need
+  // yet: accept and ignore. Real implementations land as needed. (Transform ops
+  // — save/restore/translate/scale/rotate/transform/setTransform/resetTransform
+  // — are implemented above and deliberately excluded here.)
+  var noops = ['beginPath', 'closePath', 'moveTo', 'lineTo',
+    'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip', 'fillText',
     'strokeText', 'setLineDash', 'putImageData', 'createLinearGradient',
     'createRadialGradient', 'createPattern', 'drawFocusIfNeeded', 'scrollPathIntoView'];
   noops.forEach(function (m) {
@@ -467,7 +560,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasHeight", js_height, 1);
   install(ctx, global, "__mv_canvasFillRect", js_fill_rect, 9);
   install(ctx, global, "__mv_canvasClearRect", js_clear_rect, 5);
-  install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 11);
+  install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 17);
   install(ctx, global, "__mv_canvasGetPixel", js_get_pixel, 3);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   JS_FreeValue(ctx, global);

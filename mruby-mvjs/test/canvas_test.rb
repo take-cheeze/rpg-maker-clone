@@ -115,3 +115,36 @@ assert 'MV::JS.present returns false for a bad handle or non-Bitmap' do
   assert_equal false, MV::JS.present(bmp, 0)          # handle 0 -> no canvas
   assert_equal false, MV::JS.present("not a bitmap", 1)
 end
+
+assert 'MV canvas translate offsets a drawImage blit' do
+  MV::JS.eval("globalThis.TS=document.createElement('canvas'); TS.width=1; TS.height=1; " \
+              "var s=TS.getContext('2d'); s.fillStyle='#ff0000'; s.fillRect(0,0,1,1);")
+  MV::JS.eval("globalThis.TD=document.createElement('canvas'); TD.width=4; TD.height=4; " \
+              "var x=TD.getContext('2d'); x.translate(2,1); x.drawImage(TS,0,0);")
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(TD.__h,2,1).join(',')")
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(TD.__h,0,0).join(',')")
+end
+
+assert 'MV canvas scale enlarges a drawImage blit' do
+  MV::JS.eval("globalThis.SS=document.createElement('canvas'); SS.width=1; SS.height=1; " \
+              "var s=SS.getContext('2d'); s.fillStyle='#00ff00'; s.fillRect(0,0,1,1);")
+  MV::JS.eval("globalThis.SD=document.createElement('canvas'); SD.width=4; SD.height=4; " \
+              "var x=SD.getContext('2d'); x.scale(2,2); x.drawImage(SS,0,0);")
+  # The 1x1 source scaled 2x covers device pixels (0,0)..(1,1) but not (2,2).
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(SD.__h,0,0).join(',')")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(SD.__h,1,1).join(',')")
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(SD.__h,2,2).join(',')")
+end
+
+assert 'MV canvas translate offsets a fillRect' do
+  MV::JS.eval("globalThis.FR=document.createElement('canvas'); FR.width=4; FR.height=4; " \
+              "var x=FR.getContext('2d'); x.translate(1,1); x.fillStyle='#0000ff'; x.fillRect(0,0,2,2);")
+  assert_equal "0,0,255,255", MV::JS.eval("__mv_canvasGetPixel(FR.__h,1,1).join(',')")
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(FR.__h,0,0).join(',')")
+end
+
+assert 'MV canvas save/restore round-trips the transform' do
+  m = MV::JS.eval("var x=document.createElement('canvas').getContext('2d'); " \
+                  "x.save(); x.translate(5,7); x.scale(2,2); x.restore(); x._m.join(',')")
+  assert_equal "1,0,0,1,0,0", m
+end

@@ -166,10 +166,15 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `Bitmap` and `MV::JS.present` copies the MV canvas into it each frame (R/B
     swapped for the ARGB8888 layout), via a small `rgss::bitmap_pixels` accessor
     (`include/rgss_bitmap.hxx`). `MV.runtime_available?` is already on.
-  - Remaining: transform-aware `drawImage` (PIXI's canvas renderer positions
-    sprites with `setTransform`, currently a no-op, so blits land at the origin)
-    — the last piece before the title screen composites correctly — plus
-    `putImageData`/typed-array `ImageData`.
+  - ✅ Transform-aware drawing: the 2D context tracks the full transform
+    (`save`/`restore`, `translate`/`scale`/`rotate`/`transform`/`setTransform`),
+    and `drawImage` inverse-maps through it so PIXI's sprites (positioned via
+    `setTransform` + draw-at-origin) land correctly; `fillRect`/`clearRect` map
+    their rect through the matrix.
+  - Remaining: `putImageData`/typed-array `ImageData`, and path-based fills
+    (`beginPath`/`fill`) that PIXI's Graphics uses for solid shapes — then the
+    title screen should composite. This is the point to boot the real MV test
+    bed and iterate on whatever the corescript exercises next.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
   in the SDL window and the sixel/iTerm2 terminals.
