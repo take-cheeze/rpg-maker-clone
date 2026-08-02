@@ -114,12 +114,31 @@ class MV
     end
 
     pump_frame # M3: run the rAF/timer queue for one frame
+    log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     RGSS::Input.update
     RGSS::Graphics.update
   end
 
   private
+
+  # Log the running scene's class name whenever it changes, so the boot's
+  # progress through the scene graph (Scene_Boot -> Scene_Title -> ...) is
+  # visible — a scene-level heartbeat that also confirms the game reached the
+  # title rather than silently looping in Scene_Boot. Scene changes are rare, so
+  # this stays quiet during normal play.
+  def log_scene_transition
+    name = MV::JS.eval(
+      "(typeof SceneManager !== 'undefined' && SceneManager._scene) ? " \
+      "SceneManager._scene.constructor.name : null"
+    )
+    return if name.nil? || name == @last_scene
+
+    @last_scene = name
+    $stderr.puts "[MV] scene: #{name}"
+  rescue StandardError
+    nil
+  end
 
   # Evaluate the MV engine scripts in order inside the embedded host. The host
   # globals (window/console/XHR/require/timers/…) are installed when the JS

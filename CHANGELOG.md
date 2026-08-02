@@ -24,7 +24,12 @@ All notable changes to this project will be documented in this file.
   satisfy). `window` also gained the inert event/lifecycle methods MV wires up
   (`addEventListener`/`removeEventListener`/`dispatchEvent`/`close`), since
   `Graphics._setupEventHandlers`, `Input` and `TouchInput` register listeners on
-  it. Covered by `mruby-mvjs/test`.
+  it; and the canvas gradient factories (`createLinearGradient` etc.) return
+  chainable stubs so `Bitmap.gradientFillRect` doesn't crash. With these, the MV
+  test bed (KinoAR/Lunatic-Core) now **boots end-to-end with no engine errors** —
+  through PIXI init, `SceneManager.initialize`, `Scene_Boot` and on into the
+  scene graph — and `MV#main_loop` logs each scene transition so the boot's
+  progress is visible in the smoke test. Covered by `mruby-mvjs/test`.
 - MV boot resilience (milestone M4): script evaluation now follows browser
   semantics — a `<script>` that throws while executing is logged and the next
   one still runs, instead of aborting the whole engine. Previously the
