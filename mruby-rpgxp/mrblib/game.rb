@@ -5,6 +5,49 @@
 
 class RPGXP
   module Game
+    # Expansion of RMXP message control codes. `\V[n]` (or `\v[n]`) inserts the
+    # value of variable n, `\N[n]` the name of actor n, `\\` a literal backslash;
+    # the display-only codes `\C[n]` (colour) and `\G` (gold window) produce no
+    # characters and are consumed. `names` is any object responding to `[]`
+    # (an id -> name lookup). Written in the mruby/CRuby common subset.
+    module Message
+      def self.expand(text, variables, names)
+        return "" if text.nil?
+        out = ""
+        i = 0
+        n = text.length
+        while i < n
+          ch = text[i]
+          if ch == "\\" && i + 1 < n
+            code = text[i + 1]
+            i += 2
+            arg, i = read_bracket(text, i)
+            case code
+            when "v", "V" then out << variables[arg.to_i].to_s if arg
+            when "n", "N" then out << (names[arg.to_i] || "").to_s if arg
+            when "\\"     then out << "\\"
+            # \C[n] colour and \G gold window have no visible text: dropped
+            # (the bracketed arg after \C is already consumed above).
+            end
+          else
+            out << ch
+            i += 1
+          end
+        end
+        out
+      end
+
+      # Read an optional "[digits]" argument at position i; returns [value, new_i].
+      def self.read_bracket(text, i)
+        return [nil, i] unless i < text.length && text[i] == "["
+        j = i + 1
+        j += 1 while j < text.length && text[j] != "]"
+        val = text[(i + 1)...j]
+        j += 1 if j < text.length # consume ']'
+        [val, j]
+      end
+    end
+
     # The mutable game state: which map/tile the player stands on and the global
     # switch/variable stores. `party` is the list of actor ids; the database is
     # kept for name/graphic lookups. `map` is the currently loaded RPG::Map.
