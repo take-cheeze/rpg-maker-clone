@@ -62,6 +62,11 @@ Create ADRs in /docs/adr for:
     common-event id (505 entries for Nepheshel), each a per-event exec state.
   - **200** — a non-standard high-id chunk written by some runtimes; not part of
     the canonical RPG2000 layout, so it is intentionally left undocumented.
+  - **111** — `SAVE_MAP_EVENT`: field 11 is each map event's live position
+    (`SAVE_MOVABLE`) — confirmed because all 21 saved entries match map 12's 21
+    defined events by id and sit in-bounds (`lcf_save_check.rb` re-checks this
+    when the map's `.lmu` is beside the save). Two leading int fields (1, 2, the
+    map scroll/pan) stay undecoded pending differential saves.
   - **108** — `SAVE_PARTY_ACTOR`, one entry per actor the party has held. Beyond
     the state block, the decoded fields are level (31), exp (32), skills (51/52),
     equipment (61, five item ids `[weapon,shield,armour,helmet,accessory]`) and

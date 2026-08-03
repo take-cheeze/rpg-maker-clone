@@ -1016,6 +1016,13 @@ module LCF
     # snapshot list (each entry reuses SAVE_MOVABLE, but without the map-id chunk
     # that only the hero/vehicle entries carry). Fields 21/22 hold the lower/upper
     # tile replacements applied by the "replace chipset tiles" event command.
+    # The running map's saved event state (chunk 111). Field 11 is each map
+    # event's live position (a SAVE_MOVABLE) -- confirmed against a real save:
+    # all 21 saved entries matched map 12's 21 defined events, id for id and at
+    # in-bounds tiles (scripts/lcf_save_check.rb re-checks this). Fields 21/22 are
+    # the chipset replacement tables. A real save also carries two leading int
+    # fields (1, 2) -- the map scroll/pan position -- left undecoded until
+    # differential saves pin the units down.
     SAVE_MAP_EVENT = {
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]

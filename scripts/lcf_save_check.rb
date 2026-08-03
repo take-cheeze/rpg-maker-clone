@@ -111,9 +111,38 @@ class SaveChecker
     puts "  schema chunks absent from this save: #{missing.join(', ')}" unless missing.empty?
 
     summarise(save, raw, schema)
+    check_map_events(save, File.dirname(path))
     @files += 1
   rescue => ex
     fail "#{path}: #{ex.class}: #{ex.message}"
+  end
+
+  # SAVE_MAP_EVENT (chunk 111) field 11 stores each map event's current position
+  # as a SAVE_MOVABLE. When the current map's .lmu sits next to the save, prove
+  # that decode: every saved event id must be a real event on that map and its
+  # position must lie inside the map. (Chunk 111 also carries two leading int
+  # fields whose meaning needs differential saves to pin down.)
+  def check_map_events(save, dir)
+    me = save.map_events
+    return unless me && me.events
+    map_id = save.hero.map_id.to_i
+    f = File.join(dir, "Map#{map_id.to_s.rjust(4, '0')}.lmu")
+    return unless File.exist?(f)
+    mu = LCF::MapUnit.new(File.open(f, 'rb'))
+    defined = {}
+    mu.events.each { |id, _e| defined[id] = true }
+    w = mu.width.to_i
+    h = mu.height.to_i
+    saved = 0
+    me.events.each do |id, m|
+      next unless m
+      saved += 1
+      fail "map-event #{id} not defined on map #{map_id}" unless defined[id]
+      unless (0...w).cover?(m.x.to_i) && (0...h).cover?(m.y.to_i)
+        fail "map-event #{id} position (#{m.x},#{m.y}) outside map #{map_id} #{w}x#{h}"
+      end
+    end
+    puts "  map-events: #{saved} saved on map #{map_id} (all match defined events, in-bounds)"
   end
 
   # Cross-check the decoded values a save always carries -- these confirm the
