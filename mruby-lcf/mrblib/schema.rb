@@ -980,7 +980,11 @@ module LCF
     # armour, helmet, accessory] — every slot's id resolves to an item of the
     # matching type in the database (slot 0 weapons, slot 2 armour, slot 3
     # helmets, slot 4 accessories; a dual-wield hero carries a second weapon in
-    # the shield slot). The base-stat block is present too but left undecoded.
+    # the shield slot). Field 1 is the (renamable) name — the hero's stored name
+    # matches the SAVE_TITLE hero_name exactly — but it is left unmodelled here
+    # because the runtime resolves names from the database and reserve actors
+    # store only a placeholder. Fields 2/33/34 are single bytes that are constant
+    # in the sampled save, so their meaning is not yet provable.
     SAVE_PARTY_ACTOR = {
       31 => { name: :level, type: :int, default: 1 },      # レベル
       32 => { name: :exp, type: :int, default: 0 },        # 経験値

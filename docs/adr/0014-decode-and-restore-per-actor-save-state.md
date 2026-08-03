@@ -30,9 +30,13 @@ gap was purely in decoding chunk 108 and feeding it through.
   the level-1 hero) equals actor 1's decoded HP. Equipment is confirmed against
   the database: every slot's id resolves to an item of the matching type (slot 0
   weapons, slot 2 armour, slot 3 helmets, slot 4 accessories; a dual-wield hero
-  carries a second weapon in the shield slot). The base-stat block is present but
-  left undecoded until proven. `hp`/`mp` carry no schema default, so an absent
-  field reads as `nil` and never overwrites a live value.
+  carries a second weapon in the shield slot). Field 1, the actor name, is
+  identified (the hero's stored name matches the SAVE_TITLE `hero_name` exactly)
+  but left unmodelled -- the runtime resolves names from the database and reserve
+  actors store only a placeholder; the remaining single-byte fields (2/33/34) are
+  constant in the sampled save, so their meaning is not yet provable. `hp`/`mp`
+  carry no schema default, so an absent field reads as `nil` and never overwrites
+  a live value.
 - **`Game::State.from_lsd`** reads chunk 108, keys it by actor id, and passes the
   roster's saved current HP/SP into `Party#load_state`, so Continue resumes a
   wounded party instead of a fully-healed one.
