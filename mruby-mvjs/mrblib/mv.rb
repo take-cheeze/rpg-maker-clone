@@ -210,6 +210,11 @@ class MV
       return
     end
 
+    # Under Emscripten the browser calls main_loop directly without going through
+    # #start, so boot the game lazily on the first frame. Native runs boot via
+    # #start, which sets @booted, so this is a no-op there.
+    boot unless @booted
+
     sync_input # M5: push RGSS input into MV's Input before the scene updates
     pump_frame # M3: run the rAF/timer queue for one frame
     pump_audio # M5: drain MV's queued audio ops into RGSS::Audio
@@ -333,6 +338,7 @@ class MV
   # visible to the next through the shared persistent context. Missing optional
   # library files are skipped; the game's own scripts are expected to be present.
   def boot
+    @booted = true # guard so the lazy boot in #main_loop runs only once
     @clock = 0.0
     # MV's own scripts request data/assets with game-relative paths (e.g.
     # `data/System.json`, `img/system/Window.png`); root them at the game dir

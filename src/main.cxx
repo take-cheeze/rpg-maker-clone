@@ -240,10 +240,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
+  } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
+             fs::exists(game_dir_path / "data" / "System.json")) {
+    // RPG Maker MV: a JavaScript project (js/rpg_core.js + data/System.json).
+    // Mirrors MV::REQUIRED_MARKERS; the embedded JS host runs the game's own
+    // scripts (see mruby-mvjs). Lets the shell loader run MV projects too.
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
   } else {
     std::fprintf(stderr,
-                 "No RPG2k (RPG_RT.ldb) or RPG XP (Game.ini) project "
-                 "found under /game\n");
+                 "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini) or RPG Maker MV "
+                 "(js/rpg_core.js + data/System.json) project found under "
+                 "/game\n");
     return 1;
   }
   if (M->exc) {
