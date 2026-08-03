@@ -245,7 +245,7 @@ module Game
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
 
-    attr_reader :name, :graphic
+    attr_reader :name, :graphic, :animation_type, :animation_speed
 
     def initialize(db, id)
       c = db.chipset[id]
@@ -253,6 +253,12 @@ module Game
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
       @terrain = c ? c.terrain_data : nil
+      # Water-animation parameters (chipset chunks 11/12): the animation "type"
+      # (0 = 3-frame back-and-forth, 1 = 3-frame cycle) and speed flag (0 slow,
+      # non-zero fast). Consumed by ChipsetLayout when picking the animation
+      # column for the water autotiles.
+      @animation_type = c ? (c.animation_type || 0) : 0
+      @animation_speed = c ? (c.animation_speed || 0) : 0
     end
 
     # Chip index into the lower passability table for a lower-layer tile id.
@@ -283,6 +289,247 @@ module Game
       idx = ChipSet.lower_index(tile_id)
       return 0 if idx.nil? || idx < 0 || idx >= @terrain.size
       @terrain[idx] || 0
+    end
+  end
+
+  # Maps an RPG2000/2003 map tile id to the source rectangle(s) it occupies in a
+  # chipset image (`ChipSet/<name>.png`, a fixed 480x256 grid of 16x16 tiles).
+  #
+  # This is a direct port of EasyRPG Player's `TilemapLayer` geometry. A tile id
+  # names one of six blocks:
+  #
+  #   * A/B (0..2999)      water autotiles, animated (3 columns)
+  #   * C   (3000..3149)   the two animated ground tiles (4 frames)
+  #   * D   (4000..4599)   terrain autotiles (grass edges, cliffs, ...)
+  #   * E   (5000..5143)   plain lower-layer tiles (one 16x16 chip each)
+  #   * F   (10000..10143) upper-layer tiles (one 16x16 chip each)
+  #
+  # Autotiles (blocks A/B and D) are not stored as whole 16x16 chips: the id
+  # encodes a *combination* the map editor picked from the tile's neighbours, and
+  # the drawn tile is assembled from four 8x8 quarter-tiles, each copied from a
+  # different chip of the chipset. #quads returns those four quarters (or the one
+  # whole chip, for the non-autotile blocks) as blit rectangles.
+  #
+  # Pure geometry with no rendering dependency, so it is exercised directly by
+  # scripts/rpg2k_render_check.rb under CRuby.
+  module ChipsetLayout
+    TS = 16      # tile size in pixels
+    HTS = 8      # quarter (8x8) size
+    CHIPSET_W = 480
+    CHIPSET_H = 256
+
+    BLOCK_C = 3000
+    BLOCK_D = 4000
+    BLOCK_E = 5000
+    BLOCK_F = 10000
+    BLOCK_E_TILES = 144
+    BLOCK_F_TILES = 144
+
+    # [a_subtile][row][col] -> block-A chipset row (0..3) for that quarter, or -1
+    # to take the quarter from block B instead. (EasyRPG BlockA_Subtiles_IDS.)
+    N = -1
+    BLOCK_A_SUBTILES = [
+      [[N, N], [N, N]], [[3, N], [N, N]], [[N, 3], [N, N]], [[3, 3], [N, N]],
+      [[N, N], [N, 3]], [[3, N], [N, 3]], [[N, 3], [N, 3]], [[3, 3], [N, 3]],
+      [[N, N], [3, N]], [[3, N], [3, N]], [[N, 3], [3, N]], [[3, 3], [3, N]],
+      [[N, N], [3, 3]], [[3, N], [3, 3]], [[N, 3], [3, 3]], [[3, 3], [3, 3]],
+      [[1, N], [1, N]], [[1, 3], [1, N]], [[1, N], [1, 3]], [[1, 3], [1, 3]],
+      [[2, 2], [N, N]], [[2, 2], [N, 3]], [[2, 2], [3, N]], [[2, 2], [3, 3]],
+      [[N, 1], [N, 1]], [[N, 1], [3, 1]], [[3, 1], [N, 1]], [[3, 1], [3, 1]],
+      [[N, N], [2, 2]], [[3, N], [2, 2]], [[N, 3], [2, 2]], [[3, 3], [2, 2]],
+      [[1, 1], [1, 1]], [[2, 2], [2, 2]], [[0, 2], [1, N]], [[0, 2], [1, 3]],
+      [[2, 0], [N, 1]], [[2, 0], [3, 1]], [[N, 1], [2, 0]], [[3, 1], [2, 0]],
+      [[1, N], [0, 2]], [[1, 3], [0, 2]], [[0, 0], [1, 1]], [[0, 2], [0, 2]],
+      [[1, 1], [0, 0]], [[2, 0], [2, 0]], [[0, 0], [0, 0]]
+    ].freeze
+
+    # [subtile][row][col] -> [dx, dy] chipset-chip offset within the block-D cell.
+    # (EasyRPG BlockD_Subtiles_IDS.)
+    BLOCK_D_SUBTILES = [
+      [[[1, 2], [1, 2]], [[1, 2], [1, 2]]], [[[2, 0], [1, 2]], [[1, 2], [1, 2]]],
+      [[[1, 2], [2, 0]], [[1, 2], [1, 2]]], [[[2, 0], [2, 0]], [[1, 2], [1, 2]]],
+      [[[1, 2], [1, 2]], [[1, 2], [2, 0]]], [[[2, 0], [1, 2]], [[1, 2], [2, 0]]],
+      [[[1, 2], [2, 0]], [[1, 2], [2, 0]]], [[[2, 0], [2, 0]], [[1, 2], [2, 0]]],
+      [[[1, 2], [1, 2]], [[2, 0], [1, 2]]], [[[2, 0], [1, 2]], [[2, 0], [1, 2]]],
+      [[[1, 2], [2, 0]], [[2, 0], [1, 2]]], [[[2, 0], [2, 0]], [[2, 0], [1, 2]]],
+      [[[1, 2], [1, 2]], [[2, 0], [2, 0]]], [[[2, 0], [1, 2]], [[2, 0], [2, 0]]],
+      [[[1, 2], [2, 0]], [[2, 0], [2, 0]]], [[[2, 0], [2, 0]], [[2, 0], [2, 0]]],
+      [[[0, 2], [0, 2]], [[0, 2], [0, 2]]], [[[0, 2], [2, 0]], [[0, 2], [0, 2]]],
+      [[[0, 2], [0, 2]], [[0, 2], [2, 0]]], [[[0, 2], [2, 0]], [[0, 2], [2, 0]]],
+      [[[1, 1], [1, 1]], [[1, 1], [1, 1]]], [[[1, 1], [1, 1]], [[1, 1], [2, 0]]],
+      [[[1, 1], [1, 1]], [[2, 0], [1, 1]]], [[[1, 1], [1, 1]], [[2, 0], [2, 0]]],
+      [[[2, 2], [2, 2]], [[2, 2], [2, 2]]], [[[2, 2], [2, 2]], [[2, 0], [2, 2]]],
+      [[[2, 0], [2, 2]], [[2, 2], [2, 2]]], [[[2, 0], [2, 2]], [[2, 0], [2, 2]]],
+      [[[1, 3], [1, 3]], [[1, 3], [1, 3]]], [[[2, 0], [1, 3]], [[1, 3], [1, 3]]],
+      [[[1, 3], [2, 0]], [[1, 3], [1, 3]]], [[[2, 0], [2, 0]], [[1, 3], [1, 3]]],
+      [[[0, 2], [2, 2]], [[0, 2], [2, 2]]], [[[1, 1], [1, 1]], [[1, 3], [1, 3]]],
+      [[[0, 1], [0, 1]], [[0, 1], [0, 1]]], [[[0, 1], [0, 1]], [[0, 1], [2, 0]]],
+      [[[2, 1], [2, 1]], [[2, 1], [2, 1]]], [[[2, 1], [2, 1]], [[2, 0], [2, 1]]],
+      [[[2, 3], [2, 3]], [[2, 3], [2, 3]]], [[[2, 0], [2, 3]], [[2, 3], [2, 3]]],
+      [[[0, 3], [0, 3]], [[0, 3], [0, 3]]], [[[0, 3], [2, 0]], [[0, 3], [0, 3]]],
+      [[[0, 1], [2, 1]], [[0, 1], [2, 1]]], [[[0, 1], [0, 1]], [[0, 3], [0, 3]]],
+      [[[0, 3], [2, 3]], [[0, 3], [2, 3]]], [[[2, 1], [2, 1]], [[2, 3], [2, 3]]],
+      [[[0, 1], [2, 1]], [[0, 3], [2, 3]]], [[[1, 2], [1, 2]], [[1, 2], [1, 2]]],
+      [[[1, 2], [1, 2]], [[1, 2], [1, 2]]], [[[0, 0], [0, 0]], [[0, 0], [0, 0]]]
+    ].freeze
+
+    module_function
+
+    # Animation column (0..2) for the water autotiles (blocks A/B), from a frame
+    # counter and the chipset's animation_type / animation_speed. Fast chipsets
+    # advance every 12 frames, slow ones every 24. Type 0 walks 0,1,2,1 (a
+    # back-and-forth); type 1 cycles 0,1,2.
+    def anim_ab(frame, animation_type, animation_speed)
+      step = frame / (animation_speed != 0 ? 12 : 24)
+      if animation_type != 0
+        step % 3
+      else
+        step %= 4
+        step == 3 ? 1 : step
+      end
+    end
+
+    # Animation frame (0..3) for the block-C animated tiles (advances every 6
+    # frames).
+    def anim_c(frame)
+      (frame / 6) % 4
+    end
+
+    # The coarse block a tile id belongs to: :water, :animated, :terrain, :lower,
+    # :upper, or nil for the empty tile (0) and ids outside every block.
+    def block(id)
+      return nil if id.nil? || id <= 0
+      if id >= BLOCK_F
+        id < BLOCK_F + BLOCK_F_TILES ? :upper : nil
+      elsif id >= BLOCK_E
+        id < BLOCK_E + BLOCK_E_TILES ? :lower : nil
+      elsif id >= BLOCK_D
+        :terrain
+      elsif id >= BLOCK_C
+        :animated
+      else
+        :water
+      end
+    end
+
+    # Source rectangles to draw for a tile id, as an array of
+    # [dx, dy, sx, sy, w, h]: dx/dy are pixel offsets within the destination
+    # 16x16 tile, and sx/sy/w/h the source rect in the chipset image. Non-
+    # autotile blocks return a single 16x16 rect; autotiles return four 8x8
+    # quarters. The empty tile (0) and out-of-range ids return []. `abf` / `cf`
+    # are the current animation columns/frames from #anim_ab / #anim_c.
+    def quads(id, abf = 0, cf = 0)
+      case block(id)
+      when :water    then water_quads(id, abf)
+      when :animated then [full(3 + (id - BLOCK_C) / 50, 4 + cf)]
+      when :terrain  then terrain_quads(id)
+      when :lower    then [lower_quad(id - BLOCK_E)]
+      when :upper    then [upper_quad(id - BLOCK_F)]
+      else []
+      end
+    end
+
+    # -- internals ----------------------------------------------------------
+
+    # A whole 16x16 chip at chipset grid (col, row).
+    def full(col, row)
+      [0, 0, col * TS, row * TS, TS, TS]
+    end
+
+    # Four 8x8 quarters assembled from `quarters[j][i] = [chip_col, chip_row]`:
+    # quarter (j, i) is copied from the matching 8x8 sub-quadrant of that chip.
+    def quads_from_quarters(quarters)
+      out = []
+      2.times do |j|
+        2.times do |i|
+          qc, qr = quarters[j][i]
+          out << [i * HTS, j * HTS, qc * TS + i * HTS, qr * TS + j * HTS, HTS, HTS]
+        end
+      end
+      out
+    end
+
+    # Water autotile (blocks A/B). `set` (id/1000) selects the water set, then the
+    # id's low digits select a block-B border combination and a block-A corner
+    # combination; each quarter comes from block A or block B accordingly.
+    def water_quads(id, anim)
+      set = id / 1000
+      b_subtile = (id % 1000) / 50
+      a_subtile = id % 50
+      return [] if a_subtile >= BLOCK_A_SUBTILES.size || b_subtile >= TS
+      quarters = [[nil, nil], [nil, nil]]
+
+      # Quarters the A table leaves open (-1) come from block B (rows 4..7).
+      2.times do |j|
+        2.times do |i|
+          next unless BLOCK_A_SUBTILES[a_subtile][j][i] == N
+          t = (b_subtile >> (j * 2 + i)) & 1
+          t ^= 3 if set == 2
+          quarters[j][i] = [anim, 4 + t]
+        end
+      end
+      # The remaining quarters come from block A (rows given by the table; set 1
+      # uses the second column trio, +3).
+      2.times do |j|
+        2.times do |i|
+          row = BLOCK_A_SUBTILES[a_subtile][j][i]
+          next if row == N
+          quarters[j][i] = [anim + (set == 1 ? 3 : 0), row]
+        end
+      end
+      # When both a border and a corner are set, the border quarters win.
+      if b_subtile != 0 && a_subtile != 0
+        2.times do |j|
+          2.times do |i|
+            t = (b_subtile >> (j * 2 + i)) & 1
+            t *= 2 if set == 2
+            next if t == 0
+            quarters[j][i] = [anim, 4 + t]
+          end
+        end
+      end
+      quads_from_quarters(quarters)
+    end
+
+    # Terrain autotile (block D). Each block is a 3x4 chip cell; the id's low
+    # digits pick one of 50 corner combinations within it.
+    def terrain_quads(id)
+      blk = (id - BLOCK_D) / 50
+      subtile = (id - BLOCK_D) % 50
+      return [] if blk < 0 || blk >= 12 || subtile >= BLOCK_D_SUBTILES.size
+      if blk < 4
+        base_col = (blk % 2) * 3
+        base_row = 8 + (blk / 2) * 4
+      else
+        base_col = 6 + (blk % 2) * 3
+        base_row = ((blk - 4) / 2) * 4
+      end
+      quarters = [[nil, nil], [nil, nil]]
+      2.times do |j|
+        2.times do |i|
+          off = BLOCK_D_SUBTILES[subtile][j][i]
+          quarters[j][i] = [base_col + off[0], base_row + off[1]]
+        end
+      end
+      quads_from_quarters(quarters)
+    end
+
+    # Plain lower-layer chip (block E), laid out in two 6-wide columns.
+    def lower_quad(idx)
+      if idx < 96
+        full(12 + idx % 6, idx / 6)
+      else
+        full(18 + (idx - 96) % 6, (idx - 96) / 6)
+      end
+    end
+
+    # Upper-layer chip (block F), in two 6-wide columns of the right half.
+    def upper_quad(idx)
+      if idx < 48
+        full(18 + idx % 6, 8 + idx / 6)
+      else
+        full(24 + (idx - 48) % 6, (idx - 48) / 6)
+      end
     end
   end
 

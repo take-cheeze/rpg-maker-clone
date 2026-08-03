@@ -320,9 +320,11 @@ class RPG2k
     end
 
     # Play scene: renders the loaded map and lets the party leader walk around
-    # it. Tiles are drawn as solid colour blocks derived from their tile id (a
-    # placeholder until real chipset blitting lands — see docs/TODO.md); the
-    # player is drawn from its real CharSet graphic. Movement is grid based with
+    # it. Tiles are blitted from the map's real ChipSet graphic via
+    # Game::ChipsetLayout (lower/upper chips, water/terrain autotile assembly and
+    # tile animation); if the chipset image is missing they fall back to solid
+    # colour blocks derived from the tile id. The player is drawn from its real
+    # CharSet graphic. Movement is grid based with
     # smooth pixel interpolation, walk animation, tile/edge/event collision and
     # a camera that follows the player and clamps to the map edges. Events roam
     # the map per their page's movement type (random / vertical / horizontal /
@@ -365,6 +367,7 @@ class RPG2k
         @state = state
         @map = state.map
         @chipset = build_chipset
+        @chipset_bmp = load_chipset_graphic
         @charset = load_charset
         @windowskin = load_windowskin
         @interpreter = Game::Interpreter.new(@state)
@@ -399,6 +402,8 @@ class RPG2k
         @dest_y = @state.y
         @tile_colors = {}
         @last_frame = nil
+        # Frame counter driving the chipset's water/animated-tile animation.
+        @anim_frame = 0
 
         setup_sprites
         render
@@ -411,11 +416,13 @@ class RPG2k
         [@lower_sprite, @upper_sprite, @player_sprite].each do |s|
           s.dispose if s
         end
+        @chipset_bmp.dispose if @chipset_bmp
       end
 
       def update
         @state.tick_timer # the timer keeps counting during events too
         @state.screen.update # screen tint progresses every frame, even in events
+        @anim_frame += 1 # water / animated tiles cycle even during events
         if event_busy?
           drive_event
         else
@@ -462,6 +469,20 @@ class RPG2k
         Game::ChipSet.new(@db, @map.chipset_id)
       rescue StandardError => e
         $stderr.puts "[RPG2k] chipset load failed, tiles treated as passable: #{e.message}"
+        nil
+      end
+
+      # Load the chipset tile graphic (ChipSet/<name>). Chipsets are indexed
+      # PNGs whose palette index 0 is the transparent colour, so load with the
+      # colour-key flag (like the windowskin). Returns nil — falling back to the
+      # solid-colour tile blocks — when there is no chipset or the file is
+      # missing.
+      def load_chipset_graphic
+        name = @chipset && @chipset.graphic
+        return nil if name.nil? || name.empty?
+        Bitmap.new "ChipSet/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] chipset graphic load failed, using colour blocks: #{e.message}"
         nil
       end
 
@@ -1263,6 +1284,14 @@ class RPG2k
         ox = cam_x % TILE
         oy = cam_y % TILE
 
+        # Animation columns/frames for this render, shared by every tile so the
+        # whole map animates in lock-step. Only needed on the real-chipset path.
+        if @chipset_bmp
+          abf = Game::ChipsetLayout.anim_ab(@anim_frame, @chipset.animation_type,
+                                            @chipset.animation_speed)
+          cf = Game::ChipsetLayout.anim_c(@anim_frame)
+        end
+
         (0...ROWS).each do |ry|
           (0...COLS).each do |rx|
             tx = first_tx + rx
@@ -1271,16 +1300,31 @@ class RPG2k
             dy = ry * TILE - oy
 
             lower = @map.lower(tx, ty)
-            @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
-
             upper = @map.upper(tx, ty)
-            @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
+
+            if @chipset_bmp
+              draw_tile @lower_bmp, lower, dx, dy, abf, cf
+              draw_tile @upper_bmp, upper, dx, dy, abf, cf
+            else
+              # Fallback: solid colour blocks keyed by tile id (no chipset image).
+              @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
+              @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
+            end
 
             if @event_tiles[[tx, ty]]
               @lower_bmp.fill_rect dx + 3, dy + 3, TILE - 6, TILE - 6,
                                    Color.new(230, 90, 90, 255)
             end
           end
+        end
+      end
+
+      # Blit one map tile from the chipset image into `bmp` at (dx, dy). A plain
+      # chip is a single 16x16 copy; an autotile is assembled from four 8x8
+      # quarters. Empty/out-of-range ids draw nothing (id 0 is transparent).
+      def draw_tile bmp, id, dx, dy, abf, cf
+        Game::ChipsetLayout.quads(id, abf, cf).each do |qdx, qdy, sx, sy, w, h|
+          bmp.blt dx + qdx, dy + qdy, @chipset_bmp, Rect.new(sx, sy, w, h)
         end
       end
 

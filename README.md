@@ -17,7 +17,9 @@
   (random, vertical/horizontal pacing, approaching or fleeing the hero) or runs a
   custom move route, paced by its move frequency and blocked by terrain, the
   player and other events
-- Tiles are currently drawn as colour blocks (real chipset rendering is planned)
+- Tiles are blitted from the map's real ChipSet graphic — lower/upper chips,
+  water and terrain autotiles assembled from quarter-tiles, and animated tiles —
+  falling back to colour blocks only when the chipset image is missing
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
@@ -208,7 +210,8 @@
 
 ## TODO
 - Editor with [imgui](https://github.com/ocornut/imgui)
-- Real chipset tile rendering (lower/upper chip graphics, autotiles, tile
-  animation); the map scene currently draws placeholder colour-block tiles
+- Chipset tile-replacement (Replace Chipset Tiles) and screen-tone tinting of
+  tiles; the map scene already blits real chipset graphics with autotiles and
+  tile animation
 - Battle system and the item/skill/equip/status menu screens
 - Audio pitch/tempo control and a guaranteed MIDI synth in the build
