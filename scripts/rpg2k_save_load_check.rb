@@ -104,6 +104,8 @@ def check_game(dir)
     eq true, a.mp <= a.max_mp, "actor #{a.id} mp within max (#{a.mp}/#{a.max_mp})"
     # The saved equipment (chunk 108 field 61) is re-equipped onto the actor.
     eq (sa.equipment || []), a.equipment, "actor #{a.id} equipment" if sa.equipment
+    # The saved skills (chunk 108 field 52) are restored as the known-skill set.
+    eq (sa.skills || []).sort, a.skills.sort, "actor #{a.id} skills" if sa.skills
   end
 
   # Switches/variables shift from the save's 0-indexed arrays to 1-indexed ids.

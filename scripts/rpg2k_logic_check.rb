@@ -1106,6 +1106,23 @@ class CurveRow < FakePlayerRow
     idx == 31 ? @curve : nil
   end
 end
+
+# A database learn-table row (skill_id learnt at level), plus an Array2D-alike
+# table exposing them the way the real player row's #skills does (each yields
+# id, entry). Lets Game::Actor seed its skills by level without the LCF parser.
+FakeLearn = Struct.new(:skill_id, :level)
+class FakeLearnTable
+  def initialize(pairs); @pairs = pairs; end # [[skill_id, level], ...]
+  def each; @pairs.each_index { |i| yield i, FakeLearn.new(*@pairs[i]) }; end
+end
+class SkillRow < CurveRow
+  def initialize(name, cs, ci, level, curve, learns)
+    super(name, cs, ci, level, curve)
+    @learns = learns
+  end
+
+  def skills; FakeLearnTable.new(@learns); end
+end
 FakeActorSystem = Struct.new(:party)
 # A database item row exposing just the equipment-bonus fields Game::Actor reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
@@ -1226,6 +1243,27 @@ check 'Actor without a growth curve falls back to a level-independent status' do
   eq [100, 30], [hero.max_hp, hero.max_mp]
   hero.set_level(2)
   eq [100, 30], [hero.max_hp, hero.max_mp]
+end
+
+check 'Actor learns skills from the growth table up to its level' do
+  # 25@L1, 32@L1, 27@L5 -- mirrors a real actor whose L5 skill set is 25/27/32.
+  learns = [[25, 1], [32, 1], [27, 5]]
+  db = FakeActorDB.new(
+    { 1 => SkillRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4], learns) }, [1])
+  a = Game::Party.new(db).leader
+  eq [25, 32], a.skills.sort            # only the L1 skills at level 1
+  a.set_level(5)
+  eq [25, 27, 32], a.skills.sort        # 27 joins at level 5
+  a.set_level(1)
+  eq [25, 27, 32], a.skills.sort        # levelling down keeps learnt skills
+  ok a.knows_skill?(27)
+  ok !a.knows_skill?(99)
+  # learn / forget mutate the set.
+  a.learn_skill(99); ok a.knows_skill?(99)
+  a.forget_skill(27); ok !a.knows_skill?(27)
+  # restoring a saved set replaces it.
+  a.skills = [1, 2, 2, 0]
+  eq [1, 2], a.skills.sort
 end
 
 check 'Change HP command damages a fixed actor' do
@@ -1468,6 +1506,13 @@ end
 check 'Conditional actor: name equals the command string (type 5, sub 1)' do
   eq true, run_actor_cond([5, 1, 1], string: 'Hero').switches[1]
   eq true, run_actor_cond([5, 1, 1], string: 'Nope').switches[2]
+end
+
+check 'Conditional actor: knows skill (type 5, sub 4)' do
+  st = run_actor_cond([5, 1, 4, 12]) { |s| s.party.actor_by_id(1).learn_skill(12) }
+  eq true, st.switches[1]            # skill 12 known -> if-branch
+  st = run_actor_cond([5, 1, 4, 12]) # skill not known -> else
+  eq true, st.switches[2]
 end
 
 check 'Conditional actor: equipped item (type 5, sub 5)' do
