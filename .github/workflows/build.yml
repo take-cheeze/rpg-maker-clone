@@ -104,7 +104,7 @@ jobs:
         id: cache
         with:
           path: data
-          key: game-${{ hashFiles('./scripts/download-*.bash') }}
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html') }}
 
       - name: Download game
         if: steps.cache.outputs.cache-hit != 'true'
@@ -154,6 +154,31 @@ jobs:
         with:
           name: mv-screenshot
           path: ss/mv_title.png
+          if-no-files-found: warn
+
+      # Also boot our own committed MV sample (data/mv-sample): its authored data
+      # is in git; the MIT engine is fetched here. A controlled bed that boots to
+      # a walkable map with a parallel test event. Non-blocking, like above.
+      - name: Build MV sample engine
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: nix develop -c ./scripts/download-mv-corescript.bash
+
+      - name: MV sample smoke test
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        run: |
+          mkdir -p ss
+          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+            --timeout_ms=5000 --game_dir data/mv-sample \
+            --mv_screenshot=ss/mv_sample.png
+
+      - name: Upload MV sample screenshot
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mv-sample-screenshot
+          path: ss/mv_sample.png
           if-no-files-found: warn
 
   wasm:

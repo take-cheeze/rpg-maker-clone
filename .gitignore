@@ -1,5 +1,9 @@
 /build
 /wasm-build
 /emsdk
-/data
+# Downloaded test-bed games live under data/ and are not committed, except the
+# hand-authored MV sample (data/mv-sample), which has its own .gitignore for the
+# engine files it fetches. Ignore data/ contents but re-include that one.
+/data/*
+!/data/mv-sample
 /ss
