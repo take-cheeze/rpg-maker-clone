@@ -258,3 +258,40 @@ assert "LCF::MapUnit parses layers, nested events and event commands" do
   lmu.events.each { |id, ev| collected << [id, ev.name] }
   assert_equal [[1, "NPC"]], collected
 end
+
+assert "LCF::SaveData teleport targets, map events and pictures" do
+  # Teleport targets (chunk 110): Array2D indexed by map id (0 = escape).
+  target = lcf_array1d([lcf_int_field(1, 5), lcf_int_field(2, 3),
+                        lcf_int_field(3, 7), lcf_field(4, "\x01"),
+                        lcf_int_field(5, 12)])
+  # Map events (chunk 111): field 11 is a per-event position table reusing the
+  # movable layout; fields 21/22 are the packed tile-replacement blobs.
+  event_pos = lcf_array1d([lcf_int_field(12, 4), lcf_int_field(13, 9),
+                           lcf_str_field(73, "npc")])
+  map_events = lcf_array1d([lcf_field(11, lcf_array2d([[1, event_pos]])),
+                            lcf_field(21, "\x02\x03")])
+  # Pictures (chunk 103): Array2D of picture state.
+  picture = lcf_array1d([lcf_str_field(1, "Fog"), lcf_field(9, "\x01"),
+                         lcf_int_field(33, 150), lcf_int_field(41, 20)])
+
+  body = lcf_array1d([lcf_field(103, lcf_array2d([[1, picture]])),
+                      lcf_field(110, lcf_array2d([[0, target]])),
+                      lcf_field(111, map_events)])
+  save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
+
+  assert_equal 5, save.targets[0].map_id
+  assert_equal 3, save.targets[0].x
+  assert_true save.targets[0].switch_on
+  assert_equal 12, save.targets[0].switch_id
+
+  ev = save.map_events.events[1]
+  assert_equal 4, ev.x
+  assert_equal 9, ev.y
+  assert_equal "npc", ev.charset_name
+  assert_equal [0x02, 0x03], save.map_events.chip_replacement_lower
+
+  assert_equal "Fog", save.pictures[1].name
+  assert_true save.pictures[1].visible
+  assert_equal 150, save.pictures[1].zoom
+  assert_equal 20, save.pictures[1].tone_red
+end
