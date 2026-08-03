@@ -53,11 +53,15 @@ Ship a ready-to-deploy Cloudflare Worker in `cors-proxy/` and document it in
     `GET`/`HEAD` otherwise;
   - **forwards the `Range` header** and follows redirects (codeload 302s to a
     signed `objects.githubusercontent.com` URL), then streams the body back with
-    `Access-Control-Allow-Origin: *` and the download-relevant headers exposed;
+    an `Access-Control-Allow-Origin` header and the download-relevant headers
+    exposed;
   - surfaces failures as CORS-enabled plain-text responses (`400`/`403`/`502`)
     rather than swallowing them, per the project's error-handling rule;
-  - supports an optional `ALLOWED_HOSTS` allowlist (comma-separated, leading-dot
-    subdomain match) so it need not run as an open proxy.
+  - supports three opt-in access controls so it need not run as an open proxy:
+    `ALLOWED_HOSTS` (which target hosts may be fetched, leading-dot subdomain
+    match), `AUTH_KEY` (a shared secret required as `?key=`, the real "only me"
+    lock, with the CORS preflight exempted), and `ALLOWED_ORIGINS` (which
+    web-page origins may call it, scoping the CORS header to the caller).
 - `cors-proxy/wrangler.toml` — the deploy config, with a commented `ALLOWED_HOSTS`
   example.
 - `docs/cors-proxy.md` — the walkthrough (`wrangler login` → `wrangler deploy` →
@@ -74,9 +78,11 @@ local files.
   service; the loader is unchanged (it already builds the right request).
 - No new build or CI dependency — `cors-proxy/` is standalone JS deployed with
   `npx wrangler`, so nothing in the CMake/Emscripten/nix path is touched.
-- **Open-proxy caveat.** Left unconfigured the Worker proxies any http(s) host,
-  which is convenient but abusable if the URL is shared; `ALLOWED_HOSTS` is
-  documented as the recommended mitigation but is off by default so the
+- **Open-proxy caveat.** Left unconfigured the Worker proxies any http(s) host
+  for anyone, which is convenient but abusable if the URL is shared; the three
+  access controls (`ALLOWED_HOSTS`, `AUTH_KEY`, `ALLOWED_ORIGINS`) are the
+  documented mitigations, with a personal-use recipe (secret key + host
+  allowlist) in `docs/cors-proxy.md`. All are off by default so the
   arbitrary-`.zip` use case keeps working out of the box.
 - This is distinct from the Cloudflare **Pages** setup in `docs/deploy.md`
   (which publishes the game *page*); the two share a vendor but not a purpose,

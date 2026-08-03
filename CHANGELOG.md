@@ -11,8 +11,10 @@ All notable changes to this project will be documented in this file.
   load without depending on a public proxy service. The Worker accepts both
   prefix styles the loader builds (`?url=<encoded>` and `/<raw url>`), handles
   the CORS preflight, forwards `Range` requests and follows redirects, and takes
-  an optional `ALLOWED_HOSTS` allowlist to avoid running as an open proxy.
-  Deploy walkthrough in `docs/cors-proxy.md`; rationale in
+  three opt-in access controls to avoid running as an open proxy: `ALLOWED_HOSTS`
+  (target hosts), `AUTH_KEY` (a shared secret required as `?key=` — the "only me"
+  lock), and `ALLOWED_ORIGINS` (which web-page origins may call it). Deploy and
+  personal-use lock-down walkthrough in `docs/cors-proxy.md`; rationale in
   `docs/adr/0009-cors-proxy-cloudflare-worker.md`.
 - MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
   `strokeText` and `measureText` are backed by stb_truetype against the game's

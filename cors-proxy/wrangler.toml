@@ -6,8 +6,15 @@ name = "rpg-maker-cors-proxy"
 main = "worker.js"
 compatibility_date = "2025-01-01"
 
-# Optional: restrict which hosts may be proxied so this isn't an open proxy.
-# A leading dot matches subdomains (".github.com" matches "codeload.github.com").
-# Uncomment and edit to enable; leaving it out proxies any http(s) host.
+# Optional access controls so this isn't an open proxy. All unset => open.
+# Uncomment and edit to enable. See ../docs/cors-proxy.md for the details.
 # [vars]
+# Which target hosts may be fetched (leading dot matches subdomains):
 # ALLOWED_HOSTS = ".github.com,codeload.github.com,objects.githubusercontent.com"
+# Which web-page origins may call the proxy (exact scheme+host):
+# ALLOWED_ORIGINS = "https://<owner>.github.io,http://localhost:8000"
+#
+# The shared secret (AUTH_KEY) is the real "only me" lock. Do NOT put it here in
+# plaintext — set it as an encrypted secret instead:
+#   npx wrangler secret put AUTH_KEY
+# then use a query-style prefix that includes it: https://<worker>/?key=SECRET&url=
