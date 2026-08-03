@@ -35,9 +35,25 @@ module Game
   # (`\c`/`\s` colour/speed, `\.`/`\|`/`\!` waits, `\>`/`\<`, `\^`, `\_`, `\$`)
   # are consumed. `names` may be a Hash or any object responding to `[]`.
   module Message
+    # Expand a line to its plain visible text (no colour information): the same
+    # string the segments from #parse concatenate to.
     def self.expand(text, variables, names)
-      return '' if text.nil?
-      out = ''
+      parse(text, variables, names).map { |s| s[:text] }.join
+    end
+
+    # Parse a message line into coloured runs. Returns an array of segments
+    # `{ text:, color: }`, where `color` is the `\c[n]` palette index in effect
+    # for that run (0 = the default colour). `\v[n]` (variable) and `\n[n]`
+    # (actor name) are expanded into the text and `\\` yields a literal
+    # backslash; the display-only codes (`\s` speed, `\.`/`\|`/`\!` waits,
+    # `\>`/`\<`, `\^`, `\_`, `\$`) produce no characters and are dropped. Runs
+    # with no text (e.g. a colour change before any character) are omitted, so a
+    # line that renders nothing yields an empty array.
+    def self.parse(text, variables, names)
+      return [] if text.nil?
+      segs = []
+      cur = ''
+      color = 0
       i = 0
       n = text.length
       while i < n
@@ -47,17 +63,22 @@ module Game
           i += 2
           arg, i = read_bracket(text, i)
           case code
-          when 'v', 'V' then out << variables[arg.to_i].to_s if arg
-          when 'n', 'N' then out << (names[arg.to_i] || '').to_s if arg
-          when "\\"     then out << "\\"
-          # colour/speed/wait/etc. produce no visible characters: dropped.
+          when 'v', 'V' then cur << variables[arg.to_i].to_s if arg
+          when 'n', 'N' then cur << (names[arg.to_i] || '').to_s if arg
+          when "\\"     then cur << "\\"
+          when 'c', 'C' # colour change: close the current run, switch colour
+            segs << { text: cur, color: color } unless cur.empty?
+            cur = ''
+            color = arg ? arg.to_i : 0
+          # other display codes produce no characters: dropped.
           end
         else
-          out << ch
+          cur << ch
           i += 1
         end
       end
-      out
+      segs << { text: cur, color: color } unless cur.empty?
+      segs
     end
 
     # Read an optional "[digits]" argument at position i; returns [value, new_i].

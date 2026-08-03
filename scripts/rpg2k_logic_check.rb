@@ -373,6 +373,43 @@ check 'TextReveal handles empty lines and an all-empty message' do
   ok empty.done?, 'a message with no characters is already fully revealed'
 end
 
+# -- Message parsing (control codes / colour) --------------------------------
+
+check 'Message.expand fills v/n codes and drops display codes' do
+  vars = Game::Variables.new
+  vars[3] = 7
+  names = { 5 => 'Aria' }
+  eq 'HP:7', Game::Message.expand('HP:\v[3]', vars, names)
+  eq 'Aria!', Game::Message.expand('\n[5]!', vars, names)
+  eq 'ab', Game::Message.expand('a\.\|b', vars, names)   # wait codes dropped
+  eq 'a\\b', Game::Message.expand('a\\\\b', vars, names) # \\ -> one backslash
+  eq '', Game::Message.expand(nil, vars, names)
+end
+
+check 'Message.parse splits colour runs and expands codes within them' do
+  vars = Game::Variables.new
+  vars[3] = 7
+  names = { 5 => 'Aria' }
+  segs = Game::Message.parse('Hi \c[2]\n[5]\c[0]!', vars, names)
+  eq [{ text: 'Hi ', color: 0 },
+      { text: 'Aria', color: 2 },
+      { text: '!', color: 0 }], segs
+  # A variable inside a coloured run keeps that run's colour.
+  eq [{ text: 'HP:', color: 0 }, { text: '7', color: 1 }],
+     Game::Message.parse('HP:\c[1]\v[3]', vars, names)
+end
+
+check 'Message.parse omits empty runs and matches expand when joined' do
+  vars = Game::Variables.new
+  names = {}
+  # A leading colour change produces no empty run.
+  eq [{ text: 'x', color: 4 }], Game::Message.parse('\c[4]x', vars, names)
+  eq [], Game::Message.parse('\c[3]', vars, names) # nothing visible
+  src = 'a\c[1]b\c[0]c'
+  joined = Game::Message.parse(src, vars, names).map { |s| s[:text] }.join
+  eq Game::Message.expand(src, vars, names), joined
+end
+
 # -- Interpreter (a few existing-behaviour regressions) -----------------------
 
 # Build a minimal State without the LCF database: stub Party just enough for the
