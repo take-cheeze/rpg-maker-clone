@@ -219,6 +219,7 @@ class MV
     pump_frame # M3: run the rAF/timer queue for one frame
     pump_audio # M5: drain MV's queued audio ops into RGSS::Audio
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
+    maybe_new_game # CI: auto-advance past the title to the first map
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -312,6 +313,36 @@ class MV
     $stderr.puts "[MV] screenshot #{ok ? "saved" : "failed"}: #{path}"
   rescue StandardError => e
     $stderr.puts "[MV] screenshot error: #{e.message}"
+  end
+
+  # When --mv_new_game is set (CI), select "New Game" once the title screen is
+  # up so the game advances to its first map without any input — letting a
+  # headless capture show in-game rendering, not just the title. One-shot; a
+  # no-op during normal play (flag unset).
+  def maybe_new_game
+    return if @new_game_done
+
+    want = begin
+      MV_NEW_GAME
+    rescue StandardError
+      false
+    end
+    return unless want
+
+    scene = MV::JS.eval(
+      "(typeof SceneManager !== 'undefined' && SceneManager._scene) ? " \
+      "SceneManager._scene.constructor.name : ''"
+    )
+    return unless scene == "Scene_Title"
+
+    @new_game_done = true
+    MV::JS.eval(
+      "if (SceneManager._scene && SceneManager._scene.commandNewGame) " \
+      "SceneManager._scene.commandNewGame();"
+    )
+    $stderr.puts "[MV] auto New Game"
+  rescue StandardError => e
+    $stderr.puts "[MV] new game error: #{e.message}"
   end
 
   # Log the running scene's class name whenever it changes, so the boot's

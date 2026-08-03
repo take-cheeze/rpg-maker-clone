@@ -83,12 +83,21 @@ assert 'MV Image decodes a PNG and serves as a drawImage source' do
   end
 end
 
-assert 'MV Image fires onerror for a missing file' do
+assert 'MV Image resolves a missing file as a 1x1 empty bitmap (boot does not stall)' do
+  # A missing image loads (onload) as a 1x1 transparent bitmap rather than
+  # erroring, so MV's ImageManager.isReady() does not block the boot forever on
+  # reserved-but-absent system art (a project running without its art still
+  # boots). onerror must NOT fire.
   MV::JS.base_dir = ""
-  MV::JS.eval("globalThis.IE=new Image(); globalThis.IE_err=false; " \
-              "IE.onerror=function(){IE_err=true;}; IE.src='definitely_missing_image.png';")
+  MV::JS.eval("globalThis.IE=new Image(); globalThis.IE_ok=false; globalThis.IE_err=false; " \
+              "IE.onload=function(){IE_ok=true;}; IE.onerror=function(){IE_err=true;}; " \
+              "IE.src='definitely_missing_image.png';")
   MV::JS.pump(0.0)
-  assert_equal true, MV::JS.eval("IE_err")
+  assert_equal true, MV::JS.eval("IE_ok")
+  assert_equal false, MV::JS.eval("IE_err")
+  assert_equal 1, MV::JS.eval("IE.width")
+  assert_equal 1, MV::JS.eval("IE.height")
+  assert_equal true, MV::JS.eval("IE.complete")
 end
 
 assert 'MV::JS.present blits a canvas onto an RGSS::Bitmap with correct channels' do
