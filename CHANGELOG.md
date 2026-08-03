@@ -141,6 +141,13 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- The event interpreter now supports **Change HP**, **Change MP** and **Full
+  Heal**. Each targets a fixed actor, an actor whose id is held in a variable,
+  or the whole party, and takes a constant or variable amount. `Game::Actor`
+  gained `change_hp` / `change_mp` / `full_heal` helpers that clamp to the
+  actor's maxima; Change HP honours RPG2000's "allow death" flag (the HP floor
+  is 0 when knockout is allowed, 1 otherwise). Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
 - The event interpreter now supports **Move Event** (Set Move Route). The
   command's parameters pack a target id followed by a forced move route; the
   interpreter decodes that route (including the switch / change-graphic /

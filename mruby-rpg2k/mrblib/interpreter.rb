@@ -22,6 +22,9 @@ module Game
       CHANGE_GOLD      = 10310
       CHANGE_ITEMS     = 10320
       CHANGE_PARTY     = 10330
+      CHANGE_HP        = 10460
+      CHANGE_MP        = 10470
+      FULL_HEAL        = 10490
       CONDITIONAL      = 12010
       ELSE_BRANCH      = 22010
       END_BRANCH       = 22011
@@ -180,6 +183,9 @@ module Game
       when Cmd::CHANGE_GOLD      then do_change_gold cmd
       when Cmd::CHANGE_ITEMS     then do_change_items cmd
       when Cmd::CHANGE_PARTY     then do_change_party cmd
+      when Cmd::CHANGE_HP        then do_change_hp cmd
+      when Cmd::CHANGE_MP        then do_change_mp cmd
+      when Cmd::FULL_HEAL        then do_full_heal cmd
       when Cmd::CONDITIONAL      then do_conditional cmd
       when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
       when Cmd::END_BRANCH       then nil
@@ -399,6 +405,44 @@ module Game
       else
         party.remove_actor(actor)
       end
+    end
+
+    # -- actor HP / MP --------------------------------------------------------
+
+    # The actors a stat-change command targets. param0 selects the scope: 0 the
+    # whole party, 1 a fixed actor id (param1), 2 the actor whose id is held in
+    # variable param1. Actors not in the party resolve to nothing.
+    def stat_targets(cmd)
+      case cmd.param(0)
+      when 0 then party.actors
+      when 1 then [party.actor_by_id(cmd.param(1))].compact
+      when 2 then [party.actor_by_id(variables[cmd.param(1)])].compact
+      else []
+      end
+    end
+
+    # The signed amount a HP/MP change applies: param2 is the operation (0 add,
+    # 1 remove) and param3/param4 the operand (0 constant / 1 variable, value).
+    def stat_amount(cmd)
+      amount = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
+      cmd.param(2) == 0 ? amount : -amount
+    end
+
+    # Change HP: param5 is the "allow death" flag (0 floors HP at 1, 1 permits 0).
+    def do_change_hp(cmd)
+      amount = stat_amount(cmd)
+      allow_death = cmd.param(5) != 0
+      stat_targets(cmd).each { |a| a.change_hp(amount, allow_death) }
+    end
+
+    def do_change_mp(cmd)
+      amount = stat_amount(cmd)
+      stat_targets(cmd).each { |a| a.change_mp(amount) }
+    end
+
+    # Full recovery: restore HP and MP to their maxima for the target actors.
+    def do_full_heal(cmd)
+      stat_targets(cmd).each { |a| a.full_heal }
     end
 
     # -- conditional branch ---------------------------------------------------

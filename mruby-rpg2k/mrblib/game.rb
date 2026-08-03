@@ -168,6 +168,27 @@ module Game
       @hp = @max_hp
       @mp = @max_mp
     end
+
+    # Apply a HP change (positive heals, negative damages), clamped to
+    # [floor, max_hp]. The floor is 0 when death is allowed (the actor may be
+    # knocked out) or 1 otherwise, matching RPG2000's Change HP "allow death"
+    # flag. Returns the new HP.
+    def change_hp(delta, allow_death = true)
+      floor = allow_death ? 0 : 1
+      @hp = Game.clamp(@hp + delta, floor, @max_hp)
+    end
+
+    # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
+    def change_mp(delta)
+      @mp = Game.clamp(@mp + delta, 0, @max_mp)
+    end
+
+    # Restore HP and MP to their maxima (RPG2000 Full Recovery; state recovery
+    # is not modelled yet).
+    def full_heal
+      @hp = @max_hp
+      @mp = @max_mp
+    end
   end
 
   # The active party. On a new game it is seeded from the database's initial
@@ -211,6 +232,7 @@ module Game
     def leader; @actors.first; end
 
     def include_actor?(id); @actors.any? { |a| a.id == id }; end
+    def actor_by_id(id); @actors.find { |a| a.id == id }; end
 
     def add_actor(id)
       return if include_actor?(id)

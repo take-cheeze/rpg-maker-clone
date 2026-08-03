@@ -94,17 +94,20 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
-  Wait, Play BGM/SE, Call Event, Move Event, End Event) with a per-frame step
-  cap so a bad loop can't hang. **Call Event** suspends the current list, runs
-  the referenced common event (or map-event page) to completion via a resolver +
-  call stack — so call-only common events, which auto-start/parallel never
-  reach, now run — and returns to the caller; recursion is bounded. **Move
-  Event** decodes the forced move route packed into the command's parameters and
-  hands it to the scene, which drives the target (a map event, "this event" or
-  the player) along it in the background. Conditional Branch covers switch /
-  variable / **timer** / gold / item / actor-in-party conditions. The remaining
-  commands (pictures, screen effects, battles, actor stat changes, ...) are TODO
+  Change HP/MP, Full Heal, Conditional Branch/Else/End, Loop/Break/End,
+  Label/Jump, Timer, Teleport, Wait, Play BGM/SE, Call Event, Move Event, End
+  Event) with a per-frame step cap so a bad loop can't hang. **Call Event**
+  suspends the current list, runs the referenced common event (or map-event
+  page) to completion via a resolver + call stack — so call-only common events,
+  which auto-start/parallel never reach, now run — and returns to the caller;
+  recursion is bounded. **Move Event** decodes the forced move route packed into
+  the command's parameters and hands it to the scene, which drives the target (a
+  map event, "this event" or the player) along it in the background. **Change
+  HP/MP** and **Full Heal** apply to a fixed actor, a variable-selected actor or
+  the whole party, clamped to each actor's maxima (Change HP honours the
+  allow-death floor). Conditional Branch covers switch / variable / **timer** /
+  gold / item / actor-in-party conditions. The remaining commands (pictures,
+  screen effects, battles, EXP/level/parameter changes, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes
