@@ -12,7 +12,6 @@
 // nor the mruby input bridge.
 
 #include <cstdio>
-#include <cstring>
 
 #include <lvgl.h>
 #include <pspiofilemgr.h>
@@ -33,13 +32,14 @@ lv_obj_t* g_status_label = nullptr;
 const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
     "Up", "Down", "Left", "Right", "A", "B", "C"};
 
-// Write a NUL-terminated string to the PSP stdout (fd 1) and stderr (fd 2).
-// Under an emulator the host captures these; on real hardware they go nowhere.
-// Plain printf is an unimplemented HLE import under PPSSPP (a silent no-op), so
-// the raw sceIoWrite is used for the CI markers; both fds are written so
-// whichever one PPSSPP surfaces to its log is captured.
-void psp_write(const char* s) {
-  const int len = static_cast<int>(std::strlen(s));
+// Write a buffer to the PSP stdout (fd 1) and stderr (fd 2). Under an emulator
+// the host captures these; on real hardware they go nowhere. The length is
+// passed explicitly rather than derived with strlen: under PPSSPP pspsdk's libc
+// string helpers resolve to firmware stubs (sysclib_strlen) that the emulator
+// only partially implements, so a strlen-derived length can come back 0 and the
+// write emits nothing. Both fds are written so whichever PPSSPP surfaces to its
+// log is captured.
+void psp_write(const char* s, int len) {
   sceIoWrite(1, s, len);
   sceIoWrite(2, s, len);
 }
@@ -109,8 +109,10 @@ void show_keys(uint32_t mask) {
 int main(void) {
   // Emitted before any LVGL/display init so the CI smoke test can tell "the
   // EBOOT booted and its stdout is captured" apart from "it crashed during
-  // init".
-  psp_write("RPG2K_PSP_BOOT\n");
+  // init". A string literal with a compile-time length keeps this marker free
+  // of any libc call, so it survives PPSSPP's partial libc HLE.
+  static const char kBootMarker[] = "RPG2K_PSP_BOOT\n";
+  psp_write(kBootMarker, static_cast<int>(sizeof(kBootMarker) - 1));
 
   setup_callbacks();
 
@@ -128,8 +130,10 @@ int main(void) {
     lv_timer_handler();
     if (frame % 200 == 0) {
       char buf[48];
-      std::snprintf(buf, sizeof(buf), "RPG2K_PSP_BRINGUP frame=%u\n", frame);
-      psp_write(buf);
+      const int n = std::snprintf(buf, sizeof(buf),
+                                  "RPG2K_PSP_BRINGUP frame=%u\n", frame);
+      if (n > 0)
+        psp_write(buf, n);
     }
     sceKernelDelayThread(5000);  // ~5 ms, matching the Wio loop's delay(5)
   }
