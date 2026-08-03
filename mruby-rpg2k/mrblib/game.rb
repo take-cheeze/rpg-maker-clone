@@ -159,6 +159,70 @@ module Game
     end
   end
 
+  # RPG2000 message-window configuration, set by the Message Options (10120) and
+  # Change Face Graphic (10130) event commands. These are *global* game-system
+  # settings shared across every event and persisted in the save (as RPG_RT does
+  # it): a Show Message is displayed with whatever configuration is in effect at
+  # the time, and the face persists until the next Change Face Graphic replaces
+  # or clears it. Pure data — the owning scene reads it when it opens a window.
+  class MessageConfig
+    # Text display position (the Message Options `position` field).
+    POS_TOP = 0
+    POS_MIDDLE = 1
+    POS_BOTTOM = 2
+
+    # Window layout: transparent background, vertical position, whether the
+    # window is pinned to `position` (vs. moving aside to avoid the hero), and
+    # whether other events keep running while the message shows.
+    attr_accessor :transparent, :position, :position_fixed, :continue_events
+    # The face graphic shown beside the text: FaceSet file name, cell index
+    # (0..15), which side it sits on and whether it is mirrored.
+    attr_accessor :face_name, :face_index, :face_right, :face_flipped
+
+    def initialize
+      @transparent = false
+      @position = POS_BOTTOM
+      @position_fixed = false
+      @continue_events = false
+      clear_face
+    end
+
+    # Whether a face graphic is currently selected (a non-empty file name).
+    def face?
+      !@face_name.nil? && !@face_name.empty?
+    end
+
+    # Drop the face graphic (an empty name), so the next message shows none.
+    def clear_face
+      @face_name = ''
+      @face_index = 0
+      @face_right = false
+      @face_flipped = false
+    end
+
+    # Serialise to a plain hash of primitives (Marshal-friendly) for saving.
+    def to_h
+      { transparent: @transparent, position: @position,
+        position_fixed: @position_fixed, continue_events: @continue_events,
+        face_name: @face_name, face_index: @face_index,
+        face_right: @face_right, face_flipped: @face_flipped }
+    end
+
+    # Restore the fields from a saved hash (missing keys keep their defaults).
+    def load_h(h)
+      return self unless h
+      @transparent = h[:transparent] ? true : false
+      @position = h[:position] || POS_BOTTOM
+      @position_fixed = h[:position_fixed] ? true : false
+      @continue_events = h[:continue_events] ? true : false
+      @face_name = h[:face_name] || ''
+      @face_index = h[:face_index] || 0
+      @face_right = h[:face_right] ? true : false
+      @face_flipped = h[:face_flipped] ? true : false
+      self
+    end
+  end
+
   def self.clamp(v, lo, hi)
     return lo if v < lo
     return hi if v > hi
@@ -839,7 +903,7 @@ module Game
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
   class State
-    attr_reader :party, :switches, :variables
+    attr_reader :party, :switches, :variables, :message_config
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
 
     def initialize(party, map_id, x, y)
@@ -853,6 +917,7 @@ module Game
       @variables = Variables.new
       @timer_frames = 0
       @timer_running = false
+      @message_config = MessageConfig.new
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
@@ -873,7 +938,7 @@ module Game
       { map_id: @map_id, x: @x, y: @y, direction: @direction,
         switches: @switches.to_h, variables: @variables.to_h,
         party: @party.to_h, timer_frames: @timer_frames,
-        timer_running: @timer_running }
+        timer_running: @timer_running, message_config: @message_config.to_h }
     end
 
     # Rebuild a State from a saved hash. Actors are re-created from the database
@@ -888,6 +953,7 @@ module Game
       state.variables.replace(h[:variables] || {})
       state.timer_frames = h[:timer_frames] || 0
       state.timer_running = h[:timer_running] || false
+      state.message_config.load_h(h[:message_config])
       state
     end
   end

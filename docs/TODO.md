@@ -124,9 +124,15 @@ The work below is roughly ordered by the critical path to a walkable game
   completing the reveal before dismissing), and `\c[n]` **colour codes** are
   drawn in colour: `Game::Message.parse` splits a line into `{text:, color:}`
   runs and `Scene::Map` draws each run in its palette colour, revealing across
-  runs (`Game::Message.visible_segments`). The palette is a built-in
-  approximation for now (the real 20-colour row from the System windowskin, and
-  face graphics, are still TODO)
+  runs (`Game::Message.visible_segments`). **Message Options** (10120) and
+  **Change Face Graphic** (10130) are now handled: a `Game::MessageConfig` on
+  `Game::State` (saved with the game) holds the window's transparency, display
+  position (top/middle/bottom) and the FaceSet graphic, and `Scene::Map` places
+  the window at the configured position, draws it transparent when asked and
+  blits the selected 48×48 face cell beside the text (left or right, with the
+  text inset). The palette is still a built-in approximation (the real 20-colour
+  row from the System windowskin), auto-positioning the window away from the
+  hero (when not pinned) and the mirrored-face flag are later refinements
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by

@@ -13,6 +13,8 @@ module Game
     module Cmd
       SHOW_MESSAGE     = 10110
       MESSAGE_2        = 20110
+      MESSAGE_OPTIONS  = 10120
+      CHANGE_FACE      = 10130
       SHOW_CHOICES     = 10140
       CHOICE_OPTION    = 20140
       CHOICE_END       = 20141
@@ -191,6 +193,8 @@ module Game
     def execute(cmd)
       case cmd.code
       when Cmd::SHOW_MESSAGE     then do_show_message cmd
+      when Cmd::MESSAGE_OPTIONS  then do_message_options cmd
+      when Cmd::CHANGE_FACE      then do_change_face cmd
       when Cmd::SHOW_CHOICES     then do_show_choices cmd
       when Cmd::CHOICE_OPTION    then skip_to([Cmd::CHOICE_END], cmd.indent); consume
       when Cmd::CHOICE_END       then nil
@@ -314,6 +318,37 @@ module Game
       @message_lines = lines
       @wait_kind = :message
       @waiting = true
+    end
+
+    # Message Options: configure the message window for subsequent Show Message
+    # commands. param0 transparent background (0 shown / 1 transparent), param1
+    # position (0 top / 1 middle / 2 bottom), param2 whether the window may move
+    # aside to avoid the hero (0 fixed / 1 auto-position — so `position_fixed`
+    # is the param2 == 0 case, matching RPG_RT), param3 whether other events keep
+    # running while the message shows. Sets global state; it does not pause.
+    def do_message_options(cmd)
+      cfg = @state.message_config
+      cfg.transparent = cmd.param(0) != 0
+      cfg.position = cmd.param(1)
+      cfg.position_fixed = cmd.param(2) == 0
+      cfg.continue_events = cmd.param(3) != 0
+    end
+
+    # Change Face Graphic: select the face shown beside the next messages. The
+    # command string is the FaceSet file name (empty clears the face); param0 is
+    # the cell index (0..15), param1 puts the face on the right, param2 mirrors
+    # it. Persists until changed; does not pause.
+    def do_change_face(cmd)
+      cfg = @state.message_config
+      name = cmd.string || ''
+      if name.empty?
+        cfg.clear_face
+      else
+        cfg.face_name = name
+        cfg.face_index = cmd.param(0)
+        cfg.face_right = cmd.param(1) != 0
+        cfg.face_flipped = cmd.param(2) != 0
+      end
     end
 
     def do_show_choices(cmd)

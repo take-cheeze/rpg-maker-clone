@@ -111,9 +111,9 @@ MOVE_NAMES = {
 # (mruby-rpg2k/mrblib/interpreter.rb `execute`). Structural markers the
 # interpreter consumes as control flow count as supported.
 SUPPORTED = [
-  10110, 20110, 10140, 20140, 20141, 10210, 10220, 10230, 10310, 10320, 10330,
-  10430, 10460, 10470, 10490, 12010, 22010, 22011, 12110, 12120, 12210, 12220,
-  22210, 12310, 12320, 12330, 10810, 11330, 11410, 11510, 11550,
+  10110, 20110, 10120, 10130, 10140, 20140, 20141, 10210, 10220, 10230, 10310,
+  10320, 10330, 10430, 10460, 10470, 10490, 12010, 22010, 22011, 12110, 12120,
+  12210, 12220, 22210, 12310, 12320, 12330, 10810, 11330, 11410, 11510, 11550,
 ].to_set
 
 # Opcodes that do nothing at run time by design: developer comments and blank /

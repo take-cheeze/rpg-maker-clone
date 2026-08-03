@@ -442,6 +442,59 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+# Tick a scene until its message window opens (or give up after `limit` frames).
+def open_msg(scene, limit = 15)
+  msg = nil
+  limit.times do
+    scene.update
+    msg = scene.instance_variable_get(:@message)
+    break if msg
+  end
+  msg
+end
+
+check 'Message Options positions the message window at the top' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MESSAGE_OPTIONS, [0, 0, 0, 0]), # position top (0), fixed
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  ok msg[:window].y < 60, "top-positioned window should sit near the top, y=#{msg[:window].y}"
+end
+
+check 'Change Face Graphic opens a message with a face and insets the text' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [2, 0, 0], string: 'Faces1'), # left-side face, cell 2
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  ok msg[:face], 'a face graphic was loaded for the message'
+  eq 2, msg[:face_index]
+  ok msg[:text_x] > 0, 'text is inset to the right of a left-side face'
+end
+
+check 'a right-side face draws on the right and does not inset the text' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 1, 0], string: 'Faces1'), # right-side face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 0, msg[:text_x], 'a right-side face leaves the left text edge in place'
+  ok msg[:face_x] > 0, 'the face is drawn on the right side of the contents'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
