@@ -54,3 +54,16 @@ assert 'MV pushes held buttons into Input._currentState (and clears released)' d
     MV::JS.eval("delete globalThis.Input;")
   end
 end
+
+assert 'MV movement probe cycles direction every dwell window' do
+  # The --mv_move_test probe holds down, then right, then up, then left (each for
+  # MOVE_PROBE_DWELL frames) so some open direction moves the player on any map.
+  d = MV::MOVE_PROBE_DWELL
+  assert_equal RGSS::Input::DOWN, MV.move_probe_dir(0)
+  assert_equal RGSS::Input::DOWN, MV.move_probe_dir(d - 1)
+  assert_equal RGSS::Input::RIGHT, MV.move_probe_dir(d)
+  assert_equal RGSS::Input::UP, MV.move_probe_dir(2 * d)
+  assert_equal RGSS::Input::LEFT, MV.move_probe_dir(3 * d)
+  # Wraps back to down after all four.
+  assert_equal RGSS::Input::DOWN, MV.move_probe_dir(4 * d)
+end

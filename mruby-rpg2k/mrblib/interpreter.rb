@@ -46,6 +46,8 @@ module Game
       ERASE_EVENT      = 12320
       CALL_EVENT       = 12330
       TELEPORT         = 10810
+      TINT_SCREEN      = 11030
+      SHAKE_SCREEN     = 11050
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       WAIT             = 11410
@@ -233,6 +235,8 @@ module Game
       when Cmd::RECALL_LOCATION   then do_recall_location cmd
       when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
       when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
+      when Cmd::TINT_SCREEN      then do_tint_screen cmd
+      when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::WAIT             then do_wait cmd
@@ -760,6 +764,36 @@ module Game
     # route never finishes, so pairing it with this command waits indefinitely.
     def do_proceed_with_movement(_cmd)
       @wait_kind = :movement
+      @waiting = true
+    end
+
+    # Frames per tenth of a second at RPG2000's fixed 60 fps, for turning a
+    # screen effect's 0.1s-unit duration into a frame count.
+    FRAMES_PER_TENTH = 6
+
+    # Tint Screen: transition the shared screen tint to the RPG2000 channels
+    # param0..3 (red / green / blue / saturation, each 0..200) over param4 tenths
+    # of a second. When param5 (the wait flag) is set and the transition takes
+    # time, pause until it finishes — the owning scene advances Game::Screen each
+    # frame and resumes us once it settles.
+    def do_tint_screen(cmd)
+      frames = cmd.param(4) * FRAMES_PER_TENTH
+      @state.screen.tint_to(cmd.param(0), cmd.param(1), cmd.param(2),
+                            cmd.param(3), frames)
+      return unless cmd.param(5) != 0 && @state.screen.tinting?
+      @wait_kind = :screen
+      @waiting = true
+    end
+
+    # Shake Screen: start a timed screen shake of strength param0 and speed
+    # param1 for param2 tenths of a second. When param3 (the wait flag) is set,
+    # pause until it finishes — the owning scene advances Game::Screen each frame
+    # and resumes us once no screen effect is animating.
+    def do_shake_screen(cmd)
+      frames = cmd.param(2) * FRAMES_PER_TENTH
+      @state.screen.shake(cmd.param(0), cmd.param(1), frames)
+      return unless cmd.param(3) != 0 && @state.screen.shaking?
+      @wait_kind = :screen
       @waiting = true
     end
 

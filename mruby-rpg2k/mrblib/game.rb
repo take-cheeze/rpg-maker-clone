@@ -999,10 +999,134 @@ module Game
     end
   end
 
+  # Screen-effect state driven by the screen event commands. Models two effects
+  # so far:
+  #
+  # * **Tint** (Tint Screen, 11030): a colour multiplier given as RPG2000's four
+  #   0..200 channels (red / green / blue / saturation, 100 = neutral). `tint_to`
+  #   starts a transition to a target over N frames and `update` steps the
+  #   channels toward it with the classic RPG2000/RGSS
+  #   `cur += (target - cur) / frames_left` interpolation, which lands exactly on
+  #   the target on the final frame. Applying the tint as an `RGSS::Viewport`
+  #   tone is the native (C++) half still to come, so the tint does not yet draw.
+  # * **Shake** (Shake Screen, 11050): a horizontal camera offset that oscillates
+  #   while active. `shake` starts a timed shake and `update` advances a float-
+  #   free triangle wave (mruby here has no `Math`), amplitude scaled by power
+  #   and rate by speed — an approximation of RPG_RT's shake. The scene reads
+  #   `shake_offset` and offsets the camera by it, so the shake *is* visible.
+  #
+  # `update` (called once per frame by the scene) advances both. Flash will join
+  # the class the same way.
+  class Screen
+    NEUTRAL = 100 # a channel value that leaves the screen unchanged
+
+    def initialize
+      @r = @g = @b = @sat = NEUTRAL
+      @tr = @tg = @tb = @tsat = NEUTRAL
+      @frames = 0 # frames left in the current tint transition (0 = settled)
+      @shake_power = 0
+      @shake_speed = 1
+      @shake_frames = 0 # frames left in the current shake (0 = still)
+      @shake_phase = 0
+      @shake_offset = 0
+    end
+
+    # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
+    def tint; [@r, @g, @b, @sat]; end
+
+    # True while a tint transition is still in progress.
+    def tinting?; @frames > 0; end
+
+    # The current horizontal shake offset in pixels (0 when not shaking).
+    def shake_offset; @shake_offset; end
+
+    # True while a timed shake is still running.
+    def shaking?; @shake_frames > 0; end
+
+    # True while any screen effect is still animating (drives the wait flag).
+    def busy?; tinting? || shaking?; end
+
+    # Begin a tint transition to the target channels over `frames` frames
+    # (frames <= 0 applies it immediately). Values are clamped to 0..200.
+    def tint_to(r, g, b, sat, frames)
+      @tr = Game.clamp(r, 0, 200)
+      @tg = Game.clamp(g, 0, 200)
+      @tb = Game.clamp(b, 0, 200)
+      @tsat = Game.clamp(sat, 0, 200)
+      if frames <= 0
+        @r = @tr; @g = @tg; @b = @tb; @sat = @tsat
+        @frames = 0
+      else
+        @frames = frames
+      end
+    end
+
+    # Begin a timed shake of the given power and speed for `frames` frames
+    # (frames <= 0 stops the shake immediately). Power/speed clamp to sane ranges.
+    def shake(power, speed, frames)
+      @shake_power = Game.clamp(power, 0, 9)
+      @shake_speed = Game.clamp(speed, 1, 9)
+      @shake_phase = 0
+      if frames <= 0
+        @shake_frames = 0
+        @shake_offset = 0
+      else
+        @shake_frames = frames
+      end
+    end
+
+    # Advance every active effect one frame. Called once per frame by the scene.
+    def update
+      update_tint
+      update_shake
+    end
+
+    private
+
+    def update_tint
+      return if @frames <= 0
+      @r += (@tr - @r) / @frames
+      @g += (@tg - @g) / @frames
+      @b += (@tb - @b) / @frames
+      @sat += (@tsat - @sat) / @frames
+      @frames -= 1
+      return unless @frames.zero?
+      @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
+    end
+
+    def update_shake
+      if @shake_frames <= 0
+        @shake_offset = 0
+        return
+      end
+      @shake_frames -= 1
+      if @shake_frames <= 0
+        @shake_offset = 0 # settle back to centre when the shake ends
+        return
+      end
+      @shake_phase += @shake_speed
+      @shake_offset = Screen.triangle_wave(@shake_phase, 16, @shake_power * 2)
+    end
+
+    # A symmetric triangle wave in [-amp, amp] over `period` phase units (float-
+    # free, so it runs on the mruby build without Math). 0 amplitude/period -> 0.
+    def self.triangle_wave(phase, period, amp)
+      return 0 if amp <= 0 || period <= 0
+      half = period / 2
+      half = 1 if half <= 0
+      p = phase % period
+      if p < half
+        -amp + (2 * amp * p) / half
+      else
+        amp - (2 * amp * (p - half)) / half
+      end
+    end
+  end
+
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
   class State
-    attr_reader :party, :switches, :variables, :message_config
+    attr_reader :party, :switches, :variables, :message_config, :screen
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
@@ -1029,6 +1153,9 @@ module Game
       @save_access = true
       @current_bgm = nil
       @memorized_bgm = nil
+      # Transient screen-effect state (tint transition); not serialised, so a
+      # reloaded game starts with a neutral screen.
+      @screen = Screen.new
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
