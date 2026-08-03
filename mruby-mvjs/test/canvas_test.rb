@@ -106,6 +106,31 @@ assert 'MV canvas negative-tone sequence darkens (difference/lighter/difference)
   assert_equal "64,64,64,255", MV::JS.eval("__mv_canvasGetPixel(TN.__h,0,0).join(',')")
 end
 
+assert "MV canvas 'saturation' white fill desaturates to luminosity (grey tone)" do
+  # A red frame fully desaturated -> grey at red's luminosity (0.30*255 ~= 76).
+  MV::JS.eval("globalThis.ST=document.createElement('canvas'); ST.width=2; ST.height=2; " \
+              "var x=ST.getContext('2d'); x.globalAlpha=1; x.fillStyle='#ff0000'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='saturation'; x.fillStyle='#ffffff'; x.fillRect(0,0,2,2);")
+  assert_equal "76,76,76,255", MV::JS.eval("__mv_canvasGetPixel(ST.__h,0,0).join(',')")
+end
+
+assert "MV canvas 'saturation' white-on-black reads black (blend-mode probe)" do
+  # Graphics._testCanvasBlendModes: black, then 'saturation' white; pixel 0 sets
+  # canUseSaturationBlend, which the grey-tone path needs.
+  MV::JS.eval("globalThis.SP=document.createElement('canvas'); SP.width=1; SP.height=1; " \
+              "var x=SP.getContext('2d'); x.fillStyle='#000000'; x.fillRect(0,0,1,1); " \
+              "x.globalCompositeOperation='saturation'; x.fillStyle='#ffffff'; x.fillRect(0,0,1,1);")
+  assert_equal "0,0,0,255", MV::JS.eval("__mv_canvasGetPixel(SP.__h,0,0).join(',')")
+end
+
+assert "MV canvas 'saturation' respects globalAlpha (partial desaturation)" do
+  # Halfway from red (255,0,0) toward luminosity 76 -> (166,38,38).
+  MV::JS.eval("globalThis.SG=document.createElement('canvas'); SG.width=2; SG.height=2; " \
+              "var x=SG.getContext('2d'); x.globalAlpha=1; x.fillStyle='#ff0000'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='saturation'; x.globalAlpha=0.5; x.fillStyle='#ffffff'; x.fillRect(0,0,2,2);")
+  assert_equal "166,38,38,255", MV::JS.eval("__mv_canvasGetPixel(SG.__h,0,0).join(',')")
+end
+
 # A 2x2 RGBA PNG: pixel (0,0) is opaque red, the other three opaque green.
 MV_IMAGE_PNG =
   "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
