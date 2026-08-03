@@ -1174,6 +1174,18 @@ module LCF
   class Database < File
     def header; "LcfDataBase" end
     def schema; LCF::Schema::DATABASE end
+
+    # RPG Maker 2003 databases carry a Classes (職業) section, chunk 30, that
+    # RPG2000 never writes. Its presence is the file-level signal that a project
+    # was authored in 2003, independent of the compile-time LCF::MODE default.
+    def rpg2003?
+      @root.key? 30
+    end
+
+    # Editor edition that wrote this database: 2003 or 2000.
+    def maker
+      rpg2003? ? 2003 : 2000
+    end
   end
 
   class MapTree < File

@@ -115,6 +115,33 @@ assert "LCF::Database item armour option flags (chunks 25-28) and equip animatio
   assert_equal 4, a.speed
 end
 
+assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
+  row = LCF::Array1D.new(lcf_array1d([lcf_int_field(1, 5), lcf_int_field(3, 0)]),
+                         { elements: { 1 => { name: :a, type: :int },
+                                       3 => { name: :b, type: :int } } })
+  assert_true row.key?(1)
+  # Present but zero-valued: still counts as physically written.
+  assert_true row.key?(3)
+  assert_false row.key?(2)
+end
+
+assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
+  actor = lcf_array1d([lcf_str_field(1, "Hero"), lcf_int_field(57, 3)])
+  klass = lcf_array1d([lcf_str_field(1, "Soldier")])
+  db2003 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(11, lcf_array2d([[1, actor]])),
+                 lcf_field(30, lcf_array2d([[3, klass]]))])))
+  assert_true db2003.rpg2003?
+  assert_equal 2003, db2003.maker
+  assert_equal "Soldier", db2003.job[3].name
+  assert_equal 3, db2003.player[1].class_id
+
+  db2000 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(11, lcf_array2d([[1, lcf_array1d([lcf_str_field(1, "Hero")])]]))])))
+  assert_false db2000.rpg2003?
+  assert_equal 2000, db2000.maker
+end
+
 assert "LCF::Database skill switch/occasion chunks (13, 16, 18, 19)" do
   se = lcf_array1d([lcf_str_field(1, "Teleport"), lcf_int_field(3, 80)])
   skill = lcf_array1d([lcf_str_field(1, "Warp"), lcf_int_field(13, 7),

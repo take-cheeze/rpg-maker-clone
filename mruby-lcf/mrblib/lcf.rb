@@ -284,6 +284,14 @@ module LCF
       LCF.to_rb @data[idx], @schema[:elements][idx]
     end
 
+    # True when a chunk with this id was physically present in the file, before
+    # any schema default is applied. Lets callers tell an absent optional
+    # section from one that is present but empty (both read as a falsy value
+    # through []), which is how the RPG2000/2003 edition is detected.
+    def key? idx
+      !@data[idx].nil?
+    end
+
     def method_missing sym, *args
       raise args unless args.empty?
       self[@sym2idx[sym]]

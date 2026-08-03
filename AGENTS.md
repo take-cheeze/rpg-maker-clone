@@ -70,6 +70,19 @@ Create ADRs in /docs/adr for:
   editor `Save<N>.lsd` when present. `ruby scripts/rpg2k_save_load_check.rb`
   round-trips a real save through it. Use `save[101]`, not `save.system`, in
   CRuby-tested code — `system` resolves to `Kernel#system` there.
+- **RPG2000 vs RPG2003:** `LCF::MODE` is a compile-time constant (2000) that only
+  supplies edition-dependent *defaults* (max level, variable range); chunk
+  decoding is id-driven, so a 2003 file parses either way. To branch on a file's
+  actual edition use `db.maker` / `db.rpg2003?` — RPG2003 databases carry a
+  Classes section (chunk 30) that RPG2000 never writes, and that presence is the
+  signal (built on the `LCF::Array1D#key?` chunk-presence primitive).
+  `lcf_testbed_check.rb` reports the detected edition per game and, for 2003,
+  asserts the Classes table decodes and every actor's `class_id` resolves. The
+  2003-specific content lives almost entirely in the database (`RPG_RT.ldb`),
+  which is validated against real 2003 games (Song-of-the-Sea, mtf-meido-action);
+  the `.lsd` layout is largely shared with 2000, and generating a real 2003 save
+  is gated behind those games' menu-disabled intros (save-level 2003 validation
+  is follow-up — see ADR 0013).
 
 ## Testing Standards
 
