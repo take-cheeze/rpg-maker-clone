@@ -74,10 +74,15 @@ and CI-checked before the interpreter and assets are layered on:
   container. This environment cannot cross-build or flash a PSP, so — exactly as
   for the Wio job — CI is the external check that the HAL and EBOOT compile. A
   second `psp-smoke` job goes further than the Wio port did: it boots the EBOOT
-  under **PPSSPP** headless (software renderer) and asserts the bring-up's
-  per-second stdout heartbeat, so CI verifies the EBOOT actually runs on an
-  emulator, not just that it links. PPSSPP is built from source (no stable
-  prebuilt headless binary exists) and cached by tag.
+  under **PPSSPP** headless (software renderer) and checks for the bring-up
+  markers it writes via `sceIoWrite` — a libc-free `RPG2K_PSP_BOOT` literal
+  emitted before any init, plus the per-second `RPG2K_PSP_BRINGUP` heartbeat — so
+  CI verifies the EBOOT actually runs on an emulator, not just that it links.
+  PPSSPP is built from source (no stable prebuilt headless binary exists) and
+  cached by tag. The job is **non-blocking** (`continue-on-error`): PPSSPP only
+  partially HLE-implements pspsdk's libc stdio (plain `printf`/`strlen` resolve
+  to firmware stubs), so the markers deliberately avoid libc where possible, but
+  emulator capture can still be fragile; the required gate is the `psp` build.
 
 ## Consequences
 
