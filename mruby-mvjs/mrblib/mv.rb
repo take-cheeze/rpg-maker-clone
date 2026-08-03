@@ -259,6 +259,7 @@ class MV
     maybe_new_game # CI: auto-advance past the title to the first map
     maybe_battle_test # CI: start a test battle once on the map, if requested
     maybe_move_test # CI: hold a direction on the map and log that the player moved
+    maybe_message_test # CI: show a text message on the map and log the window opened
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -392,7 +393,8 @@ class MV
     rescue StandardError
       false
     end
-    return unless new_game || battle_test_troop > 0 || move_test_requested?
+    return unless new_game || battle_test_troop > 0 || move_test_requested? ||
+                  message_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -487,6 +489,50 @@ class MV
     $stderr.puts "[MV-MOVE] end #{player_tile} moved=#{@move_seen ? true : false}"
   rescue StandardError => e
     $stderr.puts "[MV] move test error: #{e.message}"
+  end
+
+  # Whether --mv_message_test was requested (a launcher constant set by main.cxx).
+  def message_test_requested?
+    (begin
+      MV_MESSAGE_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mv_message_test is set (CI), once on the map queue a "Show Text"
+  # message through $gameMessage, let Scene_Map's Window_Message open and draw
+  # it over a few frames, then log whether the window opened and is showing the
+  # text. This drives the message/dialogue path every RPG uses (event ->
+  # $gameMessage -> Window_Message -> text render), so a headless run confirms
+  # message boxes actually display. One-shot; a no-op during normal play.
+  MSG_PROBE_FRAMES = 45
+  def maybe_message_test
+    return if @msg_test_done
+    return unless message_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @msg_frame ||= 0
+    if @msg_frame == 0
+      MV::JS.eval(
+        "if (typeof $gameMessage !== 'undefined' && !$gameMessage.isBusy()) " \
+        "{ $gameMessage.add('MV message smoke test'); }"
+      )
+      $stderr.puts "[MV-MSG] queued a message"
+    end
+    @msg_frame += 1
+    return if @msg_frame < MSG_PROBE_FRAMES
+
+    @msg_test_done = true
+    busy = MV::JS.eval("(typeof $gameMessage !== 'undefined' && " \
+                       "$gameMessage.isBusy()) ? true : false")
+    open = MV::JS.eval(
+      "(SceneManager._scene && SceneManager._scene._messageWindow && " \
+      "SceneManager._scene._messageWindow.openness > 0) ? true : false"
+    )
+    $stderr.puts "[MV-MSG] busy=#{busy} window_open=#{open}"
+  rescue StandardError => e
+    $stderr.puts "[MV] message test error: #{e.message}"
   end
 
   # Log the running scene's class name whenever it changes, so the boot's
