@@ -669,6 +669,48 @@ check 'Full Heal restores the whole party to max HP/MP' do
   eq [50, 20],  [st.party.actor_by_id(2).hp, st.party.actor_by_id(2).mp]
 end
 
+check 'Change Parameters adds to a base battle stat' do
+  st = party_state
+  a = st.party.actor_by_id(1) # atk 10
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, op 0 (add), param 2 (atk), operand const 5
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 1, 0, 2, 0, 5])])
+  it.update
+  eq 15, a.atk
+end
+
+check 'Change Parameters lowering max HP re-clamps current HP' do
+  st = party_state
+  a = st.party.actor_by_id(1) # max_hp 100, hp 100
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, op 1 (remove), param 0 (max_hp), const 60 -> max_hp 40
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 1, 1, 0, 0, 60])])
+  it.update
+  eq 40, a.max_hp
+  eq 40, a.hp # current HP clamped down to the new maximum
+end
+
+check 'Change Parameters clamps a stat at its floor across the whole party' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 0 (party), op 1 (remove), param 2 (atk), const 9999 -> floor 1
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [0, 0, 1, 2, 0, 9999])])
+  it.update
+  eq 1, st.party.actor_by_id(1).atk
+  eq 1, st.party.actor_by_id(2).atk
+end
+
+check 'Change Parameters raises max MP with a variable operand' do
+  st = party_state
+  st.variables[4] = 20
+  a = st.party.actor_by_id(2) # max_mp 20
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 2, op 0 (add), param 1 (max_mp), operand type 1 (var), var 4
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 2, 0, 1, 1, 4])])
+  it.update
+  eq 40, a.max_mp
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

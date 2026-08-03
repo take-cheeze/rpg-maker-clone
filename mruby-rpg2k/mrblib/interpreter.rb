@@ -22,6 +22,7 @@ module Game
       CHANGE_GOLD      = 10310
       CHANGE_ITEMS     = 10320
       CHANGE_PARTY     = 10330
+      CHANGE_PARAM     = 10430
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
       FULL_HEAL        = 10490
@@ -183,6 +184,7 @@ module Game
       when Cmd::CHANGE_GOLD      then do_change_gold cmd
       when Cmd::CHANGE_ITEMS     then do_change_items cmd
       when Cmd::CHANGE_PARTY     then do_change_party cmd
+      when Cmd::CHANGE_PARAM     then do_change_params cmd
       when Cmd::CHANGE_HP        then do_change_hp cmd
       when Cmd::CHANGE_MP        then do_change_mp cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
@@ -443,6 +445,17 @@ module Game
     # Full recovery: restore HP and MP to their maxima for the target actors.
     def do_full_heal(cmd)
       stat_targets(cmd).each { |a| a.full_heal }
+    end
+
+    # Change Parameters: adjust a base stat. param3 selects the stat (0 max HP,
+    # 1 max MP, 2 attack, 3 defence, 4 spirit/int, 5 agility), param2 is the
+    # operation (0 add, 1 remove) and param4/param5 the operand (0 constant /
+    # 1 variable, value).
+    def do_change_params(cmd)
+      type = cmd.param(3)
+      amount = cmd.param(4) == 0 ? cmd.param(5) : variables[cmd.param(5)]
+      amount = -amount if cmd.param(2) != 0
+      stat_targets(cmd).each { |a| a.change_param(type, amount) }
     end
 
     # -- conditional branch ---------------------------------------------------

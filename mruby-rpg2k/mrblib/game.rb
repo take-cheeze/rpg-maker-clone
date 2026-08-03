@@ -189,6 +189,33 @@ module Game
       @hp = @max_hp
       @mp = @max_mp
     end
+
+    # Change Parameters base-stat types (the RPG2000 command's parameter field).
+    PARAM_MAX_HP = 0
+    PARAM_MAX_MP = 1
+    PARAM_ATK    = 2
+    PARAM_DEF    = 3
+    PARAM_INT    = 4
+    PARAM_AGI    = 5
+
+    # Apply a base-parameter change (the Change Parameters command). `type` is
+    # one of the PARAM_* constants; `delta` is signed. Stats clamp to RPG2000's
+    # limits (max HP/MP 1..9999, the four battle stats 1..999), and lowering a
+    # maximum re-clamps the current HP/MP so it never exceeds its new cap.
+    def change_param(type, delta)
+      case type
+      when PARAM_MAX_HP
+        @max_hp = Game.clamp(@max_hp + delta, 1, 9999)
+        @hp = @max_hp if @hp > @max_hp
+      when PARAM_MAX_MP
+        @max_mp = Game.clamp(@max_mp + delta, 1, 9999)
+        @mp = @max_mp if @mp > @max_mp
+      when PARAM_ATK then @atk = Game.clamp(@atk + delta, 1, 999)
+      when PARAM_DEF then @def = Game.clamp(@def + delta, 1, 999)
+      when PARAM_INT then @int = Game.clamp(@int + delta, 1, 999)
+      when PARAM_AGI then @agi = Game.clamp(@agi + delta, 1, 999)
+      end
+    end
   end
 
   # The active party. On a new game it is seeded from the database's initial

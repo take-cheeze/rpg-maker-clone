@@ -151,6 +151,12 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- The event interpreter now supports **Change Parameters**: it adjusts an
+  actor's base stat — max HP, max MP, attack, defence, spirit or agility — for a
+  fixed actor, a variable-selected actor or the whole party, by a constant or
+  variable amount. `Game::Actor#change_param` clamps to RPG2000's limits (max
+  HP/MP 1–9999, the battle stats 1–999) and re-clamps current HP/MP when a
+  maximum is lowered. Covered by new checks in `scripts/rpg2k_logic_check.rb`.
 - The event interpreter now supports **Change HP**, **Change MP** and **Full
   Heal**. Each targets a fixed actor, an actor whose id is held in a variable,
   or the whole party, and takes a constant or variable amount. `Game::Actor`
