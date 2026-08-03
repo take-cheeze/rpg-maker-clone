@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- The event interpreter now supports **Erase Event**. Running it removes the
+  event that is executing (foreground or a parallel process) from the map for
+  the rest of the visit — its marker, movement, collision tile and, for a
+  parallel event, its background process — while the rest of the command list
+  still runs (Erase Event does not pause the interpreter). A common event, which
+  has no map event, is unaffected. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
 - **Control Variables** now supports more operand sources than constants and
   other variables: a **random** integer in a range, an **actor stat** (level,
   current/max HP and MP, attack, defence, spirit or agility of an actor by id)
