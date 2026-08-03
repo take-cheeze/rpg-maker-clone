@@ -323,3 +323,29 @@ assert "LCF::SaveData decodes bool_array switches, int32 variables and the doubl
   assert_equal 7, save.title.hero_level
   assert_equal 1.5, save.title.timestamp
 end
+
+assert "LCF::SaveData decodes the inventory, common-event and foreground-event chunks" do
+  # Inventory (chunk 109): parallel item-id (int16) / count (uint8) arrays plus
+  # gold, mirroring a real save's 薬草 x3 + 導きの書 x1 (ids 1 and 451) with 100G.
+  inventory = lcf_array1d([lcf_int_field(11, 2),
+                           lcf_shorts_field(12, [1, 451]),
+                           lcf_field(13, "\x03\x01"),
+                           lcf_field(14, "\x00\x00"),
+                           lcf_int_field(21, 100)])
+  # Common-event state (chunk 114): Array2D indexed by common-event id, each an
+  # opaque per-event execution-state blob.
+  common = lcf_array2d([[1, lcf_array1d([lcf_field(1, "\x01\x01\x00\x00")])]])
+  # Foreground event (chunk 113): the running event's opaque exec-state blob.
+  foreground = lcf_array1d([lcf_field(1, "\xab\xcd")])
+  body = lcf_array1d([lcf_field(109, inventory),
+                      lcf_field(113, foreground),
+                      lcf_field(114, common)])
+  save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
+
+  assert_equal 2, save.inventory.item_count
+  assert_equal [1, 451], save.inventory.item_ids
+  assert_equal [3, 1], save.inventory.item_counts
+  assert_equal 100, save.inventory.gold
+  assert_equal [0x01, 0x01, 0x00, 0x00], save.common_events[1].execution_state
+  assert_equal [0xab, 0xcd], save.foreground_event.execution_state
+end

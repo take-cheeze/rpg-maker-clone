@@ -1005,6 +1005,36 @@ module LCF
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
     }
 
+    # Party inventory (chunk 109 of the save file). Confirmed against a real
+    # save: gold (21) matched the on-screen 100G, and the parallel item id/count
+    # arrays matched the held items looked up in the database -- 薬草 (item 1) ×3
+    # and 導きの書 (item 451) ×1, after the gate crystal had been spent. Item ids
+    # are int16; counts and per-item use-counts are one byte each. The remaining
+    # fields (party roster, step/turn counters) are left out until confirmed.
+    SAVE_INVENTORY = {
+      11 => { name: :item_count, type: :int, default: 0 },
+      12 => { name: :item_ids, type: :int16_array },
+      13 => { name: :item_counts, type: :int8_array },
+      14 => { name: :item_usage, type: :int8_array },
+      21 => { name: :gold, type: :int, default: 0 },
+    }
+
+    # Saved common-event execution state (chunk 114): an Array2D indexed by
+    # common-event id -- 505 entries in a real Nepheshel save. Each entry's
+    # field 1 is that event's interpreter execution state, kept as an opaque blob
+    # (like SAVE_MAP_EVENT's tile replacements) until its grammar is documented.
+    SAVE_COMMON_EVENT = {
+      1 => { name: :execution_state, type: :int8_array },
+    }
+
+    # Foreground (map / parallel) event interpreter state (chunk 113): the event
+    # that was mid-execution when the game was saved. A save taken from an
+    # on-screen choice keeps that choice's option strings inside this blob, which
+    # is how the section was identified; its inner grammar is left opaque for now.
+    SAVE_FOREGROUND_EVENT = {
+      1 => { name: :execution_state, type: :int8_array },
+    }
+
     SAVE_SYSTEM = {
       # 0 map, 1 menu, 2 battle, 3 shop, 4 name input, 5 save/load,
       # 6 title, 7 game over, 8 F9 debug menu.
@@ -1088,9 +1118,10 @@ module LCF
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
-    # map. Chunks 109 (party/item info) and 114 (common-event state) are still
-    # marked unanalysed on the wiki, so they are left out until the layout is
-    # known.
+    # map. Chunks 109 (inventory) and 114 (common-event state), still marked
+    # unanalysed on that wiki, were identified against a real Save01.lsd (see
+    # ADR 0011). Chunk 102 (screen effects), 112 (a one-byte flag) and 200 (a
+    # non-standard high-id extension chunk) are still left out until confirmed.
     SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
@@ -1102,8 +1133,11 @@ module LCF
         106 => { name: :ship, type: :Array1D, elements: SAVE_MOVABLE },
         107 => { name: :airship, type: :Array1D, elements: SAVE_MOVABLE },
         108 => { name: :actors, type: :Array2D, elements: SAVE_PARTY_ACTOR },
+        109 => { name: :inventory, type: :Array1D, elements: SAVE_INVENTORY },
         110 => { name: :targets, type: :Array2D, elements: SAVE_TARGET },
         111 => { name: :map_events, type: :Array1D, elements: SAVE_MAP_EVENT },
+        113 => { name: :foreground_event, type: :Array1D, elements: SAVE_FOREGROUND_EVENT },
+        114 => { name: :common_events, type: :Array2D, elements: SAVE_COMMON_EVENT },
       }
     }
   end
