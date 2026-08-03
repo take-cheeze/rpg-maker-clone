@@ -272,10 +272,10 @@ if(EMSCRIPTEN)
   endif()
 
   # Optionally bundle an extra, ready-to-run project into the virtual filesystem
-  # at /game_sample *without* auto-starting it, so the shell page can offer it as
-  # a one-click preset (see src/shell.html) while its loader still handles other
-  # projects. Used to ship the committed MV sample (data/mv-sample, with its
-  # fetched engine) in the deployed/preview page. Generates index.data.
+  # at /game_sample *without* auto-starting it, so the shell page can offer it
+  # as a one-click preset (see src/shell.html) while its loader still handles
+  # other projects. Used to ship the committed MV sample (data/mv-sample, with
+  # its fetched engine) in the deployed/preview page. Generates index.data.
   if(WASM_SAMPLE_DIR)
     file(REAL_PATH ${WASM_SAMPLE_DIR} WASM_SAMPLE_DIR)
     target_link_options(${PROJECT_NAME} PRIVATE
