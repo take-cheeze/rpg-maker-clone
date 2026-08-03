@@ -1,0 +1,20 @@
+# Cloudflare Worker config for the rpg-maker-clone CORS proxy.
+# Deploy with:  cd cors-proxy && npx wrangler deploy
+# See ../docs/cors-proxy.md for the full walkthrough.
+
+name = "rpg-maker-cors-proxy"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Optional access controls so this isn't an open proxy. All unset => open.
+# Uncomment and edit to enable. See ../docs/cors-proxy.md for the details.
+# [vars]
+# Which target hosts may be fetched (leading dot matches subdomains):
+# ALLOWED_HOSTS = ".github.com,codeload.github.com,objects.githubusercontent.com"
+# Which web-page origins may call the proxy (exact scheme+host):
+# ALLOWED_ORIGINS = "https://<owner>.github.io,http://localhost:8000"
+#
+# The shared secret (AUTH_KEY) is the real "only me" lock. Do NOT put it here in
+# plaintext — set it as an encrypted secret instead:
+#   npx wrangler secret put AUTH_KEY
+# then use a query-style prefix that includes it: https://<worker>/?key=SECRET&url=

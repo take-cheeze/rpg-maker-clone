@@ -543,9 +543,28 @@ module Game
       when 4 # item: param1 id, param2 (0 has / 1 not)
         has = party.has_item?(cmd.param(1))
         cmd.param(2) == 0 ? has : !has
-      when 5 # actor in party: param1 id
-        party.include_actor?(cmd.param(1))
+      when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
+        actor_condition(cmd)
       else true
+      end
+    end
+
+    # Conditional type 5 (actor/hero): param1 is the actor id, param2 selects the
+    # sub-condition — 0 in party, 1 name equals the command string, 2 level >=
+    # param3, 3 HP >= param3. The skill / equipment / state sub-conditions
+    # (4/5/6) are not modelled and read as false. The stat checks need the actor
+    # to be in the party (the only actors this build instantiates); a missing
+    # actor is false.
+    def actor_condition(cmd)
+      id = cmd.param(1)
+      return party.include_actor?(id) if cmd.param(2) == 0
+      actor = party.actor_by_id(id)
+      return false unless actor
+      case cmd.param(2)
+      when 1 then actor.name == cmd.string
+      when 2 then actor.level >= cmd.param(3)
+      when 3 then actor.hp >= cmd.param(3)
+      else false
       end
     end
 

@@ -210,6 +210,23 @@ assert 'MV canvas text API is wired (fillText/strokeText/measureText)' do
   )
 end
 
+assert 'MV canvas gradientFillRect interpolates colours across the rect' do
+  # A horizontal red -> blue gradient over a 4px-wide rect (as MV's
+  # Bitmap.gradientFillRect drives for gauges). The left edge should be
+  # red-dominant and opaque, the right edge blue-dominant.
+  MV::JS.eval(
+    "globalThis.GR=document.createElement('canvas'); GR.width=4; GR.height=1; " \
+    "var c=GR.getContext('2d'); var g=c.createLinearGradient(0,0,4,0); " \
+    "g.addColorStop(0,'#ff0000'); g.addColorStop(1,'#0000ff'); " \
+    "c.fillStyle=g; c.fillRect(0,0,4,1);"
+  )
+  assert_equal true, MV::JS.eval("var p=__mv_canvasGetPixel(GR.__h,0,0); p[0] > p[2]")
+  assert_equal 255, MV::JS.eval("__mv_canvasGetPixel(GR.__h,0,0)[3]")
+  assert_equal true, MV::JS.eval("var p=__mv_canvasGetPixel(GR.__h,3,0); p[2] > p[0]")
+  # A gradient fillStyle no longer reads back as opaque black (the old fallback).
+  assert_equal false, MV::JS.eval("__mv_canvasGetPixel(GR.__h,0,0).slice(0,3).join(',') === '0,0,0'")
+end
+
 assert 'MV canvas save/restore round-trips the transform' do
   m = MV::JS.eval("var x=document.createElement('canvas').getContext('2d'); " \
                   "x.save(); x.translate(5,7); x.scale(2,2); x.restore(); x._m.join(',')")

@@ -16,6 +16,11 @@ module LCF
     ret = 0
     loop do
       b = s.getbyte
+      # A BER integer whose final byte still has the continuation bit set has
+      # been truncated (e.g. a single 0xff byte, which is a raw uint8 field
+      # mistyped as :int, not a valid BER number). Fail loudly instead of
+      # letting `nil & 0x7f` collapse to `false` and raise a cryptic TypeError.
+      raise 'truncated BER integer' if b.nil?
       ret = (ret << 7) | (b & 0x7f)
       break if (b & 0x80) == 0
     end
@@ -180,7 +185,10 @@ module LCF
       s[:order].each_with_index { |name, i| h[name] = vals[i] }
       return h
     when :int8_array ; return d.bytes
+    when :uint8 ; return d.bytes[0]
+    when :bool_array ; return d.bytes.map { |b| b != 0 }
     when :int32_array ; return unpack_int32(d)
+    when :double ; return unpack_double(d)
     when :event ; return parse_event_commands(d)
     when :move_commands ; return parse_move_commands(d)
     when :string ; return LCF.cp932_to_utf8 d
@@ -209,8 +217,30 @@ module LCF
     out
   end
 
+  # Decode a little-endian IEEE-754 64bit double (used by the save file's
+  # timestamp field). Assembled from raw bytes -- like unpack_int32 -- so it does
+  # not depend on the optional 'E' pack directive. Returns nil for a short blob.
+  def unpack_double d
+    return nil if d.nil? || d.bytesize < 8
+    b = d.bytes
+    bits = 0
+    7.downto(0) { |i| bits = (bits << 8) | b[i] }
+    sign = (bits >> 63) & 1
+    exp  = (bits >> 52) & 0x7ff
+    frac = bits & 0x000f_ffff_ffff_ffff
+    if exp == 0x7ff
+      return 0.0 / 0.0 unless frac == 0 # NaN
+      return sign == 1 ? (-1.0 / 0.0) : (1.0 / 0.0) # +/- infinity
+    elsif exp == 0
+      val = frac * (2.0 ** -1074)
+    else
+      val = (1.0 + frac * (2.0 ** -52)) * (2.0 ** (exp - 1023))
+    end
+    sign == 1 ? -val : val
+  end
+
   module_function :read_ber, :to_rb, :read_section, :parse_event_commands,
-                  :parse_move_commands, :unpack_int32
+                  :parse_move_commands, :unpack_int32, :unpack_double
 
   MODE = 2000 # 2003
 

@@ -295,3 +295,31 @@ assert "LCF::SaveData teleport targets, map events and pictures" do
   assert_equal 150, save.pictures[1].zoom
   assert_equal 20, save.pictures[1].tone_red
 end
+
+assert "LCF::SaveData decodes bool_array switches, int32 variables and the double timestamp" do
+  # System (chunk 101): a switch count + packed switch bytes (one byte per
+  # boolean) and a variable count + packed little-endian int32 variables. These
+  # only appear in a real Save<N>.lsd, so they exercise the :bool_array and the
+  # save file's :int32_array/:double readers that synthetic database data never
+  # reaches.
+  # Chunk 111 (teleport_erase_transition) is a single raw byte, not a BER int:
+  # a real save stores 0xff ("use database value"), which is invalid BER.
+  system = lcf_array1d([lcf_int_field(31, 3),
+                        lcf_field(32, "\x01\x00\x01"),
+                        lcf_int_field(33, 2),
+                        lcf_field(34, "\x07\x00\x00\x00\xfd\xff\xff\xff"),
+                        lcf_field(111, "\xff")])
+  # Title (chunk 100): field 1 is an 8-byte little-endian double (1.5 here).
+  title = lcf_array1d([lcf_field(1, "\x00\x00\x00\x00\x00\x00\xf8\x3f"),
+                       lcf_str_field(11, "Iris"), lcf_int_field(12, 7)])
+  body = lcf_array1d([lcf_field(100, title), lcf_field(101, system)])
+  save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
+
+  sys = save[101]
+  assert_equal [true, false, true], sys.switches
+  assert_equal [7, -3], sys.variables
+  assert_equal 0xff, sys.teleport_erase_transition
+  assert_equal "Iris", save.title.hero_name
+  assert_equal 7, save.title.hero_level
+  assert_equal 1.5, save.title.timestamp
+end

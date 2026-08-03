@@ -1052,13 +1052,15 @@ module LCF
       100 => { name: :evasion_se, type: :Array1D, elements: SE },
       101 => { name: :enemy_death_se, type: :Array1D, elements: SE },
       102 => { name: :item_se, type: :Array1D, elements: SE },
-      # Transition effects. A value of 0xff means "use the database value".
-      111 => { name: :teleport_erase_transition, type: :int },
-      112 => { name: :teleport_show_transition, type: :int },
-      113 => { name: :battle_start_erase_transition, type: :int },
-      114 => { name: :battle_start_show_transition, type: :int },
-      115 => { name: :battle_end_erase_transition, type: :int },
-      116 => { name: :battle_end_show_transition, type: :int },
+      # Transition effects, each a single raw byte (not a BER integer). A value
+      # of 0xff means "use the database value"; a real Save<N>.lsd stores 0xff
+      # here, which is invalid BER, confirming these are :uint8 rather than :int.
+      111 => { name: :teleport_erase_transition, type: :uint8 },
+      112 => { name: :teleport_show_transition, type: :uint8 },
+      113 => { name: :battle_start_erase_transition, type: :uint8 },
+      114 => { name: :battle_start_show_transition, type: :uint8 },
+      115 => { name: :battle_end_erase_transition, type: :uint8 },
+      116 => { name: :battle_end_show_transition, type: :uint8 },
       121 => { name: :teleport_allowed, type: :bool },
       122 => { name: :escape_allowed, type: :bool },
       123 => { name: :save_allowed, type: :bool },

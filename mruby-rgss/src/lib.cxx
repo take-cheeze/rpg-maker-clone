@@ -52,6 +52,13 @@ extern "C" void rgss_audio_frame(void);
 extern "C" void rgss_wio_poll(mrb_state* M);
 #endif
 
+#if defined(PSP_BUILD)
+// Defined in psp_input_bridge.cxx; scans the PSP pad and forwards press/release
+// edges to RGSS::Input.  Guarded so the desktop/wasm builds, which do not
+// compile the PSP backend, need no such symbol.
+extern "C" void rgss_psp_poll(mrb_state* M);
+#endif
+
 namespace {
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
@@ -1407,6 +1414,9 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   rgss_sdl_poll(M);
 #if defined(WIO_TERMINAL)
   rgss_wio_poll(M);
+#endif
+#if defined(PSP_BUILD)
+  rgss_psp_poll(M);
 #endif
   rgss_audio_frame();
 
