@@ -196,6 +196,7 @@ class Checker
       if it.waiting?
         case it.wait_kind
         when :choice then it.choose(0)
+        when :number then it.resume_number(0)
         when :teleport then break
         else it.resume
         end
@@ -226,44 +227,51 @@ class Checker
     end
   end
 
-  # Pack the real Data/*.rxdata into an encrypted v1 archive, then load the whole
-  # database back through Game.rgssad and confirm it is identical to the on-disk
-  # load — exercising the RGSSAD reader against real file sizes/contents and the
-  # RGSSData archive fallback end to end.
+  # Pack the real Data/*.rxdata into an encrypted archive, then load the whole
+  # database back through it and confirm it is identical to the on-disk load —
+  # exercising the RGSSAD reader against real file sizes/contents and the
+  # RGSSData archive fallback end to end. Both the v1 (`.rgssad`, XP/VX) and v3
+  # (`.rgss3a`, VX Ace) formats are checked against the same real data.
   def check_archive(dir, disk)
     files = Dir[File.join(dir, "Data", "*.rxdata")].sort.map do |f|
       ["Data\\#{File.basename(f)}", File.binread(f)]
     end
-    archive = RPGXP::RGSSAD.pack_v1(files)
+    check_archive_format(disk, files, 1, "Game.rgssad",
+                         RPGXP::RGSSAD.pack_v1(files))
+    check_archive_format(disk, files, 3, "Game.rgss3a",
+                         RPGXP::RGSSAD.pack_v3(files))
+  rescue => ex
+    fail "#{dir}: archive check raised: #{ex.class}: #{ex.message}"
+  end
 
+  def check_archive_format(disk, files, version, filename, archive)
     # Reading one entry back must reproduce the original bytes exactly.
     reader = RPGXP::RGSSAD.new(archive)
+    expect(reader.version == version, "#{filename}: version is #{reader.version}, not #{version}")
     files.each do |name, bytes|
       got = reader.read(name)
-      expect(got == bytes, "archive entry #{name} did not round-trip byte-for-byte")
+      expect(got == bytes, "#{filename} entry #{name} did not round-trip byte-for-byte")
     end
 
     Dir.mktmpdir do |tmp|
-      File.binwrite(File.join(tmp, "Game.rgssad"), archive)
+      File.binwrite(File.join(tmp, filename), archive)
       File.write(File.join(tmp, "Game.ini"), "[Game]\nTitle=Packed\n")
       packed = RPGXP::RGSSData.new(tmp) # no loose Data/ -> uses the archive
-      expect(packed.archived?, "packed project should report archived?")
+      expect(packed.archived?, "#{filename}: packed project should report archived?")
       expect(packed.system.start_map_id == disk.system.start_map_id,
-             "archived System.start_map_id differs from on-disk")
+             "#{filename}: System.start_map_id differs from on-disk")
       expect(packed.system.title_name == disk.system.title_name,
-             "archived System.title_name differs from on-disk")
+             "#{filename}: System.title_name differs from on-disk")
       expect(packed.actors.compact.size == disk.actors.compact.size,
-             "archived Actors count differs from on-disk")
+             "#{filename}: Actors count differs from on-disk")
       disk.map_infos.each_key do |id|
         pm = packed.load_map(id)
         dm = disk.load_map(id)
         expect(pm.width == dm.width && pm.height == dm.height,
-               "archived Map#{id} dimensions differ from on-disk")
+               "#{filename}: Map#{id} dimensions differ from on-disk")
       end
     end
-    puts "  archive: packed #{files.size} entries; DB loads identically through Game.rgssad"
-  rescue => ex
-    fail "#{dir}: archive check raised: #{ex.class}: #{ex.message}"
+    puts "  archive: packed #{files.size} entries; DB loads identically through #{filename}"
   end
 
   def report

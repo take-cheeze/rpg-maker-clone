@@ -117,6 +117,53 @@ class RPGXP
       end
     end
 
+    # Digit-entry model for the Input Number (103) command: a fixed number of
+    # decimal digits with a cursor. Up/down change the digit under the cursor
+    # (wrapping 0..9), left/right move the cursor (clamped). `value` reads the
+    # whole number back. Pure logic so the scene's number widget is unit-testable
+    # without a display.
+    class NumberInput
+      MAX_DIGITS = 8
+
+      attr_reader :digits, :cursor
+
+      def initialize(digits)
+        d = digits.to_i
+        d = 1 if d < 1
+        d = MAX_DIGITS if d > MAX_DIGITS
+        @digits = d
+        @values = Array.new(d, 0)
+        @cursor = 0
+      end
+
+      # The digit shown at position i (0 = most significant, leftmost).
+      def digit(i)
+        @values[i] || 0
+      end
+
+      def inc
+        @values[@cursor] = (@values[@cursor] + 1) % 10
+      end
+
+      def dec
+        @values[@cursor] = (@values[@cursor] + 9) % 10
+      end
+
+      def left
+        @cursor -= 1 if @cursor > 0
+      end
+
+      def right
+        @cursor += 1 if @cursor < @digits - 1
+      end
+
+      def value
+        v = 0
+        @values.each { |d| v = v * 10 + d }
+        v
+      end
+    end
+
     # RPG Maker XP character sheets are a 4x4 grid: four columns (walk patterns)
     # by four rows (facing down/left/right/up, top to bottom). One frame is a
     # quarter of the sheet in each axis.

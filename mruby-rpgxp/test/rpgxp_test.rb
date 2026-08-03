@@ -128,6 +128,34 @@ assert "Game::CharSet frame geometry (4x4 sheet)" do
   assert_equal 0, r0.y
 end
 
+assert "Game::NumberInput edits digits and reads the value back" do
+  ni = RPGXP::Game::NumberInput.new(3)
+  assert_equal 3, ni.digits
+  assert_equal 0, ni.cursor
+  assert_equal 0, ni.value
+
+  ni.inc                     # leftmost digit -> 1
+  ni.right                   # move to middle
+  ni.inc; ni.inc            # middle -> 2
+  ni.right                   # rightmost
+  ni.inc; ni.inc; ni.inc; ni.inc; ni.inc # -> 5
+  assert_equal 125, ni.value
+
+  # Down wraps 0 -> 9; cursor clamps at both ends.
+  z = RPGXP::Game::NumberInput.new(2)
+  z.dec                      # 0 -> 9
+  assert_equal 90, z.value
+  z.left                     # already at 0: no move
+  assert_equal 0, z.cursor
+  z.right; z.right           # clamps at the last digit
+  assert_equal 1, z.cursor
+
+  # Digit count is clamped to a sane range.
+  assert_equal 1, RPGXP::Game::NumberInput.new(0).digits
+  assert_equal RPGXP::Game::NumberInput::MAX_DIGITS,
+               RPGXP::Game::NumberInput.new(99).digits
+end
+
 assert "Game::State save/load round-trip" do
   db = FakeDB.new(actors: [nil, "a1", "a2"])
   state = RPGXP::Game::State.new(db, [1, 2], 5, 9, 7, 4)
@@ -373,6 +401,89 @@ assert "Interpreter: transfer player surfaces a teleport request" do
   assert_equal [3, 8, 9, 2], it.teleport
 end
 
+# Build an RPG::MoveCommand (code / parameters).
+def mv(code, params = [])
+  c = RPG::MoveCommand.new
+  c.code = code
+  c.parameters = params
+  c
+end
+
+# Build an RPG::MoveRoute (list of MoveCommands + repeat/skippable flags).
+def move_route(list, repeat = false, skippable = false)
+  r = RPG::MoveRoute.new
+  r.list = list
+  r.repeat = repeat
+  r.skippable = skippable
+  r
+end
+
+assert "Interpreter: set move route queues a request without pausing" do
+  s = new_state
+  route = move_route([mv(1)]) # Move Down
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(209, [-1, route], 0),      # Set Move Route -> player
+    cmd(121, [5, 5, 0], 0)         # then switch 5 ON (proves it did not pause)
+  ], 1, 7)
+  it.update
+  assert_false it.waiting?          # a move route does not suspend the interpreter
+  assert_true s.switches[5]         # ran the command after it
+  reqs = it.take_move_route_requests
+  assert_equal 1, reqs.size
+  assert_equal :player, reqs[0][:target]
+  assert_equal route, reqs[0][:route]
+  # Draining empties the queue.
+  assert_true it.take_move_route_requests.empty?
+end
+
+assert "Interpreter: set move route resolves the target" do
+  s = new_state
+  # Target 0 ("this event") resolves to the running event id (7).
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([cmd(209, [0, move_route([mv(4)])], 0)], 1, 7)
+  it.update
+  reqs = it.take_move_route_requests
+  assert_equal 1, reqs.size
+  assert_equal 7, reqs[0][:target]
+
+  # A positive id passes straight through.
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(209, [3, move_route([mv(4)])], 0)], 1, 7)
+  it2.update
+  assert_equal 3, it2.take_move_route_requests[0][:target]
+
+  # "This event" from a common event with no event context is dropped.
+  it3 = RPGXP::Game::Interpreter.new(s)
+  it3.start([cmd(209, [0, move_route([mv(4)])], 0)], 1, nil)
+  it3.update
+  assert_true it3.take_move_route_requests.empty?
+
+  # A request with no route object is dropped.
+  it4 = RPGXP::Game::Interpreter.new(s)
+  it4.start([cmd(209, [-1, nil], 0)], 1, 7)
+  it4.update
+  assert_true it4.take_move_route_requests.empty?
+end
+
+assert "Interpreter: input number surfaces a request and stores the result" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(103, [4, 3], 0),           # input into variable 4, 3 digits
+    cmd(121, [1, 1, 0], 0)         # then switch 1 ON
+  ], 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal :number, it.wait_kind
+  assert_equal 4, it.input_variable
+  assert_equal 3, it.input_digits
+  it.resume_number(275)
+  assert_equal 275, s.variables[4]  # stored into the variable
+  assert_true s.switches[1]         # resumed past the input command
+  assert_false it.running?
+end
+
 # ---- RGSSAD encrypted archive reader --------------------------------------
 
 assert "RGSSAD v1 round-trips entries (names, binary data, key advances)" do
@@ -413,20 +524,46 @@ end
 
 assert "RGSSAD rejects a bad header and an unsupported version" do
   assert_raise(RuntimeError) { RPGXP::RGSSAD.new("NOTRGSS\x01") }
-  # A version-3 (.rgss3a) header is recognised but not yet supported.
-  v3 = "RGSSAD\x00\x03rest"
-  assert_raise(RuntimeError) { RPGXP::RGSSAD.new(v3) }
+  # An unknown version (only 1 and 3 are supported) is rejected.
+  v4 = "RGSSAD\x00\x04rest"
+  assert_raise(RuntimeError) { RPGXP::RGSSAD.new(v4) }
+end
+
+assert "RGSSAD v3 (.rgss3a) round-trips entries" do
+  files = [
+    ["Data\\System.rxdata", "sys\x00\x01\xfe\xff data"],
+    ["Data\\Map001.rxdata", (("A".."Z").to_a.join) * 100], # spans 4-byte key steps
+    ["Graphics\\Titles\\001-Title01.png", "\x89PNG\r\n\x1a\n"]
+  ]
+  archive = RPGXP::RGSSAD.pack_v3(files)
+  a = RPGXP::RGSSAD.new(archive)
+
+  assert_equal 3, a.version
+  assert_equal 3, a.names.size
+  files.each do |name, data|
+    assert_equal data.bytes, a.read(name).bytes
+  end
+  # '/'-style lookups normalise to the archive's '\' names.
+  assert_equal files[0][1].bytes, a.read("Data/System.rxdata").bytes
+  assert_true a.include?("Data/Map001.rxdata")
+  assert_false a.include?("Data/Missing.rxdata")
+  assert_true a.read("Data/Missing.rxdata").nil?
+end
+
+assert "RGSSAD v3 carries real Marshal data through the archive" do
+  sys = RPG::System.new
+  sys.title_name = "001-Title01"
+  sys.start_map_id = 7
+  blob = Marshal.dump(sys)
+
+  a = RPGXP::RGSSAD.new(RPGXP::RGSSAD.pack_v3([["Data\\System.rxdata", blob]]))
+  loaded = Marshal.load(a.read("Data\\System.rxdata"))
+  assert_true loaded.is_a?(RPG::System)
+  assert_equal "001-Title01", loaded.title_name
+  assert_equal 7, loaded.start_map_id
 end
 
 # ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
-
-# Build an RPG::MoveCommand (code / parameters).
-def mv(code, params = [])
-  c = RPG::MoveCommand.new
-  c.code = code
-  c.parameters = params
-  c
-end
 
 # World stand-in for the movement engine.
 class FakeWorld

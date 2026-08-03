@@ -65,6 +65,7 @@ class RPGXP
       WHEN            = 402
       WHEN_CANCEL     = 403
       CHOICES_END     = 404
+      INPUT_NUMBER    = 103
       WAIT            = 106
       COMMENT         = 108
       COMMENT_LINE    = 408
@@ -83,6 +84,7 @@ class RPGXP
       CONTROL_SELF_SW = 123
       CHANGE_GOLD     = 125
       TRANSFER_PLAYER = 201
+      MOVE_ROUTE      = 209
       PLAY_BGM        = 241
       PLAY_BGS        = 245
       PLAY_ME         = 249
@@ -90,6 +92,11 @@ class RPGXP
 
       MAX_STEPS_PER_FRAME = 10_000
       MAX_CALL_DEPTH = 100
+
+      # Set Move Route (209) target codes: RMXP stores -1 for the player and 0 for
+      # "this event"; a positive value is a map event id.
+      MOVE_TARGET_PLAYER = -1
+      MOVE_TARGET_THIS   = 0
 
       def initialize(state)
         @state = state
@@ -101,7 +108,7 @@ class RPGXP
       # resolver#common_event_list(id) -> the command list of a common event.
       attr_accessor :resolver
       attr_reader :wait_kind, :message_lines, :choice_labels, :choice_cancel,
-                  :wait_frames, :teleport
+                  :wait_frames, :teleport, :input_variable, :input_digits
 
       def running?; @running; end
       def waiting?; @waiting; end
@@ -114,6 +121,7 @@ class RPGXP
         @map_id = map_id
         @event_id = event_id
         @call_stack = []
+        @move_route_requests = []
         @running = true
         reset_waits
         self
@@ -123,8 +131,21 @@ class RPGXP
         @list = []
         @index = 0
         @call_stack = []
+        @move_route_requests = []
         @running = false
         reset_waits
+      end
+
+      # Drain the Set Move Route (209) requests queued since the last call,
+      # returning them (each a hash: target -> :player or an event id, route ->
+      # the RPG::MoveRoute) and clearing the queue. Unlike a message / wait /
+      # teleport, a Move Route does not suspend the interpreter — the route runs
+      # in the background — so the owning Scene::Map polls this after each #update
+      # and applies the routes to the target characters.
+      def take_move_route_requests
+        reqs = @move_route_requests || []
+        @move_route_requests = []
+        reqs
       end
 
       # Advance until the list finishes or a UI request suspends us. Runs at most
@@ -155,6 +176,14 @@ class RPGXP
         update
       end
 
+      # Resume an Input Number request: store the entered `value` into the target
+      # variable and continue running the list.
+      def resume_number(value)
+        variables[@input_variable] = value.to_i if @input_variable
+        reset_waits
+        update
+      end
+
       # Resume a choice: `index` is the chosen option (or the cancel index).
       def choose(index)
         list = @list
@@ -172,6 +201,7 @@ class RPGXP
         @index = 0
         @running = false
         @call_stack = []
+        @move_route_requests = []
         reset_waits
       end
 
@@ -183,6 +213,8 @@ class RPGXP
         @choice_cancel = nil
         @wait_frames = 0
         @teleport = nil
+        @input_variable = nil
+        @input_digits = nil
       end
 
       def switches;  @state.switches;  end
@@ -192,6 +224,7 @@ class RPGXP
         case cmd.code
         when SHOW_TEXT       then do_show_text(cmd)
         when SHOW_CHOICES    then do_show_choices(cmd)
+        when INPUT_NUMBER    then do_input_number(cmd)
         when WHEN, WHEN_CANCEL then skip_past_choices(cmd) # fell through a branch
         when CHOICES_END, BRANCH_END, LABEL, COMMENT, COMMENT_LINE,
              TEXT_LINE, 0
@@ -210,6 +243,7 @@ class RPGXP
         when CONTROL_SELF_SW then do_control_self_switch(cmd)
         when CHANGE_GOLD     then do_change_gold(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
+        when MOVE_ROUTE      then do_move_route(cmd)
         when PLAY_BGM        then do_play(cmd, :bgm)
         when PLAY_BGS        then do_play(cmd, :bgs)
         when PLAY_ME         then do_play(cmd, :me)
@@ -309,6 +343,18 @@ class RPGXP
       # just past the choice block's 404.
       def skip_past_choices(cmd)
         skip_to_after([CHOICES_END], cmd.indent)
+      end
+
+      # Input Number (103): [variable_id, digits]. Suspends with a :number request
+      # the scene answers by driving a digit-entry widget and calling
+      # `resume_number` with the value, which stores it into the variable.
+      def do_input_number(cmd)
+        @input_variable = param(cmd, 0)
+        digits = param(cmd, 1, 1).to_i
+        @input_digits = digits < 1 ? 1 : digits
+        @wait_kind = :number
+        @waiting = true
+        @index += 1
       end
 
       def do_wait(cmd)
@@ -493,6 +539,26 @@ class RPGXP
         @wait_kind = :teleport
         @waiting = true
         @index += 1
+      end
+
+      # Set Move Route (209): [target, RPG::MoveRoute]. Queues a forced route for
+      # the target (the player, this event, or a map event id) without pausing —
+      # the scene drains the queue and drives the route in the background. A route
+      # aimed at "this event" from a common event with no event context, or with
+      # no route object, is dropped.
+      def do_move_route(cmd)
+        target = param(cmd, 0)
+        route = param(cmd, 1)
+        @index += 1
+        return unless route
+        resolved =
+          case target
+          when MOVE_TARGET_PLAYER then :player
+          when MOVE_TARGET_THIS   then @event_id
+          else target
+          end
+        return if resolved.nil?
+        @move_route_requests << { target: resolved, route: route }
       end
 
       def do_play(cmd, kind)

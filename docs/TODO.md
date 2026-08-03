@@ -212,20 +212,29 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `Game::MoveRoute` drive an event's page move type (fixed / random / approach)
   or custom move route (the full XP move-command set), paced by move frequency
   and blocked by terrain / the player / other events, and the **event-touch**
-  trigger fires when an event walks into the player. Covered by `mruby-rpgxp/test`
-  and driven over the real test bed by `scripts/rpgxp_testbed_check.rb`. Still to
-  come: the interpreter's *Set Move Route* (209) command (apply a forced route
-  from an event command), Input Number, and the many screen-effect / picture /
-  battle commands (skipped for now).
+  trigger fires when an event walks into the player. The interpreter's *Set Move
+  Route* (209) command is now wired up: it queues the `RPG::MoveRoute` packed
+  into the command for its target — the player, "this event" or a map event id —
+  and `Scene::Map` drains the queue and drives the target along the route in the
+  background (a forced route overrides page movement until it finishes and does
+  not survive a map change; a forced player route snaps tile-to-tile and
+  suppresses input while active). *Input Number* (103) is implemented too: the
+  interpreter suspends with a `:number` request and `Scene::Map` drives a
+  digit-entry widget (`Game::NumberInput`) whose value is stored into the target
+  variable. Covered by `mruby-rpgxp/test` and driven over the real test bed by
+  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets and
+  the many screen-effect / picture / battle commands (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
-  (RPG Maker XP; VX's same-format `Game.rgss2a`) loads: `RPGXP::RGSSAD`
-  (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts the version-1 format and
-  `RPGXP::RGSSData` falls back to it when a `.rxdata` is not loose on disk.
-  Covered by `mruby-rpgxp/test` and by `scripts/rpgxp_testbed_check.rb` (packs
-  the real test bed and reloads through the archive). Remaining: VX Ace's
-  version-3 `Game.rgss3a`, and reading **graphics/audio** out of the archive
-  (only the Ruby `Data/` path is wired; the native `Bitmap`/`Audio` loaders still
-  read loose files).
+  (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
+  `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1
+  format (rolling 0xDEADCAFE key) and the version-3 format (a plaintext header
+  seed → base key, a fixed-key entry table with per-file data keys) and
+  `RPGXP::RGSSData` falls back to whichever archive is present when a `.rxdata` is
+  not loose on disk. Covered by `mruby-rpgxp/test` (v1 and v3 round-trips) and by
+  `scripts/rpgxp_testbed_check.rb` (packs the real test bed as both `.rgssad` and
+  `.rgss3a` and reloads the whole DB through each). Remaining: reading
+  **graphics/audio** out of the archive (only the Ruby `Data/` path is wired; the
+  native `Bitmap`/`Audio` loaders still read loose files).
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
