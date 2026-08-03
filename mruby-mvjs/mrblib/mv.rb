@@ -220,6 +220,7 @@ class MV
     pump_audio # M5: drain MV's queued audio ops into RGSS::Audio
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
     maybe_new_game # CI: auto-advance past the title to the first map
+    maybe_battle_test # CI: start a test battle once on the map, if requested
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -315,25 +316,30 @@ class MV
     $stderr.puts "[MV] screenshot error: #{e.message}"
   end
 
-  # When --mv_new_game is set (CI), select "New Game" once the title screen is
-  # up so the game advances to its first map without any input — letting a
-  # headless capture show in-game rendering, not just the title. One-shot; a
-  # no-op during normal play (flag unset).
+  # The running scene's class name, or "" if none yet.
+  def current_scene
+    MV::JS.eval(
+      "(typeof SceneManager !== 'undefined' && SceneManager._scene) ? " \
+      "SceneManager._scene.constructor.name : ''"
+    )
+  rescue StandardError
+    ""
+  end
+
+  # When --mv_new_game is set (CI) — or a battle test is requested, which needs
+  # to reach the map first — select "New Game" once the title screen is up so
+  # the game advances to its first map without any input, letting a headless
+  # capture show in-game rendering, not just the title. One-shot; a no-op during
+  # normal play (flags unset).
   def maybe_new_game
     return if @new_game_done
-
-    want = begin
+    new_game = begin
       MV_NEW_GAME
     rescue StandardError
       false
     end
-    return unless want
-
-    scene = MV::JS.eval(
-      "(typeof SceneManager !== 'undefined' && SceneManager._scene) ? " \
-      "SceneManager._scene.constructor.name : ''"
-    )
-    return unless scene == "Scene_Title"
+    return unless new_game || battle_test_troop > 0
+    return unless current_scene == "Scene_Title"
 
     @new_game_done = true
     MV::JS.eval(
@@ -343,6 +349,38 @@ class MV
     $stderr.puts "[MV] auto New Game"
   rescue StandardError => e
     $stderr.puts "[MV] new game error: #{e.message}"
+  end
+
+  # When --mv_battle_test=<troopId> is set (CI), start a test battle against that
+  # troop once the map is up, so a headless capture shows Scene_Battle (its
+  # windows, HP/MP gauges and battler layout). One-shot; a no-op otherwise.
+  def maybe_battle_test
+    return if @battle_test_done
+
+    troop = battle_test_troop
+    return unless troop > 0
+    return unless current_scene == "Scene_Map"
+
+    @battle_test_done = true
+    MV::JS.eval(
+      "if (typeof BattleManager !== 'undefined') { " \
+      "BattleManager.setup(#{troop}, true, false); " \
+      "SceneManager.push(Scene_Battle); }"
+    )
+    $stderr.puts "[MV] auto battle test: troop #{troop}"
+  rescue StandardError => e
+    $stderr.puts "[MV] battle test error: #{e.message}"
+  end
+
+  # The troop id requested by --mv_battle_test (a launcher constant set by
+  # main.cxx), or 0 when unset/disabled (e.g. under the test harness).
+  def battle_test_troop
+    v = begin
+      MV_BATTLE_TEST
+    rescue StandardError
+      0
+    end
+    v.is_a?(Integer) ? v : 0
   end
 
   # Log the running scene's class name whenever it changes, so the boot's
