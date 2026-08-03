@@ -234,6 +234,34 @@ assert 'MV canvas pattern fill honors the transform (translate anchors tiling)' 
   assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PT2.__h,1,0).join(',')")   # red
 end
 
+assert 'MV canvas path fill rasterises a polygon (beginPath/lineTo/fill)' do
+  # A filled triangle (0,0)-(0,4)-(4,4) covering the lower-left half of a 4x4.
+  MV::JS.eval("globalThis.PG=document.createElement('canvas'); PG.width=4; PG.height=4; " \
+              "var x=PG.getContext('2d'); x.fillStyle='#00ff00'; " \
+              "x.beginPath(); x.moveTo(0,0); x.lineTo(0,4); x.lineTo(4,4); x.closePath(); x.fill();")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(PG.__h,1,3).join(',')") # inside
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(PG.__h,3,0).join(',')")     # outside
+end
+
+assert 'MV canvas fills a circle (arc + fill, e.g. Bitmap.drawCircle / snow)' do
+  # Bitmap.drawCircle(4,4,4,'white') on a 9x9 bitmap — how Weather draws snow.
+  MV::JS.eval("globalThis.CI=document.createElement('canvas'); CI.width=9; CI.height=9; " \
+              "var x=CI.getContext('2d'); x.fillStyle='#ffffff'; " \
+              "x.beginPath(); x.arc(4,4,4,0,Math.PI*2); x.fill();")
+  assert_equal "255,255,255,255", MV::JS.eval("__mv_canvasGetPixel(CI.__h,4,4).join(',')") # centre
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(CI.__h,0,0).join(',')")         # corner, outside r
+end
+
+assert 'MV canvas path fill honors the transform' do
+  # translate shifts the whole polygon: the triangle at user (0,0)-(0,2)-(2,2)
+  # drawn with translate(1,1) fills around device (1,1)..(3,3).
+  MV::JS.eval("globalThis.PGT=document.createElement('canvas'); PGT.width=4; PGT.height=4; " \
+              "var x=PGT.getContext('2d'); x.translate(1,1); x.fillStyle='#0000ff'; " \
+              "x.beginPath(); x.moveTo(0,0); x.lineTo(0,2); x.lineTo(2,2); x.fill();")
+  assert_equal "0,0,255,255", MV::JS.eval("__mv_canvasGetPixel(PGT.__h,1,2).join(',')") # inside, shifted
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(PGT.__h,0,0).join(',')")     # origin, untouched
+end
+
 assert 'MV canvas translate offsets a drawImage blit' do
   MV::JS.eval("globalThis.TS=document.createElement('canvas'); TS.width=1; TS.height=1; " \
               "var s=TS.getContext('2d'); s.fillStyle='#ff0000'; s.fillRect(0,0,1,1);")
