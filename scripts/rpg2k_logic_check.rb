@@ -1109,9 +1109,9 @@ end
 FakeActorSystem = Struct.new(:party)
 # A database item row exposing just the equipment-bonus fields Game::Actor reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
-                      :max_hp_points, :max_sp_points)
-def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0)
-  FakeItem.new(atk, dfn, spi, agi, mhp, msp)
+                      :max_hp_points, :max_sp_points, :type)
+def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0)
+  FakeItem.new(atk, dfn, spi, agi, mhp, msp, type)
 end
 class FakeActorDB
   attr_reader :player, :system, :item
@@ -1334,6 +1334,48 @@ check 'Change Parameters raises max MP with a variable operand' do
   it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 2, 0, 1, 1, 4])])
   it.update
   eq 40, a.max_mp
+end
+
+check 'Change Level command raises the level and rescales stats' do
+  # Two-level curve: L1 maxhp10/atk3, L2 maxhp20/atk6.
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8]) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  eq [1, 10, 3], [a.level, a.max_hp, a.atk]
+  it = Game::Interpreter.new(st)
+  # scope 1 fixed, actor 1, op 0 (add), operand-type 0 (const), amount 1, show 0
+  it.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 0, 0, 1, 0])])
+  it.update
+  eq [2, 20, 6], [a.level, a.max_hp, a.atk]
+  # op 1 removes a level.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 1, 0, 1, 0])])
+  it2.update
+  eq 1, a.level
+end
+
+check 'Change Equipment command equips into the type slot and removes' do
+  items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
+            8 => fake_item(dfn: 9, type: 3) }    # armour -> slot 2
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  # Equip weapon 7 (const item): scope1, actor1, op0 equip, operand0 const, item7.
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  eq 18, a.atk         # base 3 + 15
+  eq 7, a.equipment[0]
+  # Equip armour 8 from variable 5 (operand source 1).
+  st.variables[5] = 8
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 1, 5])]); it.update }
+  eq 11, a.def         # base 2 + 9
+  eq 8, a.equipment[2]
+  # Remove the weapon slot (op 1, slot 0).
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, 0])]); it.update }
+  eq 3, a.atk
+  eq 0, a.equipment[0]
+  eq 8, a.equipment[2] # armour still on
 end
 
 # -- Control Variables operands ----------------------------------------------

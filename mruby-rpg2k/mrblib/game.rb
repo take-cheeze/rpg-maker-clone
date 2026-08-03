@@ -617,6 +617,35 @@ module Game
       @equipment.include?(item_id)
     end
 
+    # Equip a database item into the slot matching its type (weapon type 1 ->
+    # slot 0, shield 2 -> 1, armour 3 -> 2, helmet 4 -> 3, accessory 5 -> 4) and
+    # recompute the boosted stats. A non-equippable item, an unknown id, or a
+    # database without an item table is ignored. Drives the Change Equipment
+    # event command's equip operation.
+    def equip_item(item_id)
+      return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
+      it = @db.item[item_id]
+      return unless it
+      slot = it.type - 1
+      return unless slot >= 0 && slot < EQUIP_ORDER.size
+      @equipment[slot] = item_id
+      recompute_stats
+    end
+
+    # Clear an equipment slot: 0..4 empties that one slot, EQUIP_ORDER.size (5)
+    # strips every slot, any other value is a no-op. Drives the Change Equipment
+    # command's remove operation.
+    def unequip(slot)
+      if slot == EQUIP_ORDER.size
+        @equipment = EQUIP_ORDER.map { 0 }
+      elsif slot >= 0 && slot < EQUIP_ORDER.size
+        @equipment[slot] = 0
+      else
+        return
+      end
+      recompute_stats
+    end
+
     # The six base stats at `level`. Real database rows expose the full growth
     # curve (six shorts per level) via LCF::Array1D#int16_values; index it by
     # level, clamped to the curve's length. A row that only offers a single
