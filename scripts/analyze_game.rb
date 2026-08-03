@@ -45,6 +45,11 @@ load File.join(mrblib, 'schema.rb')
 # Only used for labelling the report; an unknown code is shown as its number so
 # the analysis never invents a name it is unsure of.
 CODE_NAMES = {
+  # Editor-emitted structural no-ops: code 0 terminates a list / blank line at
+  # top level, code 10 is a blank command line inside an indented block (both
+  # carry no string and no parameters). RPG_RT skips them and so does the
+  # interpreter (`else nil`), so they are correctly handled, not feature gaps.
+  0  => 'BlankLine/End(no-op)', 10 => 'BlankLine(no-op)',
   10110 => 'ShowMessage',            20110 => 'ShowMessage(cont.)',
   10120 => 'MessageOptions',         10130 => 'ChangeFaceGraphic',
   10140 => 'ShowChoice',             20140 => 'ShowChoiceOption', 20141 => 'ShowChoiceEnd',
@@ -111,6 +116,12 @@ SUPPORTED = [
   12310, 12330, 10810, 11330, 11410, 11510, 11550,
 ].to_set
 
+# Opcodes that do nothing at run time by design: developer comments and blank /
+# block-structure lines. The interpreter no-ops them, which is the correct
+# behaviour, so they count as "handled" and must not be reported as missing
+# features (they otherwise dominate the histogram and hide the real gaps).
+NOOP_BY_DESIGN = [12410, 22410, 0, 10].to_set
+
 TRIGGER_NAMES = { 0 => 'action', 1 => 'player-touch', 2 => 'event-touch',
                   3 => 'auto-start', 4 => 'parallel' }.freeze
 MOVETYPE_NAMES = { 0 => 'stationary', 1 => 'random', 2 => 'vertical',
@@ -119,8 +130,9 @@ MOVETYPE_NAMES = { 0 => 'stationary', 1 => 'random', 2 => 'vertical',
 
 class GameStats
   attr_reader :name, :cmd_hist, :move_hist, :trigger_hist, :movetype_hist,
-              :db_counts, :maps, :map_events, :pages, :errors,
-              :move_event_cmds, :common_by_start
+              :db_counts, :errors, :move_event_cmds, :common_by_start
+  # Bumped from analyze() via `st.maps += 1` etc., so these need writers.
+  attr_accessor :maps, :map_events, :pages
 
   def initialize(name)
     @name = name
@@ -203,11 +215,19 @@ def cmd_label(code)
   CODE_NAMES[code] || "unknown(#{code})"
 end
 
+def classify(code)
+  return :impl if SUPPORTED.include?(code)
+  return :noop if NOOP_BY_DESIGN.include?(code)
+  :gap
+end
+
 def print_report(st)
   total = st.cmd_hist.values.sum
-  supported = st.cmd_hist.select { |c, _| SUPPORTED.include?(c) }.values.sum
-  distinct = st.cmd_hist.keys
-  distinct_unsup = distinct.reject { |c| SUPPORTED.include?(c) }
+  impl = st.cmd_hist.select { |c, _| classify(c) == :impl }.values.sum
+  noop = st.cmd_hist.select { |c, _| classify(c) == :noop }.values.sum
+  handled = impl + noop
+  gaps = st.cmd_hist.select { |c, _| classify(c) == :gap }
+  pct = ->(n) { total.zero? ? 0 : 100.0 * n / total }
 
   puts "== #{st.name} =="
   puts "  maps=#{st.maps} map_events=#{st.map_events} pages=#{st.pages} " \
@@ -217,22 +237,21 @@ def print_report(st)
        "troops=#{st.db_counts[:enemy_group]} chipsets=#{st.db_counts[:chipset]} " \
        "animations=#{st.db_counts[:battle_anime]} switches=#{st.db_counts[:switch]} " \
        "variables=#{st.db_counts[:variable]}"
-  cov = total.zero? ? 0 : (100.0 * supported / total)
-  puts format("  event commands: %d total, %d (%.1f%%) executable by current interpreter",
-              total, supported, cov)
-  puts "  distinct opcodes: #{distinct.size} (#{distinct_unsup.size} not yet implemented)"
+  puts format("  event commands: %d total", total)
+  puts format("    correctly handled: %d (%.1f%%) = implemented %d (%.1f%%) + no-op-by-design %d (%.1f%%)",
+              handled, pct.call(handled), impl, pct.call(impl), noop, pct.call(noop))
+  puts format("    genuine feature gaps: %d (%.1f%%) across %d distinct opcode(s)",
+              gaps.values.sum, pct.call(gaps.values.sum), gaps.size)
 
-  puts "  -- top event commands (✓ = implemented) --"
+  puts "  -- top event commands (✓ implemented · no-op-by-design ✗ gap) --"
   st.cmd_hist.sort_by { |_, n| -n }.first(25).each do |code, n|
-    mark = SUPPORTED.include?(code) ? '✓' : ' '
-    puts format("    %s %-26s %6d  (%.1f%%)", mark, cmd_label(code), n,
-                total.zero? ? 0 : 100.0 * n / total)
+    mark = { impl: '✓', noop: '·', gap: '✗' }[classify(code)]
+    puts format("    %s %-26s %6d  (%.1f%%)", mark, cmd_label(code), n, pct.call(n))
   end
 
-  unless distinct_unsup.empty?
-    puts "  -- unimplemented opcodes seen (by frequency) --"
-    st.cmd_hist.select { |c, _| distinct_unsup.include?(c) }
-      .sort_by { |_, n| -n }.each do |code, n|
+  unless gaps.empty?
+    puts "  -- genuine feature gaps (unimplemented, would change behaviour) --"
+    gaps.sort_by { |_, n| -n }.each do |code, n|
       puts format("    %-26s %6d", cmd_label(code), n)
     end
   end
@@ -268,8 +287,10 @@ def to_h(st)
     move_event_cmds: st.move_event_cmds,
     cmd_hist: st.cmd_hist.map { |c, n| [cmd_label(c), n] }.to_h,
     cmd_codes: st.cmd_hist,
-    unimplemented: st.cmd_hist.reject { |c, _| SUPPORTED.include?(c) }
-                     .map { |c, n| [cmd_label(c), n] }.to_h,
+    feature_gaps: st.cmd_hist.select { |c, _| classify(c) == :gap }
+                    .map { |c, n| [cmd_label(c), n] }.to_h,
+    noop_by_design: st.cmd_hist.select { |c, _| classify(c) == :noop }
+                      .map { |c, n| [cmd_label(c), n] }.to_h,
     move_hist: st.move_hist.map { |i, n| [MOVE_NAMES[i] || i, n] }.to_h,
     triggers: st.trigger_hist.map { |t, n| [TRIGGER_NAMES[t] || t, n] }.to_h,
     move_types: st.movetype_hist.map { |t, n| [MOVETYPE_NAMES[t] || t, n] }.to_h,
