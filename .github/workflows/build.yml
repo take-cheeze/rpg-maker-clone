@@ -90,7 +90,7 @@ jobs:
         id: cache
         with:
           path: data
-          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html') }}
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html') }}
 
       - name: Download game
         if: steps.cache.outputs.cache-hit != 'true'

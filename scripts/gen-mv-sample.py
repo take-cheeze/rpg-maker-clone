@@ -10,17 +10,22 @@ Game, into `Scene_Map`. The MIT engine (rpg_core.js + PIXI) is fetched
 separately by scripts/download-mv-corescript.bash; only this authored data is
 committed.
 
-No graphics/audio assets are referenced (they'd be copyrighted RTP), so the map
-renders blank and the player is invisible — this bed exercises the engine and
-game *logic* (boot, scene flow, map/movement, the interpreter), not art. Run
-from the repo root; it writes data/mv-sample/data/*.json. Deterministic (no
-timestamps) so re-running is a no-op in git.
+No copyrighted RTP art is referenced, but we author a tiny two-tile A5 tileset
+(a grass floor and a stone wall, written as a hand-encoded PNG) so the map
+renders as a visible tiled room — enough to exercise the engine's canvas Tilemap
+path, not just blank space. The player is still invisible (no character art).
+Run from the repo root; it writes data/mv-sample/data/*.json and
+data/mv-sample/img/tilesets/Sample_A5.png. Deterministic (no timestamps) so
+re-running is a no-op in git.
 """
 
 import json
 import os
+import struct
+import zlib
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "data", "mv-sample", "data")
+ROOT = os.path.join(os.path.dirname(__file__), "..", "data", "mv-sample")
+OUT = os.path.join(ROOT, "data")
 
 
 def write(name, obj):
@@ -28,6 +33,31 @@ def write(name, obj):
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
         f.write("\n")
+
+
+def write_png(rel_path, w, h, pixels):
+    """Write an 8-bit RGBA PNG (hand-encoded, so no Pillow dependency).
+
+    `pixels` is a bytes/bytearray of length w*h*4. Used to author the tiny
+    tileset below without pulling in an image library the nix devShell lacks.
+    """
+    raw = bytearray()
+    stride = w * 4
+    for y in range(h):
+        raw.append(0)  # per-scanline filter type 0 (none)
+        raw.extend(pixels[y * stride:(y + 1) * stride])
+
+    def chunk(typ, data):
+        return (struct.pack(">I", len(data)) + typ + data +
+                struct.pack(">I", zlib.crc32(typ + data) & 0xffffffff))
+
+    path = os.path.join(ROOT, rel_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+        f.write(chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)))
+        f.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
+        f.write(chunk(b"IEND", b""))
 
 
 def sound():
@@ -198,11 +228,50 @@ write("Armors.json", [None])
 write("Animations.json", [None])
 write("CommonEvents.json", [None])
 
-# --- Tileset (blank; all tiles passable so the whole map is walkable) ------
+# --- Tileset (a minimal authored A5 set: grass floor + stone wall) ---------
+# We author two 48x48 A5 tiles so the map renders as visible tiles (exercising
+# the engine's canvas Tilemap path), instead of a blank screen. tileId 1536
+# (A5 index 0) is the floor, 1537 (A5 index 1) is the wall — see the A5 source
+# formula in Tilemap._drawNormalTile: tileId 1536/1537 map to the first two
+# 48x48 cells of the A5 image's top row.
+TILE = 48
+A5_COLS, A5_ROWS = 8, 16            # standard A5 sheet is 384x768
+A5_W, A5_H = TILE * A5_COLS, TILE * A5_ROWS
+FLOOR_ID, WALL_ID = 1536, 1537      # Tilemap.TILE_ID_A5 (+0, +1)
+
+
+def _a5_pixels():
+    px = bytearray(A5_W * A5_H * 4)  # transparent by default
+
+    def cell(col, row, fill, edge):
+        x0, y0 = col * TILE, row * TILE
+        for yy in range(TILE):
+            for xx in range(TILE):
+                on_edge = xx == 0 or yy == 0 or xx == TILE - 1 or yy == TILE - 1
+                c = edge if on_edge else fill
+                i = ((y0 + yy) * A5_W + (x0 + xx)) * 4
+                px[i], px[i + 1], px[i + 2], px[i + 3] = c[0], c[1], c[2], 255
+
+    # A5 index 0 (tileId 1536): grass floor, with a slightly darker cell border
+    # so the tile grid is visible in a screenshot.
+    cell(0, 0, (86, 132, 74), (66, 104, 58))
+    # A5 index 1 (tileId 1537): stone wall.
+    cell(1, 0, (120, 116, 110), (86, 84, 80))
+    return bytes(px)
+
+
+write_png("img/tilesets/Sample_A5.png", A5_W, A5_H, _a5_pixels())
+
+# Passability flags are indexed by tileId. Floor is fully passable (0); the wall
+# blocks all four directions (low nibble bits: down/left/right/up). Everything
+# else stays passable so the interior is freely walkable.
+tileset_flags = [0] * 8192
+tileset_flags[WALL_ID] = 0x0f
 write("Tilesets.json", [None, {
-    "id": 1, "name": "Blank", "note": "", "mode": 1,
-    "flags": [0] * 8192,
-    "tilesetNames": ["", "", "", "", "", "", "", "", ""],
+    "id": 1, "name": "Sample", "note": "", "mode": 1,
+    "flags": tileset_flags,
+    # Order: A1,A2,A3,A4,A5,B,C,D,E — only A5 (index 4) is authored.
+    "tilesetNames": ["", "", "", "", "Sample_A5", "", "", "", ""],
 }])
 
 # --- MapInfos + Map001 -----------------------------------------------------
@@ -212,8 +281,15 @@ write("MapInfos.json", [None, {
 }])
 
 W, H = 17, 13
-# 6 layers (4 tile + shadow + region), all zero -> empty, fully-walkable map.
+# 6 layers (4 tile + shadow + region). Fill the ground layer (z=0): a stone-wall
+# border around a grass-floor interior, so the map renders as a visible tiled
+# room. The other layers stay 0. Indexing matches Game_Map.tileId:
+# data[(z*H + y)*W + x].
 map_data = [0] * (W * H * 6)
+for _y in range(H):
+    for _x in range(W):
+        border = _x == 0 or _y == 0 or _x == W - 1 or _y == H - 1
+        map_data[(0 * H + _y) * W + _x] = WALL_ID if border else FLOOR_ID
 
 
 def command(code, params, indent=0):
