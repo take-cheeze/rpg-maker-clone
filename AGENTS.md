@@ -83,7 +83,10 @@ Create ADRs in /docs/adr for:
   current HP/MP from chunk 108), and `continue_game` loads an editor
   `Save<N>.lsd` when present. Actor base stats scale with level from the database
   growth curve (chunk 31, six shorts per level, via `LCF::Array1D#int16_values`),
-  so a restored level rescales the maxima — see ADR 0015.
+  so a restored level rescales the maxima — see ADR 0015. `Game::Actor` also
+  models five equipment slots whose item bonuses (the "points1" set plus max
+  HP/SP points) fold into the effective stats; New Game equips the initial gear
+  and Continue re-equips the saved gear (chunk 108 field 61) — see ADR 0016.
   `ruby scripts/rpg2k_save_load_check.rb` round-trips a real save through it. Use
   `save[101]`, not `save.system`, in CRuby-tested code — `system` resolves to
   `Kernel#system` there.

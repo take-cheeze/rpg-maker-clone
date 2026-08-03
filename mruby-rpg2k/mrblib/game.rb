@@ -314,8 +314,20 @@ module Game
     # The six base stats in database parameter-curve order (chunk 31 stores six
     # shorts -- maxHP, maxSP, atk, def, int, agi -- per level).
     STAT_NAMES = [:max_hp, :max_mp, :atk, :def, :int, :agi].freeze
+    # The item field carrying each stat's equipment bonus, in STAT_NAMES order.
+    # RPG2000 keeps every equipped weapon/armour bonus in the "points1" set plus
+    # the max HP/SP points, whatever the slot.
+    EQUIP_BONUS_FIELD = [:max_hp_points, :max_sp_points, :atk_points1,
+                         :def_points1, :spi_points1, :agi_points1].freeze
+    # Equipment slots, in save/database order: weapon, shield, armour, helmet,
+    # accessory.
+    EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
+
+    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot).
+    attr_reader :equipment
 
     def initialize(db, id)
+      @db = db
       @id = id
       a = db.player[id]
       raise "No such actor: #{id}" if a.nil?
@@ -325,8 +337,9 @@ module Game
       @charset_index = a.charset_index
       @db_row = a
       @exp = 0
-      # Base stats scale with level from the growth curve, so seed them at the
-      # actor's initial level, then start at full health.
+      @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
+      # Base stats scale with level from the growth curve and equipment adds on
+      # top, so seed them at the actor's initial level, then start at full health.
       set_level(a.initial_level || 1)
       @hp = @max_hp
       @mp = @max_mp
@@ -335,19 +348,26 @@ module Game
     attr_writer :exp
 
     # Set the actor's level and recompute the six base stats from the database
-    # growth curve at that level (see #base_stats). Current HP/MP are re-clamped
-    # to the new maxima so lowering the level never leaves a stat over its cap.
+    # growth curve at that level (see #base_stats), then the equipment-boosted
+    # effective stats. Current HP/MP are re-clamped so lowering the level never
+    # leaves a vital over its cap.
     def set_level(level)
       @level = level && level >= 1 ? level : 1
-      s = base_stats(@level)
-      @max_hp = s[0]
-      @max_mp = s[1]
-      @atk = s[2]
-      @def = s[3]
-      @int = s[4]
-      @agi = s[5]
-      @hp = @max_hp if @hp && @hp > @max_hp
-      @mp = @max_mp if @mp && @mp > @max_mp
+      @base = base_stats(@level)
+      recompute_stats
+    end
+
+    # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
+    # 0/nil for an empty slot) and recompute the boosted stats.
+    def equip(ids)
+      @equipment = normalize_equipment(ids)
+      recompute_stats
+    end
+
+    # Whether `item_id` occupies any equipment slot.
+    def equipped?(item_id)
+      return false if item_id.nil? || item_id == 0
+      @equipment.include?(item_id)
     end
 
     # The six base stats at `level`. Real database rows expose the full growth
@@ -366,6 +386,45 @@ module Game
       end
       st = (a.respond_to?(:status) ? a.status : nil) || {}
       STAT_NAMES.map { |k| st[k] || 0 }
+    end
+
+    # Recompute the six effective stats (base + equipment) into their readers and
+    # re-clamp current HP/MP to the refreshed maxima.
+    def recompute_stats
+      @max_hp = @base[0] + equip_bonus(0)
+      @max_mp = @base[1] + equip_bonus(1)
+      @atk = @base[2] + equip_bonus(2)
+      @def = @base[3] + equip_bonus(3)
+      @int = @base[4] + equip_bonus(4)
+      @agi = @base[5] + equip_bonus(5)
+      @hp = @max_hp if @hp && @hp > @max_hp
+      @mp = @max_mp if @mp && @mp > @max_mp
+    end
+
+    # Total equipment bonus for stat index `i` (see EQUIP_BONUS_FIELD): the sum
+    # over equipped items of that item's bonus field. A database that exposes no
+    # item table (the test fixtures) contributes nothing.
+    def equip_bonus(i)
+      return 0 unless @db.respond_to?(:item)
+      field = EQUIP_BONUS_FIELD[i]
+      total = 0
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        total += (it.send(field) || 0) if it
+      end
+      total
+    end
+
+    # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
+    # five-slot array of integer item ids.
+    def normalize_equipment(spec)
+      ids =
+        if spec.is_a?(Hash) then EQUIP_ORDER.map { |k| spec[k] }
+        elsif spec.is_a?(Array) then spec.dup
+        else []
+        end
+      EQUIP_ORDER.each_index.map { |i| ids[i] || 0 }
     end
 
     # Apply a HP change (positive heals, negative damages), clamped to
@@ -398,22 +457,15 @@ module Game
     PARAM_AGI    = 5
 
     # Apply a base-parameter change (the Change Parameters command). `type` is
-    # one of the PARAM_* constants; `delta` is signed. Stats clamp to RPG2000's
-    # limits (max HP/MP 1..9999, the four battle stats 1..999), and lowering a
-    # maximum re-clamps the current HP/MP so it never exceeds its new cap.
+    # one of the PARAM_* constants; `delta` is signed. The change lands on the
+    # base stat (the equipment bonus stays on top) and clamps to RPG2000's limits
+    # (max HP/MP 1..9999, the four battle stats 1..999); recomputing re-clamps the
+    # current HP/MP so a lowered maximum never leaves a vital over its cap.
     def change_param(type, delta)
-      case type
-      when PARAM_MAX_HP
-        @max_hp = Game.clamp(@max_hp + delta, 1, 9999)
-        @hp = @max_hp if @hp > @max_hp
-      when PARAM_MAX_MP
-        @max_mp = Game.clamp(@max_mp + delta, 1, 9999)
-        @mp = @max_mp if @mp > @max_mp
-      when PARAM_ATK then @atk = Game.clamp(@atk + delta, 1, 999)
-      when PARAM_DEF then @def = Game.clamp(@def + delta, 1, 999)
-      when PARAM_INT then @int = Game.clamp(@int + delta, 1, 999)
-      when PARAM_AGI then @agi = Game.clamp(@agi + delta, 1, 999)
-      end
+      return unless type >= 0 && type < STAT_NAMES.size
+      limit = (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
+      @base[type] = Game.clamp(@base[type] + delta, 1, limit)
+      recompute_stats
     end
   end
 
@@ -1031,6 +1083,7 @@ module Game
         if actor
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp
+          actor.equip(sa.equipment) if sa.equipment
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
