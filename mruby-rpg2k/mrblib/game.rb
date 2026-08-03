@@ -252,6 +252,7 @@ module Game
       @name = c ? c.name : ''
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
+      @terrain = c ? c.terrain_data : nil
     end
 
     # Chip index into the lower passability table for a lower-layer tile id.
@@ -272,6 +273,16 @@ module Game
       flags = @passable_lower[idx]
       return true if flags.nil?
       (flags & (DIR_BIT[dir] || 0)) != 0
+    end
+
+    # Terrain id of a lower-layer tile (for the Store Terrain ID command), looked
+    # up through the same chip index as passability. Returns 0 when the chipset
+    # carries no terrain table or the tile is out of range.
+    def terrain(tile_id)
+      return 0 if @terrain.nil?
+      idx = ChipSet.lower_index(tile_id)
+      return 0 if idx.nil? || idx < 0 || idx >= @terrain.size
+      @terrain[idx] || 0
     end
   end
 
@@ -905,6 +916,14 @@ module Game
   class State
     attr_reader :party, :switches, :variables, :message_config
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
+    # Whether the player may open the main menu / save, toggled by the Change
+    # Main Menu Access (11960) and Change Save Access (11930) event commands;
+    # both default on and are persisted in the save.
+    attr_accessor :menu_access, :save_access
+    # The BGM currently playing and the one stashed by Memorize BGM (11530),
+    # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
+    # restores the stash. Persisted in the save so the memory survives a reload.
+    attr_accessor :current_bgm, :memorized_bgm
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -918,6 +937,10 @@ module Game
       @timer_frames = 0
       @timer_running = false
       @message_config = MessageConfig.new
+      @menu_access = true
+      @save_access = true
+      @current_bgm = nil
+      @memorized_bgm = nil
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
@@ -938,7 +961,9 @@ module Game
       { map_id: @map_id, x: @x, y: @y, direction: @direction,
         switches: @switches.to_h, variables: @variables.to_h,
         party: @party.to_h, timer_frames: @timer_frames,
-        timer_running: @timer_running, message_config: @message_config.to_h }
+        timer_running: @timer_running, message_config: @message_config.to_h,
+        menu_access: @menu_access, save_access: @save_access,
+        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -983,6 +1008,12 @@ module Game
       state.timer_frames = h[:timer_frames] || 0
       state.timer_running = h[:timer_running] || false
       state.message_config.load_h(h[:message_config])
+      # Access flags default on; only an explicit stored value overrides them
+      # (so a save written before these existed keeps the menu/save enabled).
+      state.menu_access = h[:menu_access] unless h[:menu_access].nil?
+      state.save_access = h[:save_access] unless h[:save_access].nil?
+      state.current_bgm = h[:current_bgm]
+      state.memorized_bgm = h[:memorized_bgm]
       state
     end
   end

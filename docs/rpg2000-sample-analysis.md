@@ -130,7 +130,7 @@ Common-event commands (161 total):
 | **FlashScreen / TintScreen** | 8 | ✗ screen effects |
 | **MessageOptions** | 4 | ✗ message window setup |
 | **ChangeFaceGraphic** | 4 | ✗ message face |
-| **MemorizeBGM / PlayMemorizedBGM** | 2 | ✗ BGM stack |
+| MemorizeBGM / PlayMemorizedBGM | 2 | ✓ BGM stack |
 | **EnemyEncounter** | 1 | ✗ battle |
 | unknown(10660) | 2 | ✗ unidentified 106xx opcode |
 
@@ -183,9 +183,9 @@ runtime can execute virtually all of it.
    | **Screen effects** | FlashScreen (11040), TintScreen (11030), PanScreen (11060) | Sample2, Sample3 |
    | **Message polish** ✅ | MessageOptions (10120), ChangeFaceGraphic (10130) — now implemented | Sample2, Sample3 |
    | **Battle** | EnemyEncounter (10710) | Sample2 |
-   | **BGM stack** | MemorizeBGM (11530), PlayMemorizedBGM (11540) | Sample2 |
-   | **Movement sync** | ProceedWithMovement (11340) | Sample3 |
-   | **Menu/telep. access, misc** | ChangeMainMenuAccess (11960), MemorizeLocation (10820), PlayerVisibility (11310) | Sample3 |
+   | **BGM stack** ✅ | MemorizeBGM (11530), PlayMemorizedBGM (11540) — now implemented | Sample2 |
+   | **Movement sync** ✅ | ProceedWithMovement (11340) — now implemented | Sample3 |
+   | **Menu/telep. access, misc** ✅ | ChangeMainMenuAccess (11960) and MemorizeLocation (10820) now implemented; PlayerVisibility (11310) remains | Sample3 |
    | **Unidentified** | code 10660, 10690 (106xx range) | Sample2, Sample3 |
 
 ## Recommended priorities for the interpreter
@@ -205,12 +205,18 @@ Ordered by real-world frequency across the analysed games:
    — common cutscene polish, appear in both games.
 4. **`EnemyEncounter` (10710)** — the entry point to the (still-unbuilt) battle
    system; unblocks the battle-showcase samples.
-5. **`ProceedWithMovement` (11340)** — pairs with the existing Move Event support
-   so forced routes can be awaited.
-6. Lower priority: BGM memorize/replay, ✅ `MemorizeLocation`/`RecallToLocation`
+5. ✅ **`ProceedWithMovement` (11340)** — *implemented.* Pairs with the existing
+   Move Event support so a forced route can be awaited: the interpreter pauses
+   until every forced route in progress finishes. Covered by
+   `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+6. Lower priority: ✅ BGM memorize/replay (`MemorizeBGM`/`PlayMemorizedBGM`,
+   *implemented* — stash the current BGM and restore it, minus seek-to-position),
+   ✅ `MemorizeLocation`/`RecallToLocation`
    (*implemented* — store the player position into three variables and teleport
    back to it; covered by `scripts/rpg2k_logic_check.rb` and
-   `scripts/rpg2k_scene_check.rb`), menu/teleport access toggles,
+   `scripts/rpg2k_scene_check.rb`), ✅ `ChangeMainMenuAccess` (11960) and
+   `ChangeSaveAccess` (11930) (*implemented* — gate opening the menu and saving;
+   covered by the same two harnesses), the teleport/escape access toggles,
    `PlayerVisibility`.
 7. **Identify opcodes 10660 and 10690** — unnamed in the current opcode table;
    worth confirming against liblcf before implementing.

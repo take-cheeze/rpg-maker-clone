@@ -377,6 +377,7 @@ class RPG2k
         @world = MapWorld.new(self, @rng)
         build_events
         @interpreter.resolver = build_resolver
+        @interpreter.map_info = self
         build_parallels
         @message = nil
         @wait_timer = nil
@@ -625,6 +626,7 @@ class RPG2k
       def new_parallel(commands, gate_switch, event)
         it = Game::Interpreter.new(@state)
         it.resolver = @interpreter.resolver
+        it.map_info = self
         it.start(commands)
         { interp: it, commands: commands, gate_switch: gate_switch,
           wait_timer: nil, event: event }
@@ -842,6 +844,40 @@ class RPG2k
         @player_route = nil if @player_route.done?
       end
 
+      # Advance every forced move route in progress one frame — the player's and
+      # each event's — while the interpreter is paused on Proceed With Movement
+      # (the normal per-frame movement is skipped because an event is running).
+      # Returns true once no forced route remains, so the caller can resume the
+      # interpreter. A repeating forced route never reports done, matching RPG_RT.
+      def step_forced_movement
+        step_player_route
+        @events.each { |e| step_forced_event(e) if e[:forced_route] }
+        forced_movement_done?
+      end
+
+      # Pace and advance one event's forced route, mirroring step_event's forced
+      # branch (used only while waiting on Proceed With Movement).
+      def step_forced_event(e)
+        ch = e[:char]
+        e[:move_timer] -= 1
+        return if e[:move_timer] > 0
+        e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
+        ox = ch.x
+        oy = ch.y
+        e[:forced_route].step(ch, @world) unless e[:forced_route].done?
+        e[:forced_route] = nil if e[:forced_route].done?
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] forced movement failed: #{ex.message}"
+        e[:forced_route] = nil # drop a broken route so Proceed does not hang
+      end
+
+      # Whether no forced move route is still running (player or any event).
+      def forced_movement_done?
+        return false if @player_route
+        @events.none? { |e| e[:forced_route] }
+      end
+
       # A move frequency the request may override the target's pace with (1..8),
       # or nil to keep the target's own frequency.
       def valid_move_freq(f)
@@ -865,9 +901,28 @@ class RPG2k
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
 
-      # The cancel button opens the main menu over the map.
+      # Terrain id of the lower-layer tile at (x, y), for the Store Terrain ID
+      # command (0 when out of bounds or no chipset). Queried by the interpreter
+      # via its map_info hook.
+      def terrain_id(x, y)
+        return 0 if @chipset.nil? || !@map.in_bounds?(x, y)
+        @chipset.terrain(@map.lower(x, y))
+      end
+      public :terrain_id
+
+      # Id of the event standing on tile (x, y), for the Store Event ID command
+      # (0 when no event is there). Queried by the interpreter via map_info.
+      def event_id_at(x, y)
+        ev = @event_tiles[[x, y]]
+        ev ? ev[:id] : 0
+      end
+      public :event_id_at
+
+      # The cancel button opens the main menu over the map, unless a Change Main
+      # Menu Access command has forbidden it.
       def try_open_menu
         return if event_busy?
+        return unless @state.menu_access
         return unless Input.trigger?(Input::B)
         @parent.push Scene::Menu.new(@parent, @state)
       end
@@ -884,6 +939,7 @@ class RPG2k
           when :choice then open_message(@interpreter.choice_labels, true)
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
+          when :movement then @interpreter.resume if step_forced_movement
           end
         else
           @interpreter.update
@@ -925,6 +981,7 @@ class RPG2k
         @player_route = nil # a forced player route does not survive a teleport
         build_events
         @interpreter.resolver = build_resolver
+        @interpreter.map_info = self
         build_parallels
         @moving = false
         @move_count = 0
@@ -1320,7 +1377,11 @@ class RPG2k
       def select_command
         case COMMANDS[@index]
         when "Save"
-          show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+          if @state.save_access
+            show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+          else
+            show_message("You cannot save right now.")
+          end
         when "End Game"
           show_message("Returning to title...", :end_game)
         else

@@ -30,6 +30,8 @@ module Game
       FULL_HEAL        = 10490
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      STORE_TERRAIN_ID  = 10910
+      STORE_EVENT_ID    = 10920
       CONDITIONAL      = 12010
       ELSE_BRANCH      = 22010
       END_BRANCH       = 22011
@@ -45,9 +47,14 @@ module Game
       CALL_EVENT       = 12330
       TELEPORT         = 10810
       MOVE_EVENT       = 11330
+      PROCEED_WITH_MOVEMENT = 11340
       WAIT             = 11410
       PLAY_BGM         = 11510
+      MEMORIZE_BGM     = 11530
+      PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
+      CHANGE_SAVE_ACCESS = 11930
+      CHANGE_MENU_ACCESS = 11960
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -85,6 +92,10 @@ module Game
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
+    # Answers tile queries for Store Terrain / Event ID: responds to
+    # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
+    # makes those commands store 0 (the map is not queryable without it).
+    attr_accessor :map_info
 
     def start(commands)
       @list = commands || []
@@ -220,10 +231,17 @@ module Game
       when Cmd::TELEPORT         then do_teleport cmd
       when Cmd::MEMORIZE_LOCATION then do_memorize_location cmd
       when Cmd::RECALL_LOCATION   then do_recall_location cmd
+      when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
+      when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
+      when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
+      when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
+      when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
+      when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
@@ -648,6 +666,36 @@ module Game
       @waiting = true
     end
 
+    # Store Terrain ID: write the terrain id of the tile at (x, y) into the
+    # variable named by param3. Non-blocking; without a map_info hook (or on any
+    # error) it stores 0.
+    def do_store_terrain_id(cmd)
+      x, y = query_position(cmd)
+      variables[cmd.param(3)] = @map_info ? (@map_info.terrain_id(x, y) || 0) : 0
+    rescue StandardError
+      variables[cmd.param(3)] = 0
+    end
+
+    # Store Event ID: write the id of the event standing on the tile at (x, y)
+    # into the variable named by param3 (0 when no event is there). Non-blocking.
+    def do_store_event_id(cmd)
+      x, y = query_position(cmd)
+      variables[cmd.param(3)] = @map_info ? (@map_info.event_id_at(x, y) || 0) : 0
+    rescue StandardError
+      variables[cmd.param(3)] = 0
+    end
+
+    # The (x, y) tile a Store Terrain / Event ID command targets: param0 == 0
+    # takes x and y as the constants param1/param2, otherwise as the values of
+    # those two variables (the shared operand mode matches RPG_RT).
+    def query_position(cmd)
+      if cmd.param(0) == 0
+        [cmd.param(1), cmd.param(2)]
+      else
+        [variables[cmd.param(1)], variables[cmd.param(2)]]
+      end
+    end
+
     # Move Event (Set Move Route): queue a forced move route for a target
     # character. The command parameters are [target, frequency, repeat,
     # skippable, then the move-route commands]; the target id selects the player
@@ -705,6 +753,36 @@ module Game
       @waiting = true
     end
 
+    # Proceed With Movement: pause until every forced move route in progress (set
+    # by a Move Event) has finished. The owning scene advances those routes while
+    # we wait and resumes us once none remain. As in RPG_RT, a *repeating* forced
+    # route never finishes, so pairing it with this command waits indefinitely.
+    def do_proceed_with_movement(_cmd)
+      @wait_kind = :movement
+      @waiting = true
+    end
+
+    # Memorize BGM: stash a copy of the currently-playing BGM so a later Play
+    # Memorized BGM can restore it (e.g. duck to a fanfare, then return). Nothing
+    # playing memorises nothing. Non-blocking.
+    def do_memorize_bgm(_cmd)
+      cur = @state.current_bgm
+      @state.memorized_bgm = cur ? cur.dup : nil
+    end
+
+    # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the
+    # current BGM again. A no-op when nothing was memorised. Playback resumes
+    # from the start — the SDL_mixer backend cannot seek to the stored position.
+    def do_play_memorized_bgm(_cmd)
+      bgm = @state.memorized_bgm
+      return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
+      RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+      @state.current_bgm = bgm.dup
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
+      nil
+    end
+
     def play_audio(kind, cmd)
       name = cmd.string
       return if name.nil? || name.empty?
@@ -713,6 +791,9 @@ module Game
         # default to 100 when the command carries a shorter list.
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
+        # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
+        # as the "current system BGM" regardless of whether playback succeeds).
+        @state.current_bgm = { name: name, volume: volume, tempo: pitch }
         RGSS::Audio.bgm_play(name, volume, pitch)
       else
         # PlaySE parameters: [volume, tempo, balance].

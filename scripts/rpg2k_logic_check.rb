@@ -715,6 +715,20 @@ check 'a decoded Move Event route drives a Character through a MoveRoute' do
   ok route.done?, 'non-repeating decoded route finishes'
 end
 
+check 'Proceed With Movement pauses the interpreter on a movement wait' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PROCEED_WITH_MOVEMENT, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Proceed With Movement pauses'
+  eq :movement, it.wait_kind
+  ok !st.switches[1], 'the following command has not run while waiting'
+  it.resume # the scene resumes once forced movement completes
+  it.update
+  eq true, st.switches[1], 'resuming runs the rest of the list'
+end
+
 check 'conditional branch on the timer' do
   st = new_state
   st.timer_frames = 30 * 60 # 30 seconds remaining
@@ -760,6 +774,108 @@ check 'Recall to Location issues a teleport from the stored variables' do
   eq [3, 6, 2, 0], it.teleport # keeps the current facing (direction 0)
 end
 
+# -- Store Terrain ID / Store Event ID ---------------------------------------
+
+# A map_info hook: terrain id is x*10+y, and an event id 7 sits at (2, 3).
+class FakeMapInfo
+  def terrain_id(x, y); x * 10 + y; end
+  def event_id_at(x, y); (x == 2 && y == 3) ? 7 : 0; end
+end
+
+check 'Store Terrain ID reads a constant tile and a variable-addressed tile' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  st.variables[8] = 4
+  st.variables[9] = 1
+  it.start([FakeCmd.new(IC::STORE_TERRAIN_ID, [0, 5, 6, 1]),   # const (5,6) -> var1
+            FakeCmd.new(IC::STORE_TERRAIN_ID, [1, 8, 9, 2])])  # var (4,1) -> var2
+  it.update
+  eq 56, st.variables[1], 'terrain at (5,6)'
+  eq 41, st.variables[2], 'terrain at (4,1) via variables'
+  ok !it.waiting?, 'Store Terrain ID does not pause'
+end
+
+check 'Store Event ID stores the event at a tile, 0 when none' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  it.start([FakeCmd.new(IC::STORE_EVENT_ID, [0, 2, 3, 1]),   # event 7 sits here
+            FakeCmd.new(IC::STORE_EVENT_ID, [0, 0, 0, 2])])  # nothing here
+  it.update
+  eq 7, st.variables[1]
+  eq 0, st.variables[2]
+end
+
+check 'Store Terrain / Event ID store 0 when no map_info hook is set' do
+  st = new_state
+  it = Game::Interpreter.new(st) # map_info defaults to nil
+  it.start([FakeCmd.new(IC::STORE_TERRAIN_ID, [0, 5, 6, 1]),
+            FakeCmd.new(IC::STORE_EVENT_ID, [0, 2, 3, 2])])
+  it.update
+  eq 0, st.variables[1]
+  eq 0, st.variables[2]
+end
+
+# -- Change Main Menu / Save Access ------------------------------------------
+
+check 'Change Main Menu Access allows and forbids opening the menu' do
+  st = new_state
+  ok st.menu_access, 'menu access defaults on'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_MENU_ACCESS, [0])]) # forbid
+  it.update
+  eq false, st.menu_access
+  ok !it.waiting?, 'the command does not pause the interpreter'
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_MENU_ACCESS, [1])]) # allow again
+  it2.update
+  eq true, st.menu_access
+end
+
+check 'Change Save Access allows and forbids saving' do
+  st = new_state
+  ok st.save_access, 'save access defaults on'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_SAVE_ACCESS, [0])]) # forbid
+  it.update
+  eq false, st.save_access
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_SAVE_ACCESS, [1])]) # allow again
+  it2.update
+  eq true, st.save_access
+end
+
+# -- Memorize / Play Memorized BGM (the BGM stack) ---------------------------
+
+check 'Memorize/Play Memorized BGM stashes and restores the current BGM' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Play "town", memorize it, duck to "fanfare", then restore the memorized BGM.
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'fanfare'),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  eq 'town', st.current_bgm[:name], 'the memorized BGM is current again'
+  eq 80, st.current_bgm[:volume], 'its volume was preserved'
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town fanfare town], names, 'the backend played town, fanfare, then town'
+end
+
+check 'Play Memorized BGM with nothing memorized does nothing' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_MEMORIZED_BGM, [])])
+  it.update
+  eq 0, RGSS::Audio.log.select { |e| e[0] == :bgm }.size, 'no BGM was played'
+  eq nil, st.memorized_bgm
+end
+
 # -- actor HP / MP commands ---------------------------------------------------
 
 # A database row for an actor, and a fake DB exposing just what Game::Party /
@@ -796,11 +912,26 @@ check 'State save round-trips the message configuration' do
   st.message_config.position = Game::MessageConfig::POS_TOP
   st.message_config.face_name = 'F'
   st.message_config.face_index = 2
+  st.menu_access = false
+  st.save_access = false
+  st.current_bgm = { name: 'town', volume: 80, tempo: 100 }
+  st.memorized_bgm = { name: 'field', volume: 70, tempo: 90 }
   loaded = Game::State.load(db, st.to_h)
   eq true, loaded.message_config.transparent
   eq Game::MessageConfig::POS_TOP, loaded.message_config.position
   eq 'F', loaded.message_config.face_name
   eq 2, loaded.message_config.face_index
+  eq false, loaded.menu_access, 'menu access round-trips'
+  eq false, loaded.save_access, 'save access round-trips'
+  eq 'town', loaded.current_bgm[:name], 'current BGM round-trips'
+  eq 'field', loaded.memorized_bgm[:name], 'memorized BGM round-trips'
+  # A save written before these flags existed keeps them enabled (default on).
+  legacy = st.to_h
+  legacy.delete(:menu_access)
+  legacy.delete(:save_access)
+  legacy_loaded = Game::State.load(db, legacy)
+  eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
+  eq true, legacy_loaded.save_access, 'absent save access defaults on'
 end
 
 check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do

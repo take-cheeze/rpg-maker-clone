@@ -111,7 +111,12 @@ R = Game::MoveRoute
 # A chipset with no passability table -> every tile is walkable, so movement is
 # bounded only by the map edges, the player and other events.
 def fake_chipset
-  OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil)
+  # All tiles passable (no lower table); terrain tag 42 on chip index 0 (the id
+  # every tile of the synthetic all-zero map maps to).
+  td = Array.new(162, 0)
+  td[0] = 42
+  OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil,
+                 terrain_data: td)
 end
 
 def fake_db(common = nil)
@@ -170,14 +175,17 @@ end
 # what perform_teleport (and Recall to Location) calls to swap maps; it hands
 # back a fresh empty map for the requested id.
 class FakeParent
-  attr_reader :db, :map_tree
+  attr_reader :db, :map_tree, :pushed
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
     @map_maker = map_maker
+    @pushed = []
   end
 
   def load_map(id); @map_maker.call(id); end
+  # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
+  def push(scene); @pushed << scene; end
 end
 
 def fake_parent(db)
@@ -535,6 +543,64 @@ check 'Recall to Location teleports the player to the stored position' do
   st = scene.instance_variable_get(:@state)
   eq [4, 3], [st.x, st.y], 'player recalled to the stored tile'
   eq 1, st.map_id, 'on the recalled map'
+end
+
+check 'the menu opens on cancel only when menu access is allowed' do
+  scene = new_scene({}, player: [2, 2])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+
+  st.menu_access = false
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq 0, parent.pushed.size, 'menu is suppressed when access is forbidden'
+
+  st.menu_access = true
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq 1, parent.pushed.size, 'menu opens once access is allowed'
+end
+
+check 'Store Terrain / Event ID query the map through the scene' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::STORE_TERRAIN_ID, [0, 1, 1, 1]), # terrain at (1,1) -> var1
+    ECmd.new(ic::STORE_EVENT_ID, [0, 3, 1, 2]),   # event 2 sits at (3,1) -> var2
+    ECmd.new(ic::STORE_EVENT_ID, [0, 5, 0, 3]),   # empty tile -> var3
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(3, 1, page) },
+                    player: [5, 5])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 42, st.variables[1], 'terrain tag read from the chipset'
+  eq 2, st.variables[2], 'id of the event at (3,1)'
+  eq 0, st.variables[3], 'no event at the empty tile'
+end
+
+check 'Proceed With Movement holds the interpreter until a forced route finishes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Force event 2 to walk right 3 tiles (freq 4, repeat off), wait for it, then
+  # flip switch 1 — which must not happen until the route completes.
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
+                    player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: still moving, switch not yet flipped
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+  ok !st.switches[1], 'the command after Proceed With Movement waits'
+
+  200.times { scene.update } # enough frames for the freq-4 route to finish
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
 # -- summary ------------------------------------------------------------------
