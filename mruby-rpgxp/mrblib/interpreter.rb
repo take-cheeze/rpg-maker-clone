@@ -76,6 +76,7 @@ class RPGXP
       BREAK_LOOP      = 113
       REPEAT_ABOVE    = 413
       EXIT_EVENT      = 115
+      ERASE_EVENT     = 116
       CALL_COMMON     = 117
       LABEL           = 118
       JUMP_LABEL      = 119
@@ -83,6 +84,10 @@ class RPGXP
       CONTROL_VARS    = 122
       CONTROL_SELF_SW = 123
       CHANGE_GOLD     = 125
+      CHANGE_ITEMS    = 126
+      CHANGE_WEAPONS  = 127
+      CHANGE_ARMOR    = 128
+      CHANGE_PARTY    = 129
       TRANSFER_PLAYER = 201
       MOVE_ROUTE      = 209
       PLAY_BGM        = 241
@@ -122,6 +127,7 @@ class RPGXP
         @event_id = event_id
         @call_stack = []
         @move_route_requests = []
+        @erase_requested = false
         @running = true
         reset_waits
         self
@@ -134,6 +140,16 @@ class RPGXP
         @move_route_requests = []
         @running = false
         reset_waits
+      end
+
+      # True (once) if an Erase Event command ran since the last call, clearing
+      # the flag. The scene polls this after #update and removes the running
+      # event from the map (Erase Event does not pause the interpreter — the rest
+      # of the list still runs).
+      def take_erase_request
+        v = @erase_requested
+        @erase_requested = false
+        v
       end
 
       # Drain the Set Move Route (209) requests queued since the last call,
@@ -202,6 +218,7 @@ class RPGXP
         @running = false
         @call_stack = []
         @move_route_requests = []
+        @erase_requested = false
         reset_waits
       end
 
@@ -236,12 +253,17 @@ class RPGXP
         when REPEAT_ABOVE    then do_repeat(cmd)
         when BREAK_LOOP      then do_break(cmd)
         when EXIT_EVENT      then stop
+        when ERASE_EVENT     then do_erase_event(cmd)
         when CALL_COMMON     then do_call_common(cmd)
         when JUMP_LABEL      then do_jump_label(cmd)
         when CONTROL_SWITCHES then do_control_switches(cmd)
         when CONTROL_VARS    then do_control_vars(cmd)
         when CONTROL_SELF_SW then do_control_self_switch(cmd)
         when CHANGE_GOLD     then do_change_gold(cmd)
+        when CHANGE_ITEMS    then do_change_items(cmd)
+        when CHANGE_WEAPONS  then do_change_weapons(cmd)
+        when CHANGE_ARMOR    then do_change_armor(cmd)
+        when CHANGE_PARTY    then do_change_party(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
         when PLAY_BGM        then do_play(cmd, :bgm)
@@ -387,8 +409,20 @@ class RPGXP
           compare(lhs, rhs, param(cmd, 4, 0))
         when 2 # self switch: [2, ch, value(0 on / 1 off)]
           self_switch_on?(param(cmd, 1)) == (param(cmd, 2) == 0)
+        when 4 # actor: [4, actor_id, sub_type, ...]; sub 0 = "is in the party"
+          if param(cmd, 2) == 0
+            @state.party.include?(param(cmd, 1))
+          else
+            true # name / skill / equipment / state sub-conditions not modelled
+          end
         when 7 # gold: [7, amount, cmp(0 >= / 1 <=)]
           param(cmd, 2) == 0 ? @state.gold >= param(cmd, 1) : @state.gold <= param(cmd, 1)
+        when 8 # item: [8, item_id] — party holds at least one
+          @state.item_count(param(cmd, 1)) > 0
+        when 9 # weapon: [9, weapon_id, include_equipped?] — party holds it
+          @state.weapon_count(param(cmd, 1)) > 0
+        when 10 # armor: [10, armor_id, include_equipped?] — party holds it
+          @state.armor_count(param(cmd, 1)) > 0
         else
           true # unsupported condition types default to the true branch
         end
@@ -466,6 +500,14 @@ class RPGXP
         true
       end
 
+      # Erase Event (116): flag the running event for removal and keep going —
+      # RMXP erases the event (hides it, drops its triggers) but the current
+      # command list runs to the end.
+      def do_erase_event(cmd)
+        @erase_requested = true if @event_id
+        @index += 1
+      end
+
       # -- state changes ------------------------------------------------------
 
       def do_control_switches(cmd)
@@ -495,7 +537,20 @@ class RPGXP
           lo = param(cmd, 4, 0)
           hi = param(cmd, 5, lo)
           lo + @rng.random(hi - lo + 1)
+        when 3 then @state.item_count(param(cmd, 4)) # item count held
+        when 7 then game_quantity(param(cmd, 4))     # "other" game data
         else 0                                          # unsupported operand
+        end
+      end
+
+      # Control Variables "other" operand (type 7): a handful of game quantities.
+      # Only the display-independent ones are modelled; the rest read as 0.
+      def game_quantity(kind)
+        case kind
+        when 0 then @state.map_id      # map id
+        when 1 then @state.party.size  # party member count
+        when 2 then @state.gold        # gold
+        else 0                         # steps / play time / timer / saves / battles
         end
       end
 
@@ -522,6 +577,35 @@ class RPGXP
         amount = param(cmd, 1) == 0 ? param(cmd, 2, 0) : variables[param(cmd, 2)]
         @state.gold += (param(cmd, 0) == 0 ? amount : -amount)
         @state.gold = 0 if @state.gold < 0
+        @index += 1
+      end
+
+      # Change Items / Weapons / Armor (126/127/128):
+      # [id, operation(0 increase / 1 decrease), operand(0 const / 1 variable),
+      #  amount]. A variable operand reads the count from that variable.
+      def do_change_items(cmd);   change_possession(cmd) { |id, n| @state.gain_item(id, n) };   end
+      def do_change_weapons(cmd); change_possession(cmd) { |id, n| @state.gain_weapon(id, n) }; end
+      def do_change_armor(cmd);   change_possession(cmd) { |id, n| @state.gain_armor(id, n) };  end
+
+      def change_possession(cmd)
+        id = param(cmd, 0)
+        amount = param(cmd, 2) == 0 ? param(cmd, 3, 0) : variables[param(cmd, 3)]
+        amount = -amount if param(cmd, 1) != 0 # decrease
+        yield(id, amount)
+        @index += 1
+      end
+
+      # Change Party Member (129): [actor_id, operation(0 add / 1 remove),
+      # initialize?]. Adds an actor to the party (no duplicates, appended in the
+      # order added) or removes it. The `initialize` flag (reset stats on add) is
+      # ignored until actor battle stats are modelled.
+      def do_change_party(cmd)
+        actor_id = param(cmd, 0)
+        if param(cmd, 1) == 0
+          @state.party << actor_id unless @state.party.include?(actor_id)
+        else
+          @state.party.delete(actor_id)
+        end
         @index += 1
       end
 

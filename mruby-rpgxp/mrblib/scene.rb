@@ -375,6 +375,9 @@ class RPGXP
         @player_route = nil
         @player_char = nil
         @player_route_timer = 0
+        # Event ids erased by an Erase Event (116) command: skipped when the event
+        # list is rebuilt so they stay gone until the map is (re)loaded.
+        @erased = {}
         build_events
         build_parallels
         setup_sprites
@@ -435,6 +438,7 @@ class RPGXP
         @events = {}
         @event_tiles = {}
         (@map.events || {}).each do |id, ev|
+          next if @erased[id] # erased for the rest of this map visit
           entry = build_event(id, ev)
           @events[id] = entry
           @event_tiles[[entry[:char].x, entry[:char].y]] = entry if entry[:page]
@@ -685,8 +689,33 @@ class RPGXP
         else
           @interpreter.update
           apply_move_requests(@interpreter)
+          apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
+      end
+
+      # Remove the running event from the map when its interpreter raised an Erase
+      # Event this step. Keyed by id so the removal survives the build_events
+      # rebuild that finish_event triggers.
+      def apply_erase_request(interp, event_id)
+        erase_event(event_id) if interp.take_erase_request && event_id
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Erase Event failed: #{e.message}"
+      end
+
+      # Drop an event from the runtime list, the occupied-tile cache (so it no
+      # longer draws / moves / blocks), any forced route and any parallel process
+      # it was driving, and mark it erased so a rebuild keeps it gone.
+      def erase_event(id)
+        @erased[id] = true
+        e = @events[id]
+        if e && e[:char]
+          tile = [e[:char].x, e[:char].y]
+          @event_tiles.delete(tile) if @event_tiles[tile].equal?(e)
+        end
+        @events.delete(id)
+        @forced_routes.delete(id)
+        @parallels.reject! { |p| p[:id] == id } if @parallels
       end
 
       # An event finished: re-select pages (a self switch / switch it set may
@@ -731,10 +760,12 @@ class RPGXP
         elsif it.running?
           it.update
           apply_move_requests(it)
+          apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
           it.update
           apply_move_requests(it)
+          apply_erase_request(it, p[:id])
         end
       rescue StandardError
         nil
@@ -757,6 +788,7 @@ class RPGXP
         @last_frame = nil
         @characters = {} # new map: events start at their spawn tiles
         @forced_routes = {} # forced routes do not survive a map change
+        @erased = {} # erased events reappear on a fresh map
         @player_route = nil
         @player_char = nil
         build_events

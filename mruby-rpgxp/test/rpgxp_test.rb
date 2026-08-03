@@ -161,6 +161,9 @@ assert "Game::State save/load round-trip" do
   state = RPGXP::Game::State.new(db, [1, 2], 5, 9, 7, 4)
   state.switches[3] = true
   state.variables[10] = 42
+  state.gain_item(1, 3)
+  state.gain_weapon(2, 1)
+  state.gain_armor(4, 5)
 
   h = state.to_h
   loaded = RPGXP::Game::State.load(db, Marshal.load(Marshal.dump(h)))
@@ -171,9 +174,13 @@ assert "Game::State save/load round-trip" do
   assert_equal [1, 2], loaded.party
   assert_true loaded.switches[3]
   assert_equal 42, loaded.variables[10]
+  assert_equal 3, loaded.item_count(1)
+  assert_equal 1, loaded.weapon_count(2)
+  assert_equal 5, loaded.armor_count(4)
   # Default-valued stores still behave after load.
   assert_false loaded.switches[999]
   assert_equal 0, loaded.variables[999]
+  assert_equal 0, loaded.item_count(999)
 end
 
 # ---- Event system: page selection + interpreter ---------------------------
@@ -276,6 +283,111 @@ assert "Interpreter: control switches / variables / gold" do
   assert_true s.switches[7]
   assert_equal 50, s.variables[1]
   assert_equal 100, s.gold
+end
+
+assert "Interpreter: change items / weapons / armor (const + variable)" do
+  s = new_state
+  s.variables[4] = 7
+  run_to_end(s, [
+    cmd(126, [3, 0, 0, 5], 0),   # item 3 += 5
+    cmd(126, [3, 1, 0, 2], 0),   # item 3 -= 2  -> 3
+    cmd(126, [9, 0, 1, 4], 0),   # item 9 += var4 (7)
+    cmd(127, [1, 0, 0, 1], 0),   # weapon 1 += 1
+    cmd(128, [2, 0, 0, 4], 0)    # armor 2 += 4
+  ])
+  assert_equal 3, s.item_count(3)
+  assert_equal 7, s.item_count(9)
+  assert_equal 1, s.weapon_count(1)
+  assert_equal 4, s.armor_count(2)
+  # Possession clamps to 0..99.
+  s.gain_item(3, -100)
+  assert_equal 0, s.item_count(3)
+  s.gain_item(5, 250)
+  assert_equal 99, s.item_count(5)
+end
+
+assert "Interpreter: item / weapon / armor conditional branches" do
+  list = [
+    cmd(111, [8, 3], 0),        # if has item 3
+    cmd(121, [1, 1, 0], 1),     #   switch 1 ON
+    cmd(412, [], 0),
+    cmd(111, [9, 1], 0),        # if has weapon 1
+    cmd(121, [2, 2, 0], 1),     #   switch 2 ON
+    cmd(412, [], 0),
+    cmd(111, [10, 2], 0),       # if has armor 2
+    cmd(121, [3, 3, 0], 1),     #   switch 3 ON
+    cmd(412, [], 0)
+  ]
+  s = new_state
+  s.gain_item(3, 1)
+  s.gain_weapon(1, 1)
+  run_to_end(s, list)
+  assert_true s.switches[1]     # holds item 3
+  assert_true s.switches[2]     # holds weapon 1
+  assert_false s.switches[3]    # lacks armor 2
+end
+
+assert "Interpreter: control variable from item count" do
+  s = new_state
+  s.gain_item(5, 12)
+  run_to_end(s, [cmd(122, [1, 1, 0, 3, 5], 0)]) # var1 = count of item 5
+  assert_equal 12, s.variables[1]
+end
+
+assert "Interpreter: change party member and actor-in-party condition" do
+  s = new_state # party starts as [1]
+  run_to_end(s, [
+    cmd(129, [2, 0, 0], 0),   # add actor 2
+    cmd(129, [3, 0, 0], 0),   # add actor 3
+    cmd(129, [1, 1, 0], 0)    # remove actor 1
+  ])
+  assert_equal [2, 3], s.party
+  run_to_end(s, [cmd(129, [2, 0, 0], 0)]) # adding a duplicate is a no-op
+  assert_equal [2, 3], s.party
+
+  s2 = new_state # party [1]
+  run_to_end(s2, [
+    cmd(111, [4, 1, 0], 0),   # if actor 1 in party
+    cmd(121, [1, 1, 0], 1),   #   switch 1 ON
+    cmd(412, [], 0),
+    cmd(111, [4, 9, 0], 0),   # if actor 9 in party
+    cmd(121, [2, 2, 0], 1),   #   switch 2 ON
+    cmd(412, [], 0)
+  ])
+  assert_true s2.switches[1]   # actor 1 is in party
+  assert_false s2.switches[2]  # actor 9 is not
+end
+
+assert "Interpreter: control variables from game quantities" do
+  s = new_state # map_id 1, party [1]
+  s.gold = 250
+  run_to_end(s, [
+    cmd(122, [1, 1, 0, 7, 0], 0),   # var1 = map id (1)
+    cmd(122, [2, 2, 0, 7, 1], 0),   # var2 = party size (1)
+    cmd(122, [3, 3, 0, 7, 2], 0)    # var3 = gold (250)
+  ])
+  assert_equal 1, s.variables[1]
+  assert_equal 1, s.variables[2]
+  assert_equal 250, s.variables[3]
+end
+
+assert "Interpreter: erase event surfaces a one-shot request without pausing" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(116, [], 0),          # erase this event
+    cmd(121, [4, 4, 0], 0)    # then switch 4 ON (proves it kept running)
+  ], 1, 7)
+  it.update
+  assert_true s.switches[4]           # ran the command after the erase
+  assert_true it.take_erase_request   # the erase was requested
+  assert_false it.take_erase_request  # ... and the flag cleared on read
+
+  # A common event with no event context requests no erase.
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(116, [], 0)], 1, nil)
+  it2.update
+  assert_false it2.take_erase_request
 end
 
 assert "Interpreter: conditional branch true and else" do
