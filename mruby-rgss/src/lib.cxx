@@ -16,6 +16,8 @@
 #include "shinonome.hxx"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -25,10 +27,19 @@
 #include <string>
 #include <vector>
 
+#include <dirent.h>
+
 #include <iostream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+// This is the single translation unit that compiles the stb_truetype
+// implementation for the whole build. mruby-mvjs depends on this gem and only
+// includes the header, so its glyph rasteriser (mvcanvas.cxx) resolves against
+// the symbols emitted here — keep exactly one STB_TRUETYPE_IMPLEMENTATION.
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <stb_truetype.h>
 
 // Defined in terminal.cxx (same gem).  A no-op unless the game was started with
 // a terminal backend (--sixel / --iterm); forwards terminal keyboard input to
@@ -1265,6 +1276,332 @@ auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
   return i;
 };
 
+// --- TrueType text rendering -------------------------------------------------
+//
+// RPG Maker XP/VX projects ship their UI font as a TrueType/OpenType file under
+// the game's `Fonts/` folder and select it by family name through RGSS::Font.
+// We rasterise those glyphs with stb_truetype so window/menu/title text honours
+// the font's pixel size (plus bold/italic/outline/shadow), instead of the
+// fixed-size shinonome bitmap font. When no usable font file is found we fall
+// back to the shinonome path below, so text always draws.
+
+struct TtfFont {
+  std::vector<uint8_t> data;
+  stbtt_fontinfo info{};
+  bool ok = false;
+};
+
+// Lowercased, alphanumeric-only copy of a font name, so a family such as
+// "VL Gothic" leniently matches a file like "VL-Gothic-Regular.ttf".
+std::string font_key(std::string_view s) {
+  std::string r;
+  for (const unsigned char c : s)
+    if (std::isalnum(c))
+      r.push_back(static_cast<char>(std::tolower(c)));
+  return r;
+}
+
+bool has_font_ext(const std::string& name) {
+  if (name.size() < 4)
+    return false;
+  std::string ext = name.substr(name.size() - 4);
+  for (char& c : ext)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == ".ttf" || ext == ".otf" || ext == ".ttc";
+}
+
+// Value of a String constant on Object (GAME_DIR / RTP_DIR), or "" when it is
+// unset or not a String.
+std::string object_const_str(mrb_state* M, const char* name) {
+  const mrb_sym sym = mrb_intern_cstr(M, name);
+  const V obj = mrb_obj_value(M->object_class);
+  if (!mrb_const_defined(M, obj, sym))
+    return std::string();
+  const V v = mrb_const_get(M, obj, sym);
+  if (!mrb_string_p(v))
+    return std::string();
+  return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
+}
+
+std::shared_ptr<TtfFont> load_ttf(const std::string& path) {
+  auto f = std::make_shared<TtfFont>();
+  std::FILE* fp = std::fopen(path.c_str(), "rb");
+  if (!fp)
+    return f;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz > 0) {
+    f->data.resize(static_cast<size_t>(sz));
+    if (std::fread(f->data.data(), 1, static_cast<size_t>(sz), fp) ==
+        static_cast<size_t>(sz)) {
+      const int off = stbtt_GetFontOffsetForIndex(f->data.data(), 0);
+      if (off >= 0 && stbtt_InitFont(&f->info, f->data.data(), off))
+        f->ok = true;
+    }
+  }
+  std::fclose(fp);
+  if (!f->ok)
+    std::fprintf(stderr, "[RGSS] failed to load font file: %s\n", path.c_str());
+  return f;
+}
+
+// First font file under the GAME_DIR/RTP_DIR `Fonts/` folders. With a `name`
+// given, prefer an exact (lenient) family match, then a partial one, else the
+// first font file found. Returns "" when no font file exists.
+std::string find_font_path(mrb_state* M, const std::string& name) {
+  const std::string roots[] = {object_const_str(M, "GAME_DIR"),
+                               object_const_str(M, "RTP_DIR")};
+  const std::string want = font_key(name);
+  std::string first_any, partial;
+  for (const std::string& root : roots) {
+    if (root.empty())
+      continue;
+    const std::string dir = root + "/Fonts";
+    DIR* d = opendir(dir.c_str());
+    if (!d)
+      continue;
+    while (dirent* e = readdir(d)) {
+      const std::string fn = e->d_name;
+      if (!has_font_ext(fn))
+        continue;
+      const std::string full = dir + "/" + fn;
+      if (first_any.empty())
+        first_any = full;
+      if (want.empty())
+        continue;
+      const std::string stem = font_key(fn.substr(0, fn.size() - 4));
+      if (stem == want) {
+        closedir(d);
+        return full;
+      }
+      if (partial.empty() && stem.find(want) != std::string::npos)
+        partial = full;
+    }
+    closedir(d);
+  }
+  return partial.empty() ? first_any : partial;
+}
+
+// Loaded fonts cached by requested family name (the search roots are fixed for
+// a run). A cached entry may hold an unloaded font (ok == false), i.e. "no
+// usable font for this name"; that negative result is cached too, so the
+// Fonts/ directory is scanned only once per name.
+std::shared_ptr<TtfFont> ttf_for_name(mrb_state* M, const std::string& name) {
+  static std::map<std::string, std::shared_ptr<TtfFont>> cache;
+  const auto it = cache.find(name);
+  if (it != cache.end())
+    return it->second;
+  const std::string path = find_font_path(M, name);
+  std::shared_ptr<TtfFont> f =
+      path.empty() ? std::make_shared<TtfFont>() : load_ttf(path);
+  cache[name] = f;
+  return f;
+}
+
+// The subset of RGSS::Font a draw needs, read once from the bitmap's @font.
+struct FontAttr {
+  std::shared_ptr<TtfFont> ttf;
+  double size = 22;
+  bool bold = false, italic = false, outline = true, shadow = false;
+  uint8_t color[4] = {0, 0, 0, 255};      // r, g, b, a
+  uint8_t out_color[4] = {0, 0, 0, 128};  // r, g, b, a
+};
+
+void color_rgba(mrb_state* M, V cv, uint8_t out[4]) {
+  if (mrb_nil_p(cv))
+    return;
+  Color& c = DataType<Color>::get(M, cv);
+  out[0] = static_cast<uint8_t>(c.red);
+  out[1] = static_cast<uint8_t>(c.green);
+  out[2] = static_cast<uint8_t>(c.blue);
+  out[3] = static_cast<uint8_t>(c.alpha);
+}
+
+FontAttr read_font(mrb_state* M, V self) {
+  FontAttr fa;
+  std::string name;
+  const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
+  if (!mrb_nil_p(fv)) {
+    const V nv = mrb_funcall(M, fv, "name", 0);
+    if (mrb_string_p(nv)) {
+      name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
+    } else if (mrb_array_p(nv) && RARRAY_LEN(nv) > 0 &&
+               mrb_string_p(mrb_ary_ref(M, nv, 0))) {
+      // RGSS accepts an array of family names; use the first.
+      const V n0 = mrb_ary_ref(M, nv, 0);
+      name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
+    }
+    const V sv = mrb_funcall(M, fv, "size", 0);
+    if (mrb_fixnum_p(sv))
+      fa.size = static_cast<double>(mrb_fixnum(sv));
+    else if (mrb_float_p(sv))
+      fa.size = mrb_float(sv);
+    fa.bold = mrb_bool(mrb_funcall(M, fv, "bold", 0));
+    fa.italic = mrb_bool(mrb_funcall(M, fv, "italic", 0));
+    fa.outline = mrb_bool(mrb_funcall(M, fv, "outline", 0));
+    fa.shadow = mrb_bool(mrb_funcall(M, fv, "shadow", 0));
+    color_rgba(M, mrb_funcall(M, fv, "color", 0), fa.color);
+    color_rgba(M, mrb_funcall(M, fv, "out_color", 0), fa.out_color);
+  }
+  fa.ttf = ttf_for_name(M, name);
+  return fa;
+}
+
+// Advance width and line height of `s` at `px` em size, in whole pixels.
+void measure_text_ttf(TtfFont& f,
+                      std::string_view s,
+                      double px,
+                      int& width,
+                      int& height) {
+  const float scale =
+      stbtt_ScaleForMappingEmToPixels(&f.info, static_cast<float>(px));
+  int asc = 0, desc = 0, gap = 0;
+  stbtt_GetFontVMetrics(&f.info, &asc, &desc, &gap);
+  double w = 0;
+  int prev = 0;
+  for (const char32_t c : s | una::views::utf8) {
+    int adv = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(&f.info, static_cast<int>(c), &adv, &lsb);
+    if (prev)
+      w += scale *
+           stbtt_GetCodepointKernAdvance(&f.info, prev, static_cast<int>(c));
+    w += scale * adv;
+    prev = static_cast<int>(c);
+  }
+  width = static_cast<int>(std::lround(w));
+  height = static_cast<int>(std::lround(scale * (asc - desc)));
+}
+
+// Blend a glyph coverage bitmap (`cov`, gw x gh, 8-bit alpha) into `bmp` in
+// colour (r,g,b) scaled by `a`. `ox,oy` is the coverage's top-left device
+// position. `dilate` > 0 spreads the coverage by that radius (a max filter) to
+// paint an outline. `slant` shears each row horizontally about `baseline_y` for
+// a synthetic italic.
+void blit_glyph_cov(Bitmap& bmp,
+                    const uint8_t* cov,
+                    int gw,
+                    int gh,
+                    int ox,
+                    int oy,
+                    int baseline_y,
+                    int r,
+                    int g,
+                    int b,
+                    int a,
+                    int dilate,
+                    double slant) {
+  for (int j = -dilate; j < gh + dilate; ++j) {
+    const int ty = oy + j;
+    if (ty < 0 || ty >= bmp.height)
+      continue;
+    const int shear =
+        slant != 0.0 ? static_cast<int>(std::lround(slant * (baseline_y - ty)))
+                     : 0;
+    for (int i = -dilate; i < gw + dilate; ++i) {
+      int m = 0;
+      if (dilate <= 0) {
+        m = cov[j * gw + i];
+      } else {
+        for (int dy = -dilate; dy <= dilate && m < 255; ++dy) {
+          const int sy = j + dy;
+          if (sy < 0 || sy >= gh)
+            continue;
+          for (int dx = -dilate; dx <= dilate; ++dx) {
+            const int sx = i + dx;
+            if (sx < 0 || sx >= gw)
+              continue;
+            if (cov[sy * gw + sx] > m)
+              m = cov[sy * gw + sx];
+          }
+        }
+      }
+      if (m <= 0)
+        continue;
+      const int tx = ox + i + shear;
+      if (tx < 0 || tx >= bmp.width)
+        continue;
+      const int alpha = a * m / 255;
+      if (alpha <= 0)
+        continue;
+      int dr, dg, db, da;
+      bmp_read(bmp, tx, ty, dr, dg, db, da);
+      const int inv = 255 - alpha;
+      bmp_put(bmp, tx, ty, (r * alpha + dr * inv) / 255,
+              (g * alpha + dg * inv) / 255, (b * alpha + db * inv) / 255,
+              std::max(da, alpha));
+    }
+  }
+}
+
+// Draw `s` into `bmp` with a TrueType font, laid out in the rect (x,y,w,h) with
+// horizontal `align` (0 left, 1 centre, 2 right) and vertically centred. Shadow
+// and outline (from the font's out_color) are painted under the fill; bold is a
+// second fill offset one pixel; italic shears the glyphs.
+void draw_text_ttf(Bitmap& bmp,
+                   const FontAttr& fa,
+                   TtfFont& f,
+                   std::string_view s,
+                   mrb_int x,
+                   mrb_int y,
+                   mrb_int w,
+                   mrb_int h,
+                   int align) {
+  const float scale =
+      stbtt_ScaleForMappingEmToPixels(&f.info, static_cast<float>(fa.size));
+  int asc = 0, desc = 0, gap = 0;
+  stbtt_GetFontVMetrics(&f.info, &asc, &desc, &gap);
+
+  int tw = 0, th = 0;
+  measure_text_ttf(f, s, fa.size, tw, th);
+  if (align == 1)
+    x += (w - tw) / 2;
+  else if (align == 2)
+    x += w - tw;
+
+  // Baseline of a block vertically centred within the rect.
+  const double top = y + (h - scale * (asc - desc)) / 2.0;
+  const double baseY = top + scale * asc;
+
+  const double slant = fa.italic ? 0.25 : 0.0;
+  const bool do_outline = fa.outline && fa.out_color[3] > 0;
+
+  double penX = static_cast<double>(x);
+  int prev = 0;
+  for (const char32_t c : s | una::views::utf8) {
+    if (prev)
+      penX += scale *
+              stbtt_GetCodepointKernAdvance(&f.info, prev, static_cast<int>(c));
+    int gw = 0, gh = 0, gx = 0, gy = 0;
+    uint8_t* g = stbtt_GetCodepointBitmap(
+        &f.info, scale, scale, static_cast<int>(c), &gw, &gh, &gx, &gy);
+    if (g) {
+      const int by = static_cast<int>(std::lround(baseY));
+      const int ox = static_cast<int>(std::lround(penX)) + gx;
+      const int oy = by + gy;
+      if (fa.shadow)
+        blit_glyph_cov(bmp, g, gw, gh, ox + 1, oy + 1, by, fa.out_color[0],
+                       fa.out_color[1], fa.out_color[2], fa.out_color[3], 0,
+                       slant);
+      if (do_outline)
+        blit_glyph_cov(bmp, g, gw, gh, ox, oy, by, fa.out_color[0],
+                       fa.out_color[1], fa.out_color[2], fa.out_color[3], 1,
+                       slant);
+      blit_glyph_cov(bmp, g, gw, gh, ox, oy, by, fa.color[0], fa.color[1],
+                     fa.color[2], fa.color[3], 0, slant);
+      if (fa.bold)
+        blit_glyph_cov(bmp, g, gw, gh, ox + 1, oy, by, fa.color[0], fa.color[1],
+                       fa.color[2], fa.color[3], 0, slant);
+      stbtt_FreeBitmap(g, nullptr);
+    }
+    int adv = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(&f.info, static_cast<int>(c), &adv, &lsb);
+    penX += scale * adv;
+    prev = static_cast<int>(c);
+  }
+  bmp.dirty = true;
+}
+
 // Measure the pixel width and height of `s` using the shinonome font tables.
 void measure_text(std::string_view s, int& width, unsigned& height) {
   width = 0;
@@ -1298,26 +1635,25 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   mrb_int align = 0;
   const char* s;
   mrb_get_args(M, "iiiis|i", &x, &y, &w, &h, &s, &len, &align);
+  const std::string_view sv(s, len);
 
-  // Text color comes from the bitmap's font when one has been assigned,
-  // otherwise default to opaque black.
-  uint8_t col[4] = {0, 0, 0, 255};
-  V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
-  if (!mrb_nil_p(fv)) {
-    V cv = mrb_funcall(M, fv, "color", 0);
-    if (!mrb_nil_p(cv)) {
-      Color& c = DataType<Color>::get(M, cv);
-      col[0] = (uint8_t)c.blue;
-      col[1] = (uint8_t)c.green;
-      col[2] = (uint8_t)c.red;
-      col[3] = (uint8_t)c.alpha;
-    }
+  // Prefer the game's TrueType font (RPG Maker XP/VX ship one under Fonts/),
+  // rasterising at the font's pixel size. Fall back to the fixed-size shinonome
+  // bitmap font when no usable font file is found.
+  const FontAttr fa = read_font(M, self);
+  if (fa.ttf && fa.ttf->ok) {
+    draw_text_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align));
+    return self;
   }
+
+  // Text colour comes from the font (default opaque black when no @font is
+  // set), laid out in the bitmap's byte order (B, G, R, A).
+  const uint8_t col[4] = {fa.color[2], fa.color[1], fa.color[0], fa.color[3]};
 
   // Horizontal alignment: 0 left, 1 center, 2 right.
   int tw = 0;
   unsigned th = 0;
-  measure_text(std::string_view(s, len), tw, th);
+  measure_text(sv, tw, th);
   if (align == 1)
     x += (w - tw) / 2;
   else if (align == 2)
@@ -1340,7 +1676,7 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
     x += c.WIDTH;
   };
 
-  for (const char32_t c : std::string_view(s, len) | una::views::utf8) {
+  for (const char32_t c : sv | una::views::utf8) {
     auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
     if (f) {
       draw(*f);
@@ -1366,10 +1702,18 @@ mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
   mrb_int len;
   const char* s;
   mrb_get_args(M, "s", &s, &len);
+  const std::string_view sv(s, len);
 
   int w = 0;
-  unsigned height = 0;
-  measure_text(std::string_view(s, len), w, height);
+  int height = 0;
+  const FontAttr fa = read_font(M, self);
+  if (fa.ttf && fa.ttf->ok) {
+    measure_text_ttf(*fa.ttf, sv, fa.size, w, height);
+  } else {
+    unsigned uh = 0;
+    measure_text(sv, w, uh);
+    height = static_cast<int>(uh);
+  }
 
   const mrb_value args[] = {
       mrb_fixnum_value(0),

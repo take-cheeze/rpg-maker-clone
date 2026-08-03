@@ -57,10 +57,16 @@ The work below is roughly ordered by the critical path to a walkable game
   edge/tile/event collision and an edge-clamped follow camera
 
 #### Map & characters
-- 🚧 Tilemap rendering — `Scene::Map` currently draws each tile as a solid
-  colour block derived from its tile id (a navigable placeholder) and reads
-  chipset passability for collision; real chipset blitting (lower/upper chip
-  graphics, autotile assembly, tile animation) is the remaining work
+- ✅ Tilemap rendering — `Scene::Map` blits the lower/upper layers from the
+  map's real ChipSet graphic via `Game::ChipsetLayout` (a port of EasyRPG
+  Player's `TilemapLayer` geometry): single-chip lower (block E) / upper
+  (block F) tiles, water (blocks A/B) and terrain (block D) autotiles assembled
+  from four 8×8 quarter-tiles per the combination encoded in the tile id, the
+  two animated block-C tiles, and water/animation frame cycling. Falls back to
+  the previous solid-colour blocks when the chipset image is missing.
+  Passability still drives collision. Geometry is pinned by
+  `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
+  Tiles) substitution and screen-tone tinting of tiles.
 - 🚧 Character sprites — the party leader renders from its CharSet graphic
   (`Game::CharSet`, 4-direction, 3 walk frames); NPC/event sprites are drawn as
   markers for now

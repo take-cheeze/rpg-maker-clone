@@ -1193,6 +1193,10 @@ module LCF
       # which routes `send` into method_missing and breaks field access.
       @root.__send__ sym, *args
     end
+
+    def respond_to_missing? sym, include_private = false
+      @root.respond_to?(sym) || super
+    end
   end
 
   class Database < File

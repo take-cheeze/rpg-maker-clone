@@ -1107,11 +1107,18 @@ class CurveRow < FakePlayerRow
   end
 end
 FakeActorSystem = Struct.new(:party)
+# A database item row exposing just the equipment-bonus fields Game::Actor reads.
+FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
+                      :max_hp_points, :max_sp_points)
+def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0)
+  FakeItem.new(atk, dfn, spi, agi, mhp, msp)
+end
 class FakeActorDB
-  attr_reader :player, :system
-  def initialize(players, party_ids)
+  attr_reader :player, :system, :item
+  def initialize(players, party_ids, items = {})
     @player = players
     @system = FakeActorSystem.new(party_ids)
+    @item = items
   end
 end
 
@@ -1189,6 +1196,26 @@ check 'Actor base stats scale with level from the growth curve' do
   a.hp = 20; a.mp = 10
   a.set_level(1)
   eq [10, 5], [a.hp, a.mp]
+end
+
+check 'Actor equipment adds item bonuses to the effective stats' do
+  items = { 10 => fake_item(atk: 20), 11 => fake_item(dfn: 8, agi: -3),
+            12 => fake_item(mhp: 50) }
+  # base at L1: maxhp10 maxmp5 atk3 def2 int1 agi4
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
+                       [1], items)
+  a = Game::Party.new(db).leader
+  eq [3, 2, 4, 10], [a.atk, a.def, a.agi, a.max_hp]   # nothing equipped
+  a.equip([10, 11, 12, 0, 0])
+  eq [23, 10, 1, 60], [a.atk, a.def, a.agi, a.max_hp] # +20 atk, +8 def-3 agi, +50 hp
+  eq true, a.equipped?(11)
+  eq false, a.equipped?(99)
+  # Change Parameters lands on the base stat; the equipment bonus stays on top.
+  a.change_param(Game::Actor::PARAM_ATK, 5)           # base 3 -> 8
+  eq 28, a.atk                                        # 8 + 20
+  # Unequipping removes the bonus.
+  a.equip([0, 0, 0, 0, 0])
+  eq [8, 2, 4, 10], [a.atk, a.def, a.agi, a.max_hp]
 end
 
 check 'Actor without a growth curve falls back to a level-independent status' do
@@ -1399,6 +1426,13 @@ end
 check 'Conditional actor: name equals the command string (type 5, sub 1)' do
   eq true, run_actor_cond([5, 1, 1], string: 'Hero').switches[1]
   eq true, run_actor_cond([5, 1, 1], string: 'Nope').switches[2]
+end
+
+check 'Conditional actor: equipped item (type 5, sub 5)' do
+  st = run_actor_cond([5, 1, 5, 10]) { |s| s.party.actor_by_id(1).equip([10, 0, 0, 0, 0]) }
+  eq true, st.switches[1]            # item 10 equipped -> if-branch
+  st = run_actor_cond([5, 1, 5, 10]) # nothing equipped -> else
+  eq true, st.switches[2]
 end
 
 check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' do

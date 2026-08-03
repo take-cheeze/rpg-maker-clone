@@ -245,7 +245,7 @@ module Game
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
 
-    attr_reader :name, :graphic
+    attr_reader :name, :graphic, :animation_type, :animation_speed
 
     def initialize(db, id)
       c = db.chipset[id]
@@ -253,6 +253,12 @@ module Game
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
       @terrain = c ? c.terrain_data : nil
+      # Water-animation parameters (chipset chunks 11/12): the animation "type"
+      # (0 = 3-frame back-and-forth, 1 = 3-frame cycle) and speed flag (0 slow,
+      # non-zero fast). Consumed by ChipsetLayout when picking the animation
+      # column for the water autotiles.
+      @animation_type = c ? (c.animation_type || 0) : 0
+      @animation_speed = c ? (c.animation_speed || 0) : 0
     end
 
     # Chip index into the lower passability table for a lower-layer tile id.
@@ -286,6 +292,247 @@ module Game
     end
   end
 
+  # Maps an RPG2000/2003 map tile id to the source rectangle(s) it occupies in a
+  # chipset image (`ChipSet/<name>.png`, a fixed 480x256 grid of 16x16 tiles).
+  #
+  # This is a direct port of EasyRPG Player's `TilemapLayer` geometry. A tile id
+  # names one of six blocks:
+  #
+  #   * A/B (0..2999)      water autotiles, animated (3 columns)
+  #   * C   (3000..3149)   the two animated ground tiles (4 frames)
+  #   * D   (4000..4599)   terrain autotiles (grass edges, cliffs, ...)
+  #   * E   (5000..5143)   plain lower-layer tiles (one 16x16 chip each)
+  #   * F   (10000..10143) upper-layer tiles (one 16x16 chip each)
+  #
+  # Autotiles (blocks A/B and D) are not stored as whole 16x16 chips: the id
+  # encodes a *combination* the map editor picked from the tile's neighbours, and
+  # the drawn tile is assembled from four 8x8 quarter-tiles, each copied from a
+  # different chip of the chipset. #quads returns those four quarters (or the one
+  # whole chip, for the non-autotile blocks) as blit rectangles.
+  #
+  # Pure geometry with no rendering dependency, so it is exercised directly by
+  # scripts/rpg2k_render_check.rb under CRuby.
+  module ChipsetLayout
+    TS = 16      # tile size in pixels
+    HTS = 8      # quarter (8x8) size
+    CHIPSET_W = 480
+    CHIPSET_H = 256
+
+    BLOCK_C = 3000
+    BLOCK_D = 4000
+    BLOCK_E = 5000
+    BLOCK_F = 10000
+    BLOCK_E_TILES = 144
+    BLOCK_F_TILES = 144
+
+    # [a_subtile][row][col] -> block-A chipset row (0..3) for that quarter, or -1
+    # to take the quarter from block B instead. (EasyRPG BlockA_Subtiles_IDS.)
+    N = -1
+    BLOCK_A_SUBTILES = [
+      [[N, N], [N, N]], [[3, N], [N, N]], [[N, 3], [N, N]], [[3, 3], [N, N]],
+      [[N, N], [N, 3]], [[3, N], [N, 3]], [[N, 3], [N, 3]], [[3, 3], [N, 3]],
+      [[N, N], [3, N]], [[3, N], [3, N]], [[N, 3], [3, N]], [[3, 3], [3, N]],
+      [[N, N], [3, 3]], [[3, N], [3, 3]], [[N, 3], [3, 3]], [[3, 3], [3, 3]],
+      [[1, N], [1, N]], [[1, 3], [1, N]], [[1, N], [1, 3]], [[1, 3], [1, 3]],
+      [[2, 2], [N, N]], [[2, 2], [N, 3]], [[2, 2], [3, N]], [[2, 2], [3, 3]],
+      [[N, 1], [N, 1]], [[N, 1], [3, 1]], [[3, 1], [N, 1]], [[3, 1], [3, 1]],
+      [[N, N], [2, 2]], [[3, N], [2, 2]], [[N, 3], [2, 2]], [[3, 3], [2, 2]],
+      [[1, 1], [1, 1]], [[2, 2], [2, 2]], [[0, 2], [1, N]], [[0, 2], [1, 3]],
+      [[2, 0], [N, 1]], [[2, 0], [3, 1]], [[N, 1], [2, 0]], [[3, 1], [2, 0]],
+      [[1, N], [0, 2]], [[1, 3], [0, 2]], [[0, 0], [1, 1]], [[0, 2], [0, 2]],
+      [[1, 1], [0, 0]], [[2, 0], [2, 0]], [[0, 0], [0, 0]]
+    ].freeze
+
+    # [subtile][row][col] -> [dx, dy] chipset-chip offset within the block-D cell.
+    # (EasyRPG BlockD_Subtiles_IDS.)
+    BLOCK_D_SUBTILES = [
+      [[[1, 2], [1, 2]], [[1, 2], [1, 2]]], [[[2, 0], [1, 2]], [[1, 2], [1, 2]]],
+      [[[1, 2], [2, 0]], [[1, 2], [1, 2]]], [[[2, 0], [2, 0]], [[1, 2], [1, 2]]],
+      [[[1, 2], [1, 2]], [[1, 2], [2, 0]]], [[[2, 0], [1, 2]], [[1, 2], [2, 0]]],
+      [[[1, 2], [2, 0]], [[1, 2], [2, 0]]], [[[2, 0], [2, 0]], [[1, 2], [2, 0]]],
+      [[[1, 2], [1, 2]], [[2, 0], [1, 2]]], [[[2, 0], [1, 2]], [[2, 0], [1, 2]]],
+      [[[1, 2], [2, 0]], [[2, 0], [1, 2]]], [[[2, 0], [2, 0]], [[2, 0], [1, 2]]],
+      [[[1, 2], [1, 2]], [[2, 0], [2, 0]]], [[[2, 0], [1, 2]], [[2, 0], [2, 0]]],
+      [[[1, 2], [2, 0]], [[2, 0], [2, 0]]], [[[2, 0], [2, 0]], [[2, 0], [2, 0]]],
+      [[[0, 2], [0, 2]], [[0, 2], [0, 2]]], [[[0, 2], [2, 0]], [[0, 2], [0, 2]]],
+      [[[0, 2], [0, 2]], [[0, 2], [2, 0]]], [[[0, 2], [2, 0]], [[0, 2], [2, 0]]],
+      [[[1, 1], [1, 1]], [[1, 1], [1, 1]]], [[[1, 1], [1, 1]], [[1, 1], [2, 0]]],
+      [[[1, 1], [1, 1]], [[2, 0], [1, 1]]], [[[1, 1], [1, 1]], [[2, 0], [2, 0]]],
+      [[[2, 2], [2, 2]], [[2, 2], [2, 2]]], [[[2, 2], [2, 2]], [[2, 0], [2, 2]]],
+      [[[2, 0], [2, 2]], [[2, 2], [2, 2]]], [[[2, 0], [2, 2]], [[2, 0], [2, 2]]],
+      [[[1, 3], [1, 3]], [[1, 3], [1, 3]]], [[[2, 0], [1, 3]], [[1, 3], [1, 3]]],
+      [[[1, 3], [2, 0]], [[1, 3], [1, 3]]], [[[2, 0], [2, 0]], [[1, 3], [1, 3]]],
+      [[[0, 2], [2, 2]], [[0, 2], [2, 2]]], [[[1, 1], [1, 1]], [[1, 3], [1, 3]]],
+      [[[0, 1], [0, 1]], [[0, 1], [0, 1]]], [[[0, 1], [0, 1]], [[0, 1], [2, 0]]],
+      [[[2, 1], [2, 1]], [[2, 1], [2, 1]]], [[[2, 1], [2, 1]], [[2, 0], [2, 1]]],
+      [[[2, 3], [2, 3]], [[2, 3], [2, 3]]], [[[2, 0], [2, 3]], [[2, 3], [2, 3]]],
+      [[[0, 3], [0, 3]], [[0, 3], [0, 3]]], [[[0, 3], [2, 0]], [[0, 3], [0, 3]]],
+      [[[0, 1], [2, 1]], [[0, 1], [2, 1]]], [[[0, 1], [0, 1]], [[0, 3], [0, 3]]],
+      [[[0, 3], [2, 3]], [[0, 3], [2, 3]]], [[[2, 1], [2, 1]], [[2, 3], [2, 3]]],
+      [[[0, 1], [2, 1]], [[0, 3], [2, 3]]], [[[1, 2], [1, 2]], [[1, 2], [1, 2]]],
+      [[[1, 2], [1, 2]], [[1, 2], [1, 2]]], [[[0, 0], [0, 0]], [[0, 0], [0, 0]]]
+    ].freeze
+
+    module_function
+
+    # Animation column (0..2) for the water autotiles (blocks A/B), from a frame
+    # counter and the chipset's animation_type / animation_speed. Fast chipsets
+    # advance every 12 frames, slow ones every 24. Type 0 walks 0,1,2,1 (a
+    # back-and-forth); type 1 cycles 0,1,2.
+    def anim_ab(frame, animation_type, animation_speed)
+      step = frame / (animation_speed != 0 ? 12 : 24)
+      if animation_type != 0
+        step % 3
+      else
+        step %= 4
+        step == 3 ? 1 : step
+      end
+    end
+
+    # Animation frame (0..3) for the block-C animated tiles (advances every 6
+    # frames).
+    def anim_c(frame)
+      (frame / 6) % 4
+    end
+
+    # The coarse block a tile id belongs to: :water, :animated, :terrain, :lower,
+    # :upper, or nil for the empty tile (0) and ids outside every block.
+    def block(id)
+      return nil if id.nil? || id <= 0
+      if id >= BLOCK_F
+        id < BLOCK_F + BLOCK_F_TILES ? :upper : nil
+      elsif id >= BLOCK_E
+        id < BLOCK_E + BLOCK_E_TILES ? :lower : nil
+      elsif id >= BLOCK_D
+        :terrain
+      elsif id >= BLOCK_C
+        :animated
+      else
+        :water
+      end
+    end
+
+    # Source rectangles to draw for a tile id, as an array of
+    # [dx, dy, sx, sy, w, h]: dx/dy are pixel offsets within the destination
+    # 16x16 tile, and sx/sy/w/h the source rect in the chipset image. Non-
+    # autotile blocks return a single 16x16 rect; autotiles return four 8x8
+    # quarters. The empty tile (0) and out-of-range ids return []. `abf` / `cf`
+    # are the current animation columns/frames from #anim_ab / #anim_c.
+    def quads(id, abf = 0, cf = 0)
+      case block(id)
+      when :water    then water_quads(id, abf)
+      when :animated then [full(3 + (id - BLOCK_C) / 50, 4 + cf)]
+      when :terrain  then terrain_quads(id)
+      when :lower    then [lower_quad(id - BLOCK_E)]
+      when :upper    then [upper_quad(id - BLOCK_F)]
+      else []
+      end
+    end
+
+    # -- internals ----------------------------------------------------------
+
+    # A whole 16x16 chip at chipset grid (col, row).
+    def full(col, row)
+      [0, 0, col * TS, row * TS, TS, TS]
+    end
+
+    # Four 8x8 quarters assembled from `quarters[j][i] = [chip_col, chip_row]`:
+    # quarter (j, i) is copied from the matching 8x8 sub-quadrant of that chip.
+    def quads_from_quarters(quarters)
+      out = []
+      2.times do |j|
+        2.times do |i|
+          qc, qr = quarters[j][i]
+          out << [i * HTS, j * HTS, qc * TS + i * HTS, qr * TS + j * HTS, HTS, HTS]
+        end
+      end
+      out
+    end
+
+    # Water autotile (blocks A/B). `set` (id/1000) selects the water set, then the
+    # id's low digits select a block-B border combination and a block-A corner
+    # combination; each quarter comes from block A or block B accordingly.
+    def water_quads(id, anim)
+      set = id / 1000
+      b_subtile = (id % 1000) / 50
+      a_subtile = id % 50
+      return [] if a_subtile >= BLOCK_A_SUBTILES.size || b_subtile >= TS
+      quarters = [[nil, nil], [nil, nil]]
+
+      # Quarters the A table leaves open (-1) come from block B (rows 4..7).
+      2.times do |j|
+        2.times do |i|
+          next unless BLOCK_A_SUBTILES[a_subtile][j][i] == N
+          t = (b_subtile >> (j * 2 + i)) & 1
+          t ^= 3 if set == 2
+          quarters[j][i] = [anim, 4 + t]
+        end
+      end
+      # The remaining quarters come from block A (rows given by the table; set 1
+      # uses the second column trio, +3).
+      2.times do |j|
+        2.times do |i|
+          row = BLOCK_A_SUBTILES[a_subtile][j][i]
+          next if row == N
+          quarters[j][i] = [anim + (set == 1 ? 3 : 0), row]
+        end
+      end
+      # When both a border and a corner are set, the border quarters win.
+      if b_subtile != 0 && a_subtile != 0
+        2.times do |j|
+          2.times do |i|
+            t = (b_subtile >> (j * 2 + i)) & 1
+            t *= 2 if set == 2
+            next if t == 0
+            quarters[j][i] = [anim, 4 + t]
+          end
+        end
+      end
+      quads_from_quarters(quarters)
+    end
+
+    # Terrain autotile (block D). Each block is a 3x4 chip cell; the id's low
+    # digits pick one of 50 corner combinations within it.
+    def terrain_quads(id)
+      blk = (id - BLOCK_D) / 50
+      subtile = (id - BLOCK_D) % 50
+      return [] if blk < 0 || blk >= 12 || subtile >= BLOCK_D_SUBTILES.size
+      if blk < 4
+        base_col = (blk % 2) * 3
+        base_row = 8 + (blk / 2) * 4
+      else
+        base_col = 6 + (blk % 2) * 3
+        base_row = ((blk - 4) / 2) * 4
+      end
+      quarters = [[nil, nil], [nil, nil]]
+      2.times do |j|
+        2.times do |i|
+          off = BLOCK_D_SUBTILES[subtile][j][i]
+          quarters[j][i] = [base_col + off[0], base_row + off[1]]
+        end
+      end
+      quads_from_quarters(quarters)
+    end
+
+    # Plain lower-layer chip (block E), laid out in two 6-wide columns.
+    def lower_quad(idx)
+      if idx < 96
+        full(12 + idx % 6, idx / 6)
+      else
+        full(18 + (idx - 96) % 6, (idx - 96) / 6)
+      end
+    end
+
+    # Upper-layer chip (block F), in two 6-wide columns of the right half.
+    def upper_quad(idx)
+      if idx < 48
+        full(18 + idx % 6, 8 + idx / 6)
+      else
+        full(24 + (idx - 48) % 6, (idx - 48) / 6)
+      end
+    end
+  end
+
   # Game switches: a 1-indexed set of booleans, defaulting to false.
   class Switches
     def initialize; @data = {}; end
@@ -314,8 +561,20 @@ module Game
     # The six base stats in database parameter-curve order (chunk 31 stores six
     # shorts -- maxHP, maxSP, atk, def, int, agi -- per level).
     STAT_NAMES = [:max_hp, :max_mp, :atk, :def, :int, :agi].freeze
+    # The item field carrying each stat's equipment bonus, in STAT_NAMES order.
+    # RPG2000 keeps every equipped weapon/armour bonus in the "points1" set plus
+    # the max HP/SP points, whatever the slot.
+    EQUIP_BONUS_FIELD = [:max_hp_points, :max_sp_points, :atk_points1,
+                         :def_points1, :spi_points1, :agi_points1].freeze
+    # Equipment slots, in save/database order: weapon, shield, armour, helmet,
+    # accessory.
+    EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
+
+    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot).
+    attr_reader :equipment
 
     def initialize(db, id)
+      @db = db
       @id = id
       a = db.player[id]
       raise "No such actor: #{id}" if a.nil?
@@ -325,8 +584,9 @@ module Game
       @charset_index = a.charset_index
       @db_row = a
       @exp = 0
-      # Base stats scale with level from the growth curve, so seed them at the
-      # actor's initial level, then start at full health.
+      @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
+      # Base stats scale with level from the growth curve and equipment adds on
+      # top, so seed them at the actor's initial level, then start at full health.
       set_level(a.initial_level || 1)
       @exp = exp_for_level(@level) # EXP consistent with the starting level
       @hp = @max_hp
@@ -336,19 +596,26 @@ module Game
     attr_writer :exp
 
     # Set the actor's level and recompute the six base stats from the database
-    # growth curve at that level (see #base_stats). Current HP/MP are re-clamped
-    # to the new maxima so lowering the level never leaves a stat over its cap.
+    # growth curve at that level (see #base_stats), then the equipment-boosted
+    # effective stats. Current HP/MP are re-clamped so lowering the level never
+    # leaves a vital over its cap.
     def set_level(level)
       @level = level && level >= 1 ? level : 1
-      s = base_stats(@level)
-      @max_hp = s[0]
-      @max_mp = s[1]
-      @atk = s[2]
-      @def = s[3]
-      @int = s[4]
-      @agi = s[5]
-      @hp = @max_hp if @hp && @hp > @max_hp
-      @mp = @max_mp if @mp && @mp > @max_mp
+      @base = base_stats(@level)
+      recompute_stats
+    end
+
+    # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
+    # 0/nil for an empty slot) and recompute the boosted stats.
+    def equip(ids)
+      @equipment = normalize_equipment(ids)
+      recompute_stats
+    end
+
+    # Whether `item_id` occupies any equipment slot.
+    def equipped?(item_id)
+      return false if item_id.nil? || item_id == 0
+      @equipment.include?(item_id)
     end
 
     # The six base stats at `level`. Real database rows expose the full growth
@@ -431,6 +698,45 @@ module Game
       end
     end
 
+    # Recompute the six effective stats (base + equipment) into their readers and
+    # re-clamp current HP/MP to the refreshed maxima.
+    def recompute_stats
+      @max_hp = @base[0] + equip_bonus(0)
+      @max_mp = @base[1] + equip_bonus(1)
+      @atk = @base[2] + equip_bonus(2)
+      @def = @base[3] + equip_bonus(3)
+      @int = @base[4] + equip_bonus(4)
+      @agi = @base[5] + equip_bonus(5)
+      @hp = @max_hp if @hp && @hp > @max_hp
+      @mp = @max_mp if @mp && @mp > @max_mp
+    end
+
+    # Total equipment bonus for stat index `i` (see EQUIP_BONUS_FIELD): the sum
+    # over equipped items of that item's bonus field. A database that exposes no
+    # item table (the test fixtures) contributes nothing.
+    def equip_bonus(i)
+      return 0 unless @db.respond_to?(:item)
+      field = EQUIP_BONUS_FIELD[i]
+      total = 0
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        total += (it.send(field) || 0) if it
+      end
+      total
+    end
+
+    # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
+    # five-slot array of integer item ids.
+    def normalize_equipment(spec)
+      ids =
+        if spec.is_a?(Hash) then EQUIP_ORDER.map { |k| spec[k] }
+        elsif spec.is_a?(Array) then spec.dup
+        else []
+        end
+      EQUIP_ORDER.each_index.map { |i| ids[i] || 0 }
+    end
+
     # Apply a HP change (positive heals, negative damages), clamped to
     # [floor, max_hp]. The floor is 0 when death is allowed (the actor may be
     # knocked out) or 1 otherwise, matching RPG2000's Change HP "allow death"
@@ -461,22 +767,15 @@ module Game
     PARAM_AGI    = 5
 
     # Apply a base-parameter change (the Change Parameters command). `type` is
-    # one of the PARAM_* constants; `delta` is signed. Stats clamp to RPG2000's
-    # limits (max HP/MP 1..9999, the four battle stats 1..999), and lowering a
-    # maximum re-clamps the current HP/MP so it never exceeds its new cap.
+    # one of the PARAM_* constants; `delta` is signed. The change lands on the
+    # base stat (the equipment bonus stays on top) and clamps to RPG2000's limits
+    # (max HP/MP 1..9999, the four battle stats 1..999); recomputing re-clamps the
+    # current HP/MP so a lowered maximum never leaves a vital over its cap.
     def change_param(type, delta)
-      case type
-      when PARAM_MAX_HP
-        @max_hp = Game.clamp(@max_hp + delta, 1, 9999)
-        @hp = @max_hp if @hp > @max_hp
-      when PARAM_MAX_MP
-        @max_mp = Game.clamp(@max_mp + delta, 1, 9999)
-        @mp = @max_mp if @mp > @max_mp
-      when PARAM_ATK then @atk = Game.clamp(@atk + delta, 1, 999)
-      when PARAM_DEF then @def = Game.clamp(@def + delta, 1, 999)
-      when PARAM_INT then @int = Game.clamp(@int + delta, 1, 999)
-      when PARAM_AGI then @agi = Game.clamp(@agi + delta, 1, 999)
-      end
+      return unless type >= 0 && type < STAT_NAMES.size
+      limit = (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
+      @base[type] = Game.clamp(@base[type] + delta, 1, limit)
+      recompute_stats
     end
 
     private
@@ -1288,6 +1587,7 @@ module Game
         if actor
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp
+          actor.equip(sa.equipment) if sa.equipment
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
