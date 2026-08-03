@@ -603,6 +603,25 @@ check 'Proceed With Movement holds the interpreter until a forced route finishes
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check 'Tint Screen with a wait holds the interpreter until the tint settles' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::TINT_SCREEN, [200, 100, 100, 100, 5, 1]), # red over 0.5s, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  10.times { scene.update } # mid-transition: still tinting, switch not flipped
+  ok st.screen.tinting?, 'the tint is still transitioning'
+  ok !st.switches[1], 'the command after the tint waits'
+
+  60.times { scene.update } # enough frames (30) for the tint to settle
+  eq 200, st.screen.tint[0], 'the tint reached its target'
+  ok st.switches[1], 'the interpreter resumed once the tint settled'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

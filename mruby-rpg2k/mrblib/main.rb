@@ -415,6 +415,7 @@ class RPG2k
 
       def update
         @state.tick_timer # the timer keeps counting during events too
+        @state.screen.update # screen tint progresses every frame, even in events
         if event_busy?
           drive_event
         else
@@ -940,6 +941,7 @@ class RPG2k
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
+          when :screen then @interpreter.resume unless @state.screen.tinting?
           end
         else
           @interpreter.update

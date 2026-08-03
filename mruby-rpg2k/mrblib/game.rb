@@ -911,10 +911,63 @@ module Game
     end
   end
 
+  # Screen-effect state driven by the screen event commands. For now this models
+  # the **tint** (Tint Screen, 11030): a colour multiplier the whole screen is
+  # drawn through, given as RPG2000's four 0..200 channels (red / green /
+  # blue / saturation, 100 = neutral). `tint_to` starts a transition to a target
+  # over a number of frames and `update` (called once per frame by the scene)
+  # linearly steps the current channels toward it — the classic RPG2000/RGSS
+  # `cur += (target - cur) / frames_left` interpolation, which lands exactly on
+  # the target on the final frame. Pure data: applying the tint as an
+  # `RGSS::Viewport` tone is the native (C++) half still to come, so nothing here
+  # draws. Flash and shake will join this class the same way.
+  class Screen
+    NEUTRAL = 100 # a channel value that leaves the screen unchanged
+
+    def initialize
+      @r = @g = @b = @sat = NEUTRAL
+      @tr = @tg = @tb = @tsat = NEUTRAL
+      @frames = 0 # frames left in the current tint transition (0 = settled)
+    end
+
+    # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
+    def tint; [@r, @g, @b, @sat]; end
+
+    # True while a tint transition is still in progress.
+    def tinting?; @frames > 0; end
+
+    # Begin a tint transition to the target channels over `frames` frames
+    # (frames <= 0 applies it immediately). Values are clamped to 0..200.
+    def tint_to(r, g, b, sat, frames)
+      @tr = Game.clamp(r, 0, 200)
+      @tg = Game.clamp(g, 0, 200)
+      @tb = Game.clamp(b, 0, 200)
+      @tsat = Game.clamp(sat, 0, 200)
+      if frames <= 0
+        @r = @tr; @g = @tg; @b = @tb; @sat = @tsat
+        @frames = 0
+      else
+        @frames = frames
+      end
+    end
+
+    # Advance the tint one frame toward its target. A no-op once settled.
+    def update
+      return if @frames <= 0
+      @r += (@tr - @r) / @frames
+      @g += (@tg - @g) / @frames
+      @b += (@tb - @b) / @frames
+      @sat += (@tsat - @sat) / @frames
+      @frames -= 1
+      return unless @frames.zero?
+      @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
+    end
+  end
+
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
   class State
-    attr_reader :party, :switches, :variables, :message_config
+    attr_reader :party, :switches, :variables, :message_config, :screen
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
@@ -941,6 +994,9 @@ module Game
       @save_access = true
       @current_bgm = nil
       @memorized_bgm = nil
+      # Transient screen-effect state (tint transition); not serialised, so a
+      # reloaded game starts with a neutral screen.
+      @screen = Screen.new
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true

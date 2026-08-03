@@ -373,6 +373,48 @@ check 'TextReveal handles empty lines and an all-empty message' do
   ok empty.done?, 'a message with no characters is already fully revealed'
 end
 
+# -- Screen (tint state machine) ---------------------------------------------
+
+check 'Screen starts neutral and settled' do
+  s = Game::Screen.new
+  eq [100, 100, 100, 100], s.tint
+  ok !s.tinting?, 'no transition in progress at rest'
+end
+
+check 'Screen tint interpolates to its target and lands exactly' do
+  s = Game::Screen.new
+  s.tint_to(200, 100, 100, 100, 4) # red 100 -> 200 over 4 frames
+  ok s.tinting?
+  s.update; eq 125, s.tint[0]
+  s.update; eq 150, s.tint[0]
+  s.update; eq 175, s.tint[0]
+  s.update; eq 200, s.tint[0], 'lands exactly on the target on the last frame'
+  ok !s.tinting?, 'settled once the transition completes'
+  s.update # further updates are a no-op
+  eq 200, s.tint[0]
+end
+
+check 'Screen tint with non-divisible steps still lands exactly' do
+  s = Game::Screen.new
+  s.tint_to(0, 100, 100, 100, 3) # red 100 -> 0 over 3 frames
+  s.update; s.update; s.update
+  eq 0, s.tint[0]
+  ok !s.tinting?
+end
+
+check 'Screen tint with zero duration applies immediately' do
+  s = Game::Screen.new
+  s.tint_to(0, 50, 200, 100, 0)
+  eq [0, 50, 200, 100], s.tint
+  ok !s.tinting?, 'an instant tint needs no frames'
+end
+
+check 'Screen tint clamps channels to 0..200' do
+  s = Game::Screen.new
+  s.tint_to(999, -50, 100, 100, 0)
+  eq [200, 0, 100, 100], s.tint
+end
+
 # -- Message parsing (control codes / colour) --------------------------------
 
 check 'Message.expand fills v/n codes and drops display codes' do
@@ -727,6 +769,44 @@ check 'Proceed With Movement pauses the interpreter on a movement wait' do
   it.resume # the scene resumes once forced movement completes
   it.update
   eq true, st.switches[1], 'resuming runs the rest of the list'
+end
+
+check 'Tint Screen without a wait sets the target and does not pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # red 200, green/blue/sat 100, over 5 tenths (30 frames), wait=0.
+  it.start([FakeCmd.new(IC::TINT_SCREEN, [200, 100, 100, 100, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'a no-wait tint keeps running'
+  eq true, st.switches[1], 'the command after the tint still ran'
+  ok st.screen.tinting?, 'a timed tint transition is in progress'
+end
+
+check 'Tint Screen with a wait pauses until the transition settles' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TINT_SCREEN, [0, 100, 100, 100, 1, 1]), # 6 frames, wait
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok it.waiting?, 'a waiting tint pauses the interpreter'
+  eq :screen, it.wait_kind
+  ok !st.switches[2], 'the following command has not run yet'
+  # The scene advances the screen each frame; drive it to completion, then resume.
+  st.screen.update until !st.screen.tinting?
+  it.resume
+  it.update
+  eq true, st.switches[2], 'resumed and ran the rest once the tint settled'
+  eq 0, st.screen.tint[0]
+end
+
+check 'Tint Screen with an instant (zero-duration) transition does not wait' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TINT_SCREEN, [50, 60, 70, 100, 0, 1])]) # dur 0, wait 1
+  it.update
+  ok !it.waiting?, 'nothing to wait for when the tint is immediate'
+  eq [50, 60, 70, 100], st.screen.tint
 end
 
 check 'conditional branch on the timer' do
