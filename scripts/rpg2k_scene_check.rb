@@ -170,14 +170,17 @@ end
 # what perform_teleport (and Recall to Location) calls to swap maps; it hands
 # back a fresh empty map for the requested id.
 class FakeParent
-  attr_reader :db, :map_tree
+  attr_reader :db, :map_tree, :pushed
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
     @map_maker = map_maker
+    @pushed = []
   end
 
   def load_map(id); @map_maker.call(id); end
+  # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
+  def push(scene); @pushed << scene; end
 end
 
 def fake_parent(db)
@@ -535,6 +538,22 @@ check 'Recall to Location teleports the player to the stored position' do
   st = scene.instance_variable_get(:@state)
   eq [4, 3], [st.x, st.y], 'player recalled to the stored tile'
   eq 1, st.map_id, 'on the recalled map'
+end
+
+check 'the menu opens on cancel only when menu access is allowed' do
+  scene = new_scene({}, player: [2, 2])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+
+  st.menu_access = false
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq 0, parent.pushed.size, 'menu is suppressed when access is forbidden'
+
+  st.menu_access = true
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq 1, parent.pushed.size, 'menu opens once access is allowed'
 end
 
 # -- summary ------------------------------------------------------------------

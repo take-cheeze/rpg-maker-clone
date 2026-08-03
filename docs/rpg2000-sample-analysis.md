@@ -185,7 +185,7 @@ runtime can execute virtually all of it.
    | **Battle** | EnemyEncounter (10710) | Sample2 |
    | **BGM stack** | MemorizeBGM (11530), PlayMemorizedBGM (11540) | Sample2 |
    | **Movement sync** | ProceedWithMovement (11340) | Sample3 |
-   | **Menu/telep. access, misc** | ChangeMainMenuAccess (11960), MemorizeLocation (10820), PlayerVisibility (11310) | Sample3 |
+   | **Menu/telep. access, misc** ✅ | ChangeMainMenuAccess (11960) and MemorizeLocation (10820) now implemented; PlayerVisibility (11310) remains | Sample3 |
    | **Unidentified** | code 10660, 10690 (106xx range) | Sample2, Sample3 |
 
 ## Recommended priorities for the interpreter
@@ -210,7 +210,9 @@ Ordered by real-world frequency across the analysed games:
 6. Lower priority: BGM memorize/replay, ✅ `MemorizeLocation`/`RecallToLocation`
    (*implemented* — store the player position into three variables and teleport
    back to it; covered by `scripts/rpg2k_logic_check.rb` and
-   `scripts/rpg2k_scene_check.rb`), menu/teleport access toggles,
+   `scripts/rpg2k_scene_check.rb`), ✅ `ChangeMainMenuAccess` (11960) and
+   `ChangeSaveAccess` (11930) (*implemented* — gate opening the menu and saving;
+   covered by the same two harnesses), the teleport/escape access toggles,
    `PlayerVisibility`.
 7. **Identify opcodes 10660 and 10690** — unnamed in the current opcode table;
    worth confirming against liblcf before implementing.

@@ -760,6 +760,35 @@ check 'Recall to Location issues a teleport from the stored variables' do
   eq [3, 6, 2, 0], it.teleport # keeps the current facing (direction 0)
 end
 
+# -- Change Main Menu / Save Access ------------------------------------------
+
+check 'Change Main Menu Access allows and forbids opening the menu' do
+  st = new_state
+  ok st.menu_access, 'menu access defaults on'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_MENU_ACCESS, [0])]) # forbid
+  it.update
+  eq false, st.menu_access
+  ok !it.waiting?, 'the command does not pause the interpreter'
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_MENU_ACCESS, [1])]) # allow again
+  it2.update
+  eq true, st.menu_access
+end
+
+check 'Change Save Access allows and forbids saving' do
+  st = new_state
+  ok st.save_access, 'save access defaults on'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_SAVE_ACCESS, [0])]) # forbid
+  it.update
+  eq false, st.save_access
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_SAVE_ACCESS, [1])]) # allow again
+  it2.update
+  eq true, st.save_access
+end
+
 # -- actor HP / MP commands ---------------------------------------------------
 
 # A database row for an actor, and a fake DB exposing just what Game::Party /
@@ -796,11 +825,22 @@ check 'State save round-trips the message configuration' do
   st.message_config.position = Game::MessageConfig::POS_TOP
   st.message_config.face_name = 'F'
   st.message_config.face_index = 2
+  st.menu_access = false
+  st.save_access = false
   loaded = Game::State.load(db, st.to_h)
   eq true, loaded.message_config.transparent
   eq Game::MessageConfig::POS_TOP, loaded.message_config.position
   eq 'F', loaded.message_config.face_name
   eq 2, loaded.message_config.face_index
+  eq false, loaded.menu_access, 'menu access round-trips'
+  eq false, loaded.save_access, 'save access round-trips'
+  # A save written before these flags existed keeps them enabled (default on).
+  legacy = st.to_h
+  legacy.delete(:menu_access)
+  legacy.delete(:save_access)
+  legacy_loaded = Game::State.load(db, legacy)
+  eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
+  eq true, legacy_loaded.save_access, 'absent save access defaults on'
 end
 
 check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do

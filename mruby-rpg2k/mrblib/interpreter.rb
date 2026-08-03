@@ -48,6 +48,8 @@ module Game
       WAIT             = 11410
       PLAY_BGM         = 11510
       PLAY_SE          = 11550
+      CHANGE_SAVE_ACCESS = 11930
+      CHANGE_MENU_ACCESS = 11960
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -224,6 +226,8 @@ module Game
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
+      when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size

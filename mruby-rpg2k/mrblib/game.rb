@@ -905,6 +905,10 @@ module Game
   class State
     attr_reader :party, :switches, :variables, :message_config
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
+    # Whether the player may open the main menu / save, toggled by the Change
+    # Main Menu Access (11960) and Change Save Access (11930) event commands;
+    # both default on and are persisted in the save.
+    attr_accessor :menu_access, :save_access
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -918,6 +922,8 @@ module Game
       @timer_frames = 0
       @timer_running = false
       @message_config = MessageConfig.new
+      @menu_access = true
+      @save_access = true
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
@@ -938,7 +944,8 @@ module Game
       { map_id: @map_id, x: @x, y: @y, direction: @direction,
         switches: @switches.to_h, variables: @variables.to_h,
         party: @party.to_h, timer_frames: @timer_frames,
-        timer_running: @timer_running, message_config: @message_config.to_h }
+        timer_running: @timer_running, message_config: @message_config.to_h,
+        menu_access: @menu_access, save_access: @save_access }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -983,6 +990,10 @@ module Game
       state.timer_frames = h[:timer_frames] || 0
       state.timer_running = h[:timer_running] || false
       state.message_config.load_h(h[:message_config])
+      # Access flags default on; only an explicit stored value overrides them
+      # (so a save written before these existed keeps the menu/save enabled).
+      state.menu_access = h[:menu_access] unless h[:menu_access].nil?
+      state.save_access = h[:save_access] unless h[:save_access].nil?
       state
     end
   end

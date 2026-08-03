@@ -865,9 +865,11 @@ class RPG2k
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
 
-      # The cancel button opens the main menu over the map.
+      # The cancel button opens the main menu over the map, unless a Change Main
+      # Menu Access command has forbidden it.
       def try_open_menu
         return if event_busy?
+        return unless @state.menu_access
         return unless Input.trigger?(Input::B)
         @parent.push Scene::Menu.new(@parent, @state)
       end
@@ -1320,7 +1322,11 @@ class RPG2k
       def select_command
         case COMMANDS[@index]
         when "Save"
-          show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+          if @state.save_access
+            show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+          else
+            show_message("You cannot save right now.")
+          end
         when "End Game"
           show_message("Returning to title...", :end_game)
         else
