@@ -132,6 +132,27 @@ class MV
       input_map.select { |key, _| RGSS::Input.press?(key) }.values
     end
 
+    # JS that pushes a pointer sample (canvas x/y, left-button pressed) into MV's
+    # TouchInput: it sets `_x`/`_y` and feeds `_newState` the triggered/released/
+    # moved edges MV's DOM handlers would, tracking the previous state on the
+    # object so press/release are detected across frames. MV's `TouchInput.update`
+    # (run during the scene update) turns `_newState` into the isTriggered/
+    # isPressed/isReleased its windows query, so menu clicks work. Split out so
+    # the mapping is unit-testable without a live engine or a pointer device.
+    def touch_bridge_js(x, y, pressed)
+      "(function(x,y,p){ if (typeof TouchInput === 'undefined' || " \
+      "!TouchInput._newState) return; TouchInput._x = x; TouchInput._y = y; " \
+      "var prev = !!TouchInput.__mvPrev; " \
+      "if (p && !prev) { TouchInput._screenPressed = true; " \
+      "TouchInput._mousePressed = true; TouchInput._pressedTime = 0; " \
+      "TouchInput._newState.triggered = true; } " \
+      "else if (!p && prev) { TouchInput._screenPressed = false; " \
+      "TouchInput._mousePressed = false; TouchInput._newState.released = true; } " \
+      "else if (p && prev) { TouchInput._newState.moved = true; } " \
+      "TouchInput.__mvPrev = p; })(#{x.to_i}, #{y.to_i}, " \
+      "#{pressed ? "true" : "false"});"
+    end
+
     # Parse one drained audio op (see AUDIO_BRIDGE_JS) into a call spec:
     # [method, *args]. `*_play` ops become [:kind_play, "audio/<kind>/<name>",
     # volume, pitch] with the maker's folder prepended so RGSS resolves it under
@@ -216,6 +237,7 @@ class MV
     boot unless @booted
 
     sync_input # M5: push RGSS input into MV's Input before the scene updates
+    sync_touch # M5: push RGSS mouse into MV's TouchInput before the scene update
     pump_frame # M3: run the rAF/timer queue for one frame
     pump_audio # M5: drain MV's queued audio ops into RGSS::Audio
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
@@ -247,6 +269,22 @@ class MV
     )
   rescue StandardError => e
     $stderr.puts "[MV] input sync error: #{e.message}"
+  end
+
+  # Bridge the pointer to MV's TouchInput (menu/title clicking). RGSS::Input,
+  # fed by the SDL backend, exposes the current pointer position and button;
+  # push a sample into TouchInput each frame before the scene updates (see
+  # MV.touch_bridge_js). No-op until the engine (and thus TouchInput) has loaded,
+  # and inert under backends with no mouse (the state stays at the origin,
+  # unpressed).
+  def sync_touch
+    MV::JS.eval(
+      self.class.touch_bridge_js(
+        RGSS::Input.mouse_x, RGSS::Input.mouse_y, RGSS::Input.mouse_pressed?
+      )
+    )
+  rescue StandardError => e
+    $stderr.puts "[MV] touch sync error: #{e.message}"
   end
 
   # Drain the audio ops MV queued this frame (see AUDIO_BRIDGE_JS) and play them
