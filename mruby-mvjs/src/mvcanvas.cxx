@@ -226,13 +226,34 @@ void blend_difference(uint8_t* d, int r, int g, int b, int a) {
   d[3] = static_cast<uint8_t>((a * 255 + d[3] * ia) / 255);
 }
 
+// "saturation" blend, as MV uses it: a white fill desaturates the backdrop.
+// The non-separable saturation mode takes the source's saturation (0 for white)
+// with the backdrop's hue and luminosity, so a white source collapses every
+// pixel to its own luminosity -- a greyscale that preserves brightness. MV only
+// ever fills white here (ToneSprite's grey tone, Sprite grey colour-tone), so
+// the source colour is ignored and each channel lerps toward the luminosity by
+// the coverage `a`. Reachable once the boot probe reports
+// canUseSaturationBlend, which it now does (white-on-black saturation reads
+// back black).
+void blend_saturation(uint8_t* d, int /*r*/, int /*g*/, int /*b*/, int a) {
+  if (a <= 0)
+    return;
+  // Rec. 601-ish luminosity with 0.30/0.59/0.11 weights scaled to /256.
+  const int lum = (77 * d[0] + 151 * d[1] + 28 * d[2]) >> 8;
+  d[0] = static_cast<uint8_t>(d[0] + (lum - d[0]) * a / 255);
+  d[1] = static_cast<uint8_t>(d[1] + (lum - d[1]) * a / 255);
+  d[2] = static_cast<uint8_t>(d[2] + (lum - d[2]) * a / 255);
+}
+
 // Dispatch by composite-op mode (0 = source-over, 1 = lighter/additive,
-// 2 = difference) threaded through from the Ctx.
+// 2 = difference, 3 = saturation) threaded through from the Ctx.
 inline void blend_mode(uint8_t* d, int r, int g, int b, int a, int mode) {
   if (mode == 1)
     blend_add(d, r, g, b, a);
   else if (mode == 2)
     blend_difference(d, r, g, b, a);
+  else if (mode == 3)
+    blend_saturation(d, r, g, b, a);
   else
     blend(d, r, g, b, a);
 }
@@ -826,13 +847,13 @@ const char* kCanvasPreamble = R"MVJS(
   Ctx.prototype.setTransform = function (a, b, c, d, e, f) { this._m = [a, b, c, d, e, f]; };
   Ctx.prototype.resetTransform = function () { this._m = [1, 0, 0, 1, 0, 0]; };
   // Map globalCompositeOperation to the native blend mode: 1 = lighter/additive
-  // (flashes, weather, positive tones), 2 = difference (negative screen tones).
-  // Everything else (including the default source-over) is 0; unsupported ops
-  // stay source-over, which is also why the boot blend-mode probe leaves
-  // saturation disabled.
+  // (flashes, weather, positive tones), 2 = difference (negative screen tones),
+  // 3 = saturation (grey/desaturation tones). Everything else (including the
+  // default source-over) is 0; unsupported ops stay source-over.
   function compositeMode(op) {
     if (op === 'lighter') return 1;
     if (op === 'difference') return 2;
+    if (op === 'saturation') return 3;
     return 0;
   }
   // Map the axis-aligned rect (x,y,w,h) through the current matrix to a device
