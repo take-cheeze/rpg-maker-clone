@@ -62,14 +62,28 @@ Create ADRs in /docs/adr for:
     common-event id (505 entries for Nepheshel), each a per-event exec state.
   - **200** — a non-standard high-id chunk written by some runtimes; not part of
     the canonical RPG2000 layout, so it is intentionally left undocumented.
+  - **111** — `SAVE_MAP_EVENT`: field 11 is each map event's live position
+    (`SAVE_MOVABLE`) — confirmed because all 21 saved entries match map 12's 21
+    defined events by id and sit in-bounds (`lcf_save_check.rb` re-checks this
+    when the map's `.lmu` is beside the save). Two leading int fields (1, 2, the
+    map scroll/pan) stay undecoded pending differential saves.
+  - **108** — `SAVE_PARTY_ACTOR`, one entry per actor the party has held. Beyond
+    the state block, the decoded fields are level (31), exp (32), skills (51/52),
+    equipment (61, five item ids `[weapon,shield,armour,helmet,accessory]`) and
+    current HP/MP (71/72) — validated because level tracks exp across the roster,
+    actor 1's HP (71) matches the SAVE_TITLE `hero_hp`, and every equipment id
+    resolves to a database item of the matching type. The base-stat block is
+    still undecoded (see ADR 0014).
 - When decoding a chunk, prove field meanings against real bytes (change one
   known thing in-game, re-save, diff) rather than guessing; document only what
   the data (or the rpg2kpsp analysis wiki) spells out, per ADR 0002.
 - The runtime can resume from a real save: `Game::State.from_lsd(db, save)`
-  rebuilds a `State` from a parsed `LcfSaveData`, and `continue_game` loads an
-  editor `Save<N>.lsd` when present. `ruby scripts/rpg2k_save_load_check.rb`
-  round-trips a real save through it. Use `save[101]`, not `save.system`, in
-  CRuby-tested code — `system` resolves to `Kernel#system` there.
+  rebuilds a `State` from a parsed `LcfSaveData` (leader position, party roster,
+  gold, items, switches, variables, and the roster's saved current HP/MP from
+  chunk 108), and `continue_game` loads an editor `Save<N>.lsd` when present.
+  `ruby scripts/rpg2k_save_load_check.rb` round-trips a real save through it. Use
+  `save[101]`, not `save.system`, in CRuby-tested code — `system` resolves to
+  `Kernel#system` there.
 - **RPG2000 vs RPG2003:** `LCF::MODE` is a compile-time constant (2000) that only
   supplies edition-dependent *defaults* (max level, variable range); chunk
   decoding is id-driven, so a 2003 file parses either way. To branch on a file's

@@ -977,12 +977,23 @@ module Game
     def self.from_lsd(db, save)
       hero = save.hero
       inv = save.inventory
-      party = Party.new(db, (inv.party || []))
+      roster = inv.party || []
+      party = Party.new(db, roster)
       items = {}
       ids = inv.item_ids || []
       counts = inv.item_counts || []
       ids.each_index { |i| items[ids[i]] = counts[i] || 0 }
-      party.load_state(items: items, gold: inv.gold)
+      # Per-actor vitals come from the SAVE_PARTY_ACTOR table (chunk 108), keyed
+      # by actor id. Restore the saved current HP/SP for the roster so Continue
+      # resumes a wounded party rather than silently healing it to full.
+      hp = {}
+      mp = {}
+      (save[108] || []).each do |aid, sa|
+        next unless roster.include?(aid)
+        hp[aid] = sa.hp if sa.hp
+        mp[aid] = sa.mp if sa.mp
+      end
+      party.load_state(items: items, gold: inv.gold, hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
       state.direction = hero.direction || 2
       sys = save[101]
