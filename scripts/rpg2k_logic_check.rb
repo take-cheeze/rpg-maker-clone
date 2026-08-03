@@ -415,6 +415,53 @@ check 'Screen tint clamps channels to 0..200' do
   eq [200, 0, 100, 100], s.tint
 end
 
+check 'Screen shake oscillates within amplitude and settles after its duration' do
+  s = Game::Screen.new
+  eq 0, s.shake_offset
+  ok !s.shaking?
+  s.shake(4, 5, 10) # power 4 -> amplitude 8 px, over 10 frames
+  ok s.shaking?
+  amp = 8
+  moved = false
+  9.times do
+    s.update
+    off = s.shake_offset
+    ok off >= -amp && off <= amp, "shake offset #{off} outside +/-#{amp}"
+    moved ||= off != 0
+  end
+  ok moved, 'the shake actually displaced the view'
+  s.update # final frame settles back to centre
+  eq 0, s.shake_offset
+  ok !s.shaking?
+end
+
+check 'Screen shake with zero duration is inert' do
+  s = Game::Screen.new
+  s.shake(9, 9, 0)
+  ok !s.shaking?
+  eq 0, s.shake_offset
+end
+
+check 'Screen zero-power shake produces no offset' do
+  s = Game::Screen.new
+  s.shake(0, 5, 30)
+  20.times { s.update }
+  eq 0, s.shake_offset
+end
+
+check 'Screen busy? reflects tint or shake activity' do
+  s = Game::Screen.new
+  ok !s.busy?
+  s.tint_to(200, 100, 100, 100, 3)
+  ok s.busy?, 'a tint transition makes it busy'
+  3.times { s.update }
+  ok !s.busy?
+  s.shake(3, 3, 3)
+  ok s.busy?, 'a shake makes it busy'
+  3.times { s.update }
+  ok !s.busy?
+end
+
 # -- Message parsing (control codes / colour) --------------------------------
 
 check 'Message.expand fills v/n codes and drops display codes' do
@@ -807,6 +854,33 @@ check 'Tint Screen with an instant (zero-duration) transition does not wait' do
   it.update
   ok !it.waiting?, 'nothing to wait for when the tint is immediate'
   eq [50, 60, 70, 100], st.screen.tint
+end
+
+check 'Shake Screen without a wait starts a shake and does not pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # power 5, speed 4, 5 tenths (30 frames), wait 0.
+  it.start([FakeCmd.new(IC::SHAKE_SCREEN, [5, 4, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'a no-wait shake keeps running'
+  eq true, st.switches[1], 'the command after the shake still ran'
+  ok st.screen.shaking?, 'a shake is in progress'
+end
+
+check 'Shake Screen with a wait pauses until the shake ends' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHAKE_SCREEN, [5, 4, 1, 1]), # 6 frames, wait
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok it.waiting?, 'a waiting shake pauses the interpreter'
+  eq :screen, it.wait_kind
+  ok !st.switches[2]
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[2], 'resumed once the shake finished'
 end
 
 check 'conditional branch on the timer' do

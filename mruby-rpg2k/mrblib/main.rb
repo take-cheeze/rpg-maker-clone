@@ -941,7 +941,7 @@ class RPG2k
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
-          when :screen then @interpreter.resume unless @state.screen.tinting?
+          when :screen then @interpreter.resume unless @state.screen.busy?
           end
         else
           @interpreter.update
@@ -1243,6 +1243,10 @@ class RPG2k
         px, py = player_pixel
         cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
         cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        # Screen shake slides the whole view horizontally (the player moves with
+        # the map, so the entire screen shakes); the map edge may show a sliver
+        # of void during the shake, which is fine.
+        cam_x -= @state.screen.shake_offset
 
         draw_layers cam_x, cam_y
 

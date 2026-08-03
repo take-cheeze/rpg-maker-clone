@@ -180,7 +180,7 @@ runtime can execute virtually all of it.
    | Theme | Opcodes seen | Appears in |
    | --- | --- | --- |
    | **Pictures** | ShowPicture (11110), MovePicture (11120), ErasePicture (11130) | Sample2 |
-   | **Screen effects** ◐ | TintScreen (11030) state machine implemented (viewport-tone render pending); FlashScreen (11040), PanScreen (11060) remain | Sample2, Sample3 |
+   | **Screen effects** ◐ | ShakeScreen (11050) implemented and visible (camera offset); TintScreen (11030) state machine done (viewport-tone render pending); FlashScreen (11040), PanScreen (11060) remain | Sample2, Sample3 |
    | **Message polish** ✅ | MessageOptions (10120), ChangeFaceGraphic (10130) — now implemented | Sample2, Sample3 |
    | **Battle** | EnemyEncounter (10710) | Sample2 |
    | **BGM stack** ✅ | MemorizeBGM (11530), PlayMemorizedBGM (11540) — now implemented | Sample2 |
@@ -202,10 +202,11 @@ Ordered by real-world frequency across the analysed games:
    — the biggest single gap in Sample2 and pervasive in RPG2000 cutscenes and
    custom menus.
 3. **Screen effects — `TintScreen`/`FlashScreen`/`PanScreen` (11030/11040/11060)**
-   — common cutscene polish, appear in both games. ◐ `TintScreen` is now
-   implemented as a host-tested `Game::Screen` tint state machine (interpolation
-   + the wait flag); applying it as an `RGSS::Viewport` tone is the native half
-   still to come. `FlashScreen`/`PanScreen` remain.
+   — common cutscene polish, appear in both games. ◐ `ShakeScreen` is
+   implemented and **visible** (a host-tested `Game::Screen` triangle-wave camera
+   offset), and `TintScreen` is a host-tested `Game::Screen` tint state machine
+   (interpolation + the wait flag) whose only remaining half is applying it as an
+   `RGSS::Viewport` tone in C++. `FlashScreen`/`PanScreen` remain.
 4. **`EnemyEncounter` (10710)** — the entry point to the (still-unbuilt) battle
    system; unblocks the battle-showcase samples.
 5. ✅ **`ProceedWithMovement` (11340)** — *implemented.* Pairs with the existing

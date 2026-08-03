@@ -622,6 +622,25 @@ check 'Tint Screen with a wait holds the interpreter until the tint settles' do
   ok st.switches[1], 'the interpreter resumed once the tint settled'
 end
 
+check 'Shake Screen with a wait holds the interpreter and renders with an offset' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHAKE_SCREEN, [6, 5, 3, 1]), # power 6, speed 5, 0.3s, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  5.times { scene.update } # mid-shake: rendering runs with a non-zero offset
+  ok st.screen.shaking?, 'still shaking'
+  ok !st.switches[1], 'the command after the shake waits'
+
+  40.times { scene.update } # 0.3s -> 18 frames, plenty
+  ok !st.screen.shaking?, 'the shake ended'
+  ok st.switches[1], 'the interpreter resumed after the shake'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
