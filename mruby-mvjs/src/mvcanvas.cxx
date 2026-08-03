@@ -499,6 +499,118 @@ JSValue js_draw_text(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// Read a numeric JS array into a vector<double> (length via .length, elements
+// by index). Non-arrays yield an empty vector.
+std::vector<double> js_num_array(JSContext* ctx, JSValueConst v) {
+  std::vector<double> out;
+  JSValue lenv = JS_GetPropertyStr(ctx, v, "length");
+  int64_t len = 0;
+  JS_ToInt64(ctx, &len, lenv);
+  JS_FreeValue(ctx, lenv);
+  for (int64_t i = 0; i < len; ++i) {
+    JSValue e = JS_GetPropertyUint32(ctx, v, static_cast<uint32_t>(i));
+    double d = 0;
+    JS_ToFloat64(ctx, &d, e);
+    JS_FreeValue(ctx, e);
+    out.push_back(d);
+  }
+  return out;
+}
+
+// Sample a sorted gradient (parallel offset/channel arrays) at position t in
+// [0,1], writing the interpolated colour to out[4]. Before the first stop uses
+// the first colour; after the last uses the last.
+void gradient_sample(const std::vector<double>& off,
+                     const std::vector<double>& r,
+                     const std::vector<double>& g,
+                     const std::vector<double>& b,
+                     const std::vector<double>& a,
+                     double t,
+                     double out[4]) {
+  const size_t n = off.size();
+  if (t <= off[0]) {
+    out[0] = r[0];
+    out[1] = g[0];
+    out[2] = b[0];
+    out[3] = a[0];
+    return;
+  }
+  if (t >= off[n - 1]) {
+    out[0] = r[n - 1];
+    out[1] = g[n - 1];
+    out[2] = b[n - 1];
+    out[3] = a[n - 1];
+    return;
+  }
+  for (size_t i = 0; i + 1 < n; ++i) {
+    if (t >= off[i] && t <= off[i + 1]) {
+      const double span = off[i + 1] - off[i];
+      const double f = span > 0 ? (t - off[i]) / span : 0.0;
+      out[0] = r[i] + (r[i + 1] - r[i]) * f;
+      out[1] = g[i] + (g[i + 1] - g[i]) * f;
+      out[2] = b[i] + (b[i + 1] - b[i]) * f;
+      out[3] = a[i] + (a[i + 1] - a[i]) * f;
+      return;
+    }
+  }
+}
+
+// __mv_canvasFillGradient(handle, rx, ry, rw, rh, x0, y0, x1, y1,
+//                         offsets, r, g, b, a, globalAlpha)
+// Fill the device rect (rx,ry,rw,rh) with a linear gradient whose axis runs
+// (x0,y0)->(x1,y1) in device space; the parallel stop arrays give each colour
+// stop's offset and RGBA. Each pixel's colour is its projection onto the axis.
+// MV's Bitmap.gradientFillRect (gauges, window dimmers) drives this.
+JSValue js_fill_gradient(JSContext* ctx,
+                         JSValueConst,
+                         int argc,
+                         JSValueConst* argv) {
+  Canvas* c = canvas_get(ai(ctx, argc, argv, 0));
+  if (!c || argc < 15)
+    return JS_UNDEFINED;
+  const int rx = ai(ctx, argc, argv, 1), ry = ai(ctx, argc, argv, 2);
+  const int rw = ai(ctx, argc, argv, 3), rh = ai(ctx, argc, argv, 4);
+  const double x0 = ad(ctx, argc, argv, 5, 0), y0 = ad(ctx, argc, argv, 6, 0);
+  const double x1 = ad(ctx, argc, argv, 7, 0), y1 = ad(ctx, argc, argv, 8, 0);
+  const std::vector<double> off = js_num_array(ctx, argv[9]);
+  const std::vector<double> r = js_num_array(ctx, argv[10]);
+  const std::vector<double> g = js_num_array(ctx, argv[11]);
+  const std::vector<double> b = js_num_array(ctx, argv[12]);
+  const std::vector<double> a = js_num_array(ctx, argv[13]);
+  const double galpha = ad(ctx, argc, argv, 14, 1);
+  const size_t n = off.size();
+  if (n == 0 || r.size() < n || g.size() < n || b.size() < n || a.size() < n)
+    return JS_UNDEFINED;
+
+  const double dx = x1 - x0, dy = y1 - y0;
+  const double len2 = dx * dx + dy * dy;
+  for (int j = 0; j < rh; ++j) {
+    const int ty = ry + j;
+    if (ty < 0 || ty >= c->h)
+      continue;
+    for (int i = 0; i < rw; ++i) {
+      const int tx = rx + i;
+      if (tx < 0 || tx >= c->w)
+        continue;
+      double t = 0.0;
+      if (len2 > 0)
+        t = ((tx + 0.5 - x0) * dx + (ty + 0.5 - y0) * dy) / len2;
+      if (t < 0)
+        t = 0;
+      else if (t > 1)
+        t = 1;
+      double col[4];
+      gradient_sample(off, r, g, b, a, t, col);
+      const int alpha = static_cast<int>(std::lround(col[3] * galpha));
+      blend(&c->px[(static_cast<size_t>(ty) * c->w + tx) * 4],
+            static_cast<int>(std::lround(col[0])),
+            static_cast<int>(std::lround(col[1])),
+            static_cast<int>(std::lround(col[2])), alpha);
+    }
+  }
+  return JS_UNDEFINED;
+}
+
 // __mv_canvasGetPixel(handle, x, y) -> [r, g, b, a] (used by tests and by the
 // getImageData path). Out-of-range reads return transparent black.
 JSValue js_get_pixel(JSContext* ctx,
@@ -632,10 +744,35 @@ const char* kCanvasPreamble = R"MVJS(
             Math.round(Math.abs(x1 - x0)), Math.round(Math.abs(y1 - y0))];
   }
   Ctx.prototype.fillRect = function (x, y, w, h) {
-    var c = parseColor(this.fillStyle);
+    var fs = this.fillStyle;
+    if (fs && fs.__mvGrad) { this._fillGradientRect(fs, x, y, w, h); return; }
+    var c = parseColor(fs);
     var a = Math.round(c[3] * this.globalAlpha);
     var r = mapRect(this._m, x, y, w, h);
     g.__mv_canvasFillRect(this.__h, r[0], r[1], r[2], r[3], c[0], c[1], c[2], a);
+  };
+  // Fill a rect with a gradient fillStyle. The rect and the gradient axis are
+  // both mapped through the current transform to device space, then the native
+  // rasteriser projects each pixel onto the axis. A radial gradient (no true
+  // radial rasteriser yet) falls back to a linear one along its centre line.
+  Ctx.prototype._fillGradientRect = function (grad, x, y, w, h) {
+    var stops = grad._stops;
+    if (!stops.length) return;
+    stops = stops.slice().sort(function (p, q) { return p[0] - q[0]; });
+    var m = this._m;
+    var r = mapRect(m, x, y, w, h);
+    function mapPt(px, py) {
+      return [m[0] * px + m[2] * py + m[4], m[1] * px + m[3] * py + m[5]];
+    }
+    var p0 = mapPt(grad.x0, grad.y0), p1 = mapPt(grad.x1, grad.y1);
+    var offs = [], rr = [], gg = [], bb = [], aa = [];
+    for (var i = 0; i < stops.length; i++) {
+      offs.push(stops[i][0]);
+      var col = stops[i][1];
+      rr.push(col[0]); gg.push(col[1]); bb.push(col[2]); aa.push(col[3]);
+    }
+    g.__mv_canvasFillGradient(this.__h, r[0], r[1], r[2], r[3],
+      p0[0], p0[1], p1[0], p1[1], offs, rr, gg, bb, aa, this.globalAlpha);
   };
   Ctx.prototype.clearRect = function (x, y, w, h) {
     var r = mapRect(this._m, x, y, w, h);
@@ -722,16 +859,26 @@ const char* kCanvasPreamble = R"MVJS(
     if (d > 2) d = 2;
     drawText(this, this.strokeStyle, d, text, x, y);
   };
-  // Gradients/patterns: MV's Bitmap.gradientFillRect creates a gradient and
-  // chains .addColorStop on it before assigning it to fillStyle, so these must
-  // return a real object (a no-op returning undefined would throw). The buffer
-  // path doesn't render gradients yet — a gradient fillStyle falls back to
-  // opaque black in parseColor — but the calls no longer crash.
-  Ctx.prototype.createLinearGradient = function () {
-    return { addColorStop: function () {} };
+  // Gradients: MV's Bitmap.gradientFillRect builds a linear gradient, chains
+  // .addColorStop, assigns it to fillStyle and fillRects. Return an object that
+  // records its axis and colour stops; fillRect rasterises it (see
+  // _fillGradientRect). Each stop's colour is parsed once, at add time.
+  function makeGradient(kind, x0, y0, x1, y1) {
+    return {
+      __mvGrad: kind, x0: x0, y0: y0, x1: x1, y1: y1, _stops: [],
+      addColorStop: function (offset, color) {
+        this._stops.push([offset, parseColor(color)]);
+      },
+    };
+  }
+  Ctx.prototype.createLinearGradient = function (x0, y0, x1, y1) {
+    return makeGradient('linear', x0, y0, x1, y1);
   };
-  Ctx.prototype.createRadialGradient = function () {
-    return { addColorStop: function () {} };
+  // No true radial rasteriser yet: approximate a radial gradient as a linear one
+  // from the inner circle's centre to the outer circle's edge, so it renders a
+  // reasonable ramp instead of falling back to black.
+  Ctx.prototype.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
+    return makeGradient('radial', x1, y1, x1 + (r1 || 0), y1);
   };
   Ctx.prototype.createPattern = function () { return {}; };
   // Path and text operations MV/PIXI call but that the buffer path does not need
@@ -937,6 +1084,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 17);
   install(ctx, global, "__mv_canvasGetPixel", js_get_pixel, 3);
   install(ctx, global, "__mv_canvasDrawText", js_draw_text, 17);
+  install(ctx, global, "__mv_canvasFillGradient", js_fill_gradient, 15);
   install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   JS_FreeValue(ctx, global);
