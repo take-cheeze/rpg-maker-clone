@@ -972,17 +972,21 @@ module LCF
     # https://w.atwiki.jp/rpg2kpsp/pages/40.html
     #
     # Saved per-actor status (chunk 108), one entry per hero the party has held.
-    # The rpg2kpsp page documents the state block; the growth/vitals fields below
-    # were decoded from a real save (Nepheshel Save01) and cross-checked: level
-    # (31) rises with exp (32) across the roster — actor 3 is L5/307exp, actor 4
-    # L8/1177exp — and current HP/SP (71/72) sit at a hero's live vitals (the
-    # level-1 hero at 50/0, higher members at several hundred). Equipment and the
-    # base-stat block are present too but left undecoded until proven.
+    # The rpg2kpsp page documents the state block; the fields below were decoded
+    # from a real save (Nepheshel Save01) and cross-checked against the database:
+    # level (31) rises with exp (32) across the roster — actor 3 is L5/307exp,
+    # actor 4 L8/1177exp; current HP/SP (71/72) sit at a hero's live vitals (the
+    # level-1 hero at 50/0); and equipment (61) is five item ids [weapon, shield,
+    # armour, helmet, accessory] — every slot's id resolves to an item of the
+    # matching type in the database (slot 0 weapons, slot 2 armour, slot 3
+    # helmets, slot 4 accessories; a dual-wield hero carries a second weapon in
+    # the shield slot). The base-stat block is present too but left undecoded.
     SAVE_PARTY_ACTOR = {
       31 => { name: :level, type: :int, default: 1 },      # レベル
       32 => { name: :exp, type: :int, default: 0 },        # 経験値
       51 => { name: :skill_size, type: :int, default: 0 }, # 『特技』情報のデータ数
       52 => { name: :skills, type: :int16_array },         # 習得特技 (uint16[])
+      61 => { name: :equipment, type: :int16_array },      # 装備 [武器,盾,鎧,兜,装飾]
       71 => { name: :hp, type: :int },                     # 現在ＨＰ
       72 => { name: :mp, type: :int },                     # 現在ＭＰ
       81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数

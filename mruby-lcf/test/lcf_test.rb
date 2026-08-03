@@ -382,6 +382,7 @@ assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
   # actor 1 (level-1 hero, HP 50/MP 0, no skills or states).
   a3 = lcf_array1d([lcf_int_field(31, 5), lcf_int_field(32, 307),
                     lcf_int_field(51, 3), lcf_shorts_field(52, [11, 12, 13]),
+                    lcf_shorts_field(61, [82, 0, 128, 220, 0]),
                     lcf_int_field(71, 56), lcf_int_field(72, 53),
                     lcf_int_field(81, 25), lcf_shorts_field(82, [0] * 25)])
   a1 = lcf_array1d([lcf_int_field(31, 1), lcf_int_field(32, 0),
@@ -393,6 +394,7 @@ assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
   assert_equal 307, save.actors[3].exp
   assert_equal 3, save.actors[3].skill_size
   assert_equal [11, 12, 13], save.actors[3].skills
+  assert_equal [82, 0, 128, 220, 0], save.actors[3].equipment
   assert_equal 56, save.actors[3].hp
   assert_equal 53, save.actors[3].mp
   assert_equal 1, save.actors[1].level

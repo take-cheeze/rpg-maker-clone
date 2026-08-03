@@ -20,13 +20,17 @@ gap was purely in decoding chunk 108 and feeding it through.
 
 ## Decision
 
-- **`SAVE_PARTY_ACTOR`** now decodes the growth and vitals fields, decoded from a
-  real save (Nepheshel Save01) and cross-checked against genuine data: `level`
-  (31) and `exp` (32) -- level rises with exp across the roster (actor 3 is
-  L5/307exp, actor 4 L8/1177exp); `skill_size`/`skills` (51/52, a `uint16[]` of
-  the learned skills); and current `hp`/`mp` (71/72). Field 71 is confirmed by an
-  independent chunk: the SAVE_TITLE summary's `hero_hp` (50 for the level-1 hero)
-  equals actor 1's decoded HP. The equipment and base-stat blocks are present but
+- **`SAVE_PARTY_ACTOR`** now decodes the growth, vitals and equipment fields,
+  decoded from a real save (Nepheshel Save01) and cross-checked against genuine
+  data: `level` (31) and `exp` (32) -- level rises with exp across the roster
+  (actor 3 is L5/307exp, actor 4 L8/1177exp); `skill_size`/`skills` (51/52, a
+  `uint16[]` of the learned skills); current `hp`/`mp` (71/72); and `equipment`
+  (61), five item ids `[weapon, shield, armour, helmet, accessory]`. Field 71 is
+  confirmed by an independent chunk: the SAVE_TITLE summary's `hero_hp` (50 for
+  the level-1 hero) equals actor 1's decoded HP. Equipment is confirmed against
+  the database: every slot's id resolves to an item of the matching type (slot 0
+  weapons, slot 2 armour, slot 3 helmets, slot 4 accessories; a dual-wield hero
+  carries a second weapon in the shield slot). The base-stat block is present but
   left undecoded until proven. `hp`/`mp` carry no schema default, so an absent
   field reads as `nil` and never overwrites a live value.
 - **`Game::State.from_lsd`** reads chunk 108, keys it by actor id, and passes the
@@ -45,7 +49,8 @@ gap was purely in decoding chunk 108 and feeding it through.
 - Only current HP/MP are applied to the runtime; the runtime derives max HP/SP
   from the database at the actor's *initial* level and does not yet scale stats
   with level, so a high-level saved actor's HP can exceed the runtime's computed
-  maximum. Level-scaled stats (and restoring level, exp, skills and states into
-  the runtime) remain follow-up -- the decoding added here is the prerequisite.
+  maximum. Level-scaled stats (and restoring level, exp, skills, equipment and
+  states into the runtime, which has no equipment model yet) remain follow-up --
+  the decoding added here is the prerequisite.
   No save fixture is bundled (games are downloaded, not redistributed), so the
   checks run against a locally generated save.

@@ -142,7 +142,10 @@ class SaveChecker
     detail = []
     (save.actors.each do |id, a|
       actors += 1
-      detail << "##{id} L#{a.level}/#{a.exp}xp hp=#{a.hp} mp=#{a.mp}" if detail.size < 4
+      if detail.size < 4
+        eq = (a.equipment || []).reject { |i| i == 0 }.size
+        detail << "##{id} L#{a.level}/#{a.exp}xp hp=#{a.hp} mp=#{a.mp} eq=#{eq}"
+      end
     end rescue nil)
     puts "  party:   #{actors} saved actor entrie(s)#{detail.empty? ? '' : " #{detail.join('  ')}"}"
     inv = save.inventory
