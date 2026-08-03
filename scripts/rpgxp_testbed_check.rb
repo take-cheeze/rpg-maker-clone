@@ -196,6 +196,7 @@ class Checker
       if it.waiting?
         case it.wait_kind
         when :choice then it.choose(0)
+        when :number then it.resume_number(0)
         when :teleport then break
         else it.resume
         end

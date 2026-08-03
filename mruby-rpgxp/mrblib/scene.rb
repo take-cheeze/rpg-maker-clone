@@ -368,6 +368,13 @@ class RPGXP
         @rng = Game::Rng.new(0x52584250)
         @world = MapWorld.new(self, @rng)
         @characters = {}
+        # Forced routes from a Set Move Route (209) command, keyed by event id
+        # (kept out of the per-rebuild event entry so they survive page
+        # re-selection); plus the player's forced route mirror.
+        @forced_routes = {}
+        @player_route = nil
+        @player_char = nil
+        @player_route_timer = 0
         build_events
         build_parallels
         setup_sprites
@@ -378,17 +385,21 @@ class RPGXP
 
       def dispose
         close_message
+        close_number_input
         [@lower_sprite, @upper_sprite, @player_sprite].each { |s| s.dispose if s }
       end
 
       def update
         if @message
           drive_message
+        elsif @number_input
+          drive_number_input
         elsif @interpreter.running? || @interpreter.waiting?
           drive_interpreter
         else
           unless start_autorun
             step_parallels
+            step_player_route
             step_events
             unless event_busy? # an event-touch may have started a process
               step_movement
@@ -400,7 +411,7 @@ class RPGXP
       end
 
       def event_busy?
-        @message || @interpreter.running? || @interpreter.waiting?
+        @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
       private
@@ -532,7 +543,11 @@ class RPGXP
       def step_event(e)
         return if event_busy?
         ch = e[:char]
-        return unless ch && e[:page]
+        return unless ch
+        # A forced route (Set Move Route) overrides page movement until it is done.
+        forced = @forced_routes[e[:id]]
+        return step_forced_event(e, ch, forced) if forced
+        return unless e[:page]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
         e[:move_timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
@@ -547,6 +562,79 @@ class RPGXP
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
       rescue StandardError => ex
         $stderr.puts "[RGSS] event ##{e[:id]} movement failed: #{ex.message}"
+      end
+
+      # Advance an event's forced route one paced step, updating its occupied
+      # tile, and drop the route once a non-repeating one is exhausted.
+      def step_forced_event(e, ch, forced)
+        forced[:timer] -= 1
+        return if forced[:timer] > 0
+        forced[:timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
+        ox = ch.x
+        oy = ch.y
+        forced[:route].step(ch, @world) unless forced[:route].done?
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+        @forced_routes.delete(e[:id]) if forced[:route].done?
+      rescue StandardError => ex
+        $stderr.puts "[RGSS] event ##{e[:id]} forced move failed: #{ex.message}"
+        @forced_routes.delete(e[:id])
+      end
+
+      # Apply the Set Move Route requests an interpreter queued this frame. The
+      # interpreter has already resolved each target to :player or an event id.
+      def apply_move_requests(interp)
+        reqs = interp.take_move_route_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_move_request(r) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Set Move Route apply failed: #{e.message}"
+      end
+
+      def apply_move_request(r)
+        route = Game::MoveRoute.from_page(r[:route])
+        return unless route
+        if r[:target] == :player
+          start_player_route(route)
+        else
+          force_event_route(r[:target], route)
+        end
+      end
+
+      # Give a map event a forced route, overriding its page movement until the
+      # route finishes (a repeating route runs until replaced). It steps on the
+      # next frame, paced by the event's own move frequency.
+      def force_event_route(id, route)
+        return unless @characters[id]
+        @forced_routes[id] = { route: route, timer: 0 }
+      end
+
+      # Drive the player along a forced route: the player has no Game::Character,
+      # so mirror one, step it against the map world and write the tile back to
+      # the state. Forced player steps snap tile-to-tile (no pixel interpolation)
+      # and suppress input movement while active.
+      def start_player_route(route)
+        @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_route = route
+        @player_route_timer = 0
+      end
+
+      def step_player_route
+        return unless @player_route
+        @player_route_timer -= 1
+        return if @player_route_timer > 0
+        @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 30
+        @player_route.step(@player_char, @world) unless @player_route.done?
+        @state.x = @player_char.x
+        @state.y = @player_char.y
+        @state.direction = @player_char.direction
+        @dest_x = @state.x
+        @dest_y = @state.y
+        @moving = false
+        @move_count = 0
+        @player_route = nil if @player_route.done?
+      rescue StandardError => e
+        $stderr.puts "[RGSS] player forced move failed: #{e.message}"
+        @player_route = nil
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
@@ -590,11 +678,13 @@ class RPGXP
           case @interpreter.wait_kind
           when :message  then open_message(@interpreter.message_lines, false)
           when :choice   then open_message(@interpreter.choice_labels, true)
+          when :number   then open_number_input(@interpreter.input_digits)
           when :wait     then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           end
         else
           @interpreter.update
+          apply_move_requests(@interpreter)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
       end
@@ -640,9 +730,11 @@ class RPGXP
           end
         elsif it.running?
           it.update
+          apply_move_requests(it)
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
           it.update
+          apply_move_requests(it)
         end
       rescue StandardError
         nil
@@ -664,6 +756,9 @@ class RPGXP
         @dest_y = y
         @last_frame = nil
         @characters = {} # new map: events start at their spawn tiles
+        @forced_routes = {} # forced routes do not survive a map change
+        @player_route = nil
+        @player_char = nil
         build_events
         build_parallels
       rescue StandardError => e
@@ -748,6 +843,70 @@ class RPGXP
         @message = nil
       end
 
+      # -- number input (Input Number command) --------------------------------
+
+      # Open a digit-entry window for the Input Number (103) command. A compact
+      # centred panel shows `digits` boxes with a cursor the player edits.
+      def open_number_input(digits)
+        return if @number_input
+        model = Game::NumberInput.new(digits || 1)
+        cell = 28
+        w = model.digits * cell + Panel::BORDER * 2 + 8
+        h = MSG_LINE_H + Panel::BORDER * 2
+        win = Panel.new((SCREEN_W - w) / 2, SCREEN_H - h - 80, w, h, load_windowskin)
+        win.z = 320
+        contents = Bitmap.new(win.inner_width, win.inner_height)
+        @number_input = { window: win, contents: contents, model: model, cell: cell }
+        draw_number_input
+      end
+
+      def draw_number_input
+        ni = @number_input
+        return unless ni
+        model = ni[:model]
+        c = ni[:contents]
+        c.clear
+        c.font.color = Color.new(255, 255, 255, 255)
+        cell = ni[:cell]
+        (0...model.digits).each do |i|
+          x = 4 + i * cell
+          if i == model.cursor
+            c.fill_rect x, 2, cell - 4, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
+          end
+          c.draw_text x, 2, cell - 4, MSG_LINE_H - 4, model.digit(i).to_s, 1
+        end
+        ni[:window].contents = c
+      end
+
+      def drive_number_input
+        ni = @number_input
+        model = ni[:model]
+        if Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          model.inc
+          draw_number_input
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          model.dec
+          draw_number_input
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          model.left
+          draw_number_input
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          model.right
+          draw_number_input
+        elsif Input.trigger?(Input::C)
+          value = model.value
+          close_number_input
+          @interpreter.resume_number(value)
+          drive_after_message
+        end
+      end
+
+      def close_number_input
+        return unless @number_input
+        @number_input[:window].dispose
+        @number_input = nil
+      end
+
       def list_nonempty?(list)
         list && list.any? { |c| c.code != 0 }
       end
@@ -786,6 +945,7 @@ class RPGXP
           return
         end
 
+        return if @player_route # a forced route controls the player
         dir = Input.dir4
         return if dir == 0
 
