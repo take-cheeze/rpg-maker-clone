@@ -287,6 +287,39 @@ class RPGXP
       end
     end
 
+    # Adapter exposing the running map to the movement engine (Game::MoveRoute /
+    # Game::MoveType): it bridges their `world` protocol — passability, hero
+    # position, switch and sound side effects, randomness — onto the Scene::Map.
+    class MapWorld
+      def initialize(scene, rng)
+        @scene = scene
+        @rng = rng
+      end
+
+      def passable?(character, dir)
+        @scene.char_passable?(character, dir)
+      end
+
+      def hero_position
+        [@scene.state.x, @scene.state.y]
+      end
+
+      def set_switch(id, on)
+        @scene.state.switches[id] = on
+      end
+
+      def play_sound(audio)
+        return if audio.nil? || !audio.respond_to?(:name) || audio.name.nil?
+        Audio.se_play(audio.name, audio.volume || 100, audio.pitch || 100)
+      rescue StandardError => e
+        $stderr.puts "[RGSS] event move SE failed: #{e.message}"
+      end
+
+      def random(n)
+        @rng.random(n)
+      end
+    end
+
     class Map < Base
       TILE = RPGXP::TILE
       SCREEN_W = RPGXP::WIDTH
@@ -295,6 +328,10 @@ class RPGXP
       ROWS = SCREEN_H / TILE + 1
       SPEED = 4 # pixels/frame while stepping (must divide TILE)
       MSG_LINE_H = 32
+
+      # Frames between autonomous event steps, keyed by RMXP move frequency
+      # (1 slowest .. 6 fastest). Placeholder pacing while events draw as markers.
+      EVENT_MOVE_DELAY = { 1 => 120, 2 => 60, 3 => 30, 4 => 15, 5 => 8, 6 => 4 }.freeze
 
       # Event-page start triggers (RPG::Event::Page#trigger).
       TRIGGER_ACTION       = 0 # player presses the action button facing it
@@ -325,6 +362,12 @@ class RPGXP
         @choice_index = 0
         @running_event_id = nil
 
+        # Deterministic RNG for autonomous movement, and the adapter the movement
+        # engine queries. Characters persist across page re-selection (keyed by
+        # event id) so a roamed event does not snap back to its spawn tile.
+        @rng = Game::Rng.new(0x52584250)
+        @world = MapWorld.new(self, @rng)
+        @characters = {}
         build_events
         build_parallels
         setup_sprites
@@ -344,9 +387,20 @@ class RPGXP
         elsif @interpreter.running? || @interpreter.waiting?
           drive_interpreter
         else
-          start_autorun || (step_parallels; step_movement; try_action)
+          unless start_autorun
+            step_parallels
+            step_events
+            unless event_busy? # an event-touch may have started a process
+              step_movement
+              try_action
+            end
+          end
         end
         render
+      end
+
+      def event_busy?
+        @message || @interpreter.running? || @interpreter.waiting?
       end
 
       private
@@ -370,17 +424,50 @@ class RPGXP
         @events = {}
         @event_tiles = {}
         (@map.events || {}).each do |id, ev|
-          page = Game::EventPage.select(ev.pages, @state.switches, @state.variables,
-                                        ->(ch) { @state.self_switch(@state.map_id, id, ch) })
-          entry = { id: id, ev: ev, page: page, x: ev.x, y: ev.y,
-                    trigger: page && page.trigger }
+          entry = build_event(id, ev)
           @events[id] = entry
-          @event_tiles[[ev.x, ev.y]] = entry if page
+          @event_tiles[[entry[:char].x, entry[:char].y]] = entry if entry[:page]
         end
       rescue StandardError => e
         $stderr.puts "[RGSS] event setup failed, map runs with no events: #{e.message}"
         @events = {}
         @event_tiles = {}
+      end
+
+      # Build one event's runtime entry: its active page, a persistent
+      # Game::Character (reused across rebuilds so a roamed event keeps its
+      # position) refreshed with the page's movement properties, and the page's
+      # autonomous move type or custom move route.
+      def build_event(id, ev)
+        page = Game::EventPage.select(ev.pages, @state.switches, @state.variables,
+                                      ->(ch) { @state.self_switch(@state.map_id, id, ch) })
+        ch = (@characters[id] ||= Game::Character.new(ev.x, ev.y, ev_direction(page)))
+        move_type = 0
+        route = nil
+        if page
+          ch.move_speed = page.move_speed || 3
+          ch.move_frequency = page.move_frequency || 3
+          ch.through = page.through ? true : false
+          ch.direction_fix = page.direction_fix ? true : false
+          ch.always_on_top = page.always_on_top ? true : false
+          g = page.graphic
+          ch.set_graphic(g.character_name, g.character_hue, g.direction, g.pattern) if g
+          move_type = page.move_type || 0
+          route = Game::MoveRoute.from_page(page.move_route) if move_type == Game::MoveType::CUSTOM
+        end
+        { id: id, ev: ev, page: page, char: ch, trigger: page && page.trigger,
+          move_type: move_type, route: route,
+          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 30 }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] event ##{id} setup failed: #{e.message}"
+        { id: id, ev: ev, page: nil, char: (@characters[id] ||= Game::Character.new(ev.x, ev.y)),
+          trigger: nil, move_type: 0, route: nil, move_timer: 30 }
+      end
+
+      def ev_direction(page)
+        return 2 unless page && page.graphic
+        d = page.graphic.direction
+        d && d > 0 ? d : 2
       end
 
       # Background (parallel-process) interpreters: one per event whose active
@@ -424,10 +511,79 @@ class RPGXP
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         e = @event_tiles[[fx, fy]]
         return unless e && e[:trigger] == TRIGGER_ACTION && list_nonempty?(page_list(e))
+        e[:char].face(e[:char].direction_toward(@state.x, @state.y))
+        start_event(e)
+      end
+
+      # Run an event's command list (faced toward the player by the caller).
+      def start_event(e)
         @running_event_id = e[:id]
         @interpreter.start(page_list(e), @state.map_id, e[:id])
         drive_interpreter
       end
+
+      # Advance each event's autonomous / custom-route movement one frame, paced
+      # by move frequency. Skipped once any event process is running this frame,
+      # so the map holds still during messages.
+      def step_events
+        @events.each { |_id, e| step_event(e) }
+      end
+
+      def step_event(e)
+        return if event_busy?
+        ch = e[:char]
+        return unless ch && e[:page]
+        e[:move_timer] -= 1
+        return if e[:move_timer] > 0
+        e[:move_timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
+        ox = ch.x
+        oy = ch.y
+        if e[:route]
+          e[:route].step(ch, @world) unless e[:route].done?
+        else
+          dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
+          move_autonomous(e, dir) if dir
+        end
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+      rescue StandardError => ex
+        $stderr.puts "[RGSS] event ##{e[:id]} movement failed: #{ex.message}"
+      end
+
+      # Move an autonomous event one step in `dir`. Walking into the player fires
+      # an event-touch (trigger 2) event instead of moving; any other obstacle
+      # just turns the event to face it.
+      def move_autonomous(e, dir)
+        ch = e[:char]
+        nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
+        if nx == @state.x && ny == @state.y
+          ch.face(dir)
+          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && list_nonempty?(page_list(e))
+        elsif @world.passable?(ch, dir)
+          ch.move(dir)
+        else
+          ch.face(dir)
+        end
+      end
+
+      # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
+      # eagerly so an event that already moved this frame blocks the next one.
+      def reoccupy(e, ox, oy)
+        @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
+        @event_tiles[[e[:char].x, e[:char].y]] = e
+      end
+
+      # Collision test for an event stepping one tile in `dir`: in bounds, not
+      # onto the player or another event, and passable per the tileset. A
+      # "through" character ignores all of it. Public: called by MapWorld.
+      def char_passable?(character, dir)
+        return true if character.through
+        nx, ny = Game::Character.step_tile(character.x, character.y, dir)
+        return false unless in_bounds?(nx, ny)
+        return false if nx == @state.x && ny == @state.y
+        return false if @event_tiles[[nx, ny]]
+        @tileset.passable?(@map, nx, ny, dir)
+      end
+      public :char_passable?
 
       def drive_interpreter
         if @interpreter.waiting?
@@ -507,6 +663,7 @@ class RPGXP
         @dest_x = x
         @dest_y = y
         @last_frame = nil
+        @characters = {} # new map: events start at their spawn tiles
         build_events
         build_parallels
       rescue StandardError => e
