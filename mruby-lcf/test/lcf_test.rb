@@ -125,6 +125,19 @@ assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   assert_false row.key?(2)
 end
 
+assert "LCF::Array1D#int16_values reads a raw short array past a named accessor" do
+  # Chunk 31 with a two-level parameter curve (six shorts per level); the named
+  # `status` accessor only surfaces the first row, int16_values sees all of it.
+  status = [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8]
+  row = LCF::Array1D.new(
+    lcf_array1d([lcf_shorts_field(31, status)]),
+    { elements: { 31 => { name: :status, type: :int16_array,
+                          order: [:max_hp, :max_mp, :atk, :def, :int, :agi] } } })
+  assert_equal 10, row.status[:max_hp]        # named accessor: level 1 only
+  assert_equal status, row.int16_values(31)   # raw: the whole curve
+  assert_nil row.int16_values(99)             # absent chunk
+end
+
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
   actor = lcf_array1d([lcf_str_field(1, "Hero"), lcf_int_field(57, 3)])
   klass = lcf_array1d([lcf_str_field(1, "Soldier")])

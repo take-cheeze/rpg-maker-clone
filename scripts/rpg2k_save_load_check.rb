@@ -94,8 +94,14 @@ def check_game(dir)
   state.party.actors.each do |a|
     sa = saved[a.id]
     next unless sa
+    # Level (which rescales base stats) and exp are restored too, and the
+    # rescaled max HP/MP must still bound the restored current HP/MP.
+    eq sa.level, a.level, "actor #{a.id} level" if sa.level
+    eq sa.exp, a.exp, "actor #{a.id} exp" if sa.exp
     eq sa.hp, a.hp, "actor #{a.id} hp" if sa.hp
     eq sa.mp, a.mp, "actor #{a.id} mp" if sa.mp
+    eq true, a.hp <= a.max_hp, "actor #{a.id} hp within max (#{a.hp}/#{a.max_hp})"
+    eq true, a.mp <= a.max_mp, "actor #{a.id} mp within max (#{a.mp}/#{a.max_mp})"
   end
 
   # Switches/variables shift from the save's 0-indexed arrays to 1-indexed ids.
