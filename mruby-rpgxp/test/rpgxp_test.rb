@@ -371,6 +371,25 @@ assert "Interpreter: control variables from game quantities" do
   assert_equal 250, s.variables[3]
 end
 
+assert "Interpreter: erase event surfaces a one-shot request without pausing" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(116, [], 0),          # erase this event
+    cmd(121, [4, 4, 0], 0)    # then switch 4 ON (proves it kept running)
+  ], 1, 7)
+  it.update
+  assert_true s.switches[4]           # ran the command after the erase
+  assert_true it.take_erase_request   # the erase was requested
+  assert_false it.take_erase_request  # ... and the flag cleared on read
+
+  # A common event with no event context requests no erase.
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(116, [], 0)], 1, nil)
+  it2.update
+  assert_false it2.take_erase_request
+end
+
 assert "Interpreter: conditional branch true and else" do
   # Switch 5 ON -> true branch sets switch 1; else sets switch 2.
   list = [

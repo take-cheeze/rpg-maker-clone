@@ -203,9 +203,12 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   (`Game::EventPage`: switch / variable / self-switch, highest match wins) and a
   `Game::Interpreter` runs the XP command list with a suspend/resume model: Show
   Text / Choices, Conditional Branch / Else / End, Loop / Break / Repeat, Label /
-  Jump, Call Common Event, Control Switches / Variables / Self Switch, Change
-  Gold, Transfer Player and Play BGM/BGS/ME/SE, indent- and terminator-driven
-  with a per-frame step cap. `Scene::Map` starts events on the action button, on
+  Jump, Call Common Event, Erase Event, Control Switches / Variables / Self
+  Switch, Change Gold, Transfer Player and Play BGM/BGS/ME/SE, indent- and
+  terminator-driven with a per-frame step cap. **Erase Event** (116) flags the
+  running event and `Scene::Map` drops it (its sprite, movement, collision and
+  any parallel process) for the rest of the map visit, keyed so it stays gone
+  across page re-selection and reappears on a fresh map load. `Scene::Map` starts events on the action button, on
   player touch, on autorun or as a background parallel process, drives a
   message/choice window, and re-selects pages when an event finishes. Events
   also **roam autonomously**: `Game::Character` / `Game::MoveType` /

@@ -76,6 +76,7 @@ class RPGXP
       BREAK_LOOP      = 113
       REPEAT_ABOVE    = 413
       EXIT_EVENT      = 115
+      ERASE_EVENT     = 116
       CALL_COMMON     = 117
       LABEL           = 118
       JUMP_LABEL      = 119
@@ -126,6 +127,7 @@ class RPGXP
         @event_id = event_id
         @call_stack = []
         @move_route_requests = []
+        @erase_requested = false
         @running = true
         reset_waits
         self
@@ -138,6 +140,16 @@ class RPGXP
         @move_route_requests = []
         @running = false
         reset_waits
+      end
+
+      # True (once) if an Erase Event command ran since the last call, clearing
+      # the flag. The scene polls this after #update and removes the running
+      # event from the map (Erase Event does not pause the interpreter — the rest
+      # of the list still runs).
+      def take_erase_request
+        v = @erase_requested
+        @erase_requested = false
+        v
       end
 
       # Drain the Set Move Route (209) requests queued since the last call,
@@ -206,6 +218,7 @@ class RPGXP
         @running = false
         @call_stack = []
         @move_route_requests = []
+        @erase_requested = false
         reset_waits
       end
 
@@ -240,6 +253,7 @@ class RPGXP
         when REPEAT_ABOVE    then do_repeat(cmd)
         when BREAK_LOOP      then do_break(cmd)
         when EXIT_EVENT      then stop
+        when ERASE_EVENT     then do_erase_event(cmd)
         when CALL_COMMON     then do_call_common(cmd)
         when JUMP_LABEL      then do_jump_label(cmd)
         when CONTROL_SWITCHES then do_control_switches(cmd)
@@ -484,6 +498,14 @@ class RPGXP
         return false if @call_stack.empty?
         @list, @index, @event_id = @call_stack.pop
         true
+      end
+
+      # Erase Event (116): flag the running event for removal and keep going —
+      # RMXP erases the event (hides it, drops its triggers) but the current
+      # command list runs to the end.
+      def do_erase_event(cmd)
+        @erase_requested = true if @event_id
+        @index += 1
       end
 
       # -- state changes ------------------------------------------------------
