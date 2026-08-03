@@ -401,6 +401,14 @@ assert "Interpreter: transfer player surfaces a teleport request" do
   assert_equal [3, 8, 9, 2], it.teleport
 end
 
+# Build an RPG::MoveCommand (code / parameters).
+def mv(code, params = [])
+  c = RPG::MoveCommand.new
+  c.code = code
+  c.parameters = params
+  c
+end
+
 # Build an RPG::MoveRoute (list of MoveCommands + repeat/skippable flags).
 def move_route(list, repeat = false, skippable = false)
   r = RPG::MoveRoute.new
@@ -556,14 +564,6 @@ assert "RGSSAD v3 carries real Marshal data through the archive" do
 end
 
 # ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
-
-# Build an RPG::MoveCommand (code / parameters).
-def mv(code, params = [])
-  c = RPG::MoveCommand.new
-  c.code = code
-  c.parameters = params
-  c
-end
 
 # World stand-in for the movement engine.
 class FakeWorld
