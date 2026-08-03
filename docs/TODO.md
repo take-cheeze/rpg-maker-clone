@@ -113,9 +113,10 @@ The work below is roughly ordered by the critical path to a walkable game
   constants and other variables but also a **random** range, an **actor stat**
   (level / HP / MP / max HP-MP / attack / defence / spirit / agility) and **game
   quantities** (party gold, timer seconds). Conditional Branch covers switch /
-  variable / **timer** / gold / item / actor-in-party conditions. The remaining
-  commands (pictures, screen effects, battles, EXP/level changes — which need
-  the per-level stat growth curves, not yet parsed — ...) are TODO
+  variable / **timer** / gold / item conditions and the **actor** sub-conditions
+  (in party, name, level ≥, HP ≥; skill / equipment / state are not modelled).
+  The remaining commands (pictures, screen effects, battles, EXP/level changes —
+  which need the per-level stat growth curves, not yet parsed — ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes

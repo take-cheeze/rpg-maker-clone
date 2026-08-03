@@ -774,6 +774,51 @@ check 'Control Variables actor operand reads 0 for an absent actor' do
   eq 0, st.variables[1]
 end
 
+# -- Conditional branch: actor (hero) sub-conditions -------------------------
+
+# Build a conditional (type 5) with an if-body switch 1 and an else-body switch
+# 2, run it against a fresh party_state, and return that state.
+def run_actor_cond(params, string: '')
+  st = party_state
+  yield st if block_given?
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONDITIONAL, params, indent: 0, string: string),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+            FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+            FakeCmd.new(IC::END_BRANCH, [], indent: 0)])
+  it.update
+  st
+end
+
+check 'Conditional actor: in-party sub-condition (type 5, sub 0)' do
+  st = run_actor_cond([5, 1, 0])     # actor 1 is in the party
+  eq true, st.switches[1]
+  st = run_actor_cond([5, 9, 0])     # actor 9 is not
+  eq true, st.switches[2]
+end
+
+check 'Conditional actor: level >= (type 5, sub 2)' do
+  eq true,  run_actor_cond([5, 1, 2, 5]).switches[1] # actor 1 level 5 >= 5
+  eq true,  run_actor_cond([5, 1, 2, 6]).switches[2] # 5 >= 6 is false -> else
+end
+
+check 'Conditional actor: HP >= (type 5, sub 3)' do
+  st = run_actor_cond([5, 1, 3, 50]) { |s| s.party.actor_by_id(1).hp = 30 }
+  eq true, st.switches[2] # hp 30 < 50 -> else
+  st = run_actor_cond([5, 1, 3, 50]) { |s| s.party.actor_by_id(1).hp = 80 }
+  eq true, st.switches[1] # hp 80 >= 50
+end
+
+check 'Conditional actor: name equals the command string (type 5, sub 1)' do
+  eq true, run_actor_cond([5, 1, 1], string: 'Hero').switches[1]
+  eq true, run_actor_cond([5, 1, 1], string: 'Nope').switches[2]
+end
+
+check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' do
+  eq true, run_actor_cond([5, 1, 6, 3]).switches[2] # has-state -> false -> else
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
