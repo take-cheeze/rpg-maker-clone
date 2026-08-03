@@ -66,6 +66,9 @@ module Game
       @call_stack = []
       @resolver = nil
       @move_route_requests = []
+      # Deterministic RNG for the Control Variables "random" operand (mruby has
+      # no Kernel#rand here); seeded like the map scene's own RNG.
+      @rng = Game::Rng.new(0x2000)
       reset_waits
     end
 
@@ -362,7 +365,51 @@ module Game
       when 0 then cmd.param(5)                             # constant
       when 1 then variables[cmd.param(5)]                  # variable
       when 2 then variables[variables[cmd.param(5)]]       # variable indirect
+      when 3 then random_operand(cmd)                      # random in a range
+      when 5 then actor_operand(cmd)                       # an actor's stat
+      when 7 then other_operand(cmd)                       # gold / timer / ...
       else cmd.param(5)
+      end
+    end
+
+    # Operand type 3: a random integer in [param5, param6] inclusive (the bounds
+    # are swapped if given the wrong way round).
+    def random_operand(cmd)
+      lo = cmd.param(5)
+      hi = cmd.param(6)
+      lo, hi = hi, lo if lo > hi
+      lo + @rng.random(hi - lo + 1)
+    end
+
+    # Operand type 5: a stat of the actor with id param5. param6 selects the
+    # attribute (0 level, 2 HP, 3 MP, 4 max HP, 5 max MP, 6 attack, 7 defence,
+    # 8 spirit, 9 agility). EXP (1) is not modelled and reads as 0, as does an
+    # actor not in the party.
+    def actor_operand(cmd)
+      actor = party.actor_by_id(cmd.param(5))
+      return 0 unless actor
+      case cmd.param(6)
+      when 0 then actor.level
+      when 2 then actor.hp
+      when 3 then actor.mp
+      when 4 then actor.max_hp
+      when 5 then actor.max_mp
+      when 6 then actor.atk
+      when 7 then actor.def
+      when 8 then actor.int
+      when 9 then actor.agi
+      else 0
+      end
+    end
+
+    # Operand type 7: a miscellaneous game quantity selected by param5 (0 party
+    # gold, 1 timer seconds). Other selectors (steps, play time, save / battle
+    # counts) are not modelled and read as 0.
+    def other_operand(cmd)
+      case cmd.param(5)
+      when 0 then party.gold
+      when 1 then @state.timer_seconds
+      else 0
       end
     end
 
