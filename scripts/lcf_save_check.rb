@@ -139,8 +139,12 @@ class SaveChecker
       fail 'hero has non-positive map id' if h.map_id.to_i <= 0
     end
     actors = 0
-    (save.actors.each { |_id, _a| actors += 1 } rescue nil)
-    puts "  party:   #{actors} saved actor entrie(s)"
+    detail = []
+    (save.actors.each do |id, a|
+      actors += 1
+      detail << "##{id} L#{a.level}/#{a.exp}xp hp=#{a.hp} mp=#{a.mp}" if detail.size < 4
+    end rescue nil)
+    puts "  party:   #{actors} saved actor entrie(s)#{detail.empty? ? '' : " #{detail.join('  ')}"}"
     inv = save.inventory
     if inv
       ids = inv.item_ids || []

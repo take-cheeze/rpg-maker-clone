@@ -87,6 +87,17 @@ def check_game(dir)
   ids.each_index { |i| expected_items[ids[i]] = counts[i] }
   eq expected_items, state.party.items, 'items (id => count)'
 
+  # Per-actor current HP/SP come from the SAVE_PARTY_ACTOR table (chunk 108).
+  # Each restored roster member must carry the vitals its save entry stored.
+  saved = {}
+  lsd[108]&.each { |id, sa| saved[id] = sa }
+  state.party.actors.each do |a|
+    sa = saved[a.id]
+    next unless sa
+    eq sa.hp, a.hp, "actor #{a.id} hp" if sa.hp
+    eq sa.mp, a.mp, "actor #{a.id} mp" if sa.mp
+  end
+
   # Switches/variables shift from the save's 0-indexed arrays to 1-indexed ids.
   on = (sys.switches || []).each_index.select { |i| sys.switches[i] }.map { |i| i + 1 }
   eq on, state.switches.to_h.select { |_k, v| v }.keys.sort, 'switch ids that are on'
@@ -94,7 +105,8 @@ def check_game(dir)
                                  .map { |i| i + 1 }
   eq nonzero, state.variables.to_h.reject { |_k, v| v == 0 }.keys.sort, 'variable ids set'
 
-  puts "  leader=#{state.party.leader.name.inspect} map=#{state.map_id} " \
+  puts "  leader=#{state.party.leader.name.inspect} hp=#{state.party.leader.hp} " \
+       "mp=#{state.party.leader.mp} map=#{state.map_id} " \
        "pos=(#{state.x},#{state.y}) gold=#{state.party.gold} " \
        "items=#{state.party.items.size} switches_on=#{on.size} vars_set=#{nonzero.size}"
 rescue => e

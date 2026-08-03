@@ -376,3 +376,28 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
   assert_equal [0x01, 0x01, 0x00, 0x00], save.common_events[1].execution_state
   assert_equal [0xab, 0xcd], save.foreground_event.execution_state
 end
+
+assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
+  # Mirrors a real save's actor 3 (L5, 307 exp, HP 56/MP 53, three skills) and
+  # actor 1 (level-1 hero, HP 50/MP 0, no skills or states).
+  a3 = lcf_array1d([lcf_int_field(31, 5), lcf_int_field(32, 307),
+                    lcf_int_field(51, 3), lcf_shorts_field(52, [11, 12, 13]),
+                    lcf_int_field(71, 56), lcf_int_field(72, 53),
+                    lcf_int_field(81, 25), lcf_shorts_field(82, [0] * 25)])
+  a1 = lcf_array1d([lcf_int_field(31, 1), lcf_int_field(32, 0),
+                    lcf_int_field(71, 50), lcf_int_field(72, 0)])
+  body = lcf_array1d([lcf_field(108, lcf_array2d([[1, a1], [3, a3]]))])
+  save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
+
+  assert_equal 5, save.actors[3].level
+  assert_equal 307, save.actors[3].exp
+  assert_equal 3, save.actors[3].skill_size
+  assert_equal [11, 12, 13], save.actors[3].skills
+  assert_equal 56, save.actors[3].hp
+  assert_equal 53, save.actors[3].mp
+  assert_equal 1, save.actors[1].level
+  assert_equal 50, save.actors[1].hp
+  assert_equal 0, save.actors[1].mp
+  # Absent optional vitals read as nil, so the runtime restore leaves them alone.
+  assert_nil save.actors[1].skills
+end
