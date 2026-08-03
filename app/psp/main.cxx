@@ -33,12 +33,15 @@ lv_obj_t* g_status_label = nullptr;
 const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
     "Up", "Down", "Left", "Right", "A", "B", "C"};
 
-// Write a NUL-terminated string to the PSP stdout (fd 1). Under an emulator the
-// host captures this; on real hardware it goes nowhere. Plain printf is
-// resolved as an unimplemented HLE import under PPSSPP (a silent no-op), so the
-// raw sceIoWrite is used for the CI markers instead.
+// Write a NUL-terminated string to the PSP stdout (fd 1) and stderr (fd 2).
+// Under an emulator the host captures these; on real hardware they go nowhere.
+// Plain printf is an unimplemented HLE import under PPSSPP (a silent no-op), so
+// the raw sceIoWrite is used for the CI markers; both fds are written so
+// whichever one PPSSPP surfaces to its log is captured.
 void psp_write(const char* s) {
-  sceIoWrite(1, s, static_cast<int>(std::strlen(s)));
+  const int len = static_cast<int>(std::strlen(s));
+  sceIoWrite(1, s, len);
+  sceIoWrite(2, s, len);
 }
 
 // The HOME-button exit callback, so the EBOOT quits cleanly back to the XMB.
@@ -125,10 +128,8 @@ int main(void) {
     lv_timer_handler();
     if (frame % 200 == 0) {
       char buf[48];
-      const int n = std::snprintf(buf, sizeof(buf),
-                                  "RPG2K_PSP_BRINGUP frame=%u\n", frame);
-      if (n > 0)
-        sceIoWrite(1, buf, n);
+      std::snprintf(buf, sizeof(buf), "RPG2K_PSP_BRINGUP frame=%u\n", frame);
+      psp_write(buf);
     }
     sceKernelDelayThread(5000);  // ~5 ms, matching the Wio loop's delay(5)
   }

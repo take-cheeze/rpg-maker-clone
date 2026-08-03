@@ -413,15 +413,14 @@ jobs:
           # Run from the PPSSPP tree so it finds its assets/ (fonts, etc.).
           # --timeout ends the otherwise-infinite bring-up loop; a non-zero exit
           # from the timeout must not mask the heartbeat check, hence `|| true`.
-          # The bring-up writes its markers with sceIoWrite(fd 1), which headless
-          # captures as emulated stdout by default (plain printf is an
-          # unimplemented HLE import under PPSSPP). --timeout ends the otherwise-
-          # infinite bring-up loop; `|| true` keeps its non-zero exit from masking
-          # the assertion below. (--screenshot is a compare-against input in
-          # headless, not an output, so it is not used.) Add --log for full
-          # PPSSPP diagnostics if this needs debugging again.
+          # The bring-up writes its markers with sceIoWrite(fd 1 and 2); PPSSPP
+          # logs those, but below the default headless level, so --log is needed
+          # to surface them (plain printf is an unimplemented HLE import under
+          # PPSSPP). --timeout ends the otherwise-infinite bring-up loop; `|| true`
+          # keeps its non-zero exit from masking the assertion below.
+          # (--screenshot is a compare-against input in headless, not an output.)
           echo "=== run ==="
-          ./build/PPSSPPHeadless --graphics=software --timeout=15 \
+          ./build/PPSSPPHeadless --log --graphics=software --timeout=15 \
             "$EBOOT" 2>&1 | tee "$GITHUB_WORKSPACE/headless.log" || true
           echo "=== asserting the EBOOT booted and pumped frames ==="
           # RPG2K_PSP_BOOT proves it booted with stdout captured; RPG2K_PSP_BRINGUP
