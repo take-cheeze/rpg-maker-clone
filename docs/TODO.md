@@ -191,11 +191,16 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   Gold, Transfer Player and Play BGM/BGS/ME/SE, indent- and terminator-driven
   with a per-frame step cap. `Scene::Map` starts events on the action button, on
   player touch, on autorun or as a background parallel process, drives a
-  message/choice window, and re-selects pages when an event finishes. Covered by
-  `mruby-rpgxp/test` and driven over the real test bed by
-  `scripts/rpgxp_testbed_check.rb`. Still to come: autonomous event move
-  types / move routes (events don't roam yet), Input Number, and the many
-  screen-effect / picture / battle commands (skipped for now).
+  message/choice window, and re-selects pages when an event finishes. Events
+  also **roam autonomously**: `Game::Character` / `Game::MoveType` /
+  `Game::MoveRoute` drive an event's page move type (fixed / random / approach)
+  or custom move route (the full XP move-command set), paced by move frequency
+  and blocked by terrain / the player / other events, and the **event-touch**
+  trigger fires when an event walks into the player. Covered by `mruby-rpgxp/test`
+  and driven over the real test bed by `scripts/rpgxp_testbed_check.rb`. Still to
+  come: the interpreter's *Set Move Route* (209) command (apply a forced route
+  from an event command), Input Number, and the many screen-effect / picture /
+  battle commands (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) loads: `RPGXP::RGSSAD`
   (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts the version-1 format and

@@ -417,3 +417,91 @@ assert "RGSSAD rejects a bad header and an unsupported version" do
   v3 = "RGSSAD\x00\x03rest"
   assert_raise(RuntimeError) { RPGXP::RGSSAD.new(v3) }
 end
+
+# ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
+
+# Build an RPG::MoveCommand (code / parameters).
+def mv(code, params = [])
+  c = RPG::MoveCommand.new
+  c.code = code
+  c.parameters = params
+  c
+end
+
+# World stand-in for the movement engine.
+class FakeWorld
+  def initialize(passable: true, hero: [0, 0], rng: 0)
+    @passable = passable
+    @hero = hero
+    @rng = rng
+    @switches = {}
+    @sounds = 0
+  end
+  attr_reader :switches, :sounds
+  def passable?(_ch, _dir); @passable; end
+  def hero_position; @hero; end
+  def set_switch(id, on); @switches[id] = on; end
+  def play_sound(_audio); @sounds += 1; end
+  def random(n); @rng % n; end
+end
+
+assert "Game::Character move / face / turns / toward" do
+  c = RPGXP::Game::Character.new(3, 4, 2)
+  c.move(6)
+  assert_equal 4, c.x
+  assert_equal 4, c.y
+  assert_equal 6, c.direction
+  c.turn_right # clockwise: 6 -> 2
+  assert_equal 2, c.direction
+  # Direction-fix locks facing.
+  c.direction_fix = true
+  c.face(8)
+  assert_equal 2, c.direction
+  c.direction_fix = false
+  assert_equal [3, 5], RPGXP::Game::Character.step_tile(3, 4, 2)
+  # Toward a tile to the right.
+  d = RPGXP::Game::Character.new(4, 4).direction_toward(10, 4)
+  assert_equal 6, d
+  assert_equal 4, RPGXP::Game::Character.new(4, 4).direction_away(10, 4)
+end
+
+assert "Game::MoveRoute moves forward and repeats" do
+  route = RPGXP::Game::MoveRoute.new([mv(12)], true, false) # Move Forward, repeat
+  c = RPGXP::Game::Character.new(0, 0, 6) # facing right
+  assert_equal :moved, route.step(c, FakeWorld.new(passable: true))
+  assert_equal 1, c.x
+  assert_false route.done? # repeats
+end
+
+assert "Game::MoveRoute blocked non-skippable retries and faces the wall" do
+  route = RPGXP::Game::MoveRoute.new([mv(1), mv(4)], false, false) # Down, then Up
+  c = RPGXP::Game::Character.new(0, 0, 8)
+  assert_equal :blocked, route.step(c, FakeWorld.new(passable: false))
+  assert_equal 2, c.direction # turned to face the blocked Down move
+  assert_equal 0, c.y         # did not move
+  assert_false route.done?    # cursor held on the blocked command
+end
+
+assert "Game::MoveRoute side effects: switch, speed, play SE, done" do
+  world = FakeWorld.new
+  route = RPGXP::Game::MoveRoute.new([mv(27, [5]), mv(29, [6]), mv(44, [nil])], false, false)
+  c = RPGXP::Game::Character.new(0, 0)
+  route.step(c, world) # Switch 5 ON
+  route.step(c, world) # Change Speed -> 6
+  route.step(c, world) # Play SE
+  assert_true world.switches[5]
+  assert_equal 6, c.move_speed
+  assert_equal 1, world.sounds
+  assert_true route.done? # non-repeating route exhausted
+end
+
+assert "Game::MoveType picks a direction per move type" do
+  c = RPGXP::Game::Character.new(0, 0)
+  # RANDOM: rng 2 -> CARDINALS[2 % 4] = 6.
+  assert_equal 6, RPGXP::Game::MoveType.next_direction(1, c, FakeWorld.new(rng: 2))
+  # APPROACH: toward a hero to the right -> 6.
+  assert_equal 6, RPGXP::Game::MoveType.next_direction(2, c, FakeWorld.new(hero: [5, 0]))
+  # FIXED / CUSTOM: no autonomous step.
+  assert_true RPGXP::Game::MoveType.next_direction(0, c, FakeWorld.new).nil?
+  assert_true RPGXP::Game::MoveType.next_direction(3, c, FakeWorld.new).nil?
+end
