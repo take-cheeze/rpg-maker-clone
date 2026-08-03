@@ -262,6 +262,15 @@ assert 'MV canvas path fill honors the transform' do
   assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(PGT.__h,0,0).join(',')")     # origin, untouched
 end
 
+assert 'MV canvas stroke draws a lineWidth-thick line along a segment' do
+  # A horizontal stroke of width 2 centred on y=2 fills the band y in [1,3).
+  MV::JS.eval("globalThis.SK=document.createElement('canvas'); SK.width=4; SK.height=4; " \
+              "var x=SK.getContext('2d'); x.strokeStyle='#ff0000'; x.lineWidth=2; " \
+              "x.beginPath(); x.moveTo(0,2); x.lineTo(4,2); x.stroke();")
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(SK.__h,2,1).join(',')") # on the band
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(SK.__h,2,3).join(',')")     # below the band
+end
+
 assert 'MV canvas translate offsets a drawImage blit' do
   MV::JS.eval("globalThis.TS=document.createElement('canvas'); TS.width=1; TS.height=1; " \
               "var s=TS.getContext('2d'); s.fillStyle='#ff0000'; s.fillRect(0,0,1,1);")

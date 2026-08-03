@@ -1199,10 +1199,40 @@ const char* kCanvasPreamble = R"MVJS(
     g.__mv_canvasFillPolygon(this.__h, xs, ys, col[0], col[1], col[2], a,
                              compositeMode(this.globalCompositeOperation));
   };
+  // Stroke the current path: draw each segment as a lineWidth-thick quad
+  // (perpendicular offset) filled through the polygon rasteriser. No core MV
+  // consumer, but plugins commonly draw HUD/gauge borders this way. Butt caps,
+  // no joins — enough for the thin lines plugins use; honors the transform,
+  // globalAlpha and composite mode like fill().
+  Ctx.prototype.stroke = function () {
+    var path = this._path;
+    if (!path || path.length < 2) return;
+    var ss = this.strokeStyle;
+    if (ss && (ss.__mvGrad || ss.__mvPattern)) return; // only solid strokes
+    var col = parseColor(ss);
+    var a = Math.round(col[3] * this.globalAlpha);
+    var hw = (this.lineWidth || 1) / 2;
+    var m = this._m;
+    var mode = compositeMode(this.globalCompositeOperation);
+    function dev(pt) {
+      return [m[0] * pt[0] + m[2] * pt[1] + m[4],
+              m[1] * pt[0] + m[3] * pt[1] + m[5]];
+    }
+    for (var i = 0; i + 1 < path.length; i++) {
+      var pa = dev(path[i]), pb = dev(path[i + 1]);
+      var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = -dy / len * hw, ny = dx / len * hw;
+      g.__mv_canvasFillPolygon(this.__h,
+        [pa[0] + nx, pb[0] + nx, pb[0] - nx, pa[0] - nx],
+        [pa[1] + ny, pb[1] + ny, pb[1] - ny, pa[1] - ny],
+        col[0], col[1], col[2], a, mode);
+    }
+  };
   // Path/text ops MV or PIXI may call that the buffer path does not need yet:
-  // accept and ignore. (stroke and clip are the notable ones; fill above covers
-  // MV's only core path consumer, Bitmap.drawCircle.)
-  var noops = ['closePath', 'arcTo', 'stroke', 'clip',
+  // accept and ignore. (clip is the notable one; fill/stroke above cover the
+  // path drawing MV core and plugins use.)
+  var noops = ['closePath', 'arcTo', 'clip',
     'setLineDash',
     'drawFocusIfNeeded', 'scrollPathIntoView'];
   noops.forEach(function (m) {
