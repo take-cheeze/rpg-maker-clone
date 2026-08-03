@@ -413,12 +413,14 @@ jobs:
           # Run from the PPSSPP tree so it finds its assets/ (fonts, etc.).
           # --timeout ends the otherwise-infinite bring-up loop; a non-zero exit
           # from the timeout must not mask the heartbeat check, hence `|| true`.
+          # --log gives full PPSSPP output (module load, exceptions), not just
+          # the emulated printfs, so a boot/load failure is visible. --timeout
+          # ends the otherwise-infinite bring-up loop; `|| true` keeps its
+          # non-zero exit from masking the assertion below. (--screenshot is a
+          # compare-against input in headless, not an output, so it is not used.)
           echo "=== run ==="
-          ./build/PPSSPPHeadless --graphics=software --timeout=15 \
-            --screenshot="$GITHUB_WORKSPACE/psp-frame.png" "$EBOOT" \
-            2>&1 | tee "$GITHUB_WORKSPACE/headless.log" || true
-          echo "=== full headless.log ==="
-          cat "$GITHUB_WORKSPACE/headless.log"
+          ./build/PPSSPPHeadless --log --graphics=software --timeout=15 \
+            "$EBOOT" 2>&1 | tee "$GITHUB_WORKSPACE/headless.log" || true
           echo "=== asserting the EBOOT booted and pumped frames ==="
           # RPG2K_PSP_BOOT proves it booted with stdout captured; RPG2K_PSP_BRINGUP
           # (the per-second heartbeat) proves the frame loop is running.
@@ -429,9 +431,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: psp-smoke
-          path: |
-            headless.log
-            psp-frame.png
+          path: headless.log
           if-no-files-found: warn
 
   flake:
