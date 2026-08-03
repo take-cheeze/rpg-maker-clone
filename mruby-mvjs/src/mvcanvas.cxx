@@ -746,6 +746,62 @@ JSValue js_fill_gradient(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// __mv_canvasFillPolygon(handle, xs, ys, r, g, b, a, mode)
+// Even-odd scanline fill of the polygon whose vertices are the parallel xs/ys
+// arrays (already mapped to device space by the Ctx). Blends (r,g,b,a) under
+// the given composite mode. Backs Ctx.fill() and thus Bitmap.drawCircle (arc +
+// fill, e.g. Weather's snow) and any plugin vector fill; the path ops
+// tessellate arcs to points before calling in.
+JSValue js_fill_polygon(JSContext* ctx,
+                        JSValueConst,
+                        int argc,
+                        JSValueConst* argv) {
+  Canvas* c = canvas_get(ai(ctx, argc, argv, 0));
+  if (!c || argc < 7)
+    return JS_UNDEFINED;
+  const std::vector<double> xs = js_num_array(ctx, argv[1]);
+  const std::vector<double> ys = js_num_array(ctx, argv[2]);
+  const size_t n = std::min(xs.size(), ys.size());
+  if (n < 3)
+    return JS_UNDEFINED;
+  const int r = ai(ctx, argc, argv, 3), g = ai(ctx, argc, argv, 4);
+  const int b = ai(ctx, argc, argv, 5), a = ai(ctx, argc, argv, 6);
+  const int mode = argc > 7 ? ai(ctx, argc, argv, 7) : 0;
+
+  double miny = ys[0], maxy = ys[0];
+  for (size_t i = 1; i < n; ++i) {
+    miny = std::min(miny, ys[i]);
+    maxy = std::max(maxy, ys[i]);
+  }
+  int y0 = std::max(static_cast<int>(std::floor(miny)), 0);
+  int y1 = std::min(static_cast<int>(std::ceil(maxy)), c->h);
+
+  std::vector<double> xints;
+  for (int y = y0; y < y1; ++y) {
+    const double yc = y + 0.5;
+    xints.clear();
+    for (size_t i = 0; i < n; ++i) {
+      const size_t j = (i + 1) % n;
+      const double ya = ys[i], yb = ys[j];
+      if ((ya <= yc && yb > yc) || (yb <= yc && ya > yc)) {
+        const double t = (yc - ya) / (yb - ya);
+        xints.push_back(xs[i] + t * (xs[j] - xs[i]));
+      }
+    }
+    std::sort(xints.begin(), xints.end());
+    for (size_t k = 0; k + 1 < xints.size(); k += 2) {
+      int xa = static_cast<int>(std::ceil(xints[k] - 0.5));
+      int xb = static_cast<int>(std::floor(xints[k + 1] - 0.5));
+      xa = std::max(xa, 0);
+      xb = std::min(xb, c->w - 1);
+      for (int x = xa; x <= xb; ++x)
+        blend_mode(&c->px[(static_cast<size_t>(y) * c->w + x) * 4], r, g, b, a,
+                   mode);
+    }
+  }
+  return JS_UNDEFINED;
+}
+
 // __mv_canvasGetPixel(handle, x, y) -> [r, g, b, a] (used by tests and by the
 // getImageData path). Out-of-range reads return transparent black.
 JSValue js_get_pixel(JSContext* ctx,
@@ -1106,8 +1162,47 @@ const char* kCanvasPreamble = R"MVJS(
   // yet: accept and ignore. Real implementations land as needed. (Transform ops
   // — save/restore/translate/scale/rotate/transform/setTransform/resetTransform
   // — are implemented above and deliberately excluded here.)
-  var noops = ['beginPath', 'closePath', 'moveTo', 'lineTo',
-    'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip',
+  // Minimal path support: build one polygon from moveTo/lineTo/arc/rect and
+  // scanline-fill it on fill(). Enough for Bitmap.drawCircle (arc + fill, used by
+  // Weather's snow) and simple vector fills. Arcs tessellate to segments; stroke,
+  // clip and multi-subpath aren't modelled (they stay no-ops below).
+  Ctx.prototype.beginPath = function () { this._path = []; };
+  Ctx.prototype.moveTo = function (x, y) {
+    (this._path || (this._path = [])).push([x, y]);
+  };
+  Ctx.prototype.lineTo = Ctx.prototype.moveTo;
+  Ctx.prototype.rect = function (x, y, w, h) {
+    var p = this._path || (this._path = []);
+    p.push([x, y], [x + w, y], [x + w, y + h], [x, y + h]);
+  };
+  Ctx.prototype.arc = function (cx, cy, r, a0, a1) {
+    var p = this._path || (this._path = []);
+    var segs = 32;
+    for (var i = 0; i <= segs; i++) {
+      var t = a0 + (a1 - a0) * (i / segs);
+      p.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+    }
+  };
+  Ctx.prototype.fill = function () {
+    var path = this._path;
+    if (!path || path.length < 3) return;
+    var fs = this.fillStyle;
+    if (fs && (fs.__mvGrad || fs.__mvPattern)) return; // only solid fills
+    var col = parseColor(fs);
+    var a = Math.round(col[3] * this.globalAlpha);
+    var m = this._m, xs = [], ys = [];
+    for (var i = 0; i < path.length; i++) {
+      var pt = path[i];
+      xs.push(m[0] * pt[0] + m[2] * pt[1] + m[4]);
+      ys.push(m[1] * pt[0] + m[3] * pt[1] + m[5]);
+    }
+    g.__mv_canvasFillPolygon(this.__h, xs, ys, col[0], col[1], col[2], a,
+                             compositeMode(this.globalCompositeOperation));
+  };
+  // Path/text ops MV or PIXI may call that the buffer path does not need yet:
+  // accept and ignore. (stroke and clip are the notable ones; fill above covers
+  // MV's only core path consumer, Bitmap.drawCircle.)
+  var noops = ['closePath', 'arcTo', 'stroke', 'clip',
     'setLineDash',
     'drawFocusIfNeeded', 'scrollPathIntoView'];
   noops.forEach(function (m) {
@@ -1312,6 +1407,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasDrawText", js_draw_text, 17);
   install(ctx, global, "__mv_canvasFillGradient", js_fill_gradient, 15);
   install(ctx, global, "__mv_canvasFillPattern", js_fill_pattern, 13);
+  install(ctx, global, "__mv_canvasFillPolygon", js_fill_polygon, 8);
   install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   JS_FreeValue(ctx, global);
