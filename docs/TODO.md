@@ -86,20 +86,30 @@ The work below is roughly ordered by the critical path to a walkable game
   event walking into the player), **auto-start** (3) and **parallel** (4, a
   background interpreter per event, driven by `Scene::Map#step_parallels`). A
   page's autonomous move type / custom move route also drives the event at
-  runtime (see Movement & collision). Still to come: the interpreter's *Set Move
-  Route* (Move Event) command — the runtime engine exists, but decoding a route
-  embedded in an event command's parameters is not wired up yet
+  runtime (see Movement & collision). The interpreter's *Set Move Route* (Move
+  Event) command is now wired up too: it decodes the route packed into the
+  command's parameters and applies it as a forced route to the target — a map
+  event (including "this event") or the player, overriding page movement until
+  it finishes. Still to come: vehicle targets (boat/ship/airship), which are not
+  modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
-  Wait, Play BGM/SE, Call Event, End Event) with a per-frame step cap so a bad
-  loop can't hang. **Call Event** suspends the current list, runs the referenced
-  common event (or map-event page) to completion via a resolver + call stack —
-  so call-only common events, which auto-start/parallel never reach, now run —
-  and returns to the caller; recursion is bounded. Conditional Branch covers
-  switch / variable / **timer** / gold / item / actor-in-party conditions. The
-  remaining commands (Move Event, pictures, screen effects, battles, actor stat
-  changes, ...) are TODO
+  Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
+  Loop/Break/End, Label/Jump, Timer, Teleport, Wait, Play BGM/SE, Call Event,
+  Move Event, End Event) with a per-frame step cap so a bad loop can't hang. **Call Event**
+  suspends the current list, runs the referenced common event (or map-event
+  page) to completion via a resolver + call stack — so call-only common events,
+  which auto-start/parallel never reach, now run — and returns to the caller;
+  recursion is bounded. **Move Event** decodes the forced move route packed into
+  the command's parameters and hands it to the scene, which drives the target (a
+  map event, "this event" or the player) along it in the background. **Change
+  HP/MP**, **Full Heal** and **Change Parameters** apply to a fixed actor, a
+  variable-selected actor or the whole party, clamped to each actor's maxima
+  (Change HP honours the allow-death floor; Change Parameters re-clamps current
+  HP/MP when a maximum is lowered). Conditional Branch covers switch / variable /
+  **timer** / gold / item / actor-in-party conditions. The remaining commands
+  (pictures, screen effects, battles, EXP/level changes — which need the
+  per-level stat growth curves, not yet parsed — ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes
@@ -148,7 +158,7 @@ An RPG Maker XP project stores its whole database as Ruby `Marshal` dumps
 scripts in `Data/Scripts.rxdata`. The graphics/audio/value primitives already
 exist natively as `mruby-rgss`; the work below brings an XP project up on top of
 them, mirroring how the RPG2000 side was staged. Full rationale:
-`docs/adr/0009-rpgxp-rgss-data-layer.md`.
+`docs/adr/0010-rpgxp-rgss-data-layer.md`.
 
 - ✅ **Data layer** — `mruby-rpgxp/mrblib/rgss_data.rb` declares the `RPG::*`
   schema so every `Data/*.rxdata` file loads straight through `Marshal.load`

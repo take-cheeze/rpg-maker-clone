@@ -21,9 +21,11 @@
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
-  switches/variables, party/gold/item changes, conditional branches, teleport,
-  waits, BGM/SE playback and Call Event (run a common event / another event's
-  page). Events start on the action button, on player touch (walking into them),
+  switches/variables, party/gold/item changes, actor HP/MP and base-stat changes
+  and full heal, conditional branches, teleport, waits, BGM/SE playback, Call
+  Event (run a common event / another event's page) and Move Event (force a move
+  route onto an event or the player). Events start on the action button, on
+  player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
@@ -50,7 +52,7 @@
   movement uses the tileset's passage flags with a follow camera
 - The window is sized to XP's native 640×480 automatically. Running the game's
   own bundled RGSS scripts (`Data/Scripts.rxdata`) is future work; see
-  [`docs/adr/0009-rpgxp-rgss-data-layer.md`](docs/adr/0009-rpgxp-rgss-data-layer.md)
+  [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md)
 
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC

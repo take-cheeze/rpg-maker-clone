@@ -1,4 +1,4 @@
-# 9. RPG Maker XP support: an RGSS data layer over mruby-marshal
+# 10. RPG Maker XP support: an RGSS data layer over mruby-marshal
 
 Date: 2026-08-03
 
