@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **LCF save-data schema** now decodes four more `LcfSaveData` sections,
+  transcribed from the rpg2kpsp analysis wiki
+  (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved
+  party-member status (108), remembered teleport/escape targets (110) and saved
+  map-event state (111). The teleport targets are an `Array2D` indexed by map id
+  (index 0 = escape); the map-event section reuses the existing movable layout
+  for each event's position snapshot plus the packed tile-replacement blobs.
+  Overlapping sections already covered by the 200X notes (system, terminology,
+  positions) were left untouched. Covered by a new `LCF::SaveData` check in
+  `mruby-lcf/test/lcf_test.rb`. See ADR 0009.
 - **Parallel-process events** (page trigger 4) and parallel common events now
   run continuously in the background. Each gets its own looping
   `Game::Interpreter` driven by `Scene::Map#step_parallels`: it runs its command
