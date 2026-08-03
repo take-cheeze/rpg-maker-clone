@@ -145,6 +145,51 @@ assert 'MV canvas scale enlarges a drawImage blit' do
   assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(SD.__h,2,2).join(',')")
 end
 
+assert "MV canvas globalCompositeOperation 'lighter' adds fills (additive blend)" do
+  # MV sets ctx.globalCompositeOperation='lighter' for battle-animation flashes,
+  # weather and glow sprites. The second fill must add to the first, not replace
+  # it: 0x30+0x10 red, 0x00+0x10 green/blue; alpha stays opaque.
+  MV::JS.eval("globalThis.L=document.createElement('canvas'); L.width=2; L.height=2; " \
+              "var x=L.getContext('2d'); x.globalAlpha=1; " \
+              "x.globalCompositeOperation='source-over'; x.fillStyle='#300000'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='lighter'; x.fillStyle='#101010'; x.fillRect(0,0,2,2);")
+  assert_equal "64,16,16,255", MV::JS.eval("__mv_canvasGetPixel(L.__h,0,0).join(',')")
+end
+
+assert "MV canvas 'lighter' clamps additive fills at 255" do
+  MV::JS.eval("var x=L.getContext('2d'); x.globalCompositeOperation='source-over'; " \
+              "x.fillStyle='#f0f0f0'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='lighter'; x.fillStyle='#303030'; x.fillRect(0,0,2,2);")
+  assert_equal "255,255,255,255", MV::JS.eval("__mv_canvasGetPixel(L.__h,0,0).join(',')")
+end
+
+assert "MV canvas 'lighter' drawImage adds the source over the dest" do
+  # An opaque green source additively drawn over an opaque red dest -> yellow.
+  MV::JS.eval("globalThis.LS=document.createElement('canvas'); LS.width=2; LS.height=2; " \
+              "var s=LS.getContext('2d'); s.fillStyle='#00ff00'; s.fillRect(0,0,2,2); " \
+              "globalThis.LD=document.createElement('canvas'); LD.width=2; LD.height=2; " \
+              "var d=LD.getContext('2d'); d.fillStyle='#ff0000'; d.fillRect(0,0,2,2); " \
+              "d.globalCompositeOperation='lighter'; d.drawImage(LS,0,0);")
+  assert_equal "255,255,0,255", MV::JS.eval("__mv_canvasGetPixel(LD.__h,0,0).join(',')")
+end
+
+assert 'MV canvas default composite still overwrites on drawImage (source-over)' do
+  # Regression: with no 'lighter' the blit replaces rather than adds.
+  MV::JS.eval("var d=LD.getContext('2d'); d.globalCompositeOperation='source-over'; " \
+              "d.fillStyle='#ff0000'; d.fillRect(0,0,2,2); " \
+              "globalThis.LS2=document.createElement('canvas'); LS2.width=2; LS2.height=2; " \
+              "var s=LS2.getContext('2d'); s.fillStyle='#00ff00'; s.fillRect(0,0,2,2); " \
+              "d.drawImage(LS2,0,0);")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(LD.__h,0,0).join(',')")
+end
+
+assert 'MV canvas save/restore round-trips globalCompositeOperation' do
+  v = MV::JS.eval("var x=document.createElement('canvas').getContext('2d'); " \
+                  "x.save(); x.globalCompositeOperation='lighter'; x.restore(); " \
+                  "x.globalCompositeOperation")
+  assert_equal "source-over", v
+end
+
 assert 'MV canvas translate offsets a fillRect' do
   MV::JS.eval("globalThis.FR=document.createElement('canvas'); FR.width=4; FR.height=4; " \
               "var x=FR.getContext('2d'); x.translate(1,1); x.fillStyle='#0000ff'; x.fillRect(0,0,2,2);")

@@ -193,6 +193,29 @@ void blend(uint8_t* d, int r, int g, int b, int a) {
   d[3] = static_cast<uint8_t>((a * 255 + d[3] * ia) / 255);
 }
 
+// Additive ("lighter") blend: the source, scaled by its coverage `a`, is added
+// to the destination and clamped. This is canvas globalCompositeOperation =
+// 'lighter' (PIXI blendMode ADD), which MV uses for battle-animation flashes,
+// weather and glow sprites; under plain source-over those effects come out too
+// dark.
+void blend_add(uint8_t* d, int r, int g, int b, int a) {
+  if (a <= 0)
+    return;
+  d[0] = static_cast<uint8_t>(std::min(255, d[0] + r * a / 255));
+  d[1] = static_cast<uint8_t>(std::min(255, d[1] + g * a / 255));
+  d[2] = static_cast<uint8_t>(std::min(255, d[2] + b * a / 255));
+  d[3] = static_cast<uint8_t>(std::min(255, d[3] + a));
+}
+
+// Dispatch to the source-over or additive blend based on a composite-op mode
+// (0 = source-over, 1 = lighter/additive) threaded through from the Ctx.
+inline void blend_mode(uint8_t* d, int r, int g, int b, int a, int mode) {
+  if (mode == 1)
+    blend_add(d, r, g, b, a);
+  else
+    blend(d, r, g, b, a);
+}
+
 int ai(JSContext* ctx, int argc, JSValueConst* argv, int i) {
   int32_t v = 0;
   if (i < argc)
@@ -233,7 +256,9 @@ JSValue js_height(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
   return JS_NewInt32(ctx, c ? c->h : 0);
 }
 
-// __mv_canvasFillRect(handle, x, y, w, h, r, g, b, a)
+// __mv_canvasFillRect(handle, x, y, w, h, r, g, b, a, mode)
+// `mode` (optional, default 0) selects the composite op: 0 = source-over,
+// 1 = lighter/additive.
 JSValue js_fill_rect(JSContext* ctx,
                      JSValueConst,
                      int argc,
@@ -245,6 +270,7 @@ JSValue js_fill_rect(JSContext* ctx,
   int rw = ai(ctx, argc, argv, 3), rh = ai(ctx, argc, argv, 4);
   const int r = ai(ctx, argc, argv, 5), g = ai(ctx, argc, argv, 6);
   const int b = ai(ctx, argc, argv, 7), a = ai(ctx, argc, argv, 8);
+  const int mode = argc > 9 ? ai(ctx, argc, argv, 9) : 0;
   for (int j = 0; j < rh; ++j) {
     const int ty = y + j;
     if (ty < 0 || ty >= c->h)
@@ -253,7 +279,8 @@ JSValue js_fill_rect(JSContext* ctx,
       const int tx = x + i;
       if (tx < 0 || tx >= c->w)
         continue;
-      blend(&c->px[(static_cast<size_t>(ty) * c->w + tx) * 4], r, g, b, a);
+      blend_mode(&c->px[(static_cast<size_t>(ty) * c->w + tx) * 4], r, g, b, a,
+                 mode);
     }
   }
   return JS_UNDEFINED;
@@ -285,7 +312,7 @@ JSValue js_clear_rect(JSContext* ctx,
 }
 
 // __mv_canvasDrawImage(dstH, srcH, sx, sy, sw, sh, dx, dy, dw, dh, alpha,
-//                      a, b, c, d, e, f)
+//                      a, b, c, d, e, f, mode)
 // Nearest-neighbour blit of a source rect into a dest rect, modulated by a
 // global alpha (0-255) and transformed by the current 2D matrix
 // [a b c d e f] (device = (a*u+c*v+e, b*u+d*v+f)). This is the workhorse PIXI's
@@ -311,6 +338,7 @@ JSValue js_draw_image(JSContext* ctx,
   const double ma = ad(ctx, argc, argv, 11, 1), mb = ad(ctx, argc, argv, 12, 0);
   const double mc = ad(ctx, argc, argv, 13, 0), md = ad(ctx, argc, argv, 14, 1);
   const double me = ad(ctx, argc, argv, 15, 0), mf = ad(ctx, argc, argv, 16, 0);
+  const int mode = argc > 17 ? ai(ctx, argc, argv, 17) : 0;
   if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0)
     return JS_UNDEFINED;
   const double det = ma * md - mb * mc;
@@ -354,8 +382,8 @@ JSValue js_draw_image(JSContext* ctx,
       const uint8_t* sp =
           &src->px[(static_cast<size_t>(syy) * src->w + sxx) * 4];
       const int a = sp[3] * ga / 255;
-      blend(&dst->px[(static_cast<size_t>(py) * dst->w + px) * 4], sp[0], sp[1],
-            sp[2], a);
+      blend_mode(&dst->px[(static_cast<size_t>(py) * dst->w + px) * 4], sp[0],
+                 sp[1], sp[2], a, mode);
     }
   }
   return JS_UNDEFINED;
@@ -749,7 +777,9 @@ const char* kCanvasPreamble = R"MVJS(
     var c = parseColor(fs);
     var a = Math.round(c[3] * this.globalAlpha);
     var r = mapRect(this._m, x, y, w, h);
-    g.__mv_canvasFillRect(this.__h, r[0], r[1], r[2], r[3], c[0], c[1], c[2], a);
+    var mode = this.globalCompositeOperation === 'lighter' ? 1 : 0;
+    g.__mv_canvasFillRect(this.__h, r[0], r[1], r[2], r[3], c[0], c[1], c[2], a,
+                          mode);
   };
   // Fill a rect with a gradient fillStyle. The rect and the gradient axis are
   // both mapped through the current transform to device space, then the native
@@ -799,8 +829,9 @@ const char* kCanvasPreamble = R"MVJS(
     }
     var a = Math.round(this.globalAlpha * 255);
     var m = this._m;
+    var mode = this.globalCompositeOperation === 'lighter' ? 1 : 0;
     g.__mv_canvasDrawImage(this.__h, h, sx, sy, sw, sh, dx, dy, dw, dh, a,
-                           m[0], m[1], m[2], m[3], m[4], m[5]);
+                           m[0], m[1], m[2], m[3], m[4], m[5], mode);
   };
   Ctx.prototype.getImageData = function (x, y, w, h) {
     w = w | 0; h = h | 0;
@@ -1083,9 +1114,9 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasResize", js_resize, 3);
   install(ctx, global, "__mv_canvasWidth", js_width, 1);
   install(ctx, global, "__mv_canvasHeight", js_height, 1);
-  install(ctx, global, "__mv_canvasFillRect", js_fill_rect, 9);
+  install(ctx, global, "__mv_canvasFillRect", js_fill_rect, 10);
   install(ctx, global, "__mv_canvasClearRect", js_clear_rect, 5);
-  install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 17);
+  install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 18);
   install(ctx, global, "__mv_canvasGetPixel", js_get_pixel, 3);
   install(ctx, global, "__mv_canvasDrawText", js_draw_text, 17);
   install(ctx, global, "__mv_canvasFillGradient", js_fill_gradient, 15);
