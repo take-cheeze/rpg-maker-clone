@@ -5,6 +5,142 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
+  `strokeText` and `measureText` are backed by stb_truetype against the game's
+  bundled TrueType font (the CSS `GameFont`, auto-discovered under the project's
+  `fonts/` dir), so window/menu/title text — which MV draws through
+  `Bitmap.drawText` → `context.fillText` — actually appears. Horizontal
+  alignment (`textAlign` centre/right, driven by the now-accurate `measureText`),
+  `textBaseline`, the current transform (translate/uniform-scale) and a dilated
+  outline for `strokeText` are all honoured. Previously these were no-ops, so
+  the boot reached the title but drew no text.
+- MV render capture: a `--mv_screenshot=PATH` flag writes a PNG of the rendered
+  MV frame a couple of seconds into the boot (`MV::JS.screenshot` encodes the
+  live PIXI canvas via stb_image_write), and the CI smoke test uploads it as the
+  `mv-screenshot` artifact — so the actual on-screen output can be inspected as
+  the maker is brought up, not just the engine's log. With the boot fixes below,
+  the KinoAR/Lunatic-Core test bed now reaches `Scene_Title` cleanly
+  (`[MV] scene: Scene_Boot -> Scene_Title`).
+- MV boot now reaches PIXI init and continues through `Graphics.initialize`
+  (milestone M4/M5): with the JS host in place PIXI 4.x starts in Canvas mode
+  against the Canvas2D bridge. Cleared the init-time blockers that followed: the
+  bundled **FPSMeter** debug overlay (which throws when instantiated on this
+  host) is replaced with a no-op exposing the tick/show/hide methods MV drives
+  each frame; the **document/element shim** gained the surface
+  `Graphics.initialize` walks (`getElementsByTagName('head')`, element
+  `getElementsByTagName` for `_disableContextMenu`, a `<style>.sheet.insertRule`,
+  `createTextNode`, child-returning `appendChild`, `classList`); a silent
+  **`AudioContext`** stub lets `SceneManager.initAudio` succeed (real Web Audio →
+  `RGSS::Audio` is a later milestone); and `document.getElementsByTagName('script')`
+  now returns a readable entry so `Utils.canReadGameFiles`/`checkFileAccess`
+  passes. The whole `SceneManager.initialize` sequence now completes, and a
+  `document.fonts` (`FontFaceSet`) stub reporting the game font ready makes
+  `Scene_Boot` advance to the title instead of looping forever on MV's
+  measured-text-width font check (which a font-agnostic `measureText` can't
+  satisfy). `window` also gained the inert event/lifecycle methods MV wires up
+  (`addEventListener`/`removeEventListener`/`dispatchEvent`/`close`), since
+  `Graphics._setupEventHandlers`, `Input` and `TouchInput` register listeners on
+  it; and the canvas gradient factories (`createLinearGradient` etc.) return
+  chainable stubs so `Bitmap.gradientFillRect` doesn't crash. With these, the MV
+  test bed (KinoAR/Lunatic-Core) now **boots end-to-end with no engine errors** —
+  through PIXI init, `SceneManager.initialize`, `Scene_Boot` and on into the
+  scene graph — and `MV#main_loop` logs each scene transition so the boot's
+  progress is visible in the smoke test. Covered by `mruby-mvjs/test`.
+- MV boot resilience (milestone M4): script evaluation now follows browser
+  semantics — a `<script>` that throws while executing is logged and the next
+  one still runs, instead of aborting the whole engine. Previously the
+  `iphone-inline-video` library (an iOS-only inline-video shim MV bundles) threw
+  `invalid 'in' operand` under quickjs and took the entire boot down with it.
+  `MV#boot` now catches and logs each script's (and `window.onload`'s) errors and
+  carries on, and installs a no-op `makeVideoPlayableInline` fallback so video
+  creation can't crash later on this (video-less) host.
+- MV transform-aware canvas drawing (milestone M4): the `CanvasRenderingContext2D`
+  shim now tracks the full 2D transform — `save`/`restore`, `translate`/`scale`/
+  `rotate`/`transform`/`setTransform`/`resetTransform` — and `drawImage` honours
+  it. PIXI's canvas renderer positions every sprite by setting the transform and
+  drawing at the origin, so without this all sprites piled up at (0,0); now they
+  land where they belong. `drawImage` rasterises by walking the transformed dest
+  rect's device-space bounding box and inverse-mapping each pixel, so scale,
+  rotation and translation all work with no gaps; `fillRect`/`clearRect` map
+  their rect through the matrix (exact for translate/scale). Covered by
+  `mruby-mvjs/test/canvas_test.rb`.
+- MV on-screen present (milestone M4): the MV canvas is now drawn to the screen
+  each frame. `MV#boot` creates one full-screen `RGSS::Sprite`/`Bitmap`, and
+  `MV::JS.present` copies MV's PIXI canvas (resolved from the running game's
+  renderer view / `Graphics._canvas`) into that bitmap — swapping R/B for the
+  RGBA→ARGB8888 layout and marking it dirty so `Graphics.update` repaints it.
+  mruby-rgss gained a small exported accessor (`include/rgss_bitmap.hxx`,
+  `rgss::bitmap_pixels`) so the present blits straight into the bitmap's buffer.
+  Covered by `mruby-mvjs/test/canvas_test.rb`. (Correct sprite positioning still
+  needs transform-aware `drawImage`, which PIXI's canvas renderer relies on.)
+- MV PNG image loading and asset path rooting (milestone M4): `new Image()` now
+  decodes a game PNG through stb_image (`__mv_imageLoad` in `mvcanvas.cxx`)
+  straight into a native RGBA canvas, exposing `width`/`height` and firing
+  `onload`/`onerror` asynchronously (on the next host frame) as the browser
+  contract MV's `Bitmap` loader expects; the decoded image is a first-class
+  `drawImage` source. Because the process is not chdir'd into the game dir,
+  MV's game-relative asset requests (`data/*.json`, `img/*.png`, saves) are now
+  rooted at the game directory via a shared `mv_resolve_path`, configured from
+  Ruby with `MV::JS.base_dir=` at boot. Covered by `mruby-mvjs/test`
+  (`canvas_test.rb` image decode/draw, `host_test.rb` base-dir resolution).
+- `scripts/download-lunatic-core.bash`: fetches a small, complete RPG Maker MV
+  project (KinoAR/Lunatic-Core — full corescript + `data/*.json` + `img/`) into
+  the git-ignored `data/` dir as the MV test bed, mirroring the RPG Maker 2000
+  Nepheshel download. It is detected as an MV game by `src/main.cxx`
+  (`js/rpg_core.js` + `data/System.json`) and is downloaded, never vendored.
+- MV Canvas2D rendering bridge, first slice (milestone M4): `document`,
+  `HTMLCanvasElement` and a `CanvasRenderingContext2D` backed by native RGBA8
+  buffers (`mruby-mvjs/src/mvcanvas.cxx`). `getContext('2d')` returns the shim
+  and `getContext('webgl')` returns `null`, so PIXI.js falls back to its Canvas
+  renderer. Implements the drawing subset that renderer uses — `fillRect`
+  (with `fillStyle` `#rgb`/`#rrggbb`/`rgba()` and `globalAlpha`), `clearRect`,
+  nearest-neighbour scaled `drawImage` (canvas→canvas), `getImageData`, and
+  `measureText` — with path/transform/text operations stubbed for now. Canvas
+  buffers are display-independent, so the primitives are unit-tested by reading
+  pixels back (`mruby-mvjs/test/canvas_test.rb`). On-screen present and PNG
+  `Image` loading follow.
+- MV JavaScript host environment, first slice (milestone M3): `MV::JS.eval` now
+  runs against a **persistent** quickjs-ng runtime/context (state carries across
+  calls, as the MV engine expects) instead of a throwaway per call, and the
+  context is bootstrapped with the first browser/host globals —
+  `window`/`self`/`global`/`globalThis` aliases, a `console`
+  (`log`/`info`/`warn`/`error`), a native synchronous file reader
+  (`__mv_readFileSync`), and a minimal synchronous `XMLHttpRequest` built on it
+  (how MV's `DataManager` loads `data/*.json`). Also the event-loop machinery —
+  `setTimeout`/`setInterval`/`clearTimeout`, `requestAnimationFrame`/
+  `cancelAnimationFrame` and `performance.now` — driven by a new `MV::JS.pump`
+  (`now_ms`) that fires due timers and animation-frame callbacks and drains
+  promise microtasks, so the JS game shares the engine's fixed cadence instead
+  of blocking; plus passive `navigator`/`location`/`localStorage` stubs. Also
+  the NW.js-style `require('fs'|'path')` MV uses for local-file saves (backed by
+  native read/write/exists), and `MV::JS.eval_file(path)` to load a script into
+  the host. `MV#boot` now evaluates the MV core scripts (`MV::CORE_SCRIPTS`) in
+  order via `eval_file`, and `MV#main_loop` advances the host with `MV::JS.pump`
+  at 60 fps — wired but still gated behind `MV.runtime_available?` (false) until
+  the Canvas2D rendering bridge (M4) lands. Covered by
+  `mruby-mvjs/test/host_test.rb`
+- Embedded JavaScript engine for RPG Maker MV support (milestone M2): added
+  quickjs-ng as the `3rd/quickjs` git submodule and static-linked its `qjs`
+  library into both the main executable and the mruby test binary. `MV::JS.eval` (in
+  `mruby-mvjs/src/mvjs.cxx`) evaluates JavaScript and marshals scalar results
+  (Integer/Float/String/true/false/nil) back to mruby, raising `RuntimeError` on
+  a JS exception; `MV.js_available?` reports that the engine is compiled in.
+  Covered by `mruby-mvjs/test/js_test.rb`
+- Groundwork for JavaScript RPG Maker (MV) support (approach: embed a real
+  JavaScript engine and run the game's own scripts, rather than reimplement the
+  engine in mruby):
+  - New `mruby-mvjs` gem — a thin Ruby orchestration layer (`MV`) that detects
+    an MV project (`js/rpg_core.js` + `data/System.json`), knows the canonical
+    MV script load order, and defines the boot/pump handshake with a
+    clearly-marked seam where the embedded runtime plugs in. The runtime
+    (quickjs-ng) is not built into the binary yet, so an MV game is detected but
+    reports that support is under construction instead of misbehaving
+  - `src/main.cxx` now sniffs the MV directory layout and instantiates `MV`,
+    alongside the existing RPG2k/RPGXP detection
+  - Host-runnable specs (`mruby-mvjs/test`) covering project detection and the
+    script load order
+  - Documented the decision, layered architecture and milestone roadmap in
+    `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
 - **Parallel-process events** (page trigger 4) and parallel common events now
   run continuously in the background. Each gets its own looping
   `Game::Interpreter` driven by `Scene::Map#step_parallels`: it runs its command
@@ -395,6 +531,12 @@ All notable changes to this project will be documented in this file.
   `:int16_array` element type used by the tile layers and the area rect.
 
 ### Changed
+- Bumped the bundled LVGL to v9.5.0 (from a v9.2.0 development snapshot)
+- `RGSS::Window` is now assembled from three layered sprites inside a viewport
+  (windowskin background+frame, selection cursor, and contents/text) instead of
+  compositing everything into one sprite's bitmap. The viewport clips the layers
+  to the window rectangle, and updating the cursor or text no longer re-blits
+  the windowskin
 - Updated documentation to reflect new title screen functionality
 - Marked "Show window component for title scene" as completed in TODO list
 - Enhanced database term schema with comprehensive RPG Maker 2000/2003 terms:

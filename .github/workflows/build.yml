@@ -18,6 +18,9 @@ jobs:
   # This workflow contains a single job called "build"
   build:
     strategy:
+      # Don't let a flaky failure on one OS (e.g. a corrupt nix-archive
+      # download in nix-quick-install-action) cancel the other OS's build.
+      fail-fast: false
       matrix:
         os:
           - ubuntu-24.04
@@ -123,6 +126,35 @@ jobs:
       - name: test
         run: |
           nix develop -c cmake --build build -t test
+
+      # Boot the RPG Maker MV test bed (KinoAR/Lunatic-Core) through the
+      # embedded JS host as a smoke test. Non-blocking while the MV runtime is
+      # brought up: the step logs the engine's output/errors for iteration but
+      # does not fail the build.
+      - name: Download MV test game
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: nix develop -c ./scripts/download-lunatic-core.bash
+
+      - name: MV boot smoke test
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        run: |
+          mkdir -p ss
+          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+            --timeout_ms=5000 --game_dir data/Lunatic-Core \
+            --mv_screenshot=ss/mv_title.png
+
+      # Upload the captured MV frame so the rendered output can be inspected
+      # while the maker is brought up. Best-effort: the boot is non-blocking, so
+      # the screenshot may be missing on some runs.
+      - name: Upload MV screenshot
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mv-screenshot
+          path: ss/mv_title.png
+          if-no-files-found: warn
 
   wasm:
     runs-on: ubuntu-24.04
@@ -292,6 +324,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      # quickjs-ng pins a nested `test262` submodule with `update = none`, so the
+      # recursive checkout above skips it. `nix build '.?submodules=1'` still
+      # recurses into every nested submodule and fails to fetch test262 when it
+      # is absent, so materialise it here (shallow). It is only needed to satisfy
+      # nix's recursive fetch; nothing in the build uses it.
+      - name: Materialize quickjs test262 submodule for the flake build
+        run: git -C 3rd/quickjs -c submodule.test262.update=checkout submodule update --init --depth 1 test262
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store

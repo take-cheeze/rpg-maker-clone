@@ -59,6 +59,22 @@ set(BUILD_TESTING ${old_build_testing})
 
 add_subdirectory(3rd/uni-algo EXCLUDE_FROM_ALL)
 
+# quickjs-ng: the embedded JavaScript engine for RPG Maker MV support (see
+# docs/adr/0004-javascript-maker-mv-quickjs.md). Only the `qjs` static library
+# is needed — linking it also carries quickjs's own include directory and its
+# libm/pthreads dependencies transitively. Its CLI, examples, install rules and
+# tests are turned off so add_subdirectory only builds the library.
+set(QJS_ENABLE_INSTALL
+    OFF
+    CACHE BOOL "" FORCE)
+set(QJS_BUILD_EXAMPLES
+    OFF
+    CACHE BOOL "" FORCE)
+set(old_build_testing ${BUILD_TESTING})
+set(BUILD_TESTING OFF)
+add_subdirectory(3rd/quickjs EXCLUDE_FROM_ALL)
+set(BUILD_TESTING ${old_build_testing})
+
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
 add_library(mruby STATIC IMPORTED)
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
@@ -98,7 +114,7 @@ target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include"
 # the next `make`, with no manual `cmake` re-run. Header changes under src/ are
 # caught too so an edit to a private header still forces the archive to be
 # rebuilt.
-foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp)
+foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-mvjs)
   file(
     GLOB_RECURSE
     src
@@ -190,7 +206,8 @@ target_link_libraries(
   SDL2::SDL2
   ${SDL2_MIXER_LIB}
   gflags
-  uni-algo::uni-algo)
+  uni-algo::uni-algo
+  qjs)
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
 

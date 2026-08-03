@@ -30,6 +30,11 @@ DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
 DEFINE_int64(height, 240, "height of the window");
 DEFINE_string(game_dir, "", "Game directory");
+DEFINE_string(
+    mv_screenshot,
+    "",
+    "For RPG Maker MV: write a PNG of the rendered frame to this path "
+    "after boot, then keep running (used to capture output in CI)");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -377,6 +382,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MV_SCREENSHOT"),
+                mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
@@ -411,6 +419,11 @@ int main(int argc, char** argv) {
   mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+  } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
+             fs::exists(game_dir_path / "data" / "System.json")) {
+    // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
+    // See docs/adr/0004-javascript-maker-mv-quickjs.md.
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
   } else {
