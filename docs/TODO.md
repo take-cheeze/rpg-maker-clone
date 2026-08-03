@@ -94,7 +94,8 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
+  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Conditional
+  Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
@@ -118,14 +119,19 @@ The work below is roughly ordered by the critical path to a walkable game
   HP/MP**, **Full Heal** and **Change Parameters** apply to a fixed actor, a
   variable-selected actor or the whole party, clamped to each actor's maxima
   (Change HP honours the allow-death floor; Change Parameters re-clamps current
-  HP/MP when a maximum is lowered). **Control Variables** reads not just
+  HP/MP when a maximum is lowered). **Change EXP** and **Change Level** grow (or
+  shrink) an actor: EXP re-derives the level from the RPG2000 standard curve
+  (`Game::Actor#exp_for_level`, ported from EasyRPG's `CalculateExp` off the
+  row's exp_basic/increase/correction), and both recompute the base stats from
+  the level's growth curve and keep EXP and level consistent (current HP/MP are
+  not refilled, matching RPG_RT). **Control Variables** reads not just
   constants and other variables but also a **random** range, an **actor stat**
-  (level / HP / MP / max HP-MP / attack / defence / spirit / agility) and **game
-  quantities** (party gold, timer seconds). Conditional Branch covers switch /
-  variable / **timer** / gold / item conditions and the **actor** sub-conditions
-  (in party, name, level ≥, HP ≥; skill / equipment / state are not modelled).
-  The remaining commands (pictures, screen effects, battles, EXP/level changes —
-  which need the per-level stat growth curves, not yet parsed — ...) are TODO
+  (level / EXP / HP / MP / max HP-MP / attack / defence / spirit / agility) and
+  **game quantities** (party gold, timer seconds). Conditional Branch covers
+  switch / variable / **timer** / gold / item conditions and the **actor**
+  sub-conditions (in party, name, level ≥, HP ≥; skill / equipment / state are
+  not modelled). The remaining commands (pictures, screen effects other than
+  tint/flash/shake, battles, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
