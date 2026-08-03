@@ -119,7 +119,8 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
+  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Conditional
+  Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
@@ -155,14 +156,18 @@ The work below is roughly ordered by the critical path to a walkable game
   the next map load). **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
-  HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
-  Equipment** apply to a fixed actor, a variable-selected actor or the whole
-  party, clamped to each actor's maxima (Change HP honours the allow-death floor;
-  Change Parameters re-clamps current HP/MP when a maximum is lowered; Change
-  Level rescales base stats through the per-level growth curve; Change Equipment
-  folds an equipped item's bonuses into the effective stats). **Control
+  HP/MP**, **Full Heal**, **Change Parameters**, **Change EXP**, **Change Level**
+  and **Change Equipment** apply to a fixed actor, a variable-selected actor or
+  the whole party, clamped to each actor's maxima (Change HP honours the
+  allow-death floor; Change Parameters re-clamps current HP/MP when a maximum is
+  lowered; **Change EXP** re-derives the level from the RPG2000 standard curve
+  (`Game::Actor#exp_for_level`, ported from EasyRPG's `CalculateExp` off the
+  row's exp_basic/increase/correction) and **Change Level** rescales base stats
+  through the per-level growth curve, both keeping EXP and level consistent
+  without refilling current HP/MP, matching RPG_RT; Change Equipment folds an
+  equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
-  range, an **actor stat** (level / HP / MP / max HP-MP / attack / defence /
+  range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,

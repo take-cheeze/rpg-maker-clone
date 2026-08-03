@@ -791,6 +791,7 @@ module Game
       # top, and levelling learns skills, so seed them all at the actor's initial
       # level, then start at full health.
       set_level(a.initial_level || 1)
+      @exp = exp_for_level(@level) # EXP consistent with the starting level
       @hp = @max_hp
       @mp = @max_mp
     end
@@ -953,6 +954,68 @@ module Game
       EQUIP_ORDER.each_index.map { |i| ids[i] || 0 }
     end
 
+    # RPG2000 caps: total EXP maxes at 999_999; the EXP-curve fields default to
+    # 30 when a database row does not carry them (e.g. a test fixture).
+    EXP_MAX = 999_999
+    EXP_DEFAULT = 30
+
+    # The actor's maximum level (from the database row; 50 by RPG2000 default).
+    def max_level
+      ml = @db_row.respond_to?(:max_level) ? @db_row.max_level : nil
+      ml && ml >= 1 ? ml : 50
+    end
+
+    # Total EXP required to *be at* `level` (0 at level 1). RPG2000's standard
+    # curve, computed from the row's exp_basic / exp_increase / exp_correction —
+    # a direct port of EasyRPG's CalculateExp(level - 1).
+    def exp_for_level(level)
+      return 0 if level <= 1
+      calc_exp(level - 1)
+    end
+
+    # Set total EXP (clamped to 0..EXP_MAX) and re-derive the level from the curve
+    # thresholds, recomputing the base stats via #set_level when the level
+    # changes. Mirrors EasyRPG's Game_Actor::ChangeExp: raising EXP climbs while
+    # the next level's threshold is reached; lowering it drops while below the
+    # current level's threshold.
+    def set_exp(new_exp)
+      new_exp = Game.clamp(new_exp, 0, EXP_MAX)
+      new_level = @level
+      if new_exp > @exp
+        while new_level < max_level && exp_for_level(new_level + 1) <= new_exp
+          new_level += 1
+        end
+      elsif new_exp < @exp
+        new_level -= 1 while new_level > 1 && new_exp < exp_for_level(new_level)
+      end
+      @exp = new_exp
+      set_level(new_level) if new_level != @level
+    end
+
+    # Add `delta` EXP (negative removes it); the Change EXP command's effect.
+    def gain_exp(delta)
+      set_exp(@exp + delta)
+    end
+
+    # Change the level by `delta` (the Change Level command). Recomputes the base
+    # stats via #set_level and re-aligns EXP to the new level, mirroring EasyRPG's
+    # ChangeLevel: on a level up EXP rises to at least the new level's threshold;
+    # on a level down that leaves EXP at/above the next threshold it drops to the
+    # level's base. Current HP/MP are not refilled (set_level only re-clamps
+    # them), matching RPG_RT.
+    def change_level_by(delta)
+      new_level = Game.clamp(@level + delta, 1, max_level)
+      old = @level
+      set_level(new_level)
+      base = exp_for_level(new_level)
+      if new_level > old
+        @exp = base if @exp < base
+      elsif new_level < old
+        nxt = new_level < max_level ? exp_for_level(new_level + 1) : EXP_MAX + 1
+        @exp = base if @exp >= nxt
+      end
+    end
+
     # Apply a HP change (positive heals, negative damages), clamped to
     # [floor, max_hp]. The floor is 0 when death is allowed (the actor may be
     # knocked out) or 1 otherwise, matching RPG2000's Change HP "allow death"
@@ -993,6 +1056,30 @@ module Game
       @base[type] = Game.clamp(@base[type] + delta, 1, limit)
       recompute_stats
     end
+
+    private
+
+    # EasyRPG's CalculateExp(n): the RPG2000 standard EXP curve summed over n
+    # steps. Float arithmetic mirrors RPG_RT; the running total truncates toward
+    # zero each step (C's (int) cast) and the whole result caps at EXP_MAX.
+    def calc_exp(n)
+      base = db_exp_param(:exp_basic).to_f
+      inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
+      correction = db_exp_param(:exp_correction).to_f
+      result = 0
+      n.times do
+        result += (correction + base).to_i
+        base *= inflation
+        inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
+      end
+      result > EXP_MAX ? EXP_MAX : result
+    end
+
+    # Read a numeric EXP-curve field from the database row, defaulting when the
+    # row (a test fixture) does not carry it.
+    def db_exp_param(field)
+      @db_row.respond_to?(field) ? (@db_row.__send__(field) || EXP_DEFAULT) : EXP_DEFAULT
+    end
   end
 
   # The active party. On a new game it is seeded from the database's initial
@@ -1016,29 +1103,34 @@ module Game
     def to_h
       hp = {}
       mp = {}
+      exp = {}
       meta = {}
       @actors.each do |a|
         hp[a.id] = a.hp
         mp[a.id] = a.mp
+        exp[a.id] = a.exp
         meta[a.id] = { name: a.name, title: a.title,
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
                        transparent: a.transparent }
       end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
-        hp: hp, mp: mp, actor_meta: meta }
+        hp: hp, mp: mp, exp: exp, actor_meta: meta }
     end
 
-    # Restore item/gold, per-actor hp/mp and the name/title/sprite overrides from
-    # a saved party hash. A save written before actor_meta existed simply keeps
-    # the database defaults.
+    # Restore item/gold, per-actor exp/hp/mp and the name/title/sprite overrides
+    # from a saved party hash. EXP is restored first (it re-derives the level and
+    # its base stats), then the saved HP/MP are laid over the recomputed maxima.
+    # A save written before actor_meta existed simply keeps the database defaults.
     def load_state(data)
       @items = data[:items] || {}
       @gold = data[:gold] || 0
+      exp = data[:exp] || {}
       hp = data[:hp] || {}
       mp = data[:mp] || {}
       meta = data[:actor_meta] || {}
       @actors.each do |a|
+        a.set_exp(exp[a.id]) if exp[a.id]
         a.hp = hp[a.id] if hp[a.id]
         a.mp = mp[a.id] if mp[a.id]
         apply_actor_meta(a, meta[a.id])

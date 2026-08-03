@@ -25,6 +25,7 @@ module Game
       CHANGE_GOLD      = 10310
       CHANGE_ITEMS     = 10320
       CHANGE_PARTY     = 10330
+      CHANGE_EXP       = 10410
       CHANGE_LEVEL     = 10420
       CHANGE_PARAM     = 10430
       CHANGE_EQUIP     = 10440
@@ -299,6 +300,7 @@ module Game
       when Cmd::CHANGE_GOLD      then do_change_gold cmd
       when Cmd::CHANGE_ITEMS     then do_change_items cmd
       when Cmd::CHANGE_PARTY     then do_change_party cmd
+      when Cmd::CHANGE_EXP       then do_change_exp cmd
       when Cmd::CHANGE_LEVEL     then do_change_level cmd
       when Cmd::CHANGE_PARAM     then do_change_params cmd
       when Cmd::CHANGE_EQUIP     then do_change_equipment cmd
@@ -568,14 +570,14 @@ module Game
     end
 
     # Operand type 5: a stat of the actor with id param5. param6 selects the
-    # attribute (0 level, 2 HP, 3 MP, 4 max HP, 5 max MP, 6 attack, 7 defence,
-    # 8 spirit, 9 agility). EXP (1) is not modelled and reads as 0, as does an
-    # actor not in the party.
+    # attribute (0 level, 1 EXP, 2 HP, 3 MP, 4 max HP, 5 max MP, 6 attack,
+    # 7 defence, 8 spirit, 9 agility). An actor not in the party reads as 0.
     def actor_operand(cmd)
       actor = party.actor_by_id(cmd.param(5))
       return 0 unless actor
       case cmd.param(6)
       when 0 then actor.level
+      when 1 then actor.exp
       when 2 then actor.hp
       when 3 then actor.mp
       when 4 then actor.max_hp
@@ -640,6 +642,26 @@ module Game
       else
         party.remove_actor(actor)
       end
+    end
+
+    # -- actor EXP / level ----------------------------------------------------
+
+    # Change EXP: add (or, when the operation is "remove", subtract) an amount of
+    # experience to the target actors, re-deriving each one's level and base
+    # stats from the growth curve. Uses the same scope/operation/operand layout
+    # as Change HP (stat_targets / stat_amount); the show-level-up-message flag is
+    # ignored (no battle/message UI drives it here).
+    def do_change_exp(cmd)
+      amount = stat_amount(cmd)
+      stat_targets(cmd).each { |a| a.gain_exp(amount) }
+    end
+
+    # Change Level: add or subtract levels for the target actors, recomputing
+    # their base stats and re-aligning EXP to the new level. Same scope/operation/
+    # operand layout as Change EXP.
+    def do_change_level(cmd)
+      amount = stat_amount(cmd)
+      stat_targets(cmd).each { |a| a.change_level_by(amount) }
     end
 
     # -- actor HP / MP --------------------------------------------------------
@@ -723,13 +745,6 @@ module Game
       amount = cmd.param(4) == 0 ? cmd.param(5) : variables[cmd.param(5)]
       amount = -amount if cmd.param(2) != 0
       stat_targets(cmd).each { |a| a.change_param(type, amount) }
-    end
-
-    # Change Level: add (op 0) or subtract (op 1) a const/variable amount to the
-    # target actors' level, rescaling their base stats through the growth curve.
-    def do_change_level(cmd)
-      amount = stat_amount(cmd)
-      stat_targets(cmd).each { |a| a.set_level(a.level + amount) }
     end
 
     # Change Equipment. param2 selects the operation: 0 equips an item (param3 0
