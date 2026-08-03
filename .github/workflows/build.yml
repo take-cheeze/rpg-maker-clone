@@ -193,6 +193,26 @@ jobs:
             --timeout_ms=6000 --game_dir data/mv-sample \
             --mv_new_game --mv_move_test
 
+      # Confirm the message/dialogue path renders: New Game -> map, then show a
+      # text message and log with `[MV-MSG] ... window_open=<bool>` whether the
+      # message window opened. Captures a frame so the rendered box can be
+      # inspected. Non-blocking, like the other MV smoke tests.
+      - name: MV message smoke test
+        continue-on-error: true
+        run: |
+          mkdir -p ss
+          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+            --timeout_ms=6000 --game_dir data/mv-sample \
+            --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
+
+      - name: Upload MV message screenshot
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mv-message-screenshot
+          path: ss/mv_message.png
+          if-no-files-found: warn
+
   wasm:
     runs-on: ubuntu-24.04
     env:
