@@ -909,6 +909,10 @@ module Game
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
     attr_accessor :menu_access, :save_access
+    # The BGM currently playing and the one stashed by Memorize BGM (11530),
+    # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
+    # restores the stash. Persisted in the save so the memory survives a reload.
+    attr_accessor :current_bgm, :memorized_bgm
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -924,6 +928,8 @@ module Game
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
+      @current_bgm = nil
+      @memorized_bgm = nil
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
@@ -945,7 +951,8 @@ module Game
         switches: @switches.to_h, variables: @variables.to_h,
         party: @party.to_h, timer_frames: @timer_frames,
         timer_running: @timer_running, message_config: @message_config.to_h,
-        menu_access: @menu_access, save_access: @save_access }
+        menu_access: @menu_access, save_access: @save_access,
+        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -994,6 +1001,8 @@ module Game
       # (so a save written before these existed keeps the menu/save enabled).
       state.menu_access = h[:menu_access] unless h[:menu_access].nil?
       state.save_access = h[:save_access] unless h[:save_access].nil?
+      state.current_bgm = h[:current_bgm]
+      state.memorized_bgm = h[:memorized_bgm]
       state
     end
   end

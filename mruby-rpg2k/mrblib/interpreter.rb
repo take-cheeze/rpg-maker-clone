@@ -47,6 +47,8 @@ module Game
       MOVE_EVENT       = 11330
       WAIT             = 11410
       PLAY_BGM         = 11510
+      MEMORIZE_BGM     = 11530
+      PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
@@ -225,6 +227,8 @@ module Game
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
+      when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
+      when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
@@ -709,6 +713,27 @@ module Game
       @waiting = true
     end
 
+    # Memorize BGM: stash a copy of the currently-playing BGM so a later Play
+    # Memorized BGM can restore it (e.g. duck to a fanfare, then return). Nothing
+    # playing memorises nothing. Non-blocking.
+    def do_memorize_bgm(_cmd)
+      cur = @state.current_bgm
+      @state.memorized_bgm = cur ? cur.dup : nil
+    end
+
+    # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the
+    # current BGM again. A no-op when nothing was memorised. Playback resumes
+    # from the start — the SDL_mixer backend cannot seek to the stored position.
+    def do_play_memorized_bgm(_cmd)
+      bgm = @state.memorized_bgm
+      return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
+      RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+      @state.current_bgm = bgm.dup
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
+      nil
+    end
+
     def play_audio(kind, cmd)
       name = cmd.string
       return if name.nil? || name.empty?
@@ -717,6 +742,9 @@ module Game
         # default to 100 when the command carries a shorter list.
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
+        # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
+        # as the "current system BGM" regardless of whether playback succeeds).
+        @state.current_bgm = { name: name, volume: volume, tempo: pitch }
         RGSS::Audio.bgm_play(name, volume, pitch)
       else
         # PlaySE parameters: [volume, tempo, balance].

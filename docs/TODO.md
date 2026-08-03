@@ -96,9 +96,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location, Wait,
-  Play BGM/SE, Message Options, Change Face Graphic, Change Main Menu / Save
-  Access, Call Event, Move Event, Erase Event, End Event) with a per-frame step
-  cap so a bad loop
+  Play BGM/SE, Memorize / Play Memorized BGM, Message Options, Change Face
+  Graphic, Change Main Menu / Save Access, Call Event, Move Event, Erase Event,
+  End Event) with a per-frame step cap so a bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command

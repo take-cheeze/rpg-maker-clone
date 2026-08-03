@@ -789,6 +789,36 @@ check 'Change Save Access allows and forbids saving' do
   eq true, st.save_access
 end
 
+# -- Memorize / Play Memorized BGM (the BGM stack) ---------------------------
+
+check 'Memorize/Play Memorized BGM stashes and restores the current BGM' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Play "town", memorize it, duck to "fanfare", then restore the memorized BGM.
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'fanfare'),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  eq 'town', st.current_bgm[:name], 'the memorized BGM is current again'
+  eq 80, st.current_bgm[:volume], 'its volume was preserved'
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town fanfare town], names, 'the backend played town, fanfare, then town'
+end
+
+check 'Play Memorized BGM with nothing memorized does nothing' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_MEMORIZED_BGM, [])])
+  it.update
+  eq 0, RGSS::Audio.log.select { |e| e[0] == :bgm }.size, 'no BGM was played'
+  eq nil, st.memorized_bgm
+end
+
 # -- actor HP / MP commands ---------------------------------------------------
 
 # A database row for an actor, and a fake DB exposing just what Game::Party /
@@ -827,6 +857,8 @@ check 'State save round-trips the message configuration' do
   st.message_config.face_index = 2
   st.menu_access = false
   st.save_access = false
+  st.current_bgm = { name: 'town', volume: 80, tempo: 100 }
+  st.memorized_bgm = { name: 'field', volume: 70, tempo: 90 }
   loaded = Game::State.load(db, st.to_h)
   eq true, loaded.message_config.transparent
   eq Game::MessageConfig::POS_TOP, loaded.message_config.position
@@ -834,6 +866,8 @@ check 'State save round-trips the message configuration' do
   eq 2, loaded.message_config.face_index
   eq false, loaded.menu_access, 'menu access round-trips'
   eq false, loaded.save_access, 'save access round-trips'
+  eq 'town', loaded.current_bgm[:name], 'current BGM round-trips'
+  eq 'field', loaded.memorized_bgm[:name], 'memorized BGM round-trips'
   # A save written before these flags existed keeps them enabled (default on).
   legacy = st.to_h
   legacy.delete(:menu_access)
