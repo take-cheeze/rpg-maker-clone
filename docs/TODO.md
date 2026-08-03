@@ -98,8 +98,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
-  Screen, Shake Screen, Call Event, Move Event, Proceed With Movement, Erase
-  Event, End Event) with a per-frame step cap so a bad loop
+  Screen, Flash Screen, Shake Screen, Call Event, Move Event, Proceed With
+  Movement, Erase Event, End Event) with a per-frame step cap so a bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
@@ -161,9 +161,12 @@ The work below is roughly ordered by the critical path to a walkable game
   (11050) also drives `Game::Screen`: a timed, float-free triangle-wave
   horizontal offset (amplitude from power, rate from speed) that `Scene::Map`
   subtracts from the camera, so — unlike the tint — the shake **is** visible
-  with the current renderer. Flash will extend `Game::Screen` the same way;
-  transitions/fade, Pan, Show Picture and weather remain, and the tint still
-  needs `RGSS::Viewport` tone support in C++ to show
+  with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
+  a colour + strength that fades to zero over the duration; like the tint it is
+  the Ruby half (drawing the full-screen colour overlay at its strength needs
+  the same alpha-blend / viewport support in C++). All three share the `:screen`
+  wait. Pan, transitions/fade, Show Picture and weather remain, and the
+  tint/flash still need `RGSS::Viewport` tone/alpha support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
