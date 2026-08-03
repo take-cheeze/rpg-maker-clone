@@ -35,10 +35,11 @@ directly. Before opening one:
 - **Run the tests you touched.** Build and run the Google Test / CTest suite
   (`cmake --build build -t test`) and any relevant `scripts/*_check.rb`
   validators before pushing.
-- **Push and verify CI.** Push with `git push -u origin <branch>`. Only open a
-  PR when explicitly asked. Each PR gets a **Cloudflare Pages** preview and must
-  keep CI green before it is merged; pushes to `master` deploy the page to
-  **GitHub Pages**.
+- **Open a PR when there is code to review.** Push with
+  `git push -u origin <branch>`, then open a pull request whenever the change
+  includes code that needs review. Each PR gets a **Cloudflare Pages** preview
+  and must keep CI green before it is merged; pushes to `master` deploy the page
+  to **GitHub Pages**.
 
 ## Architecture Decision Records
 
