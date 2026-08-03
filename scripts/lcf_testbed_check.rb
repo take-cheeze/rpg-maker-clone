@@ -81,11 +81,35 @@ class Checker
     end
   end
 
+  # Report the editor edition (RPG2000 vs RPG2003) the database was authored in,
+  # and for a 2003 project prove the 2003-only structures actually decode: the
+  # Classes (職業) section must be readable and every actor's class_id must name a
+  # real class (or 0 for none). RPG2000 databases must not carry that section.
+  def check_maker(db)
+    maker = db.maker
+    puts "  maker: RPG Maker #{maker}"
+    if db.rpg2003?
+      classes = db.job
+      fail 'ldb: 2003 database has no Classes section' unless classes
+      ids = {}
+      classes&.each { |id, _c| ids[id] = true }
+      db.player&.each do |aid, actor|
+        cid = actor.class_id.to_i
+        next if cid.zero?
+        fail "ldb.player[#{aid}].class_id #{cid} has no matching class" unless ids[cid]
+      end
+      puts "  classes: #{ids.size}"
+    elsif db.job
+      fail 'ldb: RPG2000 database unexpectedly carries a Classes section (chunk 30)'
+    end
+  end
+
   def check_game(dir)
     puts "== #{dir} =="
 
     db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
     walk(db, LCF::Schema::DATABASE, 'ldb')
+    check_maker(db)
 
     lmt = LCF::MapTree.new(File.open(File.join(dir, 'RPG_RT.lmt'), 'rb'))
     fail 'map tree has no start map' if lmt.initial.initial_map_id.to_i <= 0

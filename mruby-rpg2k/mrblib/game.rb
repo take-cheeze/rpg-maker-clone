@@ -876,6 +876,35 @@ module Game
         timer_running: @timer_running }
     end
 
+    # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
+    # by an actual editor, rather than our own Marshal hash. Only the fields we
+    # model are restored: the hero's map, tile position and facing (chunk 104),
+    # the party roster / gold / items (inventory, chunk 109) and the switches and
+    # variables (system, chunk 101). Switches and variables are 0-indexed arrays
+    # in the save but 1-indexed in-game, so they shift by one. `save[101]` is
+    # used instead of `save.system` because the latter collides with Kernel#system
+    # under CRuby (where the loaders are unit-tested).
+    def self.from_lsd(db, save)
+      hero = save.hero
+      inv = save.inventory
+      party = Party.new(db, (inv.party || []))
+      items = {}
+      ids = inv.item_ids || []
+      counts = inv.item_counts || []
+      ids.each_index { |i| items[ids[i]] = counts[i] || 0 }
+      party.load_state(items: items, gold: inv.gold)
+      state = new(party, hero.map_id, hero.x, hero.y)
+      state.direction = hero.direction || 2
+      sys = save[101]
+      switches = {}
+      (sys.switches || []).each_with_index { |v, i| switches[i + 1] = v if v }
+      state.switches.replace(switches)
+      variables = {}
+      (sys.variables || []).each_with_index { |v, i| variables[i + 1] = v unless v == 0 }
+      state.variables.replace(variables)
+      state
+    end
+
     # Rebuild a State from a saved hash. Actors are re-created from the database
     # by the saved ids, then their mutable state is restored.
     def self.load(db, h)

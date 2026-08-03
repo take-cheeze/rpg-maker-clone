@@ -1458,14 +1458,32 @@ class RPG2k
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
   end
 
-  # Save file path for a slot. We use our own portable Marshal format rather
-  # than the LCF .lsd save schema (which is not modelled yet).
+  # Save file path for a slot. Saving still uses our own portable Marshal
+  # format, but Continue can also load a genuine editor Save<N>.lsd (see
+  # continue_game) via the now-modelled LCF save schema.
   def save_path slot = 1
     "#{GAME_DIR}/save#{slot}.mrb"
   end
 
+  # Path of an editor save slot, e.g. Save01.lsd. mruby here bundles no sprintf,
+  # so the two-digit slot is zero-padded by hand.
+  def lsd_path slot = 1
+    n = slot < 10 ? "0#{slot}" : "#{slot}"
+    "#{GAME_DIR}/Save#{n}.lsd"
+  end
+
+  # The lowest-numbered editor save that exists (RPG2000 uses slots 1..15), or
+  # nil when there is none.
+  def existing_lsd
+    (1..15).each do |slot|
+      p = lsd_path(slot)
+      return p if File.exist?(p)
+    end
+    nil
+  end
+
   def save_exists? slot = 1
-    File.exist? save_path(slot)
+    File.exist?(save_path(slot)) || !existing_lsd.nil?
   rescue StandardError => e
     $stderr.puts "[RPG2k] save-slot check failed for slot #{slot}: #{e.message}"
     false
@@ -1481,15 +1499,21 @@ class RPG2k
     false
   end
 
-  # Continue: load the most recent save (our Marshal format) and resume on its
-  # map. Warns and stays on the title when there is no save to load.
+  # Continue: resume a saved game and switch to its map. A genuine editor
+  # Save<N>.lsd is loaded through the LCF save schema when present (so a real
+  # save dropped into the game dir resumes correctly); otherwise our own Marshal
+  # save is used. Warns and stays on the title when there is nothing to load.
   def continue_game
-    unless save_exists?
+    lsd = existing_lsd
+    if lsd
+      state = Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd, "rb")))
+    elsif File.exist?(save_path)
+      data = File.open(save_path, "rb") { |f| f.read }
+      state = Game::State.load(@db, Marshal.load(data))
+    else
       RGSS.warn_stub "Continue (no save data found)"
       return
     end
-    data = File.open(save_path, "rb") { |f| f.read }
-    state = Game::State.load(@db, Marshal.load(data))
     state.map = load_map state.map_id
     scene = Scene::Map.new(self, state)
     @scenes.last.dispose

@@ -7,7 +7,7 @@
 # test-bed games by scripts/lcf_testbed_check.rb, but the save-data schema
 # (ADR 0009, mruby-lcf/mrblib/schema.rb `SAVE_DATA`) was only ever run over
 # synthetic blobs -- no real `.lsd` fixture was bundled. A running RPG Maker
-# 2000/2003 game (or EasyRPG Player) writes a genuine Save<N>.lsd when the
+# 2000/2003 game writes a genuine Save<N>.lsd when the
 # player saves; this harness loads the exact mruby/CRuby-common parser sources
 # over such a file and:
 #
@@ -141,6 +141,13 @@ class SaveChecker
     actors = 0
     (save.actors.each { |_id, _a| actors += 1 } rescue nil)
     puts "  party:   #{actors} saved actor entrie(s)"
+    inv = save.inventory
+    if inv
+      ids = inv.item_ids || []
+      cnt = inv.item_counts || []
+      items = ids.each_index.map { |i| "#{ids[i]}x#{cnt[i]}" }.join(' ')
+      puts "  inventory: gold=#{inv.gold} items(id x count)=[#{items}]"
+    end
   end
 
   def report
@@ -162,8 +169,8 @@ saves = ARGV.dup
 saves = discover_saves(File.expand_path('../data', __dir__)) if saves.empty?
 
 if saves.empty?
-  warn 'no Save*.lsd found (pass a path, or generate one -- see ' \
-       'scripts/run-nepheshel-easyrpg-wine.bash)'
+  warn 'no Save*.lsd found (pass a path, or generate one by running a game ' \
+       'under wine and saving in-game -- see AGENTS.md)'
   exit 0
 end
 

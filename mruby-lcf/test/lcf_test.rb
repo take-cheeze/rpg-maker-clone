@@ -115,6 +115,33 @@ assert "LCF::Database item armour option flags (chunks 25-28) and equip animatio
   assert_equal 4, a.speed
 end
 
+assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
+  row = LCF::Array1D.new(lcf_array1d([lcf_int_field(1, 5), lcf_int_field(3, 0)]),
+                         { elements: { 1 => { name: :a, type: :int },
+                                       3 => { name: :b, type: :int } } })
+  assert_true row.key?(1)
+  # Present but zero-valued: still counts as physically written.
+  assert_true row.key?(3)
+  assert_false row.key?(2)
+end
+
+assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
+  actor = lcf_array1d([lcf_str_field(1, "Hero"), lcf_int_field(57, 3)])
+  klass = lcf_array1d([lcf_str_field(1, "Soldier")])
+  db2003 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(11, lcf_array2d([[1, actor]])),
+                 lcf_field(30, lcf_array2d([[3, klass]]))])))
+  assert_true db2003.rpg2003?
+  assert_equal 2003, db2003.maker
+  assert_equal "Soldier", db2003.job[3].name
+  assert_equal 3, db2003.player[1].class_id
+
+  db2000 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(11, lcf_array2d([[1, lcf_array1d([lcf_str_field(1, "Hero")])]]))])))
+  assert_false db2000.rpg2003?
+  assert_equal 2000, db2000.maker
+end
+
 assert "LCF::Database skill switch/occasion chunks (13, 16, 18, 19)" do
   se = lcf_array1d([lcf_str_field(1, "Teleport"), lcf_int_field(3, 80)])
   skill = lcf_array1d([lcf_str_field(1, "Warp"), lcf_int_field(13, 7),
@@ -322,4 +349,30 @@ assert "LCF::SaveData decodes bool_array switches, int32 variables and the doubl
   assert_equal "Iris", save.title.hero_name
   assert_equal 7, save.title.hero_level
   assert_equal 1.5, save.title.timestamp
+end
+
+assert "LCF::SaveData decodes the inventory, common-event and foreground-event chunks" do
+  # Inventory (chunk 109): parallel item-id (int16) / count (uint8) arrays plus
+  # gold, mirroring a real save's 薬草 x3 + 導きの書 x1 (ids 1 and 451) with 100G.
+  inventory = lcf_array1d([lcf_int_field(11, 2),
+                           lcf_shorts_field(12, [1, 451]),
+                           lcf_field(13, "\x03\x01"),
+                           lcf_field(14, "\x00\x00"),
+                           lcf_int_field(21, 100)])
+  # Common-event state (chunk 114): Array2D indexed by common-event id, each an
+  # opaque per-event execution-state blob.
+  common = lcf_array2d([[1, lcf_array1d([lcf_field(1, "\x01\x01\x00\x00")])]])
+  # Foreground event (chunk 113): the running event's opaque exec-state blob.
+  foreground = lcf_array1d([lcf_field(1, "\xab\xcd")])
+  body = lcf_array1d([lcf_field(109, inventory),
+                      lcf_field(113, foreground),
+                      lcf_field(114, common)])
+  save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
+
+  assert_equal 2, save.inventory.item_count
+  assert_equal [1, 451], save.inventory.item_ids
+  assert_equal [3, 1], save.inventory.item_counts
+  assert_equal 100, save.inventory.gold
+  assert_equal [0x01, 0x01, 0x00, 0x00], save.common_events[1].execution_state
+  assert_equal [0xab, 0xcd], save.foreground_event.execution_state
 end
