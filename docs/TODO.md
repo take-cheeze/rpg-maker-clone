@@ -121,9 +121,12 @@ The work below is roughly ordered by the critical path to a walkable game
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
   `Game::TextReveal` typewriter driven by `Scene::Map`, with a button press
-  completing the reveal before dismissing), and `Game::Message.parse` splits a
-  line into `\c[n]` **colour runs** (`{text:, color:}` segments) — drawing those
-  runs in colour is the remaining render step. Face graphics are still TODO
+  completing the reveal before dismissing), and `\c[n]` **colour codes** are
+  drawn in colour: `Game::Message.parse` splits a line into `{text:, color:}`
+  runs and `Scene::Map` draws each run in its palette colour, revealing across
+  runs (`Game::Message.visible_segments`). The palette is a built-in
+  approximation for now (the real 20-colour row from the System windowskin, and
+  face graphics, are still TODO)
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by

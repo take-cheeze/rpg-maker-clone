@@ -944,39 +944,67 @@ class RPG2k
       def open_message(lines, choice)
         return if @message
         names = ->(id) { actor_name(id) }
-        lines = (lines || []).map do |l|
-          Game::Message.expand(l.to_s, @state.variables, names)
+        raw = (lines || [])
+        raw = [''] if raw.empty?
+        # Parse each line into colour runs; the plain text (segments joined)
+        # drives the reveal counter so it counts visible characters only.
+        seg_lines = raw.map do |l|
+          Game::Message.parse(l.to_s, @state.variables, names)
         end
-        lines = [''] if lines.empty?
+        plain = seg_lines.map { |segs| segs.map { |s| s[:text] }.join }
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
-        inner_h = lines.length * MSG_LINE_H
+        inner_h = plain.length * MSG_LINE_H
         win = Window.new(10, SCREEN_H - (inner_h + Window::BORDER * 2) - 6,
                          SCREEN_W - 20, inner_h + Window::BORDER * 2)
         win.z = 300
         win.windowskin = @windowskin
 
         contents = Bitmap.new(inner_w, inner_h)
-        contents.font.color = Color.new(255, 255, 255, 255)
 
         # Plain messages type out gradually; choice lists appear at once.
-        reveal = Game::TextReveal.new(lines)
+        reveal = Game::TextReveal.new(plain)
         reveal.reveal_all if choice
-        @message = { window: win, choice: choice, count: lines.length,
-                     reveal: reveal, contents: contents, inner_w: inner_w }
+        @message = { window: win, choice: choice, count: plain.length,
+                     reveal: reveal, contents: contents, inner_w: inner_w,
+                     seg_lines: seg_lines }
         draw_message_contents
         win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
       end
 
-      # (Re)draw the message body showing the currently revealed characters.
+      # (Re)draw the message body showing the currently revealed characters,
+      # each colour run in its own colour, laid out left to right per line.
       def draw_message_contents
         return unless @message
         c = @message[:contents]
         c.clear
-        @message[:reveal].visible_lines.each_with_index do |line, i|
-          c.draw_text 0, i * MSG_LINE_H, @message[:inner_w], MSG_LINE_H, line
+        vis = Game::Message.visible_segments(@message[:seg_lines],
+                                             @message[:reveal].revealed)
+        vis.each_with_index do |segs, i|
+          x = 0
+          y = i * MSG_LINE_H
+          segs.each do |seg|
+            c.font.color = message_color(seg[:color])
+            c.draw_text x, y, @message[:inner_w] - x, MSG_LINE_H, seg[:text]
+            x += c.text_size(seg[:text]).width
+          end
         end
+      end
+
+      # RPG2000 message text palette (`\c[n]`). A small built-in approximation
+      # until the real 20-colour row is read from the System windowskin; unknown
+      # indices fall back to the default (white).
+      MSG_COLORS = {
+        0 => [255, 255, 255], 1 => [128, 176, 255], 2 => [255, 128, 128],
+        3 => [128, 255, 128], 4 => [255, 255, 128], 5 => [128, 240, 240],
+        6 => [255, 160, 255], 7 => [200, 200, 200], 8 => [255, 192, 128],
+        9 => [160, 160, 255]
+      }.freeze
+
+      def message_color(idx)
+        rgb = MSG_COLORS[idx] || MSG_COLORS[0]
+        Color.new(rgb[0], rgb[1], rgb[2], 255)
       end
 
       def set_choice_cursor
