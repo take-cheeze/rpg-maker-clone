@@ -207,8 +207,11 @@ Ordered by real-world frequency across the analysed games:
    system; unblocks the battle-showcase samples.
 5. **`ProceedWithMovement` (11340)** — pairs with the existing Move Event support
    so forced routes can be awaited.
-6. Lower priority: BGM memorize/replay, `MemorizeLocation`/`RecallToLocation`,
-   menu/teleport access toggles, `PlayerVisibility`.
+6. Lower priority: BGM memorize/replay, ✅ `MemorizeLocation`/`RecallToLocation`
+   (*implemented* — store the player position into three variables and teleport
+   back to it; covered by `scripts/rpg2k_logic_check.rb` and
+   `scripts/rpg2k_scene_check.rb`), menu/teleport access toggles,
+   `PlayerVisibility`.
 7. **Identify opcodes 10660 and 10690** — unnamed in the current opcode table;
    worth confirming against liblcf before implementing.
 

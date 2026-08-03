@@ -95,9 +95,13 @@ The work below is roughly ordered by the critical path to a walkable game
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
-  Loop/Break/End, Label/Jump, Timer, Teleport, Wait, Play BGM/SE, Call Event,
-  Move Event, Erase Event, End Event) with a per-frame step cap so a bad loop
-  can't hang. **Call Event**
+  Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location, Wait,
+  Play BGM/SE, Message Options, Change Face Graphic, Call Event, Move Event,
+  Erase Event, End Event) with a per-frame step cap so a bad loop
+  can't hang. **Memorize Location** stores the player's current map id, x and y
+  into three variables, and **Recall to Location** teleports back to a location
+  held in three variables (routed through the same teleport the Teleport command
+  uses). **Call Event**
   suspends the current list, runs the referenced common event (or map-event
   page) to completion via a resolver + call stack — so call-only common events,
   which auto-start/parallel never reach, now run — and returns to the caller;

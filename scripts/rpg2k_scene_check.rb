@@ -166,9 +166,22 @@ def fake_map(id, events)
   Game::Map.new(id, unit)
 end
 
-# A minimal parent (stands in for the RPG2k app) and party leader.
+# A minimal parent (stands in for the RPG2k app) and party leader. load_map is
+# what perform_teleport (and Recall to Location) calls to swap maps; it hands
+# back a fresh empty map for the requested id.
+class FakeParent
+  attr_reader :db, :map_tree
+  def initialize(db, &map_maker)
+    @db = db
+    @map_tree = nil
+    @map_maker = map_maker
+  end
+
+  def load_map(id); @map_maker.call(id); end
+end
+
 def fake_parent(db)
-  OpenStruct.new(db: db, map_tree: nil)
+  FakeParent.new(db) { |id| fake_map(id, {}) }
 end
 
 def fake_party
@@ -493,6 +506,35 @@ check 'a right-side face draws on the right and does not inset the text' do
   ok msg, 'message window opened'
   eq 0, msg[:text_x], 'a right-side face leaves the left text edge in place'
   ok msg[:face_x] > 0, 'the face is drawn on the right side of the contents'
+end
+
+check 'Memorize Location stores the player position into variables' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::MEMORIZE_LOCATION, [1, 2, 3])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [3, 4])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 1, st.variables[1], 'map id stored'
+  eq 3, st.variables[2], 'x stored'
+  eq 4, st.variables[3], 'y stored'
+end
+
+check 'Recall to Location teleports the player to the stored position' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Set the destination vars, then recall to (map 1, x 4, y 3).
+  auto.event_commands = [
+    ECmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 0, 1]), # var1 = map 1
+    ECmd.new(ic::CONTROL_VARS, [0, 2, 2, 0, 0, 4]), # var2 = x 4
+    ECmd.new(ic::CONTROL_VARS, [0, 3, 3, 0, 0, 3]), # var3 = y 3
+    ECmd.new(ic::RECALL_LOCATION, [1, 2, 3]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq [4, 3], [st.x, st.y], 'player recalled to the stored tile'
+  eq 1, st.map_id, 'on the recalled map'
 end
 
 # -- summary ------------------------------------------------------------------

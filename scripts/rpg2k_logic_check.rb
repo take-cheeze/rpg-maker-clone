@@ -732,6 +732,34 @@ check 'conditional branch on the timer' do
   eq false, st.switches[5]
 end
 
+# -- Memorize / Recall Location ----------------------------------------------
+
+check 'Memorize Location stores map/x/y into three variables' do
+  st = new_state # map_id 1
+  st.x = 7
+  st.y = 4
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::MEMORIZE_LOCATION, [10, 11, 12])])
+  it.update
+  eq 1, st.variables[10], 'map id stored'
+  eq 7, st.variables[11], 'x stored'
+  eq 4, st.variables[12], 'y stored'
+  ok !it.waiting?, 'Memorize Location does not pause the interpreter'
+end
+
+check 'Recall to Location issues a teleport from the stored variables' do
+  st = new_state
+  st.variables[10] = 3 # map
+  st.variables[11] = 6 # x
+  st.variables[12] = 2 # y
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::RECALL_LOCATION, [10, 11, 12])])
+  it.update
+  ok it.waiting?, 'Recall pauses on the teleport request'
+  eq :teleport, it.wait_kind
+  eq [3, 6, 2, 0], it.teleport # keeps the current facing (direction 0)
+end
+
 # -- actor HP / MP commands ---------------------------------------------------
 
 # A database row for an actor, and a fake DB exposing just what Game::Party /
