@@ -26,13 +26,13 @@
 // we include only the declarations here and the decode symbols resolve at link.
 #include <stb_image.h>
 
-// stb_truetype backs text drawing (fillText/strokeText/measureText). Nothing
-// else compiles its implementation, so we define it here (this is the single
-// implementation TU for it).
+// stb_truetype backs text drawing (fillText/strokeText/measureText). Its
+// implementation is compiled once in mruby-rgss (src/lib.cxx), which this gem
+// depends on, so here we only need the header — the glyph symbols resolve at
+// link. Defining STB_TRUETYPE_IMPLEMENTATION here too would duplicate them.
 #include <cstdio>
 
 #include <dirent.h>
-#define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
 
 namespace {

@@ -174,6 +174,54 @@ assert "RGSS::Font defaults" do
   assert_true RGSS::Font.exist?("Arial")
 end
 
+# draw_text/text_size read the whole Font (name, size, bold, italic, outline,
+# shadow, colours) to pick a TrueType face and lay text out. No game font file
+# is reachable under the test's empty GAME_DIR/RTP_DIR, so drawing falls back to
+# the built-in shinonome bitmap font; these checks cover that fallback and the
+# Font-attribute plumbing the TrueType path shares.
+assert "RGSS::Bitmap#draw_text renders in the font colour" do
+  b = RGSS::Bitmap.new(64, 24)
+  b.font.color = RGSS::Color.new(255, 0, 0, 255)
+  b.draw_text(0, 0, 64, 24, "Hi")
+
+  drawn = nil
+  0.upto(23) do |y|
+    0.upto(63) do |x|
+      px = b.get_pixel(x, y)
+      if px.alpha > 0
+        drawn = px
+        break
+      end
+    end
+    break if drawn
+  end
+  assert_true !drawn.nil?, "draw_text drew no pixels"
+  assert_equal 255.0, drawn.red
+  assert_equal 0.0, drawn.green
+  assert_equal 0.0, drawn.blue
+end
+
+assert "RGSS::Bitmap#draw_text honours every Font attribute without error" do
+  b = RGSS::Bitmap.new(80, 24)
+  b.font.bold = true
+  b.font.italic = true
+  b.font.outline = true
+  b.font.shadow = true
+  b.font.out_color = RGSS::Color.new(0, 0, 0, 128)
+  # An array of family names is accepted (RGSS allows it); must not raise.
+  b.font.name = ["Nonexistent Family", "Arial"]
+  assert_equal b, b.draw_text(0, 0, 80, 24, "Ok", 1)
+end
+
+assert "RGSS::Bitmap#text_size measures ASCII text" do
+  b = RGSS::Bitmap.new(64, 24)
+  r = b.text_size("Hello")
+  assert_true r.is_a?(RGSS::Rect)
+  assert_true r.width > 0, "text_size width should be positive"
+  assert_true r.height > 0, "text_size height should be positive"
+  assert_equal 0, b.text_size("").width
+end
+
 assert "RGSS::Bitmap loads RPG Maker XYZ images" do
   # A 3x2 XYZ picture: "XYZ1" + uint16 LE width/height + a zlib stream holding
   # a 768-byte RGB palette then one index per pixel. Palette 0 = (10,20,30),
