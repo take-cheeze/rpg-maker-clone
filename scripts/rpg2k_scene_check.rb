@@ -408,6 +408,40 @@ check 'Erase Event stops a parallel process that erases itself' do
      'its background process was removed'
 end
 
+check 'a message types out gradually, then a button completes and dismisses it' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hello'),
+                         ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  # Tick until the message window opens (autostart -> Show Message).
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  ok !reveal.done?, 'text is not fully revealed as soon as it opens'
+  before = reveal.revealed
+
+  scene.update # no input: more characters reveal
+  ok reveal.revealed > before, 'text keeps revealing over frames'
+
+  # A button press while revealing completes the text but does not dismiss it.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok reveal.done?, 'the button press completed the reveal'
+  ok scene.instance_variable_get(:@message), 'message stays open once completed'
+  ok !st.switches[1], 'the command after the message has not run yet'
+
+  # A second press, now fully shown, dismisses and resumes the interpreter.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'message dismissed'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

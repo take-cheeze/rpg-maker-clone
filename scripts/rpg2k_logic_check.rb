@@ -336,6 +336,43 @@ check 'Rng stays in range and is deterministic per seed' do
   eq 0, Game::Rng.new.random(0) # random(0) is defined as 0
 end
 
+# -- TextReveal (message typewriter effect) ----------------------------------
+
+check 'TextReveal exposes characters across lines in order' do
+  r = Game::TextReveal.new(['abc', 'de'])
+  eq 5, r.total
+  eq 0, r.revealed
+  eq ['', ''], r.visible_lines
+  r.advance(2)
+  eq ['ab', ''], r.visible_lines
+  r.advance(2)                      # 4 revealed: first line full, one of line 2
+  eq ['abc', 'd'], r.visible_lines
+  ok !r.done?, 'not done until every character shows'
+  r.advance(2)                      # capped at 5
+  eq 5, r.revealed
+  ok r.done?
+  eq ['abc', 'de'], r.visible_lines
+end
+
+check 'TextReveal#reveal_all finishes immediately' do
+  r = Game::TextReveal.new(['hello', 'world'])
+  r.reveal_all
+  ok r.done?
+  eq ['hello', 'world'], r.visible_lines
+end
+
+check 'TextReveal handles empty lines and an all-empty message' do
+  r = Game::TextReveal.new(['', 'x', ''])
+  eq 1, r.total
+  eq ['', '', ''], r.visible_lines
+  r.advance(1)
+  ok r.done?
+  eq ['', 'x', ''], r.visible_lines
+
+  empty = Game::TextReveal.new([''])
+  ok empty.done?, 'a message with no characters is already fully revealed'
+end
+
 # -- Interpreter (a few existing-behaviour regressions) -----------------------
 
 # Build a minimal State without the LCF database: stub Party just enough for the
