@@ -19,6 +19,13 @@ class MV
   WIDTH = 816
   HEIGHT = 624
 
+  # Movement probe (see #maybe_move_test): frames each direction is held, and the
+  # total run length. It cycles down/right/up/left so at least one open direction
+  # is exercised on any map. Class-level so both the probe and its unit test see
+  # them.
+  MOVE_PROBE_DWELL = 20
+  MOVE_PROBE_FRAMES = 80
+
   # The files that unambiguously mark a directory as an RPG Maker MV project:
   # the core engine script and the system database. (MZ uses `js/rmmz_core.js`
   # instead and is a separate, later target — see ADR 0004, milestone M6.)
@@ -132,6 +139,14 @@ class MV
       input_map.select { |key, _| RGSS::Input.press?(key) }.values
     end
 
+    # The RGSS::Input direction key the movement probe holds on a given frame.
+    # Split out so the cycling is unit-testable without a booted game.
+    def move_probe_dir(frame)
+      dirs = [RGSS::Input::DOWN, RGSS::Input::RIGHT,
+              RGSS::Input::UP, RGSS::Input::LEFT]
+      dirs[(frame / MOVE_PROBE_DWELL) % dirs.length]
+    end
+
     # JS that pushes a pointer sample (canvas x/y, left-button pressed) into MV's
     # TouchInput: it sets `_x`/`_y` and feeds `_newState` the triggered/released/
     # moved edges MV's DOM handlers would, tracking the previous state on the
@@ -243,6 +258,7 @@ class MV
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
     maybe_new_game # CI: auto-advance past the title to the first map
     maybe_battle_test # CI: start a test battle once on the map, if requested
+    maybe_move_test # CI: hold a direction on the map and log that the player moved
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -376,7 +392,7 @@ class MV
     rescue StandardError
       false
     end
-    return unless new_game || battle_test_troop > 0
+    return unless new_game || battle_test_troop > 0 || move_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -419,6 +435,58 @@ class MV
       0
     end
     v.is_a?(Integer) ? v : 0
+  end
+
+  # Whether --mv_move_test was requested (a launcher constant set by main.cxx).
+  def move_test_requested?
+    (begin
+      MV_MOVE_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # The player's current map tile as "x,y", or "" if the game isn't up yet.
+  def player_tile
+    MV::JS.eval("($gamePlayer ? ($gamePlayer.x + ',' + $gamePlayer.y) : '')")
+  rescue StandardError
+    ""
+  end
+
+  # When --mv_move_test is set (CI), once on the map hold a direction — cycling
+  # so some open direction is found — via RGSS::Input for MOVE_PROBE_FRAMES
+  # frames, then log the player's start/end tile and whether it ever moved. This
+  # drives the full path (RGSS::Input -> sync_input -> MV Input -> Scene_Map ->
+  # Game_Player -> Game_Map passability -> position), so a headless run confirms
+  # input actually walks the player, not just that the map renders. The input is
+  # pushed into MV by next frame's #sync_input. One-shot; a no-op during normal
+  # play (flag unset).
+  def maybe_move_test
+    return if @move_test_done
+    return unless move_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @move_frame ||= 0
+    if @move_frame.zero?
+      @move_start = player_tile
+      $stderr.puts "[MV-MOVE] start #{@move_start}"
+    end
+    cur = player_tile
+    @move_seen = true if !cur.empty? && cur != @move_start
+
+    dirs = [RGSS::Input::UP, RGSS::Input::DOWN, RGSS::Input::LEFT,
+            RGSS::Input::RIGHT]
+    dirs.each { |k| RGSS::Input.release(k) }
+    @move_frame += 1
+    if @move_frame < MOVE_PROBE_FRAMES
+      RGSS::Input.press(self.class.move_probe_dir(@move_frame))
+      return
+    end
+
+    @move_test_done = true
+    $stderr.puts "[MV-MOVE] end #{player_tile} moved=#{@move_seen ? true : false}"
+  rescue StandardError => e
+    $stderr.puts "[MV] move test error: #{e.message}"
   end
 
   # Log the running scene's class name whenever it changes, so the boot's

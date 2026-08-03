@@ -47,6 +47,12 @@ DEFINE_int32(
     "For RPG Maker MV: once on the map, start a test battle against this troop "
     "id (implies --mv_new_game to reach the map). 0 disables. Used to capture "
     "the battle scene in CI");
+DEFINE_bool(
+    mv_move_test,
+    false,
+    "For RPG Maker MV: once on the map, hold a direction for a spell (implies "
+    "--mv_new_game to reach the map) and log the player's start/end tile, so a "
+    "headless run confirms input actually moves the player. Used in CI");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -434,6 +440,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_BATTLE_TEST"),
                 mrb_fixnum_value(FLAGS_mv_battle_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MV_MOVE_TEST"),
+                mrb_bool_value(FLAGS_mv_move_test));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
