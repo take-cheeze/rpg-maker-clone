@@ -52,6 +52,12 @@
   placeholder colour blocks (real tileset/autotile rendering is planned, as on
   the RPG2000 side), the party leader walks from its character graphic, and
   movement uses the tileset's passage flags with a follow camera
+- Both an **unpacked** project (a loose `Data/` folder) and an **encrypted
+  archive** load: a packed release that ships only a `Game.rgssad` (RPG Maker XP;
+  RPG Maker VX's same-format `Game.rgss2a` too) is decrypted transparently, so
+  the database loads with no loose files present. Loose files, when present,
+  shadow the archive (as in RGSS). VX Ace's `Game.rgss3a` is detected but not yet
+  decoded
 - The window is sized to XP's native 640×480 automatically. Running the game's
   own bundled RGSS scripts (`Data/Scripts.rxdata`) is future work; see
   [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md)

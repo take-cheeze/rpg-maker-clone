@@ -195,6 +195,15 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `scripts/rpgxp_testbed_check.rb`. Still to come: autonomous event move
   types / move routes (events don't roam yet), Input Number, and the many
   screen-effect / picture / battle commands (skipped for now).
+- ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
+  (RPG Maker XP; VX's same-format `Game.rgss2a`) loads: `RPGXP::RGSSAD`
+  (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts the version-1 format and
+  `RPGXP::RGSSData` falls back to it when a `.rxdata` is not loose on disk.
+  Covered by `mruby-rpgxp/test` and by `scripts/rpgxp_testbed_check.rb` (packs
+  the real test bed and reloads through the archive). Remaining: VX Ace's
+  version-3 `Game.rgss3a`, and reading **graphics/audio** out of the archive
+  (only the Ruby `Data/` path is wired; the native `Bitmap`/`Audio` loaders still
+  read loose files).
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
