@@ -224,16 +224,23 @@ jobs:
       # command itself (after the hook runs) so the libraries are built once and
       # restored on later runs. It must be set for both configure and build,
       # since emcc runs in both.
+      # Fetch + build the MIT MV engine into the committed sample so it can be
+      # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
+      - name: Build MV sample engine
+        run: nix develop -c ./scripts/download-mv-corescript.bash
+
       - name: cmake
         # CMAKE_<LANG>_COMPILER_LAUNCHER is initialised from the environment at
         # configure time and stored in CMakeCache.txt, so setting ccache here is
         # enough for it to wrap emcc during the build step too. This overrides
         # the sccache launcher the devShell exports (sccache cannot cache emcc).
+        # WASM_SAMPLE_DIR bakes the MV sample into the page at /game_sample.
         run: |
           nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
             CMAKE_C_COMPILER_LAUNCHER=ccache \
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            emcmake cmake -S . -B wasm-build -GNinja
+            emcmake cmake -S . -B wasm-build -GNinja \
+            -DWASM_SAMPLE_DIR=data/mv-sample
 
       - name: build
         run: |
@@ -265,6 +272,7 @@ jobs:
             wasm-build/index.js
             wasm-build/index.wasm
             wasm-build/index.wasm.map
+            wasm-build/index.data
 
   screenshots:
     runs-on: ubuntu-latest

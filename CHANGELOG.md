@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV on the wasm runner: RPG Maker MV projects now run in the browser build. The
+  shell page's `rpg_start_game` and its project loader (`findRootPrefix`) learned
+  to recognise MV (`js/rpg_core.js` + `data/System.json`) alongside RPG2k/XP, and
+  MV boots lazily on the first Emscripten frame (the browser drives `main_loop`
+  without `#start`). The committed MV sample is bundled into the page at
+  `/game_sample` (new `WASM_SAMPLE_DIR` CMake option; the wasm CI job fetches the
+  MIT engine and bakes it, shipping `index.data`), and the page shows a one-click
+  **“Run the MV sample”** preset — so the sample is playable in the deploy/preview
+  with no upload. Uploaded/fetched MV zips work through the normal loader too.
 - MV save/load (milestone M5): MV's saves now persist to disk. MV stores game
   data through `StorageManager` → `localStorage` (it is kept in web-storage mode
   on purpose, so its nwjs-only code paths — which call `require('nw.gui')` etc.

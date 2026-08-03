@@ -414,7 +414,9 @@ int main(int argc, char** argv) {
   em_args = args;
   mrb_gc_register(M, em_args);
   if (fs::exists(game_dir_path / "RPG_RT.ldb") ||
-      fs::exists(game_dir_path / "Game.ini")) {
+      fs::exists(game_dir_path / "Game.ini") ||
+      (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
+       fs::exists(game_dir_path / "data" / "System.json"))) {
     rpg_start_game();
   } else {
     std::fprintf(stderr,
