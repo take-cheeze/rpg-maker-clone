@@ -241,6 +241,7 @@ class RPGXP
 
     def initialize(game_dir)
       @game_dir = game_dir
+      @archive = open_archive
       @system = load_data("System")
       @map_infos = load_data("MapInfos")
       @cache = {}
@@ -270,10 +271,36 @@ class RPGXP
       "#{@game_dir}/Data/#{base}.rxdata"
     end
 
+    # Whether this project's data lives in an encrypted archive (Game.rgssad).
+    def archived?
+      !@archive.nil?
+    end
+
     private
 
+    # Open the game's encrypted archive (Game.rgssad / .rgss2a) if it exists, so
+    # a packed project with no loose Data/ folder still loads. Best effort: an
+    # unreadable archive is logged and treated as absent.
+    def open_archive
+      path = RGSSAD.find(@game_dir)
+      return nil unless path
+      RGSSAD.open(path)
+    rescue StandardError => e
+      $stderr.puts "[RGSS] failed to open archive #{path}: #{e.message}"
+      nil
+    end
+
+    # Load and Marshal-parse a Data/ entry. A loose file on disk shadows the
+    # archive (matching RGSS, which reads loose files before the archive); when
+    # there is none, the entry is pulled from Game.rgssad.
     def load_data(base)
-      File.open(data_path(base), "rb") { |f| Marshal.load(f.read) }
+      path = data_path(base)
+      return File.open(path, "rb") { |f| Marshal.load(f.read) } if File.exist?(path)
+      if @archive
+        bytes = @archive.read("Data/#{base}.rxdata")
+        return Marshal.load(bytes) if bytes
+      end
+      raise "cannot load #{base}.rxdata: no loose file and no archive entry"
     end
   end
 end

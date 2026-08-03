@@ -303,11 +303,16 @@ int main(int argc, char** argv) {
   // RPG Maker XP projects render at 640x480 (RPG2000/MV use 320x240). When the
   // window size was not overridden on the command line, size the canvas to the
   // XP resolution so an XP game's title and maps fill the screen. Detection
-  // mirrors the game-class dispatch below: Game.ini plus a Data/System.rxdata.
+  // mirrors the game-class dispatch below: Game.ini plus either a loose
+  // Data/System.rxdata or an encrypted archive (Game.rgssad / .rgss2a /
+  // .rgss3a), since a packed release ships no loose Data/ folder.
   {
     const fs::path gd = FLAGS_game_dir;
-    const bool xp_game = fs::exists(gd / "Game.ini") &&
-                         fs::exists(gd / "Data" / "System.rxdata");
+    const bool xp_data = fs::exists(gd / "Data" / "System.rxdata") ||
+                         fs::exists(gd / "Game.rgssad") ||
+                         fs::exists(gd / "Game.rgss2a") ||
+                         fs::exists(gd / "Game.rgss3a");
+    const bool xp_game = fs::exists(gd / "Game.ini") && xp_data;
     gflags::CommandLineFlagInfo w_info, h_info;
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);

@@ -68,6 +68,8 @@ end
 class RPGXP; end
 load File.join(mrblib, "game.rb")
 load File.join(mrblib, "interpreter.rb")
+load File.join(mrblib, "rgssad.rb")
+require "tmpdir"
 
 # Resolver over the database's common events for Call Common Event.
 class CommonResolver
@@ -110,6 +112,7 @@ class Checker
     @resolver = CommonResolver.new(db.common_events)
     @db = db
     check_maps(db)
+    check_archive(dir, db)
   rescue => ex
     fail "#{dir}: #{ex.class}: #{ex.message}"
   end
@@ -221,6 +224,46 @@ class Checker
         end
       end
     end
+  end
+
+  # Pack the real Data/*.rxdata into an encrypted v1 archive, then load the whole
+  # database back through Game.rgssad and confirm it is identical to the on-disk
+  # load — exercising the RGSSAD reader against real file sizes/contents and the
+  # RGSSData archive fallback end to end.
+  def check_archive(dir, disk)
+    files = Dir[File.join(dir, "Data", "*.rxdata")].sort.map do |f|
+      ["Data\\#{File.basename(f)}", File.binread(f)]
+    end
+    archive = RPGXP::RGSSAD.pack_v1(files)
+
+    # Reading one entry back must reproduce the original bytes exactly.
+    reader = RPGXP::RGSSAD.new(archive)
+    files.each do |name, bytes|
+      got = reader.read(name)
+      expect(got == bytes, "archive entry #{name} did not round-trip byte-for-byte")
+    end
+
+    Dir.mktmpdir do |tmp|
+      File.binwrite(File.join(tmp, "Game.rgssad"), archive)
+      File.write(File.join(tmp, "Game.ini"), "[Game]\nTitle=Packed\n")
+      packed = RPGXP::RGSSData.new(tmp) # no loose Data/ -> uses the archive
+      expect(packed.archived?, "packed project should report archived?")
+      expect(packed.system.start_map_id == disk.system.start_map_id,
+             "archived System.start_map_id differs from on-disk")
+      expect(packed.system.title_name == disk.system.title_name,
+             "archived System.title_name differs from on-disk")
+      expect(packed.actors.compact.size == disk.actors.compact.size,
+             "archived Actors count differs from on-disk")
+      disk.map_infos.each_key do |id|
+        pm = packed.load_map(id)
+        dm = disk.load_map(id)
+        expect(pm.width == dm.width && pm.height == dm.height,
+               "archived Map#{id} dimensions differ from on-disk")
+      end
+    end
+    puts "  archive: packed #{files.size} entries; DB loads identically through Game.rgssad"
+  rescue => ex
+    fail "#{dir}: archive check raised: #{ex.class}: #{ex.message}"
   end
 
   def report

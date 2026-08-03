@@ -119,8 +119,10 @@ The work below is roughly ordered by the critical path to a walkable game
   which need the per-level stat growth curves, not yet parsed — ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
-  colour/speed/wait codes are consumed). Face graphics, per-code colour changes
-  and gradual text reveal are still TODO
+  colour/speed/wait codes are consumed). Text now **reveals gradually** (a
+  `Game::TextReveal` typewriter driven by `Scene::Map`, with a button press
+  completing the reveal before dismissing). Face graphics and per-code colour
+  changes are still TODO
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
@@ -196,6 +198,15 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `scripts/rpgxp_testbed_check.rb`. Still to come: autonomous event move
   types / move routes (events don't roam yet), Input Number, and the many
   screen-effect / picture / battle commands (skipped for now).
+- ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
+  (RPG Maker XP; VX's same-format `Game.rgss2a`) loads: `RPGXP::RGSSAD`
+  (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts the version-1 format and
+  `RPGXP::RGSSData` falls back to it when a `.rxdata` is not loose on disk.
+  Covered by `mruby-rpgxp/test` and by `scripts/rpgxp_testbed_check.rb` (packs
+  the real test bed and reloads through the archive). Remaining: VX Ace's
+  version-3 `Game.rgss3a`, and reading **graphics/audio** out of the archive
+  (only the Ruby `Data/` path is wired; the native `Bitmap`/`Audio` loaders still
+  read loose files).
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
