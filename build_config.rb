@@ -22,6 +22,7 @@ def rpg_maker_gems(conf)
   conf.gem "#{MRUBY_ROOT}/../../mruby-rgss"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
+  conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs"
 end
 
 # When cross-compiling (Emscripten, or the Wio Terminal below) the host build

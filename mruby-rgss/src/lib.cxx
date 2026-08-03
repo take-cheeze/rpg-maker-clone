@@ -1913,6 +1913,35 @@ void define_rect(mrb_state* M, RClass* m) {
 
 }  // namespace
 
+// Exported Bitmap pixel access (see include/rgss_bitmap.hxx). Defined at file
+// scope but still able to reach the anonymous-namespace Bitmap/DataType above,
+// which stay visible here within this translation unit.
+namespace rgss {
+
+uint8_t* bitmap_pixels(mrb_state* M, mrb_value v, int* w, int* h) {
+  if (!mrb_data_p(v))
+    return nullptr;
+  void* p = mrb_data_check_get_ptr(M, v, &DataType<Bitmap>::data_type);
+  if (!p)
+    return nullptr;
+  Bitmap* b = reinterpret_cast<Bitmap*>(p);
+  if (w)
+    *w = b->width;
+  if (h)
+    *h = b->height;
+  return b->buffer.data();
+}
+
+void bitmap_mark_dirty(mrb_state* M, mrb_value v) {
+  if (!mrb_data_p(v))
+    return;
+  void* p = mrb_data_check_get_ptr(M, v, &DataType<Bitmap>::data_type);
+  if (p)
+    reinterpret_cast<Bitmap*>(p)->dirty = true;
+}
+
+}  // namespace rgss
+
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display) {
   mrb_assert(!mrb_const_defined(M, mrb_obj_value(mrb_module_get(M, "RGSS")),
                                 mrb_intern_lit(M, "_display")));

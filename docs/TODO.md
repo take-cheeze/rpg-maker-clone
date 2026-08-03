@@ -86,20 +86,28 @@ The work below is roughly ordered by the critical path to a walkable game
   event walking into the player), **auto-start** (3) and **parallel** (4, a
   background interpreter per event, driven by `Scene::Map#step_parallels`). A
   page's autonomous move type / custom move route also drives the event at
-  runtime (see Movement & collision). Still to come: the interpreter's *Set Move
-  Route* (Move Event) command — the runtime engine exists, but decoding a route
-  embedded in an event command's parameters is not wired up yet
+  runtime (see Movement & collision). The interpreter's *Set Move Route* (Move
+  Event) command is now wired up too: it decodes the route packed into the
+  command's parameters and applies it as a forced route to the target — a map
+  event (including "this event") or the player, overriding page movement until
+  it finishes. Still to come: vehicle targets (boat/ship/airship), which are not
+  modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
-  Wait, Play BGM/SE, Call Event, End Event) with a per-frame step cap so a bad
-  loop can't hang. **Call Event** suspends the current list, runs the referenced
-  common event (or map-event page) to completion via a resolver + call stack —
-  so call-only common events, which auto-start/parallel never reach, now run —
-  and returns to the caller; recursion is bounded. Conditional Branch covers
-  switch / variable / **timer** / gold / item / actor-in-party conditions. The
-  remaining commands (Move Event, pictures, screen effects, battles, actor stat
-  changes, ...) are TODO
+  Change HP/MP, Full Heal, Conditional Branch/Else/End, Loop/Break/End,
+  Label/Jump, Timer, Teleport, Wait, Play BGM/SE, Call Event, Move Event, End
+  Event) with a per-frame step cap so a bad loop can't hang. **Call Event**
+  suspends the current list, runs the referenced common event (or map-event
+  page) to completion via a resolver + call stack — so call-only common events,
+  which auto-start/parallel never reach, now run — and returns to the caller;
+  recursion is bounded. **Move Event** decodes the forced move route packed into
+  the command's parameters and hands it to the scene, which drives the target (a
+  map event, "this event" or the player) along it in the background. **Change
+  HP/MP** and **Full Heal** apply to a fixed actor, a variable-selected actor or
+  the whole party, clamped to each actor's maxima (Change HP honours the
+  allow-death floor). Conditional Branch covers switch / variable / **timer** /
+  gold / item / actor-in-party conditions. The remaining commands (pictures,
+  screen effects, battles, EXP/level/parameter changes, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes
@@ -145,3 +153,68 @@ The work below is roughly ordered by the critical path to a walkable game
 - Support game library features of RGSS which could be found in https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 
 ## RPG Maker with JavaScript
+
+Support the JavaScript makers (RPG Maker **MV**, then **MZ**) by embedding a real
+JavaScript engine (**quickjs-ng**) and running each game's own scripts
+unmodified, rather than reimplementing the engine in mruby. MV is targeted first
+because it can render through PIXI.js's Canvas2D path, which maps onto the
+existing `mruby-rgss::Bitmap` blit primitives; MZ is WebGL-only and follows.
+Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
+
+- ✅ **M1 — Foundation.** New `mruby-mvjs` gem (thin Ruby orchestration layer:
+  MV project detection, canonical script load order, boot/pump handshake with a
+  clearly-marked seam for the JS host). MV directory sniffing wired into
+  `src/main.cxx` (`js/rpg_core.js` + `data/System.json`). Host-runnable specs
+  for the pure logic. No JS engine yet, so an MV game is detected but reports the
+  runtime as pending instead of misbehaving.
+- ✅ **M2 — Engine host.** quickjs-ng added as the `3rd/quickjs` git submodule and static-linked
+  (`qjs` target) into the executable and the mruby test binary. `MV::JS.eval`
+  opens a runtime/context, evaluates JavaScript and marshals scalar results
+  (Integer/Float/String/true/false/nil), raising `RuntimeError` on a JS
+  exception. `MV.js_available?` reports the engine's presence; `runtime_available?`
+  stays false until the game host (M3/M4) lands. Covered by `mruby-mvjs/test`.
+- 🚧 **M3 — Boot to title.** Host-global shims (`window`/`document`/`navigator`/
+  `location`/`requestAnimationFrame`/`setTimeout`/`XMLHttpRequest`/`Image`/
+  `localStorage`/`require('fs'|'path')`), the asset/JSON IO bridge, and the
+  rAF/event-loop pump — enough to load the core scripts and reach `Scene_Title`.
+  - ✅ Persistent JS host (one runtime/context reused across evals), the
+    `window`/`self`/`global`/`globalThis` aliases, `console`, a native file
+    reader and a synchronous `XMLHttpRequest` (the JSON/asset IO bridge).
+  - ✅ Event loop: `setTimeout`/`setInterval`/`clearTimeout`,
+    `requestAnimationFrame`/`cancelAnimationFrame`, `performance.now`, and a
+    `MV::JS.pump(now_ms)` that fires due timers + animation-frame callbacks and
+    drains promise microtasks. Passive `navigator`/`location`/`localStorage`.
+  - ✅ NW.js `require('fs'|'path')` (local-file saves), `MV::JS.eval_file`, and
+    `MV#boot`/`MV#main_loop` wired to evaluate `MV::CORE_SCRIPTS` and pump the
+    host (dormant behind `runtime_available?` until M4 rendering).
+  - Remaining: `document`/`Image` (canvas-related, land with rendering in M4),
+    then flip `runtime_available?` on so the boot actually reaches
+    `Scene_Title`.
+- 🚧 **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
+  renderer, so the title screen and map actually draw through `mruby-rgss`.
+  - ✅ `document`/`HTMLCanvasElement`/`CanvasRenderingContext2D` backed by native
+    RGBA buffers (`mvcanvas.cxx`): `fillRect`/`clearRect`/`drawImage`/
+    `getImageData`/`globalAlpha`/`fillStyle`, WebGL absent so PIXI uses canvas.
+    Unit-tested by pixel readback.
+  - ✅ PNG `Image` loading (via stb, reusing mruby-rgss's
+    `STB_IMAGE_IMPLEMENTATION`): `new Image()` decodes into a native canvas and
+    is a `drawImage` source, with async `onload`/`onerror`. Game-relative asset
+    paths are rooted at the game dir (`mv_resolve_path` / `MV::JS.base_dir=`).
+  - ✅ On-screen present: `MV#boot` creates one full-screen `RGSS::Sprite`/
+    `Bitmap` and `MV::JS.present` copies the MV canvas into it each frame (R/B
+    swapped for the ARGB8888 layout), via a small `rgss::bitmap_pixels` accessor
+    (`include/rgss_bitmap.hxx`). `MV.runtime_available?` is already on.
+  - ✅ Transform-aware drawing: the 2D context tracks the full transform
+    (`save`/`restore`, `translate`/`scale`/`rotate`/`transform`/`setTransform`),
+    and `drawImage` inverse-maps through it so PIXI's sprites (positioned via
+    `setTransform` + draw-at-origin) land correctly; `fillRect`/`clearRect` map
+    their rect through the matrix.
+  - Remaining: `putImageData`/typed-array `ImageData`, and path-based fills
+    (`beginPath`/`fill`) that PIXI's Graphics uses for solid shapes — then the
+    title screen should composite. This is the point to boot the real MV test
+    bed and iterate on whatever the corescript exercises next.
+- 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
+  `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
+  in the SDL window and the sixel/iTerm2 terminals.
+- 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
+  on the same foundation (`js/rmmz_*.js`).
