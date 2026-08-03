@@ -174,7 +174,7 @@ jobs:
           mkdir -p ss
           nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
             --timeout_ms=5000 --game_dir data/mv-sample \
-            --mv_screenshot=ss/mv_sample.png
+            --mv_new_game --mv_screenshot=ss/mv_sample.png
 
       - name: Upload MV sample screenshot
         if: ${{ startsWith(matrix.os, 'ubuntu') }}

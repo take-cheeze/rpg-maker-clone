@@ -882,15 +882,19 @@ const char* kCanvasPreamble = R"MVJS(
       this.complete = false;
       var h = g.__mv_imageLoad(v);
       g.requestAnimationFrame(function () {
-        if (h) {
-          self.__h = h;
-          self.width = g.__mv_canvasWidth(h);
-          self.height = g.__mv_canvasHeight(h);
-          self.complete = true;
-          if (typeof self.onload === 'function') self.onload();
-        } else if (typeof self.onerror === 'function') {
-          self.onerror(new Error('image load failed: ' + v));
-        }
+        // A missing or undecodable image resolves as a 1x1 transparent bitmap
+        // (via onload), not an error. MV reserves system art (Window, IconSet,
+        // …) and blocks on ImageManager.isReady() until it loads, so an absent
+        // file would otherwise stall the boot forever. A project running
+        // without its (optional) art still boots and reaches the map; the empty
+        // bitmap draws nothing (drawImage clamps out-of-range source reads), so
+        // e.g. a degenerate windowskin is invisible rather than fatal.
+        if (!h) h = g.__mv_canvasCreate(1, 1);
+        self.__h = h;
+        self.width = g.__mv_canvasWidth(h);
+        self.height = g.__mv_canvasHeight(h);
+        self.complete = true;
+        if (typeof self.onload === 'function') self.onload();
       });
     },
   });
