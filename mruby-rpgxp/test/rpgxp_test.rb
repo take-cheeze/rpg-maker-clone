@@ -516,9 +516,43 @@ end
 
 assert "RGSSAD rejects a bad header and an unsupported version" do
   assert_raise(RuntimeError) { RPGXP::RGSSAD.new("NOTRGSS\x01") }
-  # A version-3 (.rgss3a) header is recognised but not yet supported.
-  v3 = "RGSSAD\x00\x03rest"
-  assert_raise(RuntimeError) { RPGXP::RGSSAD.new(v3) }
+  # An unknown version (only 1 and 3 are supported) is rejected.
+  v4 = "RGSSAD\x00\x04rest"
+  assert_raise(RuntimeError) { RPGXP::RGSSAD.new(v4) }
+end
+
+assert "RGSSAD v3 (.rgss3a) round-trips entries" do
+  files = [
+    ["Data\\System.rxdata", "sys\x00\x01\xfe\xff data"],
+    ["Data\\Map001.rxdata", (("A".."Z").to_a.join) * 100], # spans 4-byte key steps
+    ["Graphics\\Titles\\001-Title01.png", "\x89PNG\r\n\x1a\n"]
+  ]
+  archive = RPGXP::RGSSAD.pack_v3(files)
+  a = RPGXP::RGSSAD.new(archive)
+
+  assert_equal 3, a.version
+  assert_equal 3, a.names.size
+  files.each do |name, data|
+    assert_equal data.bytes, a.read(name).bytes
+  end
+  # '/'-style lookups normalise to the archive's '\' names.
+  assert_equal files[0][1].bytes, a.read("Data/System.rxdata").bytes
+  assert_true a.include?("Data/Map001.rxdata")
+  assert_false a.include?("Data/Missing.rxdata")
+  assert_true a.read("Data/Missing.rxdata").nil?
+end
+
+assert "RGSSAD v3 carries real Marshal data through the archive" do
+  sys = RPG::System.new
+  sys.title_name = "001-Title01"
+  sys.start_map_id = 7
+  blob = Marshal.dump(sys)
+
+  a = RPGXP::RGSSAD.new(RPGXP::RGSSAD.pack_v3([["Data\\System.rxdata", blob]]))
+  loaded = Marshal.load(a.read("Data\\System.rxdata"))
+  assert_true loaded.is_a?(RPG::System)
+  assert_equal "001-Title01", loaded.title_name
+  assert_equal 7, loaded.start_map_id
 end
 
 # ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
