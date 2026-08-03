@@ -93,6 +93,14 @@ module RGSS
       bmp
     end
 
+    # Draw the window with no frame or background (RPG2000's transparent message
+    # window): only the contents layer shows. Setting it redraws the skin layer.
+    def transparent=(v)
+      @transparent = v ? true : false
+      draw_skin
+      v
+    end
+
     def contents=(bmp)
       @contents = bmp
       @contents_sprite.visible = !bmp.nil?
@@ -148,6 +156,7 @@ module RGSS
     # Redraw the windowskin layer (background + frame, or the fallback panel).
     def draw_skin
       @skin_bmp.clear
+      return if @transparent # transparent message window: no frame/background
       if @windowskin
         draw_background
         draw_frame
@@ -931,6 +940,10 @@ class RPG2k
       MSG_LINE_H = 14
       # Characters revealed per frame for the message typewriter effect.
       MSG_REVEAL_SPEED = 2
+      # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells, drawn beside
+      # the message text with a small gap.
+      FACE_SIZE = 48
+      FACE_MARGIN = 4
 
       # Look up an actor name by id for the \n[] message control code.
       def actor_name(id)
@@ -952,12 +965,24 @@ class RPG2k
           Game::Message.parse(l.to_s, @state.variables, names)
         end
         plain = seg_lines.map { |segs| segs.map { |s| s[:text] }.join }
+
+        # Message Options / Change Face Graphic settings in effect for this
+        # window (position, transparency and an optional FaceSet graphic).
+        cfg = @state.message_config
+        face = load_face(cfg)
+        face_left = face && !cfg.face_right
+        face_right = face && cfg.face_right
+        text_x = face_left ? FACE_SIZE + FACE_MARGIN : 0
+
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        text_w = inner_w - text_x - (face_right ? FACE_SIZE + FACE_MARGIN : 0)
         inner_h = plain.length * MSG_LINE_H
-        win = Window.new(10, SCREEN_H - (inner_h + Window::BORDER * 2) - 6,
-                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        inner_h = FACE_SIZE if face && inner_h < FACE_SIZE # keep room for the face
+        win_h = inner_h + Window::BORDER * 2
+        win = Window.new(10, message_window_y(win_h, cfg), SCREEN_W - 20, win_h)
         win.z = 300
         win.windowskin = @windowskin
+        win.transparent = cfg.transparent
 
         contents = Bitmap.new(inner_w, inner_h)
 
@@ -966,30 +991,69 @@ class RPG2k
         reveal.reveal_all if choice
         @message = { window: win, choice: choice, count: plain.length,
                      reveal: reveal, contents: contents, inner_w: inner_w,
-                     seg_lines: seg_lines }
+                     seg_lines: seg_lines, face: face,
+                     face_index: cfg.face_index,
+                     face_x: face_right ? inner_w - FACE_SIZE : 0,
+                     text_x: text_x, text_w: text_w }
         draw_message_contents
         win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
       end
 
+      # Vertical position of a `win_h`-tall message window for the configured
+      # display position (top / middle / bottom). Auto-positioning away from the
+      # hero (when `position_fixed` is off) is a later refinement; the window is
+      # placed at the requested position for now.
+      def message_window_y(win_h, cfg)
+        case cfg.position
+        when Game::MessageConfig::POS_TOP    then 6
+        when Game::MessageConfig::POS_MIDDLE then (SCREEN_H - win_h) / 2
+        else SCREEN_H - win_h - 6
+        end
+      end
+
+      # Load the FaceSet graphic named by the message config, or nil when no face
+      # is selected or the file is missing (the message then shows text only).
+      def load_face(cfg)
+        return nil unless cfg.face?
+        Bitmap.new "FaceSet/#{cfg.face_name}"
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] face graphic '#{cfg.face_name}' load failed: #{e.message}"
+        nil
+      end
+
       # (Re)draw the message body showing the currently revealed characters,
-      # each colour run in its own colour, laid out left to right per line.
+      # each colour run in its own colour, laid out left to right per line. The
+      # face graphic (when present) is drawn first, and text is inset past it.
       def draw_message_contents
         return unless @message
         c = @message[:contents]
         c.clear
+        draw_message_face
         vis = Game::Message.visible_segments(@message[:seg_lines],
                                              @message[:reveal].revealed)
+        right = @message[:text_x] + @message[:text_w]
         vis.each_with_index do |segs, i|
-          x = 0
+          x = @message[:text_x]
           y = i * MSG_LINE_H
           segs.each do |seg|
             c.font.color = message_color(seg[:color])
-            c.draw_text x, y, @message[:inner_w] - x, MSG_LINE_H, seg[:text]
+            c.draw_text x, y, right - x, MSG_LINE_H, seg[:text]
             x += c.text_size(seg[:text]).width
           end
         end
+      end
+
+      # Blit the selected face cell (a 48x48 tile of the 4x4 FaceSet grid) into
+      # the message contents at its configured side.
+      def draw_message_face
+        face = @message[:face]
+        return unless face
+        idx = @message[:face_index]
+        src = Rect.new((idx % 4) * FACE_SIZE, (idx / 4) * FACE_SIZE,
+                       FACE_SIZE, FACE_SIZE)
+        @message[:contents].blt @message[:face_x], 0, face, src
       end
 
       # RPG2000 message text palette (`\c[n]`). A small built-in approximation

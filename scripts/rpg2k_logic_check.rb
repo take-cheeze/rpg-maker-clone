@@ -496,6 +496,71 @@ check 'interpreter pauses on a message and resumes' do
   eq true, st.switches[2] # ran the command after the message
 end
 
+# -- Message Options / Change Face Graphic ------------------------------------
+
+check 'Message Options sets window position, transparency and continue flag' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # transparent=1, position=0 (top), param2=1 (auto-position -> not fixed),
+  # continue events=1.
+  it.start([FakeCmd.new(IC::MESSAGE_OPTIONS, [1, 0, 1, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  cfg = st.message_config
+  eq true, cfg.transparent
+  eq Game::MessageConfig::POS_TOP, cfg.position
+  eq false, cfg.position_fixed             # param2 == 1 -> not fixed
+  eq true, cfg.continue_events
+  ok !it.waiting?, 'Message Options must not pause the interpreter'
+  eq true, st.switches[1], 'the command after Message Options still ran'
+end
+
+check 'Message Options param2 == 0 pins the window (position fixed)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::MESSAGE_OPTIONS, [0, 2, 0, 0])])
+  it.update
+  eq true, st.message_config.position_fixed
+  eq Game::MessageConfig::POS_BOTTOM, st.message_config.position
+  eq false, st.message_config.transparent
+end
+
+check 'Change Face Graphic selects a face; an empty name clears it' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # name "Hero1", index 3, right=1, flipped=1.
+  it.start([FakeCmd.new(IC::CHANGE_FACE, [3, 1, 1], string: 'Hero1')])
+  it.update
+  cfg = st.message_config
+  ok cfg.face?, 'a face is selected'
+  eq 'Hero1', cfg.face_name
+  eq 3, cfg.face_index
+  eq true, cfg.face_right
+  eq true, cfg.face_flipped
+  ok !it.waiting?, 'Change Face Graphic must not pause the interpreter'
+  # An empty name clears the face for subsequent messages.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_FACE, [0, 0, 0], string: '')])
+  it2.update
+  ok !cfg.face?, 'an empty name clears the face'
+  eq '', cfg.face_name
+  eq 0, cfg.face_index
+end
+
+check 'MessageConfig round-trips through to_h / load_h' do
+  cfg = Game::MessageConfig.new
+  cfg.transparent = true
+  cfg.position = Game::MessageConfig::POS_MIDDLE
+  cfg.position_fixed = true
+  cfg.continue_events = true
+  cfg.face_name = 'Faces1'
+  cfg.face_index = 7
+  cfg.face_right = true
+  cfg.face_flipped = true
+  restored = Game::MessageConfig.new.load_h(cfg.to_h)
+  eq cfg.to_h, restored.to_h
+end
+
 # A Call Event resolver stub: maps common-event id -> command list, and
 # (map event id, page) -> command list.
 class FakeResolver
@@ -667,6 +732,34 @@ check 'conditional branch on the timer' do
   eq false, st.switches[5]
 end
 
+# -- Memorize / Recall Location ----------------------------------------------
+
+check 'Memorize Location stores map/x/y into three variables' do
+  st = new_state # map_id 1
+  st.x = 7
+  st.y = 4
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::MEMORIZE_LOCATION, [10, 11, 12])])
+  it.update
+  eq 1, st.variables[10], 'map id stored'
+  eq 7, st.variables[11], 'x stored'
+  eq 4, st.variables[12], 'y stored'
+  ok !it.waiting?, 'Memorize Location does not pause the interpreter'
+end
+
+check 'Recall to Location issues a teleport from the stored variables' do
+  st = new_state
+  st.variables[10] = 3 # map
+  st.variables[11] = 6 # x
+  st.variables[12] = 2 # y
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::RECALL_LOCATION, [10, 11, 12])])
+  it.update
+  ok it.waiting?, 'Recall pauses on the teleport request'
+  eq :teleport, it.wait_kind
+  eq [3, 6, 2, 0], it.teleport # keeps the current facing (direction 0)
+end
+
 # -- actor HP / MP commands ---------------------------------------------------
 
 # A database row for an actor, and a fake DB exposing just what Game::Party /
@@ -690,6 +783,24 @@ def party_state
                            max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
   Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2])), 1, 0, 0)
+end
+
+check 'State save round-trips the message configuration' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.message_config.transparent = true
+  st.message_config.position = Game::MessageConfig::POS_TOP
+  st.message_config.face_name = 'F'
+  st.message_config.face_index = 2
+  loaded = Game::State.load(db, st.to_h)
+  eq true, loaded.message_config.transparent
+  eq Game::MessageConfig::POS_TOP, loaded.message_config.position
+  eq 'F', loaded.message_config.face_name
+  eq 2, loaded.message_config.face_index
 end
 
 check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do

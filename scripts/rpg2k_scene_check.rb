@@ -166,9 +166,22 @@ def fake_map(id, events)
   Game::Map.new(id, unit)
 end
 
-# A minimal parent (stands in for the RPG2k app) and party leader.
+# A minimal parent (stands in for the RPG2k app) and party leader. load_map is
+# what perform_teleport (and Recall to Location) calls to swap maps; it hands
+# back a fresh empty map for the requested id.
+class FakeParent
+  attr_reader :db, :map_tree
+  def initialize(db, &map_maker)
+    @db = db
+    @map_tree = nil
+    @map_maker = map_maker
+  end
+
+  def load_map(id); @map_maker.call(id); end
+end
+
 def fake_parent(db)
-  OpenStruct.new(db: db, map_tree: nil)
+  FakeParent.new(db) { |id| fake_map(id, {}) }
 end
 
 def fake_party
@@ -440,6 +453,88 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   ok !scene.instance_variable_get(:@message), 'message dismissed'
   5.times { RGSS::Input.reset; scene.update }
   ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
+# Tick a scene until its message window opens (or give up after `limit` frames).
+def open_msg(scene, limit = 15)
+  msg = nil
+  limit.times do
+    scene.update
+    msg = scene.instance_variable_get(:@message)
+    break if msg
+  end
+  msg
+end
+
+check 'Message Options positions the message window at the top' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MESSAGE_OPTIONS, [0, 0, 0, 0]), # position top (0), fixed
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  ok msg[:window].y < 60, "top-positioned window should sit near the top, y=#{msg[:window].y}"
+end
+
+check 'Change Face Graphic opens a message with a face and insets the text' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [2, 0, 0], string: 'Faces1'), # left-side face, cell 2
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  ok msg[:face], 'a face graphic was loaded for the message'
+  eq 2, msg[:face_index]
+  ok msg[:text_x] > 0, 'text is inset to the right of a left-side face'
+end
+
+check 'a right-side face draws on the right and does not inset the text' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 1, 0], string: 'Faces1'), # right-side face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 0, msg[:text_x], 'a right-side face leaves the left text edge in place'
+  ok msg[:face_x] > 0, 'the face is drawn on the right side of the contents'
+end
+
+check 'Memorize Location stores the player position into variables' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::MEMORIZE_LOCATION, [1, 2, 3])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [3, 4])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 1, st.variables[1], 'map id stored'
+  eq 3, st.variables[2], 'x stored'
+  eq 4, st.variables[3], 'y stored'
+end
+
+check 'Recall to Location teleports the player to the stored position' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Set the destination vars, then recall to (map 1, x 4, y 3).
+  auto.event_commands = [
+    ECmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 0, 1]), # var1 = map 1
+    ECmd.new(ic::CONTROL_VARS, [0, 2, 2, 0, 0, 4]), # var2 = x 4
+    ECmd.new(ic::CONTROL_VARS, [0, 3, 3, 0, 0, 3]), # var3 = y 3
+    ECmd.new(ic::RECALL_LOCATION, [1, 2, 3]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq [4, 3], [st.x, st.y], 'player recalled to the stored tile'
+  eq 1, st.map_id, 'on the recalled map'
 end
 
 # -- summary ------------------------------------------------------------------

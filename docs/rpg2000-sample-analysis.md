@@ -181,7 +181,7 @@ runtime can execute virtually all of it.
    | --- | --- | --- |
    | **Pictures** | ShowPicture (11110), MovePicture (11120), ErasePicture (11130) | Sample2 |
    | **Screen effects** | FlashScreen (11040), TintScreen (11030), PanScreen (11060) | Sample2, Sample3 |
-   | **Message polish** | MessageOptions (10120), ChangeFaceGraphic (10130) | Sample2, Sample3 |
+   | **Message polish** ✅ | MessageOptions (10120), ChangeFaceGraphic (10130) — now implemented | Sample2, Sample3 |
    | **Battle** | EnemyEncounter (10710) | Sample2 |
    | **BGM stack** | MemorizeBGM (11530), PlayMemorizedBGM (11540) | Sample2 |
    | **Movement sync** | ProceedWithMovement (11340) | Sample3 |
@@ -192,8 +192,12 @@ runtime can execute virtually all of it.
 
 Ordered by real-world frequency across the analysed games:
 
-1. **`MessageOptions` (10120)** and **`ChangeFaceGraphic` (10130)** — appear in
-   both games; cheap; complete the message system the runtime already drives.
+1. ✅ **`MessageOptions` (10120)** and **`ChangeFaceGraphic` (10130)** —
+   *implemented.* The interpreter records the window setup (transparency,
+   top/middle/bottom position, continue-events) and the FaceSet selection on a
+   saved `Game::MessageConfig`, and `Scene::Map` positions the window, draws it
+   transparent and blits the face beside the text. Covered by
+   `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
 2. **Pictures — `ShowPicture`/`MovePicture`/`ErasePicture` (11110/11120/11130)**
    — the biggest single gap in Sample2 and pervasive in RPG2000 cutscenes and
    custom menus.
@@ -203,8 +207,11 @@ Ordered by real-world frequency across the analysed games:
    system; unblocks the battle-showcase samples.
 5. **`ProceedWithMovement` (11340)** — pairs with the existing Move Event support
    so forced routes can be awaited.
-6. Lower priority: BGM memorize/replay, `MemorizeLocation`/`RecallToLocation`,
-   menu/teleport access toggles, `PlayerVisibility`.
+6. Lower priority: BGM memorize/replay, ✅ `MemorizeLocation`/`RecallToLocation`
+   (*implemented* — store the player position into three variables and teleport
+   back to it; covered by `scripts/rpg2k_logic_check.rb` and
+   `scripts/rpg2k_scene_check.rb`), menu/teleport access toggles,
+   `PlayerVisibility`.
 7. **Identify opcodes 10660 and 10690** — unnamed in the current opcode table;
    worth confirming against liblcf before implementing.
 

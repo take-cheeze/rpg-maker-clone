@@ -13,6 +13,8 @@ module Game
     module Cmd
       SHOW_MESSAGE     = 10110
       MESSAGE_2        = 20110
+      MESSAGE_OPTIONS  = 10120
+      CHANGE_FACE      = 10130
       SHOW_CHOICES     = 10140
       CHOICE_OPTION    = 20140
       CHOICE_END       = 20141
@@ -26,6 +28,8 @@ module Game
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
       FULL_HEAL        = 10490
+      MEMORIZE_LOCATION = 10820
+      RECALL_LOCATION   = 10830
       CONDITIONAL      = 12010
       ELSE_BRANCH      = 22010
       END_BRANCH       = 22011
@@ -191,6 +195,8 @@ module Game
     def execute(cmd)
       case cmd.code
       when Cmd::SHOW_MESSAGE     then do_show_message cmd
+      when Cmd::MESSAGE_OPTIONS  then do_message_options cmd
+      when Cmd::CHANGE_FACE      then do_change_face cmd
       when Cmd::SHOW_CHOICES     then do_show_choices cmd
       when Cmd::CHOICE_OPTION    then skip_to([Cmd::CHOICE_END], cmd.indent); consume
       when Cmd::CHOICE_END       then nil
@@ -212,6 +218,8 @@ module Game
       when Cmd::BREAK_LOOP       then do_break_loop cmd
       when Cmd::END_LOOP         then do_end_loop cmd
       when Cmd::TELEPORT         then do_teleport cmd
+      when Cmd::MEMORIZE_LOCATION then do_memorize_location cmd
+      when Cmd::RECALL_LOCATION   then do_recall_location cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
@@ -314,6 +322,37 @@ module Game
       @message_lines = lines
       @wait_kind = :message
       @waiting = true
+    end
+
+    # Message Options: configure the message window for subsequent Show Message
+    # commands. param0 transparent background (0 shown / 1 transparent), param1
+    # position (0 top / 1 middle / 2 bottom), param2 whether the window may move
+    # aside to avoid the hero (0 fixed / 1 auto-position — so `position_fixed`
+    # is the param2 == 0 case, matching RPG_RT), param3 whether other events keep
+    # running while the message shows. Sets global state; it does not pause.
+    def do_message_options(cmd)
+      cfg = @state.message_config
+      cfg.transparent = cmd.param(0) != 0
+      cfg.position = cmd.param(1)
+      cfg.position_fixed = cmd.param(2) == 0
+      cfg.continue_events = cmd.param(3) != 0
+    end
+
+    # Change Face Graphic: select the face shown beside the next messages. The
+    # command string is the FaceSet file name (empty clears the face); param0 is
+    # the cell index (0..15), param1 puts the face on the right, param2 mirrors
+    # it. Persists until changed; does not pause.
+    def do_change_face(cmd)
+      cfg = @state.message_config
+      name = cmd.string || ''
+      if name.empty?
+        cfg.clear_face
+      else
+        cfg.face_name = name
+        cfg.face_index = cmd.param(0)
+        cfg.face_right = cmd.param(1) != 0
+        cfg.face_flipped = cmd.param(2) != 0
+      end
     end
 
     def do_show_choices(cmd)
@@ -584,6 +623,27 @@ module Game
 
     def do_teleport(cmd)
       @teleport = [cmd.param(0), cmd.param(1), cmd.param(2), cmd.param(3)]
+      @wait_kind = :teleport
+      @waiting = true
+    end
+
+    # Memorize Location: store the player's current map id, x and y into the
+    # three variables named by param0/param1/param2. Non-blocking — it only
+    # records the position for a later Recall to Location.
+    def do_memorize_location(cmd)
+      variables[cmd.param(0)] = @state.map_id
+      variables[cmd.param(1)] = @state.x
+      variables[cmd.param(2)] = @state.y
+    end
+
+    # Recall to Location: teleport to the map / x / y held in the three variables
+    # named by param0/param1/param2 (the counterpart to Memorize Location).
+    # Routed through the same teleport request the Teleport command raises, so
+    # the owning scene loads the map and moves the player; the current facing is
+    # kept (direction 0).
+    def do_recall_location(cmd)
+      @teleport = [variables[cmd.param(0)], variables[cmd.param(1)],
+                   variables[cmd.param(2)], 0]
       @wait_kind = :teleport
       @waiting = true
     end
