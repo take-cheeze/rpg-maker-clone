@@ -136,6 +136,10 @@ assert "LCF::Array1D#int16_values reads a raw short array past a named accessor"
   assert_equal 10, row.status[:max_hp]        # named accessor: level 1 only
   assert_equal status, row.int16_values(31)   # raw: the whole curve
   assert_nil row.int16_values(99)             # absent chunk
+  # A schema field name is reflected by respond_to?, so callers can probe for an
+  # optional section (e.g. the item table) instead of rescuing a missing method.
+  assert_true row.respond_to?(:status)
+  assert_false row.respond_to?(:no_such_field)
 end
 
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do

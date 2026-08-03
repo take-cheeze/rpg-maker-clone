@@ -305,6 +305,10 @@ module LCF
       raise args unless args.empty?
       self[@sym2idx[sym]]
     end
+
+    def respond_to_missing? sym, include_private = false
+      (@sym2idx && @sym2idx.key?(sym)) || super
+    end
   end
 
   class Array2D

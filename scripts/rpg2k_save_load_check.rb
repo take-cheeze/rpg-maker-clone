@@ -102,6 +102,8 @@ def check_game(dir)
     eq sa.mp, a.mp, "actor #{a.id} mp" if sa.mp
     eq true, a.hp <= a.max_hp, "actor #{a.id} hp within max (#{a.hp}/#{a.max_hp})"
     eq true, a.mp <= a.max_mp, "actor #{a.id} mp within max (#{a.mp}/#{a.max_mp})"
+    # The saved equipment (chunk 108 field 61) is re-equipped onto the actor.
+    eq (sa.equipment || []), a.equipment, "actor #{a.id} equipment" if sa.equipment
   end
 
   # Switches/variables shift from the save's 0-indexed arrays to 1-indexed ids.
