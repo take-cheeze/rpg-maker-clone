@@ -406,14 +406,22 @@ jobs:
         run: |
           EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
           ls -l "$EBOOT"
+          cd ppsspp
+          # Capture the exact supported flags/renderers for reference.
+          echo "=== PPSSPPHeadless --help ==="
+          ./build/PPSSPPHeadless --help 2>&1 | head -80 || true
           # Run from the PPSSPP tree so it finds its assets/ (fonts, etc.).
           # --timeout ends the otherwise-infinite bring-up loop; a non-zero exit
           # from the timeout must not mask the heartbeat check, hence `|| true`.
-          cd ppsspp
+          echo "=== run ==="
           ./build/PPSSPPHeadless --graphics=software --timeout=15 \
             --screenshot="$GITHUB_WORKSPACE/psp-frame.png" "$EBOOT" \
             2>&1 | tee "$GITHUB_WORKSPACE/headless.log" || true
-          echo "--- asserting bring-up heartbeat in output ---"
+          echo "=== full headless.log ==="
+          cat "$GITHUB_WORKSPACE/headless.log"
+          echo "=== asserting the EBOOT booted and pumped frames ==="
+          # RPG2K_PSP_BOOT proves it booted with stdout captured; RPG2K_PSP_BRINGUP
+          # (the per-second heartbeat) proves the frame loop is running.
           grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless.log"
 
       - name: Upload smoke-test output

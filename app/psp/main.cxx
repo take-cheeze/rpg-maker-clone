@@ -94,6 +94,12 @@ void show_keys(uint32_t mask) {
 }  // namespace
 
 int main(void) {
+  // Emitted before any LVGL/display init so the CI smoke test can tell "the
+  // EBOOT booted and its stdout is captured" apart from "it crashed during
+  // init". Routed to the host's stdout by pspsdk under an emulator.
+  std::printf("RPG2K_PSP_BOOT\n");
+  std::fflush(stdout);
+
   setup_callbacks();
 
   lv_init();
@@ -102,10 +108,9 @@ int main(void) {
   build_ui();
 
   // The loop runs ~200 iterations/second (5 ms delay); print a heartbeat line
-  // roughly once a second. pspsdk routes stdout to the host under an emulator,
-  // so ppsspp-headless captures these lines -- the CI smoke test asserts the
-  // marker appears, proving the EBOOT boots and pumps frames (see the psp-smoke
-  // job in .github/workflows/build.yml).
+  // roughly once a second. The CI smoke test asserts this marker appears,
+  // proving the EBOOT not only boots but keeps pumping frames (see the
+  // psp-smoke job in .github/workflows/build.yml).
   for (uint32_t frame = 0;; ++frame) {
     show_keys(psp_input_scan());
     lv_timer_handler();
