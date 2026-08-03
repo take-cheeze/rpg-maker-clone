@@ -185,6 +185,27 @@ jobs:
           path: ss/mv_sample.png
           if-no-files-found: warn
 
+      # Drive the sample into a test battle (New Game -> map -> Scene_Battle
+      # against troop 1) so the battle scene — its windows and HP/MP gauges — is
+      # exercised and captured. Non-blocking, like the other MV smoke tests.
+      - name: MV battle smoke test
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        run: |
+          mkdir -p ss
+          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+            --timeout_ms=6000 --game_dir data/mv-sample \
+            --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
+
+      - name: Upload MV battle screenshot
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mv-battle-screenshot
+          path: ss/mv_battle.png
+          if-no-files-found: warn
+
   wasm:
     runs-on: ubuntu-24.04
     env:

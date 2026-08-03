@@ -41,6 +41,12 @@ DEFINE_bool(
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
     "the game advances to its first map without input (used to capture "
     "in-game output in CI)");
+DEFINE_int32(
+    mv_battle_test,
+    0,
+    "For RPG Maker MV: once on the map, start a test battle against this troop "
+    "id (implies --mv_new_game to reach the map). 0 disables. Used to capture "
+    "the battle scene in CI");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -420,6 +426,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_NEW_GAME"),
                 mrb_bool_value(FLAGS_mv_new_game));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MV_BATTLE_TEST"),
+                mrb_fixnum_value(FLAGS_mv_battle_test));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
