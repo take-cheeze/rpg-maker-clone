@@ -106,10 +106,13 @@ The work below is roughly ordered by the critical path to a walkable game
   HP/MP**, **Full Heal** and **Change Parameters** apply to a fixed actor, a
   variable-selected actor or the whole party, clamped to each actor's maxima
   (Change HP honours the allow-death floor; Change Parameters re-clamps current
-  HP/MP when a maximum is lowered). Conditional Branch covers switch / variable /
-  **timer** / gold / item / actor-in-party conditions. The remaining commands
-  (pictures, screen effects, battles, EXP/level changes — which need the
-  per-level stat growth curves, not yet parsed — ...) are TODO
+  HP/MP when a maximum is lowered). **Control Variables** reads not just
+  constants and other variables but also a **random** range, an **actor stat**
+  (level / HP / MP / max HP-MP / attack / defence / spirit / agility) and **game
+  quantities** (party gold, timer seconds). Conditional Branch covers switch /
+  variable / **timer** / gold / item / actor-in-party conditions. The remaining
+  commands (pictures, screen effects, battles, EXP/level changes — which need
+  the per-level stat growth curves, not yet parsed — ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes

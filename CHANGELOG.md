@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Control Variables** now supports more operand sources than constants and
+  other variables: a **random** integer in a range, an **actor stat** (level,
+  current/max HP and MP, attack, defence, spirit or agility of an actor by id)
+  and **game quantities** (party gold, timer seconds). `Game::Interpreter`
+  carries a deterministic RNG for the random operand; unmodelled sources (EXP,
+  step count, play time, save/battle counts) read as 0. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
 - **LCF save-data schema** now decodes four more `LcfSaveData` sections,
   transcribed from the rpg2kpsp analysis wiki
   (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved
