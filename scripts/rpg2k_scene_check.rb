@@ -641,6 +641,25 @@ check 'Shake Screen with a wait holds the interpreter and renders with an offset
   ok st.switches[1], 'the interpreter resumed after the shake'
 end
 
+check 'Flash Screen with a wait holds the interpreter until the flash fades' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::FLASH_SCREEN, [255, 255, 255, 31, 3, 1]), # white, 0.3s, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  5.times { scene.update } # mid-flash: still fading, switch not yet flipped
+  ok st.screen.flashing?, 'still flashing'
+  ok !st.switches[1], 'the command after the flash waits'
+
+  40.times { scene.update } # 0.3s -> 18 frames, plenty
+  ok !st.screen.flashing?, 'the flash faded out'
+  ok st.switches[1], 'the interpreter resumed after the flash'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

@@ -977,6 +977,11 @@ module Game
       @shake_frames = 0 # frames left in the current shake (0 = still)
       @shake_phase = 0
       @shake_offset = 0
+      @flash_r = @flash_g = @flash_b = 0
+      @flash_power = 0 # peak strength of the current flash
+      @flash_strength = 0 # current strength, fading to 0 over the duration
+      @flash_frames = 0 # frames left in the current flash (0 = faded out)
+      @flash_total = 0
     end
 
     # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
@@ -991,8 +996,16 @@ module Game
     # True while a timed shake is still running.
     def shaking?; @shake_frames > 0; end
 
+    # The current flash as [red, green, blue, strength]; strength is 0 when not
+    # flashing. The owning scene draws a full-screen colour overlay at `strength`
+    # opacity (a later native refinement — see the tint note).
+    def flash_color; [@flash_r, @flash_g, @flash_b, @flash_strength]; end
+
+    # True while a flash is still fading out.
+    def flashing?; @flash_frames > 0; end
+
     # True while any screen effect is still animating (drives the wait flag).
-    def busy?; tinting? || shaking?; end
+    def busy?; tinting? || shaking? || flashing?; end
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
@@ -1023,10 +1036,28 @@ module Game
       end
     end
 
+    # Begin a flash of colour (r, g, b) at peak strength `power`, fading linearly
+    # to 0 over `frames` frames (frames <= 0 clears any flash immediately).
+    def flash(r, g, b, power, frames)
+      @flash_r = r
+      @flash_g = g
+      @flash_b = b
+      @flash_power = power
+      @flash_total = frames
+      if frames <= 0
+        @flash_frames = 0
+        @flash_strength = 0
+      else
+        @flash_frames = frames
+        @flash_strength = power
+      end
+    end
+
     # Advance every active effect one frame. Called once per frame by the scene.
     def update
       update_tint
       update_shake
+      update_flash
     end
 
     private
@@ -1054,6 +1085,13 @@ module Game
       end
       @shake_phase += @shake_speed
       @shake_offset = Screen.triangle_wave(@shake_phase, 16, @shake_power * 2)
+    end
+
+    def update_flash
+      return if @flash_frames <= 0
+      @flash_frames -= 1
+      # Strength fades linearly from the peak power to 0 across the duration.
+      @flash_strength = @flash_total > 0 ? @flash_power * @flash_frames / @flash_total : 0
     end
 
     # A symmetric triangle wave in [-amp, amp] over `period` phase units (float-

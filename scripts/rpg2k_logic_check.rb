@@ -449,7 +449,31 @@ check 'Screen zero-power shake produces no offset' do
   eq 0, s.shake_offset
 end
 
-check 'Screen busy? reflects tint or shake activity' do
+check 'Screen flash fades from its peak strength to zero, then settles' do
+  s = Game::Screen.new
+  eq [0, 0, 0, 0], s.flash_color
+  ok !s.flashing?
+  s.flash(255, 255, 200, 40, 4) # colour, peak strength 40, over 4 frames
+  ok s.flashing?
+  eq [255, 255, 200, 40], s.flash_color, 'peaks at full strength when it starts'
+  s.update; eq 30, s.flash_color[3]
+  s.update; eq 20, s.flash_color[3]
+  s.update; eq 10, s.flash_color[3]
+  s.update
+  eq 0, s.flash_color[3], 'faded fully out'
+  ok !s.flashing?, 'no longer flashing once faded'
+  s.update # further updates are a no-op
+  eq 0, s.flash_color[3]
+end
+
+check 'Screen flash with zero duration is inert' do
+  s = Game::Screen.new
+  s.flash(255, 0, 0, 31, 0)
+  ok !s.flashing?
+  eq 0, s.flash_color[3]
+end
+
+check 'Screen busy? reflects tint, shake or flash activity' do
   s = Game::Screen.new
   ok !s.busy?
   s.tint_to(200, 100, 100, 100, 3)
@@ -458,6 +482,10 @@ check 'Screen busy? reflects tint or shake activity' do
   ok !s.busy?
   s.shake(3, 3, 3)
   ok s.busy?, 'a shake makes it busy'
+  3.times { s.update }
+  ok !s.busy?
+  s.flash(255, 255, 255, 20, 3)
+  ok s.busy?, 'a flash makes it busy'
   3.times { s.update }
   ok !s.busy?
 end
@@ -881,6 +909,35 @@ check 'Shake Screen with a wait pauses until the shake ends' do
   it.resume
   it.update
   eq true, st.switches[2], 'resumed once the shake finished'
+end
+
+check 'Flash Screen without a wait starts a flash and does not pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # white flash, strength 31, 5 tenths (30 frames), wait 0.
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [255, 255, 255, 31, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'a no-wait flash keeps running'
+  eq true, st.switches[1], 'the command after the flash still ran'
+  ok st.screen.flashing?, 'a flash is in progress'
+  eq [255, 255, 255, 31], st.screen.flash_color
+end
+
+check 'Flash Screen with a wait pauses until the flash fades out' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [255, 0, 0, 20, 1, 1]), # 6 frames, wait
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok it.waiting?, 'a waiting flash pauses the interpreter'
+  eq :screen, it.wait_kind
+  ok !st.switches[2]
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[2], 'resumed once the flash faded'
+  eq 0, st.screen.flash_color[3]
 end
 
 check 'conditional branch on the timer' do
