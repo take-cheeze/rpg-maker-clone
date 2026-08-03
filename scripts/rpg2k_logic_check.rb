@@ -410,6 +410,22 @@ check 'Message.parse omits empty runs and matches expand when joined' do
   eq Game::Message.expand(src, vars, names), joined
 end
 
+check 'Message.visible_segments truncates colour runs to the revealed count' do
+  sl = [[{ text: 'ab', color: 0 }, { text: 'cd', color: 2 }],
+        [{ text: 'ef', color: 1 }]]
+  eq [[], []], Game::Message.visible_segments(sl, 0)
+  # 3 chars: first run whole, one char of the second run; nothing on line 2.
+  eq [[{ text: 'ab', color: 0 }, { text: 'c', color: 2 }], []],
+     Game::Message.visible_segments(sl, 3)
+  eq [[{ text: 'ab', color: 0 }, { text: 'cd', color: 2 }], []],
+     Game::Message.visible_segments(sl, 4)
+  # Line 1 full (4), then one char of line 2.
+  eq [[{ text: 'ab', color: 0 }, { text: 'cd', color: 2 }],
+      [{ text: 'e', color: 1 }]],
+     Game::Message.visible_segments(sl, 5)
+  eq sl, Game::Message.visible_segments(sl, 99) # capped: everything shows
+end
+
 # -- Interpreter (a few existing-behaviour regressions) -----------------------
 
 # Build a minimal State without the LCF database: stub Party just enough for the

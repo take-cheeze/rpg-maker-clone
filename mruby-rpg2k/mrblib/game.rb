@@ -81,6 +81,31 @@ module Game
       segs
     end
 
+    # Truncate per-line colour segments to the first `revealed` characters
+    # across all lines (for the typewriter effect over coloured text). `seg_lines`
+    # is an array of lines, each an array of `{ text:, color: }` segments (as
+    # #parse returns). Returns the same shape with later text dropped: full
+    # segments while the budget lasts, then a partial segment, then nothing.
+    def self.visible_segments(seg_lines, revealed)
+      remaining = revealed
+      seg_lines.map do |segs|
+        out = []
+        segs.each do |seg|
+          t = seg[:text]
+          if remaining <= 0
+            next
+          elsif remaining >= t.length
+            remaining -= t.length
+            out << seg
+          else
+            out << { text: t[0, remaining], color: seg[:color] }
+            remaining = 0
+          end
+        end
+        out
+      end
+    end
+
     # Read an optional "[digits]" argument at position i; returns [value, new_i].
     def self.read_bracket(text, i)
       return [nil, i] unless i < text.length && text[i] == '['
