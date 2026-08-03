@@ -226,10 +226,13 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   *Change Items / Weapons / Armor* (126/127/128) add or remove by a constant or
   a variable amount, the Conditional Branch **item / weapon / armor** possession
   tests (types 8/9/10) run, and Control Variables can read an **item count** as
-  its operand. Covered by `mruby-rpgxp/test` and driven over the real test bed by
-  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets, the
-  actor / enemy / character conditional sub-conditions, and the many
-  screen-effect / picture / battle commands (skipped for now).
+  its operand. *Change Party Member* (129) adds/removes actors from the party,
+  the **actor "is in the party"** conditional (type 4) is evaluated, and Control
+  Variables also reads the **"other" game quantities** — map id, party size and
+  gold (operand type 7). Covered by `mruby-rpgxp/test` and driven over the real
+  test bed by `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route
+  targets, the remaining actor / enemy / character conditional sub-conditions,
+  and the many screen-effect / picture / battle commands (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1

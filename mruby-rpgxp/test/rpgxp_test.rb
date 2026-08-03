@@ -334,6 +334,43 @@ assert "Interpreter: control variable from item count" do
   assert_equal 12, s.variables[1]
 end
 
+assert "Interpreter: change party member and actor-in-party condition" do
+  s = new_state # party starts as [1]
+  run_to_end(s, [
+    cmd(129, [2, 0, 0], 0),   # add actor 2
+    cmd(129, [3, 0, 0], 0),   # add actor 3
+    cmd(129, [1, 1, 0], 0)    # remove actor 1
+  ])
+  assert_equal [2, 3], s.party
+  run_to_end(s, [cmd(129, [2, 0, 0], 0)]) # adding a duplicate is a no-op
+  assert_equal [2, 3], s.party
+
+  s2 = new_state # party [1]
+  run_to_end(s2, [
+    cmd(111, [4, 1, 0], 0),   # if actor 1 in party
+    cmd(121, [1, 1, 0], 1),   #   switch 1 ON
+    cmd(412, [], 0),
+    cmd(111, [4, 9, 0], 0),   # if actor 9 in party
+    cmd(121, [2, 2, 0], 1),   #   switch 2 ON
+    cmd(412, [], 0)
+  ])
+  assert_true s2.switches[1]   # actor 1 is in party
+  assert_false s2.switches[2]  # actor 9 is not
+end
+
+assert "Interpreter: control variables from game quantities" do
+  s = new_state # map_id 1, party [1]
+  s.gold = 250
+  run_to_end(s, [
+    cmd(122, [1, 1, 0, 7, 0], 0),   # var1 = map id (1)
+    cmd(122, [2, 2, 0, 7, 1], 0),   # var2 = party size (1)
+    cmd(122, [3, 3, 0, 7, 2], 0)    # var3 = gold (250)
+  ])
+  assert_equal 1, s.variables[1]
+  assert_equal 1, s.variables[2]
+  assert_equal 250, s.variables[3]
+end
+
 assert "Interpreter: conditional branch true and else" do
   # Switch 5 ON -> true branch sets switch 1; else sets switch 2.
   list = [
