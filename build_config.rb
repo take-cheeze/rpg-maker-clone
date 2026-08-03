@@ -30,7 +30,8 @@ end
 # during the cross build; the actual libmruby.a is produced by the cross build.
 emscripten = ENV['MRUBY_TARGET'] == 'emscripten'
 wio = ENV['MRUBY_TARGET'] == 'wio'
-cross = emscripten || wio
+psp = ENV['MRUBY_TARGET'] == 'psp'
+cross = emscripten || wio || psp
 
 MRuby::Build.new do |conf|
   toolchain :gcc
@@ -39,8 +40,9 @@ MRuby::Build.new do |conf|
 
   if cross
     # Force native host compilers so `mrbc` runs on the build machine even when
-    # CMake hands us emcc/em++ via CC/CXX (emscripten). For the Wio build the
-    # host toolchain is invoked natively already, so the default cc/c++ are fine.
+    # CMake hands us emcc/em++ via CC/CXX (emscripten). For the Wio and PSP
+    # builds the host toolchain is invoked natively already, so the default
+    # cc/c++ are fine.
     if emscripten
       conf.cc.command = ENV['HOST_CC'] || 'cc'
       conf.cxx.command = ENV['HOST_CXX'] || 'c++'
@@ -98,6 +100,53 @@ if wio
       # Bare-metal newlib: give game data (maps/images loaded as strings) room
       # beyond the 1 MiB default cap. Actual RAM fit is a separate concern
       # handled by the streaming rework (P3).
+      t.defines << 'MRB_STR_LENGTH_MAX=4194304'
+    end
+    conf.linker.flags += cpu_flags
+
+    rpg_maker_gems(conf)
+  end
+end
+
+if psp
+  # Cross build for the Sony PlayStation Portable (Allegrex, MIPS32 R4000 with a
+  # VFPU). Produces a libmruby.a that the pspdev EBOOT (app/psp, its
+  # CMakeLists.txt) links; the host build above supplies mrbc.
+  #
+  # NOTE: like the Wio build this is the starting point for the port in
+  # docs/adr/0010-psp-port.md, not a finished, fitting build. The bring-up EBOOT
+  # links neither libmruby nor the input bridge yet; this cross target exists so
+  # the interpreter can be layered on in the next slice. It is only built when
+  # MRUBY_TARGET=psp, so it never affects the desktop or wasm builds.
+  MRuby::CrossBuild.new('psp') do |conf|
+    toolchain :gcc
+
+    conf.cc.command = 'psp-gcc'
+    conf.cxx.command = 'psp-g++'
+    conf.linker.command = 'psp-gcc'
+    conf.archiver.command = 'psp-ar'
+
+    # onigmo's (old) config.sub needs a triplet it recognizes to enter
+    # cross-compile mode; mipsel-unknown-linux keeps the 32-bit little-endian
+    # word size and only forces cross mode (the real compiler is still psp-gcc).
+    conf.host_target = 'mipsel-unknown-linux'
+
+    enable_debug
+
+    # Allegrex ABI. -G0 disables gp-relative small-data addressing (pspsdk links
+    # expect this); PSP_BUILD gates the psp.cxx / psp_input_bridge.cxx HAL in the
+    # mruby-rgss gem on. Must be identical on compile and link lines so the mruby
+    # objects match the EBOOT's ABI.
+    cpu_flags = %w[-G0]
+
+    [conf.cc, conf.cxx].each do |t|
+      t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
+      t.flags += cpu_flags
+      t.defines << 'PSP_BUILD'
+      # newlib on the PSP defines none of __linux__/__APPLE__/__*BSD__, so
+      # mruby's string.c falls through to the 1 MiB MRB_STR_LENGTH_MAX cap and
+      # rejects larger strings. Game data (maps, images loaded as strings) can
+      # exceed 1 MiB, so raise it to 4 MiB, matching the wasm/Wio builds.
       t.defines << 'MRB_STR_LENGTH_MAX=4194304'
     end
     conf.linker.flags += cpu_flags
