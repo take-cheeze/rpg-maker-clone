@@ -656,6 +656,49 @@ JSValue js_get_pixel(JSContext* ctx,
   return arr;
 }
 
+// __mv_canvasPutData(handle, dx, dy, w, h, data)
+// Write a w*h block of RGBA bytes (a flat [r,g,b,a,...] array as produced by
+// getImageData) into the canvas at (dx, dy). Per the canvas spec putImageData
+// *replaces* pixels (no source-over blend) and ignores the current transform,
+// so this is a straight copy, clipped to the canvas bounds. Values are clamped
+// to 0-255 to mimic the Uint8ClampedArray a real ImageData exposes (our
+// getImageData hands back a plain array, so MV's `pixels[i] += tone` can run
+// out of range). MV drives this from Bitmap.adjustTone / rotateHue, which read
+// the pixels back, recolour them and write them out.
+JSValue js_put_data(JSContext* ctx,
+                    JSValueConst,
+                    int argc,
+                    JSValueConst* argv) {
+  Canvas* c = canvas_get(ai(ctx, argc, argv, 0));
+  if (!c || argc < 6)
+    return JS_UNDEFINED;
+  const int dx = ai(ctx, argc, argv, 1), dy = ai(ctx, argc, argv, 2);
+  const int w = ai(ctx, argc, argv, 3), h = ai(ctx, argc, argv, 4);
+  if (w <= 0 || h <= 0)
+    return JS_UNDEFINED;
+  const std::vector<double> data = js_num_array(ctx, argv[5]);
+  if (data.size() < static_cast<size_t>(w) * h * 4)
+    return JS_UNDEFINED;
+  for (int j = 0; j < h; ++j) {
+    const int ty = dy + j;
+    if (ty < 0 || ty >= c->h)
+      continue;
+    for (int i = 0; i < w; ++i) {
+      const int tx = dx + i;
+      if (tx < 0 || tx >= c->w)
+        continue;
+      const size_t si = (static_cast<size_t>(j) * w + i) * 4;
+      uint8_t* d = &c->px[(static_cast<size_t>(ty) * c->w + tx) * 4];
+      for (int k = 0; k < 4; ++k) {
+        double v = data[si + k];
+        v = v < 0 ? 0 : (v > 255 ? 255 : v);
+        d[k] = static_cast<uint8_t>(v);
+      }
+    }
+  }
+  return JS_UNDEFINED;
+}
+
 // __mv_imageLoad(path) -> a canvas handle holding the decoded image (0 on
 // failure). MV's Bitmap loads PNGs through `new Image()`; we decode them with
 // stb_image (RGBA8) straight into a canvas so the result can be used as a
@@ -844,6 +887,16 @@ const char* kCanvasPreamble = R"MVJS(
     }
     return { width: w, height: h, data: data };
   };
+  // putImageData(imageData, dx, dy): write pixels straight back (no blend, no
+  // transform), the inverse of getImageData. MV uses it in Bitmap.adjustTone and
+  // rotateHue to commit recoloured pixels; the optional dirty-rect args of the
+  // full spec are unused by MV, so only the 3-arg form is handled.
+  Ctx.prototype.putImageData = function (imageData, dx, dy) {
+    if (!imageData || !imageData.data) return;
+    g.__mv_canvasPutData(this.__h, dx | 0, dy | 0,
+                         imageData.width | 0, imageData.height | 0,
+                         imageData.data);
+  };
   // Pixel (em) size from a CSS font shorthand, e.g. '28px GameFont' -> 28.
   function fontPx(s) {
     var m = /([\d.]+)px/.exec(s || '');
@@ -918,7 +971,7 @@ const char* kCanvasPreamble = R"MVJS(
   // — are implemented above and deliberately excluded here.)
   var noops = ['beginPath', 'closePath', 'moveTo', 'lineTo',
     'arc', 'arcTo', 'rect', 'fill', 'stroke', 'clip',
-    'setLineDash', 'putImageData',
+    'setLineDash',
     'drawFocusIfNeeded', 'scrollPathIntoView'];
   noops.forEach(function (m) {
     if (!Ctx.prototype[m]) Ctx.prototype[m] = function () {};
@@ -1118,6 +1171,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasClearRect", js_clear_rect, 5);
   install(ctx, global, "__mv_canvasDrawImage", js_draw_image, 18);
   install(ctx, global, "__mv_canvasGetPixel", js_get_pixel, 3);
+  install(ctx, global, "__mv_canvasPutData", js_put_data, 6);
   install(ctx, global, "__mv_canvasDrawText", js_draw_text, 17);
   install(ctx, global, "__mv_canvasFillGradient", js_fill_gradient, 15);
   install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);

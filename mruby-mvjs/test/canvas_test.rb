@@ -49,6 +49,34 @@ assert 'MV canvas getImageData reads back a region' do
   assert_equal "1,2,3,255", MV::JS.eval("ID.data.slice(0,4).join(',')")
 end
 
+assert 'MV canvas putImageData writes pixels straight back (getImageData inverse)' do
+  MV::JS.eval("globalThis.PD=document.createElement('canvas'); PD.width=2; PD.height=2; " \
+              "var x=PD.getContext('2d'); x.fillStyle='#00ff00'; x.fillRect(0,0,2,2); " \
+              "var d=x.getImageData(0,0,2,2); " \
+              "for (var i=0;i<d.data.length;i+=4){d.data[i]=10;d.data[i+1]=20;d.data[i+2]=30;d.data[i+3]=255;} " \
+              "x.putImageData(d,0,0);")
+  assert_equal "10,20,30,255", MV::JS.eval("__mv_canvasGetPixel(PD.__h,0,0).join(',')")
+  assert_equal "10,20,30,255", MV::JS.eval("__mv_canvasGetPixel(PD.__h,1,1).join(',')")
+end
+
+assert 'MV canvas putImageData clamps out-of-range channels (adjustTone add)' do
+  # Bitmap.adjustTone does pixels[i] += tone against a plain array, so channels
+  # can exceed 255 / go below 0; putImageData must clamp like a real ImageData's
+  # Uint8ClampedArray. 0x80(128)+200 -> 255, 128-200 -> 0, blue left at 128.
+  MV::JS.eval("var x=PD.getContext('2d'); x.fillStyle='#808080'; x.fillRect(0,0,2,2); " \
+              "var d=x.getImageData(0,0,2,2); " \
+              "for (var i=0;i<d.data.length;i+=4){d.data[i]+=200; d.data[i+1]-=200;} " \
+              "x.putImageData(d,0,0);")
+  assert_equal "255,0,128,255", MV::JS.eval("__mv_canvasGetPixel(PD.__h,0,0).join(',')")
+end
+
+assert 'MV canvas putImageData ignores the current transform (device coords)' do
+  MV::JS.eval("globalThis.PT=document.createElement('canvas'); PT.width=2; PT.height=2; " \
+              "var x=PT.getContext('2d'); x.translate(5,5); " \
+              "x.putImageData({width:1,height:1,data:[7,8,9,255]},0,0);")
+  assert_equal "7,8,9,255", MV::JS.eval("__mv_canvasGetPixel(PT.__h,0,0).join(',')")
+end
+
 # A 2x2 RGBA PNG: pixel (0,0) is opaque red, the other three opaque green.
 MV_IMAGE_PNG =
   "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
