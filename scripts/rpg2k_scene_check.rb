@@ -51,11 +51,16 @@ module RGSS
     def dispose; end
   end
 
-  # No input: the player never moves, no buttons are pressed.
+  # Scriptable input: tests set `dir_value` (a numpad direction held down) and
+  # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
     C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6
-    def self.trigger?(_); false; end
-    def self.dir4; 0; end
+    class << self
+      attr_accessor :dir_value, :triggered
+    end
+    def self.reset; @dir_value = 0; @triggered = []; end
+    def self.trigger?(k); Array(@triggered).include?(k); end
+    def self.dir4; @dir_value || 0; end
     def self.update; end
   end
 
@@ -85,6 +90,7 @@ $checks = 0
 
 def check(name)
   $checks += 1
+  RGSS::Input.reset # each check starts from a clean input state
   yield
 rescue StandardError => e
   $failures += 1
@@ -246,6 +252,81 @@ check 'an autostart event Calls a call-only common event through the scene' do
   10.times { scene.update }
   st = scene.instance_variable_get(:@state)
   ok st.switches[7], 'call-only common event ran via Call Event'
+end
+
+check 'player-touch (trigger 1): walking into an event runs it, no move' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 1) # player touch
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[6], 'player-touch event ran'
+  eq [0, 0], [st.x, st.y], 'player did not step onto the event'
+end
+
+check 'event-touch (trigger 2): an event walking into the player runs it' do
+  ic = Game::Interpreter::Cmd
+  pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  scene = new_scene({ 1 => event(3, 0, pg) }, player: [0, 0])
+  ch = chars(scene)[1]
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[5], 'event-touch event ran'
+  eq [1, 0], [ch.x, ch.y], 'event stopped adjacent, did not enter the player'
+end
+
+check 'action (trigger 0) does not fire on mere contact' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0) # needs the action button
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # walk into it, but do not press the action button
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
+end
+
+# CONTROL_VARS params to add `by` to variable `id`:
+# [mode 0=single, id, id, op 1=add, operand 0=const, value].
+def add_var_cmd(id, by = 1)
+  ECmd.new(Game::Interpreter::Cmd::CONTROL_VARS, [0, id, id, 1, 0, by])
+end
+
+check 'parallel (trigger 4): a background event runs every frame' do
+  pg = page(trigger: 4)
+  pg.event_commands = [add_var_cmd(1)]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  10.times { scene.update }
+  v = scene.instance_variable_get(:@state).variables[1]
+  ok v >= 8, "parallel event should have looped ~10 times, got #{v}"
+end
+
+check 'parallel common event runs only while its switch gate is on' do
+  ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 2,
+                      event: [add_var_cmd(3)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update }
+  eq 0, st.variables[3], 'gated-off parallel common event must not run'
+  st.switches[2] = true
+  5.times { scene.update }
+  ok st.variables[3] > 0, 'it should run once the gate switch is on'
+end
+
+check 'parallel processes pause while a foreground event is running' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  par = page(trigger: 4)
+  par.event_commands = [add_var_cmd(1)]
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(4, 4, par) })
+  10.times { scene.update }
+  # The autostart event opens a message and waits for input we never give, so
+  # the foreground stays busy and the parallel process never advances.
+  eq 0, scene.instance_variable_get(:@state).variables[1]
 end
 
 # -- summary ------------------------------------------------------------------

@@ -334,6 +334,14 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
+      # Event-page start conditions (the page `trigger` field): how the event's
+      # command list is set off.
+      TRIGGER_ACTION       = 0 # player presses the action button facing it
+      TRIGGER_PLAYER_TOUCH = 1 # player walks into it
+      TRIGGER_EVENT_TOUCH  = 2 # it walks into the player
+      TRIGGER_AUTO_START   = 3 # runs automatically once on the map
+      TRIGGER_PARALLEL     = 4 # runs continuously in the background
+
       def initialize parent, state
         super parent
         @state = state
@@ -351,6 +359,7 @@ class RPG2k
         @world = MapWorld.new(self, @rng)
         build_events
         @interpreter.resolver = build_resolver
+        build_parallels
         @message = nil
         @wait_timer = nil
         @choice_index = 0
@@ -385,6 +394,7 @@ class RPG2k
           if event_busy?
             drive_event
           else
+            step_parallels
             step_events
             step_movement
             try_action_trigger
@@ -531,12 +541,14 @@ class RPG2k
         @message || @interpreter.running? || @interpreter.waiting?
       end
 
-      # Start the first eligible not-yet-run auto-start/parallel process: map
-      # events with an auto-start trigger, then eligible common events. Each is
-      # started at most once per visit so an ungated process cannot hard-loop.
+      # Start the first not-yet-run auto-start process in the foreground: map
+      # events with an auto-start trigger, then auto-start common events (whose
+      # switch gate, if any, is on). Each runs at most once per visit so an
+      # ungated process cannot hard-loop. Parallel processes are driven
+      # separately by #step_parallels.
       def start_autostart
         ev = @events.find do |e|
-          e[:trigger] == 3 && e[:commands] && !@started_auto[e[:id]]
+          e[:trigger] == TRIGGER_AUTO_START && e[:commands] && !@started_auto[e[:id]]
         end
         if ev
           @started_auto[ev[:id]] = true
@@ -544,25 +556,103 @@ class RPG2k
           return
         end
 
-        ce = Game::CommonEvent.eligible(@common, @state.switches).find do |c|
-          c[:commands] && !@started_common[c[:id]]
+        ce = @common.find do |c|
+          c[:trigger] == Game::CommonEvent::AUTO_START && c[:commands] &&
+            common_gate_open?(c) && !@started_common[c[:id]]
         end
         return unless ce
         @started_common[ce[:id]] = true
         @interpreter.start(ce[:commands])
       end
 
-      # On the action button, run the event the player is facing (trigger 0).
-      # The faced event turns toward the player before its commands run.
+      # A common event's switch gate: open unless it needs a flag that is off.
+      def common_gate_open?(c)
+        return true unless c[:need_flag]
+        @state.switches[c[:switch_id]]
+      end
+
+      # Build the background (parallel-process) interpreters: map events with a
+      # parallel trigger plus parallel common events. Each gets its own
+      # Game::Interpreter, looped by #step_parallels; a common event that needs a
+      # flag carries its gate switch so it only runs while that switch is on.
+      def build_parallels
+        @parallels = []
+        @events.each do |e|
+          next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
+          @parallels.push new_parallel(e[:commands], nil)
+        end
+        @common.each do |c|
+          next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
+          @parallels.push new_parallel(c[:commands], c[:need_flag] ? c[:switch_id] : nil)
+        end
+      rescue StandardError
+        @parallels = []
+      end
+
+      def new_parallel(commands, gate_switch)
+        it = Game::Interpreter.new(@state)
+        it.resolver = @interpreter.resolver
+        it.start(commands)
+        { interp: it, commands: commands, gate_switch: gate_switch, wait_timer: nil }
+      end
+
+      # Advance every background parallel process one frame. They loop their
+      # command list and honour Wait; as background processes they do not drive
+      # the message/choice/teleport UI (those requests are simply resumed so the
+      # process keeps running). Called only while the foreground is idle, so
+      # parallels pause during messages and foreground events.
+      def step_parallels
+        @parallels.each { |p| step_parallel(p) }
+      end
+
+      def step_parallel(p)
+        return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
+        it = p[:interp]
+        if it.waiting?
+          drive_parallel_wait(p, it)
+        elsif it.running?
+          it.update
+        else
+          it.start(p[:commands]) # loop the process
+          it.update
+        end
+      rescue StandardError
+        nil
+      end
+
+      def drive_parallel_wait(p, it)
+        if it.wait_kind == :wait
+          p[:wait_timer] = frames_from_tenths(it.wait_frames) if p[:wait_timer].nil?
+          if p[:wait_timer] <= 0
+            p[:wait_timer] = nil
+            it.resume
+          else
+            p[:wait_timer] -= 1
+          end
+        else
+          it.resume # background: ignore message/choice/teleport requests
+        end
+      end
+
+      # The event currently standing on tile (x, y), or nil.
+      def event_at(x, y)
+        @event_tiles[[x, y]]
+      end
+
+      # Turn `ev` to face the player and run its command list.
+      def start_event(ev)
+        ev[:char].face(ev[:char].direction_toward(@state.x, @state.y))
+        @interpreter.start(ev[:commands])
+      end
+
+      # On the action button, run the trigger-0 event the player is facing. The
+      # faced event turns toward the player before its commands run.
       def try_action_trigger
+        return if event_busy?
         return unless Input.trigger?(Input::C)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        ev = @events.find do |e|
-          e[:char].x == fx && e[:char].y == fy && e[:trigger] == 0 && e[:commands]
-        end
-        return unless ev
-        ev[:char].face(Game::Character::TURN_180[@state.direction] || 2)
-        @interpreter.start(ev[:commands])
+        ev = event_at(fx, fy)
+        start_event(ev) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
       end
 
       # Advance autonomous / custom-route event movement one frame. Skipped
@@ -572,6 +662,7 @@ class RPG2k
       end
 
       def step_event(e)
+        return if event_busy? # an event fired earlier this frame; hold the rest
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
@@ -582,13 +673,28 @@ class RPG2k
           e[:route].step(ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
-          # Bumping into an obstacle still turns the event to face it.
-          @world.passable?(ch, dir) ? ch.move(dir) : ch.face(dir) if dir
+          move_autonomous(e, dir) if dir
         end
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
       rescue StandardError => ex
         $stderr.puts "[RPG2k] event ##{e[:id]} movement failed: #{ex.message}"
         nil
+      end
+
+      # Move an autonomous event one step in `dir`. Walking into the player fires
+      # an event-touch (trigger 2) event instead of moving; any other obstacle
+      # just turns the event to face it.
+      def move_autonomous(e, dir)
+        ch = e[:char]
+        nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
+        if nx == @state.x && ny == @state.y
+          ch.face(dir)
+          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+        elsif @world.passable?(ch, dir)
+          ch.move(dir)
+        else
+          ch.face(dir)
+        end
       end
 
       # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
@@ -618,6 +724,7 @@ class RPG2k
 
       # The cancel button opens the main menu over the map.
       def try_open_menu
+        return if event_busy?
         return unless Input.trigger?(Input::B)
         @parent.push Scene::Menu.new(@parent, @state)
       end
@@ -641,17 +748,21 @@ class RPG2k
       end
 
       def drive_wait
-        if @wait_timer.nil?
-          fr = Graphics.frame_rate
-          fr = 60 if fr.nil? || fr <= 0
-          @wait_timer = @interpreter.wait_frames * fr / 10
-        end
+        @wait_timer = frames_from_tenths(@interpreter.wait_frames) if @wait_timer.nil?
         if @wait_timer <= 0
           @wait_timer = nil
           @interpreter.resume
         else
           @wait_timer -= 1
         end
+      end
+
+      # Convert an RPG2000 wait duration (tenths of a second) to a frame count at
+      # the current frame rate (defaulting to 60 fps).
+      def frames_from_tenths(tenths)
+        fr = Graphics.frame_rate
+        fr = 60 if fr.nil? || fr <= 0
+        tenths * fr / 10
       end
 
       def perform_teleport(t)
@@ -667,6 +778,7 @@ class RPG2k
         @started_common = {}
         build_events
         @interpreter.resolver = build_resolver
+        build_parallels
         @moving = false
         @move_count = 0
         @last_frame = nil
@@ -759,11 +871,20 @@ class RPG2k
           return
         end
 
+        return if event_busy? # don't start a new move while an event runs
         dir = Input.dir4
         return if dir == 0
 
         @state.direction = dir
         nx, ny = target_tile(@state.x, @state.y, dir)
+
+        # Walking into a player-touch (trigger 1) event runs it instead of moving.
+        touched = event_at(nx, ny)
+        if touched && touched[:trigger] == TRIGGER_PLAYER_TOUCH && touched[:commands]
+          start_event(touched)
+          return
+        end
+
         return unless passable?(nx, ny, dir)
 
         @dest_x = nx
