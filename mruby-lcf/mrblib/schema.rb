@@ -1009,9 +1009,12 @@ module LCF
     # save: gold (21) matched the on-screen 100G, and the parallel item id/count
     # arrays matched the held items looked up in the database -- 薬草 (item 1) ×3
     # and 導きの書 (item 451) ×1, after the gate crystal had been spent. Item ids
-    # are int16; counts and per-item use-counts are one byte each. The remaining
-    # fields (party roster, step/turn counters) are left out until confirmed.
+    # are int16; counts and per-item use-counts are one byte each. Field 1 is the
+    # party roster (actor ids); the sole entry `[1]` is actor 1, whose database
+    # charset matches the saved hero. The step/turn counters are left out until
+    # confirmed.
     SAVE_INVENTORY = {
+      1 => { name: :party, type: :int8_array },
       11 => { name: :item_count, type: :int, default: 0 },
       12 => { name: :item_ids, type: :int16_array },
       13 => { name: :item_counts, type: :int8_array },

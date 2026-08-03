@@ -65,6 +65,11 @@ Create ADRs in /docs/adr for:
 - When decoding a chunk, prove field meanings against real bytes (change one
   known thing in-game, re-save, diff) rather than guessing; document only what
   the data (or the rpg2kpsp analysis wiki) spells out, per ADR 0002.
+- The runtime can resume from a real save: `Game::State.from_lsd(db, save)`
+  rebuilds a `State` from a parsed `LcfSaveData`, and `continue_game` loads an
+  editor `Save<N>.lsd` when present. `ruby scripts/rpg2k_save_load_check.rb`
+  round-trips a real save through it. Use `save[101]`, not `save.system`, in
+  CRuby-tested code — `system` resolves to `Kernel#system` there.
 
 ## Testing Standards
 
