@@ -844,6 +844,40 @@ class RPG2k
         @player_route = nil if @player_route.done?
       end
 
+      # Advance every forced move route in progress one frame — the player's and
+      # each event's — while the interpreter is paused on Proceed With Movement
+      # (the normal per-frame movement is skipped because an event is running).
+      # Returns true once no forced route remains, so the caller can resume the
+      # interpreter. A repeating forced route never reports done, matching RPG_RT.
+      def step_forced_movement
+        step_player_route
+        @events.each { |e| step_forced_event(e) if e[:forced_route] }
+        forced_movement_done?
+      end
+
+      # Pace and advance one event's forced route, mirroring step_event's forced
+      # branch (used only while waiting on Proceed With Movement).
+      def step_forced_event(e)
+        ch = e[:char]
+        e[:move_timer] -= 1
+        return if e[:move_timer] > 0
+        e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
+        ox = ch.x
+        oy = ch.y
+        e[:forced_route].step(ch, @world) unless e[:forced_route].done?
+        e[:forced_route] = nil if e[:forced_route].done?
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] forced movement failed: #{ex.message}"
+        e[:forced_route] = nil # drop a broken route so Proceed does not hang
+      end
+
+      # Whether no forced move route is still running (player or any event).
+      def forced_movement_done?
+        return false if @player_route
+        @events.none? { |e| e[:forced_route] }
+      end
+
       # A move frequency the request may override the target's pace with (1..8),
       # or nil to keep the target's own frequency.
       def valid_move_freq(f)
@@ -905,6 +939,7 @@ class RPG2k
           when :choice then open_message(@interpreter.choice_labels, true)
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
+          when :movement then @interpreter.resume if step_forced_movement
           end
         else
           @interpreter.update

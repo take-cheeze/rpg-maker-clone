@@ -578,6 +578,31 @@ check 'Store Terrain / Event ID query the map through the scene' do
   eq 0, st.variables[3], 'no event at the empty tile'
 end
 
+check 'Proceed With Movement holds the interpreter until a forced route finishes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Force event 2 to walk right 3 tiles (freq 4, repeat off), wait for it, then
+  # flip switch 1 — which must not happen until the route completes.
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
+                    player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: still moving, switch not yet flipped
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+  ok !st.switches[1], 'the command after Proceed With Movement waits'
+
+  200.times { scene.update } # enough frames for the freq-4 route to finish
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

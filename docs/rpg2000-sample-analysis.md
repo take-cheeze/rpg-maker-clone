@@ -184,7 +184,7 @@ runtime can execute virtually all of it.
    | **Message polish** ✅ | MessageOptions (10120), ChangeFaceGraphic (10130) — now implemented | Sample2, Sample3 |
    | **Battle** | EnemyEncounter (10710) | Sample2 |
    | **BGM stack** ✅ | MemorizeBGM (11530), PlayMemorizedBGM (11540) — now implemented | Sample2 |
-   | **Movement sync** | ProceedWithMovement (11340) | Sample3 |
+   | **Movement sync** ✅ | ProceedWithMovement (11340) — now implemented | Sample3 |
    | **Menu/telep. access, misc** ✅ | ChangeMainMenuAccess (11960) and MemorizeLocation (10820) now implemented; PlayerVisibility (11310) remains | Sample3 |
    | **Unidentified** | code 10660, 10690 (106xx range) | Sample2, Sample3 |
 
@@ -205,8 +205,10 @@ Ordered by real-world frequency across the analysed games:
    — common cutscene polish, appear in both games.
 4. **`EnemyEncounter` (10710)** — the entry point to the (still-unbuilt) battle
    system; unblocks the battle-showcase samples.
-5. **`ProceedWithMovement` (11340)** — pairs with the existing Move Event support
-   so forced routes can be awaited.
+5. ✅ **`ProceedWithMovement` (11340)** — *implemented.* Pairs with the existing
+   Move Event support so a forced route can be awaited: the interpreter pauses
+   until every forced route in progress finishes. Covered by
+   `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
 6. Lower priority: ✅ BGM memorize/replay (`MemorizeBGM`/`PlayMemorizedBGM`,
    *implemented* — stash the current BGM and restore it, minus seek-to-position),
    ✅ `MemorizeLocation`/`RecallToLocation`

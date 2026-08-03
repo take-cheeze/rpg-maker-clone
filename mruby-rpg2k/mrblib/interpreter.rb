@@ -47,6 +47,7 @@ module Game
       CALL_EVENT       = 12330
       TELEPORT         = 10810
       MOVE_EVENT       = 11330
+      PROCEED_WITH_MOVEMENT = 11340
       WAIT             = 11410
       PLAY_BGM         = 11510
       MEMORIZE_BGM     = 11530
@@ -233,6 +234,7 @@ module Game
       when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
       when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
+      when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
       when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
@@ -748,6 +750,15 @@ module Game
     def do_wait(cmd)
       @wait_frames = cmd.param(0) # tenths of a second in RPG2000
       @wait_kind = :wait
+      @waiting = true
+    end
+
+    # Proceed With Movement: pause until every forced move route in progress (set
+    # by a Move Event) has finished. The owning scene advances those routes while
+    # we wait and resumes us once none remain. As in RPG_RT, a *repeating* forced
+    # route never finishes, so pairing it with this command waits indefinitely.
+    def do_proceed_with_movement(_cmd)
+      @wait_kind = :movement
       @waiting = true
     end
 

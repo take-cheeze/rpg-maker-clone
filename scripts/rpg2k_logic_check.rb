@@ -715,6 +715,20 @@ check 'a decoded Move Event route drives a Character through a MoveRoute' do
   ok route.done?, 'non-repeating decoded route finishes'
 end
 
+check 'Proceed With Movement pauses the interpreter on a movement wait' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PROCEED_WITH_MOVEMENT, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Proceed With Movement pauses'
+  eq :movement, it.wait_kind
+  ok !st.switches[1], 'the following command has not run while waiting'
+  it.resume # the scene resumes once forced movement completes
+  it.update
+  eq true, st.switches[1], 'resuming runs the rest of the list'
+end
+
 check 'conditional branch on the timer' do
   st = new_state
   st.timer_frames = 30 * 60 # 30 seconds remaining

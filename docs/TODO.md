@@ -98,8 +98,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Change Main Menu / Save Access, Call
-  Event, Move Event, Erase Event, End Event) with a per-frame step cap so a bad
-  loop
+  Event, Move Event, Proceed With Movement, Erase Event, End Event) with a
+  per-frame step cap so a bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
@@ -109,7 +109,10 @@ The work below is roughly ordered by the critical path to a walkable game
   which auto-start/parallel never reach, now run — and returns to the caller;
   recursion is bounded. **Move Event** decodes the forced move route packed into
   the command's parameters and hands it to the scene, which drives the target (a
-  map event, "this event" or the player) along it in the background. **Erase
+  map event, "this event" or the player) along it in the background. **Proceed
+  With Movement** then pauses the interpreter until every forced route in
+  progress has finished — the scene advances those routes while it waits and
+  resumes it once none remain. **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal** and **Change Parameters** apply to a fixed actor, a
