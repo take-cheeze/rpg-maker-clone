@@ -25,10 +25,19 @@ module RGSS
     def initialize(*); end
   end
 
-  # A no-op drawing surface. Records nothing; every draw call is ignored.
+  # A no-op drawing surface. Records nothing; every draw call is ignored. A
+  # String first arg means "load this file": we pretend a standard 480x256
+  # chipset (or other graphic) loaded, so Scene::Map exercises the real
+  # ChipsetLayout blit path instead of the colour-block fallback.
   class Bitmap
     attr_reader :width, :height
-    def initialize(w = 1, h = 1); @width = w.to_i; @height = h.to_i; end
+    def initialize(w = 1, h = 1)
+      if w.is_a?(String)
+        @width = 480; @height = 256
+      else
+        @width = w.to_i; @height = h.to_i
+      end
+    end
     def clear; end
     def fill_rect(*); end
     def blt(*); end
