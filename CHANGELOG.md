@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV audio bridge (milestone M5): MV's `AudioManager` (BGM/BGS/ME/SE) is now
+  routed through `RGSS::Audio` (the SDL mixer) instead of the stubbed Web Audio
+  graph. The high-level manager methods are overridden to enqueue plain-text
+  ops, which Ruby drains each frame (`MV#pump_audio`) and plays — prepending
+  MV's `audio/<kind>/` folder so `RGSS::Audio` resolves the file under the game
+  dir, and passing MV's volume/pitch through unchanged (both are already
+  100-based). `_currentBgm`/`_currentBgs` are preserved so save/load and map BGM
+  replay keep working; fades convert seconds to milliseconds. The op mapping and
+  the manager overrides are unit-tested (`mruby-mvjs/test/audio_test.rb`).
 - MV committed sample test bed (`data/mv-sample`): a tiny, fully-controlled RPG
   Maker MV project we author and commit, rather than downloading a whole
   third-party game. It defines a one-actor party, a 17×13 walkable map, and a
