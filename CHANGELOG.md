@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Self-hostable **CORS proxy** for the web loader: a ready-to-deploy Cloudflare
+  Worker in `cors-proxy/` (`worker.js` + `wrangler.toml`) that the loader's *CORS
+  proxy prefix* field can point at, so GitHub repos and arbitrary `.zip` URLs
+  load without depending on a public proxy service. The Worker accepts both
+  prefix styles the loader builds (`?url=<encoded>` and `/<raw url>`), handles
+  the CORS preflight, forwards `Range` requests and follows redirects, and takes
+  an optional `ALLOWED_HOSTS` allowlist to avoid running as an open proxy.
+  Deploy walkthrough in `docs/cors-proxy.md`; rationale in
+  `docs/adr/0009-cors-proxy-cloudflare-worker.md`.
 - MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
   `strokeText` and `measureText` are backed by stb_truetype against the game's
   bundled TrueType font (the CSS `GameFont`, auto-discovered under the project's

@@ -1,0 +1,13 @@
+# Cloudflare Worker config for the rpg-maker-clone CORS proxy.
+# Deploy with:  cd cors-proxy && npx wrangler deploy
+# See ../docs/cors-proxy.md for the full walkthrough.
+
+name = "rpg-maker-cors-proxy"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Optional: restrict which hosts may be proxied so this isn't an open proxy.
+# A leading dot matches subdomains (".github.com" matches "codeload.github.com").
+# Uncomment and edit to enable; leaving it out proxies any http(s) host.
+# [vars]
+# ALLOWED_HOSTS = ".github.com,codeload.github.com,objects.githubusercontent.com"
