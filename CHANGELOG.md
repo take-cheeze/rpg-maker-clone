@@ -44,6 +44,20 @@ All notable changes to this project will be documented in this file.
   commands end to end. (Fixes along the way: the runtime avoids
   `Integer#zero?` / `sprintf` / `String#strip` / regexp, which this mruby build
   does not bundle.)
+- The event interpreter now supports **Erase Event**. Running it removes the
+  event that is executing (foreground or a parallel process) from the map for
+  the rest of the visit — its marker, movement, collision tile and, for a
+  parallel event, its background process — while the rest of the command list
+  still runs (Erase Event does not pause the interpreter). A common event, which
+  has no map event, is unaffected. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+- **Control Variables** now supports more operand sources than constants and
+  other variables: a **random** integer in a range, an **actor stat** (level,
+  current/max HP and MP, attack, defence, spirit or agility of an actor by id)
+  and **game quantities** (party gold, timer seconds). `Game::Interpreter`
+  carries a deterministic RNG for the random operand; unmodelled sources (EXP,
+  step count, play time, save/battle counts) read as 0. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
 - **LCF save-data schema** now decodes four more `LcfSaveData` sections,
   transcribed from the rpg2kpsp analysis wiki
   (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved

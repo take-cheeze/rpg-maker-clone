@@ -477,6 +477,18 @@ check 'Call Event with no resolver set is a safe no-op' do
   eq true, st.switches[1]
 end
 
+check 'Erase Event sets a one-shot request without pausing the interpreter' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_EVENT, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Erase Event must not pause the interpreter'
+  eq true, st.switches[1], 'the command after Erase Event still ran'
+  eq true, it.take_erase_request, 'the erase was requested'
+  eq false, it.take_erase_request, 'the request is one-shot (cleared on read)'
+end
+
 check 'a message inside a called event pauses and resumes across the boundary' do
   st = new_state
   called = [FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'hi'),
@@ -709,6 +721,57 @@ check 'Change Parameters raises max MP with a variable operand' do
   it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 2, 0, 1, 1, 4])])
   it.update
   eq 40, a.max_mp
+end
+
+# -- Control Variables operands ----------------------------------------------
+
+check 'Control Variables random operand stays within its range' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  20.times do
+    # var 1 = random in [10, 20]: operand type 3, param5 = lo, param6 = hi.
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 3, 10, 20])])
+    it.update
+    v = st.variables[1]
+    ok v >= 10 && v <= 20, "random operand #{v} outside [10, 20]"
+  end
+end
+
+check 'Control Variables reads party gold and the timer (operand type 7)' do
+  st = new_state
+  st.party.gain_gold(500)
+  st.timer_frames = 90 * 60 # 90 seconds
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 0]),   # var1 = gold
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 7, 1])])  # var2 = timer secs
+  it.update
+  eq 500, st.variables[1]
+  eq 90, st.variables[2]
+end
+
+check 'Control Variables reads an actor stat (operand type 5)' do
+  st = party_state
+  a = st.party.actor_by_id(1) # atk 10, max_hp 100
+  a.hp = 42
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 5, 1, 6]),  # var1 = attack
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 5, 1, 2]),  # var2 = HP
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 5, 1, 4]),  # var3 = max HP
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 5, 1, 7])]) # var4 = defence
+  it.update
+  eq 10, st.variables[1]
+  eq 42, st.variables[2]
+  eq 100, st.variables[3]
+  eq 8, st.variables[4]
+end
+
+check 'Control Variables actor operand reads 0 for an absent actor' do
+  st = party_state
+  st.variables[1] = 7
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 5, 99, 2])]) # actor 99 absent
+  it.update
+  eq 0, st.variables[1]
 end
 
 # -- summary ------------------------------------------------------------------
