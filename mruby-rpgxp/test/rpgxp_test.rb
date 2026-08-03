@@ -563,6 +563,29 @@ assert "RGSSAD v3 carries real Marshal data through the archive" do
   assert_equal 7, loaded.start_map_id
 end
 
+# An entry larger than mruby's array-length cap (MRB_ARY_LENGTH_MAX, 131072) must
+# still pack and read back byte-for-byte: real games ship maps, Animations.rxdata
+# and graphics well past that, and accumulating one integer per byte used to
+# overflow the Array. Build the payload with String#* (not a big Array literal,
+# which would hit the same cap here) and compare with == / bytesize so the check
+# itself never materialises an over-cap Array.
+assert "RGSSAD round-trips an entry larger than the mruby array cap" do
+  pattern = (0..255).to_a.pack("C*")           # 256 bytes, every value
+  big = pattern * 900                            # 230400 bytes, over the cap
+  assert_true big.bytesize > 131072
+  [:pack_v1, :pack_v3].each do |packer|
+    files = [
+      ["Data\\Small.rxdata", "hi\x00\xff"],
+      ["Data\\Big.rxdata", big]
+    ]
+    a = RPGXP::RGSSAD.new(RPGXP::RGSSAD.send(packer, files))
+    got = a.read("Data\\Big.rxdata")
+    assert_equal big.bytesize, got.bytesize
+    assert_true big == got
+    assert_equal "hi\x00\xff".bytes, a.read("Data\\Small.rxdata").bytes
+  end
+end
+
 # ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
 
 # World stand-in for the movement engine.

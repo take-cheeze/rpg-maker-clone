@@ -32,7 +32,9 @@
 # Implemented with byte-wise arithmetic only — no bignum bitwise operators, no
 # `Integer#chr` / String-ext helpers — so it runs on this trimmed mruby the same
 # as under CRuby (where scripts/rpgxp_testbed_check.rb exercises it against real
-# data). Decrypted bytes are assembled with `Array#pack("C*")` (mruby-pack).
+# data). Decrypted bytes are assembled by packing bounded chunks with
+# `Array#pack("C*")` (mruby-pack) and joining them, so no single Array grows past
+# mruby's array-length cap on large entries.
 
 class RPGXP
   class RGSSAD
@@ -41,6 +43,9 @@ class RPGXP
     MASK = 0x100000000 # 2**32
     # Little-endian byte multipliers, so an int is rebuilt without bit-shifting.
     POW = [1, 256, 65536, 16777216].freeze
+    # Max per-byte integers held in one Array while decrypting, kept under mruby's
+    # MRB_ARY_LENGTH_MAX (131072) so a large entry does not overflow the Array.
+    DECRYPT_CHUNK = 65536
 
     # The archive path for a game directory (Game.rgssad / .rgss2a / .rgss3a), or
     # nil when the project is unpacked. Extensions are tried in release order.
@@ -61,7 +66,16 @@ class RPGXP
     # project and as the fixture builder for the archive tests.
     def self.pack_v1(files)
       key = START_KEY
+      # Accumulate into bounded chunks (see DECRYPT_CHUNK): a whole archive is far
+      # larger than mruby's array-length cap, so a single `out` array would
+      # overflow. `flush` empties `out` in place so the closures below keep
+      # writing to the same array.
+      parts = []
       out = [0x52, 0x47, 0x53, 0x53, 0x41, 0x44, 0x00, 0x01] # "RGSSAD\0" + v1
+      flush = lambda do
+        parts << out.pack("C*") unless out.empty?
+        out.clear
+      end
       put_int = lambda do |v|
         b = 0
         while b < 4
@@ -88,11 +102,13 @@ class RPGXP
             j = 0
           end
           out << (bytes.getbyte(idx) ^ ((dkey / POW[j]) % 256))
+          flush.call if out.size >= DECRYPT_CHUNK
           j += 1
           idx += 1
         end
       end
-      out.pack("C*")
+      flush.call
+      parts.join
     end
 
     # Build a version-3 (`.rgss3a`) archive from `files` ([name, bytes] pairs).
@@ -113,7 +129,14 @@ class RPGXP
       pos = 12 + table_size
       entries.each { |e| e[:offset] = pos; pos += e[:bytes].bytesize }
 
+      # Bounded-chunk accumulation, as in pack_v1 (a full archive overflows a
+      # single mruby array); `flush` empties `out` in place for the closures.
+      parts = []
       out = [0x52, 0x47, 0x53, 0x53, 0x41, 0x44, 0x00, 0x03] # "RGSSAD\0" + v3
+      flush = lambda do
+        parts << out.pack("C*") unless out.empty?
+        out.clear
+      end
       b = 0
       while b < 4 # plaintext seed, little-endian
         out << ((seed / POW[b]) % 256)
@@ -150,11 +173,13 @@ class RPGXP
             j = 0
           end
           out << (bytes.getbyte(idx) ^ ((dkey / POW[j]) % 256))
+          flush.call if out.size >= DECRYPT_CHUNK
           j += 1
           idx += 1
         end
       end
-      out.pack("C*")
+      flush.call
+      parts.join
     end
 
     # A name's bytes with '/' rewritten to '\' (works without String#tr).
@@ -313,9 +338,17 @@ class RPGXP
 
     # Decrypt `size` bytes of file data, seeded from `seed` (the key right after
     # the size field). The key advances every four bytes.
+    #
+    # The plaintext is assembled in bounded chunks rather than one big Array of
+    # per-byte integers: mruby caps Array length at MRB_ARY_LENGTH_MAX (131072),
+    # so a single accumulating array overflows on any archived entry larger than
+    # that (real XP games pack maps, Animations.rxdata and graphics well past it).
+    # Packing each chunk to a String and joining stays byte-for-byte identical to
+    # the old `out.pack("C*")` while keeping every intermediate array tiny.
     def decrypt_data(bytes, seed)
       key = seed
-      out = []
+      parts = []
+      chunk = []
       j = 0
       idx = 0
       n = bytes.bytesize
@@ -324,11 +357,16 @@ class RPGXP
           key = advance(key)
           j = 0
         end
-        out << (bytes.getbyte(idx) ^ key_byte(key, j))
+        chunk << (bytes.getbyte(idx) ^ key_byte(key, j))
+        if chunk.size >= DECRYPT_CHUNK
+          parts << chunk.pack("C*")
+          chunk = []
+        end
         j += 1
         idx += 1
       end
-      out.pack("C*")
+      parts << chunk.pack("C*") unless chunk.empty?
+      parts.join
     end
 
     # Canonical archive form of a lookup name: '/' separators rewritten to '\'.
