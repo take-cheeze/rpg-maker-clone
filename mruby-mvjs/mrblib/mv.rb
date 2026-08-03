@@ -46,6 +46,52 @@ class MV
     "js/main.js",
   ].freeze
 
+  # Route MV's audio through RGSS::Audio. MV plays sound via AudioManager, whose
+  # browser build decodes files through the Web Audio graph we only stub. Rather
+  # than reimplement Web Audio, we override AudioManager's high-level methods to
+  # enqueue plain-text ops (tab-separated: op, name, volume, pitch) into
+  # __mv_audioQueue; Ruby drains that each frame (`MV#pump_audio`) and calls
+  # RGSS::Audio, which is backed by the SDL mixer. `name` is the bare file name
+  # MV uses (e.g. "Theme1"); the drain prepends the maker's audio/<kind>/ folder
+  # so RGSS resolves it under the game dir. _currentBgm/_currentBgs are kept so
+  # AudioManager.saveBgm/saveBgs (used by save/load and map replay) still work.
+  AUDIO_BRIDGE_JS = <<~'JS'
+    (function (g) {
+      if (typeof AudioManager === 'undefined') return;
+      var q = g.__mv_audioQueue = [];
+      g.__mv_drainAudio = function () { var s = q.join('\n'); q.length = 0; return s; };
+      function A(o) { return o || { name: '', volume: 0, pitch: 100, pan: 0 }; }
+      AudioManager.playBgm = function (bgm, pos) {
+        bgm = A(bgm);
+        this._currentBgm = { name: bgm.name, volume: bgm.volume, pitch: bgm.pitch, pan: bgm.pan, pos: pos || 0 };
+        q.push(bgm.name ? ('bgm_play\t' + bgm.name + '\t' + bgm.volume + '\t' + bgm.pitch) : 'bgm_stop');
+      };
+      AudioManager.replayBgm = function (bgm) { this.playBgm(bgm, bgm ? bgm.pos : 0); };
+      AudioManager.stopBgm = function () { this._currentBgm = null; q.push('bgm_stop'); };
+      AudioManager.fadeOutBgm = function (d) { q.push('bgm_fade\t' + (d || 0)); };
+      AudioManager.fadeInBgm = function () {};
+      AudioManager.playBgs = function (bgs, pos) {
+        bgs = A(bgs);
+        this._currentBgs = { name: bgs.name, volume: bgs.volume, pitch: bgs.pitch, pan: bgs.pan, pos: pos || 0 };
+        q.push(bgs.name ? ('bgs_play\t' + bgs.name + '\t' + bgs.volume + '\t' + bgs.pitch) : 'bgs_stop');
+      };
+      AudioManager.replayBgs = function (bgs) { this.playBgs(bgs, bgs ? bgs.pos : 0); };
+      AudioManager.stopBgs = function () { this._currentBgs = null; q.push('bgs_stop'); };
+      AudioManager.fadeOutBgs = function (d) { q.push('bgs_fade\t' + (d || 0)); };
+      AudioManager.fadeInBgs = function () {};
+      AudioManager.playMe = function (me) { me = A(me); if (me.name) q.push('me_play\t' + me.name + '\t' + me.volume + '\t' + me.pitch); };
+      AudioManager.stopMe = function () { q.push('me_stop'); };
+      AudioManager.fadeOutMe = function (d) { q.push('me_fade\t' + (d || 0)); };
+      AudioManager.playSe = function (se) { se = A(se); if (se.name) q.push('se_play\t' + se.name + '\t' + se.volume + '\t' + se.pitch); };
+      AudioManager.playStaticSe = function (se) { this.playSe(se); };
+      AudioManager.stopSe = function () { q.push('se_stop'); };
+      AudioManager.stopAll = function () { q.push('all_stop'); };
+      AudioManager.checkErrors = function () {};
+      AudioManager.updateBgmParameters = function () {};
+      AudioManager.updateBgsParameters = function () {};
+    })(this);
+  JS
+
   class << self
     # The canonical MV script load order (see CORE_SCRIPTS).
     def core_scripts
@@ -57,6 +103,57 @@ class MV
     # without touching the filesystem.
     def satisfied?(present)
       REQUIRED_MARKERS.all? { |m| present.include?(m) }
+    end
+
+    # Map the engine's input keys (RGSS::Input, fed by the SDL/terminal
+    # backends) onto MV's virtual buttons (the names in `Input.keyMapper`).
+    # MV has no separate "cancel"/"menu": Escape/X serve both, so B maps to
+    # 'escape'. Built at call time (not as a constant) so it does not depend on
+    # RGSS being loaded before this file. See `MV#sync_input`.
+    def input_map
+      {
+        RGSS::Input::UP => "up",
+        RGSS::Input::DOWN => "down",
+        RGSS::Input::LEFT => "left",
+        RGSS::Input::RIGHT => "right",
+        RGSS::Input::C => "ok",       # confirm (Z/Enter)
+        RGSS::Input::B => "escape",   # cancel/menu (X/Esc)
+        RGSS::Input::A => "shift",    # dash
+        RGSS::Input::L => "pageup",
+        RGSS::Input::R => "pagedown",
+        RGSS::Input::CTRL => "control",
+      }
+    end
+
+    # The MV virtual buttons currently held, derived from RGSS::Input. Split out
+    # from the JS injection so the key mapping can be unit-tested without a live
+    # MV engine.
+    def pressed_buttons
+      input_map.select { |key, _| RGSS::Input.press?(key) }.values
+    end
+
+    # Parse one drained audio op (see AUDIO_BRIDGE_JS) into a call spec:
+    # [method, *args]. `*_play` ops become [:kind_play, "audio/<kind>/<name>",
+    # volume, pitch] with the maker's folder prepended so RGSS resolves it under
+    # the game dir; stops/fades/all_stop map to their RGSS::Audio equivalents.
+    # Returns nil for an empty or unknown op. Split out so the mapping is
+    # unit-testable without a live engine or audio device.
+    def parse_audio_op(line)
+      p = line.split("\t")
+      case p[0]
+      when "bgm_play" then [:bgm_play, "audio/bgm/#{p[1]}", p[2].to_f, p[3].to_f]
+      when "bgs_play" then [:bgs_play, "audio/bgs/#{p[1]}", p[2].to_f, p[3].to_f]
+      when "me_play" then [:me_play, "audio/me/#{p[1]}", p[2].to_f, p[3].to_f]
+      when "se_play" then [:se_play, "audio/se/#{p[1]}", p[2].to_f, p[3].to_f]
+      when "bgm_stop" then [:bgm_stop]
+      when "bgs_stop" then [:bgs_stop]
+      when "me_stop" then [:me_stop]
+      when "se_stop" then [:se_stop]
+      when "bgm_fade" then [:bgm_fade, (p[1].to_f * 1000).to_i]
+      when "bgs_fade" then [:bgs_fade, (p[1].to_f * 1000).to_i]
+      when "me_fade" then [:me_fade, (p[1].to_f * 1000).to_i]
+      when "all_stop" then [:all_stop]
+      end
     end
 
     # Does the directory look like an RPG Maker MV project?
@@ -113,7 +210,14 @@ class MV
       return
     end
 
+    # Under Emscripten the browser calls main_loop directly without going through
+    # #start, so boot the game lazily on the first frame. Native runs boot via
+    # #start, which sets @booted, so this is a no-op there.
+    boot unless @booted
+
+    sync_input # M5: push RGSS input into MV's Input before the scene updates
     pump_frame # M3: run the rAF/timer queue for one frame
+    pump_audio # M5: drain MV's queued audio ops into RGSS::Audio
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
@@ -122,6 +226,66 @@ class MV
   end
 
   private
+
+  # Bridge the engine's input to MV. MV reads keyboard state from
+  # `Input._currentState`, which its browser build fills from DOM key events we
+  # don't deliver; instead, each frame we set it directly from RGSS::Input (fed
+  # by the SDL/terminal backends). MV's own `Input.update` — which it calls
+  # during the scene update in `pump_frame` — turns this into the
+  # triggered/pressed/repeat state the scenes query, so navigation, confirm and
+  # cancel work. Runs before `pump_frame` so the state is in place when MV
+  # reads it. No-op until the engine (and thus `Input`) has loaded.
+  def sync_input
+    buttons = self.class.pressed_buttons
+    assigns = buttons.map { |b| "c['#{b}']=true;" }.join
+    MV::JS.eval(
+      "(function(){ if (typeof Input === 'undefined' || !Input._currentState) " \
+      "return; var c = Input._currentState; for (var k in c) c[k] = false; " \
+      "#{assigns} })();"
+    )
+  rescue StandardError => e
+    $stderr.puts "[MV] input sync error: #{e.message}"
+  end
+
+  # Drain the audio ops MV queued this frame (see AUDIO_BRIDGE_JS) and play them
+  # through RGSS::Audio. No-op until the bridge is installed (post-boot) and
+  # while nothing is queued.
+  def pump_audio
+    data = MV::JS.eval(
+      "(typeof __mv_drainAudio === 'function') ? __mv_drainAudio() : ''"
+    )
+    return unless data.is_a?(String) && !data.empty?
+
+    data.split("\n").each do |line|
+      next if line.empty?
+      call = self.class.parse_audio_op(line)
+      apply_audio(call) if call
+    end
+  rescue StandardError => e
+    $stderr.puts "[MV] audio error: #{e.message}"
+  end
+
+  # Dispatch a parsed audio call (see MV.parse_audio_op) to RGSS::Audio.
+  def apply_audio(call)
+    case call[0]
+    when :bgm_play then RGSS::Audio.bgm_play(call[1], call[2], call[3])
+    when :bgs_play then RGSS::Audio.bgs_play(call[1], call[2], call[3])
+    when :me_play then RGSS::Audio.me_play(call[1], call[2], call[3])
+    when :se_play then RGSS::Audio.se_play(call[1], call[2], call[3])
+    when :bgm_stop then RGSS::Audio.bgm_stop
+    when :bgs_stop then RGSS::Audio.bgs_stop
+    when :me_stop then RGSS::Audio.me_stop
+    when :se_stop then RGSS::Audio.se_stop
+    when :bgm_fade then RGSS::Audio.bgm_fade(call[1])
+    when :bgs_fade then RGSS::Audio.bgs_fade(call[1])
+    when :me_fade then RGSS::Audio.me_fade(call[1])
+    when :all_stop
+      RGSS::Audio.bgm_stop
+      RGSS::Audio.bgs_stop
+      RGSS::Audio.me_stop
+      RGSS::Audio.se_stop
+    end
+  end
 
   # If a screenshot path was requested (`--mv_screenshot`), write the rendered
   # MV frame to it once, a couple of seconds in — enough for the boot to reach
@@ -174,6 +338,7 @@ class MV
   # visible to the next through the shared persistent context. Missing optional
   # library files are skipped; the game's own scripts are expected to be present.
   def boot
+    @booted = true # guard so the lazy boot in #main_loop runs only once
     @clock = 0.0
     # MV's own scripts request data/assets with game-relative paths (e.g.
     # `data/System.json`, `img/system/Window.png`); root them at the game dir
@@ -222,6 +387,10 @@ class MV
       "function(n, m){ if (typeof console !== 'undefined' && console.error) " \
       "console.error('[MV] ' + n + ': ' + m); }; }"
     )
+    # Route MV's audio (AudioManager) through RGSS::Audio instead of the stubbed
+    # Web Audio graph. Installed now that rpg_managers.js (AudioManager) is
+    # loaded; the per-frame drain in main_loop plays what MV queues.
+    MV::JS.eval(AUDIO_BRIDGE_JS)
 
     # MV registers its entry point on window.onload (see the game's main.js);
     # in a browser the page-load event calls it. Fire it now that every script

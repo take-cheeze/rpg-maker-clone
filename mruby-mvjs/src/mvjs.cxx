@@ -18,6 +18,8 @@
 // name. The JS host itself is independent of mruby (console/file IO go through
 // C stdio), so it can live for the whole process.
 
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -101,6 +103,19 @@ JSValue js_read_file(JSContext* ctx,
   return JS_NewStringLen(ctx, data.data(), data.size());
 }
 
+// Create every parent directory of `path` (mkdir -p of its dirname). Best
+// effort: existing directories and races are ignored. MV's save code expects
+// the save/ folder to be created on demand, so writes root their own dir.
+void make_parent_dirs(const std::string& path) {
+  std::string::size_type slash = path.find('/', 1);
+  while (slash != std::string::npos) {
+    const std::string dir = path.substr(0, slash);
+    if (!dir.empty())
+      ::mkdir(dir.c_str(), 0755);  // ignore errors (already exists, etc.)
+    slash = path.find('/', slash + 1);
+  }
+}
+
 // __mv_writeFileSync(path, data) -> write a string to a file (used by saves).
 JSValue js_write_file(JSContext* ctx,
                       JSValueConst,
@@ -113,6 +128,7 @@ JSValue js_write_file(JSContext* ctx,
     return JS_EXCEPTION;
   const std::string resolved = mv_resolve_path(path);
   JS_FreeCString(ctx, path);
+  make_parent_dirs(resolved);
   size_t dlen = 0;
   const char* data = JS_ToCStringLen(ctx, &dlen, argv[1]);
   if (!data)
@@ -231,17 +247,38 @@ const char* kHostPreamble = R"MVJS(
   g.innerWidth = 816;
   g.innerHeight = 624;
   g.devicePixelRatio = 1;
+  // localStorage persisted to disk so saves survive across runs. MV (in
+  // web-storage mode, since we deliberately keep Utils.isNwjs() false to avoid
+  // its nwjs-only code paths) stores saves via localStorage; back the whole
+  // store with a single JSON file under the game's save/ dir. Loaded lazily on
+  // first use — the base dir is configured after this preamble runs — and
+  // rewritten on every mutation.
   (function () {
-    var store = {};
+    var FILE = 'save/websave.json';
+    var store = null;
+    function load() {
+      if (store) return;
+      store = {};
+      try {
+        if (g.__mv_existsSync(FILE)) {
+          var txt = g.__mv_readFileSync(FILE);
+          if (txt) store = JSON.parse(txt) || {};
+        }
+      } catch (e) { store = {}; }
+    }
+    function persist() {
+      try { g.__mv_writeFileSync(FILE, JSON.stringify(store)); } catch (e) {}
+    }
     g.localStorage = {
       getItem: function (k) {
+        load();
         return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null;
       },
-      setItem: function (k, v) { store[k] = String(v); },
-      removeItem: function (k) { delete store[k]; },
-      clear: function () { store = {}; },
-      key: function (i) { return Object.keys(store)[i] || null; },
-      get length() { return Object.keys(store).length; },
+      setItem: function (k, v) { load(); store[k] = String(v); persist(); },
+      removeItem: function (k) { load(); delete store[k]; persist(); },
+      clear: function () { store = {}; persist(); },
+      key: function (i) { load(); return Object.keys(store)[i] || null; },
+      get length() { load(); return Object.keys(store).length; },
     };
   })();
 

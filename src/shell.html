@@ -200,6 +200,16 @@
     <h1>RPG Maker clone <small>— load a project to play</small></h1>
 
     <div class="panel" id="loader">
+      <!-- Shown only when a sample project is bundled into the page's virtual
+           filesystem at /game_sample (see WASM_SAMPLE_DIR in CMakeLists.txt). -->
+      <div id="presetRow" style="display:none">
+        <label>Bundled sample project</label>
+        <div class="row" style="margin-top:6px">
+          <button id="loadSample">▶ Run the MV sample</button>
+        </div>
+        <div class="divider">or open your own</div>
+      </div>
+
       <div>
         <label for="file">Open a local project (.zip)</label>
         <div class="row" style="margin-top:6px">
@@ -349,6 +359,13 @@
           runtimeReady = true;
           loadBtn.disabled = false;
           setStatus('Ready — choose a project to load.');
+          // Offer the one-click preset when a sample project is baked into the
+          // virtual filesystem at /game_sample (WASM_SAMPLE_DIR in the build).
+          try {
+            if (Module.FS.analyzePath('/game_sample').exists) {
+              document.getElementById('presetRow').style.display = '';
+            }
+          } catch (e) { /* no sample bundled */ }
           // A shared/bookmarked ?url= link loads on its own.
           if (qsUrl) loadBtn.click();
         },
@@ -434,6 +451,8 @@
       // project wrapped in a top-level folder (GitHub archives always are)
       // mounts its contents directly at /game.
       function findRootPrefix(files) {
+        // RPG2k/XP: a marker file sits at the project root, so the prefix is
+        // that file's directory.
         var markers = ['rpg_rt.ldb', 'game.ini'];
         for (var m = 0; m < markers.length; m++) {
           for (var i = 0; i < files.length; i++) {
@@ -444,13 +463,22 @@
             }
           }
         }
+        // RPG Maker MV: the marker is nested (js/rpg_core.js), so the project
+        // root is everything before that path segment.
+        for (var j = 0; j < files.length; j++) {
+          var lname = files[j].name.toLowerCase();
+          var idx = lname.indexOf('js/rpg_core.js');
+          if (idx >= 0 && (idx === 0 || lname.charAt(idx - 1) === '/')) {
+            return files[j].name.slice(0, idx);
+          }
+        }
         return null;
       }
 
       function mountAndStart(files) {
         var prefix = findRootPrefix(files);
         if (prefix === null) {
-          throw new Error('No RPG_RT.ldb or Game.ini in the archive — is this an RPG Maker 2000/2003 or XP project?');
+          throw new Error('No RPG_RT.ldb, Game.ini, or js/rpg_core.js in the archive — is this an RPG Maker 2000/2003, XP, or MV project?');
         }
         var FS = Module.FS;
         FS.mkdirTree('/game');
@@ -477,6 +505,35 @@
         setStatus('');
         Module.canvas.focus();
       }
+
+      // Start the sample project baked into the FS at /game_sample: copy it to
+      // /game (where rpg_start_game looks) and run it. No download needed.
+      function startBundledSample() {
+        var FS = Module.FS;
+        function copyTree(src, dst) {
+          FS.mkdirTree(dst);
+          var entries = FS.readdir(src);
+          for (var i = 0; i < entries.length; i++) {
+            var name = entries[i];
+            if (name === '.' || name === '..') continue;
+            var s = src + '/' + name, d = dst + '/' + name;
+            if (FS.isDir(FS.stat(s).mode)) copyTree(s, d);
+            else FS.writeFile(d, FS.readFile(s));
+          }
+        }
+        try {
+          setStatus('Starting the bundled sample…');
+          copyTree('/game_sample', '/game');
+          var rc = Module.ccall('rpg_start_game', 'number', [], []);
+          if (rc !== 0) throw new Error('runtime returned ' + rc);
+          loaderEl.hidden = true;
+          setStatus('');
+          Module.canvas.focus();
+        } catch (e) {
+          setStatus('Could not start the bundled sample: ' + e.message, 'error');
+        }
+      }
+      document.getElementById('loadSample').addEventListener('click', startBundledSample);
 
       // --- URL resolution ---------------------------------------------------
       // Turn a GitHub repo reference into its codeload zip URL. Accepts
