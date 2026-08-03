@@ -627,7 +627,9 @@ class RPG2k
       # process keeps running). Called only while the foreground is idle, so
       # parallels pause during messages and foreground events.
       def step_parallels
-        @parallels.each { |p| step_parallel(p) }
+        # Iterate a copy: an Erase Event in a parallel process removes it from
+        # @parallels mid-loop (see erase_event).
+        @parallels.dup.each { |p| step_parallel(p) }
       end
 
       def step_parallel(p)
@@ -642,6 +644,7 @@ class RPG2k
           it.update
         end
         apply_move_requests(it, p[:event])
+        apply_erase_request(it, p[:event])
       rescue StandardError
         nil
       end
@@ -737,6 +740,29 @@ class RPG2k
       def reoccupy(e, ox, oy)
         @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
         @event_tiles[[e[:char].x, e[:char].y]] = e
+      end
+
+      # -- Erase Event --------------------------------------------------------
+
+      # If the interpreter ran an Erase Event this step, remove the event that
+      # was running it (`this_event`) from the map. A common event has no such
+      # map event, so nothing happens.
+      def apply_erase_request(interp, this_event)
+        erase_event(this_event) if interp.take_erase_request && this_event
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Erase Event failed: #{e.message}"
+        nil
+      end
+
+      # Remove an event from the map for the rest of the visit: drop it from the
+      # runtime list, the occupied-tile cache (so it no longer draws, moves or
+      # blocks) and any background process it was driving. It reappears only on
+      # the next map (re)load, matching RPG2000's Erase Event.
+      def erase_event(ev)
+        @events.delete(ev)
+        tile = [ev[:char].x, ev[:char].y]
+        @event_tiles.delete(tile) if @event_tiles[tile].equal?(ev)
+        @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
       end
 
       # -- Move Event (Set Move Route) ----------------------------------------
@@ -853,6 +879,7 @@ class RPG2k
         else
           @interpreter.update
           apply_move_requests(@interpreter, @active_event)
+          apply_erase_request(@interpreter, @active_event)
         end
       end
 
