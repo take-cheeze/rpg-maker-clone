@@ -126,9 +126,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access,
-  Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
-  Event, Change / Trade Event Location, Change Map Tileset, Proceed With
-  Movement, Halt All Movement,
+  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
+  Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
+  With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
   loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
@@ -224,10 +224,14 @@ The work below is roughly ordered by the critical path to a walkable game
   with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
   a colour + strength that fades to zero over the duration; like the tint it is
   the Ruby half (drawing the full-screen colour overlay at its strength needs
-  the same alpha-blend / viewport support in C++). All three share the `:screen`
-  wait. **Show Picture** now renders (see the interpreter bullet above). Pan,
-  transitions/fade and weather remain, and the tint/flash still need
-  `RGSS::Viewport` tone/alpha support in C++ to show
+  the same alpha-blend / viewport support in C++). **Pan Screen** (11060) drives
+  `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
+  follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
+  adds to the camera (so — like the shake — the pan **is** visible; while locked
+  the view holds where locking began). All four share the `:screen` wait. **Show
+  Picture** now renders (see the interpreter bullet above). Transitions/fade and
+  weather remain, and the tint/flash still need `RGSS::Viewport` tone/alpha
+  support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a

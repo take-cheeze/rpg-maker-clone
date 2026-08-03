@@ -954,6 +954,28 @@ check 'rendering a map with charset + tile-substitution events does not raise' d
   ok true
 end
 
+check 'Pan Screen locks the camera and holds the interpreter while scrolling' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::PAN_SCREEN, [0, 0, 0, 0, 0]), # lock the camera in place
+    ECmd.new(ic::PAN_SCREEN, [2, 1, 5, 2, 1]), # pan right 5 tiles, speed 2, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [3, 3])
+  st = scene.instance_variable_get(:@state)
+
+  5.times { scene.update } # mid-scroll: renders with a locked, panned camera
+  ok st.screen.pan_locked?, 'the camera is locked'
+  ok st.screen.panning?, 'still scrolling (80 px at 2 px/frame)'
+  ok !st.switches[1], 'the command after the pan waits'
+
+  80.times { scene.update } # 80 px at 2 px/frame -> 40 frames, plenty
+  ok !st.screen.panning?, 'the pan reached its target'
+  eq [80, 0], st.screen.pan_offset
+  ok st.switches[1], 'the interpreter resumed after the pan'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
