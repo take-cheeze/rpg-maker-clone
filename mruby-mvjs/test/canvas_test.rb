@@ -77,6 +77,35 @@ assert 'MV canvas putImageData ignores the current transform (device coords)' do
   assert_equal "7,8,9,255", MV::JS.eval("__mv_canvasGetPixel(PT.__h,0,0).join(',')")
 end
 
+assert "MV canvas globalCompositeOperation 'difference' yields |dest - source|" do
+  # White base, then 'difference' with #404040 -> |255-64| = 191 per channel.
+  MV::JS.eval("globalThis.DF=document.createElement('canvas'); DF.width=2; DF.height=2; " \
+              "var x=DF.getContext('2d'); x.fillStyle='#ffffff'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='#404040'; x.fillRect(0,0,2,2);")
+  assert_equal "191,191,191,255", MV::JS.eval("__mv_canvasGetPixel(DF.__h,0,0).join(',')")
+end
+
+assert "MV canvas 'difference' white-on-white reads black (blend-mode probe)" do
+  # Graphics._testCanvasBlendModes fills white, then 'difference' white and reads
+  # the pixel: 0 means canUseDifferenceBlend, which negative screen tones need.
+  MV::JS.eval("globalThis.DP=document.createElement('canvas'); DP.width=1; DP.height=1; " \
+              "var x=DP.getContext('2d'); x.globalCompositeOperation='source-over'; " \
+              "x.fillStyle='white'; x.fillRect(0,0,1,1); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='white'; x.fillRect(0,0,1,1);")
+  assert_equal "0,0,0,255", MV::JS.eval("__mv_canvasGetPixel(DP.__h,0,0).join(',')")
+end
+
+assert 'MV canvas negative-tone sequence darkens (difference/lighter/difference)' do
+  # ToneSprite's negative-tone path: a -64 tone on a mid-grey frame -> invert,
+  # add 64, invert -> frame darkened by 64 (128 -> 64).
+  MV::JS.eval("globalThis.TN=document.createElement('canvas'); TN.width=2; TN.height=2; " \
+              "var x=TN.getContext('2d'); x.fillStyle='#808080'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='#ffffff'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='lighter'; x.fillStyle='#404040'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='#ffffff'; x.fillRect(0,0,2,2);")
+  assert_equal "64,64,64,255", MV::JS.eval("__mv_canvasGetPixel(TN.__h,0,0).join(',')")
+end
+
 # A 2x2 RGBA PNG: pixel (0,0) is opaque red, the other three opaque green.
 MV_IMAGE_PNG =
   "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \

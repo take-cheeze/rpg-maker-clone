@@ -207,11 +207,32 @@ void blend_add(uint8_t* d, int r, int g, int b, int a) {
   d[3] = static_cast<uint8_t>(std::min(255, d[3] + a));
 }
 
-// Dispatch to the source-over or additive blend based on a composite-op mode
-// (0 = source-over, 1 = lighter/additive) threaded through from the Ctx.
+// "difference" blend: |dest - source| per channel, mixed in by the source
+// coverage `a`. MV uses it (with opaque white / colour fills) to invert the
+// frame so a following additive fill subtracts instead of adds -- that is how
+// negative screen tones (night, caves, "tint screen" events) darken the map.
+// Reachable once the boot feature-probe reports canUseDifferenceBlend, which it
+// now does because this makes the probe's white-on-white difference read black.
+void blend_difference(uint8_t* d, int r, int g, int b, int a) {
+  if (a <= 0)
+    return;
+  const int ia = 255 - a;
+  const int dr = d[0] > r ? d[0] - r : r - d[0];
+  const int dg = d[1] > g ? d[1] - g : g - d[1];
+  const int db = d[2] > b ? d[2] - b : b - d[2];
+  d[0] = static_cast<uint8_t>((dr * a + d[0] * ia) / 255);
+  d[1] = static_cast<uint8_t>((dg * a + d[1] * ia) / 255);
+  d[2] = static_cast<uint8_t>((db * a + d[2] * ia) / 255);
+  d[3] = static_cast<uint8_t>((a * 255 + d[3] * ia) / 255);
+}
+
+// Dispatch by composite-op mode (0 = source-over, 1 = lighter/additive,
+// 2 = difference) threaded through from the Ctx.
 inline void blend_mode(uint8_t* d, int r, int g, int b, int a, int mode) {
   if (mode == 1)
     blend_add(d, r, g, b, a);
+  else if (mode == 2)
+    blend_difference(d, r, g, b, a);
   else
     blend(d, r, g, b, a);
 }
@@ -804,6 +825,16 @@ const char* kCanvasPreamble = R"MVJS(
   Ctx.prototype.transform = function (a, b, c, d, e, f) { this._m = matMul(this._m, [a, b, c, d, e, f]); };
   Ctx.prototype.setTransform = function (a, b, c, d, e, f) { this._m = [a, b, c, d, e, f]; };
   Ctx.prototype.resetTransform = function () { this._m = [1, 0, 0, 1, 0, 0]; };
+  // Map globalCompositeOperation to the native blend mode: 1 = lighter/additive
+  // (flashes, weather, positive tones), 2 = difference (negative screen tones).
+  // Everything else (including the default source-over) is 0; unsupported ops
+  // stay source-over, which is also why the boot blend-mode probe leaves
+  // saturation disabled.
+  function compositeMode(op) {
+    if (op === 'lighter') return 1;
+    if (op === 'difference') return 2;
+    return 0;
+  }
   // Map the axis-aligned rect (x,y,w,h) through the current matrix to a device
   // rect. Exact for translate/scale (the common case); for rotation/skew this
   // is the rect's bounding box, which is enough for the solid fills MV uses.
@@ -820,7 +851,7 @@ const char* kCanvasPreamble = R"MVJS(
     var c = parseColor(fs);
     var a = Math.round(c[3] * this.globalAlpha);
     var r = mapRect(this._m, x, y, w, h);
-    var mode = this.globalCompositeOperation === 'lighter' ? 1 : 0;
+    var mode = compositeMode(this.globalCompositeOperation);
     g.__mv_canvasFillRect(this.__h, r[0], r[1], r[2], r[3], c[0], c[1], c[2], a,
                           mode);
   };
@@ -872,7 +903,7 @@ const char* kCanvasPreamble = R"MVJS(
     }
     var a = Math.round(this.globalAlpha * 255);
     var m = this._m;
-    var mode = this.globalCompositeOperation === 'lighter' ? 1 : 0;
+    var mode = compositeMode(this.globalCompositeOperation);
     g.__mv_canvasDrawImage(this.__h, h, sx, sy, sw, sh, dx, dy, dw, dh, a,
                            m[0], m[1], m[2], m[3], m[4], m[5], mode);
   };
