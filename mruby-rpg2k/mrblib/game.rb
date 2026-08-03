@@ -389,6 +389,25 @@ module Game
     end
   end
 
+  # One decoded move-route command: a command id plus the optional string /
+  # integer parameters a handful of commands carry. This mirrors
+  # LCF::MoveCommand (produced by the native parser for event-page routes) so a
+  # MoveRoute can execute it, but is defined here in the pure-Ruby game layer so
+  # the interpreter — which decodes the move route embedded in a Move Event
+  # command's parameters, with no LCF parser loaded — can build them too.
+  class MoveCommand
+    attr_reader :command_id, :parameter_string,
+                :parameter_a, :parameter_b, :parameter_c
+
+    def initialize(command_id, string = '', a = 0, b = 0, c = 0)
+      @command_id = command_id
+      @parameter_string = string
+      @parameter_a = a
+      @parameter_b = b
+      @parameter_c = c
+    end
+  end
+
   # Runtime execution of a decoded LCF move route (an array of LCF::MoveCommand,
   # as produced by LCF.parse_move_commands and stored on an event page's
   # `move_route`). A MoveRoute is a cursor over that list: `step` runs the

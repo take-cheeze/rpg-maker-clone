@@ -35,9 +35,19 @@ module Game
       END_EVENT        = 12310
       CALL_EVENT       = 12330
       TELEPORT         = 10810
+      MOVE_EVENT       = 11330
       WAIT             = 11410
       PLAY_BGM         = 11510
       PLAY_SE          = 11550
+    end
+
+    # Move-command ids inside a Move Event that carry extra parameters (every
+    # other id is a bare command). Mirrors LCF's move-route parameter layout.
+    module MoveCmd
+      SWITCH_ON      = 32 # + switch id
+      SWITCH_OFF     = 33 # + switch id
+      CHANGE_GRAPHIC = 34 # + charset name (string) + charset index
+      PLAY_SOUND     = 35 # + file name (string) + volume, tempo, balance
     end
 
     # Upper bound on nested Call Event depth, so a common event that (directly or
@@ -51,6 +61,7 @@ module Game
       @running = false
       @call_stack = []
       @resolver = nil
+      @move_route_requests = []
       reset_waits
     end
 
@@ -67,7 +78,20 @@ module Game
       @index = 0
       @running = true
       @call_stack = []
+      @move_route_requests = []
       reset_waits
+    end
+
+    # Drain the Move Event (Set Move Route) requests queued since the last call,
+    # returning them (each a hash: target, frequency, repeat, skippable,
+    # commands) and clearing the queue. Unlike message/wait/teleport, a Move
+    # Event does not pause the interpreter — the route runs in the background —
+    # so the owning scene polls this after each #update to apply the routes to
+    # the target characters.
+    def take_move_route_requests
+      reqs = @move_route_requests
+      @move_route_requests = []
+      reqs
     end
 
     # Upper bound on commands run in a single update, so a malformed loop cannot
@@ -164,6 +188,7 @@ module Game
       when Cmd::BREAK_LOOP       then do_break_loop cmd
       when Cmd::END_LOOP         then do_end_loop cmd
       when Cmd::TELEPORT         then do_teleport cmd
+      when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
@@ -424,6 +449,57 @@ module Game
       @teleport = [cmd.param(0), cmd.param(1), cmd.param(2), cmd.param(3)]
       @wait_kind = :teleport
       @waiting = true
+    end
+
+    # Move Event (Set Move Route): queue a forced move route for a target
+    # character. The command parameters are [target, frequency, repeat,
+    # skippable, then the move-route commands]; the target id selects the player
+    # (10001), a vehicle (10002-4), this event (10005 or 0) or a map event (its
+    # id). The route runs in the background, so this only records the request —
+    # the scene resolves the target and steps the route (see decode_move_route).
+    def do_move_event(cmd)
+      params = cmd.parameters || []
+      return if params.empty?
+      @move_route_requests.push(
+        target: cmd.param(0),
+        frequency: cmd.param(1),
+        repeat: cmd.param(2) != 0,
+        skippable: cmd.param(3) != 0,
+        commands: decode_move_route(params, cmd.string || '')
+      )
+    end
+
+    # Decode the move-route commands packed into a Move Event's parameter list
+    # (from index 4 on). Most ids are bare; a few carry integer parameters, and
+    # change-graphic / play-sound carry a string whose bytes live in the event
+    # command's string field, prefixed in the parameter list by their length
+    # (matching LCF's layout). Returns Game::MoveCommand objects a MoveRoute can
+    # run. String slicing assumes ASCII file names (as charset/SE names are).
+    def decode_move_route(params, string)
+      cmds = []
+      i = 4
+      soff = 0
+      while i < params.size
+        id = params[i]; i += 1
+        a = b = c = 0
+        str = ''
+        case id
+        when MoveCmd::SWITCH_ON, MoveCmd::SWITCH_OFF
+          a = params[i] || 0; i += 1
+        when MoveCmd::CHANGE_GRAPHIC
+          len = params[i] || 0; i += 1
+          str = string[soff, len] || ''; soff += len
+          a = params[i] || 0; i += 1
+        when MoveCmd::PLAY_SOUND
+          len = params[i] || 0; i += 1
+          str = string[soff, len] || ''; soff += len
+          a = params[i] || 0; i += 1
+          b = params[i] || 0; i += 1
+          c = params[i] || 0; i += 1
+        end
+        cmds.push Game::MoveCommand.new(id, str, a, b, c)
+      end
+      cmds
     end
 
     def do_wait(cmd)

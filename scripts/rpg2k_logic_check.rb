@@ -494,6 +494,60 @@ check 'a message inside a called event pauses and resumes across the boundary' d
   eq true, st.switches[1], 'returned to and finished the caller'
 end
 
+check 'Move Event queues a decoded, non-blocking route request' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # target 25 (a map event), freq 4, repeat on, skippable off, then MOVE_UP(0),
+  # MOVE_RIGHT(1); a Control Switches command follows to prove no pause.
+  it.start([FakeCmd.new(IC::MOVE_EVENT, [25, 4, 1, 0, R::MOVE_UP, R::MOVE_RIGHT]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Move Event must not pause the interpreter'
+  eq true, st.switches[1], 'the command after Move Event still ran'
+  reqs = it.take_move_route_requests
+  eq 1, reqs.size
+  r = reqs[0]
+  eq 25, r[:target]
+  eq 4, r[:frequency]
+  eq true, r[:repeat]
+  eq false, r[:skippable]
+  eq [R::MOVE_UP, R::MOVE_RIGHT], r[:commands].map(&:command_id)
+  eq 0, it.take_move_route_requests.size, 'draining clears the queue'
+end
+
+check 'Move Event decodes switch / change-graphic / play-sound sub-commands' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # header: this-event target, freq 0, repeat 0, skippable 0. Then:
+  #   SWITCH_ON(32) + switch 7
+  #   CHANGE_GRAPHIC(34) + len 4 + index 2   (string "Hero")
+  #   PLAY_SOUND(35)    + len 3 + 90,100,50  (string "bel")
+  params = [10005, 0, 0, 0, 32, 7, 34, 4, 2, 35, 3, 90, 100, 50]
+  it.start([FakeCmd.new(IC::MOVE_EVENT, params, string: 'Herobel')])
+  it.update
+  cmds = it.take_move_route_requests[0][:commands]
+  eq [32, 34, 35], cmds.map(&:command_id)
+  eq 7, cmds[0].parameter_a
+  eq 'Hero', cmds[1].parameter_string
+  eq 2, cmds[1].parameter_a
+  eq 'bel', cmds[2].parameter_string
+  eq [90, 100, 50],
+     [cmds[2].parameter_a, cmds[2].parameter_b, cmds[2].parameter_c]
+end
+
+check 'a decoded Move Event route drives a Character through a MoveRoute' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::MOVE_EVENT, [7, 0, 0, 0, R::MOVE_RIGHT, R::MOVE_DOWN])])
+  it.update
+  route = R.new(it.take_move_route_requests[0][:commands], repeat: false)
+  c = Game::Character.new(0, 0)
+  w = FakeWorld.new
+  route.step(c, w); route.step(c, w)
+  eq [1, 1], [c.x, c.y], 'the decoded commands moved the character'
+  ok route.done?, 'non-repeating decoded route finishes'
+end
+
 check 'conditional branch on the timer' do
   st = new_state
   st.timer_frames = 30 * 60 # 30 seconds remaining
