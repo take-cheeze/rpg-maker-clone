@@ -252,6 +252,7 @@ module Game
       @name = c ? c.name : ''
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
+      @terrain = c ? c.terrain_data : nil
     end
 
     # Chip index into the lower passability table for a lower-layer tile id.
@@ -272,6 +273,16 @@ module Game
       flags = @passable_lower[idx]
       return true if flags.nil?
       (flags & (DIR_BIT[dir] || 0)) != 0
+    end
+
+    # Terrain id of a lower-layer tile (for the Store Terrain ID command), looked
+    # up through the same chip index as passability. Returns 0 when the chipset
+    # carries no terrain table or the tile is out of range.
+    def terrain(tile_id)
+      return 0 if @terrain.nil?
+      idx = ChipSet.lower_index(tile_id)
+      return 0 if idx.nil? || idx < 0 || idx >= @terrain.size
+      @terrain[idx] || 0
     end
   end
 

@@ -111,7 +111,12 @@ R = Game::MoveRoute
 # A chipset with no passability table -> every tile is walkable, so movement is
 # bounded only by the map edges, the player and other events.
 def fake_chipset
-  OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil)
+  # All tiles passable (no lower table); terrain tag 42 on chip index 0 (the id
+  # every tile of the synthetic all-zero map maps to).
+  td = Array.new(162, 0)
+  td[0] = 42
+  OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil,
+                 terrain_data: td)
 end
 
 def fake_db(common = nil)
@@ -554,6 +559,23 @@ check 'the menu opens on cancel only when menu access is allowed' do
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
   eq 1, parent.pushed.size, 'menu opens once access is allowed'
+end
+
+check 'Store Terrain / Event ID query the map through the scene' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::STORE_TERRAIN_ID, [0, 1, 1, 1]), # terrain at (1,1) -> var1
+    ECmd.new(ic::STORE_EVENT_ID, [0, 3, 1, 2]),   # event 2 sits at (3,1) -> var2
+    ECmd.new(ic::STORE_EVENT_ID, [0, 5, 0, 3]),   # empty tile -> var3
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(3, 1, page) },
+                    player: [5, 5])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 42, st.variables[1], 'terrain tag read from the chipset'
+  eq 2, st.variables[2], 'id of the event at (3,1)'
+  eq 0, st.variables[3], 'no event at the empty tile'
 end
 
 # -- summary ------------------------------------------------------------------

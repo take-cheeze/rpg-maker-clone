@@ -30,6 +30,8 @@ module Game
       FULL_HEAL        = 10490
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      STORE_TERRAIN_ID  = 10910
+      STORE_EVENT_ID    = 10920
       CONDITIONAL      = 12010
       ELSE_BRANCH      = 22010
       END_BRANCH       = 22011
@@ -89,6 +91,10 @@ module Game
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
+    # Answers tile queries for Store Terrain / Event ID: responds to
+    # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
+    # makes those commands store 0 (the map is not queryable without it).
+    attr_accessor :map_info
 
     def start(commands)
       @list = commands || []
@@ -224,6 +230,8 @@ module Game
       when Cmd::TELEPORT         then do_teleport cmd
       when Cmd::MEMORIZE_LOCATION then do_memorize_location cmd
       when Cmd::RECALL_LOCATION   then do_recall_location cmd
+      when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
+      when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
@@ -654,6 +662,36 @@ module Game
                    variables[cmd.param(2)], 0]
       @wait_kind = :teleport
       @waiting = true
+    end
+
+    # Store Terrain ID: write the terrain id of the tile at (x, y) into the
+    # variable named by param3. Non-blocking; without a map_info hook (or on any
+    # error) it stores 0.
+    def do_store_terrain_id(cmd)
+      x, y = query_position(cmd)
+      variables[cmd.param(3)] = @map_info ? (@map_info.terrain_id(x, y) || 0) : 0
+    rescue StandardError
+      variables[cmd.param(3)] = 0
+    end
+
+    # Store Event ID: write the id of the event standing on the tile at (x, y)
+    # into the variable named by param3 (0 when no event is there). Non-blocking.
+    def do_store_event_id(cmd)
+      x, y = query_position(cmd)
+      variables[cmd.param(3)] = @map_info ? (@map_info.event_id_at(x, y) || 0) : 0
+    rescue StandardError
+      variables[cmd.param(3)] = 0
+    end
+
+    # The (x, y) tile a Store Terrain / Event ID command targets: param0 == 0
+    # takes x and y as the constants param1/param2, otherwise as the values of
+    # those two variables (the shared operand mode matches RPG_RT).
+    def query_position(cmd)
+      if cmd.param(0) == 0
+        [cmd.param(1), cmd.param(2)]
+      else
+        [variables[cmd.param(1)], variables[cmd.param(2)]]
+      end
     end
 
     # Move Event (Set Move Route): queue a forced move route for a target

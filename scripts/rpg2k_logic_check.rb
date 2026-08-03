@@ -760,6 +760,49 @@ check 'Recall to Location issues a teleport from the stored variables' do
   eq [3, 6, 2, 0], it.teleport # keeps the current facing (direction 0)
 end
 
+# -- Store Terrain ID / Store Event ID ---------------------------------------
+
+# A map_info hook: terrain id is x*10+y, and an event id 7 sits at (2, 3).
+class FakeMapInfo
+  def terrain_id(x, y); x * 10 + y; end
+  def event_id_at(x, y); (x == 2 && y == 3) ? 7 : 0; end
+end
+
+check 'Store Terrain ID reads a constant tile and a variable-addressed tile' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  st.variables[8] = 4
+  st.variables[9] = 1
+  it.start([FakeCmd.new(IC::STORE_TERRAIN_ID, [0, 5, 6, 1]),   # const (5,6) -> var1
+            FakeCmd.new(IC::STORE_TERRAIN_ID, [1, 8, 9, 2])])  # var (4,1) -> var2
+  it.update
+  eq 56, st.variables[1], 'terrain at (5,6)'
+  eq 41, st.variables[2], 'terrain at (4,1) via variables'
+  ok !it.waiting?, 'Store Terrain ID does not pause'
+end
+
+check 'Store Event ID stores the event at a tile, 0 when none' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  it.start([FakeCmd.new(IC::STORE_EVENT_ID, [0, 2, 3, 1]),   # event 7 sits here
+            FakeCmd.new(IC::STORE_EVENT_ID, [0, 0, 0, 2])])  # nothing here
+  it.update
+  eq 7, st.variables[1]
+  eq 0, st.variables[2]
+end
+
+check 'Store Terrain / Event ID store 0 when no map_info hook is set' do
+  st = new_state
+  it = Game::Interpreter.new(st) # map_info defaults to nil
+  it.start([FakeCmd.new(IC::STORE_TERRAIN_ID, [0, 5, 6, 1]),
+            FakeCmd.new(IC::STORE_EVENT_ID, [0, 2, 3, 2])])
+  it.update
+  eq 0, st.variables[1]
+  eq 0, st.variables[2]
+end
+
 # -- Change Main Menu / Save Access ------------------------------------------
 
 check 'Change Main Menu Access allows and forbids opening the menu' do

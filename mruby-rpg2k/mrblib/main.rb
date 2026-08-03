@@ -377,6 +377,7 @@ class RPG2k
         @world = MapWorld.new(self, @rng)
         build_events
         @interpreter.resolver = build_resolver
+        @interpreter.map_info = self
         build_parallels
         @message = nil
         @wait_timer = nil
@@ -625,6 +626,7 @@ class RPG2k
       def new_parallel(commands, gate_switch, event)
         it = Game::Interpreter.new(@state)
         it.resolver = @interpreter.resolver
+        it.map_info = self
         it.start(commands)
         { interp: it, commands: commands, gate_switch: gate_switch,
           wait_timer: nil, event: event }
@@ -865,6 +867,23 @@ class RPG2k
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
 
+      # Terrain id of the lower-layer tile at (x, y), for the Store Terrain ID
+      # command (0 when out of bounds or no chipset). Queried by the interpreter
+      # via its map_info hook.
+      def terrain_id(x, y)
+        return 0 if @chipset.nil? || !@map.in_bounds?(x, y)
+        @chipset.terrain(@map.lower(x, y))
+      end
+      public :terrain_id
+
+      # Id of the event standing on tile (x, y), for the Store Event ID command
+      # (0 when no event is there). Queried by the interpreter via map_info.
+      def event_id_at(x, y)
+        ev = @event_tiles[[x, y]]
+        ev ? ev[:id] : 0
+      end
+      public :event_id_at
+
       # The cancel button opens the main menu over the map, unless a Change Main
       # Menu Access command has forbidden it.
       def try_open_menu
@@ -927,6 +946,7 @@ class RPG2k
         @player_route = nil # a forced player route does not survive a teleport
         build_events
         @interpreter.resolver = build_resolver
+        @interpreter.map_info = self
         build_parallels
         @moving = false
         @move_count = 0
