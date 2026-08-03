@@ -77,6 +77,35 @@ assert 'MV canvas putImageData ignores the current transform (device coords)' do
   assert_equal "7,8,9,255", MV::JS.eval("__mv_canvasGetPixel(PT.__h,0,0).join(',')")
 end
 
+assert "MV canvas globalCompositeOperation 'difference' yields |dest - source|" do
+  # White base, then 'difference' with #404040 -> |255-64| = 191 per channel.
+  MV::JS.eval("globalThis.DF=document.createElement('canvas'); DF.width=2; DF.height=2; " \
+              "var x=DF.getContext('2d'); x.fillStyle='#ffffff'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='#404040'; x.fillRect(0,0,2,2);")
+  assert_equal "191,191,191,255", MV::JS.eval("__mv_canvasGetPixel(DF.__h,0,0).join(',')")
+end
+
+assert "MV canvas 'difference' white-on-white reads black (blend-mode probe)" do
+  # Graphics._testCanvasBlendModes fills white, then 'difference' white and reads
+  # the pixel: 0 means canUseDifferenceBlend, which negative screen tones need.
+  MV::JS.eval("globalThis.DP=document.createElement('canvas'); DP.width=1; DP.height=1; " \
+              "var x=DP.getContext('2d'); x.globalCompositeOperation='source-over'; " \
+              "x.fillStyle='white'; x.fillRect(0,0,1,1); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='white'; x.fillRect(0,0,1,1);")
+  assert_equal "0,0,0,255", MV::JS.eval("__mv_canvasGetPixel(DP.__h,0,0).join(',')")
+end
+
+assert 'MV canvas negative-tone sequence darkens (difference/lighter/difference)' do
+  # ToneSprite's negative-tone path: a -64 tone on a mid-grey frame -> invert,
+  # add 64, invert -> frame darkened by 64 (128 -> 64).
+  MV::JS.eval("globalThis.TN=document.createElement('canvas'); TN.width=2; TN.height=2; " \
+              "var x=TN.getContext('2d'); x.fillStyle='#808080'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='#ffffff'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='lighter'; x.fillStyle='#404040'; x.fillRect(0,0,2,2); " \
+              "x.globalCompositeOperation='difference'; x.fillStyle='#ffffff'; x.fillRect(0,0,2,2);")
+  assert_equal "64,64,64,255", MV::JS.eval("__mv_canvasGetPixel(TN.__h,0,0).join(',')")
+end
+
 # A 2x2 RGBA PNG: pixel (0,0) is opaque red, the other three opaque green.
 MV_IMAGE_PNG =
   "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
@@ -151,6 +180,33 @@ assert 'MV::JS.present returns false for a bad handle or non-Bitmap' do
   bmp = RGSS::Bitmap.new(2, 2)
   assert_equal false, MV::JS.present(bmp, 0)          # handle 0 -> no canvas
   assert_equal false, MV::JS.present("not a bitmap", 1)
+end
+
+assert 'MV canvas createPattern tiles a source across fillRect (repeat)' do
+  # 2x2 source: red, green / blue, white. MV's TilingSprite (parallax,
+  # battlebacks) fills with such a pattern; the tile must repeat as (x%2, y%2).
+  MV::JS.eval("globalThis.PS=document.createElement('canvas'); PS.width=2; PS.height=2; " \
+              "var s=PS.getContext('2d'); " \
+              "s.fillStyle='#ff0000'; s.fillRect(0,0,1,1); s.fillStyle='#00ff00'; s.fillRect(1,0,1,1); " \
+              "s.fillStyle='#0000ff'; s.fillRect(0,1,1,1); s.fillStyle='#ffffff'; s.fillRect(1,1,1,1); " \
+              "globalThis.PDST=document.createElement('canvas'); PDST.width=4; PDST.height=4; " \
+              "var x=PDST.getContext('2d'); x.fillStyle=x.createPattern(PS,'repeat'); x.fillRect(0,0,4,4);")
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,0,0).join(',')")     # src(0,0)
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,1,0).join(',')")     # src(1,0)
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,2,0).join(',')")     # wrap -> src(0,0)
+  assert_equal "0,0,255,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,0,1).join(',')")     # src(0,1)
+  assert_equal "255,255,255,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,3,3).join(',')") # src(1,1)
+end
+
+assert 'MV canvas pattern fill honors the transform (translate anchors tiling)' do
+  # createPattern tiles anchored at the user-space origin, so a translate shifts
+  # which tile lands where; device(1,0) <- user(0,0)=red, device(0,0) <-
+  # user(-1,0) which wraps to src(1,0)=green.
+  MV::JS.eval("globalThis.PT2=document.createElement('canvas'); PT2.width=4; PT2.height=2; " \
+              "var x=PT2.getContext('2d'); x.translate(1,0); " \
+              "x.fillStyle=x.createPattern(PS,'repeat'); x.fillRect(-1,0,5,2);")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(PT2.__h,0,0).join(',')")   # wrapped green
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PT2.__h,1,0).join(',')")   # red
 end
 
 assert 'MV canvas translate offsets a drawImage blit' do
