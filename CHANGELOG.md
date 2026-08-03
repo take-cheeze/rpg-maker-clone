@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV input bridge (milestone M5): the engine's input (`RGSS::Input`, fed by the
+  SDL/terminal backends) is now mapped onto MV's virtual buttons and pushed into
+  `Input._currentState` each frame before the scene updates. MV's own
+  `Input.update` turns that into the triggered/pressed/repeat state its scenes
+  query, so the title command window and menus are navigable — arrows move the
+  cursor, C confirms (`ok`), B cancels (`escape`), A dashes (`shift`), L/R page
+  (`pageup`/`pagedown`). The mapping is unit-tested (`mruby-mvjs/test/input_test.rb`);
+  mouse/touch (`TouchInput`) is still to come.
 - MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
   `strokeText` and `measureText` are backed by stb_truetype against the game's
   bundled TrueType font (the CSS `GameFont`, auto-discovered under the project's

@@ -59,6 +59,33 @@ class MV
       REQUIRED_MARKERS.all? { |m| present.include?(m) }
     end
 
+    # Map the engine's input keys (RGSS::Input, fed by the SDL/terminal
+    # backends) onto MV's virtual buttons (the names in `Input.keyMapper`).
+    # MV has no separate "cancel"/"menu": Escape/X serve both, so B maps to
+    # 'escape'. Built at call time (not as a constant) so it does not depend on
+    # RGSS being loaded before this file. See `MV#sync_input`.
+    def input_map
+      {
+        RGSS::Input::UP => "up",
+        RGSS::Input::DOWN => "down",
+        RGSS::Input::LEFT => "left",
+        RGSS::Input::RIGHT => "right",
+        RGSS::Input::C => "ok",       # confirm (Z/Enter)
+        RGSS::Input::B => "escape",   # cancel/menu (X/Esc)
+        RGSS::Input::A => "shift",    # dash
+        RGSS::Input::L => "pageup",
+        RGSS::Input::R => "pagedown",
+        RGSS::Input::CTRL => "control",
+      }
+    end
+
+    # The MV virtual buttons currently held, derived from RGSS::Input. Split out
+    # from the JS injection so the key mapping can be unit-tested without a live
+    # MV engine.
+    def pressed_buttons
+      input_map.select { |key, _| RGSS::Input.press?(key) }.values
+    end
+
     # Does the directory look like an RPG Maker MV project?
     def project?(dir = GAME_DIR)
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }
@@ -113,6 +140,7 @@ class MV
       return
     end
 
+    sync_input # M5: push RGSS input into MV's Input before the scene updates
     pump_frame # M3: run the rAF/timer queue for one frame
     log_scene_transition # trace boot progress (Scene_Boot -> Scene_Title -> ...)
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
@@ -122,6 +150,26 @@ class MV
   end
 
   private
+
+  # Bridge the engine's input to MV. MV reads keyboard state from
+  # `Input._currentState`, which its browser build fills from DOM key events we
+  # don't deliver; instead, each frame we set it directly from RGSS::Input (fed
+  # by the SDL/terminal backends). MV's own `Input.update` — which it calls
+  # during the scene update in `pump_frame` — turns this into the
+  # triggered/pressed/repeat state the scenes query, so navigation, confirm and
+  # cancel work. Runs before `pump_frame` so the state is in place when MV
+  # reads it. No-op until the engine (and thus `Input`) has loaded.
+  def sync_input
+    buttons = self.class.pressed_buttons
+    assigns = buttons.map { |b| "c['#{b}']=true;" }.join
+    MV::JS.eval(
+      "(function(){ if (typeof Input === 'undefined' || !Input._currentState) " \
+      "return; var c = Input._currentState; for (var k in c) c[k] = false; " \
+      "#{assigns} })();"
+    )
+  rescue StandardError => e
+    $stderr.puts "[MV] input sync error: #{e.message}"
+  end
 
   # If a screenshot path was requested (`--mv_screenshot`), write the rendered
   # MV frame to it once, a couple of seconds in — enough for the boot to reach
