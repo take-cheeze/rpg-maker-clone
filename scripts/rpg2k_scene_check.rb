@@ -381,6 +381,33 @@ check 'a non-repeating player route finishes and returns control to input' do
   ok st.y > 0, "input resumed after the route finished, at y=#{st.y}"
 end
 
+check 'Erase Event removes the running event from the map' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: erase myself
+  auto.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  ok chars(scene)[1], 'event present before it runs'
+  5.times { scene.update }
+  evs = scene.instance_variable_get(:@events)
+  ok evs.none? { |e| e[:id] == 1 }, 'the event is gone from the runtime list'
+  tiles = scene.instance_variable_get(:@event_tiles)
+  ok !tiles[[2, 2]], 'its occupied tile is cleared (no marker, no collision)'
+end
+
+check 'Erase Event stops a parallel process that erases itself' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # parallel: bump var 1, then erase myself
+  par.event_commands = [add_var_cmd(1), ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [5, 5])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 1, st.variables[1], 'the process ran once, then erased itself (no re-loop)'
+  ok scene.instance_variable_get(:@events).none? { |e| e[:id] == 1 },
+     'erased from the event list'
+  ok scene.instance_variable_get(:@parallels).empty?,
+     'its background process was removed'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

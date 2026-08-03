@@ -2,19 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+<!--
+  Do not hand-edit the [Unreleased] section below — it caused constant merge
+  conflicts because every branch touched the same lines. Add a fragment file
+  under changelog.d/ instead (see changelog.d/README.md). The fragments are
+  folded in here at release time by scripts/build_changelog.rb.
+-->
+
 ## [Unreleased]
 
 ### Added
-- **PSP port (HAL bring-up).** A Sony PlayStation Portable backend, mirroring the
-  Wio Terminal port's structure: a self-guarded (`PSP_BUILD`) LVGL display +
-  input HAL in the `mruby-rgss` gem (`mruby-rgss/src/psp.cxx`, `include/psp.hxx`)
-  that flushes to the `sceDisplay` framebuffer and scans the D-pad / analog stick
-  / ✕○△□ via `sceCtrl`; a standalone pspdev CMake project under `app/psp/` that
-  builds a bring-up `EBOOT.PBP` (display + input, no interpreter yet); a `psp`
-  mruby MIPS cross-build in `build_config.rb` (`MRUBY_TARGET=psp`); an
-  `rgss_psp_poll` input bridge wired into `Graphics.update`; and a `psp` CI job
-  that compiles the EBOOT with the `pspdev/pspdev` container. See ADR 0010 and
-  `app/psp/README.md`.
+- The event interpreter now supports **Erase Event**. Running it removes the
+  event that is executing (foreground or a parallel process) from the map for
+  the rest of the visit — its marker, movement, collision tile and, for a
+  parallel event, its background process — while the rest of the command list
+  still runs (Erase Event does not pause the interpreter). A common event, which
+  has no map event, is unaffected. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+- **Control Variables** now supports more operand sources than constants and
+  other variables: a **random** integer in a range, an **actor stat** (level,
+  current/max HP and MP, attack, defence, spirit or agility of an actor by id)
+  and **game quantities** (party gold, timer seconds). `Game::Interpreter`
+  carries a deterministic RNG for the random operand; unmodelled sources (EXP,
+  step count, play time, save/battle counts) read as 0. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
 - **LCF save-data schema** now decodes four more `LcfSaveData` sections,
   transcribed from the rpg2kpsp analysis wiki
   (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved
