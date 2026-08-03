@@ -141,6 +141,27 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- The event interpreter now supports **Change HP**, **Change MP** and **Full
+  Heal**. Each targets a fixed actor, an actor whose id is held in a variable,
+  or the whole party, and takes a constant or variable amount. `Game::Actor`
+  gained `change_hp` / `change_mp` / `full_heal` helpers that clamp to the
+  actor's maxima; Change HP honours RPG2000's "allow death" flag (the HP floor
+  is 0 when knockout is allowed, 1 otherwise). Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
+- The event interpreter now supports **Move Event** (Set Move Route). The
+  command's parameters pack a target id followed by a forced move route; the
+  interpreter decodes that route (including the switch / change-graphic /
+  play-sound sub-commands, whose strings live in the command's string field) into
+  `Game::MoveCommand`s and queues a non-blocking request — a Move Event runs in
+  the background rather than pausing the interpreter. `Scene::Map` drains those
+  requests and applies the route as a *forced route* to the target: a specific
+  map event, "this event" (the event running the command, tracked for foreground
+  and parallel processes) or the player (mirrored by a `Game::Character`, with
+  input movement suppressed while it runs). A forced route overrides page
+  movement until it finishes (a repeating route runs until replaced) and is
+  paced by the requested move frequency. Vehicle targets (boat/ship/airship) are
+  recognised but not yet modelled. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
 - **Parallel-process events** (page trigger 4) and parallel common events now
   run continuously in the background. Each gets its own looping
   `Game::Interpreter` driven by `Scene::Map#step_parallels`: it runs its command
