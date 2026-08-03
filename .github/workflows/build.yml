@@ -186,7 +186,6 @@ jobs:
       # start/end tile with `[MV-MOVE] ... moved=<bool>`. Non-blocking, like the
       # other MV smoke tests; the lines show up in the job log for inspection.
       - name: MV movement smoke test
-        if: ${{ startsWith(matrix.os, 'ubuntu') }}
         continue-on-error: true
         run: |
           nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
