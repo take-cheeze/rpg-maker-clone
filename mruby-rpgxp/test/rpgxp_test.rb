@@ -505,3 +505,32 @@ assert "Game::MoveType picks a direction per move type" do
   assert_true RPGXP::Game::MoveType.next_direction(0, c, FakeWorld.new).nil?
   assert_true RPGXP::Game::MoveType.next_direction(3, c, FakeWorld.new).nil?
 end
+
+# ---- Message control-code expansion ---------------------------------------
+
+assert "Game::Message.expand handles variable / name / literal / dropped codes" do
+  vars = Hash.new(0)
+  vars[3] = 42
+  names = { 1 => "Aluxes", 2 => "Basil" }
+
+  m = RPGXP::Game::Message
+  assert_equal "You have 42 gold.", m.expand("You have \\V[3] gold.", vars, names)
+  assert_equal "Hi, Aluxes!", m.expand("Hi, \\N[1]!", vars, names)
+  # Lower-case codes work too.
+  assert_equal "Basil / 42", m.expand("\\n[2] / \\v[3]", vars, names)
+  # A literal backslash, and a missing name -> empty.
+  assert_equal "path\\to", m.expand("path\\\\to", vars, names)
+  assert_equal "", m.expand("\\N[9]", vars, names)
+  # Colour (\C[n]) and gold (\G) are display-only: consumed, no visible text.
+  assert_equal "red text", m.expand("\\C[2]red text", vars, names)
+  assert_equal "gold", m.expand("\\Ggold", vars, names)
+  # Plain text and nil.
+  assert_equal "plain", m.expand("plain", vars, names)
+  assert_equal "", m.expand(nil, vars, names)
+end
+
+assert "Game::Message.expand accepts a Proc name lookup" do
+  vars = Hash.new(0)
+  lookup = ->(id) { id == 1 ? "Hero" : nil }
+  assert_equal "Hero speaks", RPGXP::Game::Message.expand("\\N[1] speaks", vars, lookup)
+end

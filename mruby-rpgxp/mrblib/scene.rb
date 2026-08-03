@@ -673,9 +673,21 @@ class RPGXP
 
       # -- message / choice window --------------------------------------------
 
+      # Look up an actor name by id for the \N[] message control code.
+      def actor_name(id)
+        a = @db.actors[id]
+        a ? a.name.to_s : ""
+      rescue StandardError
+        ""
+      end
+
       def open_message(lines, choice)
         return if @message
-        lines = (lines || []).map(&:to_s)
+        names = ->(id) { actor_name(id) }
+        lines = (lines || []).map do |l|
+          # Choice labels are expanded too, so \V[n]/\N[n] work in menu options.
+          Game::Message.expand(l.to_s, @state.variables, names)
+        end
         lines = [""] if lines.empty?
         h = lines.length * MSG_LINE_H + Panel::BORDER * 2
         win = Panel.new(0, SCREEN_H - h - 8, SCREEN_W, h, load_windowskin)
