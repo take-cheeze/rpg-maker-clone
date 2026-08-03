@@ -1,4 +1,4 @@
-# 9. CORS proxy as a Cloudflare Worker
+# 10. CORS proxy as a Cloudflare Worker
 
 Date: 2026-08-03
 

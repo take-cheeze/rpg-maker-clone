@@ -329,6 +329,85 @@ check 'parallel processes pause while a foreground event is running' do
   eq 0, scene.instance_variable_get(:@state).variables[1]
 end
 
+check 'Move Event forces a target map event onto a route' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: on load, tell event 2 to walk east
+  # target event 2, freq 8, repeat on, skippable on, MOVE_RIGHT.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [2, 8, 1, 1, R::MOVE_RIGHT])]
+  mover = event(1, 1, page) # stationary by default; the route drives it
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => mover }, player: [5, 0])
+  40.times { scene.update }
+  c = chars(scene)[2]
+  ok c.x > 1, "forced event should have walked east, at x=#{c.x}"
+  eq 1, c.y, 'it stayed on its row'
+end
+
+check 'Move Event with "this event" moves the running event itself' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10005 (this event), freq 8, repeat on, skippable on, MOVE_DOWN.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10005, 8, 1, 1, R::MOVE_DOWN])]
+  scene = new_scene({ 1 => event(2, 0, auto) }, player: [5, 4])
+  c = chars(scene)[1]
+  30.times { scene.update }
+  ok c.y > 0, "the event moved itself downward, at y=#{c.y}"
+  eq 2, c.x, 'it stayed on its column'
+end
+
+check 'a forced player route suppresses input while it runs' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10001 (player), freq 8, repeat on, skippable on, MOVE_DOWN.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 1, 1, R::MOVE_DOWN])]
+  scene = new_scene({ 1 => event(3, 0, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 8 # hold up: must be ignored while the route drives down
+  30.times { scene.update }
+  ok st.y > 0, "player was driven downward by the route, at y=#{st.y}"
+  eq 0, st.x, 'input (up) was suppressed; player stayed on its column'
+end
+
+check 'a non-repeating player route finishes and returns control to input' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10001 (player), freq 8, repeat off, skippable on, MOVE_RIGHT.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 0, 1, R::MOVE_RIGHT])]
+  scene = new_scene({ 1 => event(3, 3, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update } # the route steps the player east once, then ends
+  eq [1, 0], [st.x, st.y], 'the one-command route moved the player east'
+  RGSS::Input.dir_value = 2 # input works again now the route is done
+  20.times { scene.update } # enough frames for the interpolated step to commit
+  ok st.y > 0, "input resumed after the route finished, at y=#{st.y}"
+end
+
+check 'Erase Event removes the running event from the map' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: erase myself
+  auto.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  ok chars(scene)[1], 'event present before it runs'
+  5.times { scene.update }
+  evs = scene.instance_variable_get(:@events)
+  ok evs.none? { |e| e[:id] == 1 }, 'the event is gone from the runtime list'
+  tiles = scene.instance_variable_get(:@event_tiles)
+  ok !tiles[[2, 2]], 'its occupied tile is cleared (no marker, no collision)'
+end
+
+check 'Erase Event stops a parallel process that erases itself' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # parallel: bump var 1, then erase myself
+  par.event_commands = [add_var_cmd(1), ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [5, 5])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 1, st.variables[1], 'the process ran once, then erased itself (no re-loop)'
+  ok scene.instance_variable_get(:@events).none? { |e| e[:id] == 1 },
+     'erased from the event list'
+  ok scene.instance_variable_get(:@parallels).empty?,
+     'its background process was removed'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

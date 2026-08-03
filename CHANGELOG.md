@@ -2,20 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+<!--
+  Do not hand-edit the [Unreleased] section below — it caused constant merge
+  conflicts because every branch touched the same lines. Add a fragment file
+  under changelog.d/ instead (see changelog.d/README.md). The fragments are
+  folded in here at release time by scripts/build_changelog.rb.
+-->
+
 ## [Unreleased]
 
 ### Added
-- Self-hostable **CORS proxy** for the web loader: a ready-to-deploy Cloudflare
-  Worker in `cors-proxy/` (`worker.js` + `wrangler.toml`) that the loader's *CORS
-  proxy prefix* field can point at, so GitHub repos and arbitrary `.zip` URLs
-  load without depending on a public proxy service. The Worker accepts both
-  prefix styles the loader builds (`?url=<encoded>` and `/<raw url>`), handles
-  the CORS preflight, forwards `Range` requests and follows redirects, and takes
-  three opt-in access controls to avoid running as an open proxy: `ALLOWED_HOSTS`
-  (target hosts), `AUTH_KEY` (a shared secret required as `?key=` — the "only me"
-  lock), and `ALLOWED_ORIGINS` (which web-page origins may call it). Deploy and
-  personal-use lock-down walkthrough in `docs/cors-proxy.md`; rationale in
-  `docs/adr/0009-cors-proxy-cloudflare-worker.md`.
+- The event interpreter now supports **Erase Event**. Running it removes the
+  event that is executing (foreground or a parallel process) from the map for
+  the rest of the visit — its marker, movement, collision tile and, for a
+  parallel event, its background process — while the rest of the command list
+  still runs (Erase Event does not pause the interpreter). A common event, which
+  has no map event, is unaffected. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+- **Control Variables** now supports more operand sources than constants and
+  other variables: a **random** integer in a range, an **actor stat** (level,
+  current/max HP and MP, attack, defence, spirit or agility of an actor by id)
+  and **game quantities** (party gold, timer seconds). `Game::Interpreter`
+  carries a deterministic RNG for the random operand; unmodelled sources (EXP,
+  step count, play time, save/battle counts) read as 0. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
+- **LCF save-data schema** now decodes four more `LcfSaveData` sections,
+  transcribed from the rpg2kpsp analysis wiki
+  (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved
+  party-member status (108), remembered teleport/escape targets (110) and saved
+  map-event state (111). The teleport targets are an `Array2D` indexed by map id
+  (index 0 = escape); the map-event section reuses the existing movable layout
+  for each event's position snapshot plus the packed tile-replacement blobs.
+  Overlapping sections already covered by the 200X notes (system, terminology,
+  positions) were left untouched. Covered by a new `LCF::SaveData` check in
+  `mruby-lcf/test/lcf_test.rb`. See ADR 0009.
 - MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
   `strokeText` and `measureText` are backed by stb_truetype against the game's
   bundled TrueType font (the CSS `GameFont`, auto-discovered under the project's
@@ -152,6 +172,33 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- The event interpreter now supports **Change Parameters**: it adjusts an
+  actor's base stat — max HP, max MP, attack, defence, spirit or agility — for a
+  fixed actor, a variable-selected actor or the whole party, by a constant or
+  variable amount. `Game::Actor#change_param` clamps to RPG2000's limits (max
+  HP/MP 1–9999, the battle stats 1–999) and re-clamps current HP/MP when a
+  maximum is lowered. Covered by new checks in `scripts/rpg2k_logic_check.rb`.
+- The event interpreter now supports **Change HP**, **Change MP** and **Full
+  Heal**. Each targets a fixed actor, an actor whose id is held in a variable,
+  or the whole party, and takes a constant or variable amount. `Game::Actor`
+  gained `change_hp` / `change_mp` / `full_heal` helpers that clamp to the
+  actor's maxima; Change HP honours RPG2000's "allow death" flag (the HP floor
+  is 0 when knockout is allowed, 1 otherwise). Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
+- The event interpreter now supports **Move Event** (Set Move Route). The
+  command's parameters pack a target id followed by a forced move route; the
+  interpreter decodes that route (including the switch / change-graphic /
+  play-sound sub-commands, whose strings live in the command's string field) into
+  `Game::MoveCommand`s and queues a non-blocking request — a Move Event runs in
+  the background rather than pausing the interpreter. `Scene::Map` drains those
+  requests and applies the route as a *forced route* to the target: a specific
+  map event, "this event" (the event running the command, tracked for foreground
+  and parallel processes) or the player (mirrored by a `Game::Character`, with
+  input movement suppressed while it runs). A forced route overrides page
+  movement until it finishes (a repeating route runs until replaced) and is
+  paced by the requested move frequency. Vehicle targets (boat/ship/airship) are
+  recognised but not yet modelled. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
 - **Parallel-process events** (page trigger 4) and parallel common events now
   run continuously in the background. Each gets its own looping
   `Game::Interpreter` driven by `Scene::Map#step_parallels`: it runs its command
