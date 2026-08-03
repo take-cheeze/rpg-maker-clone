@@ -494,6 +494,60 @@ check 'a message inside a called event pauses and resumes across the boundary' d
   eq true, st.switches[1], 'returned to and finished the caller'
 end
 
+check 'Move Event queues a decoded, non-blocking route request' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # target 25 (a map event), freq 4, repeat on, skippable off, then MOVE_UP(0),
+  # MOVE_RIGHT(1); a Control Switches command follows to prove no pause.
+  it.start([FakeCmd.new(IC::MOVE_EVENT, [25, 4, 1, 0, R::MOVE_UP, R::MOVE_RIGHT]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Move Event must not pause the interpreter'
+  eq true, st.switches[1], 'the command after Move Event still ran'
+  reqs = it.take_move_route_requests
+  eq 1, reqs.size
+  r = reqs[0]
+  eq 25, r[:target]
+  eq 4, r[:frequency]
+  eq true, r[:repeat]
+  eq false, r[:skippable]
+  eq [R::MOVE_UP, R::MOVE_RIGHT], r[:commands].map(&:command_id)
+  eq 0, it.take_move_route_requests.size, 'draining clears the queue'
+end
+
+check 'Move Event decodes switch / change-graphic / play-sound sub-commands' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # header: this-event target, freq 0, repeat 0, skippable 0. Then:
+  #   SWITCH_ON(32) + switch 7
+  #   CHANGE_GRAPHIC(34) + len 4 + index 2   (string "Hero")
+  #   PLAY_SOUND(35)    + len 3 + 90,100,50  (string "bel")
+  params = [10005, 0, 0, 0, 32, 7, 34, 4, 2, 35, 3, 90, 100, 50]
+  it.start([FakeCmd.new(IC::MOVE_EVENT, params, string: 'Herobel')])
+  it.update
+  cmds = it.take_move_route_requests[0][:commands]
+  eq [32, 34, 35], cmds.map(&:command_id)
+  eq 7, cmds[0].parameter_a
+  eq 'Hero', cmds[1].parameter_string
+  eq 2, cmds[1].parameter_a
+  eq 'bel', cmds[2].parameter_string
+  eq [90, 100, 50],
+     [cmds[2].parameter_a, cmds[2].parameter_b, cmds[2].parameter_c]
+end
+
+check 'a decoded Move Event route drives a Character through a MoveRoute' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::MOVE_EVENT, [7, 0, 0, 0, R::MOVE_RIGHT, R::MOVE_DOWN])])
+  it.update
+  route = R.new(it.take_move_route_requests[0][:commands], repeat: false)
+  c = Game::Character.new(0, 0)
+  w = FakeWorld.new
+  route.step(c, w); route.step(c, w)
+  eq [1, 1], [c.x, c.y], 'the decoded commands moved the character'
+  ok route.done?, 'non-repeating decoded route finishes'
+end
+
 check 'conditional branch on the timer' do
   st = new_state
   st.timer_frames = 30 * 60 # 30 seconds remaining
@@ -509,6 +563,152 @@ check 'conditional branch on the timer' do
   it.update
   eq true, st.switches[4], 'timer >= 10s branch taken'
   eq false, st.switches[5]
+end
+
+# -- actor HP / MP commands ---------------------------------------------------
+
+# A database row for an actor, and a fake DB exposing just what Game::Party /
+# Game::Actor read (player table + the initial party list).
+FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
+                           :initial_level, :status)
+FakeActorSystem = Struct.new(:party)
+class FakeActorDB
+  attr_reader :player, :system
+  def initialize(players, party_ids)
+    @player = players
+    @system = FakeActorSystem.new(party_ids)
+  end
+end
+
+def party_state
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3,
+                           max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2])), 1, 0, 0)
+end
+
+check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
+  hero = party_state.party.actor_by_id(1)
+  hero.change_hp(-30);          eq 70, hero.hp
+  hero.change_hp(-1000, true);  eq 0, hero.hp   # death allowed -> floor 0
+  hero.change_hp(-5, false);    eq 1, hero.hp   # death disallowed -> floor 1
+  hero.change_hp(9999);         eq 100, hero.hp # capped at max_hp
+  hero.change_mp(-1000);        eq 0, hero.mp
+  hero.change_mp(9999);         eq 30, hero.mp  # capped at max_mp
+  hero.hp = 10; hero.mp = 5
+  hero.full_heal
+  eq [100, 30], [hero.hp, hero.mp]
+end
+
+check 'Change HP command damages a fixed actor' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed id), actor 1, op 1 (remove), operand const 40, allow-death 0
+  it.start([FakeCmd.new(IC::CHANGE_HP, [1, 1, 1, 0, 40, 0])])
+  it.update
+  eq 60, st.party.actor_by_id(1).hp
+end
+
+check 'Change HP allow-death flag chooses the floor (0 vs 1)' do
+  st = party_state
+  a = st.party.actor_by_id(1)
+  a.hp = 20
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_HP, [1, 1, 1, 0, 999, 0])]) # not lethal
+  it.update
+  eq 1, a.hp
+  a.hp = 20
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_HP, [1, 1, 1, 0, 999, 1])]) # lethal
+  it2.update
+  eq 0, a.hp
+end
+
+check 'Change HP heals with a variable operand' do
+  st = party_state
+  st.variables[3] = 25
+  a = st.party.actor_by_id(1)
+  a.hp = 50
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, op 0 (add), operand type 1 (variable), var id 3 (=25)
+  it.start([FakeCmd.new(IC::CHANGE_HP, [1, 1, 0, 1, 3, 0])])
+  it.update
+  eq 75, a.hp
+end
+
+check 'Change HP targets an actor id held in a variable' do
+  st = party_state
+  st.variables[7] = 2
+  it = Game::Interpreter.new(st)
+  # scope 2 (actor id from variable 7 -> actor 2), op 1 remove, const 15
+  it.start([FakeCmd.new(IC::CHANGE_HP, [2, 7, 1, 0, 15, 0])])
+  it.update
+  eq 35, st.party.actor_by_id(2).hp # 50 - 15
+end
+
+check 'Change MP applies to the whole party' do
+  st = party_state
+  st.party.actors.each { |a| a.mp = 5 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_MP, [0, 0, 0, 0, 10])]) # scope 0, add const 10
+  it.update
+  eq 15, st.party.actor_by_id(1).mp
+  eq 15, st.party.actor_by_id(2).mp
+end
+
+check 'Full Heal restores the whole party to max HP/MP' do
+  st = party_state
+  st.party.actors.each { |a| a.hp = 1; a.mp = 0 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FULL_HEAL, [0, 0])]) # scope 0 (whole party)
+  it.update
+  eq [100, 30], [st.party.actor_by_id(1).hp, st.party.actor_by_id(1).mp]
+  eq [50, 20],  [st.party.actor_by_id(2).hp, st.party.actor_by_id(2).mp]
+end
+
+check 'Change Parameters adds to a base battle stat' do
+  st = party_state
+  a = st.party.actor_by_id(1) # atk 10
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, op 0 (add), param 2 (atk), operand const 5
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 1, 0, 2, 0, 5])])
+  it.update
+  eq 15, a.atk
+end
+
+check 'Change Parameters lowering max HP re-clamps current HP' do
+  st = party_state
+  a = st.party.actor_by_id(1) # max_hp 100, hp 100
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, op 1 (remove), param 0 (max_hp), const 60 -> max_hp 40
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 1, 1, 0, 0, 60])])
+  it.update
+  eq 40, a.max_hp
+  eq 40, a.hp # current HP clamped down to the new maximum
+end
+
+check 'Change Parameters clamps a stat at its floor across the whole party' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 0 (party), op 1 (remove), param 2 (atk), const 9999 -> floor 1
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [0, 0, 1, 2, 0, 9999])])
+  it.update
+  eq 1, st.party.actor_by_id(1).atk
+  eq 1, st.party.actor_by_id(2).atk
+end
+
+check 'Change Parameters raises max MP with a variable operand' do
+  st = party_state
+  st.variables[4] = 20
+  a = st.party.actor_by_id(2) # max_mp 20
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 2, op 0 (add), param 1 (max_mp), operand type 1 (var), var 4
+  it.start([FakeCmd.new(IC::CHANGE_PARAM, [1, 2, 0, 1, 1, 4])])
+  it.update
+  eq 40, a.max_mp
 end
 
 # -- summary ------------------------------------------------------------------

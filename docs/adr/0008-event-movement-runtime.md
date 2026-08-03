@@ -70,7 +70,14 @@ run in CI.
 - Event sprites are still drawn as markers, so movement currently snaps tile to
   tile with no per-step pixel interpolation (unlike the player). Smooth event
   interpolation and real charset rendering are follow-up work.
-- The interpreter's *Set Move Route* (Move Event) event command is still not
-  wired up: the runtime engine exists, but decoding a route embedded inline in
-  an event command's parameters (a different layout from the page/common-event
-  `move_route` chunk) remains to be done.
+- The interpreter's *Set Move Route* (Move Event) event command is now wired up.
+  Its route is packed inline in the command's parameters (a different layout from
+  the page/common-event `move_route` chunk — the ids are the same, but the
+  strings for change-graphic / play-sound live in the command's string field,
+  prefixed by their length in the parameter list). `Game::Interpreter` decodes it
+  into `Game::MoveCommand`s and queues a non-blocking request; `Scene::Map`
+  applies it as a *forced route* to the target (a map event, "this event" or the
+  player) that overrides page movement until it finishes, reusing the same
+  `MoveRoute` executor and `world` protocol. The player, which has no
+  `Game::Character`, is mirrored by one for the duration and input movement is
+  suppressed while the route runs. Vehicle targets remain unmodelled.

@@ -951,6 +951,60 @@ module LCF
       75 => { name: :charset_index, type: :int },
     }
 
+    # https://w.atwiki.jp/rpg2kpsp/pages/21.html
+    #
+    # Runtime state of a "show picture" command (chunk 103 of the save file),
+    # one entry per picture number. The rpg2kpsp analysis only labels a subset
+    # of the fields; the position/movement slots (2-5, 8, 11-14, 31, 32) hold
+    # `double` coordinates whose exact meaning is undocumented, so only the
+    # named fields are transcribed here.
+    SAVE_PICTURE = {
+      1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
+      9 => { name: :visible, type: :bool, default: false }, # 表示するか (0 非表示 / 1 表示)
+      33 => { name: :zoom, type: :int },                # 拡大率
+      34 => { name: :transparency, type: :int },        # 透明度
+      41 => { name: :tone_red, type: :int },            # 色調：赤(R)
+      42 => { name: :tone_green, type: :int },          # 色調：緑(G)
+      43 => { name: :tone_blue, type: :int },           # 色調：青(B)
+      44 => { name: :tone_saturation, type: :int },     # 色調：彩度(S)
+    }
+
+    # https://w.atwiki.jp/rpg2kpsp/pages/40.html
+    #
+    # Saved per-party-member status (chunk 108), one entry per hero. The
+    # rpg2kpsp page only documents the state block; the remaining fields (level,
+    # exp, current HP/SP, equipment, …) are catalogued in sue445's analysis and
+    # are not transcribed here.
+    SAVE_PARTY_ACTOR = {
+      81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数
+      82 => { name: :states, type: :int16_array },         # 『状態』情報 (uint16[])
+    }
+
+    # https://w.atwiki.jp/rpg2kpsp/pages/37.html
+    #
+    # Remembered teleport/escape destination (chunk 110), indexed by map id.
+    # Index 0 is reserved for the escape target.
+    SAVE_TARGET = {
+      1 => { name: :map_id, type: :int },
+      2 => { name: :x, type: :int, default: 0 },
+      3 => { name: :y, type: :int, default: 0 },
+      # Turn the switch on after teleporting.
+      4 => { name: :switch_on, type: :bool, default: false },
+      5 => { name: :switch_id, type: :int, default: 1 },
+    }
+
+    # https://w.atwiki.jp/rpg2kpsp/pages/27.html
+    #
+    # Saved map-event state (chunk 111). Field 11 is the per-event position
+    # snapshot list (each entry reuses SAVE_MOVABLE, but without the map-id chunk
+    # that only the hero/vehicle entries carry). Fields 21/22 hold the lower/upper
+    # tile replacements applied by the "replace chipset tiles" event command.
+    SAVE_MAP_EVENT = {
+      11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
+      21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
+      22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
+    }
+
     SAVE_SYSTEM = {
       # 0 map, 1 menu, 2 battle, 3 shop, 4 name input, 5 save/load,
       # 6 title, 7 game over, 8 F9 debug menu.
@@ -1031,15 +1085,23 @@ module LCF
       28 => { name: :face4_index, type: :int, default: 0 },
     }
 
+    # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
+    # map. Chunks 109 (party/item info) and 114 (common-event state) are still
+    # marked unanalysed on the wiki, so they are left out until the layout is
+    # known.
     SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
         100 => { name: :title, type: :Array1D, elements: SAVE_TITLE },
         101 => { name: :system, type: :Array1D, elements: SAVE_SYSTEM },
+        103 => { name: :pictures, type: :Array2D, elements: SAVE_PICTURE },
         104 => { name: :hero, type: :Array1D, elements: SAVE_MOVABLE },
         105 => { name: :boat, type: :Array1D, elements: SAVE_MOVABLE },
         106 => { name: :ship, type: :Array1D, elements: SAVE_MOVABLE },
         107 => { name: :airship, type: :Array1D, elements: SAVE_MOVABLE },
+        108 => { name: :actors, type: :Array2D, elements: SAVE_PARTY_ACTOR },
+        110 => { name: :targets, type: :Array2D, elements: SAVE_TARGET },
+        111 => { name: :map_events, type: :Array1D, elements: SAVE_MAP_EVENT },
       }
     }
   end

@@ -342,6 +342,15 @@ class RPG2k
       TRIGGER_AUTO_START   = 3 # runs automatically once on the map
       TRIGGER_PARALLEL     = 4 # runs continuously in the background
 
+      # Move Event (Set Move Route) target ids: the player, the three vehicles
+      # and "this event" (the event running the command). Any other id is a map
+      # event id. Vehicles are not modelled yet, so those targets are ignored.
+      MOVE_TARGET_PLAYER  = 10001
+      MOVE_TARGET_BOAT    = 10002
+      MOVE_TARGET_SHIP    = 10003
+      MOVE_TARGET_AIRSHIP = 10004
+      MOVE_TARGET_THIS    = 10005
+
       def initialize parent, state
         super parent
         @state = state
@@ -363,6 +372,15 @@ class RPG2k
         @message = nil
         @wait_timer = nil
         @choice_index = 0
+        # The map event whose commands the foreground interpreter is running, so
+        # a Move Event targeting "this event" can be resolved. nil for common
+        # events (which have no map character).
+        @active_event = nil
+        # A forced move route applied to the player by a Move Event, with its own
+        # character mirror and step timer; nil when the player moves by input.
+        @player_route = nil
+        @player_char = nil
+        @player_route_timer = 0
 
         # Player pixel position and step state.
         @moving = false
@@ -395,6 +413,7 @@ class RPG2k
             drive_event
           else
             step_parallels
+            step_player_route
             step_events
             step_movement
             try_action_trigger
@@ -552,6 +571,7 @@ class RPG2k
         end
         if ev
           @started_auto[ev[:id]] = true
+          @active_event = ev
           @interpreter.start(ev[:commands])
           return
         end
@@ -562,6 +582,7 @@ class RPG2k
         end
         return unless ce
         @started_common[ce[:id]] = true
+        @active_event = nil # a common event has no "this event" map character
         @interpreter.start(ce[:commands])
       end
 
@@ -579,21 +600,25 @@ class RPG2k
         @parallels = []
         @events.each do |e|
           next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
-          @parallels.push new_parallel(e[:commands], nil)
+          @parallels.push new_parallel(e[:commands], nil, e)
         end
         @common.each do |c|
           next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
-          @parallels.push new_parallel(c[:commands], c[:need_flag] ? c[:switch_id] : nil)
+          @parallels.push new_parallel(c[:commands],
+                                       c[:need_flag] ? c[:switch_id] : nil, nil)
         end
       rescue StandardError
         @parallels = []
       end
 
-      def new_parallel(commands, gate_switch)
+      # Build one background process. `event` is the owning map event (so a Move
+      # Event targeting "this event" resolves) or nil for a common event.
+      def new_parallel(commands, gate_switch, event)
         it = Game::Interpreter.new(@state)
         it.resolver = @interpreter.resolver
         it.start(commands)
-        { interp: it, commands: commands, gate_switch: gate_switch, wait_timer: nil }
+        { interp: it, commands: commands, gate_switch: gate_switch,
+          wait_timer: nil, event: event }
       end
 
       # Advance every background parallel process one frame. They loop their
@@ -616,6 +641,7 @@ class RPG2k
           it.start(p[:commands]) # loop the process
           it.update
         end
+        apply_move_requests(it, p[:event])
       rescue StandardError
         nil
       end
@@ -642,6 +668,7 @@ class RPG2k
       # Turn `ev` to face the player and run its command list.
       def start_event(ev)
         ev[:char].face(ev[:char].direction_toward(@state.x, @state.y))
+        @active_event = ev
         @interpreter.start(ev[:commands])
       end
 
@@ -666,10 +693,17 @@ class RPG2k
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
-        e[:move_timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 40
+        forced = e[:forced_route]
+        # A forced route (from a Move Event) is paced by its own frequency when
+        # one was given, otherwise by the page's; it overrides page movement.
+        freq = forced && e[:forced_freq] ? e[:forced_freq] : ch.move_frequency
+        e[:move_timer] = EVENT_MOVE_DELAY[freq] || 40
         ox = ch.x
         oy = ch.y
-        if e[:route]
+        if forced
+          forced.step(ch, @world) unless forced.done?
+          e[:forced_route] = nil if forced.done? # revert to page movement
+        elsif e[:route]
           e[:route].step(ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
@@ -703,6 +737,80 @@ class RPG2k
       def reoccupy(e, ox, oy)
         @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
         @event_tiles[[e[:char].x, e[:char].y]] = e
+      end
+
+      # -- Move Event (Set Move Route) ----------------------------------------
+
+      # Apply the Move Event requests an interpreter queued this step. `this_event`
+      # is the map event running that process (or nil for a common event), so a
+      # route targeting "this event" reaches the right character.
+      def apply_move_requests(interp, this_event)
+        reqs = interp.take_move_route_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_move_request(r, this_event) }
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Move Event apply failed: #{e.message}"
+        nil
+      end
+
+      def apply_move_request(r, this_event)
+        route = Game::MoveRoute.new(r[:commands], repeat: r[:repeat],
+                                    skippable: r[:skippable])
+        return if route.empty?
+        case r[:target]
+        when MOVE_TARGET_PLAYER
+          start_player_route(route, r[:frequency])
+        when 0, MOVE_TARGET_THIS
+          force_event_route(this_event, route, r[:frequency]) if this_event
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          nil # vehicles are not modelled yet
+        else
+          ev = @events.find { |e| e[:id] == r[:target] }
+          force_event_route(ev, route, r[:frequency]) if ev
+        end
+      end
+
+      # Give a map event a forced route, overriding its page movement until the
+      # route finishes (a repeating route runs until replaced). It steps on the
+      # next frame, paced by the requested frequency when one was given.
+      def force_event_route(ev, route, freq)
+        ev[:forced_route] = route
+        ev[:forced_freq] = valid_move_freq(freq)
+        ev[:move_timer] = 0
+      end
+
+      # Drive the player along a forced route: the player has no Game::Character,
+      # so mirror one, step it against the map world and write the tile back to
+      # the state. Forced player steps snap tile-to-tile (no pixel interpolation)
+      # and suppress input movement while active.
+      def start_player_route(route, freq)
+        @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char.move_frequency = valid_move_freq(freq) ||
+                                      @player_char.move_frequency
+        @player_route = route
+        @player_route_timer = 0
+      end
+
+      def step_player_route
+        return unless @player_route
+        @player_route_timer -= 1
+        return if @player_route_timer > 0
+        @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 40
+        @player_route.step(@player_char, @world) unless @player_route.done?
+        @state.x = @player_char.x
+        @state.y = @player_char.y
+        @state.direction = @player_char.direction
+        @dest_x = @state.x
+        @dest_y = @state.y
+        @moving = false
+        @move_count = 0
+        @player_route = nil if @player_route.done?
+      end
+
+      # A move frequency the request may override the target's pace with (1..8),
+      # or nil to keep the target's own frequency.
+      def valid_move_freq(f)
+        (f && f >= 1 && f <= 8) ? f : nil
       end
 
       # Collision test for an event stepping one tile in `dir`: in bounds, not
@@ -744,6 +852,7 @@ class RPG2k
           end
         else
           @interpreter.update
+          apply_move_requests(@interpreter, @active_event)
         end
       end
 
@@ -776,6 +885,8 @@ class RPG2k
         @chipset = build_chipset
         @started_auto = {}
         @started_common = {}
+        @active_event = nil
+        @player_route = nil # a forced player route does not survive a teleport
         build_events
         @interpreter.resolver = build_resolver
         build_parallels
@@ -872,6 +983,7 @@ class RPG2k
         end
 
         return if event_busy? # don't start a new move while an event runs
+        return if @player_route # a forced route controls the player
         dir = Input.dir4
         return if dir == 0
 
