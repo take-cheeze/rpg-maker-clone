@@ -47,8 +47,11 @@ module RGSS
     end
   end
 
-  # RGSS Font. Rendering currently uses the built-in shinonome bitmap font, so
-  # only the attributes that scripts read/write are modelled here.
+  # RGSS Font. Bitmap#draw_text rasterises with the game's TrueType font (found
+  # under the project's Fonts/ folder, selected by #name and sized by #size,
+  # honouring bold/italic/outline/shadow and the colours) and falls back to the
+  # built-in shinonome bitmap font when no font file is available. Only the
+  # attributes scripts read/write are modelled here.
   class Font
     @default_name = "Arial"
     @default_size = 22
