@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+<!--
+  Do not hand-edit the [Unreleased] section below — it caused constant merge
+  conflicts because every branch touched the same lines. Add a fragment file
+  under changelog.d/ instead (see changelog.d/README.md). The fragments are
+  folded in here at release time by scripts/build_changelog.rb.
+-->
+
 ## [Unreleased]
 
 ### Added

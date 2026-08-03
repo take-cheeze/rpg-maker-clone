@@ -4,7 +4,12 @@
 
 -   Update relevant documentation in /docs when modifying features
 -   Keep README.md in sync with new capabilities
--   Maintain changelog entries in CHANGELOG.md
+-   Record changelog entries as fragment files in `changelog.d/`, **not** by
+    editing the `## [Unreleased]` section of `CHANGELOG.md` directly. Add one
+    `changelog.d/<slug>.<category>.md` file per change so branches never
+    collide on the same lines. See `changelog.d/README.md` for the format;
+    `scripts/build_changelog.rb` folds the fragments into `CHANGELOG.md` at
+    release time.
 
 ## Architecture Decision Records
 
