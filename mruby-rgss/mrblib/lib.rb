@@ -327,5 +327,20 @@ module RGSS
       return 9 if press?(UP) && press?(RIGHT)
       return dir4
     end
+
+    # Pointer state, captured by the SDL window backend (see input_bridge.cxx).
+    # In game/canvas pixels; (0, 0) and unpressed under backends with no mouse.
+    # MV's TouchInput bridge reads these for menu/title clicking.
+    def self.mouse_x
+      RGSS.mouse_x
+    end
+
+    def self.mouse_y
+      RGSS.mouse_y
+    end
+
+    def self.mouse_pressed?
+      RGSS.mouse_pressed?
+    end
   end
 end

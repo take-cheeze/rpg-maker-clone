@@ -39,6 +39,14 @@ extern "C" void rgss_terminal_poll(mrb_state* M);
 // backend is active and has captured key events; drains them into RGSS::Input.
 extern "C" void rgss_sdl_poll(mrb_state* M);
 
+// Defined in input_bridge.cxx (same gem).  The latest pointer state captured by
+// the SDL backend (0 / not-pressed under the other backends); exposed to Ruby
+// as RGSS.mouse_x / mouse_y / mouse_pressed? so MV's TouchInput bridge can read
+// it.
+extern "C" int rgss_mouse_x(void);
+extern "C" int rgss_mouse_y(void);
+extern "C" int rgss_mouse_pressed(void);
+
 // Defined in audio.cxx (same gem).  Registers the native RGSS::Audio methods
 // and drives the audio backend's per-frame work (a no-op when no backend is
 // installed).
@@ -1959,9 +1967,28 @@ extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display) {
                 mrb_intern_lit(M, "_display"), mrb_cptr_value(M, display));
 }
 
+// RGSS.mouse_x / mouse_y / mouse_pressed? — the pointer state captured by the
+// SDL backend (see input_bridge.cxx). Read by MV's TouchInput bridge.
+static mrb_value mouse_x_m(mrb_state* M, mrb_value) {
+  (void)M;
+  return mrb_fixnum_value(rgss_mouse_x());
+}
+static mrb_value mouse_y_m(mrb_state* M, mrb_value) {
+  (void)M;
+  return mrb_fixnum_value(rgss_mouse_y());
+}
+static mrb_value mouse_pressed_m(mrb_state* M, mrb_value) {
+  (void)M;
+  return mrb_bool_value(rgss_mouse_pressed() != 0);
+}
+
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, m, "mouse_x", mouse_x_m, MRB_ARGS_NONE());
+  mrb_define_module_function(M, m, "mouse_y", mouse_y_m, MRB_ARGS_NONE());
+  mrb_define_module_function(M, m, "mouse_pressed?", mouse_pressed_m,
+                             MRB_ARGS_NONE());
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));

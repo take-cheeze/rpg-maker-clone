@@ -13,8 +13,9 @@
 
 #include <SDL2/SDL.h>
 
-// Buffer sink implemented in mruby-rgss/src/input_bridge.cxx.
+// Buffer sinks implemented in mruby-rgss/src/input_bridge.cxx.
 extern "C" void rgss_sdl_input_push(int key, bool press);
+extern "C" void rgss_sdl_mouse_push(int x, int y, bool pressed);
 
 namespace {
 
@@ -120,6 +121,18 @@ int SDLCALL event_watch(void* /*user*/, SDL_Event* event) {
       key = map_key(event->key.keysym.sym);
       press = false;
       break;
+    // Pointer -> RGSS mouse state (MV's TouchInput reads it). Coordinates are
+    // window pixels; the SDL backend renders MV 1:1, so they are canvas pixels.
+    case SDL_MOUSEMOTION:
+      rgss_sdl_mouse_push(event->motion.x, event->motion.y,
+                          (event->motion.state & SDL_BUTTON_LMASK) != 0);
+      return 0;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP:
+      if (event->button.button == SDL_BUTTON_LEFT)
+        rgss_sdl_mouse_push(event->button.x, event->button.y,
+                            event->type == SDL_MOUSEBUTTONDOWN);
+      return 0;
     default:
       return 0;
   }

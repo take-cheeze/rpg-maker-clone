@@ -40,6 +40,35 @@ extern "C" void rgss_sdl_input_push(int key, bool press) {
   g_pending.push_back({key, press});
 }
 
+// --- mouse ------------------------------------------------------------------
+// The latest pointer position (in game/window pixels — the SDL window backend
+// renders the game 1:1 at MV's resolution, which is the only maker that reads
+// the mouse) and left-button state. Written by the SDL event watch, read on the
+// interpreter thread. Only current state is kept — consumers (e.g. MV's
+// TouchInput) derive their own trigger/press timing — so no queue is needed.
+namespace {
+int g_mouse_x = 0;
+int g_mouse_y = 0;
+bool g_mouse_pressed = false;
+}  // namespace
+
+// Called from the executable's SDL event watch for mouse motion/button events.
+extern "C" void rgss_sdl_mouse_push(int x, int y, bool pressed) {
+  g_mouse_x = x;
+  g_mouse_y = y;
+  g_mouse_pressed = pressed;
+}
+
+extern "C" int rgss_mouse_x(void) {
+  return g_mouse_x;
+}
+extern "C" int rgss_mouse_y(void) {
+  return g_mouse_y;
+}
+extern "C" int rgss_mouse_pressed(void) {
+  return g_mouse_pressed ? 1 : 0;
+}
+
 // Drains buffered SDL key transitions into RGSS::Input. Called every frame from
 // Graphics.update, next to rgss_terminal_poll.
 extern "C" void rgss_sdl_poll(mrb_state* M) {
