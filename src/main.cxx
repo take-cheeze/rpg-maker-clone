@@ -288,6 +288,23 @@ int main(int argc, char** argv) {
   }
   nglog::InitializeLogging(argv[0]);
 
+  // RPG Maker XP projects render at 640x480 (RPG2000/MV use 320x240). When the
+  // window size was not overridden on the command line, size the canvas to the
+  // XP resolution so an XP game's title and maps fill the screen. Detection
+  // mirrors the game-class dispatch below: Game.ini plus a Data/System.rxdata.
+  {
+    const fs::path gd = FLAGS_game_dir;
+    const bool xp_game = fs::exists(gd / "Game.ini") &&
+                         fs::exists(gd / "Data" / "System.rxdata");
+    gflags::CommandLineFlagInfo w_info, h_info;
+    gflags::GetCommandLineFlagInfo("width", &w_info);
+    gflags::GetCommandLineFlagInfo("height", &h_info);
+    if (xp_game && w_info.is_default && h_info.is_default) {
+      FLAGS_width = 640;
+      FLAGS_height = 480;
+    }
+  }
+
   // Configure profiling before mruby is opened so the allocator hook, if it is
   // installed below, sees the right enabled state from its first call. A
   // requested trace implies profiling.
@@ -336,7 +353,9 @@ int main(int argc, char** argv) {
         [](lv_display_t*) { lv_sdl_quit(); });
     CHECK(display);
     lv_sdl_window_set_resizeable(display.get(), false);
-    lv_sdl_window_set_zoom(display.get(), 2.f);
+    // A 640x480 (XP) canvas is already large, so present it 1:1; the smaller
+    // 320x240 (RPG2000/MV) canvas is doubled to a comfortable window size.
+    lv_sdl_window_set_zoom(display.get(), FLAGS_width >= 640 ? 1.f : 2.f);
     // SDL is initialised by lv_sdl_window_create above; install the keyboard
     // watch now so key events reach RGSS::Input.
     rgss_sdl_input_init();

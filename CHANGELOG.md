@@ -12,6 +12,45 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- RPG Maker **XP** support, first slice — a project now loads and boots. A new
+  RGSS data layer (`mruby-rpgxp/mrblib/rgss_data.rb`) declares the `RPG::*`
+  schema so an XP project's `Data/*.rxdata` files load straight through
+  `Marshal.load` (the bundled mruby-marshal reads the 4.8 stream; the value
+  types `Table`/`Color`/`Tone`/`Rect` already round-trip natively in
+  mruby-rgss), and `RPGXP::RGSSData` wraps them as a database (the role
+  `LCF::Database` plays for RPG2000). The `RPGXP` runtime reads `Game.ini`,
+  builds the database and drives a scene stack: a `Scene::Title` (title graphic
+  + the default New Game / Continue / Shutdown commands in an XP-styled window)
+  and a first walkable `Scene::Map` (the three tile layers as placeholder colour
+  blocks, the party leader drawn from its `Graphics/Characters` sheet, grid
+  movement with tileset passability and an edge-clamped follow camera) — the
+  same staged approach the RPG2000 runtime took. `src/main.cxx` sizes the window
+  to XP's native 640×480 when it detects an XP project and the size was not
+  overridden. The schema is the mruby/CRuby common subset, so
+  `scripts/rpgxp_testbed_check.rb` validates it under CRuby against a real
+  downloaded project (`data/OpenGame.exe/Testbed/XP`) in CI, and
+  `mruby-rpgxp/test` unit-tests the data round-trip, tileset passability, camera,
+  CharSet geometry and save/load. Running the game's bundled RGSS scripts
+  (`Data/Scripts.rxdata`) is future work; see
+  `docs/adr/0010-rpgxp-rgss-data-layer.md`.
+- RPG Maker **XP** event system — map events now run. `RPGXP::Game::EventPage`
+  selects each event's active page (switch / variable / self-switch conditions,
+  highest matching page wins), and a new `RPGXP::Game::Interpreter` runs the
+  XP event-command list with a suspend/resume model (the scene drives the UI):
+  Show Text (+ 401 continuations), Show Choices with branch selection,
+  Conditional Branch / Else / End, Loop / Break / Repeat, Label / Jump, Call
+  Common Event, Control Switches / Variables / Self Switch, Change Gold, Transfer
+  Player and Play BGM/BGS/ME/SE — indent- and terminator-driven control flow with
+  a per-frame step cap. `Scene::Map` wires this in: it picks each event's page,
+  starts it on the action button, on player touch, on autorun, or as a background
+  parallel process, shows a bottom message/choice window, re-selects pages when
+  an event finishes (so a self switch it set takes effect) and performs Transfer
+  Player teleports. State gained gold and per-(map, event, channel) self switches
+  (persisted in the save). Covered by new `mruby-rpgxp/test` cases and by
+  `scripts/rpgxp_testbed_check.rb`, which now drives the real test bed's event
+  commands end to end. (Fixes along the way: the runtime avoids
+  `Integer#zero?` / `sprintf` / `String#strip` / regexp, which this mruby build
+  does not bundle.)
 - The event interpreter now supports **Erase Event**. Running it removes the
   event that is executing (foreground or a parallel process) from the map for
   the rest of the visit — its marker, movement, collision tile and, for a

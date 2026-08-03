@@ -1,0 +1,523 @@
+# RPG Maker XP event system: which page of an event is active, and the
+# event-command interpreter that runs a page's (or common event's) command list.
+#
+# XP command lists are flat arrays of RPG::EventCommand (code / indent /
+# parameters). Control flow is expressed by indent depth plus explicit
+# terminator codes (Else 411 / branch-end 412, choice When 402/403 / end 404,
+# loop repeat 413), which is cleaner to walk than the RPG2000 encoding. The
+# interpreter runs synchronously until it needs the scene — a message, a choice,
+# a wait or a teleport — at which point it raises `waiting?` and pauses; the
+# owning Scene::Map reads the request, drives the UI and calls `resume` (or
+# `choose`) to continue. A per-frame step cap keeps a pathological loop from
+# hanging the game.
+
+class RPGXP
+  module Game
+    # Small deterministic RNG (mruby has no seeded Kernel#rand here), used by the
+    # "set variable to a random value" operand so runs are reproducible.
+    class Rng
+      def initialize(seed = 12_345)
+        @state = seed & 0xffffffff
+      end
+
+      # A value in 0...n (n <= 0 yields 0).
+      def random(n)
+        return 0 if n <= 0
+        @state = (@state * 1_103_515_245 + 12_345) & 0x7fffffff
+        @state % n
+      end
+    end
+
+    # Chooses the active page of an event: the highest-indexed page whose
+    # condition is satisfied (RMXP evaluates pages top to bottom and the last
+    # match wins). `self_switch_on` answers whether a given self-switch channel
+    # is set for the event being evaluated.
+    module EventPage
+      def self.select(pages, switches, variables, self_switch_on)
+        return nil unless pages
+        i = pages.size - 1
+        while i >= 0
+          page = pages[i]
+          return page if condition_met?(page && page.condition, switches,
+                                        variables, self_switch_on)
+          i -= 1
+        end
+        nil
+      end
+
+      def self.condition_met?(c, switches, variables, self_switch_on)
+        return true if c.nil?
+        return false if c.switch1_valid && !switches[c.switch1_id]
+        return false if c.switch2_valid && !switches[c.switch2_id]
+        return false if c.variable_valid &&
+                        variables[c.variable_id] < c.variable_value
+        return false if c.self_switch_valid && !self_switch_on.call(c.self_switch_ch)
+        true
+      end
+    end
+
+    # Runs one event/common-event command list against the game State.
+    class Interpreter
+      # Command codes (RGSS1 / RPG Maker XP).
+      SHOW_TEXT       = 101
+      TEXT_LINE       = 401
+      SHOW_CHOICES    = 102
+      WHEN            = 402
+      WHEN_CANCEL     = 403
+      CHOICES_END     = 404
+      WAIT            = 106
+      COMMENT         = 108
+      COMMENT_LINE    = 408
+      CONDITIONAL     = 111
+      ELSE            = 411
+      BRANCH_END      = 412
+      LOOP            = 112
+      BREAK_LOOP      = 113
+      REPEAT_ABOVE    = 413
+      EXIT_EVENT      = 115
+      CALL_COMMON     = 117
+      LABEL           = 118
+      JUMP_LABEL      = 119
+      CONTROL_SWITCHES = 121
+      CONTROL_VARS    = 122
+      CONTROL_SELF_SW = 123
+      CHANGE_GOLD     = 125
+      TRANSFER_PLAYER = 201
+      PLAY_BGM        = 241
+      PLAY_BGS        = 245
+      PLAY_ME         = 249
+      PLAY_SE         = 250
+
+      MAX_STEPS_PER_FRAME = 10_000
+      MAX_CALL_DEPTH = 100
+
+      def initialize(state)
+        @state = state
+        @rng = Rng.new
+        @resolver = nil
+        reset
+      end
+
+      # resolver#common_event_list(id) -> the command list of a common event.
+      attr_accessor :resolver
+      attr_reader :wait_kind, :message_lines, :choice_labels, :choice_cancel,
+                  :wait_frames, :teleport
+
+      def running?; @running; end
+      def waiting?; @waiting; end
+
+      # Begin running `list` as the given event on `map_id` (nil event_id for a
+      # common event with no self-switch context).
+      def start(list, map_id = nil, event_id = nil)
+        @list = list || []
+        @index = 0
+        @map_id = map_id
+        @event_id = event_id
+        @call_stack = []
+        @running = true
+        reset_waits
+        self
+      end
+
+      def stop
+        @list = []
+        @index = 0
+        @call_stack = []
+        @running = false
+        reset_waits
+      end
+
+      # Advance until the list finishes or a UI request suspends us. Runs at most
+      # MAX_STEPS_PER_FRAME commands so a bad loop cannot hang the frame.
+      def update
+        return unless @running
+        return if @waiting
+        steps = 0
+        while @running && !@waiting
+          if @index >= @list.size
+            break unless return_from_call
+            next
+          end
+          execute(@list[@index])
+          steps += 1
+          if steps >= MAX_STEPS_PER_FRAME
+            $stderr.puts "[RGSS] interpreter step cap hit; stopping event"
+            stop
+            break
+          end
+        end
+        @running = false if !@waiting && @index >= @list.size && @call_stack.empty?
+      end
+
+      # Resume after a plain message / wait / teleport request.
+      def resume
+        reset_waits
+        update
+      end
+
+      # Resume a choice: `index` is the chosen option (or the cancel index).
+      def choose(index)
+        list = @list
+        base_indent = @choice_indent
+        reset_waits
+        target = find_when(list, @choice_start, base_indent, index)
+        @index = target ? target + 1 : skip_choices_end(list, @choice_start, base_indent)
+        update
+      end
+
+      private
+
+      def reset
+        @list = []
+        @index = 0
+        @running = false
+        @call_stack = []
+        reset_waits
+      end
+
+      def reset_waits
+        @waiting = false
+        @wait_kind = nil
+        @message_lines = nil
+        @choice_labels = nil
+        @choice_cancel = nil
+        @wait_frames = 0
+        @teleport = nil
+      end
+
+      def switches;  @state.switches;  end
+      def variables; @state.variables; end
+
+      def execute(cmd)
+        case cmd.code
+        when SHOW_TEXT       then do_show_text(cmd)
+        when SHOW_CHOICES    then do_show_choices(cmd)
+        when WHEN, WHEN_CANCEL then skip_past_choices(cmd) # fell through a branch
+        when CHOICES_END, BRANCH_END, LABEL, COMMENT, COMMENT_LINE,
+             TEXT_LINE, 0
+          consume
+        when WAIT            then do_wait(cmd)
+        when CONDITIONAL     then do_conditional(cmd)
+        when ELSE            then skip_to_after([BRANCH_END], cmd.indent) # true branch fell through
+        when LOOP            then consume
+        when REPEAT_ABOVE    then do_repeat(cmd)
+        when BREAK_LOOP      then do_break(cmd)
+        when EXIT_EVENT      then stop
+        when CALL_COMMON     then do_call_common(cmd)
+        when JUMP_LABEL      then do_jump_label(cmd)
+        when CONTROL_SWITCHES then do_control_switches(cmd)
+        when CONTROL_VARS    then do_control_vars(cmd)
+        when CONTROL_SELF_SW then do_control_self_switch(cmd)
+        when CHANGE_GOLD     then do_change_gold(cmd)
+        when TRANSFER_PLAYER then do_transfer(cmd)
+        when PLAY_BGM        then do_play(cmd, :bgm)
+        when PLAY_BGS        then do_play(cmd, :bgs)
+        when PLAY_ME         then do_play(cmd, :me)
+        when PLAY_SE         then do_play(cmd, :se)
+        else consume # unsupported command: skip
+        end
+      end
+
+      def consume
+        @index += 1
+      end
+
+      def param(cmd, i, default = nil)
+        v = cmd.parameters && cmd.parameters[i]
+        v.nil? ? default : v
+      end
+
+      # -- flow helpers -------------------------------------------------------
+
+      # Advance @index just past the first command at `indent` whose code is in
+      # `codes`, starting from @index.
+      def skip_to_after(codes, indent)
+        i = @index + 1
+        while i < @list.size
+          c = @list[i]
+          return (@index = i + 1) if c.indent == indent && codes.include?(c.code)
+          i += 1
+        end
+        @index = @list.size
+      end
+
+      # Set @index to the first command at `indent` whose code is in `codes`
+      # (without stepping past it); returns that index or nil.
+      def seek(codes, indent, from)
+        i = from
+        while i < @list.size
+          c = @list[i]
+          return i if c.indent == indent && codes.include?(c.code)
+          i += 1
+        end
+        nil
+      end
+
+      # -- messages / choices -------------------------------------------------
+
+      def do_show_text(cmd)
+        lines = []
+        first = param(cmd, 0)
+        lines << first.to_s if first.is_a?(String)
+        # Following 401 lines belong to the same text box.
+        j = @index + 1
+        while j < @list.size && @list[j].code == TEXT_LINE
+          lines << param(@list[j], 0).to_s
+          j += 1
+        end
+        @index = j
+        @message_lines = lines.empty? ? [""] : lines
+        @wait_kind = :message
+        @waiting = true
+      end
+
+      def do_show_choices(cmd)
+        @choice_labels = (param(cmd, 0) || []).map(&:to_s)
+        @choice_cancel = param(cmd, 1, 0)
+        @choice_start = @index
+        @choice_indent = cmd.indent
+        @wait_kind = :choice
+        @waiting = true
+      end
+
+      # The 402/403 matching the chosen option, searched at the choices' indent.
+      def find_when(list, choice_start, indent, chosen)
+        i = choice_start + 1
+        while i < list.size
+          c = list[i]
+          if c.indent == indent
+            return i if c.code == WHEN && c.parameters[0] == chosen
+            return i if c.code == WHEN_CANCEL && chosen == @choice_cancel
+            break if c.code == CHOICES_END
+          end
+          i += 1
+        end
+        nil
+      end
+
+      def skip_choices_end(list, choice_start, indent)
+        i = choice_start + 1
+        while i < list.size
+          c = list[i]
+          return i + 1 if c.indent == indent && c.code == CHOICES_END
+          i += 1
+        end
+        list.size
+      end
+
+      # A When/WhenCancel reached by falling through the previous branch: jump to
+      # just past the choice block's 404.
+      def skip_past_choices(cmd)
+        skip_to_after([CHOICES_END], cmd.indent)
+      end
+
+      def do_wait(cmd)
+        @wait_frames = param(cmd, 0, 0).to_i * 2 # RGSS wait unit is 2 frames
+        @wait_kind = :wait
+        @waiting = true
+        @index += 1
+      end
+
+      # -- conditionals -------------------------------------------------------
+
+      def do_conditional(cmd)
+        if eval_condition(cmd)
+          @index += 1 # enter the true branch body
+        else
+          # Skip to Else or branch-End at this indent; step past it. When we land
+          # on Else, execution continues into the else body.
+          target = seek([ELSE, BRANCH_END], cmd.indent, @index + 1)
+          @index = target ? target + 1 : @list.size
+        end
+      end
+
+      def eval_condition(cmd)
+        case param(cmd, 0)
+        when 0 # switch: [0, id, value(0 on / 1 off)]
+          switches[param(cmd, 1)] == (param(cmd, 2) == 0)
+        when 1 # variable: [1, id, cmp_type(0 const/1 var), operand, operator]
+          lhs = variables[param(cmd, 1)]
+          rhs = param(cmd, 2) == 0 ? param(cmd, 3) : variables[param(cmd, 3)]
+          compare(lhs, rhs, param(cmd, 4, 0))
+        when 2 # self switch: [2, ch, value(0 on / 1 off)]
+          self_switch_on?(param(cmd, 1)) == (param(cmd, 2) == 0)
+        when 7 # gold: [7, amount, cmp(0 >= / 1 <=)]
+          param(cmd, 2) == 0 ? @state.gold >= param(cmd, 1) : @state.gold <= param(cmd, 1)
+        else
+          true # unsupported condition types default to the true branch
+        end
+      end
+
+      def compare(lhs, rhs, op)
+        case op
+        when 0 then lhs == rhs
+        when 1 then lhs >= rhs
+        when 2 then lhs <= rhs
+        when 3 then lhs > rhs
+        when 4 then lhs < rhs
+        when 5 then lhs != rhs
+        else lhs == rhs
+        end
+      end
+
+      # -- loops --------------------------------------------------------------
+
+      def do_repeat(cmd)
+        # Jump back to the matching Loop (112) at this indent.
+        i = @index - 1
+        while i >= 0
+          c = @list[i]
+          return (@index = i + 1) if c.indent == cmd.indent && c.code == LOOP
+          i -= 1
+        end
+        @index += 1
+      end
+
+      def do_break(cmd)
+        # Break out to just past the enclosing loop's Repeat (413): the first 413
+        # ahead at a shallower indent than this Break (a break may be nested in
+        # conditionals inside the loop, so its own indent is not the loop's).
+        i = @index + 1
+        while i < @list.size
+          c = @list[i]
+          return (@index = i + 1) if c.code == REPEAT_ABOVE && c.indent < cmd.indent
+          i += 1
+        end
+        @index = @list.size
+      end
+
+      # -- labels / calls -----------------------------------------------------
+
+      def do_jump_label(cmd)
+        name = param(cmd, 0)
+        i = 0
+        while i < @list.size
+          c = @list[i]
+          return (@index = i) if c.code == LABEL && c.parameters[0] == name
+          i += 1
+        end
+        @index += 1
+      end
+
+      def do_call_common(cmd)
+        id = param(cmd, 0)
+        list = @resolver && @resolver.common_event_list(id)
+        @index += 1
+        return unless list && !list.empty?
+        if @call_stack.size >= MAX_CALL_DEPTH
+          $stderr.puts "[RGSS] common-event call depth exceeded; skipping"
+          return
+        end
+        @call_stack.push([@list, @index, @event_id])
+        @list = list
+        @index = 0
+        # A called common event keeps the caller's self-switch/event context.
+      end
+
+      def return_from_call
+        return false if @call_stack.empty?
+        @list, @index, @event_id = @call_stack.pop
+        true
+      end
+
+      # -- state changes ------------------------------------------------------
+
+      def do_control_switches(cmd)
+        first = param(cmd, 0)
+        last = param(cmd, 1, first)
+        on = param(cmd, 2) == 0
+        (first..last).each { |id| switches[id] = on }
+        @index += 1
+      end
+
+      def do_control_vars(cmd)
+        first = param(cmd, 0)
+        last = param(cmd, 1, first)
+        op = param(cmd, 2, 0)
+        val = var_operand(cmd)
+        (first..last).each do |id|
+          variables[id] = apply_op(op, variables[id], val)
+        end
+        @index += 1
+      end
+
+      def var_operand(cmd)
+        case param(cmd, 3)
+        when 0 then param(cmd, 4, 0)                    # constant
+        when 1 then variables[param(cmd, 4)]           # variable
+        when 2 # random: [.., 2, min, max]
+          lo = param(cmd, 4, 0)
+          hi = param(cmd, 5, lo)
+          lo + @rng.random(hi - lo + 1)
+        else 0                                          # unsupported operand
+        end
+      end
+
+      def apply_op(op, cur, val)
+        case op
+        when 0 then val
+        when 1 then cur + val
+        when 2 then cur - val
+        when 3 then cur * val
+        when 4 then val == 0 ? cur : cur / val
+        when 5 then val == 0 ? cur : cur % val
+        else val
+        end
+      end
+
+      def do_control_self_switch(cmd)
+        ch = param(cmd, 0)
+        on = param(cmd, 1) == 0
+        @state.set_self_switch(@map_id, @event_id, ch, on) if @event_id
+        @index += 1
+      end
+
+      def do_change_gold(cmd)
+        amount = param(cmd, 1) == 0 ? param(cmd, 2, 0) : variables[param(cmd, 2)]
+        @state.gold += (param(cmd, 0) == 0 ? amount : -amount)
+        @state.gold = 0 if @state.gold < 0
+        @index += 1
+      end
+
+      def do_transfer(cmd)
+        if param(cmd, 0) == 0 # direct designation
+          map_id = param(cmd, 1)
+          x = param(cmd, 2)
+          y = param(cmd, 3)
+        else # variable designation
+          map_id = variables[param(cmd, 1)]
+          x = variables[param(cmd, 2)]
+          y = variables[param(cmd, 3)]
+        end
+        @teleport = [map_id, x, y, param(cmd, 4, 0)]
+        @wait_kind = :teleport
+        @waiting = true
+        @index += 1
+      end
+
+      def do_play(cmd, kind)
+        audio = param(cmd, 0)
+        return @index += 1 unless audio && audio.respond_to?(:name) && audio.name
+        name = audio.name
+        vol = audio.respond_to?(:volume) ? (audio.volume || 100) : 100
+        pit = audio.respond_to?(:pitch) ? (audio.pitch || 100) : 100
+        begin
+          case kind
+          when :bgm then Audio.bgm_play(name, vol, pit)
+          when :bgs then Audio.bgs_play(name, vol, pit)
+          when :me  then Audio.me_play(name, vol, pit)
+          when :se  then Audio.se_play(name, vol, pit)
+          end
+        rescue StandardError => e
+          $stderr.puts "[RGSS] event audio '#{name}' failed: #{e.message}"
+        end
+        @index += 1
+      end
+
+      def self_switch_on?(ch)
+        return false unless @event_id
+        @state.self_switch(@map_id, @event_id, ch)
+      end
+    end
+  end
+end

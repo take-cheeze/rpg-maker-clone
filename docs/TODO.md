@@ -157,8 +157,53 @@ The work below is roughly ordered by the critical path to a walkable game
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)
 
-## RPG Maker with RGSS
-- Support game library features of RGSS which could be found in https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
+## RPG Maker with RGSS (XP / VX / VXAce)
+
+An RPG Maker XP project stores its whole database as Ruby `Marshal` dumps
+(`Data/*.rxdata`) and its game logic as ~90 zlib-deflated RGSS (Ruby 1.8)
+scripts in `Data/Scripts.rxdata`. The graphics/audio/value primitives already
+exist natively as `mruby-rgss`; the work below brings an XP project up on top of
+them, mirroring how the RPG2000 side was staged. Full rationale:
+`docs/adr/0010-rpgxp-rgss-data-layer.md`.
+
+- ✅ **Data layer** — `mruby-rpgxp/mrblib/rgss_data.rb` declares the `RPG::*`
+  schema so every `Data/*.rxdata` file loads straight through `Marshal.load`
+  (the value types `Table`/`Color`/`Tone`/`Rect` round-trip natively in
+  mruby-rgss), and `RPGXP::RGSSData` exposes them as a database. Smoke-tested
+  against a real project by `scripts/rpgxp_testbed_check.rb` (run in CI) and
+  unit-tested in `mruby-rpgxp/test`.
+- ✅ **Boot to title** — `RPGXP` reads `Game.ini`, builds the database and shows
+  a `Scene::Title` (title graphic + New Game / Continue / Shutdown in an
+  XP-styled window, title BGM / cursor & decision SE). `src/main.cxx` sizes the
+  window to XP's native 640×480.
+- 🚧 **Map scene** — New Game builds the party from `System.party_members`,
+  loads the start map and enters a walkable `Scene::Map`: the three tile layers
+  render as placeholder colour blocks, the party leader is drawn from its
+  `Graphics/Characters` sheet, and movement is grid-based with tileset
+  passability and a follow camera. Real tileset/autotile blitting and event
+  sprites (events are markers for now) are the remaining rendering work.
+- 🚧 **Event system** — event pages select their active page by condition
+  (`Game::EventPage`: switch / variable / self-switch, highest match wins) and a
+  `Game::Interpreter` runs the XP command list with a suspend/resume model: Show
+  Text / Choices, Conditional Branch / Else / End, Loop / Break / Repeat, Label /
+  Jump, Call Common Event, Control Switches / Variables / Self Switch, Change
+  Gold, Transfer Player and Play BGM/BGS/ME/SE, indent- and terminator-driven
+  with a per-frame step cap. `Scene::Map` starts events on the action button, on
+  player touch, on autorun or as a background parallel process, drives a
+  message/choice window, and re-selects pages when an event finishes. Covered by
+  `mruby-rpgxp/test` and driven over the real test bed by
+  `scripts/rpgxp_testbed_check.rb`. Still to come: autonomous event move
+  types / move routes (events don't roam yet), Input Number, and the many
+  screen-effect / picture / battle commands (skipped for now).
+- **Menus / save / battle** — the default menu screens, saving in the real
+  `.rxdata` save format (a portable Marshal save is used for now), and the
+  battle system.
+- **Run the bundled RGSS scripts** — the largest possible direction: an
+  `eval`-based host that runs `Data/Scripts.rxdata` unmodified against the RGSS
+  class library (the equivalent of the MV "embed the real engine" choice),
+  which would also run community scripts. Out of scope for the current layer.
+- Reference for the RGSS game library:
+  https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 
 ## RPG Maker with JavaScript
 
