@@ -125,14 +125,19 @@ class RPGXP
   private
 
   # The window title from Game.ini's [Game] Title=, falling back to the folder
-  # name. Best effort: a missing/garbled ini must not stop the boot.
+  # name. Parsed with core string operations only (no regexp/String ext), since
+  # this mruby build bundles neither. Best effort: a missing/garbled ini must not
+  # stop the boot.
+  KEY = "Title=".freeze
+
   def read_ini_title
     path = "#{GAME_DIR}/Game.ini"
     return default_title unless File.exist?(path)
     File.open(path, "r") do |f|
       f.each_line do |line|
-        m = line.match(/\A\s*Title\s*=\s*(.+?)\s*\z/)
-        return m[1] if m
+        next unless line.size >= KEY.size && line[0, KEY.size] == KEY
+        value = trim(line[KEY.size, line.size])
+        return value unless value.empty?
       end
     end
     default_title
@@ -141,7 +146,20 @@ class RPGXP
     default_title
   end
 
+  # Strip trailing CR/LF/space from a string without String#strip (absent here).
+  def trim(s)
+    e = s.size
+    while e > 0
+      c = s[e - 1]
+      break unless c == "\r" || c == "\n" || c == " " || c == "\t"
+      e -= 1
+    end
+    s[0, e]
+  end
+
   def default_title
     File.basename(GAME_DIR)
+  rescue StandardError
+    "RPG Maker XP"
   end
 end

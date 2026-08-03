@@ -147,3 +147,228 @@ assert "Game::State save/load round-trip" do
   assert_false loaded.switches[999]
   assert_equal 0, loaded.variables[999]
 end
+
+# ---- Event system: page selection + interpreter ---------------------------
+
+# Build an RPG::EventCommand (code / indent / parameters).
+def cmd(code, params = [], indent = 0)
+  c = RPG::EventCommand.new
+  c.code = code
+  c.indent = indent
+  c.parameters = params
+  c
+end
+
+# Resolver stand-in for Call Common Event.
+class TestResolver
+  def initialize(commons)
+    @commons = commons
+  end
+
+  def common_event_list(id)
+    ce = @commons[id]
+    ce && ce.list
+  end
+end
+
+def new_state
+  RPGXP::Game::State.new(FakeDB.new, [1], 1, 0, 0)
+end
+
+def run_to_end(state, list, resolver = nil)
+  it = RPGXP::Game::Interpreter.new(state)
+  it.resolver = resolver
+  it.start(list, 1, 7)
+  it.update
+  it
+end
+
+def make_condition(fields = {})
+  c = RPG::Event::Page::Condition.new
+  c.switch1_valid = fields[:switch1_valid] || false
+  c.switch1_id = fields[:switch1_id] || 1
+  c.switch2_valid = fields[:switch2_valid] || false
+  c.switch2_id = fields[:switch2_id] || 1
+  c.variable_valid = fields[:variable_valid] || false
+  c.variable_id = fields[:variable_id] || 1
+  c.variable_value = fields[:variable_value] || 0
+  c.self_switch_valid = fields[:self_switch_valid] || false
+  c.self_switch_ch = fields[:self_switch_ch] || "A"
+  c
+end
+
+def make_page(condition)
+  p = RPG::Event::Page.new
+  p.condition = condition
+  p
+end
+
+assert "EventPage.select picks the highest satisfied page" do
+  no_self = ->(_ch) { false }
+  p0 = make_page(make_condition)                                   # always on
+  p1 = make_page(make_condition(switch1_valid: true, switch1_id: 5))
+  pages = [p0, p1]
+
+  sw = Hash.new(false)
+  vars = Hash.new(0)
+  # Switch 5 off: page 1's condition fails, so page 0 is active.
+  assert_equal p0, RPGXP::Game::EventPage.select(pages, sw, vars, no_self)
+  # Switch 5 on: page 1 (higher) wins.
+  sw[5] = true
+  assert_equal p1, RPGXP::Game::EventPage.select(pages, sw, vars, no_self)
+end
+
+assert "EventPage.select honours variable and self-switch conditions" do
+  vars = Hash.new(0)
+  sw = Hash.new(false)
+  var_page = make_page(make_condition(variable_valid: true, variable_id: 3, variable_value: 10))
+  base = make_page(make_condition)
+  pages = [base, var_page]
+  assert_equal base, RPGXP::Game::EventPage.select(pages, sw, vars, ->(_c) { false })
+  vars[3] = 10
+  assert_equal var_page, RPGXP::Game::EventPage.select(pages, sw, vars, ->(_c) { false })
+
+  self_page = make_page(make_condition(self_switch_valid: true, self_switch_ch: "B"))
+  pages2 = [base, self_page]
+  assert_equal base, RPGXP::Game::EventPage.select(pages2, sw, vars, ->(ch) { ch == "A" })
+  assert_equal self_page, RPGXP::Game::EventPage.select(pages2, sw, vars, ->(ch) { ch == "B" })
+end
+
+assert "Interpreter: control switches / variables / gold" do
+  s = new_state
+  run_to_end(s, [
+    cmd(121, [5, 5, 0]),          # switch 5 ON
+    cmd(121, [6, 7, 0]),          # switches 6..7 ON
+    cmd(122, [1, 1, 0, 0, 42]),   # var 1 = 42
+    cmd(122, [1, 1, 1, 0, 8]),    # var 1 += 8
+    cmd(125, [0, 0, 100])         # gold += 100
+  ])
+  assert_true s.switches[5]
+  assert_true s.switches[6]
+  assert_true s.switches[7]
+  assert_equal 50, s.variables[1]
+  assert_equal 100, s.gold
+end
+
+assert "Interpreter: conditional branch true and else" do
+  # Switch 5 ON -> true branch sets switch 1; else sets switch 2.
+  list = [
+    cmd(111, [0, 5, 0], 0),
+    cmd(121, [1, 1, 0], 1),
+    cmd(411, [], 0),
+    cmd(121, [2, 2, 0], 1),
+    cmd(412, [], 0)
+  ]
+  on = new_state
+  on.switches[5] = true
+  run_to_end(on, list)
+  assert_true on.switches[1]
+  assert_false on.switches[2]
+
+  off = new_state
+  run_to_end(off, list)
+  assert_false off.switches[1]
+  assert_true off.switches[2]
+end
+
+assert "Interpreter: show choices runs the chosen branch" do
+  list = [
+    cmd(102, [["Yes", "No"], 1], 0),
+    cmd(402, [0, "Yes"], 0),
+    cmd(121, [1, 1, 0], 1),         # Yes -> switch 1
+    cmd(402, [1, "No"], 0),
+    cmd(121, [2, 2, 0], 1),         # No  -> switch 2
+    cmd(404, [], 0),
+    cmd(121, [3, 3, 0], 0)          # after: switch 3 (always)
+  ]
+
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start(list, 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal :choice, it.wait_kind
+  assert_equal ["Yes", "No"], it.choice_labels
+  it.choose(0)
+  assert_true s.switches[1]
+  assert_false s.switches[2]
+  assert_true s.switches[3]
+
+  s2 = new_state
+  it2 = RPGXP::Game::Interpreter.new(s2)
+  it2.start(list, 1, 7)
+  it2.update
+  it2.choose(1)
+  assert_false s2.switches[1]
+  assert_true s2.switches[2]
+  assert_true s2.switches[3]
+end
+
+assert "Interpreter: loop with break counts to a threshold" do
+  s = new_state
+  run_to_end(s, [
+    cmd(122, [1, 1, 0, 0, 0], 0),     # var1 = 0
+    cmd(112, [], 0),                  # loop
+    cmd(122, [1, 1, 1, 0, 1], 1),     #   var1 += 1
+    cmd(111, [1, 1, 0, 3, 3], 1),     #   if var1 > 3
+    cmd(113, [], 2),                  #     break
+    cmd(412, [], 1),                  #   end
+    cmd(413, [], 0)                   # repeat
+  ])
+  assert_equal 4, s.variables[1]
+end
+
+assert "Interpreter: label and jump" do
+  s = new_state
+  run_to_end(s, [
+    cmd(122, [1, 1, 0, 0, 0], 0),     # var1 = 0
+    cmd(118, ["top"], 0),             # label top
+    cmd(122, [1, 1, 1, 0, 1], 0),     # var1 += 1
+    cmd(111, [1, 1, 0, 3, 4], 0),     # if var1 < 3
+    cmd(119, ["top"], 1),             #   jump top
+    cmd(412, [], 0)
+  ])
+  assert_equal 3, s.variables[1]
+end
+
+assert "Interpreter: call common event" do
+  common = RPG::CommonEvent.new
+  common.id = 1
+  common.list = [cmd(121, [9, 9, 0], 0)]     # switch 9 ON
+  resolver = TestResolver.new([nil, common])
+  s = new_state
+  run_to_end(s, [cmd(117, [1], 0)], resolver)
+  assert_true s.switches[9]
+end
+
+assert "Interpreter: self switch set and read back" do
+  s = new_state
+  run_to_end(s, [cmd(123, ["A", 0])])         # self switch A ON for event 7
+  assert_true s.self_switch(1, 7, "A")
+  assert_false s.self_switch(1, 7, "B")
+end
+
+assert "Interpreter: show text surfaces message lines" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(101, ["Hello"], 0),
+    cmd(401, ["World"], 0)
+  ], 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal :message, it.wait_kind
+  assert_equal ["Hello", "World"], it.message_lines
+  it.resume
+  assert_false it.running?
+end
+
+assert "Interpreter: transfer player surfaces a teleport request" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([cmd(201, [0, 3, 8, 9, 2, 0], 0)], 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal :teleport, it.wait_kind
+  assert_equal [3, 8, 9, 2], it.teleport
+end

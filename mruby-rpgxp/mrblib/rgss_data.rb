@@ -257,8 +257,12 @@ class RPGXP
 
     # Load one map (Data/MapNNN.rxdata) by id. Maps are big, so they are not
     # cached with the rest of the database — the caller loads the one it needs.
+    # Ids are zero-padded to three digits (Map001.rxdata) without sprintf/format,
+    # which this mruby build does not bundle.
     def load_map(id)
-      load_data(format("Map%03d", id))
+      num = id.to_s
+      num = "0#{num}" while num.size < 3
+      load_data("Map#{num}")
     end
 
     # Absolute path of a Data/ entry.

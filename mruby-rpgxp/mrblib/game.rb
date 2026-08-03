@@ -17,13 +17,27 @@ class RPGXP
         @y = y
         @direction = direction
         @map = nil
+        @gold = 0
         @switches = Hash.new(false)
         @variables = Hash.new(0)
+        # Self switches are per (map_id, event_id, channel). Global across the
+        # game (they persist when you leave and re-enter a map), keyed the way
+        # RMXP's $game_self_switches is.
+        @self_switches = Hash.new(false)
       end
 
       attr_reader :db
-      attr_accessor :map_id, :x, :y, :direction, :map, :party,
-                    :switches, :variables
+      attr_accessor :map_id, :x, :y, :direction, :map, :party, :gold,
+                    :switches, :variables, :self_switches
+
+      # Read/write a self switch for a specific event on a specific map.
+      def self_switch(map_id, event_id, ch)
+        @self_switches[[map_id, event_id, ch]]
+      end
+
+      def set_self_switch(map_id, event_id, ch, on)
+        @self_switches[[map_id, event_id, ch]] = on
+      end
 
       # The lead actor's RPG::Actor record (nil when the party is empty or the id
       # is unknown), used for the on-map character graphic.
@@ -35,14 +49,17 @@ class RPGXP
       # Portable save payload (our own Marshal format, not the RMXP .rxdata save).
       def to_h
         { map_id: @map_id, x: @x, y: @y, direction: @direction,
-          party: @party, switches: hash_to_plain(@switches),
-          variables: hash_to_plain(@variables) }
+          party: @party, gold: @gold, switches: hash_to_plain(@switches),
+          variables: hash_to_plain(@variables),
+          self_switches: hash_to_plain(@self_switches) }
       end
 
       def self.load(db, h)
         s = new(db, h[:party], h[:map_id], h[:x], h[:y], h[:direction] || 2)
+        s.gold = h[:gold] || 0
         (h[:switches] || {}).each { |k, v| s.switches[k] = v }
         (h[:variables] || {}).each { |k, v| s.variables[k] = v }
+        (h[:self_switches] || {}).each { |k, v| s.self_switches[k] = v }
         s
       end
 
@@ -94,7 +111,7 @@ class RPGXP
 
       # Passage byte for a tile id (0 when unknown / out of range / empty).
       def passage(tile_id)
-        return 0 if tile_id.nil? || tile_id.zero?
+        return 0 if tile_id.nil? || tile_id == 0
         p = @passages
         return 0 unless p
         return 0 if tile_id >= p.xsize
@@ -109,7 +126,7 @@ class RPGXP
         any_tile = false
         (0..2).each do |z|
           tid = map.data[x, y, z]
-          next if tid.nil? || tid.zero?
+          next if tid.nil? || tid == 0
           any_tile = true
           return false if (passage(tid) & bit) != 0
           return false if (passage(tid) & 0x0f) == 0x0f

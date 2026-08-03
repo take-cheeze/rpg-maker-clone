@@ -274,6 +274,19 @@ class RPGXP
     # interpolation, tileset collision and an edge-clamped follow camera. Map
     # events are drawn as markers for now; running their command lists is the
     # next milestone.
+    # Resolves the command list a Call Common Event refers to (common events are
+    # 1-based in the database array).
+    class EventResolver
+      def initialize(common_events)
+        @common = common_events || []
+      end
+
+      def common_event_list(id)
+        ce = @common[id]
+        ce && ce.list
+      end
+    end
+
     class Map < Base
       TILE = RPGXP::TILE
       SCREEN_W = RPGXP::WIDTH
@@ -281,6 +294,14 @@ class RPGXP
       COLS = SCREEN_W / TILE + 1
       ROWS = SCREEN_H / TILE + 1
       SPEED = 4 # pixels/frame while stepping (must divide TILE)
+      MSG_LINE_H = 32
+
+      # Event-page start triggers (RPG::Event::Page#trigger).
+      TRIGGER_ACTION       = 0 # player presses the action button facing it
+      TRIGGER_PLAYER_TOUCH = 1 # player walks into it
+      TRIGGER_EVENT_TOUCH  = 2 # it walks into the player (not modelled yet)
+      TRIGGER_AUTORUN      = 3 # runs automatically while its page is active
+      TRIGGER_PARALLEL     = 4 # runs continuously in the background
 
       def initialize(parent, state)
         super parent
@@ -296,7 +317,16 @@ class RPGXP
         @dest_y = @state.y
         @last_frame = nil
 
-        collect_events
+        @resolver = EventResolver.new(@db.common_events)
+        @interpreter = Game::Interpreter.new(@state)
+        @interpreter.resolver = @resolver
+        @message = nil
+        @wait_timer = nil
+        @choice_index = 0
+        @running_event_id = nil
+
+        build_events
+        build_parallels
         setup_sprites
         render
       end
@@ -304,11 +334,18 @@ class RPGXP
       attr_reader :state
 
       def dispose
+        close_message
         [@lower_sprite, @upper_sprite, @player_sprite].each { |s| s.dispose if s }
       end
 
       def update
-        step_movement
+        if @message
+          drive_message
+        elsif @interpreter.running? || @interpreter.waiting?
+          drive_interpreter
+        else
+          start_autorun || (step_parallels; step_movement; try_action)
+        end
         render
       end
 
@@ -325,15 +362,225 @@ class RPGXP
         nil
       end
 
-      # Cache the tiles map events occupy so they can be drawn and collided with.
-      def collect_events
+      # (Re)build the runtime event list for the current map: pick each event's
+      # active page (per switch / variable / self-switch conditions) and index
+      # the tiles they occupy for collision and drawing. Called on entry and
+      # whenever an event finishes, since it may have flipped a switch.
+      def build_events
+        @events = {}
         @event_tiles = {}
-        (@map.events || {}).each do |_id, ev|
-          @event_tiles[[ev.x, ev.y]] = ev
+        (@map.events || {}).each do |id, ev|
+          page = Game::EventPage.select(ev.pages, @state.switches, @state.variables,
+                                        ->(ch) { @state.self_switch(@state.map_id, id, ch) })
+          entry = { id: id, ev: ev, page: page, x: ev.x, y: ev.y,
+                    trigger: page && page.trigger }
+          @events[id] = entry
+          @event_tiles[[ev.x, ev.y]] = entry if page
         end
       rescue StandardError => e
-        $stderr.puts "[RGSS] event collection failed: #{e.message}"
+        $stderr.puts "[RGSS] event setup failed, map runs with no events: #{e.message}"
+        @events = {}
         @event_tiles = {}
+      end
+
+      # Background (parallel-process) interpreters: one per event whose active
+      # page has the parallel trigger. Each loops its own list.
+      def build_parallels
+        @parallels = []
+        @events.each do |id, e|
+          next unless e[:trigger] == TRIGGER_PARALLEL && e[:page] && page_list(e)
+          it = Game::Interpreter.new(@state)
+          it.resolver = @resolver
+          it.start(page_list(e), @state.map_id, id)
+          @parallels << { interp: it, id: id, list: page_list(e), wait: nil }
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] parallel setup failed: #{e.message}"
+        @parallels = []
+      end
+
+      def page_list(entry)
+        p = entry[:page]
+        p && p.list
+      end
+
+      # -- event execution ----------------------------------------------------
+
+      # Start the first autorun event's page (if any). Returns true when one was
+      # started, so the caller skips movement this frame.
+      def start_autorun
+        e = @events.values.find do |ev|
+          ev[:trigger] == TRIGGER_AUTORUN && ev[:page] && list_nonempty?(page_list(ev))
+        end
+        return false unless e
+        @running_event_id = e[:id]
+        @interpreter.start(page_list(e), @state.map_id, e[:id])
+        drive_interpreter
+        true
+      end
+
+      def try_action
+        return unless Input.trigger?(Input::C)
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        e = @event_tiles[[fx, fy]]
+        return unless e && e[:trigger] == TRIGGER_ACTION && list_nonempty?(page_list(e))
+        @running_event_id = e[:id]
+        @interpreter.start(page_list(e), @state.map_id, e[:id])
+        drive_interpreter
+      end
+
+      def drive_interpreter
+        if @interpreter.waiting?
+          case @interpreter.wait_kind
+          when :message  then open_message(@interpreter.message_lines, false)
+          when :choice   then open_message(@interpreter.choice_labels, true)
+          when :wait     then drive_wait
+          when :teleport then perform_teleport(@interpreter.teleport)
+          end
+        else
+          @interpreter.update
+          finish_event unless @interpreter.running? || @interpreter.waiting?
+        end
+      end
+
+      # An event finished: re-select pages (a self switch / switch it set may
+      # change which page is active) and rebuild parallels.
+      def finish_event
+        @running_event_id = nil
+        build_events
+        build_parallels
+      end
+
+      def drive_wait
+        @wait_timer = @interpreter.wait_frames if @wait_timer.nil?
+        if @wait_timer <= 0
+          @wait_timer = nil
+          @interpreter.resume
+        else
+          @wait_timer -= 1
+        end
+      end
+
+      # Advance every background parallel process one frame. They honour Wait but
+      # do not drive the message/choice/teleport UI (those requests are resumed
+      # so the loop keeps running). Only stepped while the foreground is idle.
+      def step_parallels
+        @parallels.each { |p| step_parallel(p) }
+      end
+
+      def step_parallel(p)
+        it = p[:interp]
+        if it.waiting?
+          if it.wait_kind == :wait
+            p[:wait] = it.wait_frames if p[:wait].nil?
+            if p[:wait] <= 0
+              p[:wait] = nil
+              it.resume
+            else
+              p[:wait] -= 1
+            end
+          else
+            it.resume # ignore UI requests in the background
+          end
+        elsif it.running?
+          it.update
+        else
+          it.start(p[:list], @state.map_id, p[:id]) # loop the process
+          it.update
+        end
+      rescue StandardError
+        nil
+      end
+
+      def perform_teleport(t)
+        map_id, x, y, dir = t
+        @interpreter.stop
+        @map = @db.load_map(map_id)
+        @state.map = @map
+        @state.map_id = map_id
+        @state.x = x
+        @state.y = y
+        @state.direction = dir if dir && dir > 0
+        @tileset = Game::TileSet.new(@db, @map.tileset_id)
+        @moving = false
+        @move_count = 0
+        @dest_x = x
+        @dest_y = y
+        @last_frame = nil
+        build_events
+        build_parallels
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Teleport failed: #{e.message}"
+        @interpreter.stop
+      end
+
+      # -- message / choice window --------------------------------------------
+
+      def open_message(lines, choice)
+        return if @message
+        lines = (lines || []).map(&:to_s)
+        lines = [""] if lines.empty?
+        h = lines.length * MSG_LINE_H + Panel::BORDER * 2
+        win = Panel.new(0, SCREEN_H - h - 8, SCREEN_W, h, load_windowskin)
+        win.z = 300
+        contents = Bitmap.new(win.inner_width, win.inner_height)
+        contents.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |line, i|
+          contents.draw_text 8, i * MSG_LINE_H + 2, contents.width - 16, MSG_LINE_H, line
+        end
+        win.contents = contents
+        @message = { window: win, choice: choice, count: lines.length }
+        @choice_index = 0
+        set_choice_cursor if choice
+      end
+
+      def set_choice_cursor
+        return unless @message
+        @message[:window].cursor_rect =
+          Rect.new(0, @choice_index * MSG_LINE_H, @message[:window].inner_width, MSG_LINE_H)
+      end
+
+      def drive_message
+        if @message[:choice]
+          if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
+            @choice_index += 1
+            set_choice_cursor
+          elsif Input.trigger?(Input::UP) && @choice_index > 0
+            @choice_index -= 1
+            set_choice_cursor
+          elsif Input.trigger?(Input::C)
+            index = @choice_index
+            close_message
+            @interpreter.choose(index)
+            drive_after_message
+          end
+        elsif Input.trigger?(Input::C) || Input.trigger?(Input::B)
+          close_message
+          @interpreter.resume
+          drive_after_message
+        end
+      end
+
+      # After a message closes and the interpreter advances, immediately pump the
+      # next request (another message, a wait, or completion) so a run of text
+      # boxes flows without a blank frame between them.
+      def drive_after_message
+        return if @message
+        if @interpreter.running? || @interpreter.waiting?
+          drive_interpreter
+        else
+          finish_event
+        end
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
+      end
+
+      def list_nonempty?(list)
+        list && list.any? { |c| c.code != 0 }
       end
 
       def setup_sprites
@@ -375,6 +622,16 @@ class RPGXP
 
         @state.direction = dir
         nx, ny = target_tile(@state.x, @state.y, dir)
+
+        # Walking into a player-touch (trigger 1) event runs it instead of moving.
+        e = @event_tiles[[nx, ny]]
+        if e && e[:trigger] == TRIGGER_PLAYER_TOUCH && list_nonempty?(page_list(e))
+          @running_event_id = e[:id]
+          @interpreter.start(page_list(e), @state.map_id, e[:id])
+          drive_interpreter
+          return
+        end
+
         return unless passable?(nx, ny, dir)
 
         @dest_x = nx

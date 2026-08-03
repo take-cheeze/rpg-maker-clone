@@ -26,6 +26,24 @@ All notable changes to this project will be documented in this file.
   CharSet geometry and save/load. Running the game's bundled RGSS scripts
   (`Data/Scripts.rxdata`) is future work; see
   `docs/adr/0010-rpgxp-rgss-data-layer.md`.
+- RPG Maker **XP** event system — map events now run. `RPGXP::Game::EventPage`
+  selects each event's active page (switch / variable / self-switch conditions,
+  highest matching page wins), and a new `RPGXP::Game::Interpreter` runs the
+  XP event-command list with a suspend/resume model (the scene drives the UI):
+  Show Text (+ 401 continuations), Show Choices with branch selection,
+  Conditional Branch / Else / End, Loop / Break / Repeat, Label / Jump, Call
+  Common Event, Control Switches / Variables / Self Switch, Change Gold, Transfer
+  Player and Play BGM/BGS/ME/SE — indent- and terminator-driven control flow with
+  a per-frame step cap. `Scene::Map` wires this in: it picks each event's page,
+  starts it on the action button, on player touch, on autorun, or as a background
+  parallel process, shows a bottom message/choice window, re-selects pages when
+  an event finishes (so a self switch it set takes effect) and performs Transfer
+  Player teleports. State gained gold and per-(map, event, channel) self switches
+  (persisted in the save). Covered by new `mruby-rpgxp/test` cases and by
+  `scripts/rpgxp_testbed_check.rb`, which now drives the real test bed's event
+  commands end to end. (Fixes along the way: the runtime avoids
+  `Integer#zero?` / `sprintf` / `String#strip` / regexp, which this mruby build
+  does not bundle.)
 - **LCF save-data schema** now decodes four more `LcfSaveData` sections,
   transcribed from the rpg2kpsp analysis wiki
   (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved

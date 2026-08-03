@@ -174,11 +174,21 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   loads the start map and enters a walkable `Scene::Map`: the three tile layers
   render as placeholder colour blocks, the party leader is drawn from its
   `Graphics/Characters` sheet, and movement is grid-based with tileset
-  passability and a follow camera. Real tileset/autotile blitting, event
-  markers → sprites, and the event-command interpreter are the next steps.
-- 🚧 **Event system** — event page conditions (switch/variable/self-switch),
-  triggers, autonomous move types / move routes, and the RGSS event-command
-  interpreter (the XP command set) are still to build, as on the RPG2000 side.
+  passability and a follow camera. Real tileset/autotile blitting and event
+  sprites (events are markers for now) are the remaining rendering work.
+- 🚧 **Event system** — event pages select their active page by condition
+  (`Game::EventPage`: switch / variable / self-switch, highest match wins) and a
+  `Game::Interpreter` runs the XP command list with a suspend/resume model: Show
+  Text / Choices, Conditional Branch / Else / End, Loop / Break / Repeat, Label /
+  Jump, Call Common Event, Control Switches / Variables / Self Switch, Change
+  Gold, Transfer Player and Play BGM/BGS/ME/SE, indent- and terminator-driven
+  with a per-frame step cap. `Scene::Map` starts events on the action button, on
+  player touch, on autorun or as a background parallel process, drives a
+  message/choice window, and re-selects pages when an event finishes. Covered by
+  `mruby-rpgxp/test` and driven over the real test bed by
+  `scripts/rpgxp_testbed_check.rb`. Still to come: autonomous event move
+  types / move routes (events don't roam yet), Input Number, and the many
+  screen-effect / picture / battle commands (skipped for now).
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.

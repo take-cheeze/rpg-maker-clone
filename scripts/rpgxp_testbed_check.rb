@@ -56,6 +56,31 @@ class Rect;  def self._load(s); r = allocate; r.instance_variable_set(:@v, s.unp
 mrblib = File.expand_path("../mruby-rpgxp/mrblib", __dir__)
 load File.join(mrblib, "rgss_data.rb")
 
+# The event interpreter is host-runnable too; load it (with tiny stand-ins for
+# the native Audio/RPGXP shell) so the check can drive real event command lists
+# and catch any parameter-shape surprise the synthetic unit tests can't.
+module Audio
+  def self.bgm_play(*); end
+  def self.bgs_play(*); end
+  def self.me_play(*); end
+  def self.se_play(*); end
+end
+class RPGXP; end
+load File.join(mrblib, "game.rb")
+load File.join(mrblib, "interpreter.rb")
+
+# Resolver over the database's common events for Call Common Event.
+class CommonResolver
+  def initialize(commons)
+    @commons = commons || []
+  end
+
+  def common_event_list(id)
+    ce = @commons[id]
+    ce && ce.list
+  end
+end
+
 class Checker
   def initialize
     @errors = 0
@@ -82,6 +107,8 @@ class Checker
     check_system(db.system)
     check_actors(db.actors)
     check_tilesets(db.tilesets)
+    @resolver = CommonResolver.new(db.common_events)
+    @db = db
     check_maps(db)
   rescue => ex
     fail "#{dir}: #{ex.class}: #{ex.message}"
@@ -137,7 +164,42 @@ class Checker
       end
 
       check_events(id, map)
+      drive_events(id, map)
       @maps += 1
+    end
+  end
+
+  # Drive each event's active page through the real interpreter, auto-answering
+  # messages/choices, so the genuine command lists decode and run end to end
+  # without raising (a battle/other unsupported command is skipped, not fatal).
+  def drive_events(map_id, map)
+    (map.events || {}).each do |eid, ev|
+      page = RPGXP::Game::EventPage.select(ev.pages, Hash.new(false),
+                                           Hash.new(0), ->(_ch) { false })
+      next unless page && page.list && page.list.any? { |c| c.code != 0 }
+      state = RPGXP::Game::State.new(@db, @db.system.party_members, map_id, ev.x, ev.y)
+      it = RPGXP::Game::Interpreter.new(state)
+      it.resolver = @resolver
+      it.start(page.list, map_id, eid)
+      pump(it)
+    end
+  rescue => ex
+    fail "Map#{map_id}: interpreter raised: #{ex.class}: #{ex.message}"
+  end
+
+  def pump(it, limit = 5000)
+    steps = 0
+    while (it.running? || it.waiting?) && steps < limit
+      if it.waiting?
+        case it.wait_kind
+        when :choice then it.choose(0)
+        when :teleport then break
+        else it.resume
+        end
+      else
+        it.update
+      end
+      steps += 1
     end
   end
 
