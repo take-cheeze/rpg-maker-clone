@@ -313,6 +313,37 @@ jobs:
       - name: Build firmware
         run: pio run -e wio
 
+  psp:
+    # Build the PSP EBOOT bring-up with the pspdev toolchain. Like the Wio job,
+    # this is the external check for the port's HAL: this environment cannot
+    # cross-build or flash a PSP, so CI compiles it. Builds the LVGL display +
+    # input HAL and the entry-point sketch into EBOOT.PBP; the mruby interpreter
+    # is layered on in a later slice (see app/psp/README.md and
+    # docs/adr/0010-psp-port.md).
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # LVGL is vendored as a submodule and linked into the EBOOT.
+          submodules: recursive
+
+      - name: Build EBOOT (pspdev container)
+        # The pspdev image ships psp-gcc, cmake and the psp-cmake wrapper (which
+        # points CMake at the pspdev toolchain and provides create_pbp_file).
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest sh -euc '
+            psp-cmake -S app/psp -B build-psp
+            cmake --build build-psp -j"$(nproc)"
+          '
+
+      - name: Upload EBOOT
+        uses: actions/upload-artifact@v4
+        with:
+          name: psp-eboot
+          path: build-psp/EBOOT.PBP
+          if-no-files-found: error
+
   flake:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
