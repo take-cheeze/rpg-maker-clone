@@ -67,11 +67,29 @@ class RPGXP
         # game (they persist when you leave and re-enter a map), keyed the way
         # RMXP's $game_self_switches is.
         @self_switches = Hash.new(false)
+        # Party possessions, mirroring $game_party's separate item / weapon /
+        # armor stores (id => count, each capped at 99 like RMXP).
+        @items = Hash.new(0)
+        @weapons = Hash.new(0)
+        @armors = Hash.new(0)
       end
+
+      MAX_ITEMS = 99
 
       attr_reader :db
       attr_accessor :map_id, :x, :y, :direction, :map, :party, :gold,
-                    :switches, :variables, :self_switches
+                    :switches, :variables, :self_switches,
+                    :items, :weapons, :armors
+
+      # Possession counts, clamped to 0..MAX_ITEMS. `store` is one of :items /
+      # :weapons / :armors.
+      def item_count(id);   @items[id];   end
+      def weapon_count(id); @weapons[id]; end
+      def armor_count(id);  @armors[id];  end
+
+      def gain_item(id, n = 1);   change_possession(@items, id, n);   end
+      def gain_weapon(id, n = 1); change_possession(@weapons, id, n); end
+      def gain_armor(id, n = 1);  change_possession(@armors, id, n);  end
 
       # Read/write a self switch for a specific event on a specific map.
       def self_switch(map_id, event_id, ch)
@@ -94,7 +112,9 @@ class RPGXP
         { map_id: @map_id, x: @x, y: @y, direction: @direction,
           party: @party, gold: @gold, switches: hash_to_plain(@switches),
           variables: hash_to_plain(@variables),
-          self_switches: hash_to_plain(@self_switches) }
+          self_switches: hash_to_plain(@self_switches),
+          items: hash_to_plain(@items), weapons: hash_to_plain(@weapons),
+          armors: hash_to_plain(@armors) }
       end
 
       def self.load(db, h)
@@ -103,10 +123,21 @@ class RPGXP
         (h[:switches] || {}).each { |k, v| s.switches[k] = v }
         (h[:variables] || {}).each { |k, v| s.variables[k] = v }
         (h[:self_switches] || {}).each { |k, v| s.self_switches[k] = v }
+        (h[:items] || {}).each { |k, v| s.items[k] = v }
+        (h[:weapons] || {}).each { |k, v| s.weapons[k] = v }
+        (h[:armors] || {}).each { |k, v| s.armors[k] = v }
         s
       end
 
       private
+
+      # Adjust a possession store by `n`, clamped to 0..MAX_ITEMS.
+      def change_possession(store, id, n)
+        c = store[id] + n
+        c = 0 if c < 0
+        c = MAX_ITEMS if c > MAX_ITEMS
+        store[id] = c
+      end
 
       # Default-valued Hashes do not round-trip their default through Marshal in a
       # useful way, so persist a plain copy of the set entries only.

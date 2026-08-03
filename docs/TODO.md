@@ -221,9 +221,15 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   suppresses input while active). *Input Number* (103) is implemented too: the
   interpreter suspends with a `:number` request and `Scene::Map` drives a
   digit-entry widget (`Game::NumberInput`) whose value is stored into the target
-  variable. Covered by `mruby-rpgxp/test` and driven over the real test bed by
-  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets and
-  the many screen-effect / picture / battle commands (skipped for now).
+  variable. The party also carries an **inventory** now (`Game::State` item /
+  weapon / armor stores, each id → count capped at 99, persisted in the save):
+  *Change Items / Weapons / Armor* (126/127/128) add or remove by a constant or
+  a variable amount, the Conditional Branch **item / weapon / armor** possession
+  tests (types 8/9/10) run, and Control Variables can read an **item count** as
+  its operand. Covered by `mruby-rpgxp/test` and driven over the real test bed by
+  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets, the
+  actor / enemy / character conditional sub-conditions, and the many
+  screen-effect / picture / battle commands (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1

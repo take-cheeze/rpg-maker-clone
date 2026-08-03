@@ -83,6 +83,9 @@ class RPGXP
       CONTROL_VARS    = 122
       CONTROL_SELF_SW = 123
       CHANGE_GOLD     = 125
+      CHANGE_ITEMS    = 126
+      CHANGE_WEAPONS  = 127
+      CHANGE_ARMOR    = 128
       TRANSFER_PLAYER = 201
       MOVE_ROUTE      = 209
       PLAY_BGM        = 241
@@ -242,6 +245,9 @@ class RPGXP
         when CONTROL_VARS    then do_control_vars(cmd)
         when CONTROL_SELF_SW then do_control_self_switch(cmd)
         when CHANGE_GOLD     then do_change_gold(cmd)
+        when CHANGE_ITEMS    then do_change_items(cmd)
+        when CHANGE_WEAPONS  then do_change_weapons(cmd)
+        when CHANGE_ARMOR    then do_change_armor(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
         when PLAY_BGM        then do_play(cmd, :bgm)
@@ -389,6 +395,12 @@ class RPGXP
           self_switch_on?(param(cmd, 1)) == (param(cmd, 2) == 0)
         when 7 # gold: [7, amount, cmp(0 >= / 1 <=)]
           param(cmd, 2) == 0 ? @state.gold >= param(cmd, 1) : @state.gold <= param(cmd, 1)
+        when 8 # item: [8, item_id] — party holds at least one
+          @state.item_count(param(cmd, 1)) > 0
+        when 9 # weapon: [9, weapon_id, include_equipped?] — party holds it
+          @state.weapon_count(param(cmd, 1)) > 0
+        when 10 # armor: [10, armor_id, include_equipped?] — party holds it
+          @state.armor_count(param(cmd, 1)) > 0
         else
           true # unsupported condition types default to the true branch
         end
@@ -495,6 +507,7 @@ class RPGXP
           lo = param(cmd, 4, 0)
           hi = param(cmd, 5, lo)
           lo + @rng.random(hi - lo + 1)
+        when 3 then @state.item_count(param(cmd, 4)) # item count held
         else 0                                          # unsupported operand
         end
       end
@@ -522,6 +535,21 @@ class RPGXP
         amount = param(cmd, 1) == 0 ? param(cmd, 2, 0) : variables[param(cmd, 2)]
         @state.gold += (param(cmd, 0) == 0 ? amount : -amount)
         @state.gold = 0 if @state.gold < 0
+        @index += 1
+      end
+
+      # Change Items / Weapons / Armor (126/127/128):
+      # [id, operation(0 increase / 1 decrease), operand(0 const / 1 variable),
+      #  amount]. A variable operand reads the count from that variable.
+      def do_change_items(cmd);   change_possession(cmd) { |id, n| @state.gain_item(id, n) };   end
+      def do_change_weapons(cmd); change_possession(cmd) { |id, n| @state.gain_weapon(id, n) }; end
+      def do_change_armor(cmd);   change_possession(cmd) { |id, n| @state.gain_armor(id, n) };  end
+
+      def change_possession(cmd)
+        id = param(cmd, 0)
+        amount = param(cmd, 2) == 0 ? param(cmd, 3, 0) : variables[param(cmd, 3)]
+        amount = -amount if param(cmd, 1) != 0 # decrease
+        yield(id, amount)
         @index += 1
       end
 
