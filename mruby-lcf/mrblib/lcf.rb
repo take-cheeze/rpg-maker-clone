@@ -292,6 +292,15 @@ module LCF
       !@data[idx].nil?
     end
 
+    # Raw little-endian int16 values of a chunk, bypassing any schema `order`
+    # mapping. Lets a caller read a variable-length short array (e.g. the actor
+    # parameter growth curve, six shorts per level) whose named accessor only
+    # surfaces the first row. Returns nil when the chunk is absent.
+    def int16_values idx
+      d = @data[idx]
+      d && d.unpack('s<*')
+    end
+
     def method_missing sym, *args
       raise args unless args.empty?
       self[@sym2idx[sym]]

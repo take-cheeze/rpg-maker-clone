@@ -882,6 +882,19 @@ end
 # Game::Actor read (player table + the initial party list).
 FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            :initial_level, :status)
+# Like FakePlayerRow but exposing the full growth curve the way a real LCF row
+# does (six shorts per level via #int16_values(31)), so Actor scales its base
+# stats by level instead of using a single level-independent status hash.
+class CurveRow < FakePlayerRow
+  def initialize(name, cs, ci, level, curve)
+    super(name, cs, ci, level, nil)
+    @curve = curve
+  end
+
+  def int16_values(idx)
+    idx == 31 ? @curve : nil
+  end
+end
 FakeActorSystem = Struct.new(:party)
 class FakeActorDB
   attr_reader :player, :system
@@ -945,6 +958,36 @@ check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
   hero.hp = 10; hero.mp = 5
   hero.full_heal
   eq [100, 30], [hero.hp, hero.mp]
+end
+
+check 'Actor base stats scale with level from the growth curve' do
+  # Two levels, six stats each: L1 = maxhp10/maxmp5/atk3/def2/int1/agi4,
+  # L2 = double each (except as listed).
+  curve = [10, 5, 3, 2, 1, 4,  20, 10, 6, 4, 2, 8]
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, curve) }, [1])
+  a = Game::Party.new(db).leader
+  eq 1, a.level
+  eq [10, 5, 3, 2, 1, 4], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+  eq 10, a.hp                       # a fresh actor starts full
+  a.set_level(2)
+  eq [20, 10, 6, 4, 2, 8], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+  # A level past the curve clamps to its last entry rather than reading past it.
+  a.set_level(99)
+  eq 20, a.max_hp
+  # Lowering the level re-clamps current HP/MP to the smaller maxima.
+  a.hp = 20; a.mp = 10
+  a.set_level(1)
+  eq [10, 5], [a.hp, a.mp]
+end
+
+check 'Actor without a growth curve falls back to a level-independent status' do
+  # party_state uses FakePlayerRow (a status hash, no int16_values): stats stay
+  # put regardless of level, and the initial level is honoured.
+  hero = party_state.party.actor_by_id(1)
+  eq 5, hero.level
+  eq [100, 30], [hero.max_hp, hero.max_mp]
+  hero.set_level(2)
+  eq [100, 30], [hero.max_hp, hero.max_mp]
 end
 
 check 'Change HP command damages a fixed actor' do

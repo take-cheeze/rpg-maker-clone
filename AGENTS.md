@@ -79,8 +79,11 @@ Create ADRs in /docs/adr for:
   the data (or the rpg2kpsp analysis wiki) spells out, per ADR 0002.
 - The runtime can resume from a real save: `Game::State.from_lsd(db, save)`
   rebuilds a `State` from a parsed `LcfSaveData` (leader position, party roster,
-  gold, items, switches, variables, and the roster's saved current HP/MP from
-  chunk 108), and `continue_game` loads an editor `Save<N>.lsd` when present.
+  gold, items, switches, variables, and each roster actor's saved level/exp and
+  current HP/MP from chunk 108), and `continue_game` loads an editor
+  `Save<N>.lsd` when present. Actor base stats scale with level from the database
+  growth curve (chunk 31, six shorts per level, via `LCF::Array1D#int16_values`),
+  so a restored level rescales the maxima — see ADR 0015.
   `ruby scripts/rpg2k_save_load_check.rb` round-trips a real save through it. Use
   `save[101]`, not `save.system`, in CRuby-tested code — `system` resolves to
   `Kernel#system` there.

@@ -307,9 +307,13 @@ module Game
 
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
-    attr_reader :id, :name, :level, :charset_name, :charset_index
+    attr_reader :id, :name, :level, :exp, :charset_name, :charset_index
     attr_accessor :hp, :mp
     attr_reader :max_hp, :max_mp, :atk, :def, :int, :agi
+
+    # The six base stats in database parameter-curve order (chunk 31 stores six
+    # shorts -- maxHP, maxSP, atk, def, int, agi -- per level).
+    STAT_NAMES = [:max_hp, :max_mp, :atk, :def, :int, :agi].freeze
 
     def initialize(db, id)
       @id = id
@@ -319,17 +323,49 @@ module Game
       @name = a.name
       @charset_name = a.charset_name
       @charset_index = a.charset_index
-      @level = a.initial_level
-      st = a.status || {}
-      @max_hp = st[:max_hp] || 0
-      @max_mp = st[:max_mp] || 0
-      @atk = st[:atk] || 0
-      @def = st[:def] || 0
-      @int = st[:int] || 0
-      @agi = st[:agi] || 0
-      # A fresh actor starts at full health.
+      @db_row = a
+      @exp = 0
+      # Base stats scale with level from the growth curve, so seed them at the
+      # actor's initial level, then start at full health.
+      set_level(a.initial_level || 1)
       @hp = @max_hp
       @mp = @max_mp
+    end
+
+    attr_writer :exp
+
+    # Set the actor's level and recompute the six base stats from the database
+    # growth curve at that level (see #base_stats). Current HP/MP are re-clamped
+    # to the new maxima so lowering the level never leaves a stat over its cap.
+    def set_level(level)
+      @level = level && level >= 1 ? level : 1
+      s = base_stats(@level)
+      @max_hp = s[0]
+      @max_mp = s[1]
+      @atk = s[2]
+      @def = s[3]
+      @int = s[4]
+      @agi = s[5]
+      @hp = @max_hp if @hp && @hp > @max_hp
+      @mp = @max_mp if @mp && @mp > @max_mp
+    end
+
+    # The six base stats at `level`. Real database rows expose the full growth
+    # curve (six shorts per level) via LCF::Array1D#int16_values; index it by
+    # level, clamped to the curve's length. A row that only offers a single
+    # `status` hash (the test fixtures, or a database without a curve) is treated
+    # as level-independent.
+    def base_stats(level)
+      a = @db_row
+      curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
+      if curve && curve.size >= STAT_NAMES.size
+        levels = curve.size / STAT_NAMES.size
+        lv = level > levels ? levels : level
+        base = (lv - 1) * STAT_NAMES.size
+        return STAT_NAMES.each_index.map { |i| curve[base + i] || 0 }
+      end
+      st = (a.respond_to?(:status) ? a.status : nil) || {}
+      STAT_NAMES.map { |k| st[k] || 0 }
     end
 
     # Apply a HP change (positive heals, negative damages), clamped to
@@ -983,13 +1019,19 @@ module Game
       ids = inv.item_ids || []
       counts = inv.item_counts || []
       ids.each_index { |i| items[ids[i]] = counts[i] || 0 }
-      # Per-actor vitals come from the SAVE_PARTY_ACTOR table (chunk 108), keyed
-      # by actor id. Restore the saved current HP/SP for the roster so Continue
-      # resumes a wounded party rather than silently healing it to full.
+      # Per-actor state comes from the SAVE_PARTY_ACTOR table (chunk 108), keyed
+      # by actor id. Restore each roster member's saved level (which rescales its
+      # base stats) and exp first, then its current HP/SP, so Continue resumes a
+      # levelled, wounded party rather than a fresh full-health one.
       hp = {}
       mp = {}
       (save[108] || []).each do |aid, sa|
         next unless roster.include?(aid)
+        actor = party.actor_by_id(aid)
+        if actor
+          actor.set_level(sa.level) if sa.level
+          actor.exp = sa.exp if sa.exp
+        end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
       end
