@@ -43,6 +43,15 @@ Run `EBOOT.PBP` under an emulator such as
 [PPSSPP](https://www.ppsspp.org/), or copy it to
 `PSP/GAME/rpg2k/EBOOT.PBP` on a Memory Stick (a homebrew-enabled console).
 
+The bring-up prints a `RPG2K_PSP_BRINGUP frame=N` line to stdout once a second;
+CI's `psp-smoke` job boots the EBOOT under PPSSPP headless and asserts that
+marker appears, so a regression that links but fails to boot or render is caught
+automatically. To reproduce locally, run PPSSPP's headless binary:
+
+```sh
+PPSSPPHeadless --graphics=software --timeout=15 EBOOT.PBP
+```
+
 ## Not yet wired (later slices)
 
 The pieces below are scaffolded but **not** part of the bring-up EBOOT:

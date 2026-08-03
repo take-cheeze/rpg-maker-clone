@@ -1,10 +1,10 @@
 // LVGL configuration for the PSP EBOOT.
 //
 // The desktop build's include/lv_conf.h hardcodes a 16 MB LVGL heap pool, which
-// does not fit the PSP's ~24 MB of user RAM once mruby and game assets are added
-// later. This config keeps the same shape but a PSP-sized heap. LVGL v9 fills
-// every option not set here with the default from lv_conf_internal.h, so this
-// only overrides what the port needs.
+// does not fit the PSP's ~24 MB of user RAM once mruby and game assets are
+// added later. This config keeps the same shape but a PSP-sized heap. LVGL v9
+// fills every option not set here with the default from lv_conf_internal.h, so
+// this only overrides what the port needs.
 //
 // Selected via -DLV_CONF_INCLUDE_SIMPLE plus this directory on the include path
 // (see app/psp/CMakeLists.txt).

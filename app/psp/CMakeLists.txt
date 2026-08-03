@@ -6,11 +6,10 @@
 # and vice versa. See app/psp/README.md and docs/adr/0010-psp-port.md.
 #
 # It requires the pspdev toolchain (https://github.com/pspdev/pspdev), which
-# provides psp-gcc and the CMake toolchain file + create_pbp_file macro:
-#
-#   cmake -S app/psp -B build-psp \
-#     -DCMAKE_TOOLCHAIN_FILE=$PSPDEV/psp/share/pspdev.cmake
-#   cmake --build build-psp        # -> build-psp/EBOOT.PBP
+# provides psp-gcc and the CMake toolchain file plus the create_pbp_file macro.
+# Configure with psp-cmake (or plain cmake with
+# -DCMAKE_TOOLCHAIN_FILE=$PSPDEV/psp/share/pspdev.cmake) and build; the exact
+# commands are in app/psp/README.md. The build produces build-psp/EBOOT.PBP.
 
 cmake_minimum_required(VERSION 3.13)
 
@@ -23,6 +22,20 @@ set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # directory scope before LVGL is added.
 add_compile_options(-G0)
 
+# LVGL ships ARM Helium/NEON SIMD blend kernels as hand-written .S assembly and
+# its CMake adds them to the lvgl target. The PSP is MIPS/Allegrex with neither
+# SIMD, and psp-as chokes on the C typedefs these .S files pull in via stdint.h
+# ("unrecognized opcode `typedef ...'"). LV_USE_DRAW_SW_ASM is NONE (see
+# app/psp/lv_conf.h) so they are unused anyway -- delete them before LVGL is
+# added (its CMake globs sources at configure time) so they are never assembled.
+# Mirrors app/wio/exclude_lvgl_asm.py, which does the same for the PlatformIO
+# build. Harmless to the desktop/wasm builds: those use separate build trees and
+# do not compile these files on x86.
+file(GLOB_RECURSE _lvgl_asm ${REPO_ROOT}/3rd/lvgl/src/*.S)
+if(_lvgl_asm)
+  file(REMOVE ${_lvgl_asm})
+endif()
+
 # Build the vendored LVGL with the PSP-tuned lv_conf.h in this directory (same
 # submodule the desktop and Wio builds use). LV_BUILD_CONF_DIR points LVGL's
 # build at our config.
@@ -34,10 +47,7 @@ add_subdirectory(${REPO_ROOT}/3rd/lvgl lvgl EXCLUDE_FROM_ALL)
 # The bring-up EBOOT: the platform HAL (compiled straight from the mruby-rgss
 # gem, self-guarded on PSP_BUILD) plus the entry-point sketch. libmruby and the
 # input bridge are layered on in a later slice.
-add_executable(
-  rpg2k_psp
-  main.cxx
-  ${REPO_ROOT}/mruby-rgss/src/psp.cxx)
+add_executable(rpg2k_psp main.cxx ${REPO_ROOT}/mruby-rgss/src/psp.cxx)
 
 target_compile_definitions(rpg2k_psp PRIVATE PSP_BUILD LV_CONF_INCLUDE_SIMPLE)
 target_include_directories(rpg2k_psp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -66,8 +76,13 @@ if(NOT COMMAND create_pbp_file)
 endif()
 
 create_pbp_file(
-  TARGET rpg2k_psp
-  ICON_PATH NULL
-  BACKGROUND_PATH NULL
-  PREVIEW_PATH NULL
-  TITLE "rpg2k PSP bring-up")
+  TARGET
+  rpg2k_psp
+  ICON_PATH
+  NULL
+  BACKGROUND_PATH
+  NULL
+  PREVIEW_PATH
+  NULL
+  TITLE
+  "rpg2k PSP bring-up")

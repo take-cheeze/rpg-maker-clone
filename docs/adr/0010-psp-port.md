@@ -72,17 +72,23 @@ and CI-checked before the interpreter and assets are layered on:
   never affects the desktop or wasm builds.
 - **CI**: a `psp` job building the bring-up EBOOT with the `pspdev/pspdev`
   container. This environment cannot cross-build or flash a PSP, so — exactly as
-  for the Wio job — CI is the external check that the HAL and EBOOT compile.
+  for the Wio job — CI is the external check that the HAL and EBOOT compile. A
+  second `psp-smoke` job goes further than the Wio port did: it boots the EBOOT
+  under **PPSSPP** headless (software renderer) and asserts the bring-up's
+  per-second stdout heartbeat, so CI verifies the EBOOT actually runs on an
+  emulator, not just that it links. PPSSPP is built from source (no stable
+  prebuilt headless binary exists) and cached by tag.
 
 ## Consequences
 
 - The PSP HAL follows the exact seam the Wio port validated, so a reviewer can
   read the two side by side; the shared LVGL/`RGSS::Input`/tick abstractions mean
   no engine changes beyond one guarded poll hook in `gfx_update`.
-- CI now compiles the EBOOT on every push, catching bit-rot in the HAL and the
-  pspdev build. It does **not** run the game — on-device / emulator verification
-  is manual (PPSSPP or a homebrew-enabled console) until a headless PPSSPP smoke
-  test is added.
+- CI now compiles the EBOOT on every push (the `psp` job) and boots it under
+  PPSSPP headless (the `psp-smoke` job), catching both build bit-rot and a boot
+  that links but crashes or never renders. Richer on-device verification
+  (real hardware, or PPSSPP's GUI to eyeball the screen and the red/blue channel
+  order) is still manual.
 - The bring-up EBOOT links neither `libmruby` nor the input bridge, so the
   `psp` mruby cross target and `psp_input_bridge.cxx` are checked in but unused
   until the next slice wires the interpreter and starts the real `RPG2k` scene

@@ -101,9 +101,18 @@ int main(void) {
   psp_input_init();
   build_ui();
 
-  while (true) {
+  // The loop runs ~200 iterations/second (5 ms delay); print a heartbeat line
+  // roughly once a second. pspsdk routes stdout to the host under an emulator,
+  // so ppsspp-headless captures these lines -- the CI smoke test asserts the
+  // marker appears, proving the EBOOT boots and pumps frames (see the psp-smoke
+  // job in .github/workflows/build.yml).
+  for (uint32_t frame = 0;; ++frame) {
     show_keys(psp_input_scan());
     lv_timer_handler();
+    if (frame % 200 == 0) {
+      std::printf("RPG2K_PSP_BRINGUP frame=%u\n", frame);
+      std::fflush(stdout);
+    }
     sceKernelDelayThread(5000);  // ~5 ms, matching the Wio loop's delay(5)
   }
 

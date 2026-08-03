@@ -344,6 +344,73 @@ jobs:
           path: build-psp/EBOOT.PBP
           if-no-files-found: error
 
+  psp-smoke:
+    # Headless run test for the PSP EBOOT: boot it under PPSSPP with the software
+    # renderer and assert it prints its bring-up heartbeat. This proves the EBOOT
+    # actually boots and pumps frames on an emulator, not just that it compiles
+    # (the `psp` job). PPSSPP is built from source -- there is no stable prebuilt
+    # headless binary -- and the whole tree is cached by tag, so only the first
+    # run pays the build cost. The bring-up main() prints "RPG2K_PSP_BRINGUP
+    # frame=N" once a second; pspsdk routes stdout to the host, and PPSSPP's
+    # headless runner captures it the same way its own test suite does.
+    needs: psp
+    runs-on: ubuntu-24.04
+    env:
+      PPSSPP_TAG: v1.17.1
+    steps:
+      - name: Download EBOOT
+        uses: actions/download-artifact@v4
+        with:
+          name: psp-eboot
+          path: eboot
+
+      - name: Install PPSSPP build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            libgl1-mesa-dev libsdl2-dev zlib1g-dev
+
+      - name: Cache PPSSPP
+        id: cache-ppsspp
+        uses: actions/cache@v6
+        with:
+          path: ppsspp
+          key: ppsspp-${{ env.PPSSPP_TAG }}-headless-${{ runner.os }}
+
+      - name: Build PPSSPP headless
+        if: steps.cache-ppsspp.outputs.cache-hit != 'true'
+        run: |
+          git clone --recursive --depth 1 -b "$PPSSPP_TAG" \
+            https://github.com/hrydgard/ppsspp
+          cmake -S ppsspp -B ppsspp/build -GNinja \
+            -DHEADLESS=ON -DUNITTEST=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build ppsspp/build --target PPSSPPHeadless -j"$(nproc)"
+
+      - name: Run headless smoke test
+        run: |
+          EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
+          ls -l "$EBOOT"
+          # Run from the PPSSPP tree so it finds its assets/ (fonts, etc.).
+          # --timeout ends the otherwise-infinite bring-up loop; a non-zero exit
+          # from the timeout must not mask the heartbeat check, hence `|| true`.
+          cd ppsspp
+          ./build/PPSSPPHeadless --graphics=software --timeout=15 \
+            --screenshot="$GITHUB_WORKSPACE/psp-frame.png" "$EBOOT" \
+            2>&1 | tee "$GITHUB_WORKSPACE/headless.log" || true
+          echo "--- asserting bring-up heartbeat in output ---"
+          grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless.log"
+
+      - name: Upload smoke-test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: psp-smoke
+          path: |
+            headless.log
+            psp-frame.png
+          if-no-files-found: warn
+
   flake:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest

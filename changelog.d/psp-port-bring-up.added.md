@@ -5,6 +5,7 @@
   / ✕○△□ via `sceCtrl`; a standalone pspdev CMake project under `app/psp/` that
   builds a bring-up `EBOOT.PBP` (display + input, no interpreter yet); a `psp`
   mruby MIPS cross-build in `build_config.rb` (`MRUBY_TARGET=psp`); an
-  `rgss_psp_poll` input bridge wired into `Graphics.update`; and a `psp` CI job
-  that compiles the EBOOT with the `pspdev/pspdev` container. See ADR 0010 and
-  `app/psp/README.md`.
+  `rgss_psp_poll` input bridge wired into `Graphics.update`; a `psp` CI job that
+  compiles the EBOOT with the `pspdev/pspdev` container; and a `psp-smoke` CI job
+  that boots the EBOOT under PPSSPP headless and asserts its per-second stdout
+  heartbeat. See ADR 0010 and `app/psp/README.md`.
