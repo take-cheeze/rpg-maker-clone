@@ -2,21 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+<!--
+  Do not hand-edit the [Unreleased] section below — it caused constant merge
+  conflicts because every branch touched the same lines. Add a fragment file
+  under changelog.d/ instead (see changelog.d/README.md). The fragments are
+  folded in here at release time by scripts/build_changelog.rb.
+-->
+
 ## [Unreleased]
 
 ### Added
-- **RPG2000 sample-game analysis** — a new `scripts/analyze_game.rb` loads the
-  pure-Ruby LCF parser under CRuby and walks a game's `RPG_RT.ldb` common events
-  and `Map*.lmu` event pages, reporting database entity counts and a classified
-  event-command histogram (implemented / no-op-by-design / genuine feature gap),
-  move-route usage and per-page trigger/move-type breakdowns (`--json`
-  supported). `docs/rpg2000-sample-analysis.md` writes up the collection (7
-  `Sample*` + 32 ツクールコンパク `Extra*` contest games) and a deep dive on
-  Sample2/Sample3: the control-flow/variable/switch core is done and dominates
-  real usage (Sample3's common events are ~99.5 % correctly handled once
-  comments/blank lines are excluded), and the genuine gaps cluster into
-  pictures, screen effects, message face/options, and battle entry — used to
-  prioritise interpreter work.
+- The event interpreter now supports **Erase Event**. Running it removes the
+  event that is executing (foreground or a parallel process) from the map for
+  the rest of the visit — its marker, movement, collision tile and, for a
+  parallel event, its background process — while the rest of the command list
+  still runs (Erase Event does not pause the interpreter). A common event, which
+  has no map event, is unaffected. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+- **Control Variables** now supports more operand sources than constants and
+  other variables: a **random** integer in a range, an **actor stat** (level,
+  current/max HP and MP, attack, defence, spirit or agility of an actor by id)
+  and **game quantities** (party gold, timer seconds). `Game::Interpreter`
+  carries a deterministic RNG for the random operand; unmodelled sources (EXP,
+  step count, play time, save/battle counts) read as 0. Covered by new checks in
+  `scripts/rpg2k_logic_check.rb`.
 - **LCF save-data schema** now decodes four more `LcfSaveData` sections,
   transcribed from the rpg2kpsp analysis wiki
   (<https://w.atwiki.jp/rpg2kpsp/>): show-picture state (chunk 103), saved
@@ -163,6 +172,12 @@ All notable changes to this project will be documented in this file.
     script load order
   - Documented the decision, layered architecture and milestone roadmap in
     `docs/adr/0004-javascript-maker-mv-quickjs.md` and `docs/TODO.md`
+- The event interpreter now supports **Change Parameters**: it adjusts an
+  actor's base stat — max HP, max MP, attack, defence, spirit or agility — for a
+  fixed actor, a variable-selected actor or the whole party, by a constant or
+  variable amount. `Game::Actor#change_param` clamps to RPG2000's limits (max
+  HP/MP 1–9999, the battle stats 1–999) and re-clamps current HP/MP when a
+  maximum is lowered. Covered by new checks in `scripts/rpg2k_logic_check.rb`.
 - The event interpreter now supports **Change HP**, **Change MP** and **Full
   Heal**. Each targets a fixed actor, an actor whose id is held in a variable,
   or the whole party, and takes a constant or variable amount. `Game::Actor`
