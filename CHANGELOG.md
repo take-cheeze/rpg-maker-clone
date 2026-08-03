@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- MV save/load (milestone M5): MV's saves now persist to disk. MV stores game
+  data through `StorageManager` → `localStorage` (it is kept in web-storage mode
+  on purpose, so its nwjs-only code paths — which call `require('nw.gui')` etc.
+  and would abort our boot — are never taken); our `localStorage` shim is now
+  backed by a single JSON file under the game's `save/` dir, loaded lazily and
+  rewritten on each change, so saves/config survive across runs. File writes
+  (`__mv_writeFileSync`) now create their parent directory on demand, so the
+  `save/` folder appears automatically. Covered by `mruby-mvjs/test/save_test.rb`.
 - MV audio bridge (milestone M5): MV's `AudioManager` (BGM/BGS/ME/SE) is now
   routed through `RGSS::Audio` (the SDL mixer) instead of the stubbed Web Audio
   graph. The high-level manager methods are overridden to enqueue plain-text

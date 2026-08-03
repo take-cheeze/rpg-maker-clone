@@ -9,3 +9,5 @@
 /js/rpg_sprites.js
 /js/rpg_windows.js
 /js/libs/
+# Save files written at runtime (localStorage backing) are not committed.
+/save/
