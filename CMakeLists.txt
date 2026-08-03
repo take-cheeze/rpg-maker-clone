@@ -231,18 +231,18 @@ if(EMSCRIPTEN)
     # function"/out-of-bounds/signature-mismatch traps), so give it room.
     "-sSTACK_SIZE=8388608"
     # Symbolication: emit index.wasm.map so Chrome resolves wasm frames to
-    # file:line in console stack traces. The printed trace text resolves from
-    # the map with no base URL needed (serving the sources is only required to
-    # view the code), and C++ exception throw sites get real stack traces too.
-    #
-    # We deliberately do NOT also embed full DWARF (-g3). Built RelWithDebInfo
-    # (-O2 -g), the embedded DWARF ballooned index.wasm past Cloudflare Pages'
-    # 25 MiB per-file deploy limit (the preview-cloudflare step rejected it).
-    # -gsource-map builds the external map from the objects' debug info without
-    # keeping the DWARF sections in the wasm, and embedded DWARF only feeds an
-    # interactive debugger UI, not the printed file:line traces we actually
-    # read.
+    # file:line in console stack traces (the printed trace text resolves from
+    # the map with no base URL needed), and C++ exception throw sites get real
+    # stack traces too.
     "-gsource-map"
+    # Keep the DWARF debug info OUT of index.wasm. RelWithDebInfo compiles with
+    # -g, and left embedded that DWARF pushed index.wasm past Cloudflare Pages'
+    # 25 MiB per-file deploy limit (the preview-cloudflare step rejected it);
+    # -gsource-map alone does not strip it. -gseparate-dwarf writes the DWARF to
+    # a side file (index.debug.wasm, which we do not deploy) instead, so
+    # index.wasm carries no DWARF -- it only fed an interactive debugger anyway,
+    # not the printed traces above.
+    "-gseparate-dwarf"
     # Runtime checks for the browser — verbose assertions, heap-access
     # validation and stack-overflow detection — to catch the mruby init
     # corruption early instead of as an opaque trap.
