@@ -477,6 +477,18 @@ check 'Call Event with no resolver set is a safe no-op' do
   eq true, st.switches[1]
 end
 
+check 'Erase Event sets a one-shot request without pausing the interpreter' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_EVENT, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Erase Event must not pause the interpreter'
+  eq true, st.switches[1], 'the command after Erase Event still ran'
+  eq true, it.take_erase_request, 'the erase was requested'
+  eq false, it.take_erase_request, 'the request is one-shot (cleared on read)'
+end
+
 check 'a message inside a called event pauses and resumes across the boundary' do
   st = new_state
   called = [FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'hi'),

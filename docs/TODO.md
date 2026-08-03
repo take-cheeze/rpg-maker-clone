@@ -96,13 +96,16 @@ The work below is roughly ordered by the critical path to a walkable game
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Wait, Play BGM/SE, Call Event,
-  Move Event, End Event) with a per-frame step cap so a bad loop can't hang. **Call Event**
+  Move Event, Erase Event, End Event) with a per-frame step cap so a bad loop
+  can't hang. **Call Event**
   suspends the current list, runs the referenced common event (or map-event
   page) to completion via a resolver + call stack — so call-only common events,
   which auto-start/parallel never reach, now run — and returns to the caller;
   recursion is bounded. **Move Event** decodes the forced move route packed into
   the command's parameters and hands it to the scene, which drives the target (a
-  map event, "this event" or the player) along it in the background. **Change
+  map event, "this event" or the player) along it in the background. **Erase
+  Event** removes the running event from the map for the rest of the visit (its
+  marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal** and **Change Parameters** apply to a fixed actor, a
   variable-selected actor or the whole party, clamped to each actor's maxima
   (Change HP honours the allow-death floor; Change Parameters re-clamps current

@@ -37,6 +37,7 @@ module Game
       COMMENT          = 12410
       COMMENT_2        = 22410
       END_EVENT        = 12310
+      ERASE_EVENT      = 12320
       CALL_EVENT       = 12330
       TELEPORT         = 10810
       MOVE_EVENT       = 11330
@@ -66,6 +67,7 @@ module Game
       @call_stack = []
       @resolver = nil
       @move_route_requests = []
+      @erase_requested = false
       # Deterministic RNG for the Control Variables "random" operand (mruby has
       # no Kernel#rand here); seeded like the map scene's own RNG.
       @rng = Game::Rng.new(0x2000)
@@ -86,6 +88,7 @@ module Game
       @running = true
       @call_stack = []
       @move_route_requests = []
+      @erase_requested = false
       reset_waits
     end
 
@@ -99,6 +102,16 @@ module Game
       reqs = @move_route_requests
       @move_route_requests = []
       reqs
+    end
+
+    # True (once) if an Erase Event command ran since the last call, clearing the
+    # flag. The owning scene polls this after #update and removes the event that
+    # was running this interpreter from the map. Like Move Event, Erase Event does
+    # not pause the interpreter — the rest of the command list still runs.
+    def take_erase_request
+      v = @erase_requested
+      @erase_requested = false
+      v
     end
 
     # Upper bound on commands run in a single update, so a malformed loop cannot
@@ -204,6 +217,7 @@ module Game
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CALL_EVENT       then do_call_event cmd
+      when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
       else nil # unimplemented / no-op (labels, comments, ...)
       end
