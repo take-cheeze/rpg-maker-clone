@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Parallel-process events** (page trigger 4) and parallel common events now
+  run continuously in the background. Each gets its own looping
+  `Game::Interpreter` driven by `Scene::Map#step_parallels`: it runs its command
+  list, honours `Wait`, and restarts when it finishes. A parallel common event
+  that needs a flag is gated by its switch, re-checked every frame so toggling
+  the switch starts or stops it. Background processes deliberately do not drive
+  the message/choice/teleport UI (those requests are skipped) and pause while a
+  foreground event or message is active, so they never fight the player for the
+  message window. Auto-start common events now run only in the foreground (no
+  longer double-counted as parallel). Covered by new checks in
+  `scripts/rpg2k_scene_check.rb`.
+- Map events now fire on **touch**. In addition to the action button (trigger 0)
+  and auto-start (3), `Scene::Map` runs **player-touch** events (trigger 1: the
+  player walks into the event) and **event-touch** events (trigger 2: the event
+  walks into the player). A touched event turns to face the player before its
+  commands run, the player does not step onto the event, and once any event's
+  process starts, player movement / the action button / the menu are held until
+  it finishes. True parallel-process events (trigger 4) are still to come.
+  Covered by new checks in `scripts/rpg2k_scene_check.rb` (the input stub is now
+  scriptable).
 - The event interpreter now supports **Call Event**. A Call Event command
   suspends the current command list and runs a referenced list to completion,
   then resumes where it left off, via a call stack on `Game::Interpreter` and a

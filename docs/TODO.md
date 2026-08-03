@@ -80,13 +80,15 @@ The work below is roughly ordered by the critical path to a walkable game
   (scene integration under host Ruby)
 
 #### Event system
-- 🚧 Event pages — page conditions (switch/variable/item/actor) are implemented
-  (`Game::EventPage`), action-button + auto-start triggers run, and a page's
-  autonomous move type / custom move route now drives the event at runtime (see
-  Movement & collision). Touch, event-touch and parallel triggers are still to
-  come, as is the interpreter's *Set Move Route* (Move Event) command — the
-  runtime engine exists, but decoding a route embedded in an event command's
-  parameters is not wired up yet
+- ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
+  (`Game::EventPage`), and all five start triggers now run: **action button**
+  (0), **player touch** (1, walking into the event), **event touch** (2, the
+  event walking into the player), **auto-start** (3) and **parallel** (4, a
+  background interpreter per event, driven by `Scene::Map#step_parallels`). A
+  page's autonomous move type / custom move route also drives the event at
+  runtime (see Movement & collision). Still to come: the interpreter's *Set Move
+  Route* (Move Event) command — the runtime engine exists, but decoding a route
+  embedded in an event command's parameters is not wired up yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Conditional Branch/Else/End, Loop/Break/End, Label/Jump, Timer, Teleport,
@@ -102,10 +104,13 @@ The work below is roughly ordered by the critical path to a walkable game
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   colour/speed/wait codes are consumed). Face graphics, per-code colour changes
   and gradual text reveal are still TODO
-- 🚧 Common events — auto-start and parallel common events run on the map
-  (`Game::CommonEvent`), gated by their switch when `need_flag` is set; true
-  concurrent parallel execution (running every frame alongside the player) is
-  still simplified to a once-per-visit start
+- ✅ Common events — auto-start common events run once on the map, and parallel
+  common events now run **continuously** in the background alongside the player
+  via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
+  its switch when `need_flag` is set (re-checked every frame, so toggling the
+  switch starts/stops it). Background processes honour `Wait` but do not drive
+  the message/choice UI (those requests are skipped) — full parallel UI is a
+  later refinement
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
   `Game::State` countdown); transitions/fade, tint, flash, shake, Show Picture
   and weather remain. `RGSS::Viewport` now exists (position/clip/scroll/z), but
