@@ -604,6 +604,71 @@ void gradient_sample(const std::vector<double>& off,
   }
 }
 
+// __mv_canvasFillPattern(dstH, srcH, rx, ry, rw, rh, a, b, c, d, e, f, alpha)
+// Fill the user-space rect (rx,ry,rw,rh) with the source canvas tiled
+// ('repeat') under the current matrix [a b c d e f]. Like drawImage, but the
+// source wraps (mod its size) over the rect and the tiling is anchored at the
+// user-space origin, matching createPattern(canvas, 'repeat') + fillRect. MV's
+// TilingSprite (map parallax and battlebacks) renders through this.
+JSValue js_fill_pattern(JSContext* ctx,
+                        JSValueConst,
+                        int argc,
+                        JSValueConst* argv) {
+  Canvas* dst = canvas_get(ai(ctx, argc, argv, 0));
+  Canvas* src = canvas_get(ai(ctx, argc, argv, 1));
+  if (!dst || !src || src->w <= 0 || src->h <= 0)
+    return JS_UNDEFINED;
+  const double rx = ad(ctx, argc, argv, 2, 0), ry = ad(ctx, argc, argv, 3, 0);
+  const double rw = ad(ctx, argc, argv, 4, 0), rh = ad(ctx, argc, argv, 5, 0);
+  const double ma = ad(ctx, argc, argv, 6, 1), mb = ad(ctx, argc, argv, 7, 0);
+  const double mc = ad(ctx, argc, argv, 8, 0), md = ad(ctx, argc, argv, 9, 1);
+  const double me = ad(ctx, argc, argv, 10, 0), mf = ad(ctx, argc, argv, 11, 0);
+  const int ga = argc > 12 ? ai(ctx, argc, argv, 12) : 255;
+  if (rw <= 0 || rh <= 0)
+    return JS_UNDEFINED;
+  const double det = ma * md - mb * mc;
+  if (det == 0)
+    return JS_UNDEFINED;
+  const double invdet = 1.0 / det;
+
+  // Device-space bounding box of the four transformed rect corners.
+  const double cxs[4] = {rx, rx + rw, rx + rw, rx};
+  const double cys[4] = {ry, ry, ry + rh, ry + rh};
+  double minx = 1e18, miny = 1e18, maxx = -1e18, maxy = -1e18;
+  for (int i = 0; i < 4; ++i) {
+    const double X = ma * cxs[i] + mc * cys[i] + me;
+    const double Y = mb * cxs[i] + md * cys[i] + mf;
+    minx = std::min(minx, X);
+    maxx = std::max(maxx, X);
+    miny = std::min(miny, Y);
+    maxy = std::max(maxy, Y);
+  }
+  int x0 = std::max(static_cast<int>(std::floor(minx)), 0);
+  int y0 = std::max(static_cast<int>(std::floor(miny)), 0);
+  int x1 = std::min(static_cast<int>(std::ceil(maxx)), dst->w);
+  int y1 = std::min(static_cast<int>(std::ceil(maxy)), dst->h);
+
+  for (int py = y0; py < y1; ++py) {
+    for (int px = x0; px < x1; ++px) {
+      const double rxp = px - me, ryp = py - mf;
+      const double u = (md * rxp - mc * ryp) * invdet;
+      const double v = (-mb * rxp + ma * ryp) * invdet;
+      if (u < rx || u >= rx + rw || v < ry || v >= ry + rh)
+        continue;
+      const long iu = static_cast<long>(std::floor(u));
+      const long iv = static_cast<long>(std::floor(v));
+      const int sxx = static_cast<int>(((iu % src->w) + src->w) % src->w);
+      const int syy = static_cast<int>(((iv % src->h) + src->h) % src->h);
+      const uint8_t* sp =
+          &src->px[(static_cast<size_t>(syy) * src->w + sxx) * 4];
+      const int a = sp[3] * ga / 255;
+      blend(&dst->px[(static_cast<size_t>(py) * dst->w + px) * 4], sp[0], sp[1],
+            sp[2], a);
+    }
+  }
+  return JS_UNDEFINED;
+}
+
 // __mv_canvasFillGradient(handle, rx, ry, rw, rh, x0, y0, x1, y1,
 //                         offsets, r, g, b, a, globalAlpha)
 // Fill the device rect (rx,ry,rw,rh) with a linear gradient whose axis runs
@@ -848,6 +913,7 @@ const char* kCanvasPreamble = R"MVJS(
   Ctx.prototype.fillRect = function (x, y, w, h) {
     var fs = this.fillStyle;
     if (fs && fs.__mvGrad) { this._fillGradientRect(fs, x, y, w, h); return; }
+    if (fs && fs.__mvPattern) { this._fillPatternRect(fs, x, y, w, h); return; }
     var c = parseColor(fs);
     var a = Math.round(c[3] * this.globalAlpha);
     var r = mapRect(this._m, x, y, w, h);
@@ -877,6 +943,16 @@ const char* kCanvasPreamble = R"MVJS(
     }
     g.__mv_canvasFillGradient(this.__h, r[0], r[1], r[2], r[3],
       p0[0], p0[1], p1[0], p1[1], offs, rr, gg, bb, aa, this.globalAlpha);
+  };
+  // Fill a rect with a repeating pattern fillStyle (createPattern). The rect and
+  // current matrix are handed to the native tiler, which wraps the source over
+  // the rect anchored at the user-space origin (canvas 'repeat' semantics).
+  Ctx.prototype._fillPatternRect = function (pat, x, y, w, h) {
+    if (!pat.__srcH) return;
+    var m = this._m;
+    var a = Math.round(this.globalAlpha * 255);
+    g.__mv_canvasFillPattern(this.__h, pat.__srcH, x, y, w, h,
+                             m[0], m[1], m[2], m[3], m[4], m[5], a);
   };
   Ctx.prototype.clearRect = function (x, y, w, h) {
     var r = mapRect(this._m, x, y, w, h);
@@ -995,7 +1071,16 @@ const char* kCanvasPreamble = R"MVJS(
   Ctx.prototype.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
     return makeGradient('radial', x1, y1, x1 + (r1 || 0), y1);
   };
-  Ctx.prototype.createPattern = function () { return {}; };
+  // createPattern(image, repetition): a pattern usable as a fillStyle, tiling
+  // the image's canvas. Only 'repeat' is modelled (what MV's TilingSprite uses);
+  // _fillPatternRect reads __srcH to tile it.
+  Ctx.prototype.createPattern = function (image, repetition) {
+    return {
+      __mvPattern: true,
+      __srcH: srcHandle(image),
+      repeat: repetition || 'repeat',
+    };
+  };
   // Path and text operations MV/PIXI call but that the buffer path does not need
   // yet: accept and ignore. Real implementations land as needed. (Transform ops
   // — save/restore/translate/scale/rotate/transform/setTransform/resetTransform
@@ -1205,6 +1290,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasPutData", js_put_data, 6);
   install(ctx, global, "__mv_canvasDrawText", js_draw_text, 17);
   install(ctx, global, "__mv_canvasFillGradient", js_fill_gradient, 15);
+  install(ctx, global, "__mv_canvasFillPattern", js_fill_pattern, 13);
   install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   JS_FreeValue(ctx, global);

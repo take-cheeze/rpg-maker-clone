@@ -182,6 +182,33 @@ assert 'MV::JS.present returns false for a bad handle or non-Bitmap' do
   assert_equal false, MV::JS.present("not a bitmap", 1)
 end
 
+assert 'MV canvas createPattern tiles a source across fillRect (repeat)' do
+  # 2x2 source: red, green / blue, white. MV's TilingSprite (parallax,
+  # battlebacks) fills with such a pattern; the tile must repeat as (x%2, y%2).
+  MV::JS.eval("globalThis.PS=document.createElement('canvas'); PS.width=2; PS.height=2; " \
+              "var s=PS.getContext('2d'); " \
+              "s.fillStyle='#ff0000'; s.fillRect(0,0,1,1); s.fillStyle='#00ff00'; s.fillRect(1,0,1,1); " \
+              "s.fillStyle='#0000ff'; s.fillRect(0,1,1,1); s.fillStyle='#ffffff'; s.fillRect(1,1,1,1); " \
+              "globalThis.PDST=document.createElement('canvas'); PDST.width=4; PDST.height=4; " \
+              "var x=PDST.getContext('2d'); x.fillStyle=x.createPattern(PS,'repeat'); x.fillRect(0,0,4,4);")
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,0,0).join(',')")     # src(0,0)
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,1,0).join(',')")     # src(1,0)
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,2,0).join(',')")     # wrap -> src(0,0)
+  assert_equal "0,0,255,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,0,1).join(',')")     # src(0,1)
+  assert_equal "255,255,255,255", MV::JS.eval("__mv_canvasGetPixel(PDST.__h,3,3).join(',')") # src(1,1)
+end
+
+assert 'MV canvas pattern fill honors the transform (translate anchors tiling)' do
+  # createPattern tiles anchored at the user-space origin, so a translate shifts
+  # which tile lands where; device(1,0) <- user(0,0)=red, device(0,0) <-
+  # user(-1,0) which wraps to src(1,0)=green.
+  MV::JS.eval("globalThis.PT2=document.createElement('canvas'); PT2.width=4; PT2.height=2; " \
+              "var x=PT2.getContext('2d'); x.translate(1,0); " \
+              "x.fillStyle=x.createPattern(PS,'repeat'); x.fillRect(-1,0,5,2);")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(PT2.__h,0,0).join(',')")   # wrapped green
+  assert_equal "255,0,0,255", MV::JS.eval("__mv_canvasGetPixel(PT2.__h,1,0).join(',')")   # red
+end
+
 assert 'MV canvas translate offsets a drawImage blit' do
   MV::JS.eval("globalThis.TS=document.createElement('canvas'); TS.width=1; TS.height=1; " \
               "var s=TS.getContext('2d'); s.fillStyle='#ff0000'; s.fillRect(0,0,1,1);")
