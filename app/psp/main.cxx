@@ -12,8 +12,10 @@
 // nor the mruby input bridge.
 
 #include <cstdio>
+#include <cstring>
 
 #include <lvgl.h>
+#include <pspiofilemgr.h>
 #include <pspkernel.h>
 
 #include "psp.hxx"
@@ -30,6 +32,14 @@ lv_obj_t* g_status_label = nullptr;
 // Names for the RGSS key ids, indexed by PspKey, for the on-screen echo.
 const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
     "Up", "Down", "Left", "Right", "A", "B", "C"};
+
+// Write a NUL-terminated string to the PSP stdout (fd 1). Under an emulator the
+// host captures this; on real hardware it goes nowhere. Plain printf is
+// resolved as an unimplemented HLE import under PPSSPP (a silent no-op), so the
+// raw sceIoWrite is used for the CI markers instead.
+void psp_write(const char* s) {
+  sceIoWrite(1, s, static_cast<int>(std::strlen(s)));
+}
 
 // The HOME-button exit callback, so the EBOOT quits cleanly back to the XMB.
 int exit_callback(int /*arg1*/, int /*arg2*/, void* /*common*/) {
@@ -96,9 +106,8 @@ void show_keys(uint32_t mask) {
 int main(void) {
   // Emitted before any LVGL/display init so the CI smoke test can tell "the
   // EBOOT booted and its stdout is captured" apart from "it crashed during
-  // init". Routed to the host's stdout by pspsdk under an emulator.
-  std::printf("RPG2K_PSP_BOOT\n");
-  std::fflush(stdout);
+  // init".
+  psp_write("RPG2K_PSP_BOOT\n");
 
   setup_callbacks();
 
@@ -107,7 +116,7 @@ int main(void) {
   psp_input_init();
   build_ui();
 
-  // The loop runs ~200 iterations/second (5 ms delay); print a heartbeat line
+  // The loop runs ~200 iterations/second (5 ms delay); emit a heartbeat line
   // roughly once a second. The CI smoke test asserts this marker appears,
   // proving the EBOOT not only boots but keeps pumping frames (see the
   // psp-smoke job in .github/workflows/build.yml).
@@ -115,8 +124,11 @@ int main(void) {
     show_keys(psp_input_scan());
     lv_timer_handler();
     if (frame % 200 == 0) {
-      std::printf("RPG2K_PSP_BRINGUP frame=%u\n", frame);
-      std::fflush(stdout);
+      char buf[48];
+      const int n = std::snprintf(buf, sizeof(buf),
+                                  "RPG2K_PSP_BRINGUP frame=%u\n", frame);
+      if (n > 0)
+        sceIoWrite(1, buf, n);
     }
     sceKernelDelayThread(5000);  // ~5 ms, matching the Wio loop's delay(5)
   }
