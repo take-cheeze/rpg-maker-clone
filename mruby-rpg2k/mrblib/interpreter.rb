@@ -51,6 +51,7 @@ module Game
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
+      PAN_SCREEN       = 11060
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       WAIT             = 11410
@@ -243,6 +244,7 @@ module Game
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
+      when Cmd::PAN_SCREEN       then do_pan_screen cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::WAIT             then do_wait cmd
@@ -820,6 +822,24 @@ module Game
       @state.screen.flash(cmd.param(0), cmd.param(1), cmd.param(2),
                           cmd.param(3), frames)
       return unless cmd.param(5) != 0 && @state.screen.flashing?
+      @wait_kind = :screen
+      @waiting = true
+    end
+
+    # Pan Screen: param0 selects the operation — 0 lock the camera in place, 1
+    # unlock it (resume following the hero), 2 pan the view param2 tiles in
+    # direction param1 (0 up / 1 right / 2 down / 3 left) at speed param3, 3 reset
+    # the pan back to the hero at speed param3. param4 is the wait flag for the
+    # pan/reset scroll (lock/unlock are instant, so they never wait).
+    def do_pan_screen(cmd)
+      screen = @state.screen
+      case cmd.param(0)
+      when 0 then screen.pan_lock
+      when 1 then screen.pan_unlock
+      when 2 then screen.pan(cmd.param(1), cmd.param(2), cmd.param(3))
+      when 3 then screen.pan_reset(cmd.param(3))
+      end
+      return unless cmd.param(4) != 0 && screen.panning?
       @wait_kind = :screen
       @waiting = true
     end

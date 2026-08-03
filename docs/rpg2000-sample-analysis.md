@@ -180,7 +180,7 @@ runtime can execute virtually all of it.
    | Theme | Opcodes seen | Appears in |
    | --- | --- | --- |
    | **Pictures** | ShowPicture (11110), MovePicture (11120), ErasePicture (11130) | Sample2 |
-   | **Screen effects** ◐ | ShakeScreen (11050) implemented and visible (camera offset); TintScreen (11030) + FlashScreen (11040) state machines done (viewport tone/alpha render pending); PanScreen (11060) remains | Sample2, Sample3 |
+   | **Screen effects** ◐ | ShakeScreen (11050) + PanScreen (11060) implemented and visible (camera offset/lock); TintScreen (11030) + FlashScreen (11040) state machines done (viewport tone/alpha render pending) | Sample2, Sample3 |
    | **Message polish** ✅ | MessageOptions (10120), ChangeFaceGraphic (10130) — now implemented | Sample2, Sample3 |
    | **Battle** | EnemyEncounter (10710) | Sample2 |
    | **BGM stack** ✅ | MemorizeBGM (11530), PlayMemorizedBGM (11540) — now implemented | Sample2 |
@@ -202,12 +202,13 @@ Ordered by real-world frequency across the analysed games:
    — the biggest single gap in Sample2 and pervasive in RPG2000 cutscenes and
    custom menus.
 3. **Screen effects — `TintScreen`/`FlashScreen`/`PanScreen` (11030/11040/11060)**
-   — common cutscene polish, appear in both games. ◐ `ShakeScreen` is
-   implemented and **visible** (a host-tested `Game::Screen` triangle-wave camera
-   offset), and `TintScreen` + `FlashScreen` are host-tested `Game::Screen` state
-   machines (interpolation/fade + the shared wait flag) whose only remaining half
-   is drawing them through an `RGSS::Viewport` tone/alpha in C++. `PanScreen`
-   remains.
+   — common cutscene polish, appear in both games. ◐ `ShakeScreen` (camera
+   shake) and `PanScreen` (lock / pan / reset a camera offset) are implemented
+   and **visible** through the existing camera; `TintScreen` + `FlashScreen` are
+   host-tested `Game::Screen` state machines (interpolation/fade + the shared
+   wait flag) whose only remaining half is drawing them through an
+   `RGSS::Viewport` tone/alpha in C++. The whole screen-effects family now lives
+   on `Game::Screen`.
 4. **`EnemyEncounter` (10710)** — the entry point to the (still-unbuilt) battle
    system; unblocks the battle-showcase samples.
 5. ✅ **`ProceedWithMovement` (11340)** — *implemented.* Pairs with the existing

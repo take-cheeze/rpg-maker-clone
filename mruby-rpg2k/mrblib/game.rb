@@ -1373,6 +1373,12 @@ module Game
       @flash_strength = 0 # current strength, fading to 0 over the duration
       @flash_frames = 0 # frames left in the current flash (0 = faded out)
       @flash_total = 0
+      @pan_x = 0        # current pan offset in pixels (added to the camera)
+      @pan_y = 0
+      @pan_tx = 0       # target pan offset the current pan/reset scrolls toward
+      @pan_ty = 0
+      @pan_step = 1     # pixels moved toward the target per frame
+      @pan_locked = false # when true the scene stops the camera following the hero
     end
 
     # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
@@ -1395,8 +1401,19 @@ module Game
     # True while a flash is still fading out.
     def flashing?; @flash_frames > 0; end
 
+    # The current pan offset [x, y] in pixels, added to the camera by the scene.
+    def pan_offset; [@pan_x, @pan_y]; end
+
+    # Whether a Lock operation has frozen the camera in place — the scene stops
+    # following the hero while this holds. The pan offset (see #pan_offset) is
+    # applied by the scene independently of this flag.
+    def pan_locked?; @pan_locked; end
+
+    # True while a pan/reset scroll has not yet reached its target.
+    def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
+
     # True while any screen effect is still animating (drives the wait flag).
-    def busy?; tinting? || shaking? || flashing?; end
+    def busy?; tinting? || shaking? || flashing? || panning?; end
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
@@ -1444,11 +1461,37 @@ module Game
       end
     end
 
+    # Pan-operation direction (RPG2000: 0 up, 1 right, 2 down, 3 left) -> unit
+    # camera delta. A positive x pans the view right, a positive y pans it down.
+    PAN_DELTA = { 0 => [0, -1], 1 => [1, 0], 2 => [0, 1], 3 => [-1, 0] }.freeze
+
+    # Pan (scroll) the view `distance` tiles in `direction` at `speed`, adding
+    # onto the current pan target — RPG2000's Pan Screen "pan" operation.
+    def pan(direction, distance, speed)
+      dx, dy = PAN_DELTA[direction] || [0, 0]
+      d = distance * Game::TILE
+      @pan_tx += dx * d
+      @pan_ty += dy * d
+      @pan_step = pan_step_for(speed)
+    end
+
+    # Scroll the pan back to the hero-centred origin at `speed` (Reset operation).
+    def pan_reset(speed)
+      @pan_tx = 0
+      @pan_ty = 0
+      @pan_step = pan_step_for(speed)
+    end
+
+    # Freeze / resume the camera following the hero (Lock / Unlock operations).
+    def pan_lock; @pan_locked = true; end
+    def pan_unlock; @pan_locked = false; end
+
     # Advance every active effect one frame. Called once per frame by the scene.
     def update
       update_tint
       update_shake
       update_flash
+      update_pan
     end
 
     private
@@ -1483,6 +1526,25 @@ module Game
       @flash_frames -= 1
       # Strength fades linearly from the peak power to 0 across the duration.
       @flash_strength = @flash_total > 0 ? @flash_power * @flash_frames / @flash_total : 0
+    end
+
+    # Step the pan offset toward its target, landing exactly on the last frame.
+    def update_pan
+      @pan_x = approach(@pan_x, @pan_tx, @pan_step)
+      @pan_y = approach(@pan_y, @pan_ty, @pan_step)
+    end
+
+    # Move `cur` toward `target` by at most `step` (never overshooting).
+    def approach(cur, target, step)
+      return target if (target - cur).abs <= step
+      cur < target ? cur + step : cur - step
+    end
+
+    # Pixels moved per frame for a pan speed (1..6): RPG2000's pan speeds roughly
+    # double per step. An approximation — the exact subpixel rate is a native
+    # refinement.
+    def pan_step_for(speed)
+      2**(Game.clamp(speed, 1, 6) - 1)
     end
 
     # A symmetric triangle wave in [-amp, amp] over `period` phase units (float-

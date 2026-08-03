@@ -490,6 +490,39 @@ check 'Screen busy? reflects tint, shake or flash activity' do
   ok !s.busy?
 end
 
+check 'Screen pan scrolls the offset toward its target and lands exactly' do
+  s = Game::Screen.new
+  eq [0, 0], s.pan_offset
+  ok !s.panning?
+  s.pan(1, 2, 3) # pan right 2 tiles (32 px) at speed 3 -> 4 px/frame
+  ok s.panning?
+  ok s.busy?, 'a pan in progress makes the screen busy'
+  s.update; eq [4, 0], s.pan_offset
+  s.update; eq [8, 0], s.pan_offset
+  6.times { s.update } # 32 px total reached (and clamped)
+  eq [32, 0], s.pan_offset
+  ok !s.panning?, 'settles exactly on the target'
+end
+
+check 'Screen pan directions move the offset the right way' do
+  s = Game::Screen.new
+  s.pan(0, 1, 6); 5.times { s.update } # up: negative y
+  eq [0, -16], s.pan_offset
+  s.pan_reset(6); 5.times { s.update }
+  eq [0, 0], s.pan_offset, 'reset scrolls back to the origin'
+  s.pan(3, 1, 6); 5.times { s.update } # left: negative x
+  eq [-16, 0], s.pan_offset
+end
+
+check 'Screen pan lock / unlock toggles the follow flag' do
+  s = Game::Screen.new
+  ok !s.pan_locked?
+  s.pan_lock
+  ok s.pan_locked?
+  s.pan_unlock
+  ok !s.pan_locked?
+end
+
 # -- Message parsing (control codes / colour) --------------------------------
 
 check 'Message.expand fills v/n codes and drops display codes' do
@@ -938,6 +971,39 @@ check 'Flash Screen with a wait pauses until the flash fades out' do
   it.update
   eq true, st.switches[2], 'resumed once the flash faded'
   eq 0, st.screen.flash_color[3]
+end
+
+check 'Pan Screen lock / unlock are instant and never pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PAN_SCREEN, [0, 0, 0, 0, 1]),   # lock, wait flag set
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'lock does not pause even with the wait flag'
+  ok st.screen.pan_locked?
+  eq true, st.switches[1]
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::PAN_SCREEN, [1, 0, 0, 0, 0])]) # unlock
+  it2.update
+  ok !st.screen.pan_locked?
+end
+
+check 'Pan Screen (op 2) with a wait pauses until the scroll finishes' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # op 2 pan, direction 1 (right), distance 1 tile, speed 6, wait 1.
+  it.start([FakeCmd.new(IC::PAN_SCREEN, [2, 1, 1, 6, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok it.waiting?, 'a waiting pan pauses the interpreter'
+  eq :screen, it.wait_kind
+  ok !st.switches[2]
+  ok st.screen.panning?
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[2], 'resumed once the pan reached its target'
+  eq [16, 0], st.screen.pan_offset
 end
 
 check 'conditional branch on the timer' do

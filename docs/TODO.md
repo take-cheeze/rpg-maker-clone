@@ -105,8 +105,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
-  Screen, Flash Screen, Shake Screen, Call Event, Move Event, Proceed With
-  Movement, Erase Event, End Event) with a per-frame step cap so a bad loop
+  Screen, Flash Screen, Shake Screen, Pan Screen, Call Event, Move Event,
+  Proceed With Movement, Erase Event, End Event) with a per-frame step cap so a
+  bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
@@ -176,9 +177,13 @@ The work below is roughly ordered by the critical path to a walkable game
   with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
   a colour + strength that fades to zero over the duration; like the tint it is
   the Ruby half (drawing the full-screen colour overlay at its strength needs
-  the same alpha-blend / viewport support in C++). All three share the `:screen`
-  wait. Pan, transitions/fade, Show Picture and weather remain, and the
-  tint/flash still need `RGSS::Viewport` tone/alpha support in C++ to show
+  the same alpha-blend / viewport support in C++). **Pan Screen** (11060) drives
+  `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
+  follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
+  adds to the camera (so — like the shake — the pan **is** visible; while locked
+  the view holds where locking began). All four share the `:screen` wait.
+  Transitions/fade, Show Picture and weather remain, and the tint/flash still
+  need `RGSS::Viewport` tone/alpha support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
