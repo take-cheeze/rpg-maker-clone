@@ -11,6 +11,36 @@
     `scripts/build_changelog.rb` folds the fragments into `CHANGELOG.md` at
     release time.
 
+## Pull Requests
+
+Every change lands on `master` through a pull request — do not push to `master`
+directly. Before opening one:
+
+- **One logical change per branch/PR.** Keep the diff focused; unrelated
+  cleanups belong on their own branch so reviews and reverts stay clean.
+- **Branch naming.** Work on a `claude/<short-topic>-<suffix>` branch (matching
+  the existing `claude/rpg2k-todos-nftv59`, `claude/mv-move-smoke-e6qtsr` history),
+  create it if it does not exist, and never push to a branch you were not asked
+  to use.
+- **Format before committing.** Run pre-commit after finishing edits so
+  `clang-format`, `cmake-format`, `nixfmt`, trailing-whitespace and
+  end-of-file-fixer all pass (`pre-commit run --all-files`, or install the hook
+  with `pre-commit install`). CI and reviewers expect an already-formatted diff.
+- **Add a changelog fragment.** Drop one `changelog.d/<slug>.<category>.md` file
+  per change instead of editing `CHANGELOG.md` (see the Documentation
+  Requirements above and `changelog.d/README.md`).
+- **Record an ADR when the change is architectural.** New dependencies,
+  patterns, integrations or schema changes get a `docs/adr/` entry (see below),
+  and user-facing capabilities get matching `/docs` and `README.md` updates.
+- **Run the tests you touched.** Build and run the Google Test / CTest suite
+  (`cmake --build build -t test`) and any relevant `scripts/*_check.rb`
+  validators before pushing.
+- **Open a PR when there is code to review.** Push with
+  `git push -u origin <branch>`, then open a pull request whenever the change
+  includes code that needs review. Each PR gets a **Cloudflare Pages** preview
+  and must keep CI green before it is merged; pushes to `master` deploy the page
+  to **GitHub Pages**.
+
 ## Architecture Decision Records
 
 Create ADRs in /docs/adr for:
