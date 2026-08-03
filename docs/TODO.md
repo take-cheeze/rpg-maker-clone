@@ -97,9 +97,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
-  Message Options, Change Face Graphic, Change Main Menu / Save Access, Call
-  Event, Move Event, Proceed With Movement, Erase Event, End Event) with a
-  per-frame step cap so a bad loop
+  Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
+  Screen, Shake Screen, Call Event, Move Event, Proceed With Movement, Erase
+  Event, End Event) with a per-frame step cap so a bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
@@ -150,10 +150,20 @@ The work below is roughly ordered by the critical path to a walkable game
   the message/choice UI (those requests are skipped) — full parallel UI is a
   later refinement
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
-  `Game::State` countdown); transitions/fade, tint, flash, shake, Show Picture
-  and weather remain. `RGSS::Viewport` now exists (position/clip/scroll/z), but
-  most of these still need more `RGSS::Sprite`/`Viewport` support in C++
-  (opacity, tone, flash) before they can be driven from Ruby
+  `Game::State` countdown). The **Tint Screen** (11030) command now drives a
+  `Game::Screen` tint state machine on `Game::State`: it interpolates the four
+  RPG2000 channels (red/green/blue/saturation, 0..200) toward their target over
+  the command's duration (advanced each frame by `Scene::Map`), and the wait
+  flag pauses the interpreter until the effect settles (a `:screen` wait,
+  resumed by the scene once `Game::Screen#busy?` clears). The tint is the Ruby
+  half only — **applying** it as an `RGSS::Viewport` tone is native (C++) work
+  still to come, so it does not yet change what is drawn. **Shake Screen**
+  (11050) also drives `Game::Screen`: a timed, float-free triangle-wave
+  horizontal offset (amplitude from power, rate from speed) that `Scene::Map`
+  subtracts from the camera, so — unlike the tint — the shake **is** visible
+  with the current renderer. Flash will extend `Game::Screen` the same way;
+  transitions/fade, Pan, Show Picture and weather remain, and the tint still
+  needs `RGSS::Viewport` tone support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
