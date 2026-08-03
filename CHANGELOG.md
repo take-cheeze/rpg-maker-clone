@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- RPG Maker **XP** support, first slice — a project now loads and boots. A new
+  RGSS data layer (`mruby-rpgxp/mrblib/rgss_data.rb`) declares the `RPG::*`
+  schema so an XP project's `Data/*.rxdata` files load straight through
+  `Marshal.load` (the bundled mruby-marshal reads the 4.8 stream; the value
+  types `Table`/`Color`/`Tone`/`Rect` already round-trip natively in
+  mruby-rgss), and `RPGXP::RGSSData` wraps them as a database (the role
+  `LCF::Database` plays for RPG2000). The `RPGXP` runtime reads `Game.ini`,
+  builds the database and drives a scene stack: a `Scene::Title` (title graphic
+  + the default New Game / Continue / Shutdown commands in an XP-styled window)
+  and a first walkable `Scene::Map` (the three tile layers as placeholder colour
+  blocks, the party leader drawn from its `Graphics/Characters` sheet, grid
+  movement with tileset passability and an edge-clamped follow camera) — the
+  same staged approach the RPG2000 runtime took. `src/main.cxx` sizes the window
+  to XP's native 640×480 when it detects an XP project and the size was not
+  overridden. The schema is the mruby/CRuby common subset, so
+  `scripts/rpgxp_testbed_check.rb` validates it under CRuby against a real
+  downloaded project (`data/OpenGame.exe/Testbed/XP`) in CI, and
+  `mruby-rpgxp/test` unit-tests the data round-trip, tileset passability, camera,
+  CharSet geometry and save/load. Running the game's bundled RGSS scripts
+  (`Data/Scripts.rxdata`) is future work; see
+  `docs/adr/0009-rpgxp-rgss-data-layer.md`.
 - MV text rendering: the Canvas2D bridge now draws real glyphs. `fillText`,
   `strokeText` and `measureText` are backed by stb_truetype against the game's
   bundled TrueType font (the CSS `GameFont`, auto-discovered under the project's

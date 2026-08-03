@@ -33,6 +33,25 @@
 - Press the cancel button to open a menu (party status, Save, End Game); "New
   Game" state can be saved and reloaded from the title's "Continue"
 
+### RPG Maker XP
+
+- Alongside RPG Maker 2000/2003 (LCF) projects, an **RPG Maker XP** project
+  (a folder with `Game.ini` and a `Data/*.rxdata` database) now loads and boots.
+  XP stores its whole database as Ruby `Marshal` dumps, which load straight
+  through the bundled marshal reader into a typed `RPG::*` schema
+  (`mruby-rpgxp`); the RGSS value types (`Table`, `Color`, `Tone`, `Rect`) are
+  the same native classes the rest of the engine already uses
+- The engine reads `Game.ini`, shows the **title screen** (the game's title
+  graphic behind a New Game / Continue / Shutdown window, with the database's
+  title BGM and cursor/decision sound effects) and, on **New Game**, builds the
+  party and enters a walkable **map**: the three XP tile layers are drawn as
+  placeholder colour blocks (real tileset/autotile rendering is planned, as on
+  the RPG2000 side), the party leader walks from its character graphic, and
+  movement uses the tileset's passage flags with a follow camera
+- The window is sized to XP's native 640×480 automatically. Running the game's
+  own bundled RGSS scripts (`Data/Scripts.rxdata`) is future work; see
+  [`docs/adr/0009-rpgxp-rgss-data-layer.md`](docs/adr/0009-rpgxp-rgss-data-layer.md)
+
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
   **sixel** protocol or **iTerm2's inline-image** protocol
