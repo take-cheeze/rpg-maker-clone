@@ -929,6 +929,8 @@ class RPG2k
       # -- message / choice window --------------------------------------------
 
       MSG_LINE_H = 14
+      # Characters revealed per frame for the message typewriter effect.
+      MSG_REVEAL_SPEED = 2
 
       # Look up an actor name by id for the \n[] message control code.
       def actor_name(id)
@@ -955,14 +957,26 @@ class RPG2k
 
         contents = Bitmap.new(inner_w, inner_h)
         contents.font.color = Color.new(255, 255, 255, 255)
-        lines.each_with_index do |line, i|
-          contents.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
-        end
-        win.contents = contents
 
-        @message = { window: win, choice: choice, count: lines.length }
+        # Plain messages type out gradually; choice lists appear at once.
+        reveal = Game::TextReveal.new(lines)
+        reveal.reveal_all if choice
+        @message = { window: win, choice: choice, count: lines.length,
+                     reveal: reveal, contents: contents, inner_w: inner_w }
+        draw_message_contents
+        win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
+      end
+
+      # (Re)draw the message body showing the currently revealed characters.
+      def draw_message_contents
+        return unless @message
+        c = @message[:contents]
+        c.clear
+        @message[:reveal].visible_lines.each_with_index do |line, i|
+          c.draw_text 0, i * MSG_LINE_H, @message[:inner_w], MSG_LINE_H, line
+        end
       end
 
       def set_choice_cursor
@@ -985,7 +999,22 @@ class RPG2k
             close_message
             @interpreter.choose(index)
           end
-        elsif Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        else
+          drive_text_message
+        end
+      end
+
+      # A plain (non-choice) message: type the text out, and let a button press
+      # first complete the reveal, then (once fully shown) dismiss and resume.
+      def drive_text_message
+        reveal = @message[:reveal]
+        pressed = Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        unless reveal.done?
+          pressed ? reveal.reveal_all : reveal.advance(MSG_REVEAL_SPEED)
+          draw_message_contents
+          return
+        end
+        if pressed
           close_message
           @interpreter.resume
         end

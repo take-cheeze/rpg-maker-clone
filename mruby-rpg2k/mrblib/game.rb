@@ -71,6 +71,48 @@ module Game
     end
   end
 
+  # Gradual message text reveal (RPG2000's typewriter effect): a cursor over a
+  # set of already-expanded message lines that exposes them a few characters per
+  # frame. Pure data — the owning scene reads #visible_lines to (re)draw the
+  # window, calls #advance each frame, and #reveal_all to finish instantly when
+  # the player presses a button.
+  class TextReveal
+    def initialize(lines, revealed = 0)
+      @lines = lines || []
+      @total = 0
+      @lines.each { |l| @total += l.length }
+      @revealed = Game.clamp(revealed, 0, @total)
+    end
+
+    attr_reader :revealed, :total
+
+    def done?; @revealed >= @total; end
+    def reveal_all; @revealed = @total; end
+
+    # Reveal `n` more characters (default 1), never past the total.
+    def advance(n = 1)
+      n = 0 if n < 0
+      @revealed = Game.clamp(@revealed + n, 0, @total)
+    end
+
+    # The lines truncated to however many characters are currently revealed:
+    # earlier lines fill up before later ones start, so the result is a run of
+    # full lines, then one partial line, then empty strings.
+    def visible_lines
+      remaining = @revealed
+      @lines.map do |line|
+        if remaining >= line.length
+          remaining -= line.length
+          line
+        else
+          shown = line[0, remaining] || ''
+          remaining = 0
+          shown
+        end
+      end
+    end
+  end
+
   def self.clamp(v, lo, hi)
     return lo if v < lo
     return hi if v > hi

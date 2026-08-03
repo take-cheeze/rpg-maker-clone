@@ -31,8 +31,9 @@
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
-- Message text expands the common control codes (`\v[n]` variable, `\n[n]`
-  actor name, `\\`)
+- Message text reveals gradually (a typewriter effect; a button press completes
+  it, then dismisses) and expands the common control codes (`\v[n]` variable,
+  `\n[n]` actor name, `\\`)
 - A countdown timer can be set/started/stopped from events
 - Press the cancel button to open a menu (party status, Save, End Game); "New
   Game" state can be saved and reloaded from the title's "Continue"
