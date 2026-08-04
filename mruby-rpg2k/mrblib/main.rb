@@ -3131,10 +3131,22 @@ class RPG2k
         raw = [''] if raw.empty?
         # Parse each line into colour runs; the plain text (segments joined)
         # drives the reveal counter so it counts visible characters only.
-        seg_lines = raw.map do |l|
-          Game::Message.parse(l.to_s, @state.variables, names)
+        scans = raw.map do |l|
+          Game::Message.scan(l.to_s, @state.variables, names)
         end
+        seg_lines = scans.map { |s| s[:segments] }
         plain = seg_lines.map { |segs| segs.map { |s| s[:text] }.join }
+        # Lift each line's pacing codes into global reveal coordinates (offset by
+        # the visible length of the lines before it) so one reveal counter drives
+        # the whole window.
+        pauses = []
+        auto_close = false
+        offset = 0
+        scans.each_with_index do |s, li|
+          s[:pauses].each { |p| pauses << { at: offset + p[:at], kind: p[:kind] } }
+          auto_close ||= s[:auto_close]
+          offset += plain[li].length
+        end
 
         # Message Options / Change Face Graphic settings in effect for this
         # window (position, transparency and an optional FaceSet graphic).
@@ -3156,7 +3168,7 @@ class RPG2k
         contents = Bitmap.new(inner_w, inner_h)
 
         # Plain messages type out gradually; choice lists appear at once.
-        reveal = Game::TextReveal.new(plain)
+        reveal = Game::TextReveal.new(plain, 0, pauses, auto_close)
         reveal.reveal_all if choice
         @message = { window: win, choice: choice, count: plain.length,
                      reveal: reveal, contents: contents, inner_w: inner_w,
@@ -3286,17 +3298,45 @@ class RPG2k
 
       # A plain (non-choice) message: type the text out, and let a button press
       # first complete the reveal, then (once fully shown) dismiss and resume.
+      # Frames a `\.` (quarter-second) and `\|` (full-second) pause hold.
+      MSG_PAUSE_QUARTER = 15
+      MSG_PAUSE_FULL = 60
+
       def drive_text_message
         reveal = @message[:reveal]
         pressed = Input.trigger?(Input::C) || Input.trigger?(Input::B)
         unless reveal.done?
-          pressed ? reveal.reveal_all : reveal.advance(MSG_REVEAL_SPEED)
+          pause = reveal.pending_pause
+          if pause
+            drive_message_pause(reveal, pause, pressed)
+          elsif pressed
+            reveal.reveal_all
+          else
+            reveal.advance(MSG_REVEAL_SPEED)
+          end
           draw_message_contents
           return
         end
-        if pressed
+        # `\^` closes the finished window on its own; otherwise wait for a button.
+        if reveal.auto_close? || pressed
           close_message
           @interpreter.resume
+        end
+      end
+
+      # Hold the reveal at a pacing code: `\!` waits for a button, `\.` / `\|`
+      # count down a fixed number of frames (a button skips the wait).
+      def drive_message_pause(reveal, pause, pressed)
+        if pause[:kind] == :key
+          reveal.release_pause if pressed
+          return
+        end
+        @message[:pause_frames] ||=
+          pause[:kind] == :full ? MSG_PAUSE_FULL : MSG_PAUSE_QUARTER
+        @message[:pause_frames] -= 1
+        if pressed || @message[:pause_frames] <= 0
+          @message[:pause_frames] = nil
+          reveal.release_pause
         end
       end
 

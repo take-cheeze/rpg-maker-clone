@@ -389,10 +389,13 @@ The work below is roughly ordered by the critical path to a walkable game
   ship / airship) also persist in the save (`Game::Vehicle`, `.lsd` chunks
   105–107 / the Marshal save).
 - 🚧 Message window — renders text lines and a choice cursor and expands the
-  common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
-  speed/wait codes are consumed). Text now **reveals gradually** (a
-  `Game::TextReveal` typewriter driven by `Scene::Map`, with a button press
-  completing the reveal before dismissing), and `\c[n]` **colour codes** are
+  common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`,
+  `\_` space). Text now **reveals gradually** (a `Game::TextReveal` typewriter
+  driven by `Scene::Map`, with a button press completing the reveal before
+  dismissing), and the **pacing codes act**: `Game::Message.scan` surfaces
+  `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds) and `\^` (close the
+  window without a keypress) in revealed-character coordinates, and the reveal
+  halts at each until released. `\c[n]` **colour codes** are
   drawn in colour: `Game::Message.parse` splits a line into `{text:, color:}`
   runs and `Scene::Map` draws each run in its palette colour, revealing across
   runs (`Game::Message.visible_segments`). **Message Options** (10120) and
