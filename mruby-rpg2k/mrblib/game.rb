@@ -825,9 +825,10 @@ module Game
     # accessory.
     EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
 
-    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), and
-    # the ids of the skills the actor knows.
-    attr_reader :equipment, :skills
+    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), the
+    # ids of the skills the actor knows, and the ids of the status conditions
+    # (状態) currently afflicting the actor.
+    attr_reader :equipment, :skills, :states
 
     def initialize(db, id)
       @db = db
@@ -844,6 +845,7 @@ module Game
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
       @skills = []
+      @states = []
       # Base stats scale with level from the growth curve and equipment adds on
       # top, and levelling learns skills, so seed them all at the actor's initial
       # level, then start at full health.
@@ -922,6 +924,30 @@ module Game
     # Replace the known-skill set (Continue restoring the saved skills).
     def skills=(ids)
       @skills = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
+    end
+
+    # -- status conditions (状態) -------------------------------------------
+
+    # Whether `state_id` is currently afflicting the actor.
+    def state?(state_id)
+      return false if state_id.nil? || state_id == 0
+      @states.include?(state_id)
+    end
+
+    # Inflict / cure a status condition (no-ops for an absent/duplicate id).
+    def add_state(state_id)
+      return if state_id.nil? || state_id == 0 || @states.include?(state_id)
+      @states.push(state_id)
+    end
+
+    def remove_state(state_id); @states.delete(state_id); end
+
+    # Cure every status condition (RPG2000 Full Recovery clears them).
+    def clear_states; @states = []; end
+
+    # Replace the state set (Continue restoring the saved conditions).
+    def states=(ids)
+      @states = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
     end
 
     # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
@@ -1116,11 +1142,12 @@ module Game
       @mp = Game.clamp(@mp + delta, 0, @max_mp)
     end
 
-    # Restore HP and MP to their maxima (RPG2000 Full Recovery; state recovery
-    # is not modelled yet).
+    # Restore HP and MP to their maxima and cure every status condition
+    # (RPG2000 Full Recovery).
     def full_heal
       @hp = @max_hp
       @mp = @max_mp
+      clear_states
     end
 
     # Change Parameters base-stat types (the RPG2000 command's parameter field).
@@ -1198,7 +1225,7 @@ module Game
         meta[a.id] = { name: a.name, title: a.title,
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
-                       transparent: a.transparent }
+                       transparent: a.transparent, states: a.states.dup }
       end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
         hp: hp, mp: mp, exp: exp, actor_meta: meta }
@@ -1233,6 +1260,7 @@ module Game
         actor.set_charset(m[:charset_name], m[:charset_index] || actor.charset_index)
       end
       actor.transparent = m[:transparent] unless m[:transparent].nil?
+      actor.states = m[:states] if m[:states]
     end
 
     def each(&blk); @actors.each(&blk); end
@@ -2890,6 +2918,10 @@ module Game
         e[61] = a.equipment
         e[71] = a.hp
         e[72] = a.mp
+        unless a.states.empty?
+          e[81] = a.states.size
+          e[82] = a.states
+        end
         actors[a.id] = e
       end
       save[108] = actors
@@ -2953,6 +2985,7 @@ module Game
           actor.exp = sa.exp if sa.exp
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
+          actor.states = sa.states if sa.states
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp

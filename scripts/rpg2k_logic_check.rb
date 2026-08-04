@@ -1988,6 +1988,43 @@ check 'Conditional actor: equipped item (type 5, sub 5)' do
   eq true, st.switches[2]
 end
 
+check 'Conditional actor: afflicted by state (type 5, sub 6)' do
+  st = run_actor_cond([5, 1, 6, 4]) { |s| s.party.actor_by_id(1).add_state(4) }
+  eq true, st.switches[1]            # state 4 present -> if-branch
+  st = run_actor_cond([5, 1, 6, 4]) # no states -> else
+  eq true, st.switches[2]
+end
+
+check 'Actor status states: add / remove / query, cleared by Full Recovery' do
+  a = party_state.party.actor_by_id(1)
+  eq [], a.states
+  eq false, a.state?(3)
+  a.add_state(3); a.add_state(3); a.add_state(7)     # duplicate is ignored
+  eq [3, 7], a.states
+  eq true, a.state?(3)
+  a.remove_state(3)
+  eq [7], a.states
+  a.states = [1, 0, nil, 2, 2]                        # setter drops 0/nil, dedups
+  eq [1, 2], a.states
+  a.full_heal
+  eq [], a.states                                     # Full Recovery clears states
+end
+
+check 'State save round-trips per-actor status states' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  db = FakeActorDB.new(players, [1, 2])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.actor_by_id(1).add_state(3)
+  st.party.actor_by_id(1).add_state(9)
+  st.party.actor_by_id(2).add_state(5)
+  loaded = Game::State.load(db, Marshal.load(Marshal.dump(st.to_h)))
+  eq [3, 9], loaded.party.actor_by_id(1).states.sort
+  eq [5], loaded.party.actor_by_id(2).states.sort
+end
+
 check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' do
   eq true, run_actor_cond([5, 1, 6, 3]).switches[2] # has-state -> false -> else
 end

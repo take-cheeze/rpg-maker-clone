@@ -204,6 +204,8 @@ def check_game(dir)
   if state.party.leader
     state.party.leader.set_charset('HeroAlt', 5)
     state.party.leader.name = 'Renamed'
+    state.party.leader.add_state(3)   # afflict the leader with a couple of states
+    state.party.leader.add_state(7)
   end
 
   round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd.to_lcf)))
@@ -224,6 +226,7 @@ def check_game(dir)
     eq a.mp, b.mp, "to_lsd: actor #{a.id} mp"
     eq a.equipment, b.equipment, "to_lsd: actor #{a.id} equipment"
     eq a.skills.sort, b.skills.sort, "to_lsd: actor #{a.id} skills"
+    eq a.states.sort, b.states.sort, "to_lsd: actor #{a.id} states"
   end
   eq state.switches.to_h.select { |_k, v| v }.keys.sort,
      round.switches.to_h.select { |_k, v| v }.keys.sort, 'to_lsd: switches on'
