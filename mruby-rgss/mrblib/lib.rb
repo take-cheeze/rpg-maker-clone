@@ -210,16 +210,16 @@ module RGSS
   # tilemap_refresh draws the visible tiles of the three map_data layers scrolled
   # by ox/oy — regular tiles from the tileset and autotiles assembled from their
   # four quads (the seven `autotiles` bitmaps are read by the native renderer).
-  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`,
-  # `dispose`/`disposed?` are native. This reopening keeps the plain readers, the
-  # `autotiles` slot array (which the native renderer reads), and the properties
-  # not yet honoured — `priorities` (priority layering) and `flash_data` — stored
-  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md).
+  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
+  # `visible`/`visible=`, `dispose`/`disposed?` are native. `update` advances the
+  # autotile animation (frames cycle through the wider autotile bitmaps). This
+  # reopening keeps the plain readers, the `autotiles` slot array (which the
+  # native renderer reads), and the properties not yet honoured — `priorities`
+  # (priority layering) and `flash_data` — stored so scripts run (tracked in
+  # docs/rpgxp-rgss-api-gap.md).
   class Tilemap
     attr_reader :tileset, :map_data, :ox, :oy, :viewport
     attr_accessor :flash_data, :priorities
-
-    def update; end
 
     # RGSS exposes exactly seven autotile slots (0..6); the game assigns each with
     # `tilemap.autotiles[i] = bitmap` and reads them back to dispose. A fixed-size
