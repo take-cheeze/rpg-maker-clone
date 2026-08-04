@@ -96,7 +96,7 @@ clip contents taller than the window; `stretch` (tiled vs stretched background) 
 ignored; and the RMXP windowskin source-rect constants are best-effort until a
 game exercises them.
 
-### 3. `Tilemap` ⚠️ (tiles + autotiles rendered; priority layering pending)
+### 3. `Tilemap` ⚠️ (tiles + animated autotiles rendered; priority layering pending)
 
 `Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
 `lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
@@ -104,12 +104,20 @@ visible part of the map — for each of the three `map_data` layers it blits the
 tiles overlapping the viewport (given `ox`/`oy`). **Regular tiles** (id ≥ 384)
 come straight from the `tileset`; **autotiles** (id 48–383) are assembled from
 their four 16×16 quads using the RMXP 48-shape quad table (`AUTOTILE_QUADS`,
-derived from mkxp), so water/terrain ground now fills in. `tileset=`,
-`map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
-native and re-render on change. **Remaining:** the per-tile **priority layering**
-(`priorities`) — tiles that should draw above characters — is stored-only, so
-everything renders on one flat layer; **autotile animation** uses only the first
-frame; and `flash_data` is ignored.
+derived from mkxp), so water/terrain ground now fills in. **Animated autotiles**
+(a wider autotile bitmap holds several 96px frames side by side) now cycle:
+`Tilemap#update` advances a counter whose frame index is `counter / 16` (mod 4,
+matching RMXP/mkxp's 16-tick-per-frame `atAnimation` table), and the renderer
+shifts the autotile source into that frame's column — so water and waterfalls
+animate. `update` only re-tiles on a frame boundary, and only when the map
+actually has an animated autotile (recorded during the last refresh), so static
+maps do no per-frame work. `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
+`visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
+**Remaining:** the per-tile **priority layering** (`priorities`) — tiles that
+should draw above characters — is stored-only, so everything still renders on one
+flat layer (a correct fix needs the above-priority tiles to become their own
+z-ordered objects that interleave with character sprites per row); and
+`flash_data` is ignored.
 
 ### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
 

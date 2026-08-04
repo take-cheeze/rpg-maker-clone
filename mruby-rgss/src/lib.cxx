@@ -2844,6 +2844,10 @@ static const int AUTOTILE_QUADS[48][4][2] = {
 // table's TL, TR, BL, BR order.
 static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
 
+// One autotile animation frame is 96px wide (3 tiles); animated autotiles pack
+// several such frames left to right.
+static const int AUTOTILE_FRAME_W = 96;
+
 // Redraw the visible part of the map into the tilemap's canvas. For each of the
 // three map-data layers, the tiles overlapping the viewport (given ox/oy) are
 // blitted from the tileset (regular tiles, id >= 384) or assembled from the
@@ -2883,6 +2887,17 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       mrb_iv_get(M, self, mrb_intern_lit(M, "@autotiles"));
   const bool have_autotiles = mrb_array_p(autotiles_v);
 
+  // Autotile animation: an autotile bitmap wider than one 96px frame holds
+  // several animation frames side by side. RMXP shows each of the four frames
+  // for 16 ticks (mkxp's atAnimation table), so the current frame is the tick
+  // counter / 16, mod 4. `any_anim` records whether this map actually has an
+  // animated autotile, so tilemap_update can skip the periodic re-tile when the
+  // map is static.
+  const mrb_value anim_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+  const int anim = mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0;
+  const int frame_idx = (anim / 16) % 4;
+  bool any_anim = false;
+
   int tx0 = static_cast<int>(ox) / TILE_SIZE;
   int ty0 = static_cast<int>(oy) / TILE_SIZE;
   if (tx0 < 0)
@@ -2917,11 +2932,19 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
             continue;
           Bitmap& ab = DataType<Bitmap>::get(M, at);
           const int shape = id % 48;
+          // Animated autotile: shift the source into the current frame's 96px
+          // column. A single-frame (96px-wide) autotile stays at offset 0.
+          int sx_off = 0;
+          if (ab.width > AUTOTILE_FRAME_W) {
+            any_anim = true;
+            sx_off =
+                (frame_idx % (ab.width / AUTOTILE_FRAME_W)) * AUTOTILE_FRAME_W;
+          }
           for (int q = 0; q < 4; ++q)
             blit_blend(dst, dx0 + AUTOTILE_QUAD_OFF[q][0],
                        dy0 + AUTOTILE_QUAD_OFF[q][1], ab,
-                       AUTOTILE_QUADS[shape][q][0], AUTOTILE_QUADS[shape][q][1],
-                       16, 16);
+                       AUTOTILE_QUADS[shape][q][0] + sx_off,
+                       AUTOTILE_QUADS[shape][q][1], 16, 16);
         } else {
           // Regular tile from the tileset.
           const int ti = id - 384;
@@ -2931,6 +2954,8 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       }
     }
   }
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
+             mrb_bool_value(any_anim));
   lv_obj_invalidate(obj);
 }
 
@@ -2974,6 +2999,23 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), mrb_nil_value());
   mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(0));
+  return self;
+}
+
+// Per-frame tick: advance the autotile animation. The counter cycles 0..63 and
+// the frame it selects is counter / 16, so only every 16th update crosses a
+// frame boundary and needs a re-tile — and only when the map has an animated
+// autotile at all (recorded by tilemap_refresh). A static map does no work.
+mrb_value tilemap_update(mrb_state* M, mrb_value self) {
+  if (!mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_animated"))))
+    return self;
+  const mrb_value anim_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+  const int anim = mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0;
+  const int next = (anim + 1) % 64;
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(next));
+  if (anim / 16 != next / 16)
+    tilemap_refresh(M, self);
   return self;
 }
 
@@ -3714,6 +3756,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
