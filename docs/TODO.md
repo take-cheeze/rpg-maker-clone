@@ -268,19 +268,23 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
-  command list. Save, End Game, **Item** and **Equip** work; skill / status are
-  placeholders still to be built from the parsed `term`/skill/actor data. The
-  **Item** command opens `Scene::ItemMenu`: it lists the party's usable medicines
-  (database item type 6) with their held counts, applies a single-target item to
-  a chosen ally or an all-ally item (scope 1) to the whole party, restores HP/SP
-  (flat + percentage of max, clamped), consumes one on a use that had any effect,
-  and greys out / reports a use with no effect (a target already full). The
-  **Equip** command opens `Scene::EquipMenu`: it shows a party member's five
-  equipment slots and stats (LEFT/RIGHT cycle members), and for a chosen slot
-  lists the bag's fitting items (plus Remove); equipping swaps the previously-worn
-  item back into the bag and recomputes stats. The decision logic is on
-  `Game::Party` (`field_items` / `item_recovery` / `item_effective?` / `use_item`
-  for items; `equip_candidates` / `equip_from_bag` / `unequip_to_bag` for equip),
+  command list. Save, End Game, **Item**, **Equip** and **Status** work; only
+  **Skill** remains a placeholder (it shares the battle effect formula, so it is
+  best built with / after the battle system). The **Item** command opens
+  `Scene::ItemMenu`: it lists the party's usable medicines (database item type 6)
+  with their held counts, applies a single-target item to a chosen ally or an
+  all-ally item (scope 1) to the whole party, restores HP/SP (flat + percentage
+  of max, clamped), consumes one on a use that had any effect, and greys out /
+  reports a use with no effect (a target already full). The **Equip** command
+  opens `Scene::EquipMenu`: it shows a party member's five equipment slots and
+  stats (LEFT/RIGHT cycle members), and for a chosen slot lists the bag's fitting
+  items (plus Remove); equipping swaps the previously-worn item back into the bag
+  and recomputes stats. The **Status** command opens `Scene::StatusMenu`: a
+  read-only per-member detail (name/title, level, EXP and EXP-to-next, HP/MP, the
+  six stats and the equipped items; LEFT/RIGHT cycle members). The decision logic
+  is on `Game::Party` (`field_items` / `item_recovery` / `item_effective?` /
+  `use_item` for items; `equip_candidates` / `equip_from_bag` / `unequip_to_bag`
+  for equip) and `Game::Actor` (`next_level_exp` / `exp_to_next` for status),
   covered by `scripts/rpg2k_logic_check.rb`; the RGSS windows are the
   untestable-here UI. Book (7) / seed (8) / switch (9) item use, the item
   usable-occasion gate, and two-handed / dual-wield equipping are later
@@ -313,9 +317,9 @@ The work below is roughly ordered by the critical path to a walkable game
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
-- Skill / Status menu screens — the menu framework and party data are in place,
-  and the Item and Equip screens now exist (see Menu scene above); Skill and
-  Status still need building
+- Skill menu screen — the Item, Equip and Status screens now exist (see Menu
+  scene above); only Skill remains, and it is best built with / after the battle
+  system since a skill's HP/SP effect shares that damage/heal formula
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an

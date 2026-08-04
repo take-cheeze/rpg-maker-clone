@@ -1035,6 +1035,23 @@ module Game
       set_exp(@exp + delta)
     end
 
+    # Total EXP needed to *be at* the next level, or nil at the maximum level
+    # (where there is no next level).
+    def next_level_exp
+      return nil if @level >= max_level
+      exp_for_level(@level + 1)
+    end
+
+    # EXP still required to reach the next level (0 once the threshold is met, so
+    # a just-levelled actor reads 0 briefly), or nil at the maximum level. Drives
+    # the status screen's "to next level" figure.
+    def exp_to_next
+      nxt = next_level_exp
+      return nil unless nxt
+      rem = nxt - @exp
+      rem < 0 ? 0 : rem
+    end
+
     # Change the level by `delta` (the Change Level command). Recomputes the base
     # stats via #set_level and re-aligns EXP to the new level, mirroring EasyRPG's
     # ChangeLevel: on a level up EXP rises to at least the new level's threshold;
