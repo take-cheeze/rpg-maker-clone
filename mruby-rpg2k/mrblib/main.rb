@@ -510,6 +510,7 @@ class RPG2k
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
+        @airship_shadow.dispose if @airship_shadow
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -571,6 +572,14 @@ class RPG2k
           @vehicle_sprites[type] = spr
           @vehicle_bmps[type] = bmp
         end
+        # The airship floats above the ground; a shadow sprite on the tile below
+        # it sells the altitude. A squat translucent dark blob approximates it.
+        @airship_shadow = Sprite.new
+        @airship_shadow.z = 98 # under the vehicles, over the ground / events
+        @airship_shadow.visible = false
+        shadow = Bitmap.new(TILE, TILE)
+        shadow.fill_rect 3, TILE - 8, TILE - 6, 5, Color.new(0, 0, 0, 96)
+        @airship_shadow.bitmap = shadow
         # Fallback marker when the CharSet graphic is unavailable.
         unless @charset
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
@@ -3180,8 +3189,12 @@ class RPG2k
       # sits on its own tile; the ridden one follows the party's pixel position
       # (so it slides smoothly), drawn just under the hero. A vehicle on another
       # map, or one with no CharSet graphic, is hidden.
+      # Pixels the airship floats above its shadow on the ground.
+      AIRSHIP_ALTITUDE = 8
+
       def draw_vehicles(cam_x, cam_y, px, py)
         return unless @vehicle_sprites
+        @airship_shadow.visible = false
         Game::Vehicle::TYPES.each do |type|
           spr = @vehicle_sprites[type]
           v = @state.vehicle(type)
@@ -3193,8 +3206,17 @@ class RPG2k
           ridden = @state.boarded == type
           vpx = ridden ? px : v.x * TILE
           vpy = ridden ? py : v.y * TILE
-          spr.x = vpx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-          spr.y = vpy - cam_y - (Game::CharSet::HEIGHT - TILE)
+          sx = vpx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+          sy = vpy - cam_y - (Game::CharSet::HEIGHT - TILE)
+          if type == :airship
+            # The shadow marks the ground tile; the airship floats above it.
+            @airship_shadow.x = vpx - cam_x
+            @airship_shadow.y = vpy - cam_y
+            @airship_shadow.visible = true
+            sy -= AIRSHIP_ALTITUDE
+          end
+          spr.x = sx
+          spr.y = sy
           spr.visible = true
           draw_vehicle_frame(type, v, charset)
         end

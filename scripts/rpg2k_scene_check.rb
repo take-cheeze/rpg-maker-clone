@@ -1666,6 +1666,31 @@ check 'the ridden vehicle sprite follows the party, under the hero' do
   ok sprites[:boat].z < player.z, 'the vehicle sits under the hero'
 end
 
+check 'the airship floats above a ground shadow; a boat casts none' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 2
+  air.y = 2
+  air.charset_name = 'Airship'
+  scene.update
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  shadow = scene.instance_variable_get(:@airship_shadow)
+  ok shadow.visible, 'the airship casts a shadow'
+  ok sprites[:airship].y < shadow.y, 'the airship floats above its shadow'
+  ok shadow.z < sprites[:airship].z, 'the shadow sits under the airship'
+  # A boat (no airship placed) casts no shadow.
+  air.map_id = 0 # unplace the airship
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 1
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  scene.update
+  ok !shadow.visible, 'a boat casts no airship shadow'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
