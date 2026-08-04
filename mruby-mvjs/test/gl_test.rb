@@ -4,6 +4,12 @@
 # proprietary MZ project — it is the CI proof that the backend works.
 
 assert 'MV::GL.smoke_test renders a green triangle through OSMesa GLES2' do
+  # The OSMesa backend is optional: absent on Emscripten (browser WebGL) and
+  # where the OSMesa headers were missing at build time (e.g. the nix build
+  # until OSMesa is packaged). Skip cleanly there; the backend is exercised
+  # wherever OSMesa is present (the apt-based dev build).
+  skip 'OSMesa/GLES2 backend not compiled into this build' unless MV::GL.available?
+
   px = MV::GL.smoke_test
   # nil means the OSMesa context or the GLSL ES 1.00 shader path failed; the
   # [MZ-GL] stderr line above says which. On success px is the rendered centre

@@ -158,10 +158,18 @@ JavaScript loads and interprets the JSON.
       OSMesa GLES2 context bound to an RGBA buffer, exposed to Ruby as `MV::GL`.
       A self-test (`MV::GL.smoke_test`) compiles the PIXI-style ES 1.00 shaders,
       draws and reads a pixel back, pinned by `mruby-mvjs/test/gl_test.rb` — the
-      one part of M6.3 that **is** CI-verifiable without the proprietary MZ
-      engine, so the backend is proven on CI runners. OSMesa/GLES2 are wired into
-      the CMake link and `flake.nix`; the Emscripten build stubs them out (it
-      renders MZ through the browser's own WebGL).
+      one part of M6.3 that can be exercised without the proprietary MZ engine.
+      The backend is **build-optional**: `mvgl.cxx` compiles to inert stubs (an
+      `__has_include` guard) and `MV::GL.available?` reports false where OSMesa
+      is absent, so the CMake link and the gem test only pick it up where the
+      libraries exist. It is present and verified on the apt-based dev build
+      (`libosmesa6-dev`/`libgles2-mesa-dev`). **nixpkgs 26.05 no longer ships
+      `libOSMesa` as a plain package** (mesa dropped the osmesa frontend; there
+      is no top-level `osmesa`), so the nix/CI build stubs it out and the smoke
+      test skips there for now — packaging OSMesa for nix (a `mesa` override with
+      `-Dosmesa=true`, or a dedicated derivation) so the test also runs in CI is
+      an explicit follow-up. The Emscripten build likewise stubs it (it renders
+      MZ through the browser's own WebGL).
     - **M6.3b — WebGL wrapper.** Map the `WebGLRenderingContext` surface PIXI
       uses onto the GLES2 natives, have `getContext("webgl")` return it (instead
       of `null`, see below) and `Utils.canUseWebGL()` become true.

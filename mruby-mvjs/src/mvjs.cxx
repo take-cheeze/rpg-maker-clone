@@ -878,6 +878,13 @@ mrb_value gl_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
   return ary;
 }
 
+// MV::GL.available? -> whether the OSMesa/GLES2 backend was compiled in. False
+// on Emscripten and where the OSMesa headers were absent at build time (e.g.
+// the nix build until OSMesa is packaged), where MV::GL.smoke_test is inert.
+mrb_value gl_available(mrb_state* mrb, mrb_value /*self*/) {
+  return mrb_bool_value(mvgl::available());
+}
+
 extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
@@ -894,6 +901,7 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* gl = mrb_define_class_under(mrb, mv, "GL", mrb->object_class);
   mrb_define_class_method(mrb, gl, "smoke_test", gl_smoke_test,
                           MRB_ARGS_NONE());
+  mrb_define_class_method(mrb, gl, "available?", gl_available, MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}

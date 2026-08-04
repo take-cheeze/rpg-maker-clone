@@ -3,7 +3,14 @@
 
 #include "mvgl.hxx"
 
-#ifndef __EMSCRIPTEN__
+// The backend needs OSMesa + GLES2 headers. The Emscripten build renders MZ
+// through the browser's own WebGL, and some environments (e.g. the nix build
+// until OSMesa is packaged there) ship neither header — in both cases mvgl
+// compiles to inert stubs and `available()` reports false. `__has_include`
+// makes this a compile-time decision with no build-system probing.
+#if !defined(__EMSCRIPTEN__) && __has_include(<GL/osmesa.h>) && \
+    __has_include(<GLES2/gl2.h>)
+#define MVJS_HAVE_OSMESA 1
 
 #include <GL/osmesa.h>
 #include <GLES2/gl2.h>
@@ -209,13 +216,16 @@ bool smoke_test(std::uint8_t out_rgba[4]) {
   return ok;
 }
 
+bool available() {
+  return true;
+}
+
 }  // namespace mvgl
 
-#else  // __EMSCRIPTEN__
+#else  // no OSMesa/GLES2 (Emscripten, or a build without the headers)
 
-// The Emscripten build renders MZ through the browser's own WebGL, so the
-// OSMesa backend is not compiled there; provide inert stubs so the shared
-// binding (MV::GL.smoke_test) still links and simply reports "unavailable".
+// Inert stubs so the shared binding (MV::GL) still links; `available()` reports
+// false so callers (and the gl_test spec) skip the GL path cleanly.
 namespace mvgl {
 Context* create(int, int) {
   return nullptr;
@@ -230,6 +240,9 @@ const std::uint8_t* pixels(Context*, int*, int*) {
 bool smoke_test(std::uint8_t[4]) {
   return false;
 }
+bool available() {
+  return false;
+}
 }  // namespace mvgl
 
-#endif  // __EMSCRIPTEN__
+#endif

@@ -32,12 +32,22 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   linker.libraries << "qjs" << "m" << "pthread"
 
   # OSMesa (off-screen software Mesa) + GLES2 back the MZ WebGL renderer
-  # (src/mvgl.cxx, milestone M6.3). OSMesa renders into a CPU RGBA buffer with no
-  # GPU/display — matching the software LVGL pipeline and working headless in CI.
-  # Provided by libosmesa6-dev / libgles2-mesa-dev (apt) and the `osmesa`/
-  # `libGLES` nix inputs in flake.nix. Not linked into the Emscripten build,
-  # which has its own WebGL via the browser.
-  unless ENV["MRUBY_TARGET"] == "emscripten"
-    linker.libraries << "OSMesa" << "GLESv2"
+  # (src/mvgl.cxx, milestone M6.3): OSMesa renders into a CPU RGBA buffer with no
+  # GPU/display, matching the software LVGL pipeline. This is optional — mvgl.cxx
+  # stubs itself out where the OSMesa headers are absent (Emscripten's browser
+  # WebGL; the nix build until OSMesa is packaged) — so only link the libraries
+  # when this build actually has the header. Probe with the configured compiler
+  # so the check honours the same include paths the build uses (apt's
+  # /usr/include, a nix buildInput, etc.); provided by libosmesa6-dev /
+  # libgles2-mesa-dev on apt.
+  if ENV["MRUBY_TARGET"] != "emscripten"
+    have_osmesa =
+      begin
+        system("echo '#include <GL/osmesa.h>' | #{cc.command} -E -x c - " \
+               ">/dev/null 2>&1")
+      rescue StandardError
+        false
+      end
+    linker.libraries << "OSMesa" << "GLESv2" if have_osmesa
   end
 end

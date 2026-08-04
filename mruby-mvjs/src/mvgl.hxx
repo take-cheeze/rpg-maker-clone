@@ -47,6 +47,13 @@ bool make_current(Context* ctx);
 // the context and valid until the next draw or `destroy`.
 const std::uint8_t* pixels(Context* ctx, int* out_w, int* out_h);
 
+// Whether the OSMesa/GLES2 backend was compiled into this build. False on
+// Emscripten (browser WebGL) and where the OSMesa headers are absent (e.g. the
+// nix build until OSMesa is packaged); in that case the other entry points are
+// inert stubs. Callers should check this before relying on
+// `create`/`smoke_test`.
+bool available();
+
 // End-to-end self-test of the pipeline, independent of any game: create a small
 // context, compile the PIXI-style GLES2 (ES 1.00) shaders, draw a full-screen
 // green triangle, and read the centre pixel back. On success returns true and
