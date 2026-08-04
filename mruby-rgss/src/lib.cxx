@@ -2187,18 +2187,55 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// Point the sprite's canvas at the bitmap it should display: the assigned
+// bitmap directly, or — when the sprite is mirrored — a horizontally-flipped
+// scratch copy (LVGL's lv_image has no flip, so mirroring is a software pass).
+// The scratch Bitmap is kept in @_mirror_bitmap so it lives as long as the
+// sprite and is freed with it. The flip is a snapshot taken here; a sprite that
+// redraws its bitmap contents while mirrored must re-assign bitmap= (or set
+// mirror= again) to refresh it (tracked in docs/rpgxp-rgss-api-gap.md).
+void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
+  const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
+  if (mrb_nil_p(bmp_v))
+    return;
+  Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
+  if (mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@mirror")))) {
+    RClass* bmp_class =
+        mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+    const mrb_value flip_v =
+        DataType<Bitmap>::make(M, bmp_class, src.width, src.height, src.format);
+    Bitmap& flip = DataType<Bitmap>::get(M, flip_v);
+    const int px = lv_color_format_get_size(src.format);
+    const int w = src.width;
+    for (int y = 0; y < src.height; ++y) {
+      const uint8_t* srow = src.buffer.data() + static_cast<size_t>(y) * w * px;
+      uint8_t* drow = flip.buffer.data() + static_cast<size_t>(y) * w * px;
+      for (int x = 0; x < w; ++x)
+        std::memcpy(drow + static_cast<size_t>(x) * px,
+                    srow + static_cast<size_t>(w - 1 - x) * px, px);
+    }
+    flip.dirty = true;
+    // Hold the scratch bitmap on the sprite so the GC keeps it alive.
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_mirror_bitmap"), flip_v);
+    lv_canvas_set_buffer(obj, flip.buffer.data(), src.width, src.height,
+                         src.format);
+  } else {
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_mirror_bitmap"), mrb_nil_value());
+    lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
+                         src.format);
+  }
+  // Repaint on the next Graphics.update, even if the contents were drawn before
+  // the bitmap was attached to this sprite.
+  src.dirty = true;
+}
+
 mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
-  Bitmap* p;
-  mrb_get_args(M, "d", &p, &DataType<Bitmap>::data_type);
-  V bmp;
+  mrb_value bmp;
   mrb_get_args(M, "o", &bmp);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
-  lv_canvas_set_buffer(obj, p->buffer.data(), p->width, p->height, p->format);
-  // Repaint the newly assigned bitmap on the next Graphics.update, even if its
-  // contents were drawn before it was attached to this sprite.
-  p->dirty = true;
+  spr_bind_display(M, self, obj);
   return bmp;
 }
 
@@ -2275,6 +2312,19 @@ mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
       mrb_nil_p(oy) ? 0 : static_cast<int32_t>(mrb_as_int(M, oy)));
   lv_image_set_rotation(obj, static_cast<int32_t>(tenths));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@angle"), mrb_float_value(M, deg));
+  return self;
+}
+
+// RGSS Sprite#mirror= (horizontal flip). LVGL's lv_image has no flip, so this
+// re-binds the canvas to a flipped scratch copy of the bitmap (or back to the
+// bitmap itself) via spr_bind_display.
+mrb_value spr_set_mirror(mrb_state* M, mrb_value self) {
+  mrb_bool m;
+  mrb_get_args(M, "b", &m);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@mirror"), mrb_bool_value(m));
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
   return self;
 }
 
@@ -2686,6 +2736,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "zoom_x=", spr_set_zoom_x, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
