@@ -31,23 +31,25 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/quickjs"
   linker.libraries << "qjs" << "m" << "pthread"
 
-  # OSMesa (off-screen software Mesa) + GLES2 back the MZ WebGL renderer
-  # (src/mvgl.cxx, milestone M6.3): OSMesa renders into a CPU RGBA buffer with no
-  # GPU/display, matching the software LVGL pipeline. This is optional — mvgl.cxx
-  # stubs itself out where the OSMesa headers are absent (Emscripten's browser
-  # WebGL; the nix build until OSMesa is packaged) — so only link the libraries
-  # when this build actually has the header. Probe with the configured compiler
-  # so the check honours the same include paths the build uses (apt's
-  # /usr/include, a nix buildInput, etc.); provided by libosmesa6-dev /
-  # libgles2-mesa-dev on apt.
+  # EGL (surfaceless) + GLES2 back the MZ WebGL renderer (src/mvgl.cxx,
+  # milestone M6.3): a surfaceless EGL context renders through llvmpipe into an
+  # FBO with no GPU/display, matching the software LVGL pipeline. This is
+  # optional — mvgl.cxx stubs itself out where the EGL headers are absent
+  # (Emscripten's browser WebGL; a build without them, e.g. darwin) — so only
+  # link the libraries when this build actually has the header. Probe with the
+  # configured compiler so the check honours the same include paths the build
+  # uses (apt's /usr/include, a nix buildInput, etc.); provided by
+  # libgles2-mesa-dev / libegl1-mesa-dev on apt and by the `libglvnd` (headers +
+  # dispatch) buildInput in flake.nix. (mvgl used OSMesa until Mesa dropped that
+  # frontend; EGL surfaceless is its supported replacement.)
   if ENV["MRUBY_TARGET"] != "emscripten"
-    have_osmesa =
+    have_egl =
       begin
-        system("echo '#include <GL/osmesa.h>' | #{cc.command} -E -x c - " \
+        system("echo '#include <EGL/egl.h>' | #{cc.command} -E -x c - " \
                ">/dev/null 2>&1")
       rescue StandardError
         false
       end
-    linker.libraries << "OSMesa" << "GLESv2" if have_osmesa
+    linker.libraries << "EGL" << "GLESv2" if have_egl
   end
 end

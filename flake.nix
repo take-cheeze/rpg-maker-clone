@@ -80,7 +80,17 @@
                   ]
                 else
                   [ ]
-              );
+              )
+              # Software-GL environment for the MZ WebGL backend's headless EGL
+              # (mruby-mvjs/src/mvgl.cxx). This setup hook, shipped by nixpkgs
+              # mesa, exports LIBGL_ALWAYS_SOFTWARE / LIBGL_DRIVERS_PATH /
+              # __EGL_VENDOR_LIBRARY_FILENAMES / LD_LIBRARY_PATH pointing at
+              # mesa's llvmpipe + glvnd EGL vendor, so the surfaceless EGL
+              # context finds a driver on a plain (non-NixOS) CI runner and
+              # MV::GL.smoke_test runs. Linux-only, like the backend itself.
+              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                pkgs.mesa.llvmpipeHook
+              ];
             cp932_table = pkgs.fetchurl {
               url = "https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt";
               hash = "sha256-JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE=";
@@ -89,20 +99,25 @@
               url = "https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT";
               hash = "sha256-HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc=";
             };
-            buildInputs = with pkgs; [
-              SDL2
-              SDL2_mixer
-              # NOTE: the RPG Maker MZ WebGL renderer (mruby-mvjs/src/mvgl.cxx,
-              # ADR 0004 M6.3) needs OSMesa + GLES2. nixpkgs 26.05 no longer
-              # ships libOSMesa as a plain package (mesa dropped the osmesa
-              # frontend, and there is no top-level `osmesa`), so it is not wired
-              # in here yet — mvgl.cxx compiles to inert stubs when the OSMesa
-              # headers are absent (see its __has_include guard), and MV::GL is
-              # only exercised where OSMesa is present (e.g. the apt-based dev
-              # build). Packaging OSMesa for the nix build (a mesa override with
-              # -Dosmesa=true, or a dedicated derivation) is tracked as follow-up
-              # so the GL smoke test can run in CI too.
-            ];
+            buildInputs =
+              (with pkgs; [
+                SDL2
+                SDL2_mixer
+              ])
+              # EGL + GLES2 back the RPG Maker MZ WebGL renderer
+              # (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3). libglvnd supplies the
+              # <EGL/egl.h> / <GLES2/gl2.h> headers and the libEGL / libGLESv2
+              # dispatch libraries; the actual off-screen driver (llvmpipe, via
+              # the surfaceless EGL platform) comes from mesa, discovered at run
+              # time through mesa.llvmpipeHook below. With the headers present
+              # mvgl.cxx's __has_include guard compiles the real backend (rather
+              # than the inert stubs used on Emscripten's browser WebGL), and
+              # MV::GL.smoke_test renders its green triangle in CI instead of
+              # skipping. Linux-only: this targets the headless CI/dev runner,
+              # and mvgl stubs itself where the headers are absent (e.g. darwin).
+              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                pkgs.libglvnd
+              ];
             # The package build only builds; tests are run separately via CTest.
             # Prevents nixpkgs' pytest check hook from hijacking the check phase
             # (it collects no tests and fails with exit code 5).

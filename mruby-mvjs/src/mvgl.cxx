@@ -1,24 +1,54 @@
-// OSMesa-backed off-screen GLES2 context for the WebGL path (milestone M6.3a).
-// See mvgl.hxx for why this exists and how it fits the software renderer.
+// EGL surfaceless off-screen GLES2 context for the WebGL path (milestone
+// M6.3a). See mvgl.hxx for why this exists and how it fits the software
+// renderer.
 
 #include "mvgl.hxx"
 
-// The backend needs OSMesa + GLES2 headers. The Emscripten build renders MZ
-// through the browser's own WebGL, and some environments (e.g. the nix build
-// until OSMesa is packaged there) ship neither header — in both cases mvgl
-// compiles to inert stubs and `available()` reports false. `__has_include`
-// makes this a compile-time decision with no build-system probing.
-#if !defined(__EMSCRIPTEN__) && __has_include(<GL/osmesa.h>) && \
+// The backend needs EGL + GLES2 headers. The Emscripten build renders MZ
+// through the browser's own WebGL, and some environments (e.g. darwin) ship
+// neither header — in both cases mvgl compiles to inert stubs and `available()`
+// reports false. The apt and nix builds both provide the headers (libEGL /
+// libGLESv2 via mesa + libglvnd), so the real backend is what compiles there.
+// `__has_include` makes this a compile-time decision with no build-system
+// probing.
+//
+// This used to sit on OSMesa, but Mesa removed the OSMesa frontend (gone from
+// mesa 26.1, so nixpkgs 26.05 ships no libOSMesa). EGL with the surfaceless
+// platform (EGL_MESA_platform_surfaceless) is the supported way to get an
+// off-screen GLES2 context on modern Mesa: it renders through llvmpipe into an
+// FBO with no GPU or display, matching the software LVGL pipeline exactly as
+// OSMesa did.
+#if !defined(__EMSCRIPTEN__) && __has_include(<EGL/egl.h>) && \
     __has_include(<GLES2/gl2.h>)
-#define MVJS_HAVE_OSMESA 1
+#define MVJS_HAVE_EGL 1
 
-#include <GL/osmesa.h>
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+
+// ES3 renderbuffer/attachment enums the base <GLES2/gl2.h> may not declare. The
+// llvmpipe context we create is ES3-capable, so these are valid at runtime;
+// define them defensively for builds whose GLES2 header predates ES3.
+#ifndef GL_RGBA8
+#define GL_RGBA8 0x8058
+#endif
+#ifndef GL_DEPTH24_STENCIL8
+#define GL_DEPTH24_STENCIL8 0x88F0
+#endif
+#ifndef GL_DEPTH_STENCIL_ATTACHMENT
+#define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
+#endif
+#ifndef EGL_OPENGL_ES3_BIT
+#define EGL_OPENGL_ES3_BIT 0x00000040
+#endif
+#ifndef EGL_PLATFORM_SURFACELESS_MESA
+#define EGL_PLATFORM_SURFACELESS_MESA 0x31DD
+#endif
 
 namespace mvgl {
 
@@ -50,13 +80,68 @@ GLuint compile(GLenum type, const char* src) {
   return sh;
 }
 
+// Open the off-screen display. Prefer the surfaceless Mesa platform (no window
+// system, no device node needed) via the 1.5 core entry point, then the EXT
+// entry point, then plain eglGetDisplay as a last resort.
+EGLDisplay open_display() {
+#if defined(EGL_VERSION_1_5)
+  EGLDisplay d = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
+                                       EGL_DEFAULT_DISPLAY, nullptr);
+  if (d != EGL_NO_DISPLAY)
+    return d;
+#endif
+  auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+      eglGetProcAddress("eglGetPlatformDisplayEXT"));
+  if (get_platform_display) {
+    EGLDisplay d = get_platform_display(EGL_PLATFORM_SURFACELESS_MESA,
+                                        EGL_DEFAULT_DISPLAY, nullptr);
+    if (d != EGL_NO_DISPLAY)
+      return d;
+  }
+  return eglGetDisplay(EGL_DEFAULT_DISPLAY);
+}
+
+// Pick an RGBA8 + depth24/stencil8 config. Ask for an ES3-renderable one first
+// (what we create), falling back to ES2 for a driver that only advertises ES2
+// configs; the ES 1.00 shaders PIXI uses run on either.
+bool choose_config(EGLDisplay dpy, EGLConfig* out) {
+  const EGLint es_bits[] = {EGL_OPENGL_ES3_BIT, EGL_OPENGL_ES2_BIT};
+  for (EGLint bit : es_bits) {
+    const EGLint attribs[] = {EGL_SURFACE_TYPE,
+                              EGL_PBUFFER_BIT,
+                              EGL_RENDERABLE_TYPE,
+                              bit,
+                              EGL_RED_SIZE,
+                              8,
+                              EGL_GREEN_SIZE,
+                              8,
+                              EGL_BLUE_SIZE,
+                              8,
+                              EGL_ALPHA_SIZE,
+                              8,
+                              EGL_DEPTH_SIZE,
+                              24,
+                              EGL_STENCIL_SIZE,
+                              8,
+                              EGL_NONE};
+    EGLint n = 0;
+    if (eglChooseConfig(dpy, attribs, out, 1, &n) && n >= 1)
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 struct Context {
-  OSMesaContext osmesa = nullptr;
+  EGLDisplay dpy = EGL_NO_DISPLAY;
+  EGLContext egl = EGL_NO_CONTEXT;
+  GLuint fbo = 0;
+  GLuint color_rb = 0;  // RGBA8 colour renderbuffer (the render target)
+  GLuint ds_rb = 0;     // packed depth24/stencil8 renderbuffer
   int w = 0;
   int h = 0;
-  std::vector<std::uint8_t> buffer;   // RGBA8, bottom-up (GL order)
+  std::vector<std::uint8_t> buffer;   // RGBA8, bottom-up (glReadPixels order)
   std::vector<std::uint8_t> flipped;  // RGBA8, top-down (present order)
 };
 
@@ -65,61 +150,109 @@ Context* create(int width, int height) {
     warn("create: non-positive dimensions", nullptr);
     return nullptr;
   }
-  // Request a GLES2-capable context. OSMesa exposes only compat/core profiles,
-  // but a compat context reached through libGLESv2 runs the ES entry points and
-  // compiles ES 1.00 shaders, which is all PIXI needs (verified end to end by
-  // smoke_test). Ask for >= 3.0 so the compat superset is comfortably ahead of
-  // ES 2.0; Mesa returns at least what we ask for.
-  const int attribs[] = {OSMESA_FORMAT,
-                         OSMESA_RGBA,
-                         OSMESA_DEPTH_BITS,
-                         24,
-                         OSMESA_STENCIL_BITS,
-                         8,
-                         OSMESA_PROFILE,
-                         OSMESA_COMPAT_PROFILE,
-                         OSMESA_CONTEXT_MAJOR_VERSION,
-                         3,
-                         OSMESA_CONTEXT_MINOR_VERSION,
-                         0,
-                         0};
-  OSMesaContext osmesa = OSMesaCreateContextAttribs(attribs, nullptr);
-  if (!osmesa) {
-    warn("create: OSMesaCreateContextAttribs returned null", nullptr);
+
+  EGLDisplay dpy = open_display();
+  if (dpy == EGL_NO_DISPLAY) {
+    warn("create: no EGL display (surfaceless platform unavailable)", nullptr);
+    return nullptr;
+  }
+  EGLint major = 0, minor = 0;
+  if (!eglInitialize(dpy, &major, &minor)) {
+    warn("create: eglInitialize failed", nullptr);
+    return nullptr;
+  }
+  if (!eglBindAPI(EGL_OPENGL_ES_API)) {
+    warn("create: eglBindAPI(EGL_OPENGL_ES_API) failed", nullptr);
+    return nullptr;
+  }
+
+  EGLConfig cfg = nullptr;
+  if (!choose_config(dpy, &cfg)) {
+    warn("create: eglChooseConfig found no RGBA8 config", nullptr);
+    return nullptr;
+  }
+
+  // Request ES 3.0 (a comfortable superset of the ES 2.0 PIXI needs, and what
+  // llvmpipe advertises), falling back to an ES 2.0 context. The rendering only
+  // uses ES2/ES 1.00-shader features, so either is fine.
+  const EGLint es3_attribs[] = {EGL_CONTEXT_MAJOR_VERSION, 3,
+                                EGL_CONTEXT_MINOR_VERSION, 0, EGL_NONE};
+  EGLContext egl = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, es3_attribs);
+  if (egl == EGL_NO_CONTEXT) {
+    const EGLint es2_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+    egl = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, es2_attribs);
+  }
+  if (egl == EGL_NO_CONTEXT) {
+    warn("create: eglCreateContext failed", nullptr);
+    return nullptr;
+  }
+
+  // Surfaceless: no draw/read surface, an FBO is the render target instead.
+  if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl)) {
+    warn("create: eglMakeCurrent(surfaceless) failed", nullptr);
+    eglDestroyContext(dpy, egl);
     return nullptr;
   }
 
   Context* ctx = new Context();
-  ctx->osmesa = osmesa;
+  ctx->dpy = dpy;
+  ctx->egl = egl;
   ctx->w = width;
   ctx->h = height;
-  ctx->buffer.assign(static_cast<size_t>(width) * height * 4, 0);
-  if (!OSMesaMakeCurrent(osmesa, ctx->buffer.data(), GL_UNSIGNED_BYTE, width,
-                         height)) {
-    warn("create: OSMesaMakeCurrent failed", nullptr);
-    OSMesaDestroyContext(osmesa);
-    delete ctx;
+  const size_t bytes = static_cast<size_t>(width) * height * 4;
+  ctx->buffer.assign(bytes, 0);
+  ctx->flipped.assign(bytes, 0);
+
+  glGenFramebuffers(1, &ctx->fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, ctx->fbo);
+  glGenRenderbuffers(1, &ctx->color_rb);
+  glBindRenderbuffer(GL_RENDERBUFFER, ctx->color_rb);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                            GL_RENDERBUFFER, ctx->color_rb);
+  glGenRenderbuffers(1, &ctx->ds_rb);
+  glBindRenderbuffer(GL_RENDERBUFFER, ctx->ds_rb);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                            GL_RENDERBUFFER, ctx->ds_rb);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    warn("create: framebuffer incomplete", nullptr);
+    destroy(ctx);
     return nullptr;
   }
-  // OSMesa's origin is bottom-left; ask it to present top-down so `pixels`
-  // (and PIXI's own y-flip conventions) line up with the RGSS::Bitmap surface.
-  OSMesaPixelStore(OSMESA_Y_UP, 0);
+  glViewport(0, 0, width, height);
   return ctx;
 }
 
 void destroy(Context* ctx) {
   if (!ctx)
     return;
-  if (ctx->osmesa)
-    OSMesaDestroyContext(ctx->osmesa);
+  if (ctx->dpy != EGL_NO_DISPLAY && ctx->egl != EGL_NO_CONTEXT) {
+    eglMakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx->egl);
+    if (ctx->fbo)
+      glDeleteFramebuffers(1, &ctx->fbo);
+    if (ctx->color_rb)
+      glDeleteRenderbuffers(1, &ctx->color_rb);
+    if (ctx->ds_rb)
+      glDeleteRenderbuffers(1, &ctx->ds_rb);
+    eglMakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    eglDestroyContext(ctx->dpy, ctx->egl);
+    // The display is process-shared and refcounted by eglInitialize; leave it
+    // initialised rather than tearing it down under any other live context.
+  }
   delete ctx;
 }
 
 bool make_current(Context* ctx) {
-  if (!ctx || !ctx->osmesa)
+  if (!ctx || ctx->dpy == EGL_NO_DISPLAY || ctx->egl == EGL_NO_CONTEXT)
     return false;
-  return OSMesaMakeCurrent(ctx->osmesa, ctx->buffer.data(), GL_UNSIGNED_BYTE,
-                           ctx->w, ctx->h) == GL_TRUE;
+  if (!eglMakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx->egl))
+    return false;
+  // A fresh make-current binds the default framebuffer; rebind ours (there is
+  // no window-system surface) so draws and readback hit the render target.
+  glBindFramebuffer(GL_FRAMEBUFFER, ctx->fbo);
+  glViewport(0, 0, ctx->w, ctx->h);
+  return true;
 }
 
 const std::uint8_t* pixels(Context* ctx, int* out_w, int* out_h) {
@@ -129,9 +262,19 @@ const std::uint8_t* pixels(Context* ctx, int* out_w, int* out_h) {
     *out_w = ctx->w;
   if (out_h)
     *out_h = ctx->h;
-  // With OSMESA_Y_UP=0 the bound buffer is already top-down, so no extra flip
-  // is needed; expose it directly.
-  return ctx->buffer.data();
+  if (!make_current(ctx))
+    return nullptr;
+  glReadPixels(0, 0, ctx->w, ctx->h, GL_RGBA, GL_UNSIGNED_BYTE,
+               ctx->buffer.data());
+  // glReadPixels' origin is bottom-left; flip to top-down so `pixels` (and
+  // PIXI's own y-flip conventions) line up with the RGSS::Bitmap surface.
+  const int stride = ctx->w * 4;
+  for (int y = 0; y < ctx->h; ++y)
+    std::memcpy(
+        ctx->flipped.data() + static_cast<size_t>(y) * stride,
+        ctx->buffer.data() + static_cast<size_t>(ctx->h - 1 - y) * stride,
+        stride);
+  return ctx->flipped.data();
 }
 
 bool smoke_test(std::uint8_t out_rgba[4]) {
@@ -222,7 +365,7 @@ bool available() {
 
 }  // namespace mvgl
 
-#else  // no OSMesa/GLES2 (Emscripten, or a build without the headers)
+#else  // no EGL/GLES2 (Emscripten, or a build without the headers)
 
 // Inert stubs so the shared binding (MV::GL) still links; `available()` reports
 // false so callers (and the gl_test spec) skip the GL path cleanly.
