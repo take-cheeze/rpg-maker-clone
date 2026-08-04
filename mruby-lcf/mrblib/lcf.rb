@@ -259,6 +259,12 @@ module LCF
 
   def exp_default; MODE == 2003 ? 300 : 30 end
 
+  # Edition-dependent helpers are referenced as `LCF.<name>` from lazy schema
+  # defaults (`-> { LCF.level_max }` etc.), so they must be module functions --
+  # otherwise calling the default raises NoMethodError for module LCF.
+  module_function :var_max, :var_min, :level_max, :pc_hp_max, :npc_hp_max,
+                  :exp_default
+
   class Array1D
     def initialize s, schema
       s = StringIO.new s if s.is_a? String
