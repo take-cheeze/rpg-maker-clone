@@ -507,7 +507,7 @@ class RPG2k
         close_shop
         close_battle
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
-         @picture_sprite, @fade_sprite, @flash_sprite].each do |s|
+         @picture_sprite, @fade_sprite, @flash_sprite, @tint_sprite].each do |s|
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
@@ -632,6 +632,16 @@ class RPG2k
         @flash_sprite.bitmap = @flash_bmp
         @flash_sprite.opacity = 0
         @flash_rgb = nil
+
+        # Tint Screen: a black overlay whose opacity approximates the tint's
+        # darkening (below flash / fade, over the map and UI). A full tone
+        # (colour cast, brightening, saturation) is native work still to come.
+        @tint_sprite = Sprite.new
+        @tint_sprite.z = 440
+        @tint_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @tint_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
+        @tint_sprite.bitmap = @tint_bmp
+        @tint_sprite.opacity = 0
       end
 
       # Push this frame's fade and flash levels onto the two overlay sprites.
@@ -641,6 +651,7 @@ class RPG2k
       def update_screen_overlay
         screen = @state.screen
         @fade_sprite.opacity = screen.fade_level
+        @tint_sprite.opacity = tint_overlay_opacity(screen.tint)
 
         r, g, b, strength = screen.flash_color
         if strength <= 0
@@ -653,6 +664,17 @@ class RPG2k
           end
           @flash_sprite.opacity = strength
         end
+      end
+
+      # Approximate the darkening of a Tint Screen tone (`[r, g, b, sat]`, each
+      # 0..200 with 100 neutral) as the opacity of a black overlay: the further
+      # the channels average below neutral, the darker. Brightening (above 100),
+      # the colour cast and saturation need a real tone and are not applied.
+      def tint_overlay_opacity(tint)
+        r, g, b, = tint
+        avg = (r + g + b) / 3
+        return 0 if avg >= 100
+        (100 - avg) * 255 / 100
       end
 
       # Create the buffer that carries the Show Picture layer. Pictures composite

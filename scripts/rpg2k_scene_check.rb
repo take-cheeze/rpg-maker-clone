@@ -1730,6 +1730,26 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   ok !shadow.visible, 'a boat casts no airship shadow'
 end
 
+check 'Tint Screen darkens the view through a black overlay; neutral clears it' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Tint to (0,0,0) sat 100 instantly (0 tenths), no wait — a full darken.
+  auto.event_commands = [ECmd.new(ic::TINT_SCREEN, [0, 0, 0, 100, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update }
+  tint = scene.instance_variable_get(:@tint_sprite)
+  ok tint.opacity > 200, 'a black tint darkens the screen'
+  # A half-darken (50,50,50) reads as roughly half opacity.
+  st.screen.tint_to(50, 50, 50, 100, 0)
+  scene.update
+  ok tint.opacity > 100 && tint.opacity < 160, 'a partial tint is partly opaque'
+  # Neutral (100,100,100) clears the overlay.
+  st.screen.tint_to(100, 100, 100, 100, 0)
+  scene.update
+  eq 0, tint.opacity, 'a neutral tint clears the overlay'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
