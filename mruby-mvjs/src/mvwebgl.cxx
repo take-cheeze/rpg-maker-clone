@@ -1171,7 +1171,16 @@ const char* kWebGLPreamble = R"MVJS(
     this._ext = {};
   }
   var P = WebGLRenderingContext.prototype;
-  for (var k in K) P[k] = K[k];
+  // The GL enums live both on the prototype (read as `gl.RGBA`) and as static
+  // properties on the constructor (`WebGLRenderingContext.RGBA`). PIXI v5's
+  // ScissorSystem/StencilSystem read the enum off the *constructor* at
+  // renderer-construction time (e.g. `WebGLRenderingContext.SCISSOR_TEST`), so
+  // without the statics `new PIXI.Renderer` throws a ReferenceError before it
+  // can create a context. Mirror the browser, which exposes both.
+  for (var k in K) {
+    P[k] = K[k];
+    WebGLRenderingContext[k] = K[k];
+  }
 
   // Whole-context state.
   P.viewport = function (x, y, w, h) { g.__mv_glViewport(this.__gl, x, y, w, h); };
