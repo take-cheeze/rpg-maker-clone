@@ -473,6 +473,7 @@ class RPG2k
         @name_ui = nil
         @wait_timer = nil
         @anim_wait = nil
+        @map_animation = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
         # a Move Event targeting "this event" can be resolved. nil for common
@@ -511,6 +512,7 @@ class RPG2k
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
         @airship_shadow.dispose if @airship_shadow
+        @animation_sprite.dispose if @animation_sprite
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -580,6 +582,14 @@ class RPG2k
         shadow = Bitmap.new(TILE, TILE)
         shadow.fill_rect 3, TILE - 8, TILE - 6, 5, Color.new(0, 0, 0, 96)
         @airship_shadow.bitmap = shadow
+
+        # A screen-sized layer the Show Battle Animation renderer composites the
+        # current frame's cells into, over the map (above the hero).
+        @animation_sprite = Sprite.new
+        @animation_sprite.z = 150
+        @animation_sprite.visible = false
+        @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @animation_sprite.bitmap = @animation_bmp
         # Fallback marker when the CharSet graphic is unavailable.
         unless @charset
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
@@ -2694,18 +2704,58 @@ class RPG2k
         @name_ui = nil
       end
 
-      # Display frames each animation cell is held, and the fallback length (in
-      # cells) when the database has no data for the requested animation.
+      # Display frames each animation frame is held; the fallback length (frames)
+      # when the database has no data for the requested animation; and the flash
+      # duration a timing fires.
       ANIM_CELL_FRAMES = 3
-      ANIM_FALLBACK_CELLS = 10
+      ANIM_FALLBACK_FRAMES = 10
+      ANIM_FLASH_FRAMES = 8
+      # RPG2000 battle-animation cells: a 96x96 grid, 5 cells across the sheet.
+      ANIM_CELL = 96
+      ANIM_SHEET_COLS = 5
 
-      # Drive a Show Battle Animation (11210) wait: hold the event for the
-      # animation's on-screen duration, then resume. The animation itself is not
-      # drawn yet (a native renderer would read @interpreter.battle_animation and
-      # play it); this makes the *timing* correct so a cutscene that waits on an
-      # animation paces the same as RPG_RT.
+      # Drive a Show Battle Animation (11210) wait: play the animation over its
+      # target, then resume the event. When the animation's data / sheet is
+      # available it advances frame by frame (composited by #draw_map_animation),
+      # firing the screen flashes its timings request; otherwise it degrades to a
+      # plain timed wait, so a cutscene paces the same as RPG_RT either way.
       def drive_map_animation
-        @anim_wait = map_animation_frames if @anim_wait.nil?
+        init_map_animation if @map_animation.nil? && @anim_wait.nil?
+        @map_animation ? step_map_animation : step_animation_wait
+      end
+
+      # Begin the animation: build the frame-by-frame player from the request, or
+      # arm the timed-wait fallback when there is no drawable animation.
+      def init_map_animation
+        @map_animation = start_map_animation
+        if @map_animation
+          fire_animation_flashes(@map_animation) # frame 0 flashes
+        else
+          @anim_wait = ANIM_FALLBACK_FRAMES * ANIM_CELL_FRAMES
+        end
+      end
+
+      # Advance the drawable animation one frame per ANIM_CELL_FRAMES, firing that
+      # frame's flashes; finish (hide, resume) once the last frame has played.
+      def step_map_animation
+        ma = @map_animation
+        if ma[:timer] > 0
+          ma[:timer] -= 1
+          return
+        end
+        ma[:frame_i] += 1
+        if ma[:frame_i] >= ma[:frames].length
+          @animation_sprite.visible = false
+          ma[:sheet].dispose if ma[:sheet].respond_to?(:dispose)
+          @map_animation = nil
+          @interpreter.resume
+          return
+        end
+        fire_animation_flashes(ma)
+        ma[:timer] = ANIM_CELL_FRAMES
+      end
+
+      def step_animation_wait
         if @anim_wait <= 0
           @anim_wait = nil
           @interpreter.resume
@@ -2714,22 +2764,106 @@ class RPG2k
         end
       end
 
-      # The on-screen length of the requested animation, in display frames: its
-      # database cell count (`battle_anime[id].frames`) times ANIM_CELL_FRAMES,
-      # falling back to a nominal length when the animation is unknown.
-      def map_animation_frames
+      # Build the animation player, or nil when the animation is unknown or its
+      # Battle/<name> sheet is missing (then the timed-wait fallback runs).
+      def start_map_animation
         req = @interpreter.battle_animation
-        id = req && req[:animation]
-        cells = animation_cell_count(id)
-        (cells > 0 ? cells : ANIM_FALLBACK_CELLS) * ANIM_CELL_FRAMES
+        anim = animation_row(req && req[:animation])
+        return nil unless anim
+        frames = table_entries(anim.frames)
+        return nil if frames.empty?
+        sheet = animation_sheet(anim.animation_name)
+        return nil unless sheet
+        tx, ty = animation_target_pixel(req[:target])
+        { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
+          position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
+          timer: ANIM_CELL_FRAMES }
       end
 
-      def animation_cell_count(id)
-        return 0 if id.nil? || !@db.respond_to?(:battle_anime) || @db.battle_anime.nil?
-        anim = @db.battle_anime[id]
-        anim && anim.frames ? anim.frames.size : 0
+      def animation_row(id)
+        return nil if id.nil? || !@db.respond_to?(:battle_anime) || @db.battle_anime.nil?
+        @db.battle_anime[id]
       rescue StandardError
-        0
+        nil
+      end
+
+      def animation_sheet(name)
+        return nil if name.nil? || name.empty?
+        Bitmap.new "Battle/#{name}"
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle animation '#{name}' load failed: #{e.message}"
+        nil
+      end
+
+      # The target character's map-pixel position: the player, the running event
+      # ("this event" / 0), or a map event by id, defaulting to the player.
+      def animation_target_pixel(target)
+        case target
+        when MOVE_TARGET_PLAYER then player_pixel
+        when 0, MOVE_TARGET_THIS
+          @active_event ? event_pixel(@active_event) : player_pixel
+        else
+          ev = @events.find { |e| e[:id] == target }
+          ev ? event_pixel(ev) : player_pixel
+        end
+      end
+
+      # Fire the screen flashes the current frame's timings request (flash_scope
+      # 2 = whole screen); RPG2000 stores the colour / power as 0..31 (scaled up
+      # to the 0..255 the shared Game::Screen flash uses).
+      def fire_animation_flashes(ma)
+        ma[:timings].each do |t|
+          next unless (t.frame || 0) == ma[:frame_i]
+          next unless (t.flash_scope || 0) == 2
+          @state.screen.flash((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
+                              (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
+                              ANIM_FLASH_FRAMES)
+        end
+      end
+
+      # Collect an Array2D (or a plain Hash test double) into a dense array of its
+      # entries, in id order — both answer #each with (id, entry).
+      def table_entries(table)
+        out = []
+        table.each { |_id, entry| out << entry } if table
+        out
+      end
+
+      # Composite the animation's current frame over its target. Runs in the
+      # render pass (the camera is known here): each visible cell of the frame is
+      # blitted from the sheet's 96x96 grid to the target's screen position plus
+      # the cell's offset. Zoom / tone / per-cell transparency are approximated as
+      # a plain blit for now.
+      def draw_map_animation(cam_x, cam_y)
+        return unless @animation_sprite
+        ma = @map_animation
+        unless ma
+          @animation_sprite.visible = false
+          return
+        end
+        @animation_sprite.visible = true
+        @animation_sprite.x = 0
+        @animation_sprite.y = 0
+        @animation_bmp.clear
+        frame = ma[:frames][ma[:frame_i]]
+        return unless frame
+        cx = ma[:tx] - cam_x + TILE / 2
+        cy = ma[:ty] - cam_y + TILE / 2
+        table_entries(frame.cells).each do |cell|
+          next if cell.respond_to?(:visible) && cell.visible == false
+          blit_animation_cell(ma[:sheet], cell, cx, cy)
+        end
+      end
+
+      def blit_animation_cell(sheet, cell, cx, cy)
+        cid = cell.cell_id || 0
+        sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
+        sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
+        dx = cx + (cell.x || 0) - ANIM_CELL / 2
+        dy = cy + (cell.y || 0) - ANIM_CELL / 2
+        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+      rescue StandardError
+        nil
       end
 
       def drive_wait
@@ -3180,6 +3314,7 @@ class RPG2k
         @player_sprite.visible = !player_hidden?
         draw_player_frame
         draw_vehicles cam_x, cam_y, px, py
+        draw_map_animation cam_x, cam_y
 
         draw_pictures cam_x, cam_y
         update_screen_overlay

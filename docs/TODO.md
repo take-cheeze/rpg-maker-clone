@@ -331,10 +331,11 @@ The work below is roughly ordered by the critical path to a walkable game
   damage variance, all-target skill/item scopes, the per-terrain backdrop and the
   RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
-  effects) are TODO. **Show Battle Animation** (11210) is handled at the timing
-  level — the interpreter records the request and, with the wait flag, holds the
-  event for the animation's length (drawing it is native renderer work still to
-  come). **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
+  effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
+  scene composites the animation's cells from its `Battle/<name>` sheet over the
+  target frame by frame and fires its screen flashes, holding the event with the
+  wait flag (per-cell zoom / tone and target-only flashes are approximations for
+  now). **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
   place a boat / ship / airship and set its CharSet (persisted via
   `Game::Vehicle`), and the party can now **board and pilot** a placed vehicle on
   the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow

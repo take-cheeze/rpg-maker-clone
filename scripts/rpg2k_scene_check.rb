@@ -166,6 +166,20 @@ def fake_db(common = nil)
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
       1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
       2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) }) },
+    # A drawable battle animation (id 8): four frames, with a screen flash timing
+    # on frame 1. (Id 7 is intentionally absent so that test exercises the
+    # timed-wait fallback.)
+    battle_anime: { 8 => OpenStruct.new(
+      animation_name: 'Anim', position: 1,
+      frames: {
+        1 => OpenStruct.new(cells: { 1 => OpenStruct.new(visible: true, cell_id: 0, x: 0, y: 0) }),
+        2 => OpenStruct.new(cells: { 1 => OpenStruct.new(visible: true, cell_id: 1, x: 0, y: 0) }),
+        3 => OpenStruct.new(cells: {}),
+        4 => OpenStruct.new(cells: {})
+      },
+      timings: { 1 => OpenStruct.new(frame: 1, flash_scope: 2, flash_red: 31,
+                                     flash_green: 31, flash_blue: 31, flash_power: 20) }
+    ) },
     common_event: common,
     player: {}
   )
@@ -1620,6 +1634,31 @@ check 'Show Battle Animation with the wait flag holds the event then resumes' do
   ok !st.switches[5], 'the event is held while the animation plays'
   60.times { scene.update } # outlast the fallback animation length
   ok st.switches[5], 'the event resumes once the animation finishes'
+end
+
+check 'Show Battle Animation plays: an animation sprite shows and a flash fires' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # animation 8 (a drawable one in the fake db) on the player, wait flag on.
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  shown = false
+  flashed = false
+  40.times do
+    scene.update
+    shown ||= spr.visible
+    flashed ||= st.screen.flashing?
+    break if st.switches[6]
+  end
+  ok shown, 'the animation sprite was shown while the animation played'
+  ok flashed, 'a screen-flash timing fired during the animation'
+  ok st.switches[6], 'the event resumed after the animation'
+  ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
 check 'a vehicle placed on the current map is drawn; one off-map or absent is not' do
