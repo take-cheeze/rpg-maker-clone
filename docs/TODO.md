@@ -166,12 +166,21 @@ The work below is roughly ordered by the critical path to a walkable game
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
-  item equipped, skill known; state is not modelled). **Weather Effects** (11070)
-  records the map weather type (none / rain / snow) and strength on `Game::State`
-  — the Ruby-half model only, like the tint overlay, so it round-trips through the
-  save but drawing the rain/snow particles is native renderer work still to come.
-  The remaining commands (pictures, battles, shop / inn, EXP gain / level-up
-  messages, ...) are TODO
+  item equipped, skill known; state is not modelled). **Show / Move / Erase
+  Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
+  (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
+  `Game::State`, decoded with EasyRPG's parameter layout (literal or
+  variable-sourced coordinates, transparency → opacity); Move eases every
+  parameter to its target over the duration and its wait flag suspends the
+  interpreter (`:picture`) until the move settles; `Scene::Map` composites the
+  pictures (id-ordered, zoomed via `stretch_blt`, at their opacity) into a layer
+  above the map and below the message window. Picture **tone** is carried but not
+  yet drawn (needs the same native tone support as the screen tint). **Weather
+  Effects** (11070) records the map weather type (none / rain / snow) and strength
+  on `Game::State` — the Ruby-half model only, like the tint overlay, so it
+  round-trips through the save but drawing the rain/snow particles is native
+  renderer work still to come. The remaining commands (battles, shop / inn, EXP
+  gain / level-up
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
@@ -211,8 +220,9 @@ The work below is roughly ordered by the critical path to a walkable game
   a colour + strength that fades to zero over the duration; like the tint it is
   the Ruby half (drawing the full-screen colour overlay at its strength needs
   the same alpha-blend / viewport support in C++). All three share the `:screen`
-  wait. Pan, transitions/fade, Show Picture and weather remain, and the
-  tint/flash still need `RGSS::Viewport` tone/alpha support in C++ to show
+  wait. **Show Picture** now renders (see the interpreter bullet above). Pan,
+  transitions/fade and weather remain, and the tint/flash still need
+  `RGSS::Viewport` tone/alpha support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
