@@ -415,5 +415,9 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     (`width*height*6`), tileset/actor/class cross-references, party members —
     and runs as a **blocking** CI step ahead of the non-blocking native MV
     smokes, so a regression in the committed `data/mv-sample` fails the build.
+  - ✅ Real-game play smoke: CI drives the downloaded Lunatic-Core bed past the
+    title into New Game → map and a movement probe (`--mv_new_game
+    --mv_move_test`), not just the title boot — so the fuller real game's
+    map/movement/render path is exercised, not only the minimal sample's.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
