@@ -425,6 +425,7 @@ def xp_change_db
   a = RPG::Actor.new
   a.id = 1; a.name = "Aluxes"; a.class_id = 1
   a.initial_level = 3; a.final_level = 6
+  a.exp_basis = 30; a.exp_inflation = 30      # so the EXP curve is non-trivial
   a.weapon_id = 7; a.armor1_id = 11
   a.armor2_id = 0; a.armor3_id = 0; a.armor4_id = 0
   prm = Table.new(6, 8)
@@ -467,6 +468,21 @@ assert "Interpreter: Change Level learns skills and regrows stats" do
   assert_true a.knows_skill?(50)                          # kept
   assert_true a.knows_skill?(60)                          # learned at level 5
   assert_equal 150, a.max_hp                              # 50 + 5*20
+  # Change Level realigns EXP to the new level's threshold (RMXP level=).
+  assert_equal a.exp_for_level(5), a.exp
+end
+
+assert "Interpreter: Change EXP levels up (learning skills) and down (keeping them)" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  a = s.actor(1)                                           # starts level 3
+  need = a.exp_for_level(5) - a.exp                        # EXP to reach level 5
+  run_to_end(s, [cmd(315, [0, 1, 0, 0, need], 0)])         # gain EXP
+  assert_equal 5, a.level
+  assert_true a.knows_skill?(60)                           # learned at level 5
+  # Losing that EXP drops the level again; learned skills are kept (RMXP).
+  run_to_end(s, [cmd(315, [0, 1, 1, 0, need], 0)])         # lose the same EXP
+  assert_equal 3, a.level
+  assert_true a.knows_skill?(60)
 end
 
 assert "Interpreter: Change Skills / Change Equipment (via a variable-held id)" do

@@ -91,6 +91,7 @@ class RPGXP
       CHANGE_HP       = 311
       CHANGE_SP       = 312
       RECOVER_ALL     = 314
+      CHANGE_EXP      = 315
       CHANGE_LEVEL    = 316
       CHANGE_SKILLS   = 318
       CHANGE_EQUIP    = 319
@@ -287,6 +288,7 @@ class RPGXP
         when CHANGE_HP       then do_change_hp(cmd)
         when CHANGE_SP       then do_change_sp(cmd)
         when RECOVER_ALL     then do_recover_all(cmd)
+        when CHANGE_EXP      then do_change_exp(cmd)
         when CHANGE_LEVEL    then do_change_level(cmd)
         when CHANGE_SKILLS   then do_change_skills(cmd)
         when CHANGE_EQUIP    then do_change_equipment(cmd)
@@ -731,6 +733,12 @@ class RPGXP
       def do_recover_all(cmd)
         a = change_actor_target(cmd)
         a.recover_all if a
+        @index += 1
+      end
+
+      def do_change_exp(cmd)
+        a = change_actor_target(cmd)
+        a.gain_exp(operate_value(cmd, 2, 3, 4)) if a
         @index += 1
       end
 

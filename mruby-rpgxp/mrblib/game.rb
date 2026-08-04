@@ -186,7 +186,7 @@ class RPGXP
       PARAM_AGI   = 4
       PARAM_INT   = 5
 
-      attr_reader :id
+      attr_reader :id, :exp
       attr_accessor :level, :hp, :sp, :skills,
                     :weapon_id, :armor1_id, :armor2_id, :armor3_id, :armor4_id
 
@@ -197,6 +197,8 @@ class RPGXP
         raise "No such actor: #{id}" if @record.nil?
         @class = db.classes[@record.class_id]
         @level = @record.initial_level
+        make_exp_list
+        @exp = @exp_list[@level] || 0
         @weapon_id = @record.weapon_id
         @armor1_id = @record.armor1_id
         @armor2_id = @record.armor2_id
@@ -209,6 +211,10 @@ class RPGXP
 
       # The actor's database display name.
       def name; @record.name; end
+
+      # Total EXP required to *be at* `level` (0 at level 1, 0 beyond
+      # final_level). nil for an out-of-range level.
+      def exp_for_level(level); @exp_list[level]; end
 
       # A level-derived stat read from the parameters table (`parameters[kind,
       # level]`); level is 1-based, matching the table the editor writes.
@@ -252,17 +258,37 @@ class RPGXP
         @sp = max_sp
       end
 
-      # Move the level by `delta` (Change Level); see #set_level.
-      def change_level(delta); set_level(@level + delta); end
+      # Add `delta` to total EXP (Change EXP), re-deriving the level.
+      def gain_exp(delta); self.exp = @exp + delta; end
 
-      # Set the level, clamped to 1..final_level. Newly-reached class learnings are
-      # learned (RMXP keeps skills on a level drop, so none are removed), and
-      # current HP/SP are re-clamped to the new maxima.
-      def set_level(level)
-        @level = clamp(level, 1, @record.final_level || 99)
-        learnable_skills(@level).each { |s| @skills.push(s) unless @skills.include?(s) }
+      # Move the level by `delta` (Change Level); routed through the level setter.
+      def change_level(delta); self.level = @level + delta; end
+
+      # Set the total EXP (clamped to RMXP's 0..9,999,999) and re-derive the level
+      # from the exp curve: climb while the next level's threshold is met (learning
+      # the skills the class teaches at each level reached), then drop while below
+      # the current level's threshold (skills are kept on the way down). Current
+      # HP/SP are re-clamped to the new maxima. Mirrors RGSS's Game_Actor#exp=.
+      def exp=(value)
+        @exp = clamp(value, 0, 9_999_999)
+        while @level < 100 && @exp_list[@level + 1] && @exp_list[@level + 1] > 0 &&
+              @exp >= @exp_list[@level + 1]
+          @level += 1
+          learn_level_skills(@level)
+        end
+        while @level > 1 && @exp < (@exp_list[@level] || 0)
+          @level -= 1
+        end
         @hp = max_hp if @hp > max_hp
         @sp = max_sp if @sp > max_sp
+      end
+
+      # Set the level (Change Level), clamped to 1..final_level: RMXP realigns EXP
+      # to that level's threshold, which re-derives the level and learns any skills
+      # reached along the way. Mirrors RGSS's Game_Actor#level=.
+      def level=(level)
+        level = clamp(level, 1, @record.final_level || 99)
+        self.exp = @exp_list[level] || 0
       end
 
       def learn_skill(skill_id)
@@ -289,16 +315,18 @@ class RPGXP
       # The mutable state to persist (the fields the Change Actor commands touch);
       # everything else is re-derived from the database on load.
       def to_h
-        { level: @level, hp: @hp, sp: @sp, skills: @skills.dup,
+        { level: @level, exp: @exp, hp: @hp, sp: @sp, skills: @skills.dup,
           weapon_id: @weapon_id, armor1_id: @armor1_id, armor2_id: @armor2_id,
           armor3_id: @armor3_id, armor4_id: @armor4_id }
       end
 
-      # Restore mutable state from #to_h (missing keys keep the database defaults);
-      # level is applied first so the saved HP/SP land against the right maxima.
+      # Restore mutable state from #to_h (missing keys keep the database defaults).
+      # Level and EXP are restored verbatim (not re-derived), so an exact saved
+      # state comes back exactly.
       def load_h(h)
         return self unless h
         @level = h[:level] if h[:level]
+        @exp = h[:exp] if h[:exp]
         @skills = h[:skills].dup if h[:skills]
         @weapon_id = h[:weapon_id] if h.key?(:weapon_id)
         @armor1_id = h[:armor1_id] if h.key?(:armor1_id)
@@ -313,6 +341,37 @@ class RPGXP
       private
 
       def clamp(v, lo, hi); v < lo ? lo : (v > hi ? hi : v); end
+
+      # Build @exp_list: the total EXP required to *be at* each level 1..100.
+      # Level 1 is 0; each further level (up to final_level) adds
+      # `Integer(exp_basis * (level + 3)**pow / 5**pow)`, `pow = 2.4 +
+      # exp_inflation / 100`. Levels past final_level are 0 (unreachable). A direct
+      # port of RGSS's Game_Actor#make_exp_list.
+      def make_exp_list
+        final = @record.final_level || 99
+        basis = @record.exp_basis || 0
+        inflation = @record.exp_inflation || 0
+        pow = 2.4 + inflation / 100.0
+        denom = 5.0 ** pow
+        @exp_list = Array.new(101, 0)
+        i = 2
+        while i <= 100
+          if i > final
+            @exp_list[i] = 0
+          else
+            n = basis * ((i + 3).to_f ** pow) / denom
+            @exp_list[i] = @exp_list[i - 1] + n.to_i
+          end
+          i += 1
+        end
+      end
+
+      # Learn every skill the class teaches exactly at `level` (called for each
+      # level gained), matching RGSS's per-level learning on the way up.
+      def learn_level_skills(level)
+        learnings = @class && @class.learnings
+        (learnings || []).each { |l| learn_skill(l.skill_id) if l.level == level }
+      end
 
       # The skill ids the class has taught by `level` (every learning at or below
       # it). RMXP seeds an actor's known skills this way at its starting level.
