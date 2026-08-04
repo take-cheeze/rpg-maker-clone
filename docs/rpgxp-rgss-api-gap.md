@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth rendered; flash stored)
+### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -60,16 +60,19 @@ pixel; and `Sprite#src_rect=` crops the display to a sub-rectangle (the scratch
 is that region, reused across frames to avoid GC churn). `Sprite#update` is native
 and re-composites when a `src_rect` is set, so the per-frame `src_rect.set` that
 character sprites do actually changes the shown cell. Crop/mirror/tone/colour
-share one pre-composite (`spr_bind_display`). **Snapshot caveat:** a sprite that
-redraws its bitmap, or mutates tone/colour in place, still needs a re-assign
-(`bitmap=`/`tone=`/`color=`) unless it also has a `src_rect` (which re-composites
-via `update`). `Sprite#blend_type=` maps 0/1/2 to the canvas object's LVGL blend
-mode (normal / additive / subtractive), so additive effects composite;
+share one pre-composite (`spr_bind_display`). `Sprite#blend_type=` maps 0/1/2 to
+the canvas object's LVGL blend mode (normal / additive / subtractive), so
+additive effects composite;
 `Sprite#bush_depth=` fades the bottom N rows to half opacity in the same
-pre-composite, so a character wading through bushes dims below the waist.
-**Remaining:** **flash** (a timed colour pulse — needs `update`-driven timing).
-`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather and the animation
-player depend on it.
+pre-composite, so a character wading through bushes dims below the waist; and
+`Sprite#flash(color, duration)` runs a timed colour pulse — a colour flash
+overlays that colour at a fading alpha, a nil-colour "empty" flash blinks the
+sprite out, and `update` decays it one frame at a time until it clears. So all of
+`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, the weather sprites and the
+battle animation player now get their full visual treatment. **Snapshot caveat:**
+a sprite that redraws its bitmap, or mutates tone/colour in place, still needs a
+re-assign (`bitmap=`/`tone=`/`color=`) to re-composite unless it also has a
+`src_rect` or an active flash (which re-composite via `update`).
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
 

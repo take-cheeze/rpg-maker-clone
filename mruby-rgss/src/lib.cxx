@@ -2258,6 +2258,29 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       mrb_iv_get(M, self, mrb_intern_lit(M, "@bush_depth"));
   const int bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
 
+  // flash: a timed colour pulse (Sprite#flash) that decays over its duration,
+  // advanced one frame per Sprite#update. A colour flash overlays that colour
+  // at a fading alpha; a nil-colour ("empty") flash instead blinks the sprite
+  // out and back in.
+  const mrb_value fcnt_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value fdur_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
+  const mrb_value fcol_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const int flash_count = mrb_test(fcnt_v) ? mrb_as_int(M, fcnt_v) : 0;
+  const int flash_dur = mrb_test(fdur_v) ? mrb_as_int(M, fdur_v) : 0;
+  const bool flash_on = flash_count > 0 && flash_dur > 0;
+  const bool flash_color_on = flash_on && mrb_test(fcol_v) && DATA_PTR(fcol_v);
+  const bool flash_empty = flash_on && !flash_color_on;
+  Color fcl{0, 0, 0, 0};
+  if (flash_color_on)
+    fcl = DataType<Color>::get(M, fcol_v);
+  // Colour flash intensity fades from full (count == duration) to nothing.
+  const int fa = flash_color_on
+                     ? static_cast<int>(fcl.alpha) * flash_count / flash_dur
+                     : 0;
+
   // src_rect: display only a sub-region of the bitmap (character-animation
   // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
   int cx = 0, cy = 0, cw = src.width, ch = src.height;
@@ -2276,7 +2299,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     }
   }
 
-  if (cropped || mirror || has_tone || has_color || bush > 0) {
+  if (cropped || mirror || has_tone || has_color || bush > 0 || flash_on) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
     mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
@@ -2319,6 +2342,13 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
           g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
           b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
         }
+        if (flash_color_on) {
+          r = clamp_byte(r + (static_cast<int>(fcl.red) - r) * fa / 255);
+          g = clamp_byte(g + (static_cast<int>(fcl.green) - g) * fa / 255);
+          b = clamp_byte(b + (static_cast<int>(fcl.blue) - b) * fa / 255);
+        }
+        if (flash_empty)
+          a = a * (flash_dur - flash_count) / flash_dur;
         if (bush > 0 && y >= ch - bush)
           a /= 2;
         bmp_put(fx, x, y, r, g, b, a);
@@ -2471,16 +2501,35 @@ mrb_value spr_set_src_rect(mrb_state* M, mrb_value self) {
 // Per-frame tick: stock scripts (Sprite_Character etc.) mutate src_rect in
 // place via `src_rect.set(...)` each frame, which does not call src_rect=, so a
 // sprite that uses src_rect re-composites here to pick that up (and any
-// tone/color change). Sprites without a src_rect need no per-frame work.
+// tone/color change). An active flash also decays one frame here. Sprites with
+// neither need no per-frame work.
 mrb_value spr_update(mrb_state* M, mrb_value self) {
+  bool recomposite = false;
+
+  // Advance an active flash: it fades one frame per update and clears (dropping
+  // its colour) once the duration runs out.
+  const mrb_value fcnt = mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  int fc = mrb_test(fcnt) ? mrb_as_int(M, fcnt) : 0;
+  if (fc > 0) {
+    --fc;
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+               mrb_fixnum_value(fc));
+    if (fc == 0)
+      mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), mrb_nil_value());
+    recomposite = true;
+  }
+
   const mrb_value sr = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
   if (mrb_test(sr) && DATA_PTR(sr)) {
     Rect& r = DataType<Rect>::get(M, sr);
-    if (r.width > 0 && r.height > 0) {
-      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-      if (obj)
-        spr_bind_display(M, self, obj);
-    }
+    if (r.width > 0 && r.height > 0)
+      recomposite = true;
+  }
+
+  if (recomposite) {
+    lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+    if (obj)
+      spr_bind_display(M, self, obj);
   }
   return self;
 }
@@ -2513,6 +2562,24 @@ mrb_value spr_set_bush_depth(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   spr_bind_display(M, self, obj);
   return self;
+}
+
+// RGSS Sprite#flash(color, duration) starts a timed colour pulse; a nil colour
+// is an "empty" flash that blinks the sprite out. The state is baked into the
+// composite by spr_bind_display and decayed each frame by spr_update.
+mrb_value spr_flash(mrb_state* M, mrb_value self) {
+  mrb_value color;
+  mrb_int duration;
+  mrb_get_args(M, "oi", &color, &duration);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(duration));
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return mrb_nil_value();
 }
 
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
@@ -3623,6 +3690,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "blend_type=", spr_set_blend_type, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
