@@ -75,7 +75,8 @@ assert 'MZ.runnable_scripts drops the loader and the WASM-gated decoder' do
   # and is audio-only, so it is skipped rather than throwing at load.
   assert_false scripts.include?("js/libs/vorbisdecoder.js")
   # Everything else is kept, in the same order as CORE_SCRIPTS.
-  expected = MZ.core_scripts - ["js/main.js", "js/libs/vorbisdecoder.js"]
+  skip = ["js/main.js", "js/libs/vorbisdecoder.js"]
+  expected = MZ.core_scripts.reject { |s| skip.include?(s) }
   assert_equal expected, scripts
   # The engine core and PIXI must survive the filtering.
   assert_true scripts.include?("js/rmmz_core.js")
