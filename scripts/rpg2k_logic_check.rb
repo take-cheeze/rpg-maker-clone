@@ -1709,6 +1709,30 @@ check 'equip_from_bag rejects a non-equippable or unheld item' do
   eq 0, a.equipment[0]
 end
 
+# -- Status screen (Game::Actor EXP-to-next) ---------------------------------
+
+check 'next_level_exp / exp_to_next track the curve across a level up' do
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 3, [10, 5, 3, 2, 1, 4]) },
+                       [1])
+  a = Game::Party.new(db).leader                 # starts at level 3
+  eq a.exp_for_level(4), a.next_level_exp
+  eq a.next_level_exp - a.exp, a.exp_to_next
+  need = a.exp_to_next
+  ok need > 0, "expected a positive EXP-to-next, got #{need}"
+  a.gain_exp(need)                               # exactly reaches level 4
+  eq 4, a.level
+  eq a.exp_for_level(5) - a.exp, a.exp_to_next   # now measured against level 5
+end
+
+check 'next_level_exp / exp_to_next are nil at the maximum level' do
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
+                       [1])
+  a = Game::Party.new(db).leader
+  a.set_level(a.max_level)
+  eq nil, a.next_level_exp
+  eq nil, a.exp_to_next
+end
+
 # -- Control Variables operands ----------------------------------------------
 
 check 'Control Variables random operand stays within its range' do
