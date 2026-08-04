@@ -119,18 +119,22 @@ flat layer (a correct fix needs the above-priority tiles to become their own
 z-ordered objects that interleave with character sprites per row); and
 `flash_data` is ignored.
 
-### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
+### 4. `Plane` ⚠️ (tiling + scroll + tint/blend rendered; zoom stored)
 
 `Plane` is now **native** (`mruby-rgss/src/lib.cxx`): `Plane.new` creates an
 `lv_canvas` the size of the viewport (or screen) whose buffer is filled by tiling
 the `bitmap` with the `ox`/`oy` scroll wrapped around it (`plane_retile`), so map
 parallax and fog now actually tile and scroll. `bitmap=`, `ox=`/`oy=`,
-`opacity=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native; the
-canvas is invalidated directly on each re-tile. **Remaining:** `zoom_x`/`zoom_y`,
-`blend_type`, `tone` and `color` are stored but not yet applied to the tiled blit
-(the tile is a straight copy — no scale/blend/tint yet). The per-scroll re-tile is
-a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based scroll is a
-possible optimization.
+`opacity=`, `tone=`, `color=`, `blend_type=`, `z=`, `visible`/`visible=`,
+`dispose`/`disposed?` are native. `opacity=` and `blend_type=` map onto the plane
+canvas's LVGL object (so a fog Plane can fade and composite additively), and
+`tone=`/`color=` bake an RGSS tone (grey desaturation + RGB offset) and a colour
+overlay into the tiled buffer per pixel (the same maths Sprite uses) — so a tinted
+fog renders its tint. The canvas is invalidated directly on each re-tile.
+**Remaining:** `zoom_x`/`zoom_y` are stored but not applied (scaled tiling is a
+different mechanism from the current 1:1 wrap and is future work). The per-scroll
+re-tile is a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based
+scroll is a possible optimization.
 
 ### 5. `Kernel#sprintf` / `String#%` ✅ (mruby-sprintf gem)
 

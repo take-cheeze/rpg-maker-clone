@@ -2662,6 +2662,23 @@ void plane_retile(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
   const mrb_int oy =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+
+  // Tone (grey desaturation + RGB offset) and colour overlay are baked into the
+  // tiled buffer per pixel, the same way Sprite does — so a tinted fog/parallax
+  // Plane renders its tint. (Same maths as spr_bind_display.)
+  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  Tone tn{};
+  Color cl{0, 0, 0, 0};
+  if (mrb_test(tone_v) && DATA_PTR(tone_v))
+    tn = DataType<Tone>::get(M, tone_v);
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    cl = DataType<Color>::get(M, color_v);
+  const bool has_tone =
+      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_color = cl.alpha != 0;
+  const int ca = static_cast<int>(cl.alpha);
+
   for (int y = 0; y < dst.height; ++y) {
     const int sy =
         static_cast<int>(((y + oy) % src.height + src.height) % src.height);
@@ -2670,6 +2687,23 @@ void plane_retile(mrb_state* M, mrb_value self) {
           static_cast<int>(((x + ox) % src.width + src.width) % src.width);
       int r, g, b, a;
       bmp_read(src, sx, sy, r, g, b, a);
+      if (has_tone) {
+        const int gy = static_cast<int>(tn.gray);
+        if (gy != 0) {
+          const int lum = (r * 77 + g * 150 + b * 29) / 256;
+          r += (lum - r) * gy / 255;
+          g += (lum - g) * gy / 255;
+          b += (lum - b) * gy / 255;
+        }
+        r = clamp_byte(r + static_cast<int>(tn.red));
+        g = clamp_byte(g + static_cast<int>(tn.green));
+        b = clamp_byte(b + static_cast<int>(tn.blue));
+      }
+      if (has_color) {
+        r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
+        g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
+        b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
+      }
       bmp_put(dst, x, y, r, g, b, a);
     }
   }
@@ -2742,6 +2776,24 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
   plane_retile(M, self);
   return self;
+}
+
+// Plane#tone= / #color= tint the tiled buffer (baked in by plane_retile), so a
+// fog/parallax Plane re-tiles with its new tint on assign.
+mrb_value plane_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  plane_retile(M, self);
+  return v;
+}
+
+mrb_value plane_set_color(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  plane_retile(M, self);
+  return v;
 }
 
 // ---- Tilemap --------------------------------------------------------------
@@ -3741,6 +3793,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "ox=", plane_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "oy=", plane_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "tone=", plane_set_tone, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "color=", plane_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "blend_type=", spr_set_blend_type,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));

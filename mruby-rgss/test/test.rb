@@ -480,7 +480,8 @@ assert "RGSS::Plane API surface" do
   # and tiles the bitmap into it, so construction needs a live display the
   # headless test binary lacks. Assert only the method surface here (the tiling
   # itself is exercised by the game runs), matching the Viewport/Sprite tests.
-  %i[bitmap= ox= oy= opacity= z= visible visible= dispose disposed?].each do |m|
+  %i[bitmap= ox= oy= opacity= tone= color= blend_type= z= visible visible=
+     dispose disposed?].each do |m|
     assert_true RGSS::Plane.method_defined?(m), "Plane##{m} missing"
   end
 end
