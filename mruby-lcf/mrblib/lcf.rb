@@ -298,7 +298,7 @@ module LCF
     when :int32_array ; pack_int32 value
     when :string ; utf8_to_cp932 value
     when :Array1D, :Array2D
-      return value.dup.force_encoding('BINARY') if value.is_a? String
+      return binstr(value) if value.is_a? String
       value.to_lcf
     else
       raise "cannot encode type: #{type}"
@@ -376,7 +376,7 @@ module LCF
       if elem
         @data[idx] = LCF.encode(value, elem[:type])
       elsif value.is_a? String
-        @data[idx] = value.dup.force_encoding('BINARY')
+        @data[idx] = LCF.binstr(value)
       else
         raise "cannot encode chunk #{idx} without a schema"
       end
@@ -398,11 +398,11 @@ module LCF
     def to_lcf terminate = true
       out = String.new
       @data.each_with_index do |v, idx|
-        next if idx.zero? || v.nil?
+        next if idx == 0 || v.nil?
         bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
-        out << LCF.write_ber(idx) << LCF.write_ber(bytes.bytesize) << bytes
+        out = out + LCF.write_ber(idx) + LCF.write_ber(bytes.bytesize) + bytes
       end
-      out << LCF.write_ber(0) if terminate
+      out = out + LCF.write_ber(0) if terminate
       out
     end
 
@@ -446,11 +446,11 @@ module LCF
     def to_lcf
       ids = []
       @data.each_with_index { |v, i| ids.push(i) unless v.nil? }
-      out = String.new << LCF.write_ber(ids.size)
+      out = LCF.write_ber(ids.size)
       ids.each do |i|
         entry = @data[i]
         bytes = LCF.binstr(entry.is_a?(String) ? entry : entry.to_lcf)
-        out << LCF.write_ber(i) << bytes
+        out = out + LCF.write_ber(i) + bytes
       end
       out
     end

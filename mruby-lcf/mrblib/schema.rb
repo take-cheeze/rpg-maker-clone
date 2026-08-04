@@ -1196,8 +1196,7 @@ module LCF
     def to_lcf
       raise 'section-based file serialization not implemented' if schema.is_a? Array
       root = @root.is_a?(LCF::Array1D) ? @root.to_lcf(false) : @root.to_lcf
-      out = String.new << LCF.write_ber(header.bytesize)
-      out << LCF.binstr(header) << LCF.binstr(root)
+      LCF.write_ber(header.bytesize) + LCF.binstr(header) + LCF.binstr(root)
     end
 
     # Write #to_lcf to a path (binary). Uses ::File since LCF::File shadows it.
