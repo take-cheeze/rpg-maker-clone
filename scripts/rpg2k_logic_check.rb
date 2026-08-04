@@ -1250,12 +1250,14 @@ FakeActorSystem = Struct.new(:party)
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
-                      :price, :skill_id)
+                      :price, :skill_id,
+                      :atk_points2, :def_points2, :spi_points2, :agi_points2)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
-              skill_id: 0)
+              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
-               rhp, rhp_rate, rsp, rsp_rate, price, skill_id)
+               rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
+               atk2, dfn2, spi2, agi2)
 end
 class FakeActorDB
   attr_reader :player, :system, :item
@@ -1674,6 +1676,30 @@ check 'a skill book on an actor who already knows the skill does nothing' do
   eq false, st.party.item_effective?(8, hero)
   eq [], st.party.use_item(8, hero)
   eq 1, st.party.item_count(8)                 # not consumed
+end
+
+check 'a seed permanently raises the target stats (points2 set) and is consumed' do
+  st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
+  st.party.gain_item(9, 2)
+  hero = st.party.leader                        # max_hp 100, atk 10
+  eq true, st.party.item_effective?(9, hero)
+  eq [hero], st.party.use_item(9, hero)
+  eq 150, hero.max_hp                           # +50 base max HP
+  eq 15, hero.atk                               # +5 base attack (atk_points2)
+  eq 1, st.party.item_count(9)                  # one seed consumed
+end
+
+check 'field_items includes seeds; a seed with no boost is ineffective' do
+  items = { 9 => fake_item(type: 8, mhp: 20),   # seed with a boost
+            4 => fake_item(type: 8) }           # seed with no boost
+  st = item_party(items)
+  st.party.gain_item(9, 1)
+  st.party.gain_item(4, 1)
+  eq [[4, 1], [9, 1]], st.party.field_items     # both held seeds are listed
+  hero = st.party.leader
+  eq false, st.party.item_effective?(4, hero)   # no boost -> ineffective
+  eq [], st.party.use_item(4, hero)             # nothing happens
+  eq 1, st.party.item_count(4)                  # not consumed
 end
 
 # -- Field equip menu (Game::Party bag-aware equip) --------------------------
