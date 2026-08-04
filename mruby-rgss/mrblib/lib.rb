@@ -140,17 +140,18 @@ module RGSS
 
     # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
     # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect.
-    # `opacity=`, `zoom_x=`, `zoom_y=`, `angle=` and `mirror=` are now honoured
-    # natively (src/lib.cxx sets the sprite canvas's LVGL object opacity / image
-    # scale / image rotation, and mirror re-binds the canvas to a flipped copy);
-    # they still store their ivars here so the readers below return the set
-    # values. The rest are stored so `sprite.tone = t` no longer raises, but the
-    # native renderer does not yet honour them visually (tracked in
-    # docs/rpgxp-rgss-api-gap.md). Readers fall back to RGSS's defaults because
-    # the native #initialize does not set these ivars (and cannot be wrapped from
-    # here without replacing it). `nil?` checks — not `||` — where 0/false is a
-    # meaningful value (opacity 0 = transparent).
-    attr_writer :ox, :oy, :bush_depth, :blend_type, :tone, :color, :src_rect
+    # `opacity=`, `zoom_x=`, `zoom_y=`, `angle=`, `mirror=`, `tone=` and `color=`
+    # are now honoured natively (src/lib.cxx sets the sprite canvas's LVGL object
+    # opacity / image scale / image rotation; mirror, tone and colour are baked
+    # into a scratch copy the canvas points at). They still store their ivars here
+    # so the readers below return the set values. The rest are stored so
+    # `sprite.blend_type = n` no longer raises, but the native renderer does not
+    # yet honour them visually (tracked in docs/rpgxp-rgss-api-gap.md). Readers
+    # fall back to RGSS's defaults because the native #initialize does not set
+    # these ivars (and cannot be wrapped from here without replacing it). `nil?`
+    # checks — not `||` — where 0/false is a meaningful value (opacity 0 =
+    # transparent).
+    attr_writer :ox, :oy, :bush_depth, :blend_type, :src_rect
 
     def opacity
       @opacity.nil? ? 255 : @opacity

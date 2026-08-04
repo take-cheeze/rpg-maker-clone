@@ -2221,33 +2221,76 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
 // sprite and is freed with it. The flip is a snapshot taken here; a sprite that
 // redraws its bitmap contents while mirrored must re-assign bitmap= (or set
 // mirror= again) to refresh it (tracked in docs/rpgxp-rgss-api-gap.md).
+static int clamp_byte(int v) {
+  return v < 0 ? 0 : (v > 255 ? 255 : v);
+}
+
+// Point the sprite's canvas at the bitmap it should display: the assigned
+// bitmap directly, or — when the sprite is mirrored, toned or colour-overlaid —
+// a scratch copy with those effects baked in (LVGL can express none of them, so
+// they are a software pre-composite). The scratch Bitmap is kept in @_fx_bitmap
+// so it lives as long as the sprite. The effects are a snapshot taken here; a
+// sprite that redraws its bitmap, or mutates its tone/color in place, must
+// re-assign bitmap= / tone= / color= to refresh (tracked in the gap doc).
 void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
   if (mrb_nil_p(bmp_v))
     return;
   Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
-  if (mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@mirror")))) {
+
+  const bool mirror =
+      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@mirror")));
+  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  Tone tn{};
+  Color cl{0, 0, 0, 0};
+  if (mrb_test(tone_v) && DATA_PTR(tone_v))
+    tn = DataType<Tone>::get(M, tone_v);
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    cl = DataType<Color>::get(M, color_v);
+  const bool has_tone =
+      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_color = cl.alpha != 0;
+
+  if (mirror || has_tone || has_color) {
     RClass* bmp_class =
         mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
-    const mrb_value flip_v =
+    const mrb_value fx_v =
         DataType<Bitmap>::make(M, bmp_class, src.width, src.height, src.format);
-    Bitmap& flip = DataType<Bitmap>::get(M, flip_v);
-    const int px = lv_color_format_get_size(src.format);
-    const int w = src.width;
+    Bitmap& fx = DataType<Bitmap>::get(M, fx_v);
+    const int ca = static_cast<int>(cl.alpha);
     for (int y = 0; y < src.height; ++y) {
-      const uint8_t* srow = src.buffer.data() + static_cast<size_t>(y) * w * px;
-      uint8_t* drow = flip.buffer.data() + static_cast<size_t>(y) * w * px;
-      for (int x = 0; x < w; ++x)
-        std::memcpy(drow + static_cast<size_t>(x) * px,
-                    srow + static_cast<size_t>(w - 1 - x) * px, px);
+      for (int x = 0; x < src.width; ++x) {
+        const int sx = mirror ? src.width - 1 - x : x;
+        int r, g, b, a;
+        bmp_read(src, sx, y, r, g, b, a);
+        if (has_tone) {
+          const int gy = static_cast<int>(tn.gray);
+          if (gy != 0) {
+            const int lum = (r * 77 + g * 150 + b * 29) / 256;
+            r += (lum - r) * gy / 255;
+            g += (lum - g) * gy / 255;
+            b += (lum - b) * gy / 255;
+          }
+          r = clamp_byte(r + static_cast<int>(tn.red));
+          g = clamp_byte(g + static_cast<int>(tn.green));
+          b = clamp_byte(b + static_cast<int>(tn.blue));
+        }
+        if (has_color) {
+          r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
+          g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
+          b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
+        }
+        bmp_put(fx, x, y, r, g, b, a);
+      }
     }
-    flip.dirty = true;
+    fx.dirty = true;
     // Hold the scratch bitmap on the sprite so the GC keeps it alive.
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_mirror_bitmap"), flip_v);
-    lv_canvas_set_buffer(obj, flip.buffer.data(), src.width, src.height,
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), fx_v);
+    lv_canvas_set_buffer(obj, fx.buffer.data(), src.width, src.height,
                          src.format);
   } else {
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_mirror_bitmap"), mrb_nil_value());
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), mrb_nil_value());
     lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
                          src.format);
   }
@@ -2353,6 +2396,28 @@ mrb_value spr_set_mirror(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   spr_bind_display(M, self, obj);
   return self;
+}
+
+// RGSS Sprite#tone= (a Tone tint) and #color= (a Color overlay). Both are baked
+// into the sprite's pixels by spr_bind_display, so assigning one re-composites.
+mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return v;
+}
+
+mrb_value spr_set_color(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return v;
 }
 
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
@@ -3457,6 +3522,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "tone=", spr_set_tone, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "color=", spr_set_color, MRB_ARGS_REQ(1));
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);

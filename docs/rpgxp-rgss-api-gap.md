@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity + zoom + angle + mirror rendered; rest stored)
+### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color rendered; src_rect etc. stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -54,12 +54,14 @@ scale (`lv_image_set_scale_x/y`, where 256 = 1.0), so the sprite scales;
 RGSS's counter-clockwise degrees to LVGL's clockwise 0.1° units, pivoting on the
 sprite's `ox`/`oy` origin); `Sprite#mirror=` re-binds the canvas to a
 horizontally-flipped scratch copy of the bitmap (LVGL's `lv_image` has no flip,
-so mirroring is a software pass — the flip is a snapshot, so a sprite that
-redraws its bitmap contents while mirrored must re-assign `bitmap=` to refresh).
-**Remaining:** **tone/color/src_rect/bush_depth** → a software pre-composite
-through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
-scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
-`Arrow_Base`, weather and the animation player depend on these.
+so mirroring is a software pass); and `Sprite#tone=`/`color=` bake an RGSS tone
+(grey desaturation + RGB offset) and a colour overlay into that same scratch copy
+per pixel. Mirror/tone/colour share one pre-composite (`spr_bind_display`), and
+are a **snapshot** — a sprite that redraws its bitmap, or mutates its tone/colour
+in place (`sprite.tone.set`), must re-assign `bitmap=`/`tone=`/`color=` to
+refresh. **Remaining:** **src_rect** (sub-rect display — every character-animation
+frame) and **bush_depth**/**blend_type**/**flash**. `Sprite_Character`,
+`Sprite_Battler`, `Arrow_Base`, weather and the animation player depend on these.
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
 
