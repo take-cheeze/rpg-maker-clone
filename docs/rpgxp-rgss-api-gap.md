@@ -87,15 +87,18 @@ reuses the tested `Bitmap#clear`/`#stretch_blt`/`#blt` via `mrb_funcall`; only t
 RMXP windowskin source rects are new. `contents=`, `windowskin=`, `x=`/`y=`,
 `width=`/`height=`, `ox=`/`oy=`, `opacity=`/`back_opacity=`/`contents_opacity=`,
 `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native. It also draws the
-**blinking cursor** highlight at `cursor_rect` (when `active`) and the **pause
+**blinking cursor** 9-slice at `cursor_rect` (when `active`) and the **pause
 arrow** (when `pause`); `Window#update` advances the blink/pause animation and
 redraws (also picking up in-place `cursor_rect` mutation, which scripts do via
-`cursor_rect.set`). So the whole menu/message/shop/battle UI renders — framed
-windows, text, selection cursor and message pause. **Remaining:** the cursor is a
-stretched highlight rather than a crisp 9-slice; the content blit does not yet
-clip contents taller than the window; `stretch` (tiled vs stretched background) is
-ignored; and the RMXP windowskin source-rect constants are best-effort until a
-game exercises them.
+`cursor_rect.set`). The cursor is a crisp **9-slice** with 2px corners (matching
+RMXP/mkxp's `buildFrame`): the four corners copy 1:1, the four edges stretch along
+one axis and the centre fills the rest, so the selection box keeps a sharp border
+at any size. So the whole menu/message/shop/battle UI renders — framed windows,
+text, selection cursor and message pause. The content blit already clips to the
+content area (its source rect is the content-area size, so taller `contents` are
+cropped and scrolled, not overflowed). **Remaining:** `stretch` (tiled vs stretched
+background) is ignored, and the RMXP windowskin source-rect constants are
+best-effort until a game exercises them.
 
 ### 3. `Tilemap` ⚠️ (tiles + animated autotiles rendered; priority layering pending)
 
