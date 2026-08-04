@@ -1110,3 +1110,22 @@ assert "Kernel#sprintf / #format / String#% are available for the script host" d
   assert_equal "S [0012-3456]", sprintf("S [%04d-%04d]", 12, 3456)
   assert_equal "  hi", ("%4s" % "hi")
 end
+
+# The script-host driver runs the game's blocking Main inside a Fiber (ADR 0023)
+# and ends the game when a script calls `exit` (raised as a catchable
+# SystemExit). Confirm both gems are linked into the build — without invoking
+# `exit`, which would terminate the test runner.
+assert "Fiber and Kernel#exit / SystemExit are available for the script host" do
+  assert_true Object.const_defined?(:Fiber), "Fiber missing (mruby-fiber)"
+  # mruby-exit defines Kernel#exit (a private method) alongside SystemExit, so the
+  # constant's presence proves the gem is linked. mruby's Module has no
+  # #private_method_defined? (it is CRuby-only, as script_host.rb notes), so we do
+  # not reflect on the private method here.
+  assert_true Object.const_defined?(:SystemExit),
+              "SystemExit / Kernel#exit missing (mruby-exit)"
+  # A Fiber round-trips a value through yield/resume, the mechanism the driver
+  # relies on to advance one frame per resume.
+  f = Fiber.new { Fiber.yield(:frame); :done }
+  assert_equal :frame, f.resume
+  assert_equal :done, f.resume
+end

@@ -157,8 +157,10 @@ offset-based scroll is a possible optimization.
 Scripts use `sprintf` (~9, e.g. `%02d`/`%04d` clocks and ids, `%+d`, `%0*d`).
 The `mruby-sprintf` core gem is now in the build (`build_config.rb`), providing
 `Kernel#sprintf`/`#format` and `String#%`. Covered by the gem's own tests plus a
-`mruby-rpgxp/test` availability check. `exit` (1 use, from `Interpreter`) is
-still assumed and not yet provided.
+`mruby-rpgxp/test` availability check. `exit` (1 use, from `Interpreter`, which
+calls it to abort on runaway common-event recursion) is now provided by the
+`mruby-exit` core gem — it raises a catchable `SystemExit` that the script-host
+driver ends the game on (see item 3 above / ADR 0023).
 
 ## Notes
 
@@ -171,9 +173,10 @@ still assumed and not yet provided.
   when the host is enabled, `RPGXP` runs `Main` inside an mruby `Fiber` and the
   wrapped `Graphics.update` yields it once per frame, so `main_loop` drives one
   game frame per browser callback. It is gated behind `RGSS_SCRIPT_HOST` (off by
-  default), so the built-in flow is unchanged; the remaining step is to boot a real
-  project under the web build with the flag on and confirm it end to end (plus
-  wiring `exit`, the one Kernel built-in the `Interpreter` still assumes).
+  default), so the built-in flow is unchanged. `exit` (used by the `Interpreter`)
+  is now wired too — it raises a `SystemExit` the driver ends the game on. The
+  remaining step is to boot a real project under the web build with the flag on and
+  confirm it end to end.
 - None of the above can be built or run in the current CI sandbox; each item is
   verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
   `scripts/rpgxp_script_host_check.rb`.

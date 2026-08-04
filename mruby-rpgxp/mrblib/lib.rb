@@ -128,6 +128,10 @@ class RPGXP
   # default flow, so that path is unchanged.
   def main_loop
     return drive_script_host if @host_fiber
+    # The host game has ended (Main returned, or a script called `exit`); the web
+    # per-frame callback keeps calling this, so idle instead of falling into the
+    # built-in tick with no scenes.
+    return if @host_done
 
     RGSS::Profiler.frame do
       RGSS::Profiler.section("scene.update") { @scenes.last.update }
@@ -176,7 +180,10 @@ class RPGXP
       @host_fiber = nil
       @host_done = true
     end
-  rescue RGSS::Timeout
+  rescue RGSS::Timeout, SystemExit
+    # A clean end: the timeout guard fired, or a script called `exit` (RMXP's
+    # Interpreter does this to abort on runaway common-event recursion). End the
+    # game rather than treating it as a boot failure.
     @host_fiber = nil
     @host_done = true
   rescue StandardError => e
