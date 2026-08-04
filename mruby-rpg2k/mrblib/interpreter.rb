@@ -867,9 +867,22 @@ module Game
       when 1 then variables[cmd.param(5)]                  # variable
       when 2 then variables[variables[cmd.param(5)]]       # variable indirect
       when 3 then random_operand(cmd)                      # random in a range
+      when 4 then item_operand(cmd)                        # item count / equipped
       when 5 then actor_operand(cmd)                       # an actor's stat
       when 7 then other_operand(cmd)                       # gold / timer / ...
       else cmd.param(5)
+      end
+    end
+
+    # Operand type 4: a count for the item with id param5. param6 selects the
+    # mode: 0 the number held in the bag, 1 the number equipped across the party
+    # (each slot equipping it counts). Matches EasyRPG's ControlVariables::Item.
+    def item_operand(cmd)
+      id = cmd.param(5)
+      if cmd.param(6) == 1
+        party.actors.reduce(0) { |n, a| n + a.equipment.count(id) }
+      else
+        party.item_count(id)
       end
     end
 
@@ -904,12 +917,13 @@ module Game
     end
 
     # Operand type 7: a miscellaneous game quantity selected by param5 (0 party
-    # gold, 1 timer seconds). Other selectors (steps, play time, save / battle
-    # counts) are not modelled and read as 0.
+    # gold, 1 timer seconds, 2 the number of party members). Other selectors
+    # (steps, play time, save / battle counts) are not modelled and read as 0.
     def other_operand(cmd)
       case cmd.param(5)
       when 0 then party.gold
       when 1 then @state.timer_seconds
+      when 2 then party.actors.size
       else 0
       end
     end

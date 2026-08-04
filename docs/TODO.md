@@ -217,7 +217,10 @@ The work below is roughly ordered by the critical path to a walkable game
   equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
-  spirit / agility) and **game quantities** (party gold, timer seconds).
+  spirit / agility), an **item** count (number held, or number equipped across the
+  party) and **game quantities** (party gold, timer seconds, party size). The
+  event-reference operand (map id / position / facing of an event or the hero)
+  is still TODO.
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and **all** the **actor** sub-conditions (in party, name, level ≥,
   HP ≥, item equipped, skill known, and **afflicted by a state**). Actors now

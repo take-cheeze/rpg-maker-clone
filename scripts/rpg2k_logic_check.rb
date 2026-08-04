@@ -2067,6 +2067,27 @@ check 'Control Variables reads party gold and the timer (operand type 7)' do
   eq 90, st.variables[2]
 end
 
+check 'Control Variables reads the party size (operand type 7, selector 2)' do
+  st = party_state                                             # 2 members
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 2])]) # var1 = party size
+  it.update
+  eq 2, st.variables[1]
+end
+
+check 'Control Variables reads item count and equipped count (operand type 4)' do
+  st = party_state
+  st.party.gain_item(7, 3)                                     # 3 of item 7 in the bag
+  st.party.actor_by_id(1).equip([7, 0, 0, 0, 0])              # hero equips item 7
+  st.party.actor_by_id(2).equip([0, 7, 0, 0, 0])              # ally equips item 7
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 4, 7, 0]),   # var1 = held
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 4, 7, 1])])  # var2 = equipped
+  it.update
+  eq 3, st.variables[1]                                        # 3 held in the bag
+  eq 2, st.variables[2]                                        # two members equip it
+end
+
 check 'Control Variables reads an actor stat (operand type 5)' do
   st = party_state
   a = st.party.actor_by_id(1) # atk 10, max_hp 100
