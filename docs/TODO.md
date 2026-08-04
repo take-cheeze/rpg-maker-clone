@@ -316,28 +316,37 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::Actor#set_hp`, so damage sticks and a member reduced to 0 comes out
   戦闘不能 — and a **defeat ends the game** (return to title via
   `perform_game_over`) when the encounter's defeat mode is "game over" (no
-  `[Defeat]` handler) and the party is wiped (`Game::Party#all_dead?`). Still to
-  come: criticals / attributes / damage variance and in-battle status infliction
-  (rolling `state_chance`), all-target skill/item scopes, the per-terrain
-  backdrop and the RPG2000 Game Over graphic.
+  `[Defeat]` handler) and the party is wiped (`Game::Party#all_dead?`). **Status
+  conditions carry through a battle**: a `Combatant` seeds its state set from its
+  actor, a **battle medicine cures** its `state_set` (an antidote used mid-fight),
+  and `apply_to_party` writes the surviving states back — so an ailment walks into
+  the fight, can be cured there, and the result persists out. **Afflicted
+  battlers now act on their conditions each turn**: `Battle` takes the database
+  `situation` (state) table, and at the start of a battler's turn `apply_turn_
+  states` slips HP/SP (fixed val + a percentage of the max, per EasyRPG's
+  `ApplyConditions`) and **skips the turn** for a "do nothing" restriction (asleep
+  / paralysed). Still to come: state **auto-recovery** (`hold_turn` /
+  `auto_release_prob`) and forced-attack restrictions, in-battle status
+  **infliction** (attack skills rolling `state_chance`), criticals / attributes /
+  damage variance, all-target skill/item scopes, the per-terrain backdrop and the
+  RPG2000 Game Over graphic.
   The remaining event commands (Show Battle Animation, tile substitution, ...)
   are TODO. **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
   place a boat / ship / airship and set its CharSet (persisted via
   `Game::Vehicle`), and the party can now **board and pilot** a placed vehicle on
   the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow
   their terrain; drawing the vehicle on the map and its BGM / shadow are still to
-  come). **Enter Hero Name** (10740) opens a
-  character-entry widget that renames a party actor; **Change Level** (10420) /
-  **Change EXP** (10410) honour their "show message" flag — a level-up queues one
-  message per level gained, shown through the message window before the event
-  continues (a small reusable pending-message queue on the interpreter);
-  **Change System Graphics** (10680) overrides the windowskin / font (save chunks
-  15 / 17; the scene reloads the skin); **Change Screen Transitions** (10690)
-  records the six teleport / battle transition styles (save chunks 111–116;
-  modelled for save fidelity); and **Game Over** (12520) returns to the title —
-  all handled. **Vehicle locations** (boat / ship / airship) now persist in the
-  save (`Game::Vehicle`, `.lsd` chunks 105–107 / the Marshal save), though
-  boarding and piloting are still to come.
+  come). **Enter Hero Name** (10740) opens a character-entry widget that renames a
+  party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
+  "show message" flag — a level-up queues one message per level gained, shown
+  through the message window before the event continues (a small reusable
+  pending-message queue on the interpreter); **Change System Graphics** (10680)
+  overrides the windowskin / font (save chunks 15 / 17; the scene reloads the
+  skin); **Change Screen Transitions** (10690) records the six teleport / battle
+  transition styles (save chunks 111–116; modelled for save fidelity); and **Game
+  Over** (12520) returns to the title — all handled. **Vehicle locations** (boat /
+  ship / airship) also persist in the save (`Game::Vehicle`, `.lsd` chunks
+  105–107 / the Marshal save).
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

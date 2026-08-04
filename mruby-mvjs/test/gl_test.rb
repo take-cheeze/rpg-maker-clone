@@ -69,6 +69,24 @@ assert 'the Utils.canUseWebGL() gate shape passes through the wrapper' do
   JS
 end
 
+# --- M6.3c: gaps PIXI v5 exercises at renderer construction -------------------
+
+assert 'WebGLRenderingContext exposes the GL enums as constructor statics (PIXI reads them there)' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # PIXI v5's ScissorSystem/StencilSystem read the enum off the *constructor*
+  # (e.g. `WebGLRenderingContext.SCISSOR_TEST`) while building the renderer, not
+  # off the context instance — so `new PIXI.Renderer` throws a ReferenceError
+  # without these statics. (Found by booting PIXI v5.2.4 against the wrapper's
+  # method surface.) Values are the standard WebGL/GLES2 tokens.
+  assert_equal 0x0C11, MV::JS.eval("WebGLRenderingContext.SCISSOR_TEST")  # 3089
+  assert_equal 0x0B90, MV::JS.eval("WebGLRenderingContext.STENCIL_TEST")  # 2960
+  assert_equal 0x1908, MV::JS.eval("WebGLRenderingContext.RGBA")          # 6408
+  assert_equal 0x0DE1, MV::JS.eval("WebGLRenderingContext.TEXTURE_2D")    # 3553
+  # The same enums remain on the instance (read as `gl.RGBA`).
+  assert_equal 0x1908, MV::JS.eval("document.createElement('canvas').getContext('webgl').RGBA")
+end
+
 assert 'a green triangle renders end to end through the WebGL wrapper' do
   skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
 

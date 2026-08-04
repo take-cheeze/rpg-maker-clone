@@ -19,7 +19,8 @@ These are complete enough for the stock scripts:
 - **Value types** — `Table`, `Color`, `Tone`, `Rect` (native, with RGSS Marshal).
 - **`Bitmap`** — `new`, `draw_text` (~96), `fill_rect`, `gradient_fill_rect`,
   `blt`, `stretch_blt`, `clear` (~33), `text_size`, `get_pixel`/`set_pixel`,
-  `rect`, `width`/`height`, `font`, `dispose`. _Missing: `hue_change`._
+  `rect`, `width`/`height`, `font`, `hue_change`, `dispose`. _Complete for the
+  stock scripts._
 - **`Font`** — instance `name`/`size`/`bold`/`italic`/`shadow`/`outline`/`color`/
   `out_color`, class defaults (`default_name`/`default_size`/…), `exist?`.
 - **`Graphics`** — `frame_count`, `frame_rate`, `update`. _`freeze`,
@@ -115,9 +116,13 @@ maps do no per-frame work. `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
 `visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
 **Remaining:** the per-tile **priority layering** (`priorities`) — tiles that
 should draw above characters — is stored-only, so everything still renders on one
-flat layer (a correct fix needs the above-priority tiles to become their own
-z-ordered objects that interleave with character sprites per row); and
-`flash_data` is ignored.
+flat layer. A correct fix needs the above-priority tiles to become their own
+z-ordered objects that interleave with character sprites per row; the design is
+worked out in
+[ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md) (per-row `z` strips as
+companion z-objects) and is held for review before it lands, because it mints new
+z-ordered objects and a custom dispose path that can only be verified in a running
+game. `flash_data` is also still ignored.
 
 ### 4. `Plane` ✅ (tiling + scroll + tint/blend + zoom all rendered)
 

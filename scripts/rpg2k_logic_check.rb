@@ -3824,7 +3824,101 @@ check 'battle_items lists battle medicines; battle_item_command recovers' do
   ok !st.party.battle_usable?(6), 'a field-only medicine is not battle-usable'
   target = combatant('T', 0, 0, 5, 100)
   target.max_mp = 30
-  eq({ hp: 40, mp: 0 }, st.party.battle_item_command(st.party.db_item(5), target))
+  eq({ hp: 40, mp: 0, cured: [] },
+     st.party.battle_item_command(st.party.db_item(5), target))
+end
+
+check 'a battle item cures the target status; states carry out via apply_to_party' do
+  # An antidote (reverse item curing state 3) used in battle on a poisoned ally.
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  ally = st.party.actor_by_id(1)
+  ally.add_state(3); ally.add_state(9)         # afflicted entering the fight
+  c = Game::Battle.from_actor(ally)
+  eq true, c.state?(3)                          # the status walked into battle
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.command_item(c, c, item_id: 5, name: 'Antidote',
+                   **st.party.battle_item_command(st.party.db_item(5), c))
+  bat.run_round
+  eq false, c.state?(3)                         # cured in battle
+  eq true, c.state?(9)                          # an unlisted state stays
+  bat.apply_to_party
+  eq false, ally.state?(3)                      # ...and the cure persisted out
+  eq true, ally.state?(9)
+end
+
+check 'battle carries an actor status through unchanged when nothing cures it' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(5)                             # afflicted before the fight
+  hc = Game::Battle.from_actor(hero)
+  eq true, hc.state?(5)
+  hc.hp = 40                                    # took some damage on the way
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 40, hero.hp
+  eq true, hero.state?(5)                       # the status survived the battle
+end
+
+# A state-definition lookup for the battle: id -> a row the sim reads for its
+# per-turn slip damage (hp/sp change) and action restriction.
+FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
+                          :sp_change_val, :sp_change_max)
+
+check 'battle poison slips HP each turn (fixed val + percent of max)' do
+  states = { 2 => FakeStateDef.new(0, 5, 10, 0, 0) } # 5 + 10% of max HP / turn
+  hero = combatant('Hero', 40, 0, 20, 100)           # max HP 100, acts first
+  hero.states = [2]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  bat.step_action                                    # hero's turn: slip then strike
+  eq 85, hero.hp                                     # 100 - (5 + 10) poison
+end
+
+check 'battle poison (percent of max) can knock the battler out' do
+  states = { 2 => FakeStateDef.new(0, 0, 100, 0, 0) } # 100% of max HP / turn
+  hero = combatant('Hero', 0, 0, 1, 50)               # slow so the slip lands
+  hero.states = [2]
+  foe = combatant('Foe', 0, 0, 99, 100)               # fast but nearly harmless
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.run
+  ok hero.dead?, 'the poison finished the hero off'
+  eq :defeat, bat.result
+end
+
+check 'battle: a "do nothing" state (restriction 1) skips the turn' do
+  states = { 3 => FakeStateDef.new(1, 0, 0, 0, 0) }  # asleep / paralysed
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.command_attack(hero, slime)                    # even commanded, it cannot act
+  bat.run_round
+  eq 100, slime.hp                                   # the asleep hero never struck
+end
+
+check 'battle poison slips SP too when the battler has max SP' do
+  states = { 4 => FakeStateDef.new(0, 3, 0, 2, 0) }  # 3 HP + 2 SP / turn
+  mage = combatant_mp('Mage', 40, 0, 20, 100, 10)
+  mage.states = [4]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([mage], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  bat.step_action
+  eq 97, mage.hp
+  eq 8, mage.mp
+end
+
+check 'battle states stay inert without a state-definition lookup' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [2]                                  # afflicted, but no lookup
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # 3-arg: no state defs
+  bat.begin_round
+  bat.step_action
+  eq 100, hero.hp                                    # nothing slipped
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do
