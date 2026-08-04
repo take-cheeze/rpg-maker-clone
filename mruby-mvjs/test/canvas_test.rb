@@ -165,6 +165,25 @@ assert 'MV Image decodes a PNG and serves as a drawImage source' do
   end
 end
 
+assert 'MV Image loads a percent-encoded filename (encodeURIComponent path)' do
+  # MV builds asset URLs with encodeURIComponent(filename), so a "$Hero"
+  # character sheet is requested as "%24Hero.png". The loader must url-decode to
+  # find the on-disk file; without it the load falls back to a 1x1 empty bitmap.
+  # The file on disk carries the literal "$"; we request it percent-encoded.
+  disk = "mvjs_$enc_fixture.png"
+  File.open(disk, "wb") { |f| f.write(MV_IMAGE_PNG) }
+  begin
+    MV::JS.base_dir = ""
+    MV::JS.eval("globalThis.ENC=new Image(); ENC.src='mvjs_%24enc_fixture.png';")
+    MV::JS.pump(0.0)
+    # width == 2 proves the real 2x2 file was found (a decode miss would be 1x1).
+    assert_equal 2, MV::JS.eval("ENC.width")
+    assert_equal 2, MV::JS.eval("ENC.height")
+  ensure
+    File.delete(disk) rescue nil
+  end
+end
+
 assert 'MV Image resolves a missing file as a 1x1 empty bitmap (boot does not stall)' do
   # A missing image loads (onload) as a 1x1 transparent bitmap rather than
   # erroring, so MV's ImageManager.isReady() does not block the boot forever on
