@@ -1810,9 +1810,72 @@ class RPG2k
                        status_win: nil, cmd_win: nil, target_win: nil,
                        skill_win: nil, item_win: nil, ally_win: nil,
                        action_win: nil, anim_timer: 0,
+                       back_sprite: nil, enemy_sprites: nil,
                        result_win: nil, result: nil }
+        build_battle_sprites
         refresh_battle_status
         draw_battle_command
+      end
+
+      # RPG2000 is a front-view battle: the enemy troop is drawn as sprites over a
+      # battle background, while the party is represented by the status window (not
+      # sprites). Build the backdrop and one sprite per visible troop member,
+      # centred on its database position. Hidden (invisible) members get no sprite
+      # until a battle event reveals them — a mechanism still to come.
+      def build_battle_sprites
+        build_battle_back
+        @battle_ui[:enemy_sprites] = @battle_ui[:troop].members.each_with_index.map do |enemy, i|
+          next nil if enemy.hidden
+          bmp = battler_bitmap(enemy)
+          spr = Sprite.new
+          spr.bitmap = bmp
+          spr.x = enemy.x - bmp.width / 2
+          spr.y = enemy.y - bmp.height / 2
+          spr.z = 100 + i
+          spr
+        end
+        refresh_battle_sprites
+      end
+
+      # A plain dark battle field behind the enemies. The real per-terrain
+      # backdrop (Backdrop/<name>, chosen by the tile the encounter started on) is
+      # still to come — the encounter request does not carry that terrain yet.
+      def build_battle_back
+        bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+        spr = Sprite.new
+        spr.bitmap = bmp
+        spr.z = 5
+        @battle_ui[:back_sprite] = spr
+      end
+
+      # The battler graphic for `enemy` (Monster/<battler_name>, colour-keyed), or
+      # a solid placeholder block when it has no graphic or the file is missing —
+      # the same fallback strategy the map uses for a missing chipset.
+      def battler_bitmap(enemy)
+        name = enemy.battler_name
+        return Bitmap.new("Monster/#{name}", true) if name && !name.empty?
+        placeholder_battler
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battler load failed for #{enemy.name}: #{e.message}"
+        placeholder_battler
+      end
+
+      def placeholder_battler
+        bmp = Bitmap.new(32, 32)
+        bmp.fill_rect 0, 0, 32, 32, Color.new(180, 60, 60, 255)
+        bmp
+      end
+
+      # Show a living enemy's sprite, hide a defeated one — called after each
+      # animated action so a downed enemy vanishes from the field.
+      def refresh_battle_sprites
+        sprites = @battle_ui[:enemy_sprites]
+        return unless sprites
+        @battle_ui[:foes].each_with_index do |foe, i|
+          spr = sprites[i]
+          spr.visible = !foe.dead? if spr
+        end
       end
 
       def living_allies; @battle_ui[:allies].reject(&:dead?); end
@@ -2095,6 +2158,7 @@ class RPG2k
           @state.party.lose_item(entry[:item_id], 1) if entry[:item_id]
           log_round([entry])
           refresh_battle_status
+          refresh_battle_sprites
           show_battle_action(entry)
           @battle_ui[:anim_timer] = BATTLE_ANIM_FRAMES
         else
@@ -2378,7 +2442,17 @@ class RPG2k
          @battle_ui[:target_win], @battle_ui[:skill_win],
          @battle_ui[:item_win], @battle_ui[:ally_win],
          @battle_ui[:action_win], @battle_ui[:result_win]].each { |w| w.dispose if w }
+        dispose_battle_sprite(@battle_ui[:back_sprite])
+        (@battle_ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
         @battle_ui = nil
+      end
+
+      # Dispose a battle sprite and its bitmap (sprites do not own their bitmap,
+      # so the graphic is freed explicitly).
+      def dispose_battle_sprite(spr)
+        return unless spr
+        spr.bitmap.dispose if spr.bitmap
+        spr.dispose
       end
 
       def drive_wait

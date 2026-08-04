@@ -159,12 +159,13 @@ def fake_db(common = nil)
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
     # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
-    enemy: { 2 => OpenStruct.new(name: 'Slime', max_hp: 30, max_sp: 0, attack: 8,
+    enemy: { 2 => OpenStruct.new(name: 'Slime', battler_name: 'Slime',
+                                 max_hp: 30, max_sp: 0, attack: 8,
                                  defense: 4, spirit: 3, agility: 5, exp: 5,
                                  gold: 10) },
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
-      1 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false),
-      2 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false) }) },
+      1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
+      2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) }) },
     common_event: common,
     player: {}
   )
@@ -1544,6 +1545,29 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   scene.update                          # the Hero uses the Potion first
   eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
   eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
+end
+
+check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+
+  sprites = ui[:enemy_sprites]
+  eq 2, sprites.compact.length, 'one battler sprite per visible troop member'
+  ok ui[:back_sprite], 'a battle background sprite is drawn behind them'
+  ok sprites.all? { |s| s.visible }, 'both enemies are shown at the start'
+  # Centred on the member's troop position (member 1 at x = 100, y = 80).
+  eq 100 - sprites[0].bitmap.width / 2, sprites[0].x, 'sprite centred on its x'
+  eq 80 - sprites[0].bitmap.height / 2, sprites[0].y, 'sprite centred on its y'
+  ok sprites[0].z < 300, 'battlers sit below the UI windows (z >= 300)'
+  ok ui[:back_sprite].z < sprites[0].z, 'the backdrop sits behind the battlers'
+
+  battle_attack_to_end(scene) # both Slimes fall
+  ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------

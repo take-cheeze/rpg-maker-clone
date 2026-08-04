@@ -2513,14 +2513,17 @@ module Game
   # Current HP / SP start full. The turn-based battle that would reduce them is
   # not built yet, so for now this backs the Enemy Encounter reward model.
   class Enemy
-    attr_reader :id, :name, :max_hp, :max_sp, :atk, :def, :spi, :agi,
-                :exp, :gold, :x, :y, :hidden
+    attr_reader :id, :name, :battler_name, :max_hp, :max_sp, :atk, :def, :spi,
+                :agi, :exp, :gold, :x, :y, :hidden
     attr_accessor :hp, :sp
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
       row = db.enemy[id]
       @id = id
       @name    = row ? row.name.to_s : ''
+      # The Monster/<name> battle graphic (blank for a fixture that omits it);
+      # the battle screen draws it, falling back to a placeholder block.
+      @battler_name = row && row.respond_to?(:battler_name) ? (row.battler_name || '') : ''
       @max_hp  = row ? row.max_hp : 1
       @max_sp  = row ? row.max_sp : 0
       @atk     = row ? row.attack : 0
