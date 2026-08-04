@@ -27,6 +27,7 @@ module Game
       CHANGE_EXP       = 10410
       CHANGE_LEVEL     = 10420
       CHANGE_PARAM     = 10430
+      CHANGE_EQUIP     = 10440
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
       FULL_HEAL        = 10490
@@ -226,6 +227,7 @@ module Game
       when Cmd::CHANGE_EXP       then do_change_exp cmd
       when Cmd::CHANGE_LEVEL     then do_change_level cmd
       when Cmd::CHANGE_PARAM     then do_change_params cmd
+      when Cmd::CHANGE_EQUIP     then do_change_equipment cmd
       when Cmd::CHANGE_HP        then do_change_hp cmd
       when Cmd::CHANGE_MP        then do_change_mp cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
@@ -606,6 +608,21 @@ module Game
       amount = cmd.param(4) == 0 ? cmd.param(5) : variables[cmd.param(5)]
       amount = -amount if cmd.param(2) != 0
       stat_targets(cmd).each { |a| a.change_param(type, amount) }
+    end
+
+    # Change Equipment. param2 selects the operation: 0 equips an item (param3 0
+    # = the item id in param4, 1 = the id held in variable param4) into the slot
+    # matching its type; 1 removes equipment, param4 selecting the slot (0..4, or
+    # 5 for every slot). Confirmed against real events, e.g. `[1, 3, 0, 0, 127]`
+    # equips armour 127 onto actor 3.
+    def do_change_equipment(cmd)
+      targets = stat_targets(cmd)
+      if cmd.param(2) == 0
+        item = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
+        targets.each { |a| a.equip_item(item) }
+      else
+        targets.each { |a| a.unequip(cmd.param(4)) }
+      end
     end
 
     # -- conditional branch ---------------------------------------------------
