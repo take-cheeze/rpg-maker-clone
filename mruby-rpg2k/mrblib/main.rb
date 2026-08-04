@@ -2167,7 +2167,8 @@ class RPG2k
         c = @state.party.battle_skill_command(sk, current_actor, target)
         @battle_ui[:battle].command_skill(current_actor, target,
                                           name: sk.name, cost: c[:cost],
-                                          hp: c[:hp], mp: c[:mp])
+                                          hp: c[:hp], mp: c[:mp],
+                                          inflict: c[:inflict], chance: c[:chance])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor

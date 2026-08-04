@@ -96,11 +96,12 @@ one axis and the centre fills the rest, so the selection box keeps a sharp borde
 at any size. So the whole menu/message/shop/battle UI renders — framed windows,
 text, selection cursor and message pause. The content blit already clips to the
 content area (its source rect is the content-area size, so taller `contents` are
-cropped and scrolled, not overflowed). **Remaining:** `stretch` (tiled vs stretched
-background) is ignored, and the RMXP windowskin source-rect constants are
+cropped and scrolled, not overflowed). `stretch=` picks between the stretched
+(default) windowskin background and a tiled one (the 128×128 tile repeated at 1:1
+across the window). **Remaining:** the RMXP windowskin source-rect constants are
 best-effort until a game exercises them.
 
-### 3. `Tilemap` ⚠️ (tiles + animated autotiles rendered; priority layering pending)
+### 3. `Tilemap` ⚠️ (tiles + animated autotiles + interim priority split rendered)
 
 `Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
 `lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
@@ -115,17 +116,23 @@ matching RMXP/mkxp's 16-tick-per-frame `atAnimation` table), and the renderer
 shifts the autotile source into that frame's column — so water and waterfalls
 animate. `update` only re-tiles on a frame boundary, and only when the map
 actually has an animated autotile (recorded during the last refresh), so static
-maps do no per-frame work. `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
+maps do no per-frame work. **Priority split (interim):** `priorities=` (native)
+routes each tile by its `priorities[id]` value — priority-0 tiles into the ground
+canvas, priority ≥ 1 tiles into a second **"above" canvas** that is a companion
+z-ordered object (created in `tilemap_init`, torn down by the native
+`Tilemap#dispose`) sorting above the character sprites (`TILEMAP_ABOVE_Z`). So
+roofs and tree crowns now draw over the party. This is an **interim flat
+approximation**: it puts *every* priority tile above *every* character, not only
+the ones on lower rows, and the above layer's single `z` is a best guess (above
+characters, below fog) pending in-game confirmation. The correct **per-row**
+scheme — above-priority tiles as per-row `z` strips that interleave with
+characters — is designed in
+[ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md) and remains the follow-up.
+`tileset=`, `map_data=`, `priorities=`, `ox=`/`oy=`, `z=`, `update`,
 `visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
-**Remaining:** the per-tile **priority layering** (`priorities`) — tiles that
-should draw above characters — is stored-only, so everything still renders on one
-flat layer. A correct fix needs the above-priority tiles to become their own
-z-ordered objects that interleave with character sprites per row; the design is
-worked out in
-[ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md) (per-row `z` strips as
-companion z-objects) and is held for review before it lands, because it mints new
-z-ordered objects and a custom dispose path that can only be verified in a running
-game. `flash_data` is also still ignored.
+`visible=` hides the above layer along with the ground. **Remaining:** the per-row
+priority scheme (ADR 0022); `z=` on the tilemap does not yet shift the above
+layer's fixed `z`; and `flash_data` is still ignored.
 
 ### 4. `Plane` ✅ (tiling + scroll + tint/blend + zoom all rendered)
 

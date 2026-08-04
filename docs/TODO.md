@@ -325,11 +325,15 @@ The work below is roughly ordered by the critical path to a walkable game
   `situation` (state) table, and at the start of a battler's turn `apply_turn_
   states` slips HP/SP (fixed val + a percentage of the max, per EasyRPG's
   `ApplyConditions`) and **skips the turn** for a "do nothing" restriction (asleep
-  / paralysed). Still to come: state **auto-recovery** (`hold_turn` /
-  `auto_release_prob`) and forced-attack restrictions, in-battle status
-  **infliction** (attack skills rolling `state_chance`), criticals / attributes /
-  damage variance, all-target skill/item scopes, the per-terrain backdrop and the
-  RPG2000 Game Over graphic.
+  / paralysed). **Attack skills inflict states**: `battle_skill_command` carries a
+  scope-enemy skill's `state_effects`, and `apply_command` rolls each against the
+  skill's `hit` accuracy on a surviving target — so a Poison Sting / Sleep spell
+  afflicts the foe, which then slips or skips via the per-turn processing above.
+  A state also **auto-recovers**: a per-battler turn counter lets `apply_turn_
+  states` roll `auto_release_prob` once the state has held past its `hold_turn`,
+  so a temporary ailment wears off. Still to come: forced-attack restrictions,
+  enemy-cast infliction, criticals / attributes / damage variance, all-target
+  skill/item scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
@@ -773,8 +777,17 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
       context and `Utils.canUseWebGL()` is true. `gl_test.rb` renders a green
       triangle end to end through the wrapper. Stubs cleanly (getContext →
       `null`) where the EGL backend is absent.
-    - 🚧 M6.3c PIXI v5 boots to a frame: fill the remaining gaps PIXI exercises
-      (getExtension/VAO emulation, texture Y-flip + image uploads, uniform
-      introspection wiring, presenting the GL frame on-screen) until
-      `MZ#boot_probe` renders `Scene_Boot`, verified against a user-supplied MZ
-      project.
+    - 🚧 M6.3c PIXI v5 boots to a frame:
+      - ✅ MZ reaches `Scene_Boot` through the renderer: `data/mz-sample` commits
+        a minimal authored database and fetches the rmmz engine
+        (`scripts/download-mz-corescript.bash`, community mirror, CI-only); `MZ`
+        adds the one host global MZ's boot needs (`indexedDB`), and
+        `MZ#boot_probe` drives `SceneManager.run(Scene_Boot)` + a few frames past
+        the old `Utils.canUseWebGL()` wall. `scripts/mz_boot_check.bash` asserts
+        the `[MZ-BOOT] booted to <scene>` marker in CI. Discovered/validated by
+        booting PIXI v5.2.4 + rmmz under Node against the wrapper's surface.
+      - 🚧 Remaining: present the GL frame on-screen each frame + resize the FBO
+        to the canvas (continuous play, not just the boot probe); optional VAO /
+        `vertexAttribDivisor` fast path (PIXI falls back without it); texture
+        Y-flip + image uploads and uniform-introspection polish as real content
+        (a user-supplied MZ project) exercises them.

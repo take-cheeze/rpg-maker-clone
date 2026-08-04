@@ -207,16 +207,17 @@ module RGSS
   # tilemap_refresh draws the visible tiles of the three map_data layers scrolled
   # by ox/oy — regular tiles from the tileset and autotiles assembled from their
   # four quads (the seven `autotiles` bitmaps are read by the native renderer).
-  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
-  # `visible`/`visible=`, `dispose`/`disposed?` are native. `update` advances the
-  # autotile animation (frames cycle through the wider autotile bitmaps). This
+  # `initialize`, `tileset=`, `map_data=`, `priorities=`, `ox=`/`oy=`, `z=`,
+  # `update`, `visible`/`visible=`, `dispose`/`disposed?` are native. `update`
+  # advances the autotile animation (frames cycle through the wider autotile
+  # bitmaps). `priorities=` routes priority >= 1 tiles to a separate "above" layer
+  # that sorts over the characters (an interim flat approximation of RMXP's
+  # per-row priority — see docs/adr/0022-rpgxp-tilemap-priority-layering.md). This
   # reopening keeps the plain readers, the `autotiles` slot array (which the
-  # native renderer reads), and the properties not yet honoured — `priorities`
-  # (priority layering) and `flash_data` — stored so scripts run (tracked in
-  # docs/rpgxp-rgss-api-gap.md).
+  # native renderer reads), and `flash_data` — still stored-only — so scripts run.
   class Tilemap
-    attr_reader :tileset, :map_data, :ox, :oy, :viewport
-    attr_accessor :flash_data, :priorities
+    attr_reader :tileset, :map_data, :ox, :oy, :viewport, :priorities
+    attr_accessor :flash_data
 
     # RGSS exposes exactly seven autotile slots (0..6); the game assigns each with
     # `tilemap.autotiles[i] = bitmap` and reads them back to dispose. A fixed-size
@@ -236,14 +237,13 @@ module RGSS
   # `pause`). `update` advances the blink/pause animation and redraws. Almost the
   # whole surface is native — `initialize`, `contents=`, `windowskin=`, `x=`,
   # `y=`, `width=`, `height=`, `ox=`, `oy=`, `opacity=`, `back_opacity=`,
-  # `contents_opacity=`, `cursor_rect=`, `active=`, `pause=`, `update`, `z=`,
-  # `visible`/`visible=`, `dispose`/`disposed?`. This reopening only adds the
-  # plain readers (and their RGSS defaults) plus `stretch`, which the tiling-vs-
-  # stretch background choice does not yet distinguish.
+  # `contents_opacity=`, `cursor_rect=`, `active=`, `pause=`, `stretch=`,
+  # `update`, `z=`, `visible`/`visible=`, `dispose`/`disposed?`. `stretch=` picks
+  # between the stretched (default) and tiled windowskin background. This reopening
+  # only adds the plain readers and their RGSS defaults.
   class Window
     attr_reader :contents, :windowskin, :x, :y, :width, :height, :ox, :oy, :z,
                 :viewport, :contents_opacity
-    attr_writer :stretch
 
     def opacity
       @opacity.nil? ? 255 : @opacity

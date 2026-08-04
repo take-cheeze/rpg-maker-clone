@@ -1265,13 +1265,18 @@ end
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
                        :affect_hp, :affect_sp, :occasion_battle,
-                       :state_effects, :reverse_state_effect)
+                       :state_effects, :reverse_state_effect, :hit)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
-               occ_battle: true, state_effects: nil, reverse_state: false)
+               occ_battle: true, state_effects: nil, reverse_state: false, hit: 100)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
-                prate, mrate, hp, sp, occ_battle, state_effects, reverse_state)
+                prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit)
 end
+# A state-definition lookup for the battle: id -> a row the sim reads for its
+# per-turn slip damage (hp/sp change), action restriction and auto-recovery.
+FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
+                          :sp_change_val, :sp_change_max,
+                          :hold_turn, :auto_release_prob)
 class FakeActorDB
   attr_reader :player, :system, :item, :skill
   def initialize(players, party_ids, items = {}, skills = {})
@@ -3772,13 +3777,63 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12, maxSP 30
   foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
   # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
-  eq({ cost: 6, hp: -30, mp: 0 },
+  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100 },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
   eq({ cost: 4, hp: 22, mp: 22 },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
+end
+
+check 'a battle attack skill inflicts its state_effects on a surviving enemy' do
+  skills = { 7 => fake_skill(name: 'Poison Sting', scope: 0, sp_cost: 3, power: 20,
+                             mrate: 40, state_effects: [0, 0, 1], hit: 100) }
+  st = skill_party(skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, foe)
+  eq [3], c[:inflict], 'state_effects -> state id 3'
+  eq 100, c[:chance]
+  bat = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  bat.command_skill(mage, foe, name: 'Poison Sting', cost: c[:cost],
+                    hp: c[:hp], mp: c[:mp], inflict: c[:inflict], chance: c[:chance])
+  bat.run_round
+  eq true, foe.state?(3)                        # inflicted on the surviving enemy
+end
+
+check 'a battle attack skill at 0% accuracy never inflicts its state' do
+  skills = { 7 => fake_skill(name: 'Dud', scope: 0, sp_cost: 3, power: 20,
+                             mrate: 40, state_effects: [0, 0, 1], hit: 0) }
+  st = skill_party(skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, foe)
+  eq 0, c[:chance]
+  bat = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  bat.command_skill(mage, foe, name: 'Dud', cost: c[:cost], hp: c[:hp], mp: c[:mp],
+                    inflict: c[:inflict], chance: c[:chance])
+  bat.run_round
+  eq false, foe.state?(3)                        # 0% -> never lands
+end
+
+check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
+  # Sleep inflicts state 4; the state table marks 4 as restriction 1 (do nothing).
+  skills = { 7 => fake_skill(name: 'Sleep', scope: 0, sp_cost: 3, power: 1,
+                             state_effects: [0, 0, 0, 1], hit: 100) }
+  states = { 4 => FakeStateDef.new(1, 0, 0, 0, 0) }
+  st = skill_party(skills)
+  hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 40, 0, 1, 100)          # slow (acts after the hero)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+  bat.command_skill(hero, foe, name: 'Sleep', cost: c[:cost], hp: c[:hp], mp: c[:mp],
+                    inflict: c[:inflict], chance: c[:chance])
+  bat.run_round
+  eq true, foe.state?(4), 'the foe was put to sleep'
+  hp_before = hero.hp
+  bat.run_round                                  # next round: the asleep foe skips
+  eq hp_before, hero.hp, 'the sleeping foe did not attack'
 end
 
 check 'Battle command_skill resolves an attack skill: damage lands, SP is spent' do
@@ -3892,10 +3947,6 @@ check 'battle carries an actor status through unchanged when nothing cures it' d
   eq true, hero.state?(5)                       # the status survived the battle
 end
 
-# A state-definition lookup for the battle: id -> a row the sim reads for its
-# per-turn slip damage (hp/sp change) and action restriction.
-FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
-                          :sp_change_val, :sp_change_max)
 
 check 'battle poison slips HP each turn (fixed val + percent of max)' do
   states = { 2 => FakeStateDef.new(0, 5, 10, 0, 0) } # 5 + 10% of max HP / turn
@@ -3950,6 +4001,29 @@ check 'battle states stay inert without a state-definition lookup' do
   bat.begin_round
   bat.step_action
   eq 100, hero.hp                                    # nothing slipped
+end
+
+check 'battle state auto-recovers once it has held past hold_turn' do
+  # hold_turn 1, 100% release: eligible only once the counter exceeds 1.
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 1, 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.run_round
+  eq true, hero.state?(5)                            # turn 1: counter 1, not > 1
+  bat.run_round
+  eq false, hero.state?(5)                           # turn 2: counter 2 > 1 -> cured
+end
+
+check 'battle state at 0% auto_release_prob never wears off on its own' do
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 0, 0) } # hold 0, prob 0
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  3.times { bat.run_round }
+  eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do
