@@ -540,3 +540,14 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     still wants a device / a native listen; CI only checks dispatch + resolve.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
+  - ✅ M6.1 foundation: an `MZ` class (`mruby-mvjs/mrblib/mz.rb`) detects an MZ
+    project (`js/rmmz_core.js` + `data/System.json`), knows the canonical
+    `rmmz_*` load order, and is wired into `src/main.cxx`'s maker sniff so an MZ
+    game reports the pending WebGL backend cleanly instead of "no project
+    found". Covered by `mruby-mvjs/test/mz_test.rb`.
+  - 🚧 M6.2 host reuse: run the `rmmz_*` scripts on the shared quickjs host to
+    reach `Scene_Boot` in logic; a committed MZ sample is authorable (MZ's
+    corescript has an MIT community reimplementation, `stak/rmmz-corescript`,
+    fetchable like the MV corescript).
+  - 🚧 M6.3 WebGL rendering: the WebGL-subset backend behind PIXI v5 (the bulk
+    of the work — MZ dropped the Canvas2D renderer the MV bridge targets).
