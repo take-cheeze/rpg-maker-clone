@@ -251,22 +251,27 @@ module RGSS
   # command, menu, shop, battle status) builds on. Now native (src/lib.cxx):
   # Window.new builds an lv_canvas the size of the window and blits the game's
   # `contents` Bitmap into the content area (inset 16px, scrolled by ox/oy) at
-  # contents_opacity — so window text renders. `initialize`, `contents=`, `x=`,
-  # `y=`, `width=`, `height=`, `ox=`, `oy=`, `contents_opacity=`, `z=`,
-  # `visible`/`visible=`, `dispose`/`disposed?` are native. This reopening adds
-  # the plain readers plus the properties the native renderer does not yet honour
-  # (the windowskin background/frame, the blinking cursor rect and the pause
-  # arrow) — stored so scripts that set them run (tracked in
+  # contents_opacity, and — when a `windowskin` is set — draws the stretched
+  # background at `back_opacity` and the 9-slice frame at `opacity`. `initialize`,
+  # `contents=`, `windowskin=`, `x=`, `y=`, `width=`, `height=`, `ox=`, `oy=`,
+  # `opacity=`, `back_opacity=`, `contents_opacity=`, `z=`, `visible`/`visible=`,
+  # `dispose`/`disposed?` are native. This reopening adds the plain readers plus
+  # the properties the native renderer does not yet honour (the blinking cursor
+  # rect and the pause arrow) — stored so scripts that set them run (tracked in
   # docs/rpgxp-rgss-api-gap.md).
   class Window
-    attr_reader :contents, :x, :y, :width, :height, :ox, :oy, :z, :viewport,
-                :contents_opacity
-    attr_writer :windowskin, :opacity, :back_opacity, :active, :pause, :stretch
+    attr_reader :contents, :windowskin, :x, :y, :width, :height, :ox, :oy, :z,
+                :viewport, :contents_opacity
+    attr_writer :active, :pause, :stretch
 
     def update; end
 
-    def windowskin
-      @windowskin
+    def opacity
+      @opacity.nil? ? 255 : @opacity
+    end
+
+    def back_opacity
+      @back_opacity.nil? ? 255 : @back_opacity
     end
 
     def cursor_rect
@@ -275,14 +280,6 @@ module RGSS
 
     def cursor_rect=(r)
       @cursor_rect = r
-    end
-
-    def opacity
-      @opacity.nil? ? 255 : @opacity
-    end
-
-    def back_opacity
-      @back_opacity.nil? ? 255 : @back_opacity
     end
 
     def active

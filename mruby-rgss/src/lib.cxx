@@ -2519,6 +2519,8 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
 
 // ---- Window ---------------------------------------------------------------
 
+mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h);
+
 // RGSS insets a window's contents 16px from its frame on every side, so the
 // drawable content area is (width - 32) x (height - 32).
 static const int WINDOW_PADDING = 16;
@@ -2551,10 +2553,23 @@ Bitmap& window_ensure_canvas(mrb_state* M,
   return c;
 }
 
-// Repaint the window canvas: clear it, then blit the contents bitmap into the
-// content area (inset by WINDOW_PADDING, scrolled by ox/oy) at
-// contents_opacity. The windowskin background/frame and the cursor/pause
-// overlays are not drawn yet (tracked in docs/rpgxp-rgss-api-gap.md).
+static mrb_int clamp_opacity(mrb_state* M, mrb_value self, const char* iv) {
+  mrb_int v = mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_cstr(M, iv)));
+  if (v < 0)
+    return 0;
+  if (v > 255)
+    return 255;
+  return v;
+}
+
+// Repaint the window canvas: clear it, draw the windowskin background + 9-slice
+// frame (if a windowskin is set), then blit the contents bitmap into the
+// content area (inset by WINDOW_PADDING, scrolled by ox/oy). The compositing
+// reuses the tested Bitmap#clear/#stretch_blt/#blt methods via mrb_funcall;
+// only the RMXP windowskin source rects are new here (the 128x128 background at
+// (0,0) and the 64x64 frame at (128,0) with 16px corners). The blinking cursor
+// rect and the pause arrow are not drawn yet (tracked in
+// docs/rpgxp-rgss-api-gap.md).
 void window_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -2563,43 +2578,72 @@ void window_refresh(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@width")));
   const mrb_int h =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@height")));
-  Bitmap& dst = window_ensure_canvas(M, self, w, h);
-  std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+  window_ensure_canvas(M, self, w, h);
+  const mrb_value canvas =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
+  const mrb_sym blt = mrb_intern_lit(M, "blt");
+  const mrb_sym sblt = mrb_intern_lit(M, "stretch_blt");
+  // The compositing allocates transient Rect values; drop them off the GC arena
+  // when done (canvas/skin/contents stay alive via their ivars on self).
+  const int arena = mrb_gc_arena_save(M);
+  mrb_funcall_argv(M, canvas, mrb_intern_lit(M, "clear"), 0, nullptr);
+
+  const mrb_value skin = mrb_iv_get(M, self, mrb_intern_lit(M, "@windowskin"));
+  const mrb_int b = WINDOW_PADDING;
+  if (mrb_test(skin) && DATA_PTR(skin)) {
+    const mrb_int op = clamp_opacity(M, self, "@opacity");
+    const mrb_int back = op * clamp_opacity(M, self, "@back_opacity") / 255;
+    // Background: stretch the 128x128 tile at (0,0) over the whole window.
+    const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
+                            make_rect(M, 0, 0, 128, 128),
+                            mrb_fixnum_value(back)};
+    mrb_funcall_argv(M, canvas, sblt, 4, bg);
+    // Frame: the 64x64 border at (128,0), a 9-slice with 16px corners/margins.
+    const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
+                            make_rect(M, 128, 0, b, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, tl);
+    const mrb_value tr[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(0), skin,
+                            make_rect(M, 176, 0, b, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, tr);
+    const mrb_value bl[] = {mrb_fixnum_value(0), mrb_fixnum_value(h - b), skin,
+                            make_rect(M, 128, 48, b, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, bl);
+    const mrb_value br[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(h - b),
+                            skin, make_rect(M, 176, 48, b, b),
+                            mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, br);
+    const mrb_value top[] = {make_rect(M, b, 0, w - 2 * b, b), skin,
+                             make_rect(M, 144, 0, 32, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, top);
+    const mrb_value bottom[] = {make_rect(M, b, h - b, w - 2 * b, b), skin,
+                                make_rect(M, 144, 48, 32, b),
+                                mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, bottom);
+    const mrb_value left[] = {make_rect(M, 0, b, b, h - 2 * b), skin,
+                              make_rect(M, 128, 16, b, 32),
+                              mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, left);
+    const mrb_value right[] = {make_rect(M, w - b, b, b, h - 2 * b), skin,
+                               make_rect(M, 176, 16, b, 32),
+                               mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, right);
+  }
 
   const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
-  if (!mrb_nil_p(cont)) {
-    Bitmap& src = DataType<Bitmap>::get(M, cont);
-    mrb_int op = mrb_as_int(
-        M, mrb_iv_get(M, self, mrb_intern_lit(M, "@contents_opacity")));
-    if (op < 0)
-      op = 0;
-    else if (op > 255)
-      op = 255;
+  if (mrb_test(cont) && DATA_PTR(cont)) {
+    const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
     const mrb_int ox =
         mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
     const mrb_int oy =
         mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
-    const mrb_int cw = w - 2 * WINDOW_PADDING;
-    const mrb_int ch = h - 2 * WINDOW_PADDING;
-    for (mrb_int j = 0; j < ch; ++j) {
-      const mrb_int sy = oy + j;
-      const mrb_int dy = WINDOW_PADDING + j;
-      if (sy < 0 || sy >= src.height || dy < 0 || dy >= dst.height)
-        continue;
-      for (mrb_int i = 0; i < cw; ++i) {
-        const mrb_int sx = ox + i;
-        const mrb_int dx = WINDOW_PADDING + i;
-        if (sx < 0 || sx >= src.width || dx < 0 || dx >= dst.width)
-          continue;
-        int r, g, b, a;
-        bmp_read(src, sx, sy, r, g, b, a);
-        const int alpha = a * static_cast<int>(op) / 255;
-        if (alpha <= 0)
-          continue;
-        bmp_put(dst, dx, dy, r, g, b, alpha);
-      }
-    }
+    // Blit the scrolled contents into the content area, inset by
+    // WINDOW_PADDING.
+    const mrb_value c[] = {mrb_fixnum_value(b), mrb_fixnum_value(b), cont,
+                           make_rect(M, ox, oy, w - 2 * b, h - 2 * b),
+                           mrb_fixnum_value(cop)};
+    mrb_funcall_argv(M, canvas, blt, 5, c);
   }
+  mrb_gc_arena_restore(M, arena);
   lv_obj_invalidate(obj);
 }
 
@@ -2667,6 +2711,30 @@ mrb_value window_set_contents_opacity(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "i", &v);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
              mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_skin(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@windowskin"), v);
+  window_refresh(M, self);
+  return v;
+}
+
+mrb_value window_set_opacity(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_back_opacity(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@back_opacity"), mrb_fixnum_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -3070,6 +3138,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "ox=", window_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "oy=", window_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "contents_opacity=", window_set_contents_opacity,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "windowskin=", window_set_skin, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "opacity=", window_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "back_opacity=", window_set_back_opacity,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
