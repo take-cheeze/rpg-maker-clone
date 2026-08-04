@@ -232,15 +232,20 @@ The work below is roughly ordered by the critical path to a walkable game
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
   on and persist in the save)
-- 🚧 Save & Continue — implemented with a portable `Marshal` save of the game
-  state (`Game::State#to_h` / `State.load`) written via the menu's Save command;
-  "Continue" reloads it. **Reading** the real `LCF::SaveData` (`.lsd`) is done
-  (`Game::State.from_lsd`). **Writing** it now has its LCF foundation: `mruby-lcf`
-  can serialize a save back to bytes (`Array1D`/`Array2D`/`File#to_lcf`,
-  `LCF.write_ber`/`encode`, `Array1D#[]=`), proven byte-exact against the real
-  2000/2003 saves by `scripts/lcf_save_roundtrip.rb` (ADR 0018). The remaining
-  step is a `Game::State#to_lsd` that builds the `SAVE_DATA` chunks from live game
-  state and calls `SaveData#save_to`, replacing the `Marshal` save
+- 🚧 Save & Continue — the portable `Marshal` save of the game state
+  (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
+  menu's Save command; "Continue" reloads it. **Reading** the real
+  `LCF::SaveData` (`.lsd`) is done (`Game::State.from_lsd`), and **writing** it is
+  now done too: `Game::State#to_lsd` builds the `SAVE_DATA` chunks (system 101,
+  hero 104, party actors 108, inventory 109) from live game state and
+  `SaveData#save_to` writes a genuine `Save<slot>.lsd`, exported alongside the
+  Marshal save on every save (ADR 0019, on the `mruby-lcf` serializer of ADR
+  0018). It round-trips through `from_lsd` field-for-field
+  (`scripts/rpg2k_save_load_check.rb`). Remaining refinements to make the `.lsd`
+  the *primary* save (so Continue prefers it): model the fields the Marshal save
+  still holds but `.lsd` drops here — timer, message config, current/memorized
+  BGM, actor name/title/sprite overrides, access flags — plus the title chunk
+  (100, needs `:double` timestamp encoding) so the save-slot menu shows the party
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
@@ -339,10 +344,27 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
-- **Run the bundled RGSS scripts** — the largest possible direction: an
-  `eval`-based host that runs `Data/Scripts.rxdata` unmodified against the RGSS
-  class library (the equivalent of the MV "embed the real engine" choice),
-  which would also run community scripts. Out of scope for the current layer.
+- 🚧 **Run the bundled RGSS scripts** — the largest direction: an `eval`-based
+  host that runs `Data/Scripts.rxdata` unmodified against the RGSS class library
+  (the equivalent of the MV "embed the real engine" choice), which would also
+  run community scripts. The **host plumbing now exists** (ADR 0017): a native
+  `RGSS.zlib_inflate` decompresses the script sections, `RPGXP::RGSSData`
+  exposes `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost`
+  installs the Kernel `load_data`/`save_data` built-ins and evaluates every
+  section at the top level (mruby-eval) so "Main" drives the game. Boot runs the
+  host when it is enabled (`RGSS_SCRIPT_HOST`, off by default) and the project
+  ships scripts, falling back to the built-in flow otherwise. Decoding, the
+  built-ins and top-level evaluation of real script source are covered by
+  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. Remaining before
+  it can be the default: complete the `mruby-rgss` class library the stock
+  scripts call — the precise gap (measured against the real test-bed scripts) is
+  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
+  `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
+  `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
+  widgets, plus `Kernel#sprintf` and drawing `Graphics.transition/freeze`.
+  Also reconcile the scripts' blocking main loop with the emscripten frame loop
+  (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
+  archive.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

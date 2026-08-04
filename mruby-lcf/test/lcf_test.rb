@@ -522,3 +522,55 @@ assert 'SaveData edit survives a write/reload round-trip' do
   assert_equal 7, reread.hero.y          # untouched field preserved
   assert_equal 2, reread[101].save_count
 end
+
+# ---- Build a save FROM SCRATCH (ADR 0019, Game::State#to_lsd) --------------
+# The writer above edits a save parsed from bytes; these exercise assembling a
+# save with no source file: int16 field encoding, an Array2D populated via #[]=,
+# and an empty SaveData built up chunk by chunk and read straight back.
+
+assert 'LCF.pack_int16 / encode :int16_array inverts the reader' do
+  vals = [0, 1, 255, 256, 32767, 40000, 65535]
+  bytes = LCF.pack_int16(vals)
+  assert_equal LCF.encode(vals, :int16_array), bytes
+  # unpack('s<*') reads these back as signed 16; masking to 16 bits recovers the
+  # value written, so the low half round-trips exactly.
+  assert_equal vals, bytes.unpack('s<*').map { |v| v & 0xffff }
+  # Non-negative ids (equipment/skills/item ids) match the unsigned LE reference
+  # the test helper uses to author int16 fields.
+  assert_equal [10, 20, 0, 0, 5].pack('v*'), LCF.pack_int16([10, 20, 0, 0, 5])
+end
+
+assert 'Array2D built from scratch serialises and reads back' do
+  schema = { elements: LCF::Schema::SAVE_PARTY_ACTOR }
+  a = LCF::Array2D.new('', schema)         # empty, writable table
+  e = LCF::Array1D.new('', schema)
+  e[31] = 5                                # level (:int)
+  e[52] = [101, 102]                       # skills (:int16_array)
+  e[61] = [1, 2, 0, 0, 0]                  # equipment (:int16_array)
+  a[1] = e
+  reread = LCF::Array2D.new(a.to_lcf, schema)
+  assert_equal 5, reread[1].level
+  assert_equal [101, 102], reread[1].skills
+  assert_equal [1, 2, 0, 0, 0], reread[1].equipment
+end
+
+assert 'SaveData built from scratch round-trips through the reader' do
+  save = LCF::SaveData.new                 # no io => empty, writable save
+  hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+  hero[11] = 3; hero[12] = 8; hero[13] = 4; hero[22] = 1
+  save[104] = hero
+  sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
+  sys[32] = [false, true, false]           # switches (:bool_array)
+  sys[34] = [0, 7, 0]                       # variables (:int32_array)
+  sys[131] = 2                              # save_count
+  save[101] = sys
+
+  reread = LCF::SaveData.new(StringIO.new(save.to_lcf))
+  assert_equal 3, reread.hero.map_id
+  assert_equal 8, reread.hero.x
+  assert_equal 4, reread.hero.y
+  assert_equal 1, reread.hero.direction
+  assert_equal [false, true, false], reread[101].switches
+  assert_equal [0, 7, 0], reread[101].variables
+  assert_equal 2, reread[101].save_count
+end

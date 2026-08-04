@@ -1170,7 +1170,15 @@ module LCF
   end
 
   class File
-    def initialize io
+    def initialize io = nil
+      # No stream builds an empty, writable file from scratch: an empty root of
+      # the schema's type, ready to populate via #[]= and serialise with #to_lcf
+      # / #save_to. Multi-section (Array-schema) files are not yet buildable.
+      if io.nil?
+        raise 'section-based file construction not implemented' if schema.is_a? Array
+        @root = LCF.const_get(schema[:type]).new('', schema)
+        return
+      end
       @io = io
       h_len = LCF.read_ber io
       h = io.read h_len

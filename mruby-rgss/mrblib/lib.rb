@@ -89,12 +89,109 @@ module RGSS
     end
   end
 
+  # RGSS Plane: a tiling, scrolling full-viewport bitmap (map parallax / fog).
+  # Pure-Ruby property holder for now so the stock RGSS scripts that create and
+  # drive a Plane run; the native tiling render is future work (tracked in
+  # docs/rpgxp-rgss-api-gap.md).
   class Plane
+    attr_accessor :bitmap, :visible, :z, :ox, :oy, :opacity, :zoom_x, :zoom_y,
+                  :blend_type, :tone, :color
+    attr_reader :viewport
+
+    def initialize(viewport = nil)
+      @viewport = viewport
+      @bitmap = nil
+      @visible = true
+      @z = 0
+      @ox = 0
+      @oy = 0
+      @opacity = 255
+      @zoom_x = 1.0
+      @zoom_y = 1.0
+      @blend_type = 0
+      @tone = Tone.new(0, 0, 0, 0)
+      @color = Color.new(0, 0, 0, 0)
+      @disposed = false
+    end
+
+    def dispose
+      @disposed = true
+    end
+
+    def disposed?
+      @disposed
+    end
   end
 
   class Sprite
     attr_reader :bitmap
     attr_reader :x, :y, :z
+
+    # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
+    # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect.
+    # mruby-rgss stores them so `sprite.opacity = n` / `sprite.zoom_x` no longer
+    # raise; the native renderer does not yet honour them visually (tracked in
+    # docs/rpgxp-rgss-api-gap.md). Readers fall back to RGSS's defaults because
+    # the native #initialize does not set these ivars (and cannot be wrapped from
+    # here without replacing it). `nil?` checks — not `||` — where 0/false is a
+    # meaningful value (opacity 0 = transparent).
+    attr_writer :opacity, :ox, :oy, :zoom_x, :zoom_y, :angle, :mirror,
+                :bush_depth, :blend_type, :tone, :color, :src_rect
+
+    def opacity
+      @opacity.nil? ? 255 : @opacity
+    end
+
+    def ox
+      @ox || 0
+    end
+
+    def oy
+      @oy || 0
+    end
+
+    def zoom_x
+      @zoom_x.nil? ? 1.0 : @zoom_x
+    end
+
+    def zoom_y
+      @zoom_y.nil? ? 1.0 : @zoom_y
+    end
+
+    def angle
+      @angle || 0
+    end
+
+    def mirror
+      @mirror || false
+    end
+
+    def bush_depth
+      @bush_depth || 0
+    end
+
+    def blend_type
+      @blend_type || 0
+    end
+
+    def tone
+      @tone ||= Tone.new(0, 0, 0, 0)
+    end
+
+    def color
+      @color ||= Color.new(0, 0, 0, 0)
+    end
+
+    def src_rect
+      @src_rect ||= Rect.new(0, 0, 0, 0)
+    end
+
+    # Flash the sprite (colour + duration in frames). Stored; the visual flash is
+    # future native work.
+    def flash(color, duration)
+      @flash_color = color
+      @flash_duration = duration
+    end
   end
 
   class Tilemap

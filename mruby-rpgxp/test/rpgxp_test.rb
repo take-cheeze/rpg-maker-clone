@@ -882,3 +882,59 @@ assert "Game::Message.expand accepts a Proc name lookup" do
   lookup = ->(id) { id == 1 ? "Hero" : nil }
   assert_equal "Hero speaks", RPGXP::Game::Message.expand("\\N[1] speaks", vars, lookup)
 end
+
+# ---- RGSS script host -------------------------------------------------------
+
+# Fake project DB for the script host: serves pre-decoded [name, source]
+# sections and answers the Kernel built-ins load_data / save_data out of an
+# in-memory store, so a save round-trips through the same instance.
+class FakeScriptDB
+  def initialize(sections)
+    @sections = sections
+    @store = {}
+  end
+
+  def scripts?; !@sections.empty?; end
+  def scripts;  @sections; end
+  def read_object(path); @store[path]; end
+  def save_object(obj, path); @store[path] = obj; end
+end
+
+assert "ScriptHost.available? is true (eval present)" do
+  assert_true RPGXP::ScriptHost.available?
+end
+
+assert "ScriptHost.run evaluates sections in order and sets $RGSS_SCRIPTS" do
+  db = FakeScriptDB.new([
+    ["Setup", "$rgss_host_probe = 41"],
+    ["Main", "$rgss_host_probe += 1"]
+  ])
+  assert_true RPGXP::ScriptHost.run(db)
+  assert_equal 42, $rgss_host_probe
+  # $RGSS_SCRIPTS mirrors RGSS's [id, name, source] triples in load order.
+  assert_equal 2, $RGSS_SCRIPTS.size
+  assert_equal 0, $RGSS_SCRIPTS[0][0]
+  assert_equal "Setup", $RGSS_SCRIPTS[0][1]
+  assert_equal "Main", $RGSS_SCRIPTS[1][1]
+end
+
+assert "ScriptHost.run defines classes at the top level" do
+  db = FakeScriptDB.new([["Def", "class RgssHostProbe; def hi; 7; end; end"]])
+  assert_true RPGXP::ScriptHost.run(db)
+  assert_true Object.const_defined?(:RgssHostProbe)
+  assert_equal 7, RgssHostProbe.new.hi
+end
+
+assert "ScriptHost.run returns false when the project ships no scripts" do
+  assert_false RPGXP::ScriptHost.run(FakeScriptDB.new([]))
+end
+
+assert "ScriptHost.install_kernel wires load_data / save_data round-trip" do
+  db = FakeScriptDB.new([["x", "0"]])
+  RPGXP::ScriptHost.install_kernel(db)
+  # The built-ins are private Kernel methods (RGSS scripts call them bare);
+  # save then load of a fresh path round-trips through the bound database.
+  probe = Object.new
+  probe.send(:save_data, { "hp" => 30 }, "ScriptHostProbe.rxdata")
+  assert_equal({ "hp" => 30 }, probe.send(:load_data, "ScriptHostProbe.rxdata"))
+end

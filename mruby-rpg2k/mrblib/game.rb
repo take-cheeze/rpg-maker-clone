@@ -1909,6 +1909,71 @@ module Game
         teleport_access: @teleport_access, escape_access: @escape_access }
     end
 
+    # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
+    # inverse of .from_lsd. It writes exactly the chunks that path reads back:
+    # the system chunk (101: switches, variables, save_count), the hero
+    # position/facing (104), the per-actor level/exp/equipment/skills/HP/MP table
+    # (108) and the party roster / gold / item bag (109). Fields our Marshal save
+    # also carries but this format does not model here (timer, message config,
+    # BGM, actor name/sprite overrides, access flags) are intentionally dropped,
+    # so this is a lower-fidelity, interoperable *export* rather than a
+    # replacement for #to_h. Switch and variable ids are 1-indexed in-game but
+    # 0-indexed in the save, so they shift down by one; unset entries default to
+    # false / 0. +save_count+ goes in the system chunk (RPG_RT increments it on
+    # every save).
+    def to_lsd(save_count = 1)
+      save = LCF::SaveData.new
+
+      hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+      hero[11] = @map_id
+      hero[12] = @x
+      hero[13] = @y
+      hero[22] = @direction || 2
+      save[104] = hero
+
+      sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
+      sw = @switches.to_h
+      sw_max = sw.empty? ? 0 : sw.keys.max
+      switches = Array.new(sw_max, false)
+      sw.each { |id, v| switches[id - 1] = v ? true : false }
+      sys[31] = sw_max
+      sys[32] = switches
+      vr = @variables.to_h
+      vr_max = vr.empty? ? 0 : vr.keys.max
+      variables = Array.new(vr_max, 0)
+      vr.each { |id, v| variables[id - 1] = v }
+      sys[33] = vr_max
+      sys[34] = variables
+      sys[131] = save_count
+      sys[132] = 1
+      save[101] = sys
+
+      actors = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
+      @party.actors.each do |a|
+        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
+        e[31] = a.level
+        e[32] = a.exp
+        e[51] = a.skills.size
+        e[52] = a.skills
+        e[61] = a.equipment
+        e[71] = a.hp
+        e[72] = a.mp
+        actors[a.id] = e
+      end
+      save[108] = actors
+
+      inv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_INVENTORY })
+      inv[1] = @party.actors.map { |a| a.id }
+      item_ids = @party.items.keys.sort
+      inv[11] = item_ids.size
+      inv[12] = item_ids
+      inv[13] = item_ids.map { |i| @party.items[i] }
+      inv[21] = @party.gold
+      save[109] = inv
+
+      save
+    end
+
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
     # by an actual editor, rather than our own Marshal hash. Only the fields we
     # model are restored: the hero's map, tile position and facing (chunk 104),

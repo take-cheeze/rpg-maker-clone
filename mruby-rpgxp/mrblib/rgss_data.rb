@@ -276,6 +276,49 @@ class RPGXP
       !@archive.nil?
     end
 
+    # Read + Marshal-parse an arbitrary project-relative file, exactly like
+    # RGSS's Kernel#load_data ("Data/System.rxdata", "Data/Scripts.rxdata", a
+    # "Save1.rxdata" in the game root, ...). A loose file on disk shadows the
+    # archive, matching RGSS; when there is none the entry is pulled from the
+    # encrypted archive. The RGSS script host uses this to feed Kernel#load_data.
+    def read_object(relative_path)
+      full = "#{@game_dir}/#{relative_path}"
+      return File.open(full, "rb") { |f| Marshal.load(f.read) } if File.exist?(full)
+      if @archive
+        bytes = @archive.read(relative_path)
+        return Marshal.load(bytes) if bytes
+      end
+      raise "cannot load #{relative_path}: no loose file and no archive entry"
+    end
+
+    # Marshal-dump `obj` to a project-relative file (RGSS's Kernel#save_data).
+    # Always writes a loose file under the game directory — RGSS never writes
+    # back into the encrypted archive — so in-game saving works on a packed
+    # project too.
+    def save_object(obj, relative_path)
+      File.open("#{@game_dir}/#{relative_path}", "wb") { |f| f.write(Marshal.dump(obj)) }
+    end
+
+    # Whether the project ships a script bundle (loose Data/Scripts.rxdata or the
+    # archive entry). Cheap presence check — does not decode the scripts.
+    def scripts?
+      File.exist?(data_path("Scripts")) ||
+        (!@archive.nil? && @archive.include?("Data/Scripts.rxdata"))
+    end
+
+    # The bundled RGSS scripts as an ordered array of [name, source]: the editor
+    # stores Data/Scripts.rxdata as a Marshal array of [id, name, zlib-deflated
+    # source] sections, evaluated top to bottom (the final "Main" section drives
+    # the game). Each section is inflated through the native RGSS.zlib_inflate.
+    # Empty when the project ships no scripts.
+    def scripts
+      return [] unless scripts?
+      read_object("Data/Scripts.rxdata").map do |section|
+        _id, name, deflated = section
+        [name.to_s, RGSS.zlib_inflate(deflated.to_s)]
+      end
+    end
+
     private
 
     # Open the game's encrypted archive (Game.rgssad / .rgss2a) if it exists, so
@@ -290,17 +333,11 @@ class RPGXP
       nil
     end
 
-    # Load and Marshal-parse a Data/ entry. A loose file on disk shadows the
-    # archive (matching RGSS, which reads loose files before the archive); when
-    # there is none, the entry is pulled from Game.rgssad.
+    # Load and Marshal-parse a Data/ entry by base name (System, MapInfos,
+    # Map001, ...). Delegates to the public read_object, which reads a loose file
+    # before the archive, matching RGSS.
     def load_data(base)
-      path = data_path(base)
-      return File.open(path, "rb") { |f| Marshal.load(f.read) } if File.exist?(path)
-      if @archive
-        bytes = @archive.read("Data/#{base}.rxdata")
-        return Marshal.load(bytes) if bytes
-      end
-      raise "cannot load #{base}.rxdata: no loose file and no archive entry"
+      read_object("Data/#{base}.rxdata")
     end
   end
 end
