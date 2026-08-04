@@ -75,21 +75,36 @@ set(BUILD_TESTING OFF)
 add_subdirectory(3rd/quickjs EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
-# OSMesa (off-screen software Mesa) + GLES2 back the RPG Maker MZ WebGL renderer
-# (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3). OSMesa renders into a CPU RGBA
-# buffer with no GPU or display, matching the software LVGL pipeline. This is
-# optional: where the libraries are absent (Emscripten uses the browser's WebGL;
-# the nix build until OSMesa is packaged) mvgl.cxx compiles to inert stubs (its
-# __has_include guard), so we only link them when found rather than REQUIRE
-# them.
+# EGL (surfaceless) + GLES2 back the RPG Maker MZ WebGL renderer
+# (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3). A surfaceless EGL context renders
+# through llvmpipe into an FBO with no GPU or display, matching the software
+# LVGL pipeline. This is optional: where the libraries are absent (Emscripten
+# uses the browser's WebGL; a build without them, e.g. darwin) mvgl.cxx compiles
+# to inert stubs (its __has_include guard), so we only link them when found
+# rather than REQUIRE them. The apt and nix builds both provide them.
+set(GL_LIBS "")
 if(NOT EMSCRIPTEN)
-  find_library(OSMESA_LIB OSMesa)
+  # Plain find_library resolves the libraries on apt (they sit in the system
+  # linker path). Under nix they live in per-package store paths find_library
+  # doesn't search, so fall back to pkg-config — egl.pc and glesv2.pc from
+  # libglvnd, both exposed on nix's PKG_CONFIG_PATH. mvgl.o is compiled with the
+  # real backend wherever the headers are present, so whenever that happens the
+  # link must find the libraries here too; the two discovery paths keep the
+  # header probe and the link in agreement on both toolchains.
+  find_library(EGL_LIB EGL)
   find_library(GLESV2_LIB GLESv2)
-endif()
-if(OSMESA_LIB AND GLESV2_LIB)
-  set(GL_LIBS ${OSMESA_LIB} ${GLESV2_LIB})
-else()
-  set(GL_LIBS "")
+  if(EGL_LIB AND GLESV2_LIB)
+    set(GL_LIBS ${EGL_LIB} ${GLESV2_LIB})
+  else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+      pkg_check_modules(EGL IMPORTED_TARGET egl)
+      pkg_check_modules(GLESV2 IMPORTED_TARGET glesv2)
+      if(TARGET PkgConfig::EGL AND TARGET PkgConfig::GLESV2)
+        set(GL_LIBS PkgConfig::EGL PkgConfig::GLESV2)
+      endif()
+    endif()
+  endif()
 endif()
 
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")

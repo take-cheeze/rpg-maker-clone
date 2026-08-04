@@ -683,3 +683,16 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     exact gate is `SceneManager.run` → `Utils.canUseWebGL()` throwing at
     `rmmz_managers.js:1890` unless `canvas.getContext("webgl")` returns a real
     (LVGL-backed) context.
+    - ✅ M6.3a EGL GLES2 backend foundation: `mruby-mvjs/src/mvgl.cxx`
+      (`MV::GL`) drives an off-screen surfaceless-EGL/GLES2 context (llvmpipe
+      into an FBO). `flake.nix` adds `libglvnd` (EGL/GLES2 headers + dispatch)
+      and `mesa.llvmpipeHook` (headless software-GL runtime), so
+      `MV::GL.smoke_test` — compile the PIXI-style GLSL ES 1.00 shaders, draw
+      and read back a green triangle — runs as a check in CI, not just the apt
+      dev build. (Started on OSMesa; Mesa removed that frontend, so this moved
+      to surfaceless EGL, its supported replacement.)
+    - 🚧 M6.3b WebGL method wrapper: map the `WebGLRenderingContext` surface
+      PIXI uses onto the GLES2 natives and make `getContext("webgl")` return it.
+    - 🚧 M6.3c PIXI v5 boots to a frame: fill the remaining gaps until
+      `MZ#boot_probe` renders `Scene_Boot`, verified against a user-supplied MZ
+      project.

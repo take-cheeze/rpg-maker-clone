@@ -865,7 +865,7 @@ std::string mv_resolve_path(const std::string& raw) {
 }
 
 // MV::GL.smoke_test -> [r, g, b, a] (the rendered centre pixel) on success, or
-// nil on failure. Drives the OSMesa GLES2 pipeline end to end (create context,
+// nil on failure. Drives the EGL GLES2 pipeline end to end (create context,
 // compile PIXI-style ES 1.00 shaders, draw, read back) without any game engine,
 // so CI can prove the WebGL backend (M6.3a) works on its runners.
 mrb_value gl_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
@@ -878,9 +878,9 @@ mrb_value gl_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
   return ary;
 }
 
-// MV::GL.available? -> whether the OSMesa/GLES2 backend was compiled in. False
-// on Emscripten and where the OSMesa headers were absent at build time (e.g.
-// the nix build until OSMesa is packaged), where MV::GL.smoke_test is inert.
+// MV::GL.available? -> whether the EGL/GLES2 backend was compiled in. False
+// on Emscripten and where the EGL headers were absent at build time (e.g.
+// darwin), where MV::GL.smoke_test is inert. True on the apt and nix builds.
 mrb_value gl_available(mrb_state* mrb, mrb_value /*self*/) {
   return mrb_bool_value(mvgl::available());
 }
