@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect rendered; bush_depth/blend_type/flash stored)
+### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type rendered; bush_depth/flash stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -63,8 +63,9 @@ character sprites do actually changes the shown cell. Crop/mirror/tone/colour
 share one pre-composite (`spr_bind_display`). **Snapshot caveat:** a sprite that
 redraws its bitmap, or mutates tone/colour in place, still needs a re-assign
 (`bitmap=`/`tone=`/`color=`) unless it also has a `src_rect` (which re-composites
-via `update`). **Remaining:** **bush_depth**, **blend_type** and **flash**.
-`Sprite_Character`,
+via `update`). `Sprite#blend_type=` maps 0/1/2 to the canvas object's LVGL blend
+mode (normal / additive / subtractive), so additive effects composite. **Remaining:**
+**bush_depth** and **flash**. `Sprite_Character`,
 `Sprite_Battler`, `Arrow_Base`, weather and the animation player depend on these.
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
