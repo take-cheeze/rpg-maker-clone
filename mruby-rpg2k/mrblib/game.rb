@@ -791,6 +791,7 @@ module Game
       # top, and levelling learns skills, so seed them all at the actor's initial
       # level, then start at full health.
       set_level(a.initial_level || 1)
+      @exp = exp_for_level(@level) # EXP consistent with the starting level
       @hp = @max_hp
       @mp = @max_mp
     end
@@ -953,6 +954,68 @@ module Game
       EQUIP_ORDER.each_index.map { |i| ids[i] || 0 }
     end
 
+    # RPG2000 caps: total EXP maxes at 999_999; the EXP-curve fields default to
+    # 30 when a database row does not carry them (e.g. a test fixture).
+    EXP_MAX = 999_999
+    EXP_DEFAULT = 30
+
+    # The actor's maximum level (from the database row; 50 by RPG2000 default).
+    def max_level
+      ml = @db_row.respond_to?(:max_level) ? @db_row.max_level : nil
+      ml && ml >= 1 ? ml : 50
+    end
+
+    # Total EXP required to *be at* `level` (0 at level 1). RPG2000's standard
+    # curve, computed from the row's exp_basic / exp_increase / exp_correction —
+    # a direct port of EasyRPG's CalculateExp(level - 1).
+    def exp_for_level(level)
+      return 0 if level <= 1
+      calc_exp(level - 1)
+    end
+
+    # Set total EXP (clamped to 0..EXP_MAX) and re-derive the level from the curve
+    # thresholds, recomputing the base stats via #set_level when the level
+    # changes. Mirrors EasyRPG's Game_Actor::ChangeExp: raising EXP climbs while
+    # the next level's threshold is reached; lowering it drops while below the
+    # current level's threshold.
+    def set_exp(new_exp)
+      new_exp = Game.clamp(new_exp, 0, EXP_MAX)
+      new_level = @level
+      if new_exp > @exp
+        while new_level < max_level && exp_for_level(new_level + 1) <= new_exp
+          new_level += 1
+        end
+      elsif new_exp < @exp
+        new_level -= 1 while new_level > 1 && new_exp < exp_for_level(new_level)
+      end
+      @exp = new_exp
+      set_level(new_level) if new_level != @level
+    end
+
+    # Add `delta` EXP (negative removes it); the Change EXP command's effect.
+    def gain_exp(delta)
+      set_exp(@exp + delta)
+    end
+
+    # Change the level by `delta` (the Change Level command). Recomputes the base
+    # stats via #set_level and re-aligns EXP to the new level, mirroring EasyRPG's
+    # ChangeLevel: on a level up EXP rises to at least the new level's threshold;
+    # on a level down that leaves EXP at/above the next threshold it drops to the
+    # level's base. Current HP/MP are not refilled (set_level only re-clamps
+    # them), matching RPG_RT.
+    def change_level_by(delta)
+      new_level = Game.clamp(@level + delta, 1, max_level)
+      old = @level
+      set_level(new_level)
+      base = exp_for_level(new_level)
+      if new_level > old
+        @exp = base if @exp < base
+      elsif new_level < old
+        nxt = new_level < max_level ? exp_for_level(new_level + 1) : EXP_MAX + 1
+        @exp = base if @exp >= nxt
+      end
+    end
+
     # Apply a HP change (positive heals, negative damages), clamped to
     # [floor, max_hp]. The floor is 0 when death is allowed (the actor may be
     # knocked out) or 1 otherwise, matching RPG2000's Change HP "allow death"
@@ -993,6 +1056,30 @@ module Game
       @base[type] = Game.clamp(@base[type] + delta, 1, limit)
       recompute_stats
     end
+
+    private
+
+    # EasyRPG's CalculateExp(n): the RPG2000 standard EXP curve summed over n
+    # steps. Float arithmetic mirrors RPG_RT; the running total truncates toward
+    # zero each step (C's (int) cast) and the whole result caps at EXP_MAX.
+    def calc_exp(n)
+      base = db_exp_param(:exp_basic).to_f
+      inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
+      correction = db_exp_param(:exp_correction).to_f
+      result = 0
+      n.times do
+        result += (correction + base).to_i
+        base *= inflation
+        inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
+      end
+      result > EXP_MAX ? EXP_MAX : result
+    end
+
+    # Read a numeric EXP-curve field from the database row, defaulting when the
+    # row (a test fixture) does not carry it.
+    def db_exp_param(field)
+      @db_row.respond_to?(field) ? (@db_row.__send__(field) || EXP_DEFAULT) : EXP_DEFAULT
+    end
   end
 
   # The active party. On a new game it is seeded from the database's initial
@@ -1016,29 +1103,34 @@ module Game
     def to_h
       hp = {}
       mp = {}
+      exp = {}
       meta = {}
       @actors.each do |a|
         hp[a.id] = a.hp
         mp[a.id] = a.mp
+        exp[a.id] = a.exp
         meta[a.id] = { name: a.name, title: a.title,
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
                        transparent: a.transparent }
       end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
-        hp: hp, mp: mp, actor_meta: meta }
+        hp: hp, mp: mp, exp: exp, actor_meta: meta }
     end
 
-    # Restore item/gold, per-actor hp/mp and the name/title/sprite overrides from
-    # a saved party hash. A save written before actor_meta existed simply keeps
-    # the database defaults.
+    # Restore item/gold, per-actor exp/hp/mp and the name/title/sprite overrides
+    # from a saved party hash. EXP is restored first (it re-derives the level and
+    # its base stats), then the saved HP/MP are laid over the recomputed maxima.
+    # A save written before actor_meta existed simply keeps the database defaults.
     def load_state(data)
       @items = data[:items] || {}
       @gold = data[:gold] || 0
+      exp = data[:exp] || {}
       hp = data[:hp] || {}
       mp = data[:mp] || {}
       meta = data[:actor_meta] || {}
       @actors.each do |a|
+        a.set_exp(exp[a.id]) if exp[a.id]
         a.hp = hp[a.id] if hp[a.id]
         a.mp = mp[a.id] if mp[a.id]
         apply_actor_meta(a, meta[a.id])
@@ -1586,6 +1678,12 @@ module Game
       @flash_strength = 0 # current strength, fading to 0 over the duration
       @flash_frames = 0 # frames left in the current flash (0 = faded out)
       @flash_total = 0
+      @pan_x = 0        # current pan offset in pixels (added to the camera)
+      @pan_y = 0
+      @pan_tx = 0       # target pan offset the current pan/reset scrolls toward
+      @pan_ty = 0
+      @pan_step = 1     # pixels moved toward the target per frame
+      @pan_locked = false # when true the scene stops the camera following the hero
     end
 
     # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
@@ -1608,8 +1706,19 @@ module Game
     # True while a flash is still fading out.
     def flashing?; @flash_frames > 0; end
 
+    # The current pan offset [x, y] in pixels, added to the camera by the scene.
+    def pan_offset; [@pan_x, @pan_y]; end
+
+    # Whether a Lock operation has frozen the camera in place — the scene stops
+    # following the hero while this holds. The pan offset (see #pan_offset) is
+    # applied by the scene independently of this flag.
+    def pan_locked?; @pan_locked; end
+
+    # True while a pan/reset scroll has not yet reached its target.
+    def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
+
     # True while any screen effect is still animating (drives the wait flag).
-    def busy?; tinting? || shaking? || flashing?; end
+    def busy?; tinting? || shaking? || flashing? || panning?; end
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
@@ -1657,11 +1766,37 @@ module Game
       end
     end
 
+    # Pan-operation direction (RPG2000: 0 up, 1 right, 2 down, 3 left) -> unit
+    # camera delta. A positive x pans the view right, a positive y pans it down.
+    PAN_DELTA = { 0 => [0, -1], 1 => [1, 0], 2 => [0, 1], 3 => [-1, 0] }.freeze
+
+    # Pan (scroll) the view `distance` tiles in `direction` at `speed`, adding
+    # onto the current pan target — RPG2000's Pan Screen "pan" operation.
+    def pan(direction, distance, speed)
+      dx, dy = PAN_DELTA[direction] || [0, 0]
+      d = distance * Game::TILE
+      @pan_tx += dx * d
+      @pan_ty += dy * d
+      @pan_step = pan_step_for(speed)
+    end
+
+    # Scroll the pan back to the hero-centred origin at `speed` (Reset operation).
+    def pan_reset(speed)
+      @pan_tx = 0
+      @pan_ty = 0
+      @pan_step = pan_step_for(speed)
+    end
+
+    # Freeze / resume the camera following the hero (Lock / Unlock operations).
+    def pan_lock; @pan_locked = true; end
+    def pan_unlock; @pan_locked = false; end
+
     # Advance every active effect one frame. Called once per frame by the scene.
     def update
       update_tint
       update_shake
       update_flash
+      update_pan
     end
 
     private
@@ -1696,6 +1831,25 @@ module Game
       @flash_frames -= 1
       # Strength fades linearly from the peak power to 0 across the duration.
       @flash_strength = @flash_total > 0 ? @flash_power * @flash_frames / @flash_total : 0
+    end
+
+    # Step the pan offset toward its target, landing exactly on the last frame.
+    def update_pan
+      @pan_x = approach(@pan_x, @pan_tx, @pan_step)
+      @pan_y = approach(@pan_y, @pan_ty, @pan_step)
+    end
+
+    # Move `cur` toward `target` by at most `step` (never overshooting).
+    def approach(cur, target, step)
+      return target if (target - cur).abs <= step
+      cur < target ? cur + step : cur - step
+    end
+
+    # Pixels moved per frame for a pan speed (1..6): RPG2000's pan speeds roughly
+    # double per step. An approximation — the exact subpixel rate is a native
+    # refinement.
+    def pan_step_for(speed)
+      2**(Game.clamp(speed, 1, 6) - 1)
     end
 
     # A symmetric triangle wave in [-amp, amp] over `period` phase units (float-

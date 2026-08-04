@@ -1676,12 +1676,26 @@ class RPG2k
 
       def render
         px, py = player_pixel
-        cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
-        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        screen = @state.screen
+        hero_cx = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
+        hero_cy = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        # Pan Screen: while the camera is locked it holds where locking began
+        # (captured once) instead of following the hero; the pan offset then
+        # scrolls that view. Unlocked, it tracks the hero as usual.
+        if screen.pan_locked?
+          @locked_cam ||= [hero_cx, hero_cy]
+          base_x, base_y = @locked_cam
+        else
+          @locked_cam = nil
+          base_x = hero_cx
+          base_y = hero_cy
+        end
+        ox, oy = screen.pan_offset
         # Screen shake slides the whole view horizontally (the player moves with
         # the map, so the entire screen shakes); the map edge may show a sliver
-        # of void during the shake, which is fine.
-        cam_x -= @state.screen.shake_offset
+        # of void during the shake/pan, which is fine.
+        cam_x = base_x + ox - screen.shake_offset
+        cam_y = base_y + oy
 
         draw_parallax cam_x, cam_y
         draw_layers cam_x, cam_y

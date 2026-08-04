@@ -119,15 +119,16 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
+  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Conditional
+  Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access,
-  Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
-  Event, Change / Trade Event Location, Change Map Tileset, Proceed With
-  Movement, Halt All Movement,
+  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
+  Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
+  With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
   loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
@@ -155,14 +156,18 @@ The work below is roughly ordered by the critical path to a walkable game
   the next map load). **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
-  HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
-  Equipment** apply to a fixed actor, a variable-selected actor or the whole
-  party, clamped to each actor's maxima (Change HP honours the allow-death floor;
-  Change Parameters re-clamps current HP/MP when a maximum is lowered; Change
-  Level rescales base stats through the per-level growth curve; Change Equipment
-  folds an equipped item's bonuses into the effective stats). **Control
+  HP/MP**, **Full Heal**, **Change Parameters**, **Change EXP**, **Change Level**
+  and **Change Equipment** apply to a fixed actor, a variable-selected actor or
+  the whole party, clamped to each actor's maxima (Change HP honours the
+  allow-death floor; Change Parameters re-clamps current HP/MP when a maximum is
+  lowered; **Change EXP** re-derives the level from the RPG2000 standard curve
+  (`Game::Actor#exp_for_level`, ported from EasyRPG's `CalculateExp` off the
+  row's exp_basic/increase/correction) and **Change Level** rescales base stats
+  through the per-level growth curve, both keeping EXP and level consistent
+  without refilling current HP/MP, matching RPG_RT; Change Equipment folds an
+  equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
-  range, an **actor stat** (level / HP / MP / max HP-MP / attack / defence /
+  range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
@@ -219,10 +224,14 @@ The work below is roughly ordered by the critical path to a walkable game
   with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
   a colour + strength that fades to zero over the duration; like the tint it is
   the Ruby half (drawing the full-screen colour overlay at its strength needs
-  the same alpha-blend / viewport support in C++). All three share the `:screen`
-  wait. **Show Picture** now renders (see the interpreter bullet above). Pan,
-  transitions/fade and weather remain, and the tint/flash still need
-  `RGSS::Viewport` tone/alpha support in C++ to show
+  the same alpha-blend / viewport support in C++). **Pan Screen** (11060) drives
+  `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
+  follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
+  adds to the camera (so — like the shake — the pan **is** visible; while locked
+  the view holds where locking began). All four share the `:screen` wait. **Show
+  Picture** now renders (see the interpreter bullet above). Transitions/fade and
+  weather remain, and the tint/flash still need `RGSS::Viewport` tone/alpha
+  support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
