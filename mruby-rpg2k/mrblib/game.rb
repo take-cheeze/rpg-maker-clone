@@ -1170,6 +1170,21 @@ module Game
       @hp
     end
 
+    # Set HP to an absolute value, clamped to [0, max_hp], keeping the death
+    # state (戦闘不能) in sync: 0 knocks the actor out, a positive value revives a
+    # downed one. Unlike change_hp this is not blocked while dead -- it is the
+    # write-back used to persist a battle's outcome (a wounded or KO'd survivor)
+    # onto the party. Returns the new HP.
+    def set_hp(value)
+      @hp = Game.clamp(value, 0, @max_hp)
+      if @hp <= 0
+        add_state(DEATH_STATE)
+      else
+        remove_state(DEATH_STATE)
+      end
+      @hp
+    end
+
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
     def change_mp(delta)
       @mp = Game.clamp(@mp + delta, 0, @max_mp)
@@ -1302,6 +1317,12 @@ module Game
 
     def include_actor?(id); @actors.any? { |a| a.id == id }; end
     def actor_by_id(id); @actors.find { |a| a.id == id }; end
+
+    # Whether any party member is still standing. An empty party counts as wiped.
+    def any_alive?; @actors.any? { |a| !a.dead? }; end
+
+    # Whether the whole party is knocked out (戦闘不能) -- the game-over condition.
+    def all_dead?; !any_alive?; end
 
     def add_actor(id)
       return if include_actor?(id)
@@ -1592,34 +1613,84 @@ module Game
       end
     end
 
+    # The states a field skill changes, from its `state_effects` (a 0/1 byte per
+    # state, index i -> state id i+1). Per EasyRPG's Game_Battler::UseSkill, the
+    # field path is deterministic (no accuracy roll): with `reverse_state_effect`
+    # cleared (the default) the skill *cures* those states, with it set it
+    # *inflicts* them -- the opposite polarity to items, where the reverse flag
+    # marks the cure.
+    def skill_state_ids(sk)
+      set = sk.respond_to?(:state_effects) ? sk.state_effects : nil
+      return [] unless set
+      out = []
+      set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
+      out
+    end
+
+    # The states a field skill cures (the default, non-reverse case).
+    def skill_cured_states(sk)
+      return [] if sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      skill_state_ids(sk)
+    end
+
+    # The states a field skill inflicts (the reverse case).
+    def skill_inflicted_states(sk)
+      return [] unless sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      skill_state_ids(sk)
+    end
+
     # Whether casting skill `sid` on `target` would change anything -- used to grey
     # out a no-op (e.g. a heal on an already-full ally). Requires the caster to be
-    # able to cast it at all.
+    # able to cast it at all. A skill that cures a condition the target actually
+    # has (or inflicts one it lacks) is usable even when HP/SP are full.
     def skill_effective?(caster, sid, target)
       sk = db_skill(sid)
       return false unless sk && can_cast?(caster, sid)
       amount = skill_effect(sk, caster)
-      return false unless amount > 0
+      cured = skill_cured_states(sk)
+      inflicted = skill_inflicted_states(sk)
       skill_targets(sk, caster, target).any? do |t|
-        (sk.affect_hp && t.hp < t.max_hp) || (sk.affect_sp && t.mp < t.max_mp)
+        (amount > 0 && sk.affect_hp && t.hp < t.max_hp) ||
+          (amount > 0 && sk.affect_sp && t.mp < t.max_mp) ||
+          cured.any? { |s| t.state?(s) } ||
+          inflicted.any? { |s| !t.state?(s) }
       end
     end
 
-    # Cast field skill `sid` from `caster` on `target` (scope-dependent). Restores
-    # HP and/or SP by the skill effect to each target (clamped), then spends the
-    # caster's SP -- but only when it actually helped someone, so a wasted cast
-    # (everyone full) costs nothing. Returns the affected actors.
+    # Cast field skill `sid` from `caster` on `target` (scope-dependent). Applies
+    # the skill's status changes then restores HP and/or SP by the skill effect to
+    # each target (clamped), then spends the caster's SP -- but only when it
+    # actually helped someone, so a wasted cast (everyone full and unafflicted)
+    # costs nothing. States are applied before HP so a cure that clears the death
+    # state revives the target and the recovery then lands. Returns the affected
+    # actors.
     def cast_skill(caster, sid, target = nil)
       sk = db_skill(sid)
       return [] unless sk && can_cast?(caster, sid)
       amount = skill_effect(sk, caster)
+      cured = skill_cured_states(sk)
+      inflicted = skill_inflicted_states(sk)
       affected = []
       skill_targets(sk, caster, target).each do |t|
+        changed = false
+        cured.each do |s|
+          if t.state?(s)
+            t.remove_state(s)
+            changed = true
+          end
+        end
+        inflicted.each do |s|
+          unless t.state?(s)
+            t.add_state(s)
+            changed = true
+          end
+        end
         before_hp = t.hp
         before_mp = t.mp
         t.change_hp(amount) if sk.affect_hp && amount > 0
         t.change_mp(amount) if sk.affect_sp && amount > 0
-        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+        changed ||= t.hp != before_hp || t.mp != before_mp
+        affected.push(t) if changed
       end
       caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
       affected
@@ -2677,7 +2748,8 @@ module Game
     # member. `mp` / `max_mp` carry SP (skills spend it) and `spi` is the spirit
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
-                           :action, :defending, :mp, :max_mp, :spi, :command) do
+                           :action, :defending, :mp, :max_mp, :spi, :command,
+                           :actor) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -2686,9 +2758,11 @@ module Game
 
     def self.from_actor(a)
       Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
-                    nil, false, a.mp, a.max_mp, a.int, nil)
+                    nil, false, a.mp, a.max_mp, a.int, nil, a)
     end
 
+    # Enemies have no source actor (the last field stays nil), so the post-battle
+    # HP write-back skips them.
     def self.from_enemy(e)
       Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
                     nil, false, e.sp, e.max_sp, e.spi, nil)
@@ -2717,6 +2791,20 @@ module Game
 
     # True once one side has been wiped out (the battle is decided).
     def finished?; !alive?(@allies) || !alive?(@enemies); end
+
+    # Persist the fight's outcome onto the real party: write each ally combatant's
+    # final HP (and SP, which battle skills spend) back to its source actor, so
+    # damage taken in battle sticks and a combatant reduced to 0 comes out knocked
+    # out (戦闘不能). Combatants without a source actor -- enemies, or bare test
+    # snapshots -- are skipped. RPG2000 keeps the party's post-battle HP/SP; a
+    # downed member stays down until revived.
+    def apply_to_party
+      @allies.each do |c|
+        next unless c.actor
+        c.actor.set_hp(c.hp)
+        c.actor.mp = Game.clamp(c.mp, 0, c.actor.max_mp) if c.mp
+      end
+    end
 
     # Perform the next single action and return its log entry, or nil when the
     # battle is already decided (or has hit the round cap). Living battlers act
@@ -2924,6 +3012,58 @@ module Game
     end
   end
 
+  # A boat / ship / airship's saved location. RPG2000 stores one per vehicle in
+  # its own `.lsd` chunk (105 boat, 106 ship, 107 airship, each a SAVE_MOVABLE):
+  # the map it sits on, its tile position and facing, and its on-map graphic.
+  # Only that saved location is modelled here -- enough to round-trip a save so a
+  # parked vehicle stays where the player left it. Boarding / piloting a vehicle
+  # is not built yet (`map_id` 0 means it has never been placed).
+  class Vehicle
+    TYPES = [:boat, :ship, :airship].freeze
+
+    attr_accessor :map_id, :x, :y, :direction, :charset_name, :charset_index
+    attr_reader :type
+
+    def initialize(type, map_id = 0, x = 0, y = 0, direction = 2)
+      @type = type
+      @map_id = map_id || 0
+      @x = x || 0
+      @y = y || 0
+      @direction = direction || 2
+      @charset_name = ''
+      @charset_index = 0
+    end
+
+    # Whether the vehicle has been placed on a map (0 = never positioned).
+    def placed?; @map_id > 0; end
+
+    def to_h
+      { map_id: @map_id, x: @x, y: @y, direction: @direction,
+        charset_name: @charset_name, charset_index: @charset_index }
+    end
+
+    def load_h(h)
+      return unless h
+      @map_id = h[:map_id] || 0
+      @x = h[:x] || 0
+      @y = h[:y] || 0
+      @direction = h[:direction] || 2
+      @charset_name = h[:charset_name] || ''
+      @charset_index = h[:charset_index] || 0
+    end
+
+    # Populate from a parsed SAVE_MOVABLE chunk (a vehicle location in a `.lsd`).
+    def load_movable(m)
+      return unless m
+      @map_id = m.map_id || 0
+      @x = m.x || 0
+      @y = m.y || 0
+      @direction = m.direction || 2
+      @charset_name = m.charset_name || ''
+      @charset_index = m.charset_index || 0
+    end
+  end
+
   class State
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
@@ -3003,6 +3143,10 @@ module Game
       @system_graphic = nil
       @font_id = 0
       @weather = Weather.new
+      # The three vehicles' saved locations (boat / ship / airship), persisted in
+      # `.lsd` chunks 105-107. Unplaced until a save restores them.
+      @vehicles = { boat: Vehicle.new(:boat), ship: Vehicle.new(:ship),
+                    airship: Vehicle.new(:airship) }
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -3011,7 +3155,10 @@ module Game
       @pictures = {}
     end
 
-    attr_reader :pictures
+    attr_reader :pictures, :vehicles
+
+    # The saved location of vehicle `type` (:boat / :ship / :airship), or nil.
+    def vehicle(type); @vehicles[type]; end
 
     # Show (or replace) picture `id` with the given Picture options hash.
     def show_picture(id, opts)
@@ -3082,7 +3229,9 @@ module Game
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
         escape_target: @escape_target, system_bgm: @system_bgm,
         system_sfx: @system_sfx, screen_transitions: @screen_transitions,
-        system_graphic: @system_graphic, font_id: @font_id }
+        system_graphic: @system_graphic, font_id: @font_id,
+        vehicles: { boat: @vehicles[:boat].to_h, ship: @vehicles[:ship].to_h,
+                    airship: @vehicles[:airship].to_h } }
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
@@ -3151,6 +3300,22 @@ module Game
         hero[75] = leader.charset_index || 0
       end
       save[104] = hero
+
+      # Vehicle locations (105 boat / 106 ship / 107 airship). Only a placed
+      # vehicle is written, so a game that never positioned one leaves the chunk
+      # absent, exactly as RPG_RT does.
+      { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
+        v = @vehicles[type]
+        next unless v.placed?
+        mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+        mv[11] = v.map_id
+        mv[12] = v.x
+        mv[13] = v.y
+        mv[22] = v.direction
+        mv[73] = v.charset_name || ''
+        mv[75] = v.charset_index || 0
+        save[chunk] = mv
+      end
 
       sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
       sw = @switches.to_h
@@ -3278,6 +3443,11 @@ module Game
       party.load_state(items: items, gold: inv.gold, hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
       state.direction = hero.direction || 2
+      # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
+      # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
+      state.vehicle(:boat).load_movable(save.boat)
+      state.vehicle(:ship).load_movable(save.ship)
+      state.vehicle(:airship).load_movable(save.airship)
       # The leader's on-map sprite override (a Change Sprite Association), stored
       # in the hero chunk's CharSet fields.
       if party.leader && hero.charset_name && !hero.charset_name.empty?
@@ -3425,6 +3595,11 @@ module Game
       end
       state.system_graphic = h[:system_graphic]
       state.font_id = h[:font_id] || 0
+      if (v = h[:vehicles])
+        state.vehicle(:boat).load_h(v[:boat])
+        state.vehicle(:ship).load_h(v[:ship])
+        state.vehicle(:airship).load_h(v[:airship])
+      end
       state
     end
   end

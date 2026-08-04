@@ -235,9 +235,16 @@ The work below is roughly ordered by the critical path to a walkable game
   death state (or Full Recovery) revives at 1 HP — `Game::Actor#dead?`/`alive?`
   report it, and the KO'd HP-0 + state-1 pair round-trips through the `.lsd`. The
   **Change Condition** event command (10480) inflicts / cures a state on the
-  target actors, so events can poison, cure, KO, or revive. Still remaining:
-  *inflicting* states from combat (the non-reverse item case rolled against
-  `state_chance`, and skill / battle infliction), and party-wipe game over.
+  target actors, so events can poison, cure, KO, or revive. **Field skills change
+  status too**: `cast_skill` applies a skill's `state_effects` deterministically
+  (EasyRPG's field `Game_Battler::UseSkill` — no accuracy roll), curing them by
+  default and inflicting them when `reverse_state_effect` is set (the opposite
+  polarity to items); states apply before HP so a revive skill (curing 戦闘不能)
+  stands the ally up and its recovery then lands, and a cure skill is usable even
+  at full HP. A **party wipe now ends the game** (a game-over-mode battle defeat
+  returns to the title — see the Enemy Encounter entry). Still remaining:
+  inflicting states from **battle** (rolling `state_chance` / to-hit, the
+  non-reverse item case, enemy attacks).
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
@@ -285,8 +292,12 @@ The work below is roughly ordered by the critical path to a walkable game
   EXP / gold on a win. `#step` performs one action at a time and appends a `#log`
   entry (attacker / target / damage / defeated), so an on-screen battle can
   animate it action-by-action; `#run` steps to completion for the headless
-  resolution. It runs on Combatant snapshots, so the party's real HP is untouched
-  for now, and `Scene::Map` traces the fight to the console from the log.
+  resolution. It runs on Combatant snapshots, and `Battle#apply_to_party` then
+  **writes each survivor's final HP back to its actor** when the fight ends
+  (`Scene::Map#finish_battle`), so damage taken **persists** and a combatant
+  reduced to 0 comes out **knocked out** (戦闘不能, via `Actor#set_hp`) — a level-up
+  on victory does not heal. `Scene::Map` traces the fight to the console from the
+  log.
   Encounters now open a **battle screen** (driven by `Scene::Map` during the
   `:battle` wait, like the shop / inn): a status panel of the troop and each
   party member's HP, and **per-actor commands each round** — for every living
@@ -300,17 +311,24 @@ The work below is roughly ordered by the critical path to a walkable game
   per-actor menu is **Attack / Skill / Item / Defend** (single-target skills and
   battle medicines reuse the field formulas); the enemy troop is **drawn as
   battler sprites** (`Monster/<battler_name>`, placeholder block fallback, hidden
-  on death) over a plain battle field; and a **defeat ends the game** (return to
-  title) when the encounter's defeat mode is "game over" rather than a `[Defeat]`
-  handler. Still to come: criticals / attributes / damage variance and status
-  effects in the sim, all-target skill/item scopes, HP persistence across a
-  battle, the per-terrain backdrop and the RPG2000 Game Over graphic.
+  on death) over a plain battle field. **Post-battle HP now persists to the
+  party** — `Battle#apply_to_party` writes each survivor's final HP back through
+  `Game::Actor#set_hp`, so damage sticks and a member reduced to 0 comes out
+  戦闘不能 — and a **defeat ends the game** (return to title via
+  `perform_game_over`) when the encounter's defeat mode is "game over" (no
+  `[Defeat]` handler) and the party is wiped (`Game::Party#all_dead?`). Still to
+  come: criticals / attributes / damage variance and in-battle status infliction
+  (rolling `state_chance`), all-target skill/item scopes, the per-terrain
+  backdrop and the RPG2000 Game Over graphic.
   The remaining event commands (Inflict Damage, Name Input, Show Battle
-  Animation, vehicles, tile substitution, ...) are TODO. **Change System
+  Animation, vehicle boarding, tile substitution, ...) are TODO. **Change System
   Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the
   scene reloads the skin), **Change Screen Transitions** (10690) records the six
   teleport / battle transition styles (save chunks 111–116; modelled for save
   fidelity) and **Game Over** (12520) returns to the title, all handled.
+  **Vehicle locations** (boat / ship / airship) now persist in the save
+  (`Game::Vehicle`, `.lsd` chunks 105–107 / the Marshal save), though boarding
+  and piloting are still to come.
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

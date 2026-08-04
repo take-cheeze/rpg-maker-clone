@@ -423,6 +423,10 @@ class BattleStubActor
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
   end
   def gain_exp(n); @exp += n; end
+  # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
+  # HP absolutely; the stub has no state model, so just clamp to [0, max].
+  def set_hp(value); @hp = value < 0 ? 0 : (value > @max_hp ? @max_hp : value); end
+  def dead?; @hp <= 0; end
 end
 
 class BattleStubParty
@@ -430,6 +434,8 @@ class BattleStubParty
   attr_accessor :leader
   def initialize(actor = BattleStubActor.new); @actors = [actor]; @gold = 0; @leader = nil; end
   def gain_gold(n); @gold += n; end
+  def any_alive?; @actors.any? { |a| !a.dead? }; end
+  def all_dead?; !any_alive?; end
 end
 
 # A party the shop can charge and stock: gold plus an item-count bag, with the
@@ -1370,6 +1376,27 @@ check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   eq 0, st.party.actors.first.exp, 'no EXP on a loss'
   ok !st.switches[1], 'the Victory handler was skipped'
   ok st.switches[3], 'the Defeat handler ran'
+end
+
+check 'Enemy Encounter scene: a game-over defeat returns to the title' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # A bare encounter with defeat mode 0 (game over) and no handler block.
+  auto.event_commands = [ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # A frail hero the two Slimes overwhelm.
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  scene.update
+  battle_attack_to_end(scene)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result window
+  scene.update
+  RGSS::Input.triggered = []
+  # finish_battle wrote the wipe back to the party, then went to the title.
+  ok st.party.all_dead?, 'the party was wiped out'
+  parent = scene.instance_variable_get(:@parent)
+  ok parent.returned_to_title, 'a game-over defeat returns to the title screen'
 end
 
 check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
