@@ -1913,8 +1913,17 @@ class RPG2k
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
         @battle_ui[:battle].apply_to_party
+        # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
+        # party knocked out ends the game -- back to the title screen. Otherwise
+        # the event resumes down its Victory / Escape / Defeat branch.
+        game_over = result == :defeat && @battle_ui[:req][:defeat_game_over] &&
+                    @state.party.all_dead?
         close_battle
-        @interpreter.resume_battle(result)
+        if game_over
+          @parent.return_to_title
+        else
+          @interpreter.resume_battle(result)
+        end
       end
 
       def log_round(entries)

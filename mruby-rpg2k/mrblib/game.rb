@@ -1318,6 +1318,12 @@ module Game
     def include_actor?(id); @actors.any? { |a| a.id == id }; end
     def actor_by_id(id); @actors.find { |a| a.id == id }; end
 
+    # Whether any party member is still standing. An empty party counts as wiped.
+    def any_alive?; @actors.any? { |a| !a.dead? }; end
+
+    # Whether the whole party is knocked out (戦闘不能) -- the game-over condition.
+    def all_dead?; !any_alive?; end
+
     def add_actor(id)
       return if include_actor?(id)
       @actors.push Actor.new(@db, id)

@@ -241,9 +241,10 @@ The work below is roughly ordered by the critical path to a walkable game
   default and inflicting them when `reverse_state_effect` is set (the opposite
   polarity to items); states apply before HP so a revive skill (curing 戦闘不能)
   stands the ally up and its recovery then lands, and a cure skill is usable even
-  at full HP. Still remaining: inflicting states from **battle** (rolling
-  `state_chance` / to-hit, the non-reverse item case, enemy attacks) and
-  party-wipe game over.
+  at full HP. A **party wipe now ends the game** (a game-over-mode battle defeat
+  returns to the title — see the Enemy Encounter entry). Still remaining:
+  inflicting states from **battle** (rolling `state_chance` / to-hit, the
+  non-reverse item case, enemy attacks).
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
@@ -306,10 +307,13 @@ The work below is roughly ordered by the critical path to a walkable game
   is allowed. `Game::Battle` has the round-based API (`command_attack` /
   `command_defend` / `run_round`) alongside the headless `run`. Dismissing the
   result resumes the event and routes the `[Victory]` / `[Escape]` / `[Defeat]`
-  branch. Post-battle HP now persists to the party (see above). Still to come:
+  branch. Post-battle HP now persists to the party (see above), and a **defeat in
+  "game over" mode with the whole party knocked out returns to the title screen**
+  (`Scene::Map#finish_battle`, gated by `Game::Party#all_dead?`); a defeat routed
+  to a custom `[Defeat]` handler still runs the branch instead. Still to come:
   Skill / Item commands, criticals / attributes / variance in the sim, in-battle
   state infliction (rolling `state_chance`), per-turn animation from the log,
-  enemy / battler sprites, and game over on defeat.
+  enemy / battler sprites, and a dedicated Game Over graphic before the title.
   The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the

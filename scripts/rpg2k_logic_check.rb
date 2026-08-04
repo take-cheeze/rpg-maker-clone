@@ -2223,6 +2223,21 @@ check 'Actor#set_hp sets an absolute HP and syncs the death state' do
   eq false, a.state?(Game::Actor::DEATH_STATE)        # death state cleared
 end
 
+check 'Party#all_dead? / any_alive? track the game-over condition' do
+  st = party_state
+  eq true, st.party.any_alive?
+  eq false, st.party.all_dead?
+  st.party.actor_by_id(1).change_hp(-9999)            # leader down
+  eq true, st.party.any_alive?                        # the ally still stands
+  eq false, st.party.all_dead?
+  st.party.actor_by_id(2).change_hp(-9999)            # ally down too
+  eq false, st.party.any_alive?
+  eq true, st.party.all_dead?                         # whole party wiped
+  st.party.actor_by_id(1).full_heal                   # revive one
+  eq true, st.party.any_alive?
+  eq false, st.party.all_dead?
+end
+
 check 'State save round-trips per-actor status states' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
