@@ -87,17 +87,25 @@ EGLDisplay open_display() {
 #if defined(EGL_VERSION_1_5)
   EGLDisplay d = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
                                        EGL_DEFAULT_DISPLAY, nullptr);
-  if (d != EGL_NO_DISPLAY)
+  if (d != EGL_NO_DISPLAY) {
+    warn("display: surfaceless (1.5)", nullptr);
     return d;
+  }
 #endif
   auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
       eglGetProcAddress("eglGetPlatformDisplayEXT"));
   if (get_platform_display) {
     EGLDisplay d = get_platform_display(EGL_PLATFORM_SURFACELESS_MESA,
                                         EGL_DEFAULT_DISPLAY, nullptr);
-    if (d != EGL_NO_DISPLAY)
+    if (d != EGL_NO_DISPLAY) {
+      warn("display: surfaceless (EXT)", nullptr);
       return d;
+    }
   }
+  // Last resort: the default display. Under X11/Xvfb this is a window-system
+  // display where a no-surface/pbuffer make-current may behave differently than
+  // the surfaceless platform.
+  warn("display: eglGetDisplay(EGL_DEFAULT_DISPLAY) fallback", nullptr);
   return eglGetDisplay(EGL_DEFAULT_DISPLAY);
 }
 
@@ -165,6 +173,18 @@ Context* create(int width, int height) {
     warn("create: eglInitialize failed", nullptr);
     return nullptr;
   }
+  {
+    char buf[224];
+    const char* vnd = eglQueryString(dpy, EGL_VENDOR);
+    const char* ver = eglQueryString(dpy, EGL_VERSION);
+    const char* ext = eglQueryString(dpy, EGL_EXTENSIONS);
+    std::snprintf(buf, sizeof(buf), "vendor=%s version=%s surfaceless=%s",
+                  vnd ? vnd : "?", ver ? ver : "?",
+                  (ext && std::strstr(ext, "EGL_KHR_surfaceless_context"))
+                      ? "yes"
+                      : "no");
+    warn("create: EGL initialized", buf);
+  }
   if (!eglBindAPI(EGL_OPENGL_ES_API)) {
     warn("create: eglBindAPI(EGL_OPENGL_ES_API) failed", nullptr);
     return nullptr;
@@ -200,13 +220,26 @@ Context* create(int width, int height) {
   // config advertises EGL_PBUFFER_BIT); it exists only to satisfy make-current.
   EGLSurface surf = EGL_NO_SURFACE;
   if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl)) {
+    const EGLint surfaceless_err = eglGetError();
     const EGLint pb_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
     surf = eglCreatePbufferSurface(dpy, cfg, pb_attribs);
-    if (surf == EGL_NO_SURFACE || !eglMakeCurrent(dpy, surf, surf, egl)) {
-      warn("create: eglMakeCurrent failed (surfaceless and 1x1 pbuffer)",
-           nullptr);
-      if (surf != EGL_NO_SURFACE)
-        eglDestroySurface(dpy, surf);
+    if (surf == EGL_NO_SURFACE) {
+      char buf[160];
+      std::snprintf(buf, sizeof(buf),
+                    "surfaceless makeCurrent err=0x%04x; pbuffer create "
+                    "err=0x%04x",
+                    surfaceless_err, eglGetError());
+      warn("create: no bindable surface", buf);
+      eglDestroyContext(dpy, egl);
+      return nullptr;
+    }
+    if (!eglMakeCurrent(dpy, surf, surf, egl)) {
+      char buf[160];
+      std::snprintf(buf, sizeof(buf),
+                    "surfaceless err=0x%04x; pbuffer makeCurrent err=0x%04x",
+                    surfaceless_err, eglGetError());
+      warn("create: eglMakeCurrent failed (surfaceless and pbuffer)", buf);
+      eglDestroySurface(dpy, surf);
       eglDestroyContext(dpy, egl);
       return nullptr;
     }
