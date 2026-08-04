@@ -592,17 +592,23 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `rmmz_*` load order, and is wired into `src/main.cxx`'s maker sniff so an MZ
     game reports the pending WebGL backend cleanly instead of "no project
     found". Covered by `mruby-mvjs/test/mz_test.rb`.
-  - 🚧 M6.2 host reuse: run the `rmmz_*` scripts on the shared quickjs host to
-    reach `Scene_Boot` in logic. Note there is **no fetchable MZ test bed** —
-    MZ's engine ships only with the paid editor (no open-source release like
-    MV's MIT `rpgtkoolmv`), so MZ is verified against a user-supplied project,
-    not a committed/downloaded sample. Reading the real engine, the ordered
-    boot-path gaps before pixels are: (1) MZ's `main.js` is a dynamic
-    `<script>`-injection loader (not MV's `window.onload`), so the host must
-    drive the load sequence itself; (2) it inits the **Effekseer WASM**
-    runtime before `Scene_Boot` (needs a WASM shim or a no-op `effekseer`
-    stub); then M6.3.
+  - ✅ M6.2 host reuse (to the WebGL wall): `MZ#boot_probe`
+    (`mruby-mvjs/mrblib/mz.rb`) runs the `rmmz_*` scripts on the shared quickjs
+    host and calls `SceneManager.run(Scene_Boot)`, which reaches the renderer
+    boundary and stops — everything up to pixels works. There is **no fetchable
+    MZ test bed** (MZ's engine ships only with the paid editor, no open-source
+    release like MV's MIT `rpgtkoolmv`), so this path is verified against a
+    user-supplied project, not CI; the pure logic it leans on
+    (`MZ.runnable_scripts`, `MZ.host_globals_js`) is covered by
+    `mruby-mvjs/test/mz_test.rb`. The measured boot map (correcting the earlier
+    source-read guesses): PIXI v5.2.4 loads under quickjs; `rmmz_managers.js`
+    needs `HTMLVideoElement`/`HTMLImageElement` host globals (empty-constructor
+    stubs suffice); the Effekseer WASM init is **not** on the boot path (it
+    lives in the bypassed `main.js`, and `effekseer.min.js` loads without WASM),
+    so the only WASM-gated script is the audio-only `vorbisdecoder.js`, which is
+    skipped; the sole remaining blocker is WebGL (M6.3).
   - 🚧 M6.3 WebGL rendering: the WebGL-subset backend behind PIXI v5 (the bulk
     of the work — MZ dropped the Canvas2D renderer the MV bridge targets). The
-    exact gate is `SceneManager.run` → `Utils.canUseWebGL()` throwing unless
-    `canvas.getContext("webgl")` returns a real (LVGL-backed) context.
+    exact gate is `SceneManager.run` → `Utils.canUseWebGL()` throwing at
+    `rmmz_managers.js:1890` unless `canvas.getContext("webgl")` returns a real
+    (LVGL-backed) context.
