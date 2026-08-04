@@ -28,6 +28,20 @@ class RPGXP
     # scripts needs both eval and a complete-enough RGSS class library.
     ENABLED_ENV = "RGSS_SCRIPT_HOST".freeze
 
+    # True while the host's blocking `Main` runs inside the driver Fiber (see
+    # RPGXP#setup_script_host_driver). The wrapped Graphics.update reads this to
+    # decide whether to yield the fiber once per frame — so the flag is only ever
+    # set on the script-host path and the built-in flow never yields. See
+    # docs/adr/0023-rpgxp-script-host-frame-driver.md.
+    @driving = false
+    def self.driving?
+      @driving
+    end
+
+    def self.driving=(v)
+      @driving = v
+    end
+
     # Whether the runtime can eval Ruby source at all (mruby-eval present, or
     # CRuby). Kernel#eval is a public method under mruby-eval and a private one
     # under CRuby; the private check is itself CRuby-only (mruby's Module has no
