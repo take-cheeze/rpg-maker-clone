@@ -1810,6 +1810,10 @@ module Game
       @pan_ty = 0
       @pan_step = 1     # pixels moved toward the target per frame
       @pan_locked = false # when true the scene stops the camera following the hero
+      @fade = 0            # screen erasure: 0 fully visible .. 255 fully black
+      @fade_target = 0     # the level the current transition eases toward
+      @fade_frames = 0     # frames left in the current fade (0 = settled)
+      @fade_transition = 0 # RPG2000 transition style (see Erase/Show Screen)
     end
 
     # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
@@ -1843,8 +1847,25 @@ module Game
     # True while a pan/reset scroll has not yet reached its target.
     def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
 
+    # Screen erasure level (0 fully visible .. 255 fully black). The scene draws
+    # a black overlay at this opacity — the native half still to come, like the
+    # tint and flash overlays — so the level is modelled but does not yet darken
+    # the screen.
+    def fade_level; @fade; end
+
+    # The RPG2000 transition style requested by the last Erase / Show Screen
+    # (0 = fade, higher = block / stripe / scroll variants). Recorded for
+    # fidelity; only the fade is modelled.
+    def fade_transition; @fade_transition; end
+
+    # True while an erase / show fade is still in progress.
+    def fading?; @fade_frames > 0; end
+
+    # True once the screen is fully erased (held black until a Show Screen).
+    def erased?; @fade >= 255; end
+
     # True while any screen effect is still animating (drives the wait flag).
-    def busy?; tinting? || shaking? || flashing? || panning?; end
+    def busy?; tinting? || shaking? || flashing? || panning? || fading?; end
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
@@ -1892,6 +1913,19 @@ module Game
       end
     end
 
+    # Erase Screen: fade the screen out to black over `frames` frames using the
+    # given RPG2000 transition style. Held black afterwards until #show. A no-op
+    # (settles immediately) when the screen is already fully erased.
+    def erase(transition, frames)
+      fade_to(255, transition, frames)
+    end
+
+    # Show Screen: fade the screen back in from black over `frames` frames. A
+    # no-op when the screen is already fully visible.
+    def show(transition, frames)
+      fade_to(0, transition, frames)
+    end
+
     # Pan-operation direction (RPG2000: 0 up, 1 right, 2 down, 3 left) -> unit
     # camera delta. A positive x pans the view right, a positive y pans it down.
     PAN_DELTA = { 0 => [0, -1], 1 => [1, 0], 2 => [0, 1], 3 => [-1, 0] }.freeze
@@ -1923,9 +1957,30 @@ module Game
       update_shake
       update_flash
       update_pan
+      update_fade
     end
 
     private
+
+    # Start a fade toward `target` (0 visible / 255 black) over `frames` frames.
+    # Already at the target -> settle immediately so the command does not wait.
+    def fade_to(target, transition, frames)
+      @fade_transition = transition
+      @fade_target = target
+      if frames <= 0 || @fade == target
+        @fade = target
+        @fade_frames = 0
+      else
+        @fade_frames = frames
+      end
+    end
+
+    def update_fade
+      return if @fade_frames <= 0
+      @fade += (@fade_target - @fade) / @fade_frames
+      @fade_frames -= 1
+      @fade = @fade_target if @fade_frames.zero? # land exactly on the target
+    end
 
     def update_tint
       return if @frames <= 0

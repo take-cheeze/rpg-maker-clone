@@ -1006,6 +1006,61 @@ check 'Pan Screen (op 2) with a wait pauses until the scroll finishes' do
   eq [16, 0], st.screen.pan_offset
 end
 
+# -- Erase / Show Screen ------------------------------------------------------
+
+check 'Erase Screen fades to black, pauses the event, then holds erased' do
+  st = new_state
+  eq 0, st.screen.fade_level, 'screen visible by default'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Erase Screen suspends until the fade settles'
+  eq :screen, it.wait_kind
+  ok st.screen.fading?, 'the fade is in progress'
+  ok !st.switches[1], 'the next command has not run yet'
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  eq 255, st.screen.fade_level, 'fully black'
+  ok st.screen.erased?, 'the screen is held erased'
+  it.resume
+  it.update
+  eq true, st.switches[1], 'the event continued once the fade settled'
+end
+
+check 'Show Screen fades back in from black' do
+  st = new_state
+  st.screen.erase(0, 32)
+  st.screen.update until !st.screen.fading? # start fully black
+  eq 255, st.screen.fade_level
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_SCREEN, [0])])
+  it.update
+  ok it.waiting?, 'Show Screen also waits for its fade'
+  st.screen.update until !st.screen.fading?
+  eq 0, st.screen.fade_level, 'fully visible again'
+  ok !st.screen.erased?
+end
+
+check 'Show Screen when already visible does not pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_SCREEN, [0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok !it.waiting?, 'a no-op show settles immediately'
+  eq true, st.switches[2], 'the event ran straight through'
+end
+
+check 'Erase Screen records the transition style and ramps the level' do
+  st = new_state
+  st.screen.erase(3, 32) # transition style 3 (a block/stripe variant)
+  eq 3, st.screen.fade_transition, 'the style is recorded for fidelity'
+  before = st.screen.fade_level
+  st.screen.update
+  ok st.screen.fade_level > before, 'the level eases toward black'
+  ok st.screen.fade_level < 255, 'over time, not instantly'
+end
+
 check 'conditional branch on the timer' do
   st = new_state
   st.timer_frames = 30 * 60 # 30 seconds remaining
