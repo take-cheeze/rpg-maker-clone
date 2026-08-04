@@ -145,7 +145,7 @@ jobs:
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
-      # `exe_open` test in CMakeLists.txt); MV runs=100..106 below. Every MV
+      # `exe_open` test in CMakeLists.txt); MV runs=100..107 below. Every MV
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -243,6 +243,16 @@ jobs:
               nix develop -c xvfb-run --server-num=106 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_menu_test --mv_screenshot=ss/mv_menu.png
+
+          # Confirm the save path works: New Game -> map, then a save+load
+          # round-trip through DataManager, logging `[MV-SAVE] saved=.. exists=..
+          # loaded=..`. Non-visual, so no screenshot.
+          - name: MV save smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run --server-num=107 timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=6000 --game_dir data/mv-sample \
+                --mv_new_game --mv_save_test
 
       - name: Upload MV screenshot
         continue-on-error: true

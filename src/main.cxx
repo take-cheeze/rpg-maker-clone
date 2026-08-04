@@ -66,6 +66,13 @@ DEFINE_bool(
     "For RPG Maker MV: once on the map, press the cancel/menu button (implies "
     "--mv_new_game to reach the map) and log whether Scene_Menu opened, so a "
     "headless run confirms the menu path works. Used in CI");
+DEFINE_bool(
+    mv_save_test,
+    false,
+    "For RPG Maker MV: once on the map, save to a slot and load it back "
+    "(implies --mv_new_game to reach the map) and log whether the save/load "
+    "round-trip succeeded, so a headless run confirms the save path works. "
+    "Used in CI");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -462,6 +469,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_MENU_TEST"),
                 mrb_bool_value(FLAGS_mv_menu_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MV_SAVE_TEST"),
+                mrb_bool_value(FLAGS_mv_save_test));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
