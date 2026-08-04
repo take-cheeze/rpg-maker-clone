@@ -2445,8 +2445,10 @@ class RPG2k
         return if items.empty?
         id, = items[@item_index]
         it = @state.party.db_item(id)
-        if it && it.scope == 1
-          apply_item(id, nil)          # all-ally: no target prompt
+        # Only an all-ally medicine skips the target prompt; single-target
+        # medicines and skill books (always one actor) ask who to use it on.
+        if it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
+          apply_item(id, nil)
         else
           @pending_item = id
           @mode = :target

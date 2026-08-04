@@ -1250,11 +1250,12 @@ FakeActorSystem = Struct.new(:party)
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
-                      :price)
+                      :price, :skill_id)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
-              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0)
+              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
+              skill_id: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
-               rhp, rhp_rate, rsp, rsp_rate, price)
+               rhp, rhp_rate, rsp, rsp_rate, price, skill_id)
 end
 class FakeActorDB
   attr_reader :player, :system, :item
@@ -1643,6 +1644,36 @@ check 'use_item restores MP and item_effective? tracks the SP deficit' do
   st.party.use_item(6, hero)
   eq 25, hero.mp                               # 10 + 15
   eq 0, st.party.item_count(6)
+end
+
+check 'field_items includes skill books alongside medicines' do
+  items = { 5 => fake_item(type: 6, rhp: 10),       # medicine
+            8 => fake_item(type: 7, skill_id: 42),  # skill book
+            3 => fake_item(type: 1, atk: 5) }       # weapon (not usable)
+  st = item_party(items)
+  [5, 8, 3].each { |id| st.party.gain_item(id, 1) }
+  eq [[5, 1], [8, 1]], st.party.field_items
+end
+
+check 'a skill book teaches its skill to the target and is consumed' do
+  st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
+  st.party.gain_item(8, 2)
+  hero = st.party.leader
+  eq false, hero.knows_skill?(42)
+  eq true, st.party.item_effective?(8, hero)
+  eq [hero], st.party.use_item(8, hero)
+  eq true, hero.knows_skill?(42)
+  eq 1, st.party.item_count(8)                 # one book consumed
+end
+
+check 'a skill book on an actor who already knows the skill does nothing' do
+  st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
+  st.party.gain_item(8, 1)
+  hero = st.party.leader
+  hero.learn_skill(42)
+  eq false, st.party.item_effective?(8, hero)
+  eq [], st.party.use_item(8, hero)
+  eq 1, st.party.item_count(8)                 # not consumed
 end
 
 # -- Field equip menu (Game::Party bag-aware equip) --------------------------
