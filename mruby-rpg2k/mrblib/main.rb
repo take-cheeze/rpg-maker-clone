@@ -2168,7 +2168,8 @@ class RPG2k
         @battle_ui[:battle].command_skill(current_actor, target,
                                           name: sk.name, cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
-                                          inflict: c[:inflict], chance: c[:chance])
+                                          inflict: c[:inflict], chance: c[:chance],
+                                          variance: c[:variance] || 0)
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
