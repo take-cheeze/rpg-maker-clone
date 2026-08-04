@@ -1265,6 +1265,75 @@ mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
   return self;
 }
 
+// RGSS Bitmap#hue_change(hue): rotate every pixel's hue by `hue` degrees,
+// preserving saturation, value and alpha (an RGB -> HSV -> RGB pass, matching
+// RMXP's hue rotation). A hue of 0 (mod 360) is a no-op.
+mrb_value bmp_hue_change(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  mrb_int hue;
+  mrb_get_args(M, "i", &hue);
+  hue = ((hue % 360) + 360) % 360;
+  if (hue == 0)
+    return self;
+  for (int32_t y = 0; y < b.height; ++y) {
+    for (int32_t x = 0; x < b.width; ++x) {
+      int r, g, bl, a;
+      bmp_read(b, x, y, r, g, bl, a);
+      const double rf = r / 255.0, gf = g / 255.0, bf = bl / 255.0;
+      const double mx = std::max(rf, std::max(gf, bf));
+      const double mn = std::min(rf, std::min(gf, bf));
+      const double delta = mx - mn;
+      double h = 0.0;
+      if (delta > 0.0) {
+        if (mx == rf)
+          h = 60.0 * std::fmod((gf - bf) / delta, 6.0);
+        else if (mx == gf)
+          h = 60.0 * ((bf - rf) / delta + 2.0);
+        else
+          h = 60.0 * ((rf - gf) / delta + 4.0);
+        if (h < 0.0)
+          h += 360.0;
+      }
+      const double s = mx == 0.0 ? 0.0 : delta / mx;
+      const double v = mx;
+      h = std::fmod(h + hue, 360.0);
+      // HSV -> RGB.
+      const double c = v * s;
+      const double xx = c * (1.0 - std::fabs(std::fmod(h / 60.0, 2.0) - 1.0));
+      const double m = v - c;
+      double nr, ng, nb;
+      if (h < 60.0) {
+        nr = c;
+        ng = xx;
+        nb = 0.0;
+      } else if (h < 120.0) {
+        nr = xx;
+        ng = c;
+        nb = 0.0;
+      } else if (h < 180.0) {
+        nr = 0.0;
+        ng = c;
+        nb = xx;
+      } else if (h < 240.0) {
+        nr = 0.0;
+        ng = xx;
+        nb = c;
+      } else if (h < 300.0) {
+        nr = xx;
+        ng = 0.0;
+        nb = c;
+      } else {
+        nr = c;
+        ng = 0.0;
+        nb = xx;
+      }
+      bmp_put(b, x, y, (nr + m) * 255.0, (ng + m) * 255.0, (nb + m) * 255.0, a);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
 mrb_value bmp_get_pixel(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y;
@@ -3993,6 +4062,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(3));
   mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
+  mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
