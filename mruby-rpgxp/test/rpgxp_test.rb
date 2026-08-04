@@ -938,3 +938,15 @@ assert "ScriptHost.install_kernel wires load_data / save_data round-trip" do
   probe.send(:save_data, { "hp" => 30 }, "ScriptHostProbe.rxdata")
   assert_equal({ "hp" => 30 }, probe.send(:load_data, "ScriptHostProbe.rxdata"))
 end
+
+# The RGSS script host needs Kernel#sprintf / #format / String#% (mruby-sprintf)
+# to run the stock scripts that format numbers; confirm the gem is linked into
+# the build and the integer/string specs the scripts use produce the right text.
+assert "Kernel#sprintf / #format / String#% are available for the script host" do
+  assert_equal "05", sprintf("%02d", 5)
+  assert_equal "id=007", format("id=%03d", 7)
+  assert_equal "0007", ("%0*d" % [4, 7])   # dynamic width, as the clock uses
+  assert_equal "+5", sprintf("%+d", 5)
+  assert_equal "S [0012-3456]", sprintf("S [%04d-%04d]", 12, 3456)
+  assert_equal "  hi", ("%4s" % "hi")
+end

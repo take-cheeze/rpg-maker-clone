@@ -72,12 +72,13 @@ side already implements in `Game::ChipsetLayout` (portable reference).
 RGSS defaults, so scripts that create and drive a `Plane` run. **Remaining:** the
 native tiling, scrolling full-viewport blit (map parallax and fog).
 
-### 5. `Kernel#sprintf` / `String#%` ❌ (small but pervasive)
+### 5. `Kernel#sprintf` / `String#%` ✅ (mruby-sprintf gem)
 
-Scripts use `sprintf` (~9, e.g. `sprintf("%02d", n)` for clock/number display).
-This mruby build does not bundle `sprintf`/`format` (see the note in
-`mruby-rpgxp/mrblib/rgss_data.rb`). Either add the `mruby-sprintf` gem or provide
-a minimal formatter. `exit` (1 use, from `Interpreter`) is also assumed.
+Scripts use `sprintf` (~9, e.g. `%02d`/`%04d` clocks and ids, `%+d`, `%0*d`).
+The `mruby-sprintf` core gem is now in the build (`build_config.rb`), providing
+`Kernel#sprintf`/`#format` and `String#%`. Covered by the gem's own tests plus a
+`mruby-rpgxp/test` availability check. `exit` (1 use, from `Interpreter`) is
+still assumed and not yet provided.
 
 ## Notes
 

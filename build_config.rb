@@ -4,6 +4,10 @@ def rpg_maker_gems(conf)
   conf.gem core: 'mruby-hash-ext'
   conf.gem core: 'mruby-io'
   conf.gem core: 'mruby-numeric-ext'
+  # Kernel#sprintf / #format and String#%: the RGSS script host runs the game's
+  # bundled scripts, which format numbers with sprintf ("%02d" clocks, "%04d"
+  # ids, "%+d", "%0*d", …). Not in the default gem set, so pull it in explicitly.
+  conf.gem core: 'mruby-sprintf'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 
