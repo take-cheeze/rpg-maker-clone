@@ -107,6 +107,17 @@ class RPGXP
         id && @db.actors[id]
       end
 
+      # The live Game::Actor for actor `id` (any database actor, not only party
+      # members), built from the database on first use and memoised so its
+      # mutable state -- once the Change Actor commands mutate it -- persists
+      # across the game, the way RMXP's `$game_actors[id]` does. Returns nil for
+      # an unknown id.
+      def actor(id)
+        return nil if id.nil? || id == 0 || @db.actors[id].nil?
+        @actors ||= {}
+        @actors[id] ||= Actor.new(@db, id)
+      end
+
       # Portable save payload (our own Marshal format, not the RMXP .rxdata save).
       def to_h
         { map_id: @map_id, x: @x, y: @y, direction: @direction,
@@ -144,6 +155,85 @@ class RPGXP
       def hash_to_plain(h)
         out = {}
         h.each { |k, v| out[k] = v }
+        out
+      end
+    end
+
+    # A party actor's live menu/battle state, wrapping its RPG::Actor database
+    # record (and RPG::Class). Level-derived stats come straight from the actor's
+    # `parameters` Table (kind 0 max HP, 1 max SP, 2 str, 3 dex, 4 agi, 5 int),
+    # the known skills from the class's learnings up to the current level, and the
+    # equipment from the actor's default weapon and four armor slots. The Change
+    # Actor event commands will mutate this object rather than the shared database
+    # record; for now it exposes what the actor Conditional Branch sub-conditions
+    # (skill learned / weapon / armor equipped) need to read.
+    class Actor
+      # Parameter kinds indexing the RPG::Actor#parameters Table.
+      PARAM_MAXHP = 0
+      PARAM_MAXSP = 1
+      PARAM_STR   = 2
+      PARAM_DEX   = 3
+      PARAM_AGI   = 4
+      PARAM_INT   = 5
+
+      attr_reader :id
+      attr_accessor :level, :hp, :sp, :skills,
+                    :weapon_id, :armor1_id, :armor2_id, :armor3_id, :armor4_id
+
+      def initialize(db, id)
+        @db = db
+        @id = id
+        @record = db.actors[id]
+        raise "No such actor: #{id}" if @record.nil?
+        @class = db.classes[@record.class_id]
+        @level = @record.initial_level
+        @weapon_id = @record.weapon_id
+        @armor1_id = @record.armor1_id
+        @armor2_id = @record.armor2_id
+        @armor3_id = @record.armor3_id
+        @armor4_id = @record.armor4_id
+        @skills = learnable_skills(@level)
+        @hp = max_hp
+        @sp = max_sp
+      end
+
+      # The actor's database display name.
+      def name; @record.name; end
+
+      # A level-derived stat read from the parameters table (`parameters[kind,
+      # level]`); level is 1-based, matching the table the editor writes.
+      def param(kind); @record.parameters[kind, @level]; end
+      def max_hp; param(PARAM_MAXHP); end
+      def max_sp; param(PARAM_MAXSP); end
+      def str;    param(PARAM_STR);   end
+      def dex;    param(PARAM_DEX);   end
+      def agi;    param(PARAM_AGI);   end
+      def int;    param(PARAM_INT);   end
+
+      # -- Conditional Branch actor predicates --------------------------------
+      # Matched to RMXP's command_111 actor tests (exact-match on the equipped
+      # weapon / any of the four armor slots), so they mirror the editor's
+      # behaviour including its quirks (an id of 0 tests the empty slot).
+
+      def knows_skill?(skill_id); @skills.include?(skill_id); end
+
+      def weapon_equipped?(weapon_id); @weapon_id == weapon_id; end
+
+      def armor_equipped?(armor_id)
+        armor_id == @armor1_id || armor_id == @armor2_id ||
+          armor_id == @armor3_id || armor_id == @armor4_id
+      end
+
+      private
+
+      # The skill ids the class has taught by `level` (every learning at or below
+      # it). RMXP seeds an actor's known skills this way at its starting level.
+      def learnable_skills(level)
+        out = []
+        learnings = @class && @class.learnings
+        (learnings || []).each do |l|
+          out.push(l.skill_id) if l.skill_id && l.level && l.level <= level
+        end
         out
       end
     end

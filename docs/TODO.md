@@ -441,18 +441,27 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   a variable amount, the Conditional Branch **item / weapon / armor** possession
   tests (types 8/9/10) run, and Control Variables can read an **item count** as
   its operand. *Change Party Member* (129) adds/removes actors from the party,
-  the **actor "is in the party"** conditional (type 4) is evaluated, and Control
-  Variables also reads the **"other" game quantities** — map id, party size and
-  gold (operand type 7). **Battle Processing** (301) navigates its result
+  and Control Variables also reads the **"other" game quantities** — map id,
+  party size and gold (operand type 7). A **per-actor model** (`Game::Actor`)
+  now wraps each `RPG::Actor` record and its class: level-derived stats read
+  straight from the actor's `parameters` table (max HP/SP, str/dex/agi/int), the
+  known skills from the class's learnings up to the current level, and the
+  equipment from the actor's weapon / four armor slots; `State#actor(id)`
+  memoises one live actor per id (like RMXP's `$game_actors`). It powers the full
+  **actor Conditional Branch** (type 4): *is in the party* (0), *name is* (1),
+  *skill learned* (2), *weapon equipped* (3) and *armor equipped* (4), matched to
+  RMXP's `command_111`. **Battle Processing** (301) navigates its result
   branches — If Win (601), If Escape (602), If Lose (603), branch end (604) —
   running only the branch that matches the resolved outcome (a win by default,
   configurable via the interpreter's `battle_outcome`, since there is no battle
   system yet); the real `OpenGame.exe` XP test bed uses this structure. Covered
   by `mruby-rpgxp/test` and driven over the real test bed by
-  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets,
-  the remaining actor / enemy / character conditional sub-conditions, and the
-  many screen-effect / picture commands, plus the battle system itself that
-  Battle Processing would drive (skipped for now).
+  `scripts/rpgxp_testbed_check.rb` (which now builds a `Game::Actor` for every
+  database actor). Still to come: the **Change Actor** commands (Change HP/SP,
+  EXP, Level, Parameters, Skills, Equipment) that mutate the new model, the actor
+  *state* (5) and enemy / character conditional sub-conditions, vehicle
+  move-route targets, and the many screen-effect / picture commands, plus the
+  battle system itself that Battle Processing would drive (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1

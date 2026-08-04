@@ -108,9 +108,10 @@ class Checker
 
     check_system(db.system)
     check_actors(db.actors)
+    @db = db
+    check_game_actors(db)
     check_tilesets(db.tilesets)
     @resolver = CommonResolver.new(db.common_events)
-    @db = db
     check_maps(db)
     check_archive(dir, db)
   rescue => ex
@@ -137,6 +138,29 @@ class Checker
       expect(a.parameters.is_a?(Table), "actor #{a.id} parameters must be a Table")
     end
     puts "  actors: #{actors.compact.size} (e.g. #{actors.compact.first&.name.inspect})"
+  end
+
+  # Build the live RPGXP::Game::Actor for every database actor and assert its
+  # derived state resolves: stats read from the parameters table at the actor's
+  # level (so a mis-sized table or bad level surfaces here), HP/SP start full, and
+  # the skills / equipment lists are well-formed. This exercises the actor model
+  # the Change-Actor commands and actor conditionals build on, over real data.
+  def check_game_actors(db)
+    built = 0
+    db.actors.compact.each do |a|
+      ga = RPGXP::Game::Actor.new(db, a.id)
+      expect(ga.max_hp.to_i > 0, "actor #{a.id} Game::Actor max_hp must be positive (got #{ga.max_hp.inspect})")
+      expect(ga.max_sp.to_i >= 0, "actor #{a.id} Game::Actor max_sp must be non-negative")
+      expect(ga.hp == ga.max_hp && ga.sp == ga.max_sp, "actor #{a.id} must start at full HP/SP")
+      expect(ga.skills.is_a?(Array), "actor #{a.id} skills must be an Array")
+      expect([true, false].include?(ga.weapon_equipped?(a.weapon_id.to_i)),
+             "actor #{a.id} weapon_equipped? must be boolean")
+      built += 1
+    end
+    first = db.actors.compact.first
+    sample = first && RPGXP::Game::Actor.new(db, first.id)
+    puts "  game-actors: #{built} built" +
+         (sample ? " (e.g. #{sample.name.inspect} Lv#{sample.level} HP#{sample.max_hp} skills=#{sample.skills.size})" : "")
   end
 
   def check_tilesets(tilesets)
