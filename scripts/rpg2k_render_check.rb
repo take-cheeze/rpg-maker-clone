@@ -200,6 +200,91 @@ check 'anim_c cycles 0..3 every 6 frames' do
   eq [0, 1, 2, 3, 0], (0..4).map { |k| L.anim_c(k * 6) }
 end
 
+# -- event tile substitution (EasyRPG Cache::Tile port) -----------------------
+
+check 'event_tile_rect maps the three tile palettes to the chipset lower-right' do
+  # tile 0 and out-of-range ids fall back to the first (empty) tile.
+  eq [288, 128, 16, 16], L.event_tile_rect(0)
+  eq [288, 128, 16, 16], L.event_tile_rect(144)
+  eq [288, 128, 16, 16], L.event_tile_rect(-1)
+  # Palette 1 (ids 1..47) starts at (288,128) and runs 6 wide.
+  eq [304, 128, 16, 16], L.event_tile_rect(1)
+  eq [368, 240, 16, 16], L.event_tile_rect(47)
+  # Palette 2 (ids 48..95) starts at (384,0).
+  eq [384, 0, 16, 16], L.event_tile_rect(48)
+  eq [464, 112, 16, 16], L.event_tile_rect(95)
+  # Palette 3 (ids 96..143) starts at (384,128). idx 97 is Nepheshel's ground
+  # decoration event.
+  eq [384, 128, 16, 16], L.event_tile_rect(96)
+  eq [400, 128, 16, 16], L.event_tile_rect(97)
+  eq [464, 240, 16, 16], L.event_tile_rect(143)
+end
+
+check 'every event tile id lands inside the 480x256 chipset' do
+  (0..160).each do |t|
+    sx, sy, w, h = L.event_tile_rect(t)
+    ok sx >= 0 && sx + w <= L::CHIPSET_W, "tile #{t} x #{sx}+#{w}"
+    ok sy >= 0 && sy + h <= L::CHIPSET_H, "tile #{t} y #{sy}+#{h}"
+  end
+end
+
+# -- event graphic frame selection (Game::EventGraphic) -----------------------
+
+EG = Game::EventGraphic
+
+check 'LCF page facing converts to the numpad convention' do
+  eq 8, EG.numpad_direction(0) # up
+  eq 6, EG.numpad_direction(1) # right
+  eq 2, EG.numpad_direction(2) # down
+  eq 4, EG.numpad_direction(3) # left
+  eq 2, EG.numpad_direction(nil) # unknown -> down
+end
+
+check 'pattern_column walks middle,right,middle,left' do
+  eq [1, 2, 1, 0], (0..3).map { |p| EG.pattern_column(p) }
+  eq 1, EG.pattern_column(4) # wraps
+end
+
+check 'a fixed-graphic event never animates or turns' do
+  # anim type 4: always the page frame regardless of facing / phase / motion.
+  eq [2, 1], EG.frame(EG::FIXED_GRAPHIC, 2, 1, 8, 3, true)
+  eq [6, 0], EG.frame(EG::FIXED_GRAPHIC, 6, 0, 4, 1, false)
+end
+
+check 'a spinning event derives facing from the phase' do
+  eq [2, 1], EG.frame(EG::SPIN, 8, 2, 4, 0, false)
+  eq [4, 1], EG.frame(EG::SPIN, 8, 2, 4, 1, false)
+  eq [8, 1], EG.frame(EG::SPIN, 8, 2, 4, 2, false)
+  eq [6, 1], EG.frame(EG::SPIN, 8, 2, 4, 3, false)
+end
+
+check 'ordinary events walk while moving and rest on the page pose when idle' do
+  # non-continuous (0): faces its movement, walks only while stepping.
+  eq [6, 2], EG.frame(EG::NON_CONTINUOUS, 2, 1, 6, 1, true)  # moving -> walk col
+  eq [6, 1], EG.frame(EG::NON_CONTINUOUS, 2, 1, 6, 1, false) # idle -> page pattern
+  # fixed-direction non-continuous (2): keeps the page facing.
+  eq [2, 2], EG.frame(EG::FIXED_NON_CONTINUOUS, 2, 1, 6, 1, true)
+  eq [2, 1], EG.frame(EG::FIXED_NON_CONTINUOUS, 2, 1, 6, 1, false)
+end
+
+check 'continuous events animate even while standing still' do
+  # continuous (1): faces movement, always cycles regardless of `moving`.
+  eq [6, 2], EG.frame(EG::CONTINUOUS, 2, 1, 6, 1, false)
+  # fixed continuous (3): page facing, always cycles.
+  eq [2, 2], EG.frame(EG::FIXED_CONTINUOUS, 2, 1, 6, 1, false)
+end
+
+check 'animation-type predicates classify the six types' do
+  ok EG.fixed_direction?(EG::FIXED_NON_CONTINUOUS)
+  ok EG.fixed_direction?(EG::FIXED_GRAPHIC)
+  ok !EG.fixed_direction?(EG::NON_CONTINUOUS)
+  ok EG.continuous?(EG::CONTINUOUS)
+  ok EG.continuous?(EG::SPIN)
+  ok !EG.continuous?(EG::NON_CONTINUOUS)
+  ok EG.animated?(EG::NON_CONTINUOUS)
+  ok !EG.animated?(EG::FIXED_GRAPHIC)
+end
+
 if $failures.zero?
   puts "rpg2k render check: #{$checks} checks passed"
   exit 0

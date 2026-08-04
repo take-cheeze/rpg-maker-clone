@@ -67,9 +67,16 @@ The work below is roughly ordered by the critical path to a walkable game
   Passability still drives collision. Geometry is pinned by
   `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
   Tiles) substitution and screen-tone tinting of tiles.
-- 🚧 Character sprites — the party leader renders from its CharSet graphic
-  (`Game::CharSet`, 4-direction, 3 walk frames); NPC/event sprites are drawn as
-  markers for now
+- ✅ Character sprites — the party leader and every map event render from their
+  CharSet graphic (`Game::CharSet`, 4-direction, 3 walk frames). Events also
+  draw a chipset tile when their graphic is a tile substitution (empty CharSet
+  name), composite into the correct layer relative to the hero (below / above /
+  same-layer y-sorted), honour the translucent flag, and pick their walk frame
+  from the page's animation type (`Game::EventGraphic`: walk-while-moving,
+  continuous, fixed-direction, fixed-graphic, spin). Grounded in the real
+  Nepheshel data and pinned by `scripts/rpg2k_render_check.rb` /
+  `scripts/rpg2k_scene_check.rb`. Remaining polish: per-step pixel interpolation
+  of event movement (events currently hop tile-to-tile) and vehicle sprites
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
   animation and edge/tile/event collision. Move-route *data* decodes
   (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and

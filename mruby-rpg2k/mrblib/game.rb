@@ -531,6 +531,110 @@ module Game
         full(24 + (idx - 48) % 6, (idx - 48) / 6)
       end
     end
+
+    # Source rect [sx, sy, w, h] in the chipset image for an event whose graphic
+    # is a *chipset tile* rather than a CharSet character: an RPG2000 event with
+    # an empty CharSet name draws tile `tile_id` (its stored graphic index) from
+    # the chipset. This is a direct port of EasyRPG Player's Cache::Tile — the
+    # event-tile palette occupies three 6-wide columns in the lower-right of the
+    # 480x256 chipset (block E/F region), addressed differently from the map's
+    # own lower/upper chips. tile_id 0 and out-of-range ids fall back to the
+    # first (empty) tile.
+    def event_tile_rect(tile_id)
+      if tile_id > 0 && tile_id < 48
+        sub = tile_id;      bx = 288; by = 128
+      elsif tile_id >= 48 && tile_id < 96
+        sub = tile_id - 48; bx = 384; by = 0
+      elsif tile_id >= 96 && tile_id < 144
+        sub = tile_id - 96; bx = 384; by = 128
+      else
+        sub = 0;            bx = 288; by = 128 # invalid -> first tile
+      end
+      [bx + sub % 6 * TS, by + sub / 6 * TS, TS, TS]
+    end
+  end
+
+  # How an RPG2000 map event's graphic is drawn each frame: which CharSet frame
+  # (facing row + walk-pattern column) or chipset tile to show, given the event
+  # page's static graphic fields and the character's live movement state.
+  #
+  # Pure geometry / selection logic with no rendering dependency (like
+  # ChipsetLayout), so it is exercised directly by scripts/rpg2k_render_check.rb.
+  # The owning Scene::Map keeps a per-event walk `phase` counter and a `moving`
+  # flag and asks #frame for the (direction, column) to blit.
+  module EventGraphic
+    # Event-page facing is stored 0..3 (0 up, 1 right, 2 down, 3 left); the
+    # runtime characters use RPG2000's numpad convention (8/6/2/4). Map between
+    # them so movement and the CharSet row (Game::CharSet::DIR_ROW) agree.
+    LCF_DIR_TO_NUMPAD = { 0 => 8, 1 => 6, 2 => 2, 3 => 4 }.freeze
+
+    # Event-page animation types (MAP_EVENT_PAGE field 36).
+    NON_CONTINUOUS       = 0 # walk animation only while stepping, faces movement
+    CONTINUOUS           = 1 # walk animation always runs, faces movement
+    FIXED_NON_CONTINUOUS = 2 # facing fixed, walk animation only while stepping
+    FIXED_CONTINUOUS     = 3 # facing fixed, walk animation always runs
+    FIXED_GRAPHIC        = 4 # a single frame, facing fixed, never animates
+    SPIN                 = 5 # facing cycles through the four directions
+
+    # Walk-frame columns cycled by an animated character: standing middle, right
+    # foot, middle, left foot. RPG2000 reads its 0,1,2,1 walk as CharSet columns
+    # middle(1), right(2), middle(1), left(0); `phase` is a 0..3 counter.
+    WALK_COLUMNS = [1, 2, 1, 0].freeze
+    # Facings a spinning event steps through (clockwise: down, left, up, right).
+    SPIN_DIRECTIONS = [2, 4, 8, 6].freeze
+
+    module_function
+
+    def numpad_direction(lcf_dir)
+      LCF_DIR_TO_NUMPAD[lcf_dir] || 2
+    end
+
+    # Whether the type keeps the sprite's facing pinned to the page direction
+    # (movement does not turn it).
+    def fixed_direction?(anim_type)
+      anim_type == FIXED_NON_CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
+        anim_type == FIXED_GRAPHIC
+    end
+
+    # Whether the walk animation runs even while the event stands still.
+    def continuous?(anim_type)
+      anim_type == CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
+        anim_type == SPIN
+    end
+
+    # Whether the graphic animates at all (a fixed graphic never does).
+    def animated?(anim_type)
+      anim_type != FIXED_GRAPHIC
+    end
+
+    def pattern_column(phase)
+      WALK_COLUMNS[phase % WALK_COLUMNS.size]
+    end
+
+    def spin_direction(phase)
+      SPIN_DIRECTIONS[phase % SPIN_DIRECTIONS.size]
+    end
+
+    # The [direction, column] CharSet frame to draw for an event this render.
+    # `char_dir` is the character's live facing (updated by movement),
+    # `base_dir`/`base_pattern` the page's initial facing/pattern, `phase` the
+    # walk counter and `moving` whether the event is currently stepping. Fixed
+    # graphics stay on their page frame; spinning events derive facing from the
+    # phase; the ordinary types walk (cycling columns) while moving/continuous
+    # and rest on the page pattern when idle.
+    def frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
+      case anim_type
+      when SPIN
+        [spin_direction(phase), 1]
+      when FIXED_GRAPHIC
+        [base_dir, base_pattern]
+      else
+        dir = fixed_direction?(anim_type) ? base_dir : char_dir
+        col = (moving || continuous?(anim_type)) ? pattern_column(phase)
+                                                  : base_pattern
+        [dir, col]
+      end
+    end
   end
 
   # Game switches: a 1-indexed set of booleans, defaulting to false.
