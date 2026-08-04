@@ -119,8 +119,8 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Conditional
-  Branch/Else/End,
+  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Change
+  Equipment, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Key Input Processing,
@@ -128,7 +128,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
   Change Encounter Rate, Change System BGM / SFX, Show Inn,
-  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
+  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Show/Move/Erase Picture,
+  Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
