@@ -61,20 +61,23 @@ through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
 scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
 `Arrow_Base`, weather and the animation player depend on these.
 
-### 2. `Window` ⚠️ (contents rendered; windowskin frame/cursor/pause pending)
+### 2. `Window` ⚠️ (background + frame + contents rendered; cursor/pause pending)
 
 `Window` is now **native** (`mruby-rgss/src/lib.cxx`): `Window.new` creates an
-`lv_canvas` the size of the window and `window_refresh` blits the game's
-`contents` `Bitmap` into the content area (inset 16px, scrolled by `ox`/`oy`) at
-`contents_opacity`, so **window text now renders**. `contents=`, `x=`/`y=`,
-`width=`/`height=` (which re-allocate the canvas), `ox=`/`oy=`,
-`contents_opacity=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
-native. So every `Window_Base` subclass (`Window_Message`, `Window_Command`, the
-menu/shop/battle UI) shows its text. **Remaining:** the windowskin compositing —
-the stretched background at `back_opacity`, the 9-slice frame, the blinking
-cursor rect and the pause arrow — is stored (`windowskin`, `cursor_rect`,
-`opacity`, `back_opacity`, `active`, `pause`, `stretch`) but not yet drawn; and
-the content blit does not yet clip contents taller than the window.
+`lv_canvas` the size of the window and `window_refresh` composites it — when a
+`windowskin` is set it stretches the 128×128 background tile at `(0,0)` over the
+window at `back_opacity` and draws the 64×64 frame at `(128,0)` as a 9-slice
+(16px corners) at `opacity`, then blits the `contents` `Bitmap` into the content
+area (inset 16px, scrolled by `ox`/`oy`) at `contents_opacity`. The compositing
+reuses the tested `Bitmap#clear`/`#stretch_blt`/`#blt` via `mrb_funcall`; only the
+RMXP windowskin source rects are new. `contents=`, `windowskin=`, `x=`/`y=`,
+`width=`/`height=`, `ox=`/`oy=`, `opacity=`/`back_opacity=`/`contents_opacity=`,
+`z=`, `visible`/`visible=`, `dispose`/`disposed?` are native. So the whole
+menu/message/shop/battle UI shows its framed windows. **Remaining:** the blinking
+cursor rect and the pause arrow (both need per-frame animation via `update`) are
+stored (`cursor_rect`, `active`, `pause`, `stretch`) but not yet drawn; the
+content blit does not yet clip contents taller than the window; and the RMXP
+windowskin source-rect constants are best-effort until a game exercises them.
 
 ### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
 
