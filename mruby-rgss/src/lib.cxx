@@ -1197,13 +1197,16 @@ mrb_value bmp_tone_blt(mrb_state* M, V self) {
   Bitmap& src = DataType<Bitmap>::get(M, src_v);
   Tone& t = DataType<Tone>::get(M, tone_v);
 
-  if (src.width != dst.width || src.height != dst.height)
-    mrb_raisef(M,
-               mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
-               "tone_blt: size mismatch (self %dx%d, src %dx%d)", dst.width,
-               dst.height, src.width, src.height);
+  if (src.width != dst.width || src.height != dst.height) {
+    RClass* mod = mrb_module_get(M, "RGSS");
+    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    mrb_raisef(M, err, "tone_blt: size mismatch (self %dx%d, src %dx%d)",
+               dst.width, dst.height, src.width, src.height);
+  }
 
-  const int tr = (int)t.red, tg = (int)t.green, tb = (int)t.blue;
+  const int tr = (int)t.red;
+  const int tg = (int)t.green;
+  const int tb = (int)t.blue;
   const int gray = (int)t.gray;
   for (int32_t y = 0; y < src.height; ++y) {
     for (int32_t x = 0; x < src.width; ++x) {
