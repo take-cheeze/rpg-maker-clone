@@ -557,6 +557,52 @@ assert("RGSS::Window property defaults and accessors") do
   assert_true w.disposed?
 end
 
+assert("RGSS::Tilemap property defaults and accessors") do
+  t = RGSS::Tilemap.new
+  # RGSS defaults.
+  assert_true t.tileset.nil?
+  assert_true t.map_data.nil?
+  assert_true t.flash_data.nil?
+  assert_true t.priorities.nil?
+  assert_true t.visible
+  assert_equal 0, t.ox
+  assert_equal 0, t.oy
+  assert_true t.viewport.nil?
+  assert_false t.disposed?
+  # Seven autotile slots, all empty, indexable and assignable.
+  assert_equal 7, t.autotiles.size
+  assert_true t.autotiles[0].nil?
+  auto = RGSS::Bitmap.new(96, 128)
+  t.autotiles[3] = auto
+  assert_equal auto, t.autotiles[3]
+
+  # Writable — Spriteset_Map sets these from $game_map.
+  ts = RGSS::Bitmap.new(256, 256)
+  data = RGSS::Table.new(20, 15, 3)
+  prio = RGSS::Table.new(384)
+  t.tileset = ts
+  t.map_data = data
+  t.priorities = prio
+  t.ox = 32
+  t.oy = 16
+  t.visible = false
+  assert_equal ts, t.tileset
+  assert_equal data, t.map_data
+  assert_equal prio, t.priorities
+  assert_equal 32, t.ox
+  assert_equal 16, t.oy
+  assert_false t.visible
+
+  # A viewport-bound tilemap remembers whatever viewport it was constructed with
+  # (a real RGSS::Viewport needs a live display the headless test binary lacks).
+  marker = Object.new
+  assert_equal marker, RGSS::Tilemap.new(marker).viewport
+
+  t.update
+  t.dispose
+  assert_true t.disposed?
+end
+
 # RGSS::Sprite.new needs an initialized display (it references RGSS::_display),
 # which the headless mrbtest build does not set up, so the Sprite extended
 # properties cannot be exercised here — they are load-verified with the rest of

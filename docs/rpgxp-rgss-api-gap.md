@@ -62,12 +62,16 @@ without raising. **Remaining:** the native widget compositing — the frame buil
 from the windowskin, the blinking cursor rect, the pause arrow, and blitting the
 scrolled `contents` at `contents_opacity` — is future work.
 
-### 3. `Tilemap` ❌ (the big one for maps)
+### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
 
-`class Tilemap` is empty. `Spriteset_Map` needs: `tileset`, `autotiles` (array),
-`map_data` (a `Table`), `flash_data`, `priorities`, `ox`/`oy`, `viewport`,
-`update`, `dispose`, with the autotile assembly + priority layering the RPG2000
-side already implements in `Game::ChipsetLayout` (portable reference).
+`Tilemap` is now a pure-Ruby property holder (`mruby-rgss/mrblib/lib.rb`) with
+RGSS defaults: `tileset` (a `Bitmap`), `autotiles` (the seven `[0..6]` slots,
+indexable/assignable), `map_data`/`flash_data`/`priorities` (`Table`s), `ox`/`oy`,
+`visible`, `viewport`, `update`, `dispose`/`disposed?`. So `Spriteset_Map` can
+build its ground layer — assign the tileset, fill the autotiles, set the map
+data/priorities, scroll it, and dispose it — without raising. **Remaining:** the
+native render — autotile assembly + priority layering (the RPG2000 side already
+implements a portable reference in `Game::ChipsetLayout`).
 
 ### 4. `Plane` ⚠️ (stored; render pending)
 
