@@ -1259,12 +1259,22 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2)
 end
+# A database skill row exposing the fields Game::Party's field-skill logic reads.
+FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
+                       :sp_percent, :power, :physical_rate, :magical_rate,
+                       :affect_hp, :affect_sp)
+def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
+               sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false)
+  FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
+                prate, mrate, hp, sp)
+end
 class FakeActorDB
-  attr_reader :player, :system, :item
-  def initialize(players, party_ids, items = {})
+  attr_reader :player, :system, :item, :skill
+  def initialize(players, party_ids, items = {}, skills = {})
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
+    @skill = skills
   end
 end
 
@@ -1700,6 +1710,87 @@ check 'field_items includes seeds; a seed with no boost is ineffective' do
   eq false, st.party.item_effective?(4, hero)   # no boost -> ineffective
   eq [], st.party.use_item(4, hero)             # nothing happens
   eq 1, st.party.item_count(4)                  # not consumed
+end
+
+# -- Field skill menu (Game::Party skill casting) ----------------------------
+
+# A two-actor party (Hero atk 10 / spirit 12 / max SP 30, Ally max HP 50) plus
+# the given skill table, for the field-skill checks.
+def skill_party(skills)
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
+    2 => FakePlayerRow.new('Ally', '', 0, 3,
+                           max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
+  }
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills)), 1, 0, 0)
+end
+
+check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
+  # effect = power 20 + physical_rate 0 * atk/20 + magical_rate 40 * spirit 12 /40
+  #        = 20 + 0 + 12 = 32
+  skills = { 7 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5,
+                             power: 20, mrate: 40, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(7)
+  ally.change_hp(-40)                          # 50 -> 10
+  eq [[7, 5]], st.party.field_skills(hero)
+  eq true, st.party.skill_effective?(hero, 7, ally)
+  eq [ally], st.party.cast_skill(hero, 7, ally)
+  eq 42, ally.hp                               # 10 + 32
+  eq 25, hero.mp                               # 30 - 5
+end
+
+check 'field_skills lists only known field-usable ally skills; can_cast? checks SP' do
+  skills = {
+    7  => fake_skill(scope: 3, sp_cost: 5, power: 10, hp: true),        # usable
+    8  => fake_skill(scope: 0, sp_cost: 1, power: 10, hp: true),        # enemy scope
+    9  => fake_skill(scope: 3, occ: false, sp_cost: 1, power: 10, hp: true), # not field
+    10 => fake_skill(scope: 4, sp_cost: 99, power: 10, hp: true),       # too costly
+  }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)               # max SP 30
+  [7, 8, 9, 10].each { |s| hero.learn_skill(s) }
+  eq [[7, 5], [10, 99]], st.party.field_skills(hero)  # ally-scope, field-usable
+  eq true, st.party.can_cast?(hero, 7)
+  eq false, st.party.can_cast?(hero, 10)       # 99 SP > 30
+  eq false, st.party.can_cast?(hero, 99)       # unknown skill
+end
+
+check 'an all-ally heal skill heals the whole party (caster included) and spends SP' do
+  skills = { 5 => fake_skill(scope: 4, sp_cost: 8, power: 30, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(5)
+  hero.change_hp(-20)                          # 100 -> 80
+  ally.change_hp(-15)                          # 50 -> 35
+  aff = st.party.cast_skill(hero, 5, nil)
+  eq [1, 2], aff.map { |a| a.id }.sort
+  eq 100, hero.hp                              # 80 + 30, clamped to max
+  eq 50, ally.hp                               # 35 + 30, clamped to max
+  eq 22, hero.mp                               # 30 - 8
+end
+
+check 'skill_cost supports a percentage of max SP (sp_type 1)' do
+  skills = { 5 => fake_skill(scope: 2, sp_type: 1, sp_percent: 10, power: 5, sp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)               # max SP 30
+  hero.learn_skill(5)
+  eq [[5, 3]], st.party.field_skills(hero)      # 30 * 10 / 100 = 3
+end
+
+check 'casting a heal with the target already full spends no SP' do
+  skills = { 5 => fake_skill(scope: 3, sp_cost: 8, power: 30, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)               # full HP
+  hero.learn_skill(5)
+  eq false, st.party.skill_effective?(hero, 5, ally)
+  eq [], st.party.cast_skill(hero, 5, ally)
+  eq 30, hero.mp                               # unchanged
 end
 
 # -- Field equip menu (Game::Party bag-aware equip) --------------------------

@@ -285,9 +285,8 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
-  command list. Save, End Game, **Item**, **Equip** and **Status** work; only
-  **Skill** remains a placeholder (it shares the battle effect formula, so it is
-  best built with / after the battle system). The **Item** command opens
+  command list. Save, End Game, **Item**, **Skill**, **Equip** and **Status** all
+  work — the full main-menu set. The **Item** command opens
   `Scene::ItemMenu`: it lists the party's usable **medicines** (database item type
   6), **skill books** (type 7) and **seeds** (type 8) with their held counts. A
   medicine heals its target — a single-target item a chosen ally, an all-ally item
@@ -304,13 +303,21 @@ The work below is roughly ordered by the critical path to a walkable game
   items (plus Remove); equipping swaps the previously-worn item back into the bag
   and recomputes stats. The **Status** command opens `Scene::StatusMenu`: a
   read-only per-member detail (name/title, level, EXP and EXP-to-next, HP/MP, the
-  six stats and the equipped items; LEFT/RIGHT cycle members). The decision logic
-  is on `Game::Party` (`field_items` / `item_recovery` / `item_effective?` /
-  `use_item` for items; `equip_candidates` / `equip_from_bag` / `unequip_to_bag`
-  for equip) and `Game::Actor` (`next_level_exp` / `exp_to_next` for status),
-  covered by `scripts/rpg2k_logic_check.rb`; the RGSS windows are the
-  untestable-here UI. Switch (type 9) item use, the item usable-occasion gate,
-  and two-handed / dual-wield equipping are later refinements.
+  six stats and the equipped items; LEFT/RIGHT cycle members). The **Skill**
+  command opens `Scene::SkillMenu`: it lists a caster's known field-usable normal
+  skills (LEFT/RIGHT cycle casters) with their SP cost; casting a self / all-ally
+  skill applies at once and a single-ally skill asks who to target, spending SP
+  and restoring HP/SP by the RPG2000 effect formula (`power +
+  physical_rate*atk/20 + magical_rate*spirit/40`, deterministic in the field —
+  battle adds variance). The decision logic is on `Game::Party` (`field_items` /
+  `item_recovery` / `item_effective?` / `use_item` for items; `equip_candidates` /
+  `equip_from_bag` / `unequip_to_bag` for equip; `field_skills` / `skill_cost` /
+  `can_cast?` / `skill_effect` / `cast_skill` for skills) and `Game::Actor`
+  (`next_level_exp` / `exp_to_next` for status), covered by
+  `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
+  Switch (type 9) item use, teleport/escape/switch skill types, the battle-time
+  skill variance, the item usable-occasion gate, and two-handed / dual-wield
+  equipping are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -339,9 +346,10 @@ The work below is roughly ordered by the critical path to a walkable game
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
-- Skill menu screen — the Item, Equip and Status screens now exist (see Menu
-  scene above); only Skill remains, and it is best built with / after the battle
-  system since a skill's HP/SP effect shares that damage/heal formula
+- ✅ Menu screens — the Item, Skill, Equip and Status screens all exist now (see
+  Menu scene above). The Skill screen's recovery formula (`power +
+  physical_rate*atk/20 + magical_rate*spirit/40`) is the same one the battle
+  system will reuse for skills; battle adds the +/- variance the field path omits
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an

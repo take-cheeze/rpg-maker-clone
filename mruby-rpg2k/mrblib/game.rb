@@ -1408,6 +1408,102 @@ module Game
       gain_item(removed, 1) if removed && removed != 0
       removed || 0
     end
+
+    # RPG2000 skill type (field 8): 0 normal (an HP/SP/stat effect), 1 teleport,
+    # 2 escape, 3 switch. The field skill menu casts normal skills; the
+    # teleport/escape/switch types are later refinements. Skill scope (field 12):
+    # 0 single enemy, 1 all enemies, 2 the caster, 3 a single ally, 4 all allies.
+    SKILL_NORMAL = 0
+
+    # The database row for a skill id, or nil when the database has no skill table
+    # (a bare fixture) or no such row.
+    def db_skill(id)
+      return nil unless @db.respond_to?(:skill)
+      @db.skill[id]
+    end
+
+    # The SP `caster` pays to cast skill `sk`: a fixed cost (sp_type 0) or a
+    # percentage of the caster's max SP (sp_type 1). Mirrors EasyRPG's
+    # CalculateSkillCost (the half-SP-cost modifier is a later refinement).
+    def skill_cost(sk, caster)
+      if sk.sp_type == 1
+        caster.max_mp * (sk.sp_percent || 0) / 100
+      else
+        sk.sp_cost || 0
+      end
+    end
+
+    # `caster`'s known skills usable from the field menu -- normal skills flagged
+    # `occasion_field` that target the caster or an ally (scope >= 2) -- as
+    # `[skill_id, cost]` pairs in ascending id order.
+    def field_skills(caster)
+      return [] unless caster
+      caster.skills.sort.select do |sid|
+        sk = db_skill(sid)
+        sk && sk.type == SKILL_NORMAL && sk.occasion_field && sk.scope >= 2
+      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+    end
+
+    # Whether `caster` can cast skill `sid` right now: it knows the skill and can
+    # pay its SP cost.
+    def can_cast?(caster, sid)
+      sk = db_skill(sid)
+      !sk.nil? && caster && caster.knows_skill?(sid) && caster.mp >= skill_cost(sk, caster)
+    end
+
+    # The base HP/SP amount a recovery skill restores, per RPG2000's formula
+    # `power + physical_rate*attack/20 + magical_rate*spirit/40` (spirit is the
+    # `int` stat), computed from the caster deterministically -- battle applies a
+    # +/- variance, but field/menu use does not. Confirmed against EasyRPG's
+    # Algo::CalcSkillEffect (the ally-heal path has no target-defence term).
+    def skill_effect(sk, caster)
+      (sk.power || 0) +
+        (sk.physical_rate || 0) * caster.atk / 20 +
+        (sk.magical_rate || 0) * caster.int / 40
+    end
+
+    # The actors a field skill affects: the caster (scope 2), a chosen single ally
+    # (scope 3), or the whole party (scope 4).
+    def skill_targets(sk, caster, target)
+      case sk.scope
+      when 4 then @actors
+      when 2 then [caster]
+      else [target].compact
+      end
+    end
+
+    # Whether casting skill `sid` on `target` would change anything -- used to grey
+    # out a no-op (e.g. a heal on an already-full ally). Requires the caster to be
+    # able to cast it at all.
+    def skill_effective?(caster, sid, target)
+      sk = db_skill(sid)
+      return false unless sk && can_cast?(caster, sid)
+      amount = skill_effect(sk, caster)
+      return false unless amount > 0
+      skill_targets(sk, caster, target).any? do |t|
+        (sk.affect_hp && t.hp < t.max_hp) || (sk.affect_sp && t.mp < t.max_mp)
+      end
+    end
+
+    # Cast field skill `sid` from `caster` on `target` (scope-dependent). Restores
+    # HP and/or SP by the skill effect to each target (clamped), then spends the
+    # caster's SP -- but only when it actually helped someone, so a wasted cast
+    # (everyone full) costs nothing. Returns the affected actors.
+    def cast_skill(caster, sid, target = nil)
+      sk = db_skill(sid)
+      return [] unless sk && can_cast?(caster, sid)
+      amount = skill_effect(sk, caster)
+      affected = []
+      skill_targets(sk, caster, target).each do |t|
+        before_hp = t.hp
+        before_mp = t.mp
+        t.change_hp(amount) if sk.affect_hp && amount > 0
+        t.change_mp(amount) if sk.affect_sp && amount > 0
+        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+      end
+      caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
+      affected
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
