@@ -474,6 +474,7 @@ class RPG2k
         @wait_timer = nil
         @anim_wait = nil
         @map_animation = nil
+        @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
         # a Move Event targeting "this event" can be resolved. nil for common
@@ -1035,16 +1036,22 @@ class RPG2k
           v = @state.vehicle(type)
           next unless v.placed? && v.map_id == @state.map_id
           if v.x == @state.x && v.y == @state.y
-            @state.boarded = type
+            board_as(type)
             return true
           elsif v.x == fx && v.y == fy
             @state.x = fx
             @state.y = fy
-            @state.boarded = type
+            board_as(type)
             return true
           end
         end
         false
+      end
+
+      # Mark the party aboard `type` and switch to the vehicle's BGM.
+      def board_as(type)
+        @state.boarded = type
+        play_vehicle_bgm(type)
       end
 
       # Step off the ridden vehicle onto the tile ahead when it is walkable on
@@ -1057,7 +1064,51 @@ class RPG2k
         @state.x = fx
         @state.y = fy
         @state.boarded = nil
+        restore_pre_vehicle_bgm # the map BGM resumes
       end
+
+      # Play the vehicle's own BGM (the database System boat / ship / airship
+      # music), remembering the BGM that was playing so #restore_pre_vehicle_bgm
+      # can bring it back on disembark. A vehicle with no configured BGM leaves
+      # the current music playing.
+      def play_vehicle_bgm(type)
+        music = vehicle_bgm(type)
+        name = music && music_name(music)
+        return if name.nil? || name.empty?
+        @pre_vehicle_bgm = @state.current_bgm
+        vol = music_volume(music)
+        tempo = music_tempo(music)
+        RGSS::Audio.bgm_play(name, vol, tempo)
+        @state.current_bgm = { name: name, volume: vol, tempo: tempo }
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] vehicle BGM failed: #{e.message}"
+      end
+
+      # Restore the BGM that was playing before the party boarded (the map BGM).
+      # A no-op when boarding did not switch the music.
+      def restore_pre_vehicle_bgm
+        bgm = @pre_vehicle_bgm
+        @pre_vehicle_bgm = nil
+        return unless bgm && bgm[:name] && !bgm[:name].empty?
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        @state.current_bgm = bgm
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
+      end
+
+      # The database System BGM configured for vehicle `type` (boat / ship /
+      # airship), or nil when the database has none.
+      def vehicle_bgm(type)
+        field = "#{type}_music"
+        return nil unless @db.system.respond_to?(field)
+        @db.system.send(field)
+      end
+
+      # A parsed BGM chunk exposes file / volume / pitch; read them defensively so
+      # a bare fixture that omits a field still works.
+      def music_name(m); m.file rescue nil; end
+      def music_volume(m); (m.volume rescue nil) || 100; end
+      def music_tempo(m); (m.pitch rescue nil) || 100; end
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle
