@@ -119,13 +119,15 @@ class RPGXP
       end
 
       # Portable save payload (our own Marshal format, not the RMXP .rxdata save).
+      # `actors` holds only the actors whose live state has been touched (built via
+      # #actor); untouched actors re-derive from the database identically on load.
       def to_h
         { map_id: @map_id, x: @x, y: @y, direction: @direction,
           party: @party, gold: @gold, switches: hash_to_plain(@switches),
           variables: hash_to_plain(@variables),
           self_switches: hash_to_plain(@self_switches),
           items: hash_to_plain(@items), weapons: hash_to_plain(@weapons),
-          armors: hash_to_plain(@armors) }
+          armors: hash_to_plain(@armors), actors: actor_states }
       end
 
       def self.load(db, h)
@@ -137,7 +139,15 @@ class RPGXP
         (h[:items] || {}).each { |k, v| s.items[k] = v }
         (h[:weapons] || {}).each { |k, v| s.weapons[k] = v }
         (h[:armors] || {}).each { |k, v| s.armors[k] = v }
+        (h[:actors] || {}).each { |id, ah| a = s.actor(id); a && a.load_h(ah) }
         s
+      end
+
+      # The saved live state of every actor built so far (id => Game::Actor#to_h).
+      def actor_states
+        out = {}
+        (@actors || {}).each { |id, a| out[id] = a.to_h }
+        out
       end
 
       private
@@ -224,7 +234,85 @@ class RPGXP
           armor_id == @armor3_id || armor_id == @armor4_id
       end
 
+      # -- mutators (the Change Actor event commands) -------------------------
+
+      # Add `delta` to current HP, clamped to [floor, max HP]. `allow_death` (the
+      # command's "allow knockout" flag) lets HP reach 0; otherwise the floor is 1.
+      def change_hp(delta, allow_death = false)
+        @hp = clamp(@hp + delta, allow_death ? 0 : 1, max_hp)
+      end
+
+      # Add `delta` to current SP, clamped to [0, max SP].
+      def change_sp(delta); @sp = clamp(@sp + delta, 0, max_sp); end
+
+      # Fully restore HP and SP (RMXP Recover All also clears states, which are
+      # not modelled yet).
+      def recover_all
+        @hp = max_hp
+        @sp = max_sp
+      end
+
+      # Move the level by `delta` (Change Level); see #set_level.
+      def change_level(delta); set_level(@level + delta); end
+
+      # Set the level, clamped to 1..final_level. Newly-reached class learnings are
+      # learned (RMXP keeps skills on a level drop, so none are removed), and
+      # current HP/SP are re-clamped to the new maxima.
+      def set_level(level)
+        @level = clamp(level, 1, @record.final_level || 99)
+        learnable_skills(@level).each { |s| @skills.push(s) unless @skills.include?(s) }
+        @hp = max_hp if @hp > max_hp
+        @sp = max_sp if @sp > max_sp
+      end
+
+      def learn_skill(skill_id)
+        return if skill_id.nil? || skill_id == 0 || @skills.include?(skill_id)
+        @skills.push(skill_id)
+      end
+
+      def forget_skill(skill_id); @skills.delete(skill_id); end
+
+      # Equip an item into a slot: 0 weapon, 1..4 the four armor slots. An id of 0
+      # empties the slot. Other slot numbers are ignored.
+      def equip(slot, item_id)
+        case slot
+        when 0 then @weapon_id = item_id
+        when 1 then @armor1_id = item_id
+        when 2 then @armor2_id = item_id
+        when 3 then @armor3_id = item_id
+        when 4 then @armor4_id = item_id
+        end
+      end
+
+      # -- save round-trip ----------------------------------------------------
+
+      # The mutable state to persist (the fields the Change Actor commands touch);
+      # everything else is re-derived from the database on load.
+      def to_h
+        { level: @level, hp: @hp, sp: @sp, skills: @skills.dup,
+          weapon_id: @weapon_id, armor1_id: @armor1_id, armor2_id: @armor2_id,
+          armor3_id: @armor3_id, armor4_id: @armor4_id }
+      end
+
+      # Restore mutable state from #to_h (missing keys keep the database defaults);
+      # level is applied first so the saved HP/SP land against the right maxima.
+      def load_h(h)
+        return self unless h
+        @level = h[:level] if h[:level]
+        @skills = h[:skills].dup if h[:skills]
+        @weapon_id = h[:weapon_id] if h.key?(:weapon_id)
+        @armor1_id = h[:armor1_id] if h.key?(:armor1_id)
+        @armor2_id = h[:armor2_id] if h.key?(:armor2_id)
+        @armor3_id = h[:armor3_id] if h.key?(:armor3_id)
+        @armor4_id = h[:armor4_id] if h.key?(:armor4_id)
+        @hp = h[:hp] if h[:hp]
+        @sp = h[:sp] if h[:sp]
+        self
+      end
+
       private
+
+      def clamp(v, lo, hi); v < lo ? lo : (v > hi ? hi : v); end
 
       # The skill ids the class has taught by `level` (every learning at or below
       # it). RMXP seeds an actor's known skills this way at its starting level.
