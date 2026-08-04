@@ -407,21 +407,58 @@ class MV
     $stderr.puts "[MV] new game error: #{e.message}"
   end
 
+  # How many frames to keep watching for Scene_Battle after requesting it before
+  # giving up and logging a failure — generous, since New Game's fade, the map
+  # settle, the encounter-effect intro (~60f) and Scene_Battle's fade-in all
+  # have to play out first, and headless frames are slower than 60fps.
+  BATTLE_PROBE_FRAMES = 120
+
   # When --mv_battle_test=<troopId> is set (CI), start a test battle against that
   # troop once the map is up, so a headless capture shows Scene_Battle (its
-  # windows, HP/MP gauges and battler layout). One-shot; a no-op otherwise.
+  # windows, HP/MP gauges and battler layout), then log whether it was actually
+  # reached. One-shot; a no-op otherwise.
+  #
+  # The battle is started the way a real game does — a "Battle Processing" event
+  # command (code 301) run through the *map interpreter* — NOT a bare
+  # `SceneManager.push(Scene_Battle)` injected from outside the scene loop. The
+  # bare push deadlocks: `Scene_Map.stop` kicks off the encounter-effect intro,
+  # but that intro only advances while the scene is inactive, and an
+  # out-of-loop push leaves the map active with the effect frozen, so the
+  # pending Scene_Battle never applies. Running 301 inside Scene_Map's own
+  # update (via the interpreter) is the path the engine itself uses and it
+  # transitions cleanly.
   def maybe_battle_test
     return if @battle_test_done
 
     troop = battle_test_troop
     return unless troop > 0
+
+    # After the request, watch for the transition: report as soon as
+    # Scene_Battle is up (the intro can take longer than a fixed wait under a
+    # slow headless framerate), and give up with a failure line only if it never
+    # arrives within the probe window.
+    if @battle_requested
+      if current_scene == "Scene_Battle"
+        @battle_test_done = true
+        $stderr.puts "[MV-BTL] reached_battle=true"
+        return
+      end
+      @battle_frame += 1
+      return if @battle_frame < BATTLE_PROBE_FRAMES
+
+      @battle_test_done = true
+      $stderr.puts "[MV-BTL] reached_battle=false scene=#{current_scene}"
+      return
+    end
+
     return unless current_scene == "Scene_Map"
 
-    @battle_test_done = true
+    @battle_requested = true
+    @battle_frame = 0
     MV::JS.eval(
-      "if (typeof BattleManager !== 'undefined') { " \
-      "BattleManager.setup(#{troop}, true, false); " \
-      "SceneManager.push(Scene_Battle); }"
+      "if ($gameMap && $gameMap._interpreter) { $gameMap._interpreter.setup(" \
+      "[{code:301,indent:0,parameters:[0,#{troop},true,false]}," \
+      "{code:0,indent:0,parameters:[]}], 0); }"
     )
     $stderr.puts "[MV] auto battle test: troop #{troop}"
   rescue StandardError => e

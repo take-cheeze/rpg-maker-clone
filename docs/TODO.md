@@ -419,5 +419,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     title into New Game → map and a movement probe (`--mv_new_game
     --mv_move_test`), not just the title boot — so the fuller real game's
     map/movement/render path is exercised, not only the minimal sample's.
+  - ✅ Battle smoke reaches `Scene_Battle`: `--mv_battle_test` now starts the
+    fight via a real "Battle Processing" event command (code 301) through the
+    map interpreter instead of a bare out-of-loop `SceneManager.push`, which
+    deadlocked on the frozen encounter-effect intro. Runs on Lunatic-Core (real
+    battlers/battleback) and logs `[MV-BTL] reached_battle=<bool>`.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
