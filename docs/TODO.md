@@ -375,10 +375,27 @@ The work below is roughly ordered by the critical path to a walkable game
   Confirmed in the real binary before the code was written — forcing the fade
   layer to opacity 128 halves the rendered frame's mean brightness (31.9 → 15.2).
 
-  Still open here: **weather**, and the **tint** (Tint Screen), which really does
-  need native work — a tone is a per-channel multiply against what is already
-  drawn, and no amount of compositing a solid colour on top reproduces that.
-  Tint remains the Ruby half only
+  Still open here: **weather**, and the **tint** (Tint Screen). The tint really
+  does need native work, unlike the fade and flash — a tone rescales what is
+  already drawn rather than laying a colour over it. That native half now
+  exists: `RGSS::Bitmap#tone_blt(src, tone)` copies a bitmap applying an
+  RGSS `Tone` (desaturate toward luminance by `gray`, then add the per-channel
+  offsets), covered by `mruby-rgss/test/test.rb`. It writes to a separate
+  destination on purpose — the map layers are redrawn only when they change, so
+  an in-place tone would re-tint an already-tinted layer every frame and walk it
+  to black.
+
+  **Nothing calls it yet.** A first attempt at wiring it through `Scene::Map`
+  (tone each scene-owned layer into a shadow bitmap, point the sprite at the
+  shadow) was written and then dropped rather than shipped: instrumentation
+  confirms the code runs and finds its four layers, but the rendered frame is
+  unchanged — a forced full-strength green tint moved the frame's mean green by
+  0.09/255. So the remaining work is not the tone maths but finding why a
+  per-frame `Sprite#bitmap=` swap does not reach the display; suspects are the
+  sprite's cached canvas source and the dirty-flag sweep in
+  `mruby-rgss/src/lib.cxx`. Note the obvious probe is misleading: the Nepheshel
+  opening is nearly black (frame mean ~32/255), where a *subtractive* tint
+  changes almost nothing even when it is working — use an additive one
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
