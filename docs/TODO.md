@@ -352,10 +352,14 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   built-ins and top-level evaluation of real script source are covered by
   `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. Remaining before
   it can be the default: complete the `mruby-rgss` class library the stock
-  scripts call (`Graphics.transition/freeze`, `Window`/`Tilemap`/`Sprite`
-  surface, `Font` defaults, `Kernel#exit`, …), reconcile the scripts' blocking
-  main loop with the emscripten frame loop (Asyncify or a per-frame driver), and
-  read graphics/audio out of the encrypted archive.
+  scripts call — the precise gap (measured against the real test-bed scripts) is
+  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
+  `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
+  `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
+  widgets, plus `Kernel#sprintf` and drawing `Graphics.transition/freeze`.
+  Also reconcile the scripts' blocking main loop with the emscripten frame loop
+  (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
+  archive.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

@@ -86,9 +86,12 @@ at the top level.
   scripts run.
 - **Trade-offs / follow-up.** The host is not yet the default and is unverified
   on the native target until the SDL/mruby build can run in CI. Remaining work:
-  fill in the `mruby-rgss` methods the stock scripts exercise
-  (`Graphics.transition/freeze`, `Window`/`Tilemap`/`Sprite` surface, `Font`
-  defaults, `Kernel#exit`, …); resolve the blocking-main-loop/emscripten
+  fill in the `mruby-rgss` methods the stock scripts exercise — the precise gap,
+  measured against the real test-bed scripts, is tracked in
+  `docs/rpgxp-rgss-api-gap.md` (`Font`/`Graphics`/`Input`/`Audio` are already
+  covered; the open pieces are `Sprite` extended properties and the empty
+  `Window`/`Tilemap`/`Plane` widgets, plus `Kernel#sprintf`); resolve the
+  blocking-main-loop/emscripten
   mismatch (Asyncify or a driver that pumps one `Scene#main` iteration per
   frame); and read graphics/audio out of the encrypted archive (still loose-file
   only). `mruby-eval` also enlarges every build that includes the RPG-maker gem
