@@ -1736,17 +1736,25 @@ module Game
       end
     end
 
+    # A skill's state-infliction accuracy (its `hit` field, default 100), used as
+    # the per-state roll when an attack skill inflicts its `state_effects`.
+    def skill_hit(sk)
+      sk.respond_to?(:hit) ? (sk.hit || 100) : 100
+    end
+
     # The command numbers for casting `sk` from `caster` on `target` (both
     # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
     # to the target — negative HP for an attack skill (base effect less a quarter
-    # of the target's defence, min 1), positive HP / SP for a recovery skill.
+    # of the target's defence, min 1), positive HP / SP for a recovery skill. An
+    # attack skill also carries the states it may inflict and the roll chance.
     def battle_skill_command(sk, caster, target)
       cost = skill_cost(sk, caster)
       base = skill_effect(sk, caster)
       if sk.scope == 0
         dmg = base - (target ? target.def / 4 : 0)
         dmg = 1 if dmg < 1
-        { cost: cost, hp: -dmg, mp: 0 }
+        { cost: cost, hp: -dmg, mp: 0,
+          inflict: skill_state_ids(sk), chance: skill_hit(sk) }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
       end
@@ -2750,7 +2758,7 @@ module Game
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor, :states) do
+                           :actor, :states, :state_turns) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -2866,9 +2874,10 @@ module Game
     # SP and applying the signed HP / SP deltas (negative HP = damage, positive =
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
     # order by #apply_command when the round runs.
-    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0)
+    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil, chance: 100)
       ally.command = { kind: :skill, target: target, name: name,
-                       cost: cost, hp: hp, mp: mp }
+                       cost: cost, hp: hp, mp: mp,
+                       inflict: inflict || [], chance: chance }
       ally.action = nil; ally.defending = false
     end
 
@@ -2941,15 +2950,24 @@ module Game
     # A field off a state row, tolerating a fixture that omits it.
     def state_field(d, name); d.respond_to?(name) ? (d.send(name) || 0) : 0; end
 
-    # Apply `b`'s afflicted states at the start of its turn: slip HP/SP damage
-    # (fixed val + a percentage of the max, per EasyRPG's ApplyConditions) from
-    # each state, and report whether the battler may act (a "do nothing"
+    # Apply `b`'s afflicted states at the start of its turn: first roll each state
+    # for auto-recovery (once it has held longer than its `hold_turn`, an
+    # `auto_release_prob`% roll cures it), then, for the states that remain, slip
+    # HP/SP damage (fixed val + a percentage of the max, per EasyRPG's
+    # ApplyConditions) and report whether the battler may act (a "do nothing"
     # restriction skips its turn). Returns true if `b` may act.
     def apply_turn_states(b)
       can_act = true
-      (b.states || []).each do |id|
+      b.state_turns ||= {}
+      (b.states || []).dup.each do |id|
         d = state_def(id)
         next unless d
+        b.state_turns[id] = (b.state_turns[id] || 0) + 1
+        if recovers_from_state?(b, id, d)
+          b.states = b.states - [id]
+          b.state_turns.delete(id)
+          next
+        end
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
         b.hp -= hp if hp > 0
         if b.max_mp && b.mp
@@ -2959,6 +2977,16 @@ module Game
         can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
       end
       can_act
+    end
+
+    # Whether `b` shakes off state `id` this turn: only once it has held for more
+    # than the state's `hold_turn`, then an `auto_release_prob`% roll (0 = never
+    # auto-releases). Grounded on EasyRPG's BattleStateHeal.
+    def recovers_from_state?(b, id, d)
+      prob = state_field(d, :auto_release_prob)
+      return false if prob <= 0
+      return false unless b.state_turns[id] > state_field(d, :hold_turn)
+      @rng.random(100) < prob
     end
 
     def alive?(side); side.any? { |b| !b.dead? }; end
@@ -3018,9 +3046,12 @@ module Game
       if hp < 0
         dmg = -hp
         target.hp -= dmg
+        # An attack skill may inflict its states on a surviving target, each
+        # rolled against the skill's accuracy.
+        inflicted = target.dead? ? [] : roll_inflict(target, cmd)
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          skill: cmd[:name] }
+          inflicted: inflicted, skill: cmd[:name] }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -3035,6 +3066,21 @@ module Game
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, target_hp: target.hp, target_mp: target.mp }
       end
+    end
+
+    # Inflict a skill command's `inflict` states on `target`, each landing only if
+    # a 0..99 roll comes in under the skill's `chance` (its accuracy). Skips a
+    # state the target already carries. Returns the states actually inflicted.
+    def roll_inflict(target, cmd)
+      chance = cmd[:chance] || 100
+      inflicted = []
+      (cmd[:inflict] || []).each do |sid|
+        next if target.state?(sid)
+        next unless @rng.random(100) < chance
+        target.states = (target.states || []) + [sid]
+        inflicted << sid
+      end
+      inflicted
     end
   end
 
