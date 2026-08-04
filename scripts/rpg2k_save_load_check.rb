@@ -85,8 +85,19 @@ def check_game(dir)
   # database charset must match the saved hero's -- the state really points at
   # the right actor.
   eq((inv.party || []).first, state.party.leader && state.party.leader.id, 'party leader id')
-  eq hero.charset_name, (state.party.leader && state.party.leader.charset_name),
-     'leader charset matches hero'
+  # ...and when the save records a hero sprite, it must be the leader's, so we
+  # know the state points at the right actor. A save can legitimately carry
+  # *no* sprite: one taken during Nepheshel's opening (as
+  # scripts/gen-lcf-save-wine.bash does, via EasyRPG's F9 debug menu) stores an
+  # empty charset because the hero graphic is not assigned until the opening
+  # ends. Asserting equality there compared "unset" against the database default
+  # and failed on a perfectly valid save.
+  if hero.charset_name.nil? || hero.charset_name.empty?
+    puts '  note: save carries no hero sprite (taken before one was set)'
+  else
+    eq hero.charset_name, (state.party.leader && state.party.leader.charset_name),
+       'leader charset matches hero'
+  end
   eq inv.gold, state.party.gold, 'gold'
   expected_items = {}
   ids = inv.item_ids || []

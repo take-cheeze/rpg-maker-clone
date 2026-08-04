@@ -113,3 +113,38 @@ be compared pixel-for-pixel today. Comparing an arbitrary in-game map wants
 both runtimes resumed from the *same* `Save01.lsd` (which
 `scripts/gen-lcf-save-wine.bash` can already produce and both runtimes can
 load) rather than driven there by counting key presses.
+
+## Addendum: the save-based comparison
+
+That follow-up is now implemented as
+`scripts/compare-nepheshel-save-wine.bash`. Loading a save is not timed, so it
+cannot drift: our engine reaches the map with `--rpg2k_continue` (the title
+auto-select of `--rpg2k_new_game`, pointed at entry 2), and RPG_RT with a fixed
+three-key sequence — Down, Return, Return — instead of the ~130 confirmations
+the opening needs. `scripts/gen-rpg2k-save.rb` moves the party in that save to
+whichever map the comparison wants.
+
+Two things had to be learned the hard way, and both are worth keeping:
+
+**The save must be a genuine one.** `Game::State#to_lsd` can write a
+`Save<N>.lsd` from nothing and it round-trips through our own parser, so it
+looked usable — but RPG_RT silently refuses to load it and "Continue" just
+does nothing on the title screen. A real save carries sixteen chunks and
+11–18 KB; `to_lsd` emits five and ~180 bytes, with no vehicles, pictures, map
+events or common events, and none of the three chunks (102, 112, 200) that are
+not in our schema at all. `scripts/lcf_save_roundtrip.rb` could never have
+caught this: it only proves we can re-read our own output. So the harness starts
+from a save `gen-lcf-save-wine.bash` produced with EasyRPG and *edits* it, which
+preserves every untouched chunk byte-for-byte.
+
+**The first thing the comparison found: shown pictures are not restored on
+load.** Resuming Nepheshel's opening, RPG_RT draws the cutscene's background
+picture and we draw black — the choice window on top of it is already
+pixel-identical. `Game::State` treats `@pictures` as transient on the stated
+assumption that "RPG2000's HUD pictures are re-shown by parallel events on
+load", which holds for a HUD but not for a save taken mid-cutscene, where the
+event that showed the picture has already run. The genuine runtime saves them in
+chunk 103. Fixing it needs `LCF::Schema::SAVE_PICTURE` extended first: it models
+name, visibility, zoom, transparency and tone, but *not* the picture's
+position, so there is nothing to restore a picture's placement from yet. Both
+that and making `to_lsd`'s own output loadable are tracked in `docs/TODO.md`.
