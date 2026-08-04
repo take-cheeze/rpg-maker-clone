@@ -225,8 +225,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `add_state` / `remove_state` / `state?`; **Full Recovery clears it**), which
   persists in both the Marshal save and the `.lsd` (chunk 108 fields 81/82,
   previously parsed-but-unused) and is restored by `from_lsd`, so a real save's
-  status ailments survive. Applying states from battle / items / skills (the
-  item `state_set` + `reverse_state_effect` fields) is the remaining piece.
+  status ailments survive. The **item menu cures states**: a medicine with
+  `reverse_state_effect` set removes its `state_set` conditions from the target
+  (an antidote / herb — unconditional, matching EasyRPG's item algorithm), and
+  such an item now counts as usable when the target is afflicted even at full HP.
+  Still remaining: *inflicting* states (the non-reverse item case rolled against
+  `state_chance`, and skill / battle infliction).
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on

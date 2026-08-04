@@ -1251,13 +1251,15 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
                       :price, :skill_id,
-                      :atk_points2, :def_points2, :spi_points2, :agi_points2)
+                      :atk_points2, :def_points2, :spi_points2, :agi_points2,
+                      :state_set, :reverse_state_effect)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
-              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0)
+              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0,
+              state_set: nil, reverse_state: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
-               atk2, dfn2, spi2, agi2)
+               atk2, dfn2, spi2, agi2, state_set, reverse_state)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -1656,6 +1658,52 @@ check 'use_item restores MP and item_effective? tracks the SP deficit' do
   st.party.use_item(6, hero)
   eq 25, hero.mp                               # 10 + 15
   eq 0, st.party.item_count(6)
+end
+
+check 'a cure medicine (reverse_state_effect) removes only its listed states' do
+  # state_set: byte per state, index i -> state id i+1; states 3 and 7 marked.
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1, 0, 0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 2)
+  hero = st.party.leader
+  hero.add_state(3); hero.add_state(9)         # 3 is curable by the item, 9 is not
+  eq [3, 7], st.party.item_cured_states(st.party.db_item(5))
+  eq true, st.party.item_effective?(5, hero)
+  eq [hero], st.party.use_item(5, hero)
+  eq false, hero.state?(3)                      # cured
+  eq true, hero.state?(9)                       # a state the item does not list stays
+  eq 1, st.party.item_count(5)                  # consumed
+end
+
+check 'a cure medicine on an unafflicted, full target does nothing / not consumed' do
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  hero = st.party.leader                        # full HP, no states
+  eq false, st.party.item_effective?(5, hero)
+  eq [], st.party.use_item(5, hero)
+  eq 1, st.party.item_count(5)
+end
+
+check 'a heal+cure item counts either the heal or the cure as a use' do
+  items = { 5 => fake_item(type: 6, rhp: 40, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 3)
+  hero = st.party.leader
+  hero.add_state(3)                             # full HP but afflicted -> cures, consumes
+  eq [hero], st.party.use_item(5, hero)
+  eq false, hero.state?(3)
+  eq 2, st.party.item_count(5)
+  hero.change_hp(-50)                           # 100 -> 50, unafflicted -> heals, consumes
+  eq [hero], st.party.use_item(5, hero)
+  eq 90, hero.hp                                # 50 + 40
+  eq 1, st.party.item_count(5)
+end
+
+check 'a non-reverse item lists no cured states (infliction is battle-only)' do
+  st = item_party({})
+  it = fake_item(type: 6, state_set: [0, 0, 1], reverse_state: false)
+  eq [], st.party.item_cured_states(it)
 end
 
 check 'field_items includes skill books alongside medicines' do

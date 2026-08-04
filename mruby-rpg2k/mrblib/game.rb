@@ -1333,6 +1333,21 @@ module Game
       [hp, mp]
     end
 
+    # The status-condition ids a medicine cures. RPG2000 items list affected
+    # states in `state_set` (a 0/1 byte per state, index i -> state id i+1); when
+    # `reverse_state_effect` is set the item *removes* them (an antidote / herb),
+    # which is the only item-state effect the field menu applies -- an item that
+    # would *inflict* states (the non-reverse case, rolled against state_chance) is
+    # left to battle. Curing is unconditional, matching EasyRPG's item algorithm.
+    def item_cured_states(it)
+      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      set = it.state_set
+      return [] unless set
+      out = []
+      set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
+      out
+    end
+
     # Whether using item `id` on `actor` would change anything, so the menu can
     # grey out a no-op. A medicine is effective when the target is below full
     # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
@@ -1344,7 +1359,8 @@ module Game
       case it.type
       when ITEM_MEDICINE
         hp, mp = item_recovery(it, actor)
-        (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+        (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
+          item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
         !s.nil? && s != 0 && !actor.knows_skill?(s)
@@ -1372,10 +1388,12 @@ module Game
 
     # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
     # (scope 1) heals the whole party regardless of `actor`. Applies the recovery
-    # (clamped to each target's maxima) and consumes one from the bag only when it
-    # actually healed someone (so using it on a full party wastes nothing).
+    # (clamped to each target's maxima) and cures the item's status conditions,
+    # and consumes one from the bag only when it actually did something to someone
+    # (so using it on a full, unafflicted party wastes nothing).
     def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
+      cured = item_cured_states(it)
       affected = []
       targets.each do |t|
         hp, mp = item_recovery(it, t)
@@ -1383,7 +1401,14 @@ module Game
         before_mp = t.mp
         t.change_hp(hp) if hp > 0
         t.change_mp(mp) if mp > 0
-        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+        changed = t.hp != before_hp || t.mp != before_mp
+        cured.each do |s|
+          if t.state?(s)
+            t.remove_state(s)
+            changed = true
+          end
+        end
+        affected.push(t) if changed
       end
       lose_item(id, 1) unless affected.empty?
       affected
