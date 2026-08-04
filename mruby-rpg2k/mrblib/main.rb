@@ -3418,7 +3418,7 @@ class RPG2k
           refresh_cursor
         end
 
-        if Input.trigger?(Input::C) || auto_new_game?
+        if Input.trigger?(Input::C) || auto_select?
           case @selected_index
           when 0  # New Game
             parent.start_new_game
@@ -3439,20 +3439,44 @@ class RPG2k
 
       private
 
-      # `--rpg2k_new_game`: pick the highlighted entry (New Game, the default)
-      # once, without input, so a headless run reaches the map renderer instead
-      # of sitting on the title screen. One-shot; a no-op during normal play.
-      def auto_new_game?
+      # `--rpg2k_new_game` / `--rpg2k_continue`: pick a title entry once,
+      # without input, so a headless run reaches the map renderer instead of
+      # sitting on the title screen. One-shot; a no-op during normal play.
+      #
+      # New Game wins if both are set: it needs no save data, so it is the one
+      # that cannot fail for an unrelated reason.
+      #
+      # Each flag is read through its own `begin`/`rescue` rather than a helper
+      # taking the constant's name: `Module#const_get` is not something this
+      # runtime's mruby build is known to carry, and the whole point of these
+      # flags is catching mruby/CRuby divergence, not adding more (ADR 0021).
+      def auto_select?
         return false if @auto_started
-        want = begin
-                 RPG2K_NEW_GAME
-               rescue StandardError
-                 false
-               end
-        return false unless want
-        @auto_started = true
-        $stderr.puts '[RPG2k] --rpg2k_new_game: selecting New Game'
-        true
+        if auto_new_game?
+          @auto_started = true
+          @selected_index = 0
+          $stderr.puts '[RPG2k] --rpg2k_new_game: selecting New Game'
+          true
+        elsif auto_continue?
+          @auto_started = true
+          @selected_index = 1
+          $stderr.puts '[RPG2k] --rpg2k_continue: selecting Continue'
+          true
+        else
+          false
+        end
+      end
+
+      def auto_new_game?
+        RPG2K_NEW_GAME
+      rescue StandardError
+        false
+      end
+
+      def auto_continue?
+        RPG2K_CONTINUE
+      rescue StandardError
+        false
       end
 
       # Load the System/ windowskin declared in the database. Returns nil when
@@ -3622,6 +3646,10 @@ class RPG2k
     scene = Scene::Map.new(self, state)
     @scenes.last.dispose
     @scenes = [scene]
+    # Same marker start_new_game emits, so a headless run resuming a save (see
+    # --rpg2k_continue) can assert which map it landed on -- which for a save
+    # comparison is the whole point: both runtimes must reach the same one.
+    $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
   rescue StandardError => e
     $stderr.puts "[RPG2k] Failed to continue: #{e.message}"
   end

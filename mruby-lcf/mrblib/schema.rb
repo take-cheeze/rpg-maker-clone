@@ -956,10 +956,24 @@ module LCF
     # Runtime state of a "show picture" command (chunk 103 of the save file),
     # one entry per picture number. The rpg2kpsp analysis only labels a subset
     # of the fields; the position/movement slots (2-5, 8, 11-14, 31, 32) hold
-    # `double` coordinates whose exact meaning is undocumented, so only the
-    # named fields are transcribed here.
+    # `double` coordinates whose exact meaning it does not give.
+    #
+    # 31/32 were identified as the *live* position by experiment against the
+    # genuine RPG_RT: each candidate pair was rewritten in a real Nepheshel save
+    # and the resumed frame compared against the unedited one. Moving 31/32 from
+    # (160,120) to (80,60) shifted the picture up-left by exactly that much,
+    # leaving black at the right and bottom edges; editing 2/3 or 4/5 changed
+    # nothing on screen. (A control confirmed the runtime really does restore
+    # picture state from the save rather than re-showing it: renaming field 1
+    # swapped the displayed image.) 2/3 and 4/5 look like a move's start and
+    # finish, which a still picture does not use -- both read 160/120 here, the
+    # centre of the 320x240 screen -- but that is not proven, so they stay
+    # unnamed. See ADR 0021.
     SAVE_PICTURE = {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
+      # RPG2000 screen coordinates of the picture's *centre*, as doubles.
+      31 => { name: :current_x, type: :double },        # 表示位置Ｘ (中心)
+      32 => { name: :current_y, type: :double },        # 表示位置Ｙ (中心)
       9 => { name: :visible, type: :bool, default: false }, # 表示するか (0 非表示 / 1 表示)
       33 => { name: :zoom, type: :int },                # 拡大率
       34 => { name: :transparency, type: :int },        # 透明度

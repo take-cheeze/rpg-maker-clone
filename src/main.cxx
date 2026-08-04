@@ -43,6 +43,15 @@ DEFINE_bool(
     "scene it reaches as [RPG2k-MAP]. Used to smoke-test the LCF path in CI "
     "(the title screen alone never exercises the map renderer)");
 DEFINE_bool(
+    rpg2k_continue,
+    false,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select "
+    "Continue so the game resumes from the save in the game directory without "
+    "input, and log the map it reaches as [RPG2k-MAP]. Lets both this engine "
+    "and a genuine RPG_RT.exe be brought to the same in-game map from the same "
+    "Save<N>.lsd (see scripts/compare-nepheshel-save-wine.bash) instead of "
+    "being driven there by counting key presses");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -477,6 +486,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpg2k_new_game));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_CONTINUE"),
+                mrb_bool_value(FLAGS_rpg2k_continue));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

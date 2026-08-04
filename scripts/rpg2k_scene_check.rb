@@ -1383,6 +1383,59 @@ check 'Enemy Encounter scene: Flee escapes when allowed, runs Escape' do
   ok st.switches[2], 'the Escape handler ran'
 end
 
+# -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
+#
+# Both flags exist so a headless run can leave the title screen without input:
+# CI's boot smoke uses New Game, and the save comparison
+# (scripts/compare-nepheshel-save-wine.bash) uses Continue. The invariant worth
+# pinning is that each fires *once* -- it is checked every frame, and a
+# re-triggering flag would re-enter the scene forever.
+#
+# Scene::Title needs graphics to construct, so the selector is exercised on a
+# bare instance: these methods only read the flag constants and set
+# @selected_index.
+def title_selector(flag)
+  scene = RPG2k::Scene::Title.allocate
+  scene.instance_variable_set(:@auto_started, false)
+  scene.instance_variable_set(:@selected_index, 0)
+  Object.const_set(flag, true) unless Object.const_defined?(flag)
+  scene
+end
+
+def clear_title_flags
+  %i[RPG2K_NEW_GAME RPG2K_CONTINUE].each do |f|
+    Object.send(:remove_const, f) if Object.const_defined?(f)
+  end
+end
+
+check '--rpg2k_continue selects the title screen Continue entry, once' do
+  clear_title_flags
+  scene = title_selector(:RPG2K_CONTINUE)
+  ok scene.send(:auto_select?), 'the first frame fires the auto-select'
+  eq 1, scene.instance_variable_get(:@selected_index), 'Continue is entry 2'
+  ok !scene.send(:auto_select?), 'it does not fire again on the next frame'
+  clear_title_flags
+end
+
+check '--rpg2k_new_game selects New Game, and wins over --rpg2k_continue' do
+  clear_title_flags
+  scene = title_selector(:RPG2K_NEW_GAME)
+  Object.const_set(:RPG2K_CONTINUE, true)
+  ok scene.send(:auto_select?), 'the first frame fires the auto-select'
+  # New Game needs no save data, so it is the entry that cannot fail for an
+  # unrelated reason when both flags are set.
+  eq 0, scene.instance_variable_get(:@selected_index), 'New Game is entry 1'
+  clear_title_flags
+end
+
+check 'neither flag set leaves the title screen waiting for input' do
+  clear_title_flags
+  scene = RPG2k::Scene::Title.allocate
+  scene.instance_variable_set(:@auto_started, false)
+  scene.instance_variable_set(:@selected_index, 0)
+  ok !scene.send(:auto_select?), 'no auto-select without a flag'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

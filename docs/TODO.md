@@ -75,10 +75,33 @@ The work below is roughly ordered by the critical path to a walkable game
   command window, the windowskin selection cursor, RPG_RT's shadow + colour-
   swatch text, the fixed 320×80 message panel, 60fps frame pacing, and the
   picture / camera-pan / chipset reset a map change performs. CI runs the cheap
-  half (`--rpg2k_new_game` on the real Nepheshel data). Remaining: the two
-  runtimes desynchronise through Nepheshel's timed opening, so an arbitrary
-  in-game map still cannot be diffed pixel-for-pixel — that wants both resumed
-  from the same `Save01.lsd` rather than driven by counting key presses.
+  half (`--rpg2k_new_game` on the real Nepheshel data).
+- ✅ Diff an in-game **map**, not just the title —
+  `scripts/compare-nepheshel-save-wine.bash` resumes both runtimes from the same
+  `Save01.lsd` (ours via `--rpg2k_continue`, RPG_RT via a fixed three-key
+  Continue sequence), so they cannot drift the way the key-press-counting
+  harness did through Nepheshel's timed opening.
+  `scripts/gen-rpg2k-save.rb` moves the party in that save to any map. See the
+  addendum in ADR 0021. Two gaps it uncovered, both still open:
+  - ✅ **Shown pictures are restored on load.** Resuming mid-cutscene, RPG_RT
+    drew the saved background picture and we drew black. `Game::State` treated
+    `@pictures` as transient — true for a HUD re-shown by parallel events, false
+    for a save taken while a cutscene's picture is up, which the real runtime
+    persists in chunk 103. `LCF::Schema::SAVE_PICTURE` recorded the position
+    slots as doubles of unknown meaning; **31/32 are the centre position**,
+    identified by rewriting each candidate pair in a real save and diffing the
+    resumed frame against the unedited one (see the ADR 0021 table). The picture
+    region of the resumed frame is now pixel-identical to RPG_RT. Zoom, opacity
+    and tone have save fields but no sample where they are off their defaults,
+    so they are still left at `Picture`'s defaults rather than guessed at.
+  - **`Game::State#to_lsd` output is not loadable by RPG_RT.** It round-trips
+    through our own parser (`scripts/lcf_save_roundtrip.rb`), but the genuine
+    runtime just leaves "Continue" dead: a real save is sixteen chunks and
+    11–18 KB, ours is five chunks and ~180 bytes, missing the vehicles,
+    pictures, map events and common events plus chunks 102/112/200, which are
+    not in our schema at all. Until then anything that must be read by RPG_RT
+    has to start from a save `scripts/gen-lcf-save-wine.bash` produced and be
+    *edited*, which preserves untouched chunks byte-for-byte.
 - ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
   backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
   EasyRPG's parallax model: a looping axis tiles the image and scrolls it at

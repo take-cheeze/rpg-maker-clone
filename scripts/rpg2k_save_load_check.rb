@@ -85,8 +85,19 @@ def check_game(dir)
   # database charset must match the saved hero's -- the state really points at
   # the right actor.
   eq((inv.party || []).first, state.party.leader && state.party.leader.id, 'party leader id')
-  eq hero.charset_name, (state.party.leader && state.party.leader.charset_name),
-     'leader charset matches hero'
+  # ...and when the save records a hero sprite, it must be the leader's, so we
+  # know the state points at the right actor. A save can legitimately carry
+  # *no* sprite: one taken during Nepheshel's opening (as
+  # scripts/gen-lcf-save-wine.bash does, via EasyRPG's F9 debug menu) stores an
+  # empty charset because the hero graphic is not assigned until the opening
+  # ends. Asserting equality there compared "unset" against the database default
+  # and failed on a perfectly valid save.
+  if hero.charset_name.nil? || hero.charset_name.empty?
+    puts '  note: save carries no hero sprite (taken before one was set)'
+  else
+    eq hero.charset_name, (state.party.leader && state.party.leader.charset_name),
+       'leader charset matches hero'
+  end
   eq inv.gold, state.party.gold, 'gold'
   expected_items = {}
   ids = inv.item_ids || []
@@ -121,6 +132,38 @@ def check_game(dir)
   nonzero = (sys.variables || []).each_index.reject { |i| sys.variables[i] == 0 }
                                  .map { |i| i + 1 }
   eq nonzero, state.variables.to_h.reject { |_k, v| v == 0 }.keys.sort, 'variable ids set'
+
+  # Shown pictures (chunk 103). A save taken mid-cutscene carries the pictures
+  # that were on screen; they used to be dropped on load, which is why resuming
+  # Nepheshel's opening drew a black screen where RPG_RT drew the backdrop
+  # (ADR 0021). Fields 31/32 are the centre position, identified by experiment
+  # against the genuine runtime.
+  #
+  # Built here rather than read from the sample save, so this runs in CI too --
+  # no game ships a save with a picture up, and the wine-driven generator that
+  # makes one is a developer tool.
+  synthetic = LCF::SaveData.new
+  pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  entry = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  entry[1] = 'island'
+  entry[31] = 80.0
+  entry[32] = 60.0
+  pics[3] = entry
+  restored = {}
+  Game::State.restore_pictures(Struct.new(:pictures) do
+    def show_picture(id, opts); pictures[id] = opts; end
+  end.new(restored), pics)
+  eq({ 3 => { name: 'island', x: 80, y: 60 } }, restored,
+     'a saved picture is re-shown at its saved centre')
+
+  # An entry with no file name is one of the empty slots RPG2000 always writes.
+  blank = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  blank[1] = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  empty = {}
+  Game::State.restore_pictures(Struct.new(:pictures) do
+    def show_picture(id, opts); pictures[id] = opts; end
+  end.new(empty), blank)
+  eq({}, empty, 'an unnamed picture slot is not re-shown')
 
   # Writer round-trip (ADR 0019): serialise the runtime state back to a genuine
   # .lsd with State#to_lsd, re-read it with State.from_lsd, and confirm every
