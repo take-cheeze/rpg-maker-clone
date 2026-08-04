@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity + zoom + angle rendered; rest stored)
+### 1. `Sprite` extended properties ⚠️ (opacity + zoom + angle + mirror rendered; rest stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -52,11 +52,13 @@ alpha by it, so fades actually fade); `Sprite#zoom_x=`/`zoom_y=` set the image's
 scale (`lv_image_set_scale_x/y`, where 256 = 1.0), so the sprite scales;
 `Sprite#angle=` sets the image's rotation (`lv_image_set_rotation`, converting
 RGSS's counter-clockwise degrees to LVGL's clockwise 0.1° units, pivoting on the
-sprite's `ox`/`oy` origin). **Remaining:** **mirror** — LVGL's `lv_image` has no
-flip, so it needs a software horizontal-flip pass; and
-**tone/color/src_rect/bush_depth** → a software pre-composite through the existing
-`bmp_blt`/`bmp_stretch_blt` blend loops. Both share the same scratch-buffer
-machinery and are the next slices. `Sprite_Character`, `Sprite_Battler`,
+sprite's `ox`/`oy` origin); `Sprite#mirror=` re-binds the canvas to a
+horizontally-flipped scratch copy of the bitmap (LVGL's `lv_image` has no flip,
+so mirroring is a software pass — the flip is a snapshot, so a sprite that
+redraws its bitmap contents while mirrored must re-assign `bitmap=` to refresh).
+**Remaining:** **tone/color/src_rect/bush_depth** → a software pre-composite
+through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
+scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
 `Arrow_Base`, weather and the animation player depend on these.
 
 ### 2. `Window` ⚠️ (stored; native frame/cursor render pending)
