@@ -2252,6 +2252,12 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
   const bool has_color = cl.alpha != 0;
 
+  // bush_depth: the bottom N rows are drawn at half opacity, so a character
+  // wading through bushes fades out below the waist.
+  const mrb_value bush_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@bush_depth"));
+  const int bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
+
   // src_rect: display only a sub-region of the bitmap (character-animation
   // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
   int cx = 0, cy = 0, cw = src.width, ch = src.height;
@@ -2270,7 +2276,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     }
   }
 
-  if (cropped || mirror || has_tone || has_color) {
+  if (cropped || mirror || has_tone || has_color || bush > 0) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
     mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
@@ -2313,6 +2319,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
           g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
           b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
         }
+        if (bush > 0 && y >= ch - bush)
+          a /= 2;
         bmp_put(fx, x, y, r, g, b, a);
       }
     }
@@ -2492,6 +2500,18 @@ mrb_value spr_set_blend_type(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   lv_obj_set_style_blend_mode(obj, mode, 0);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@blend_type"), mrb_fixnum_value(t));
+  return self;
+}
+
+// RGSS Sprite#bush_depth= fades the bottom N rows of the sprite; baked into the
+// composite by spr_bind_display, so assigning it re-composites.
+mrb_value spr_set_bush_depth(mrb_state* M, mrb_value self) {
+  mrb_int d;
+  mrb_get_args(M, "i", &d);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bush_depth"), mrb_fixnum_value(d));
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
   return self;
 }
 
@@ -3602,6 +3622,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "src_rect=", spr_set_src_rect, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "blend_type=", spr_set_blend_type, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);

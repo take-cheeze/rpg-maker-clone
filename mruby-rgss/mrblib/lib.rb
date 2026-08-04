@@ -141,17 +141,17 @@ module RGSS
     # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
     # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect.
     # `opacity=`, `zoom_x=`, `zoom_y=`, `angle=`, `mirror=`, `tone=`, `color=`,
-    # `src_rect=` and `blend_type=` are now honoured natively (src/lib.cxx sets the
-    # sprite canvas's LVGL object opacity / image scale / image rotation / blend
-    # mode; mirror, tone, colour and the src_rect crop are baked into a scratch
-    # copy the canvas points at, and `update` re-composites so per-frame
-    # `src_rect.set` shows). They still store their ivars here so the readers below
-    # return the set values. The rest are stored so `sprite.bush_depth = n` no
-    # longer raises, but the native renderer does not yet honour them visually
-    # (tracked in docs/rpgxp-rgss-api-gap.md). Readers fall back to RGSS's defaults
-    # because the native #initialize does not set these ivars (and cannot be
-    # wrapped from here without replacing it). `nil?` checks — not `||` — where
-    # 0/false is a meaningful value (opacity 0 = transparent).
+    # `src_rect=`, `blend_type=` and `bush_depth=` are now honoured natively
+    # (src/lib.cxx sets the sprite canvas's LVGL object opacity / image scale /
+    # image rotation / blend mode; mirror, tone, colour, the src_rect crop and the
+    # bush-depth bottom fade are baked into a scratch copy the canvas points at, and
+    # `update` re-composites so per-frame `src_rect.set` shows). They still store
+    # their ivars here so the readers below return the set values. `flash` is stored
+    # only so `sprite.flash(...)` no longer raises, but the native renderer does not
+    # yet honour it visually (tracked in docs/rpgxp-rgss-api-gap.md). Readers fall
+    # back to RGSS's defaults because the native #initialize does not set these
+    # ivars (and cannot be wrapped from here without replacing it). `nil?` checks —
+    # not `||` — where 0/false is a meaningful value (opacity 0 = transparent).
     attr_writer :ox, :oy, :bush_depth
 
     def opacity
