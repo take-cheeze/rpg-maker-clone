@@ -127,7 +127,7 @@ The work below is roughly ordered by the critical path to a walkable game
   Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
-  Change Encounter Rate, Change System BGM / SFX, Show Inn,
+  Change Encounter Rate, Change System BGM / SFX, Show Inn, Open Shop,
   Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
   Show/Move/Erase Picture,
   Weather Effects, Call
@@ -207,7 +207,14 @@ The work below is roughly ordered by the critical path to a walkable game
   `[No Stay]` handler branches (structured and skipped like Show Choices).
   `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
   `Scene::Map` drives; the inn fade and jingle are presentation still to come.
-  The remaining commands (battles, shop, EXP gain / level-up
+  **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
+  goods and buy / sell rules and performs the transactions (buy at the database
+  price, sell at half, party 99-item / gold caps enforced), tracking whether
+  anything was traded to pick the command's `[Transaction]` / `[No Transaction]`
+  branches. The interpreter suspends on a `:shop` wait; `Scene::Map` drives the
+  buy / sell menus (one unit per confirm — the quantity selector is a later
+  refinement).
+  The remaining commands (battles, EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;

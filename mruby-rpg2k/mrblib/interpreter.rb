@@ -38,6 +38,10 @@ module Game
       CHANGE_ACTOR_SPRITE = 10630
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
+      OPEN_SHOP           = 10720
+      SHOP_TRANSACTION    = 20720
+      SHOP_NO_TRANSACTION = 20721
+      SHOP_END            = 20722
       SHOW_INN         = 10730
       INN_STAY         = 20730
       INN_NO_STAY      = 20731
@@ -129,7 +133,8 @@ module Game
     def running?; @running; end
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
-                :teleport, :input_digits, :key_input_request, :inn_request
+                :teleport, :input_digits, :key_input_request, :inn_request,
+                :shop_request
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -327,6 +332,36 @@ module Game
       nil
     end
 
+    # Resume an Open Shop request once the player leaves the shop. `transacted`
+    # is whether anything was actually bought or sold — the buying and selling
+    # (gold and inventory changes) happen in the shop scene, mirroring RPG_RT.
+    # When the event carries [Transaction] / [No Transaction] handler branches,
+    # jump into the matching one; otherwise execution simply continues.
+    def resume_shop(transacted)
+      if @shop_has_handlers
+        target = find_shop_option(transacted)
+        @index = target if target
+      end
+      reset_waits
+    end
+
+    # Locate the [Transaction] (SHOP_TRANSACTION) or [No Transaction]
+    # (SHOP_NO_TRANSACTION) handler branch for the pending shop, returning the
+    # index just after its marker. Falls back to SHOP_END and to nil once the
+    # shop's own indent level is left — the same structure as the inn branches.
+    def find_shop_option(transacted)
+      want = transacted ? Cmd::SHOP_TRANSACTION : Cmd::SHOP_NO_TRANSACTION
+      i = @index
+      while i < @list.size
+        c = @list[i]
+        return i + 1 if c.indent == @shop_indent && c.code == want
+        return i if c.indent == @shop_indent && c.code == Cmd::SHOP_END
+        return nil if c.indent < @shop_indent
+        i += 1
+      end
+      nil
+    end
+
     # RPG2000 key-input result codes in priority order (highest first). When more
     # than one accepted button is active RPG_RT returns the largest code:
     # Shift > Cancel > Decision > Up > Right > Left > Down.
@@ -359,6 +394,7 @@ module Game
       @teleport = nil
       @key_input_request = nil
       @inn_request = nil
+      @shop_request = nil
     end
 
     def switches;  @state.switches;  end
@@ -375,6 +411,10 @@ module Game
       when Cmd::CHOICE_END       then nil
       when Cmd::INPUT_NUMBER     then do_input_number cmd
       when Cmd::KEY_INPUT_PROC   then do_key_input cmd
+      when Cmd::OPEN_SHOP        then do_open_shop cmd
+      when Cmd::SHOP_TRANSACTION    then skip_to([Cmd::SHOP_END], cmd.indent); consume
+      when Cmd::SHOP_NO_TRANSACTION then skip_to([Cmd::SHOP_END], cmd.indent); consume
+      when Cmd::SHOP_END         then nil
       when Cmd::SHOW_INN         then do_show_inn cmd
       when Cmd::INN_STAY         then skip_to([Cmd::INN_END], cmd.indent); consume
       when Cmd::INN_NO_STAY      then skip_to([Cmd::INN_END], cmd.indent); consume
@@ -672,6 +712,29 @@ module Game
       @inn_request = { type: cmd.param(0), price: price,
                        can_afford: party.gold >= price, prompt: price > 0 }
       @wait_kind = :inn
+      @waiting = true
+    end
+
+    # Open Shop (10720): enter a shop selling the goods listed from param4 on.
+    # param0 is the mode (0 buy + sell, 1 buy only, 2 sell only); param1 the
+    # shop-screen style (recorded for fidelity). Like the inn, the command may be
+    # followed by [Transaction] / [No Transaction] handler branches (markers
+    # SHOP_TRANSACTION / SHOP_NO_TRANSACTION, closed by SHOP_END) that run on
+    # whether the player bought or sold anything. The interpreter records the
+    # request and suspends on a :shop wait; the scene runs the buy / sell UI
+    # (where the gold and inventory changes happen) and resumes via resume_shop.
+    def do_open_shop(cmd)
+      mode = cmd.param(0)
+      @shop_indent = cmd.indent
+      nxt = @list[@index]
+      @shop_has_handlers =
+        !nxt.nil? && nxt.code == Cmd::SHOP_TRANSACTION && nxt.indent == cmd.indent
+      @shop_request = {
+        mode: mode, allow_buy: mode == 0 || mode == 1,
+        allow_sell: mode == 0 || mode == 2, type: cmd.param(1),
+        goods: cmd.parameters[4..-1] || []
+      }
+      @wait_kind = :shop
       @waiting = true
     end
 

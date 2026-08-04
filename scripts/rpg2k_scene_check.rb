@@ -149,6 +149,9 @@ def fake_db(common = nil)
     # Terms the Show Inn window reads; blank greeting fields exercise the
     # scene's English fallbacks.
     term: OpenStruct.new(gold: 'G'),
+    # A tiny item table the Open Shop window prices its goods from.
+    item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
+            5 => OpenStruct.new(name: 'Herb', price: 40) },
     common_event: common,
     player: {}
   )
@@ -391,6 +394,22 @@ class InnStubParty
   attr_accessor :leader
   def initialize(gold); @gold = gold; @actors = [InnStubActor.new('Hero')]; @leader = nil; end
   def gain_gold(n); @gold += n; end
+end
+
+# A party the shop can charge and stock: gold plus an item-count bag, with the
+# leader Scene::Map reads while rendering.
+class ShopStubParty
+  attr_reader :actors, :gold, :items
+  attr_accessor :leader
+  def initialize(gold); @gold = gold; @items = {}; @actors = []; @leader = nil; end
+  def gain_gold(n); @gold += n; @gold = 0 if @gold < 0; end
+  def item_count(id); @items[id] || 0; end
+  def gain_item(id, n = 1)
+    c = item_count(id) + n
+    c = 0 if c < 0
+    c = 99 if c > 99
+    @items[id] = c
+  end
 end
 
 # Build an auto-start event running `commands`, with a stub party holding `gold`.
@@ -1165,6 +1184,58 @@ check 'Erase Screen pauses the event until the fade settles, then continues' do
   eq 255, st.screen.fade_level, 'the screen is fully erased'
   ok st.screen.erased?, 'held erased'
   ok st.switches[5], 'the event resumed after the fade settled'
+end
+
+check 'Open Shop scene: buying then leaving runs the Transaction branch' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only, goods 3/5
+    ECmd.new(ic::SHOP_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::SHOP_NO_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+  ok !st.switches[1] && !st.switches[2], 'still shopping'
+  RGSS::Input.triggered = [RGSS::Input::C] # buy the first good (id 3 @ 100)
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 400, st.party.gold, 'one Potion bought'
+  eq 1, st.party.item_count(3)
+  RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
+  scene.update
+  scene.update # the Transaction branch runs
+  ok st.switches[1], 'the Transaction branch ran (a purchase happened)'
+  ok !st.switches[2], 'the No Transaction branch was skipped'
+end
+
+check 'Open Shop scene: leaving without buying runs the No Transaction branch' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3], indent: 0),
+    ECmd.new(ic::SHOP_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::SHOP_NO_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update }
+  RGSS::Input.triggered = [RGSS::Input::B] # leave immediately
+  scene.update
+  scene.update
+  eq 500, st.party.gold, 'no gold spent'
+  ok !st.switches[1], 'the Transaction branch was skipped'
+  ok st.switches[2], 'the No Transaction branch ran'
 end
 
 # -- summary ------------------------------------------------------------------
