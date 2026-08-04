@@ -361,7 +361,12 @@ jobs:
           && startsWith(github.event.comment.body, '/preview')
           && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
                       github.event.comment.author_association) }}
-    runs-on: ubuntu-latest
+    # Two `gh api` calls and nothing else — no checkout, no compiler, no build
+    # tools — so this runs on the small `ubuntu-slim` image (1 CPU, 5 GB RAM,
+    # 15-minute job cap) rather than a full-fat runner. `gh` and `jq` ship with
+    # the image. This is exactly the "issue operations / short-running job"
+    # shape that label is meant for, and it bills at a lower rate.
+    runs-on: ubuntu-slim
     permissions:
       # Read the PR to find its head commit; write reactions on the comment
       # (a PR conversation comment is an issue comment, hence `issues`).
