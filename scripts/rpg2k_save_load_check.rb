@@ -208,6 +208,14 @@ def check_game(dir)
     state.party.leader.add_state(7)
     state.party.leader.change_hp(-99_999)  # ...and knock them out (HP 0 + 戦闘不能)
   end
+  # Park the boat and airship so the vehicle chunks (105/107) are exercised.
+  state.vehicle(:boat).map_id = 12
+  state.vehicle(:boat).x = 9
+  state.vehicle(:boat).y = 4
+  state.vehicle(:boat).direction = 1
+  state.vehicle(:airship).map_id = 3
+  state.vehicle(:airship).x = 15
+  state.vehicle(:airship).y = 7
 
   round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd.to_lcf)))
   eq state.map_id, round.map_id, 'to_lsd: map id'
@@ -238,6 +246,14 @@ def check_game(dir)
     eq true, rl.dead?, 'to_lsd: downed leader stays knocked out'
     eq true, rl.state?(Game::Actor::DEATH_STATE), 'to_lsd: leader death state survives'
   end
+  # Parked vehicles (chunks 105 boat / 107 airship) survive; the untouched ship
+  # (chunk 106) is absent and stays unplaced.
+  eq [12, 9, 4, 1], [round.vehicle(:boat).map_id, round.vehicle(:boat).x,
+                     round.vehicle(:boat).y, round.vehicle(:boat).direction],
+     'to_lsd: boat location'
+  eq [3, 15, 7], [round.vehicle(:airship).map_id, round.vehicle(:airship).x,
+                  round.vehicle(:airship).y], 'to_lsd: airship location'
+  eq false, round.vehicle(:ship).placed?, 'to_lsd: untouched ship stays unplaced'
   eq state.switches.to_h.select { |_k, v| v }.keys.sort,
      round.switches.to_h.select { |_k, v| v }.keys.sort, 'to_lsd: switches on'
   eq state.variables.to_h.reject { |_k, v| v == 0 },

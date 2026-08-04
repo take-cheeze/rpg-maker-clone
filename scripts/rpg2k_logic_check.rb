@@ -1324,6 +1324,37 @@ check 'State save round-trips the message configuration' do
   eq true, legacy_loaded.save_access, 'absent save access defaults on'
 end
 
+check 'Vehicle: unplaced by default, placed once positioned' do
+  v = Game::Vehicle.new(:boat)
+  eq :boat, v.type
+  eq false, v.placed?                          # map_id 0 -> never positioned
+  v.map_id = 4; v.x = 8; v.y = 6; v.direction = 1
+  eq true, v.placed?
+  h = v.to_h
+  w = Game::Vehicle.new(:boat)
+  w.load_h(h)
+  eq [4, 8, 6, 1], [w.map_id, w.x, w.y, w.direction]
+end
+
+check 'State save round-trips vehicle locations (boat / ship / airship)' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.vehicle(:boat).map_id = 4; st.vehicle(:boat).x = 8; st.vehicle(:boat).y = 6
+  st.vehicle(:airship).map_id = 2; st.vehicle(:airship).x = 3
+  st.vehicle(:airship).y = 5; st.vehicle(:airship).direction = 3
+  loaded = Game::State.load(db, st.to_h)
+  eq [4, 8, 6], [loaded.vehicle(:boat).map_id, loaded.vehicle(:boat).x,
+                 loaded.vehicle(:boat).y]
+  eq true, loaded.vehicle(:airship).placed?
+  eq 3, loaded.vehicle(:airship).direction
+  eq false, loaded.vehicle(:ship).placed?      # never positioned -> stays unplaced
+  # A save written before vehicles existed simply restores them unplaced.
+  legacy = st.to_h
+  legacy.delete(:vehicles)
+  eq false, Game::State.load(db, legacy).vehicle(:boat).placed?
+end
+
 check 'Party save round-trips actor name / title / sprite overrides' do
   players = {
     1 => FakePlayerRow.new('Hero', 'Base', 0, 5,

@@ -2823,6 +2823,58 @@ module Game
     end
   end
 
+  # A boat / ship / airship's saved location. RPG2000 stores one per vehicle in
+  # its own `.lsd` chunk (105 boat, 106 ship, 107 airship, each a SAVE_MOVABLE):
+  # the map it sits on, its tile position and facing, and its on-map graphic.
+  # Only that saved location is modelled here -- enough to round-trip a save so a
+  # parked vehicle stays where the player left it. Boarding / piloting a vehicle
+  # is not built yet (`map_id` 0 means it has never been placed).
+  class Vehicle
+    TYPES = [:boat, :ship, :airship].freeze
+
+    attr_accessor :map_id, :x, :y, :direction, :charset_name, :charset_index
+    attr_reader :type
+
+    def initialize(type, map_id = 0, x = 0, y = 0, direction = 2)
+      @type = type
+      @map_id = map_id || 0
+      @x = x || 0
+      @y = y || 0
+      @direction = direction || 2
+      @charset_name = ''
+      @charset_index = 0
+    end
+
+    # Whether the vehicle has been placed on a map (0 = never positioned).
+    def placed?; @map_id > 0; end
+
+    def to_h
+      { map_id: @map_id, x: @x, y: @y, direction: @direction,
+        charset_name: @charset_name, charset_index: @charset_index }
+    end
+
+    def load_h(h)
+      return unless h
+      @map_id = h[:map_id] || 0
+      @x = h[:x] || 0
+      @y = h[:y] || 0
+      @direction = h[:direction] || 2
+      @charset_name = h[:charset_name] || ''
+      @charset_index = h[:charset_index] || 0
+    end
+
+    # Populate from a parsed SAVE_MOVABLE chunk (a vehicle location in a `.lsd`).
+    def load_movable(m)
+      return unless m
+      @map_id = m.map_id || 0
+      @x = m.x || 0
+      @y = m.y || 0
+      @direction = m.direction || 2
+      @charset_name = m.charset_name || ''
+      @charset_index = m.charset_index || 0
+    end
+  end
+
   class State
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
@@ -2885,6 +2937,10 @@ module Game
       @system_bgm = {}
       @system_sfx = {}
       @weather = Weather.new
+      # The three vehicles' saved locations (boat / ship / airship), persisted in
+      # `.lsd` chunks 105-107. Unplaced until a save restores them.
+      @vehicles = { boat: Vehicle.new(:boat), ship: Vehicle.new(:ship),
+                    airship: Vehicle.new(:airship) }
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -2893,7 +2949,10 @@ module Game
       @pictures = {}
     end
 
-    attr_reader :pictures
+    attr_reader :pictures, :vehicles
+
+    # The saved location of vehicle `type` (:boat / :ship / :airship), or nil.
+    def vehicle(type); @vehicles[type]; end
 
     # Show (or replace) picture `id` with the given Picture options hash.
     def show_picture(id, opts)
@@ -2945,7 +3004,9 @@ module Game
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
         escape_target: @escape_target, system_bgm: @system_bgm,
-        system_sfx: @system_sfx }
+        system_sfx: @system_sfx,
+        vehicles: { boat: @vehicles[:boat].to_h, ship: @vehicles[:ship].to_h,
+                    airship: @vehicles[:airship].to_h } }
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
@@ -3014,6 +3075,22 @@ module Game
         hero[75] = leader.charset_index || 0
       end
       save[104] = hero
+
+      # Vehicle locations (105 boat / 106 ship / 107 airship). Only a placed
+      # vehicle is written, so a game that never positioned one leaves the chunk
+      # absent, exactly as RPG_RT does.
+      { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
+        v = @vehicles[type]
+        next unless v.placed?
+        mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+        mv[11] = v.map_id
+        mv[12] = v.x
+        mv[13] = v.y
+        mv[22] = v.direction
+        mv[73] = v.charset_name || ''
+        mv[75] = v.charset_index || 0
+        save[chunk] = mv
+      end
 
       sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
       sw = @switches.to_h
@@ -3136,6 +3213,11 @@ module Game
       party.load_state(items: items, gold: inv.gold, hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
       state.direction = hero.direction || 2
+      # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
+      # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
+      state.vehicle(:boat).load_movable(save.boat)
+      state.vehicle(:ship).load_movable(save.ship)
+      state.vehicle(:airship).load_movable(save.airship)
       # The leader's on-map sprite override (a Change Sprite Association), stored
       # in the hero chunk's CharSet fields.
       if party.leader && hero.charset_name && !hero.charset_name.empty?
@@ -3265,6 +3347,11 @@ module Game
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}
+      if (v = h[:vehicles])
+        state.vehicle(:boat).load_h(v[:boat])
+        state.vehicle(:ship).load_h(v[:ship])
+        state.vehicle(:airship).load_h(v[:airship])
+      end
       state
     end
   end
