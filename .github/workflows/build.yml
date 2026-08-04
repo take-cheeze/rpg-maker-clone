@@ -327,45 +327,6 @@ jobs:
             wasm-build/index.wasm.map
             wasm-build/index.data
 
-  screenshots:
-    runs-on: ubuntu-latest
-    steps:
-      - run: git config --global submodule.fetchJobs 4
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: cache test game
-        uses: actions/cache@v6
-        id: cache
-        with:
-          path: data
-          key: game-${{ hashFiles('./scripts/download-nepheshel.bash') }}
-
-      - uses: nixbuild/nix-quick-install-action@v35
-      - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-
-      - name: Download game
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: nix develop -c ./scripts/download-nepheshel.bash
-
-      - name: Take screenshots
-        run: |
-          wget https://raw.githubusercontent.com/scottyhardy/docker-wine/master/docker-wine
-          chmod +x docker-wine
-          mkdir -p $HOME/.local/bin
-          mv ./docker-wine $HOME/.local/bin
-          export PATH=$HOME/.local/bin:$PATH
-          ./scripts/take_title_screenshot.bash
-      - uses: actions/upload-artifact@v7
-        with:
-          name: screenshots
-          path: ss/
-
   wio:
     # Build the Wio Terminal (SAMD51) bring-up firmware with PlatformIO. This is
     # the external check for the port's HAL: this environment cannot cross-build
