@@ -67,16 +67,10 @@ class RPGXP
       # some scripts read it (e.g. to hot-reload). Mirror that shape.
       idx = -1
       $RGSS_SCRIPTS = sections.map { |name, source| [idx += 1, name, source] }
-      # CRuby needs the top-level binding so class defs become global constants;
-      # mruby has no TOPLEVEL_BINDING and evaluates a nil-binding eval at the top
-      # level already. const_defined? avoids defined?(CONST), which raises on an
-      # undefined constant here. (The TOPLEVEL_BINDING branch never runs on mruby.)
-      top = Object.const_defined?(:TOPLEVEL_BINDING) ? TOPLEVEL_BINDING : nil
       sections.each do |name, source|
-        # eval(str, binding, file, line): the section name becomes the "file" in
-        # any backtrace, and top-level class/module definitions land on Object —
-        # so `class Scene_Title` etc. define global constants, as under RGSS.
-        eval(source, top, name, 1)
+        # Evaluate through the top-level helper so a section's `class Scene_Title`
+        # etc. define global (::) constants, as under RGSS — see rgss_eval_section.
+        rgss_eval_section(source, name)
       end
       true
     end
@@ -107,4 +101,19 @@ class Object
   def save_data(obj, filename)
     RPGXP::ScriptHost.db.save_object(obj, filename)
   end
+end
+
+# Evaluate one RGSS script section. Defined at the TOP LEVEL (not inside
+# RPGXP::ScriptHost) on purpose: mruby resolves `class Foo` in eval'd code
+# against the *lexical* scope of the method that calls eval, so evaluating from
+# inside a module would define the section's classes under that module. Called
+# from here, the lexical scope is Object, so `class Scene_Title` etc. become
+# global (::) constants — matching how RGSS evaluates the scripts at top level.
+# CRuby is handled the same way via TOPLEVEL_BINDING when present (mruby has no
+# such constant and a nil-binding eval here already targets the top level);
+# const_defined? avoids defined?(CONST), which raises on an unknown constant in
+# this mruby build. The section name becomes the "file" in any backtrace.
+def rgss_eval_section(source, name)
+  top = Object.const_defined?(:TOPLEVEL_BINDING) ? TOPLEVEL_BINDING : nil
+  eval(source, top, name, 1)
 end

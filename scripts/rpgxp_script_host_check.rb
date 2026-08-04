@@ -153,6 +153,26 @@ class Checker
   end
 end
 
+# Project-independent: ScriptHost.run must eval a section so its class defines a
+# GLOBAL (::) constant, the way RGSS evaluates scripts at top level. Mirrors the
+# mruby test; catches a regression in rgss_eval_section's top-level scoping.
+def check_run_defines_top_level
+  tiny = Object.new
+  def tiny.scripts; [["Probe", "class RgssHostCheckProbe; def v; 5; end; end"]]; end
+  def tiny.read_object(*); end
+  def tiny.save_object(*); end
+  unless RPGXP::ScriptHost.run(tiny)
+    warn "  FAIL ScriptHost.run returned false for a one-section project"
+    return 1
+  end
+  unless Object.const_defined?(:RgssHostCheckProbe) && RgssHostCheckProbe.new.v == 5
+    warn "  FAIL ScriptHost.run did not define the section's class at the top level"
+    return 1
+  end
+  puts "  ScriptHost.run defines section classes at the top level"
+  0
+end
+
 def discover_games(root)
   return [] unless Dir.exist?(root)
   Dir.glob(File.join(root, "**", "Data", "Scripts.rxdata"))
@@ -169,5 +189,10 @@ end
 
 checker = Checker.new
 games.each { |g| checker.check_game(g) }
-checker.report
-exit(checker.errors.zero? ? 0 : 1)
+errors = checker.errors + check_run_defines_top_level
+if errors.zero?
+  puts "OK: XP script host decodes, installs built-ins and evaluates real scripts"
+else
+  warn "#{errors} error(s)"
+end
+exit(errors.zero? ? 0 : 1)
