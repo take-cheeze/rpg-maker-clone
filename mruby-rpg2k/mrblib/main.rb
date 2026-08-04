@@ -389,6 +389,7 @@ class RPG2k
         @message = nil
         @inn_window = nil
         @shop = nil
+        @battle_seq = nil
         @wait_timer = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -421,6 +422,7 @@ class RPG2k
         close_message
         close_inn_window
         close_shop
+        close_battle
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
          @picture_sprite].each do |s|
           s.dispose if s
@@ -1635,21 +1637,81 @@ class RPG2k
       def drive_battle
         req = @interpreter.battle_request
         return @interpreter.resume_battle(:victory) unless req
+        @battle_seq = resolve_battle(req) if @battle_seq.nil?
+        if @battle_seq[:window].nil?
+          if @battle_seq[:shown]
+            result = @battle_seq[:result]
+            @battle_seq = nil
+            @interpreter.resume_battle(result)
+          else
+            open_battle_window(@battle_seq[:lines])
+            @battle_seq[:shown] = true
+          end
+          return
+        end
+        # The result window is up; any confirm / cancel dismisses it.
+        close_battle_window if Input.trigger?(Input::C) || Input.trigger?(Input::B)
+      end
+
+      # Run the headless battle, grant rewards on a win and build the result
+      # window's lines. Rewards are applied now (so the amounts can be shown); the
+      # interpreter is resumed later, once the player dismisses the window.
+      def resolve_battle(req)
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
         battle = Game::Battle.new(allies, foes, Game::Rng.new(0x2000))
         result = battle.run
-        log_battle(battle, result) # until the battle screen lands, trace it to the console
-        if result == :victory
-          exp = troop.total_exp
-          @state.party.actors.each { |a| a.gain_exp(exp) }
-          @state.party.gain_gold(troop.total_gold)
-        end
-        @interpreter.resume_battle(result)
+        log_battle(battle, result) # blow-by-blow trace to the console
+        lines = battle_result_lines(result, troop)
+        { lines: lines, result: result, window: nil, shown: false }
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle resolution failed: #{e.message}"
-        @interpreter.resume_battle(:victory)
+        { lines: ['Victory!'], result: :victory, window: nil, shown: false }
+      end
+
+      # The result window's text: the outcome, and on a win the EXP / gold gained
+      # (granted here). RPG2000 shows this after the fight before returning to the
+      # map.
+      def battle_result_lines(result, troop)
+        return ['The party was defeated...'] unless result == :victory
+        exp = troop.total_exp
+        gold = troop.total_gold
+        @state.party.actors.each { |a| a.gain_exp(exp) }
+        @state.party.gain_gold(gold)
+        lines = ['Victory!']
+        lines << "Gained #{exp} EXP." if exp > 0
+        lines << "Found #{gold} gold." if gold > 0
+        lines
+      end
+
+      BATTLE_LINE_H = 14
+
+      def open_battle_window(lines)
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = lines.length * BATTLE_LINE_H
+        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |line, i|
+          c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
+        end
+        win.contents = c
+        @battle_seq[:window] = win
+      end
+
+      def close_battle_window
+        return unless @battle_seq && @battle_seq[:window]
+        @battle_seq[:window].dispose
+        @battle_seq[:window] = nil
+      end
+
+      def close_battle
+        close_battle_window
+        @battle_seq = nil
       end
 
       # Trace a resolved battle blow-by-blow to the console — a stand-in for the

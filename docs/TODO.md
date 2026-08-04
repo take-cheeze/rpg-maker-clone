@@ -228,10 +228,13 @@ The work below is roughly ordered by the critical path to a walkable game
   entry (attacker / target / damage / defeated), so an on-screen battle can
   animate it action-by-action; `#run` steps to completion for the headless
   resolution. It runs on Combatant snapshots, so the party's real HP is untouched
-  for now, and until the battle screen exists `Scene::Map` traces the fight to
-  the console from the log. Still to come: skills / items / criticals /
-  attributes / variance / escape in the sim, and the on-screen turn-based battle
-  (showing and persisting HP, with the command menu) plus game over on defeat.
+  for now, and `Scene::Map` traces the fight to the console from the log. After
+  the fight it shows an on-map **battle result window** (`Victory!` with EXP /
+  gold gained, or `The party was defeated...`), waiting for a confirm before
+  resuming and routing the `[Victory]` / `[Defeat]` branch. Still to come: skills
+  / items / criticals / attributes / variance / escape in the sim, and the full
+  on-screen turn-based battle (party / enemy display, HP, the command menu and
+  per-turn animation from the log) plus game over on defeat.
   The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
