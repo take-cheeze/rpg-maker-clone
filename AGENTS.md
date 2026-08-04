@@ -37,9 +37,11 @@ directly. Before opening one:
   validators before pushing.
 - **Open a PR when there is code to review.** Push with
   `git push -u origin <branch>`, then open a pull request whenever the change
-  includes code that needs review. Each PR gets a **Cloudflare Pages** preview
-  and must keep CI green before it is merged; pushes to `master` deploy the page
-  to **GitHub Pages**.
+  includes code that needs review. A PR must keep CI green before it is merged;
+  pushes to `master` deploy the page to **GitHub Pages**. A **Cloudflare Pages**
+  preview is published on request — comment `/preview` on the PR when a
+  reviewer should see the change running in the browser (see
+  `docs/deploy.md`).
 - **Auto-merge counts as approval — keep moving.** When a PR has auto-merge
   enabled, treat it as already review-approved: do not block waiting for the
   merge to land. Move straight on to the next task if there is work left to do;
