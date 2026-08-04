@@ -1228,6 +1228,43 @@ mrb_value bmp_tone_blt(mrb_state* M, V self) {
   return self;
 }
 
+// RGSS Bitmap#gradient_fill_rect(rect, color1, color2, vertical=false) or
+// (x, y, width, height, color1, color2, vertical=false): fill the rect with a
+// linear gradient from color1 to color2, left-to-right (or top-to-bottom when
+// vertical). Like fill_rect, it overwrites the pixels (colour + alpha).
+mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  mrb_int x, y, w, h;
+  V col1, col2;
+  mrb_bool vertical = false;
+  if (mrb_get_argc(M) <= 4) {
+    V r;
+    mrb_get_args(M, "ooo|b", &r, &col1, &col2, &vertical);
+    Rect& rc = DataType<Rect>::get(M, r);
+    x = rc.x;
+    y = rc.y;
+    w = rc.width;
+    h = rc.height;
+  } else {
+    mrb_get_args(M, "iiiioo|b", &x, &y, &w, &h, &col1, &col2, &vertical);
+  }
+  Color& c1 = DataType<Color>::get(M, col1);
+  Color& c2 = DataType<Color>::get(M, col2);
+  const mrb_int span = vertical ? h : w;
+  for (mrb_int j = y; j < y + h; ++j) {
+    for (mrb_int i = x; i < x + w; ++i) {
+      const mrb_int pos = vertical ? (j - y) : (i - x);
+      const double t = span > 1 ? static_cast<double>(pos) / (span - 1) : 0.0;
+      bmp_put(b, i, j, c1.red + (c2.red - c1.red) * t,
+              c1.green + (c2.green - c1.green) * t,
+              c1.blue + (c2.blue - c1.blue) * t,
+              c1.alpha + (c2.alpha - c1.alpha) * t);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
 mrb_value bmp_get_pixel(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y;
@@ -3954,6 +3991,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "clear", bmp_clear, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "fill_rect", bmp_fill_rect,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(3));
+  mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
+                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
