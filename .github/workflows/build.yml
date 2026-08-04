@@ -203,11 +203,17 @@ jobs:
                 --timeout_ms=5000 --game_dir data/mv-sample \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
+          # Run the battle smoke against the real bed (Lunatic-Core): it ships
+          # battlers and a battleback, so the captured Scene_Battle frame shows
+          # an actual battle (enemy + battle log) rather than the art-less
+          # sample's near-black screen. The step logs `[MV-BTL] reached_battle=
+          # <bool>`; a longer timeout lets New Game -> map -> the battle intro
+          # play out before the assertion.
           - name: MV battle smoke test
             continue-on-error: true
             run: |
               nix develop -c xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=6000 --game_dir data/mv-sample \
+                --timeout_ms=8000 --game_dir data/Lunatic-Core \
                 --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
 
           - name: MV movement smoke test
