@@ -504,7 +504,7 @@ class RPG2k
         close_shop
         close_battle
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
-         @picture_sprite].each do |s|
+         @picture_sprite, @fade_sprite, @flash_sprite].each do |s|
           s.dispose if s
         end
         @chipset_bmp.dispose if @chipset_bmp
@@ -563,6 +563,58 @@ class RPG2k
 
         setup_parallax
         setup_pictures
+        setup_screen_overlay
+      end
+
+      # The full-screen colour layers Erase/Show Screen (fade) and Flash Screen
+      # draw. Both sit above everything, message window included -- RPG2000 fades
+      # and flashes the whole screen, not just the map.
+      #
+      # No native work was needed for this, despite the note in docs/TODO.md that
+      # it wanted "alpha-blend / viewport support in C++": RGSS::Sprite#opacity
+      # already maps onto LVGL's per-object alpha at blit time, which is exactly
+      # the per-sprite opacity RGSS specifies. So a screen-sized sprite of solid
+      # colour, shown at the effect's strength, is the whole mechanism.
+      #
+      # The bitmaps are filled once and only re-filled when the colour changes
+      # (never, for the always-black fade): a per-frame fill of the screen would
+      # be 76800 pixel writes to produce the same image, where changing the
+      # opacity is one property set.
+      def setup_screen_overlay
+        @fade_sprite = Sprite.new
+        @fade_sprite.z = 500
+        @fade_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
+        @fade_sprite.bitmap = @fade_bmp
+        @fade_sprite.opacity = 0
+
+        @flash_sprite = Sprite.new
+        @flash_sprite.z = 450
+        @flash_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @flash_sprite.bitmap = @flash_bmp
+        @flash_sprite.opacity = 0
+        @flash_rgb = nil
+      end
+
+      # Push this frame's fade and flash levels onto the two overlay sprites.
+      # Both are 0..255 already: Game::Screen models the fade as 0 visible ..
+      # 255 black, and the flash as a colour plus a 0..255 strength that decays
+      # over the command's duration.
+      def update_screen_overlay
+        screen = @state.screen
+        @fade_sprite.opacity = screen.fade_level
+
+        r, g, b, strength = screen.flash_color
+        if strength <= 0
+          @flash_sprite.opacity = 0
+        else
+          rgb = [r, g, b]
+          if @flash_rgb != rgb
+            @flash_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
+            @flash_rgb = rgb
+          end
+          @flash_sprite.opacity = strength
+        end
       end
 
       # Create the buffer that carries the Show Picture layer. Pictures composite
@@ -2424,6 +2476,7 @@ class RPG2k
         draw_player_frame
 
         draw_pictures cam_x, cam_y
+        update_screen_overlay
       end
 
       # Composite the Show Picture layer into its buffer, drawing lowest-id first
