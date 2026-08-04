@@ -179,22 +179,17 @@ jobs:
             run: |
               nix develop -c cmake --build build -t test
 
-          # Boot the built engine on the real RPG2000 test-bed (Nepheshel) and
-          # drive it past the title into the map with --rpg2k_new_game. The
-          # CRuby host checks above load the same game.rb/main.rb sources but
-          # cannot catch mruby/CRuby divergence (a bare `module_function` is a
-          # no-op in mruby, `Enumerable#none?` is absent), which had left the
-          # LCF map path raising on New Game while every check passed. Any
-          # uncaught mruby exception aborts the binary, so a non-zero exit or a
-          # missing [RPG2k-MAP] marker fails this step. See ADR 0021.
+          # Boot the built engine on the real RPG2000/2003 test-beds and drive
+          # it past the title into the map with --rpg2k_new_game. The CRuby host
+          # checks above load the same game.rb/main.rb sources but cannot catch
+          # mruby/CRuby divergence (a bare `module_function` is a no-op in
+          # mruby, `Enumerable#none?` is absent), which had left the LCF map
+          # path raising on New Game while every check passed. Any uncaught
+          # mruby exception aborts the binary, so a non-zero exit or a missing
+          # [RPG2k-MAP] marker fails this step. It uses display 108 and up, one
+          # per game. See ADR 0021.
           - name: RPG2k real-game boot smoke test
-            run: |
-              nix develop -c xvfb-run --server-num=108 timeout 180 \
-                ./build/rpg_maker_clone --game_dir \
-                data/Nepheshel206beta/Nepheshel206Rbeta \
-                --rpg2k_new_game --timeout_ms=20000 >/tmp/rpg2k.log 2>&1
-              cat /tmp/rpg2k.log
-              grep -q '\[RPG2k-MAP\]' /tmp/rpg2k.log
+            run: nix develop -c ./scripts/rpg2k_boot_check.bash 108
 
           - name: MV boot smoke test
             continue-on-error: true
