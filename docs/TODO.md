@@ -127,7 +127,7 @@ The work below is roughly ordered by the critical path to a walkable game
   Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
-  Change Encounter Rate, Change System BGM / SFX,
+  Change Encounter Rate, Change System BGM / SFX, Show Inn,
   Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
@@ -198,7 +198,14 @@ The work below is roughly ordered by the critical path to a walkable game
   round-trip through the save, but nothing consumes them yet (the Teleport /
   Escape skills, encounter system and battle / menu scenes are not built), so
   they are modelled for save fidelity like the access flags.
-  The remaining commands (battles, shop / inn, EXP gain / level-up
+  **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
+  window with Accept / Cancel choices (Accept gated on whether the party can
+  afford it) plus a gold window, staying deducts the price and fully heals the
+  party, and either outcome routes into the command's optional `[Stay]` /
+  `[No Stay]` handler branches (structured and skipped like Show Choices).
+  `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
+  `Scene::Map` drives; the inn fade and jingle are presentation still to come.
+  The remaining commands (battles, shop, EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;

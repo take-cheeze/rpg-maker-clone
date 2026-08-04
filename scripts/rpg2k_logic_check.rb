@@ -2289,6 +2289,96 @@ check 'Key Input Proc accepts only the chosen keys' do
   eq 0, it.key_input_result([:cancel, :up, :down]), 'unlisted keys ignored'
 end
 
+# -- Show Inn (Stay at Inn) ---------------------------------------------------
+
+check 'Show Inn: staying charges the price and full-heals the party' do
+  st = party_state
+  st.party.gain_gold(1000)
+  st.party.actors.each { |a| a.hp = 1; a.mp = 0 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
+  it.update
+  ok it.waiting?, 'Show Inn suspends the interpreter'
+  eq :inn, it.wait_kind
+  req = it.inn_request
+  eq true, req[:prompt], 'a priced inn prompts'
+  eq true, req[:can_afford]
+  eq 100, req[:price]
+  it.resume_inn(true)
+  ok !it.waiting?, 'the inn resolved'
+  eq 900, st.party.gold, 'the price was deducted'
+  st.party.actors.each do |a|
+    eq a.max_hp, a.hp, "#{a.name} HP restored"
+    eq a.max_mp, a.mp, "#{a.name} MP restored"
+  end
+end
+
+check 'Show Inn: cancelling leaves gold and HP untouched' do
+  st = party_state
+  st.party.gain_gold(1000)
+  st.party.actors.each { |a| a.hp = 1; a.mp = 0 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
+  it.update
+  it.resume_inn(false)
+  eq 1000, st.party.gold, 'no gold spent on cancel'
+  eq 1, st.party.actors.first.hp, 'no healing on cancel'
+end
+
+check 'Show Inn: a free stay (price 0) skips the prompt' do
+  st = party_state
+  st.party.actors.each { |a| a.hp = 1 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 0, 0])])
+  it.update
+  eq false, it.inn_request[:prompt], 'a free inn needs no prompt'
+  it.resume_inn(true)
+  eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'still heals'
+end
+
+check 'Show Inn: the affordability flag reflects the party gold' do
+  st = party_state
+  st.party.gain_gold(50)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
+  it.update
+  eq false, it.inn_request[:can_afford], 'cannot afford a 100g inn with 50g'
+end
+
+check 'Show Inn: Stay / No Stay handler branches route on the outcome' do
+  # Layout mirrors a Show Choices block: the command is followed by the two
+  # marked branches, closed by INN_END, then a command that always runs.
+  list = [
+    FakeCmd.new(IC::SHOW_INN, [0, 100, 0], indent: 0),
+    FakeCmd.new(IC::INN_STAY, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::INN_NO_STAY, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::INN_END, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 0)
+  ]
+  st = party_state
+  st.party.gain_gold(1000)
+  it = Game::Interpreter.new(st)
+  it.start(list)
+  it.update
+  it.resume_inn(true)
+  it.update
+  eq true, st.switches[1], 'the Stay branch ran'
+  ok !st.switches[2], 'the No Stay branch was skipped'
+  eq true, st.switches[3], 'execution continued past the inn'
+  # And the No Stay path on a fresh run.
+  st2 = party_state
+  it2 = Game::Interpreter.new(st2)
+  it2.start(list)
+  it2.update
+  it2.resume_inn(false)
+  it2.update
+  ok !st2.switches[1], 'the Stay branch was skipped'
+  eq true, st2.switches[2], 'the No Stay branch ran'
+  eq true, st2.switches[3], 'execution continued past the inn'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

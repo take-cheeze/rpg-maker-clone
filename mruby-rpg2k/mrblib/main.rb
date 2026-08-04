@@ -387,6 +387,7 @@ class RPG2k
         @interpreter.map_info = self
         build_parallels
         @message = nil
+        @inn_window = nil
         @wait_timer = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -417,6 +418,7 @@ class RPG2k
 
       def dispose
         close_message
+        close_inn_window
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
          @picture_sprite].each do |s|
           s.dispose if s
@@ -1291,6 +1293,7 @@ class RPG2k
           when :choice then open_message(@interpreter.choice_labels, true)
           when :number then open_number_input(@interpreter.input_digits)
           when :key_input then drive_key_input
+          when :inn then drive_inn
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -1343,6 +1346,122 @@ class RPG2k
         else
           it.resume_key_input(code)
         end
+      end
+
+      # -- Show Inn (Stay at Inn) ---------------------------------------------
+
+      INN_LINE_H = 14
+
+      # Drive a Show Inn wait: a free stay (price 0) resumes at once; otherwise a
+      # greeting window with Accept / Cancel choices and a gold window is shown,
+      # Accept selectable only when the party can afford the price. The
+      # interpreter charges gold and heals the party in resume_inn.
+      def drive_inn
+        req = @interpreter.inn_request
+        return @interpreter.resume_inn(false) unless req
+        return @interpreter.resume_inn(true) unless req[:prompt]
+
+        if @inn_window.nil?
+          open_inn_window(req) # opened this frame; take input from the next one
+          return
+        end
+        if Input.trigger?(Input::DOWN) && @inn_choice < 1
+          @inn_choice += 1
+          set_inn_cursor
+        elsif Input.trigger?(Input::UP) && @inn_choice > 0
+          @inn_choice -= 1
+          set_inn_cursor
+        elsif Input.trigger?(Input::C)
+          if @inn_choice.zero?
+            # Accept: only honoured when the party can pay; otherwise ignored.
+            if req[:can_afford]
+              close_inn_window
+              @interpreter.resume_inn(true)
+            end
+          else
+            close_inn_window
+            @interpreter.resume_inn(false)
+          end
+        elsif Input.trigger?(Input::B)
+          close_inn_window
+          @interpreter.resume_inn(false)
+        end
+      end
+
+      # RPG2000 inn term set (A or B) selected by the command's type parameter.
+      # Blank database terms (e.g. a bare test project) fall back to plain
+      # English so the window is never empty.
+      def inn_terms(type)
+        t = db.term
+        a = type.zero?
+        {
+          greet1: nonblank(a ? t.inn_a_greeting_1 : t.inn_b_greeting_1, 'Stay the night for'),
+          greet2: nonblank(a ? t.inn_a_greeting_2 : t.inn_b_greeting_2, '?'),
+          greet3: nonblank(a ? t.inn_a_greeting_3 : t.inn_b_greeting_3, 'Will you stay?'),
+          accept: nonblank(a ? t.inn_a_accept : t.inn_b_accept, 'Yes'),
+          cancel: nonblank(a ? t.inn_a_cancel : t.inn_b_cancel, 'No')
+        }
+      end
+
+      def nonblank(s, fallback)
+        s = s.to_s
+        s.empty? ? fallback : s
+      end
+
+      def open_inn_window(req)
+        terms = inn_terms(req[:type])
+        gold_term = nonblank(db.term.gold, 'G')
+        lines = ["#{terms[:greet1]} #{req[:price]}#{gold_term} #{terms[:greet2]}".strip,
+                 terms[:greet3], terms[:accept], terms[:cancel]]
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = lines.length * INN_LINE_H
+        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+        contents = Bitmap.new(inner_w, inner_h)
+        contents.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |line, i|
+          contents.draw_text 0, i * INN_LINE_H, inner_w, INN_LINE_H, line
+        end
+        win.contents = contents
+
+        gwin = build_inn_gold_window(gold_term)
+        @inn_window = { window: win, gold: gwin }
+        # Start on Accept when affordable, else on Cancel.
+        @inn_choice = req[:can_afford] ? 0 : 1
+        set_inn_cursor
+      end
+
+      # A small window showing the party's current gold, mirroring the RPG2000
+      # inn's gold display.
+      def build_inn_gold_window(gold_term)
+        gw = 88
+        gh = INN_LINE_H + Window::BORDER * 2
+        win = Window.new(SCREEN_W - gw - 6, 6, gw, gh)
+        win.z = 300
+        win.windowskin = @windowskin
+        c = Bitmap.new(gw - Window::BORDER * 2, INN_LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, INN_LINE_H, "#{@state.party.gold}#{gold_term}"
+        win.contents = c
+        win
+      end
+
+      # The Accept / Cancel lines sit below the two greeting lines, so the cursor
+      # row is offset by 2.
+      def set_inn_cursor
+        return unless @inn_window
+        win = @inn_window[:window]
+        row = 2 + @inn_choice
+        win.cursor_rect = Rect.new(0, row * INN_LINE_H, win.contents.width, INN_LINE_H)
+      end
+
+      def close_inn_window
+        return unless @inn_window
+        @inn_window[:window].dispose
+        @inn_window[:gold].dispose if @inn_window[:gold]
+        @inn_window = nil
       end
 
       def drive_wait
