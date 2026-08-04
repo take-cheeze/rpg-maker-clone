@@ -83,19 +83,20 @@ clip contents taller than the window; `stretch` (tiled vs stretched background) 
 ignored; and the RMXP windowskin source-rect constants are best-effort until a
 game exercises them.
 
-### 3. `Tilemap` ⚠️ (regular tiles rendered; autotiles + priority pending)
+### 3. `Tilemap` ⚠️ (tiles + autotiles rendered; priority layering pending)
 
 `Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
 `lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
 visible part of the map — for each of the three `map_data` layers it blits the
-tiles overlapping the viewport (given `ox`/`oy`) from the `tileset`. `tileset=`,
+tiles overlapping the viewport (given `ox`/`oy`). **Regular tiles** (id ≥ 384)
+come straight from the `tileset`; **autotiles** (id 48–383) are assembled from
+their four 16×16 quads using the RMXP 48-shape quad table (`AUTOTILE_QUADS`,
+derived from mkxp), so water/terrain ground now fills in. `tileset=`,
 `map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
-native, and re-render on change. **Remaining:** only **regular tiles** (id ≥ 384)
-are drawn — the seven **autotiles** (id 48–383, the 48-shape 2×2 quad assembly)
-and the per-tile **priority layering** are still stored-only (`autotiles`,
-`priorities`, `flash_data`), so autotile-heavy ground (water, terrain) is missing
-and everything renders on one flat layer. The RPG2000 side has a portable
-autotile reference in `Game::ChipsetLayout`.
+native and re-render on change. **Remaining:** the per-tile **priority layering**
+(`priorities`) — tiles that should draw above characters — is stored-only, so
+everything renders on one flat layer; **autotile animation** uses only the first
+frame; and `flash_data` is ignored.
 
 ### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
 
