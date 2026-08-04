@@ -9,6 +9,10 @@ def rpg_maker_gems(conf)
   # build's per-frame emscripten callback keeps control each frame. Not in the
   # default gem set (docs/adr/0023-rpgxp-script-host-frame-driver.md).
   conf.gem core: 'mruby-fiber'
+  # Kernel#exit / SystemExit: the stock RMXP Interpreter calls `exit` to abort on
+  # runaway common-event recursion; the script host provides it so that raises a
+  # catchable SystemExit the driver ends the game on, rather than a NoMethodError.
+  conf.gem core: 'mruby-exit'
   # Kernel#sprintf / #format and String#%: the RGSS script host runs the game's
   # bundled scripts, which format numbers with sprintf ("%02d" clocks, "%04d"
   # ids, "%+d", "%0*d", …). Not in the default gem set, so pull it in explicitly.
