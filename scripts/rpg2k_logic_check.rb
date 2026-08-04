@@ -2130,6 +2130,255 @@ check 'party save round-trips actor EXP and re-derives the level' do
   eq 3, la.level, 'level re-derived from the restored EXP'
 end
 
+# -- Set Teleport / Escape Target, Change Encounter Rate ----------------------
+
+check 'Set Teleport Target registers, updates and removes a destination' do
+  st = party_state
+  eq({}, st.teleport_targets, 'no targets registered by default')
+  it = Game::Interpreter.new(st)
+  # Add map 4 @ (7, 9) with switch 12 gating it, then a plain command after.
+  it.start([FakeCmd.new(IC::SET_TELEPORT_TARGET, [0, 4, 7, 9, 1, 12]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'setting a target must not pause the interpreter'
+  eq({ x: 7, y: 9, switch_id: 12 }, st.teleport_targets[4])
+  eq true, st.switches[1], 'the command after it still ran'
+  # Re-adding the same map overwrites; an absent switch flag stores nil.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SET_TELEPORT_TARGET, [0, 4, 2, 3, 0, 0])])
+  it2.update
+  eq({ x: 2, y: 3, switch_id: nil }, st.teleport_targets[4])
+  # Operation 1 removes it.
+  it3 = Game::Interpreter.new(st)
+  it3.start([FakeCmd.new(IC::SET_TELEPORT_TARGET, [1, 4])])
+  it3.update
+  ok !st.teleport_targets.key?(4), 'the target was removed'
+end
+
+check 'Set Escape Target stores the single escape destination' do
+  st = party_state
+  eq nil, st.escape_target, 'no escape target by default'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_ESCAPE_TARGET, [8, 3, 5, 1, 20])])
+  it.update
+  eq({ map_id: 8, x: 3, y: 5, switch_id: 20 }, st.escape_target)
+  # A second command replaces it; no switch flag stores nil.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SET_ESCAPE_TARGET, [2, 1, 1, 0, 0])])
+  it2.update
+  eq({ map_id: 2, x: 1, y: 1, switch_id: nil }, st.escape_target)
+end
+
+check 'Change Encounter Rate stores the step rate, non-blocking' do
+  st = party_state
+  eq nil, st.encounter_rate, 'encounter rate unset by default'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_ENCOUNTER_RATE, [25]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'changing the rate must not pause the interpreter'
+  eq 25, st.encounter_rate
+  eq true, st.switches[1], 'the command after it still ran'
+end
+
+check 'Change System BGM / SFX stash per-slot audio overrides' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # System BGM slot 0 (battle): [fadein, volume, tempo, balance].
+  it.start([FakeCmd.new(IC::CHANGE_SYSTEM_BGM, [0, 2, 80, 110, 50],
+                        string: 'Battle1'),
+            FakeCmd.new(IC::CHANGE_SYSTEM_SFX, [1, 90, 100, 50],
+                        string: 'Decision2')])
+  it.update
+  eq({ name: 'Battle1', fadein: 2, volume: 80, tempo: 110, balance: 50 },
+     st.system_bgm[0])
+  eq({ name: 'Decision2', volume: 90, tempo: 100, balance: 50 },
+     st.system_sfx[1])
+end
+
+check 'Targets / rate / system audio round-trip through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.encounter_rate = 30
+  st.teleport_targets[4] = { x: 7, y: 9, switch_id: 12 }
+  st.escape_target = { map_id: 8, x: 3, y: 5, switch_id: nil }
+  st.system_bgm[0] = { name: 'Battle1', fadein: 0, volume: 100,
+                       tempo: 100, balance: 50 }
+  st.system_sfx[1] = { name: 'Decision2', volume: 100, tempo: 100,
+                       balance: 50 }
+  loaded = Game::State.load(db, st.to_h)
+  eq 30, loaded.encounter_rate
+  eq({ x: 7, y: 9, switch_id: 12 }, loaded.teleport_targets[4])
+  eq({ map_id: 8, x: 3, y: 5, switch_id: nil }, loaded.escape_target)
+  eq 'Battle1', loaded.system_bgm[0][:name]
+  eq 'Decision2', loaded.system_sfx[1][:name]
+  # A save written before these existed restores empty / unset registries.
+  legacy = st.to_h
+  [:encounter_rate, :teleport_targets, :escape_target,
+   :system_bgm, :system_sfx].each { |k| legacy.delete(k) }
+  legacy_loaded = Game::State.load(db, legacy)
+  eq nil, legacy_loaded.encounter_rate
+  eq({}, legacy_loaded.teleport_targets)
+  eq nil, legacy_loaded.escape_target
+  eq({}, legacy_loaded.system_bgm)
+  eq({}, legacy_loaded.system_sfx)
+end
+
+# -- Key Input Processing -----------------------------------------------------
+
+check 'Key Input Proc (1.50 layout) waits, clears the var, resolves by priority' do
+  st = party_state
+  st.variables[1] = 99 # a stale value the waiting proc must clear
+  it = Game::Interpreter.new(st)
+  # var 1, wait, (legacy dir slot 0), decision, cancel, shift, down, left,
+  # right, up — every key accepted.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 1, 1, 1, 1, 1, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])])
+  it.update
+  ok it.waiting?, 'a waiting proc suspends the interpreter'
+  eq :key_input, it.wait_kind
+  eq 0, st.variables[1], 'the target variable is cleared while waiting'
+  eq true, it.key_input_request[:wait]
+  # Highest-valued matching key wins: Shift(7) > Cancel(6) > Decision(5) >
+  # Up(4) > Right(3) > Left(2) > Down(1); nothing pressed yields 0.
+  eq 7, it.key_input_result([:down, :decision, :shift])
+  eq 6, it.key_input_result([:cancel, :decision, :down])
+  eq 5, it.key_input_result([:decision, :down])
+  eq 1, it.key_input_result([:down])
+  eq 0, it.key_input_result([])
+  # A key press resumes, stores the code, and the next command runs.
+  it.resume_key_input(it.key_input_result([:decision, :down]))
+  ok !it.waiting?, 'the proc resumed'
+  it.update
+  eq 5, st.variables[1]
+  eq true, st.switches[3], 'the command after the proc ran'
+end
+
+check 'Key Input Proc pre-1.50 layout enables the whole D-pad, no Shift' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # Five params (<6): var 2, no-wait, all-directions flag on, decision on,
+  # cancel off.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [2, 0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'even a no-wait proc routes through the scene once'
+  req = it.key_input_request
+  eq false, req[:wait], 'no-wait requests read held state, not edges'
+  acc = req[:accepted]
+  [:down, :left, :right, :up, :decision].each { |k| eq true, acc[k], "#{k} on" }
+  eq false, acc[:cancel], 'cancel not accepted'
+  eq false, acc[:shift], 'pre-1.50 has no Shift'
+  eq 4, it.key_input_result([:up])
+  eq 0, it.key_input_result([:cancel]), 'an unaccepted key yields 0'
+  # No-wait mode does not pre-clear the variable; the resume writes the read.
+  it.resume_key_input(it.key_input_result([]))
+  eq 0, st.variables[2]
+end
+
+check 'Key Input Proc accepts only the chosen keys' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # Accept Decision only (all direction / shift / cancel flags off).
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0, 0])])
+  it.update
+  eq 5, it.key_input_result([:decision])
+  eq 0, it.key_input_result([:cancel, :up, :down]), 'unlisted keys ignored'
+end
+
+# -- Show Inn (Stay at Inn) ---------------------------------------------------
+
+check 'Show Inn: staying charges the price and full-heals the party' do
+  st = party_state
+  st.party.gain_gold(1000)
+  st.party.actors.each { |a| a.hp = 1; a.mp = 0 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
+  it.update
+  ok it.waiting?, 'Show Inn suspends the interpreter'
+  eq :inn, it.wait_kind
+  req = it.inn_request
+  eq true, req[:prompt], 'a priced inn prompts'
+  eq true, req[:can_afford]
+  eq 100, req[:price]
+  it.resume_inn(true)
+  ok !it.waiting?, 'the inn resolved'
+  eq 900, st.party.gold, 'the price was deducted'
+  st.party.actors.each do |a|
+    eq a.max_hp, a.hp, "#{a.name} HP restored"
+    eq a.max_mp, a.mp, "#{a.name} MP restored"
+  end
+end
+
+check 'Show Inn: cancelling leaves gold and HP untouched' do
+  st = party_state
+  st.party.gain_gold(1000)
+  st.party.actors.each { |a| a.hp = 1; a.mp = 0 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
+  it.update
+  it.resume_inn(false)
+  eq 1000, st.party.gold, 'no gold spent on cancel'
+  eq 1, st.party.actors.first.hp, 'no healing on cancel'
+end
+
+check 'Show Inn: a free stay (price 0) skips the prompt' do
+  st = party_state
+  st.party.actors.each { |a| a.hp = 1 }
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 0, 0])])
+  it.update
+  eq false, it.inn_request[:prompt], 'a free inn needs no prompt'
+  it.resume_inn(true)
+  eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'still heals'
+end
+
+check 'Show Inn: the affordability flag reflects the party gold' do
+  st = party_state
+  st.party.gain_gold(50)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
+  it.update
+  eq false, it.inn_request[:can_afford], 'cannot afford a 100g inn with 50g'
+end
+
+check 'Show Inn: Stay / No Stay handler branches route on the outcome' do
+  # Layout mirrors a Show Choices block: the command is followed by the two
+  # marked branches, closed by INN_END, then a command that always runs.
+  list = [
+    FakeCmd.new(IC::SHOW_INN, [0, 100, 0], indent: 0),
+    FakeCmd.new(IC::INN_STAY, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::INN_NO_STAY, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::INN_END, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 0)
+  ]
+  st = party_state
+  st.party.gain_gold(1000)
+  it = Game::Interpreter.new(st)
+  it.start(list)
+  it.update
+  it.resume_inn(true)
+  it.update
+  eq true, st.switches[1], 'the Stay branch ran'
+  ok !st.switches[2], 'the No Stay branch was skipped'
+  eq true, st.switches[3], 'execution continued past the inn'
+  # And the No Stay path on a fresh run.
+  st2 = party_state
+  it2 = Game::Interpreter.new(st2)
+  it2.start(list)
+  it2.update
+  it2.resume_inn(false)
+  it2.update
+  ok !st2.switches[1], 'the Stay branch was skipped'
+  eq true, st2.switches[2], 'the No Stay branch ran'
+  eq true, st2.switches[3], 'execution continued past the inn'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

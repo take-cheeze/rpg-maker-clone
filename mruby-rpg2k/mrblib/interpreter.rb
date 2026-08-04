@@ -19,6 +19,7 @@ module Game
       CHOICE_OPTION    = 20140
       CHOICE_END       = 20141
       INPUT_NUMBER     = 10150
+      KEY_INPUT_PROC   = 11610
       CONTROL_SWITCHES = 10210
       CONTROL_VARS     = 10220
       TIMER_OPERATION  = 10230
@@ -35,6 +36,12 @@ module Game
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_SYSTEM_BGM   = 10660
+      CHANGE_SYSTEM_SFX   = 10670
+      SHOW_INN         = 10730
+      INN_STAY         = 20730
+      INN_NO_STAY      = 20731
+      INN_END          = 20732
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
       CHANGE_EVENT_LOCATION = 10860
@@ -73,7 +80,10 @@ module Game
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
       CHANGE_MAP_TILESET = 11710
+      CHANGE_ENCOUNTER_RATE = 11740
+      SET_TELEPORT_TARGET = 11810
       CHANGE_TELEPORT_ACCESS = 11820
+      SET_ESCAPE_TARGET   = 11830
       CHANGE_ESCAPE_ACCESS   = 11840
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
@@ -117,7 +127,7 @@ module Game
     def running?; @running; end
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
-                :teleport, :input_digits
+                :teleport, :input_digits, :key_input_request, :inn_request
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -271,6 +281,71 @@ module Game
       reset_waits
     end
 
+    # Resume a Key Input Processing request: store the pressed key's RPG2000
+    # `code` (0 when nothing matched, only reached in no-wait mode) into the
+    # target variable and continue. The owning scene samples input while the
+    # interpreter is paused on the :key_input wait, then calls this.
+    def resume_key_input(code)
+      variables[@input_variable] = code.to_i if @input_variable && @input_variable > 0
+      reset_waits
+    end
+
+    # Resume a Show Inn request with the player's decision. On a stay: charge the
+    # inn price and fully heal the party (HP and MP). Either way, if the event
+    # carries [Stay] / [No Stay] handler sub-branches, jump into the matching one;
+    # otherwise execution simply continues past the command. The owning scene
+    # shows the greeting / choice prompt while the interpreter is paused on the
+    # :inn wait, then calls this.
+    def resume_inn(stayed)
+      if stayed
+        party.gain_gold(-@inn_price) if @inn_price && @inn_price > 0
+        party.actors.each(&:full_heal)
+      end
+      if @inn_has_handlers
+        target = find_inn_option(stayed)
+        @index = target if target
+      end
+      reset_waits
+    end
+
+    # Locate the [Stay] (INN_STAY) or [No Stay] (INN_NO_STAY) handler branch for
+    # the pending inn, returning the index just after its marker. Falls back to
+    # the INN_END marker (so an absent branch runs nothing) and to nil once the
+    # inn's own indent level is left without a match.
+    def find_inn_option(stay)
+      want = stay ? Cmd::INN_STAY : Cmd::INN_NO_STAY
+      i = @index
+      while i < @list.size
+        c = @list[i]
+        return i + 1 if c.indent == @inn_indent && c.code == want
+        return i if c.indent == @inn_indent && c.code == Cmd::INN_END
+        return nil if c.indent < @inn_indent
+        i += 1
+      end
+      nil
+    end
+
+    # RPG2000 key-input result codes in priority order (highest first). When more
+    # than one accepted button is active RPG_RT returns the largest code:
+    # Shift > Cancel > Decision > Up > Right > Left > Down.
+    KEY_INPUT_CODES = [
+      [:shift, 7], [:cancel, 6], [:decision, 5],
+      [:up, 4], [:right, 3], [:left, 2], [:down, 1]
+    ].freeze
+
+    # Given the set of currently-active key symbols (an array like [:decision]),
+    # return the RPG2000 code of the highest-priority key the pending request
+    # accepts, or 0 when none of the accepted keys are active. Called by the
+    # owning scene once it has sampled real input.
+    def key_input_result(active)
+      acc = @key_input_request && @key_input_request[:accepted]
+      return 0 unless acc
+      KEY_INPUT_CODES.each do |sym, code|
+        return code if acc[sym] && active.include?(sym)
+      end
+      0
+    end
+
     private
 
     def reset_waits
@@ -280,6 +355,8 @@ module Game
       @choice_labels = nil
       @wait_frames = 0
       @teleport = nil
+      @key_input_request = nil
+      @inn_request = nil
     end
 
     def switches;  @state.switches;  end
@@ -295,6 +372,11 @@ module Game
       when Cmd::CHOICE_OPTION    then skip_to([Cmd::CHOICE_END], cmd.indent); consume
       when Cmd::CHOICE_END       then nil
       when Cmd::INPUT_NUMBER     then do_input_number cmd
+      when Cmd::KEY_INPUT_PROC   then do_key_input cmd
+      when Cmd::SHOW_INN         then do_show_inn cmd
+      when Cmd::INN_STAY         then skip_to([Cmd::INN_END], cmd.indent); consume
+      when Cmd::INN_NO_STAY      then skip_to([Cmd::INN_END], cmd.indent); consume
+      when Cmd::INN_END          then nil
       when Cmd::CONTROL_SWITCHES then do_control_switches cmd
       when Cmd::CONTROL_VARS     then do_control_vars cmd
       when Cmd::TIMER_OPERATION  then do_timer cmd
@@ -343,6 +425,11 @@ module Game
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
+      when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
+      when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
+      when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
+      when Cmd::CHANGE_SYSTEM_BGM    then do_change_system_bgm cmd
+      when Cmd::CHANGE_SYSTEM_SFX    then do_change_system_sfx cmd
       when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
       when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
@@ -517,6 +604,70 @@ module Game
       @input_digits = digits < 1 ? 1 : digits
       @input_variable = cmd.param(1)
       @wait_kind = :number
+      @waiting = true
+    end
+
+    # Key Input Processing (11610): wait for — or, in no-wait mode, sample — one
+    # of a chosen set of buttons and store its RPG2000 code in a variable. The
+    # parameter layout matches RPG_RT and depends on the command's length:
+    #   param0            target variable id
+    #   param1            wait flag (0 = read this frame and continue)
+    #   param2            (pre-1.50 only) accept all four arrows when non-zero
+    #   param3 / param4   accept Decision (OK) / Cancel — always present
+    #   param5..param9    (1.50+) accept Shift / Down / Left / Right / Up
+    # The interpreter only records the request and suspends on a :key_input wait;
+    # the owning scene samples real input (triggered edges when waiting, held
+    # state otherwise) and calls resume_key_input with the resulting code. Number
+    # and operator keys (RPG2003) and the mouse (Maniac) are not modelled.
+    def do_key_input(cmd)
+      var_id = cmd.param(0)
+      wait = cmd.param(1) != 0
+      accepted = { decision: cmd.param(3) != 0, cancel: cmd.param(4) != 0,
+                   shift: false, down: false, left: false, right: false,
+                   up: false }
+      if cmd.parameters.size < 6
+        # Pre-1.50: a single flag enables the whole D-pad, no Shift.
+        if cmd.param(2) != 0
+          accepted[:down] = accepted[:left] = true
+          accepted[:right] = accepted[:up] = true
+        end
+      else
+        accepted[:shift] = cmd.param(5) != 0
+        accepted[:down]  = cmd.param(6) != 0
+        accepted[:left]  = cmd.param(7) != 0
+        accepted[:right] = cmd.param(8) != 0
+        accepted[:up]    = cmd.param(9) != 0
+      end
+      @input_variable = var_id
+      @key_input_request = { wait: wait, accepted: accepted }
+      # RPG_RT clears the variable while a waiting proc is pending; a no-wait proc
+      # overwrites it below via the scene's immediate resume.
+      variables[var_id] = 0 if wait && var_id && var_id > 0
+      @wait_kind = :key_input
+      @waiting = true
+    end
+
+    # Show Inn / Stay at Inn (10730): offer to rest for a price. param0 selects
+    # which term set greets the player (0 inn A, 1 inn B); param1 is the price.
+    # A price of 0 skips the prompt and stays for free. The command may be
+    # followed by [Stay] / [No Stay] handler branches (markers INN_STAY /
+    # INN_NO_STAY, closed by INN_END) that run on the matching outcome, laid out
+    # exactly like a Show Choices block. The interpreter records the request and
+    # suspends on an :inn wait; the scene shows the greeting, the accept / cancel
+    # choices (accept selectable only when affordable) and the gold window, then
+    # resumes via resume_inn. Charging gold and healing the party happen there.
+    def do_show_inn(cmd)
+      price = cmd.param(1)
+      @inn_price = price
+      @inn_indent = cmd.indent
+      # Handler branches, when present, open with an INN_STAY marker immediately
+      # after the command (as a Show Choices block opens with CHOICE_OPTION).
+      nxt = @list[@index]
+      @inn_has_handlers =
+        !nxt.nil? && nxt.code == Cmd::INN_STAY && nxt.indent == cmd.indent
+      @inn_request = { type: cmd.param(0), price: price,
+                       can_afford: party.gold >= price, prompt: price > 0 }
+      @wait_kind = :inn
       @waiting = true
     end
 
@@ -1131,6 +1282,60 @@ module Game
     def do_memorize_bgm(_cmd)
       cur = @state.current_bgm
       @state.memorized_bgm = cur ? cur.dup : nil
+    end
+
+    # Set Teleport Target: register (or clear) a destination the party can jump
+    # to with the Teleport skill. param0 is the operation (0 add, 1 remove),
+    # param1 the map id; on add, param2/param3 are the tile x/y and an optional
+    # switch (param4 flags its presence, param5 is the switch id) gates the
+    # target's availability. Stored in a Game::State registry keyed by map id.
+    # Nothing consumes it yet — the Teleport skill is not executed — so this is
+    # modelled purely for save fidelity, mirroring the access flags.
+    def do_set_teleport_target(cmd)
+      map_id = cmd.param(1)
+      if cmd.param(0) != 0
+        @state.teleport_targets.delete(map_id)
+        return
+      end
+      switch_id = cmd.param(4) != 0 ? cmd.param(5) : nil
+      @state.teleport_targets[map_id] =
+        { x: cmd.param(2), y: cmd.param(3), switch_id: switch_id }
+    end
+
+    # Set Escape Target: register the single destination the Escape skill jumps
+    # to. param0 map id, param1/param2 the tile x/y, and an optional switch
+    # (param3 flags its presence, param4 the switch id). Like the teleport
+    # registry this is stored for save fidelity only; the Escape skill is not
+    # executed yet.
+    def do_set_escape_target(cmd)
+      switch_id = cmd.param(3) != 0 ? cmd.param(4) : nil
+      @state.escape_target =
+        { map_id: cmd.param(0), x: cmd.param(1), y: cmd.param(2),
+          switch_id: switch_id }
+    end
+
+    # Change System BGM: override one of the system music slots (battle,
+    # victory, inn, ...) selected by param0. The remaining fields carry a Music
+    # struct: string = file name, param1 fade-in, param2 volume, param3 tempo,
+    # param4 balance. Stashed in a Game::State slot table; the battle / inn / …
+    # scenes that would play these are not built yet, so this only preserves the
+    # configured music across Save / Continue.
+    def do_change_system_bgm(cmd)
+      @state.system_bgm[cmd.param(0)] = {
+        name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
+        tempo: cmd.param(3), balance: cmd.param(4)
+      }
+    end
+
+    # Change System SFX: override one of the system sound slots (cursor,
+    # decision, cancel, ...) selected by param0. string = file name, param1
+    # volume, param2 tempo, param3 balance. Stored for save fidelity like the
+    # system BGM; nothing plays these yet.
+    def do_change_system_sfx(cmd)
+      @state.system_sfx[cmd.param(0)] = {
+        name: cmd.string, volume: cmd.param(1),
+        tempo: cmd.param(2), balance: cmd.param(3)
+      }
     end
 
     # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the

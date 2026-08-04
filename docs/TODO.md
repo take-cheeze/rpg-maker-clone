@@ -123,9 +123,11 @@ The work below is roughly ordered by the critical path to a walkable game
   Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
-  Message Options, Change Face Graphic, Input Number, Change Actor
+  Message Options, Change Face Graphic, Input Number, Key Input Processing,
+  Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
-  Change Teleport / Escape Access,
+  Change Teleport / Escape Access, Set Teleport / Escape Target,
+  Change Encounter Rate, Change System BGM / SFX, Show Inn,
   Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
@@ -144,7 +146,11 @@ The work below is roughly ordered by the critical path to a walkable game
   progress has finished — the scene advances those routes while it waits and
   resumes it once none remain. **Halt All Movement** cancels every forced route
   at once (the player's and each event's). **Input Number** suspends on a
-  digit-entry widget and writes the entered value to a variable. **Change Actor
+  digit-entry widget and writes the entered value to a variable. **Key Input
+  Processing** waits for (or, in no-wait mode, samples) a chosen set of buttons
+  and writes the pressed key's RPG2000 code to a variable — the scene drives it
+  for foreground and parallel events alike, following RPG_RT's pre-1.50 /
+  1.50+ parameter layouts (number / operator keys and mouse are not modelled). **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
   these edits survive Save / Continue. **Set Transparent Flag** hides or shows
@@ -184,8 +190,23 @@ The work below is roughly ordered by the critical path to a walkable game
   Effects** (11070) records the map weather type (none / rain / snow) and strength
   on `Game::State` — the Ruby-half model only, like the tint overlay, so it
   round-trips through the save but drawing the rain/snow particles is native
-  renderer work still to come. The remaining commands (battles, shop / inn, EXP
-  gain / level-up
+  renderer work still to come.
+  **Set Teleport / Escape Target** (11810 / 11830), **Change Encounter Rate**
+  (11740) and **Change System BGM / SFX** (10660 / 10670) record their payloads
+  on `Game::State` — a per-map teleport-target registry, a single escape target,
+  the encounter step rate and per-slot system music / sound overrides — and
+  round-trip through the save, but nothing consumes them yet (the Teleport /
+  Escape skills, encounter system and battle / menu scenes are not built), so
+  they are modelled for save fidelity like the access flags.
+  **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
+  window with Accept / Cancel choices (Accept gated on whether the party can
+  afford it) plus a gold window, staying deducts the price and fully heals the
+  party, and either outcome routes into the command's optional `[Stay]` /
+  `[No Stay]` handler branches (structured and skipped like Show Choices).
+  `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
+  `Scene::Map` drives; the inn fade and jingle are presentation still to come.
+  The remaining commands (battles, shop, EXP gain / level-up
+  messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

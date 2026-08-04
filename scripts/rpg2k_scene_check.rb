@@ -63,7 +63,7 @@ module RGSS
   # Scriptable input: tests set `dir_value` (a numpad direction held down) and
   # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
-    C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6
+    C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6; SHIFT = 7
     class << self
       attr_accessor :dir_value, :triggered
     end
@@ -72,6 +72,7 @@ module RGSS
     # The scene treats a held key like a triggered one for widget navigation; the
     # stub answers both from the same `triggered` set.
     def self.repeat?(k); Array(@triggered).include?(k); end
+    def self.press?(k); Array(@triggered).include?(k); end
     def self.dir4; @dir_value || 0; end
     def self.update; end
   end
@@ -136,6 +137,9 @@ def fake_db(common = nil)
     system: OpenStruct.new(system_graphic: ''),
     # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
     chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
+    # Terms the Show Inn window reads; blank greeting fields exercise the
+    # scene's English fallbacks.
+    term: OpenStruct.new(gold: 'G'),
     common_event: common,
     player: {}
   )
@@ -362,6 +366,130 @@ check 'parallel common event runs only while its switch gate is on' do
   st.switches[2] = true
   5.times { scene.update }
   ok st.variables[3] > 0, 'it should run once the gate switch is on'
+end
+
+# A lightweight party for the inn tests: resume_inn only needs gold + a party
+# roster whose members respond to full_heal, and Scene::Map reads party.leader.
+class InnStubActor
+  attr_accessor :hp, :mp
+  attr_reader :max_hp, :max_mp, :name
+  def initialize(name); @name = name; @hp = 1; @mp = 0; @max_hp = 100; @max_mp = 30; end
+  def full_heal; @hp = @max_hp; @mp = @max_mp; end
+end
+
+class InnStubParty
+  attr_reader :actors, :gold
+  attr_accessor :leader
+  def initialize(gold); @gold = gold; @actors = [InnStubActor.new('Hero')]; @leader = nil; end
+  def gain_gold(n); @gold += n; end
+end
+
+# Build an auto-start event running `commands`, with a stub party holding `gold`.
+def inn_scene(gold, commands)
+  auto = page(trigger: 3)
+  auto.event_commands = commands
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, InnStubParty.new(gold))
+  [scene, st]
+end
+
+# Show Inn followed by [Stay] / [No Stay] handler branches (switch 1 / switch 2),
+# closed by INN_END — the standard structured layout.
+def inn_commands(ic, price)
+  [
+    ECmd.new(ic::SHOW_INN, [0, price, 0], indent: 0),
+    ECmd.new(ic::INN_STAY, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::INN_NO_STAY, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::INN_END, [], indent: 0)
+  ]
+end
+
+check 'Show Inn scene: accepting heals the party, spends gold, runs Stay branch' do
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  ok !st.switches[1] && !st.switches[2], 'still waiting on the prompt'
+  RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
+  scene.update # resumes with a stay
+  scene.update # runs the Stay branch
+  eq 900, st.party.gold, 'the price was deducted'
+  eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'party healed'
+  ok st.switches[1], 'the Stay branch ran'
+  ok !st.switches[2], 'the No Stay branch was skipped'
+end
+
+check 'Show Inn scene: cancelling with B spends nothing and runs No Stay' do
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update }
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update # resumes with no stay
+  scene.update # runs the No Stay branch
+  eq 1000, st.party.gold, 'no gold spent on cancel'
+  eq 1, st.party.actors.first.hp, 'no healing on cancel'
+  ok !st.switches[1], 'the Stay branch was skipped'
+  ok st.switches[2], 'the No Stay branch ran'
+end
+
+check 'Show Inn scene: an unaffordable Accept is ignored' do
+  scene, st = inn_scene(50, inn_commands(Game::Interpreter::Cmd, 100)) # 50g < 100g
+  5.times { scene.update }
+  # Cursor starts on Cancel when broke; move up to Accept and press it.
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]
+  3.times { scene.update }
+  ok !st.switches[1] && !st.switches[2], 'Accept is inert while unaffordable'
+  eq 50, st.party.gold, 'no gold spent'
+  # Cancel still works.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  scene.update
+  ok st.switches[2], 'the No Stay branch ran on cancel'
+end
+
+check 'Key Input Proc waits for a key, stores its code, then continues' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Wait-mode proc into var 1 accepting Decision + all directions (1.50
+  # layout: [var, wait, _, decision, cancel, shift, down, left, right, up]),
+  # then flip switch 5 to prove it resumed.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 1, 1, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update } # no key pressed: the proc keeps waiting
+  eq 0, st.variables[1], 'no key yet -> variable stays 0'
+  ok !st.switches[5], 'the proc has not resumed'
+  RGSS::Input.triggered = [RGSS::Input::C] # press Decision (OK)
+  scene.update # this frame resumes the proc and stores the code
+  eq 5, st.variables[1], 'Decision stored code 5'
+  scene.update # the following command runs once the proc has resumed
+  ok st.switches[5], 'the event continued after the key press'
+end
+
+check 'Key Input Proc ignores keys it was not told to accept' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Accept Decision only; a Cancel press must not resume it.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0, 0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::B] # Cancel: not accepted
+  3.times { scene.update }
+  ok !st.switches[5], 'an unaccepted key must not resume the proc'
+  eq 0, st.variables[1]
+  RGSS::Input.triggered = [RGSS::Input::C] # Decision: accepted
+  scene.update # resumes and stores the code
+  eq 5, st.variables[1]
+  scene.update # the following command runs
+  ok st.switches[5]
 end
 
 check 'parallel processes pause while a foreground event is running' do
