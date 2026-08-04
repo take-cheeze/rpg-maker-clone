@@ -165,6 +165,18 @@ def check_game(dir)
   end.new(empty), blank)
   eq({}, empty, 'an unnamed picture slot is not re-shown')
 
+  # The save's date must not be zero. RPG_RT reads a zero OLE date (1899-12-30)
+  # as an empty file slot and silently refuses the save -- "Continue" simply does
+  # nothing, with no error anywhere -- which is exactly what to_lsd used to write
+  # and why nothing it produced could be loaded by the genuine runtime (ADR
+  # 0021). Nothing else in the file screen's metadata has that effect, so this is
+  # the one field worth pinning.
+  stamp = state.to_lsd[100][1]
+  eq true, !stamp.nil? && stamp > 0,
+     "to_lsd writes a non-zero save date (got #{stamp.inspect})"
+  # A caller-supplied date still wins, so a deterministic export stays possible.
+  eq 40000.0, state.to_lsd(1, 40000.0)[100][1], 'an explicit timestamp is kept'
+
   # Writer round-trip (ADR 0019): serialise the runtime state back to a genuine
   # .lsd with State#to_lsd, re-read it with State.from_lsd, and confirm every
   # modelled field survives -- i.e. to_lsd is a faithful inverse of from_lsd.

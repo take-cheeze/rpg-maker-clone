@@ -14,15 +14,17 @@
 # timed, so it cannot drift; this puts that save wherever the comparison needs
 # it.
 #
-# WHY IT EDITS A SAVE INSTEAD OF WRITING ONE: `Game::State#to_lsd` can already
-# emit a Save<N>.lsd from nothing, and it round-trips through our own parser --
-# but the genuine RPG_RT *refuses to load it*, leaving "Continue" dead on the
-# title screen. A real save carries sixteen chunks (~11-18 KB); to_lsd emits
-# five (~180 bytes), missing the vehicles, pictures, map events, common events
-# and three chunks not in our schema at all (102, 112, 200). Editing a genuine
-# save sidesteps that entirely: every chunk we do not touch is preserved
-# byte-for-byte, which scripts/lcf_save_roundtrip.rb already proves our writer
-# does. Making to_lsd's own output loadable is tracked separately in docs/TODO.md.
+# WHY IT EDITS A SAVE INSTEAD OF WRITING ONE: `Game::State#to_lsd` can emit a
+# Save<N>.lsd from nothing, and the genuine RPG_RT does load one now (it used to
+# refuse them -- the file-screen date defaulted to 0.0, which is 1899-12-30 on
+# the OLE scale and reads as an empty slot; see ADR 0021). But a to_lsd save
+# carries only the five chunks that model our runtime state: no pictures, no map
+# events, no vehicles. It resumes into a valid but *bare* scene, which is no use
+# for comparing rendering against the real thing.
+#
+# Editing a genuine save keeps all of that: every chunk not touched here is
+# preserved byte-for-byte, which scripts/lcf_save_roundtrip.rb already proves
+# our writer does.
 #
 # Get the base save with scripts/gen-lcf-save-wine.bash, which drives EasyRPG
 # Player's F9 debug menu under wine to write one without a playthrough.

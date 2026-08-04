@@ -94,14 +94,19 @@ The work below is roughly ordered by the critical path to a walkable game
     region of the resumed frame is now pixel-identical to RPG_RT. Zoom, opacity
     and tone have save fields but no sample where they are off their defaults,
     so they are still left at `Picture`'s defaults rather than guessed at.
-  - **`Game::State#to_lsd` output is not loadable by RPG_RT.** It round-trips
-    through our own parser (`scripts/lcf_save_roundtrip.rb`), but the genuine
-    runtime just leaves "Continue" dead: a real save is sixteen chunks and
-    11–18 KB, ours is five chunks and ~180 bytes, missing the vehicles,
-    pictures, map events and common events plus chunks 102/112/200, which are
-    not in our schema at all. Until then anything that must be read by RPG_RT
-    has to start from a save `scripts/gen-lcf-save-wine.bash` produced and be
-    *edited*, which preserves untouched chunks byte-for-byte.
+  - ✅ **`Game::State#to_lsd` output is loadable by RPG_RT.** It round-tripped
+    through our own parser (`scripts/lcf_save_roundtrip.rb`) but the genuine
+    runtime left "Continue" dead, with no error anywhere. The assumed cause —
+    that our five chunks against a real save's sixteen were too few — was
+    **wrong**: a real save stripped to exactly those five chunks still loads.
+    Swapping in one of our chunks at a time isolated the title chunk (100), and
+    then the field: `to_lsd` wrote the file-screen date as `0.0`, and zero on
+    the OLE-automation scale is 1899-12-30, which RPG_RT reads as an *empty
+    slot*. It now defaults to the current time, and a from-scratch `to_lsd` save
+    loads in the real runtime. A `to_lsd` save still carries no picture,
+    map-event or vehicle state, so it resumes into a bare scene — enough to
+    prove the file loads, not enough to compare rendering, which is why the
+    comparison harness still edits a genuine save.
 - ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
   backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
   EasyRPG's parallax model: a looping axis tiles the image and scrolls it at

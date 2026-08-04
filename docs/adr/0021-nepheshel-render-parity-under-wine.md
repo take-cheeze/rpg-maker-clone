@@ -126,16 +126,46 @@ whichever map the comparison wants.
 
 Two things had to be learned the hard way, and both are worth keeping:
 
-**The save must be a genuine one.** `Game::State#to_lsd` can write a
+**The save had to be a genuine one.** `Game::State#to_lsd` can write a
 `Save<N>.lsd` from nothing and it round-trips through our own parser, so it
-looked usable — but RPG_RT silently refuses to load it and "Continue" just
-does nothing on the title screen. A real save carries sixteen chunks and
-11–18 KB; `to_lsd` emits five and ~180 bytes, with no vehicles, pictures, map
-events or common events, and none of the three chunks (102, 112, 200) that are
-not in our schema at all. `scripts/lcf_save_roundtrip.rb` could never have
-caught this: it only proves we can re-read our own output. So the harness starts
-from a save `gen-lcf-save-wine.bash` produced with EasyRPG and *edits* it, which
-preserves every untouched chunk byte-for-byte.
+looked usable — but RPG_RT silently refused to load it and "Continue" just did
+nothing on the title screen, with no error anywhere.
+`scripts/lcf_save_roundtrip.rb` could never have caught that: it only proves we
+can re-read our *own* output. So the harness was built to start from a save
+`gen-lcf-save-wine.bash` produced with EasyRPG and *edit* it, which preserves
+every untouched chunk byte-for-byte.
+
+The obvious explanation was that too much was missing — a real save carries
+sixteen chunks and 11–18 KB where `to_lsd` emits five and ~180 bytes, with no
+vehicles, pictures, map events or common events, and none of chunks 102, 112 or
+200, which our schema does not model at all. **That explanation was wrong**, and
+this ADR asserted it before it was tested. Stripping a real save down to exactly
+the five chunks `to_lsd` writes produces a 9.6 KB file that RPG_RT still loads
+happily, so nothing was missing at all.
+
+Swapping our version of one chunk at a time into that stripped save found the
+real cause in the title chunk (100), and then one field at a time within it:
+
+| Variant of the stripped-but-loadable save | Result |
+| --- | --- |
+| our chunk 101 / 104 / 108 / 109 | loads |
+| our chunk 100 | **refused** |
+| our chunk 100, with a real date in field 1 | loads |
+| our chunk 100, with the face fields dropped instead | refused |
+
+`to_lsd` defaulted the file-screen date to `0.0`. Zero on the OLE-automation
+scale is 1899-12-30, which RPG_RT reads as an **empty file slot** — so it never
+offered the save, and never reported a problem either. The date now defaults to
+the current time (`State.ole_now`), and a `to_lsd` save written from scratch
+loads in the genuine RPG_RT: it leaves the title, the process stays alive and
+keeps responding to input. Pinned by a check in
+`scripts/rpg2k_save_load_check.rb`, since nothing else about the file-screen
+metadata has this effect.
+
+The harness still edits a genuine save rather than writing one, and should: a
+`to_lsd` save carries no picture, map-event or vehicle state, so resuming it
+lands in a valid but bare scene — fine for proving the file loads, useless for
+comparing rendering.
 
 **The first thing the comparison found: shown pictures were not restored on
 load.** Resuming Nepheshel's opening, RPG_RT drew the cutscene's background
