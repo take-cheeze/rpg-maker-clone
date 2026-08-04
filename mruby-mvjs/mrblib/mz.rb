@@ -101,8 +101,7 @@ class MZ
     #     rides the shared RGSS::Audio bridge instead, so skipping it does not
     #     block reaching a scene.
     def runnable_scripts
-      skip = ["js/main.js", "js/libs/vorbisdecoder.js"]
-      CORE_SCRIPTS.reject { |s| skip.include?(s) }
+      CORE_SCRIPTS - ["js/main.js", "js/libs/vorbisdecoder.js"]
     end
 
     # The JS that installs MZ's extra host globals (see HOST_GLOBALS_JS).
