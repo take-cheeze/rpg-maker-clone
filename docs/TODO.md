@@ -221,13 +221,17 @@ The work below is roughly ordered by the critical path to a walkable game
   and routes the `[Victory]` / `[Escape]` / `[Defeat]` handler branches on the
   outcome (the "end event processing" escape mode abandons the event). The
   interpreter suspends on a `:battle` wait, and `Scene::Map` resolves it by
-  running a **headless auto-battle** (`Game::Battle`): battlers act in agility
+  running a **turn-stepped auto-battle** (`Game::Battle`): battlers act in agility
   order, each striking a random living opponent for `max(1, atk/2 − def/4)`
   damage until one side is wiped (`:victory` / `:defeat`), granting the troop's
-  EXP / gold on a win. It runs on Combatant snapshots, so the party's real HP is
-  untouched for now. Still to come: skills / items / criticals / attributes /
-  variance / escape in the sim, and the on-screen turn-based battle (showing and
-  persisting HP) with game over on defeat.
+  EXP / gold on a win. `#step` performs one action at a time and appends a `#log`
+  entry (attacker / target / damage / defeated), so an on-screen battle can
+  animate it action-by-action; `#run` steps to completion for the headless
+  resolution. It runs on Combatant snapshots, so the party's real HP is untouched
+  for now, and until the battle screen exists `Scene::Map` traces the fight to
+  the console from the log. Still to come: skills / items / criticals /
+  attributes / variance / escape in the sim, and the on-screen turn-based battle
+  (showing and persisting HP, with the command menu) plus game over on defeat.
   The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the

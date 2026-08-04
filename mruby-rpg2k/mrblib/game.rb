@@ -2343,14 +2343,16 @@ module Game
     end
   end
 
-  # A headless auto-battle that decides an Enemy Encounter by the combatants'
+  # A turn-stepped auto-battle that decides an Enemy Encounter by the combatants'
   # stats. Battlers act in agility order (highest first); each attacks a random
-  # living opponent for `attack_damage` and the fight runs to a result: :victory
-  # when every enemy is down, :defeat when the whole party is. It works on
-  # Combatant snapshots, so the caller can resolve a battle without mutating the
-  # real party. This is a deliberately simple first cut — no skills, items,
-  # criticals, attributes, damage variance or escape yet — the turn-based battle
-  # screen and those refinements are still to come.
+  # living opponent for `attack_damage`, and the fight resolves to :victory when
+  # every enemy is down or :defeat when the whole party is. `#step` performs one
+  # action at a time and appends a `#log` entry, so an on-screen battle can
+  # animate it action-by-action; `#run` steps to completion for a headless
+  # resolution. It works on Combatant snapshots, so the caller can resolve a
+  # battle without mutating the real party. This is a deliberately simple first
+  # cut — no skills, items, criticals, attributes, damage variance or escape yet
+  # — the turn-based battle *screen* and those refinements are still to come.
   class Battle
     # A battler reduced to what the fight needs. Snapshotting Game::Actor /
     # Game::Enemy keeps the real party untouched by a resolved battle.
@@ -2370,7 +2372,7 @@ module Game
 
     MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
 
-    attr_reader :allies, :enemies, :rounds, :result
+    attr_reader :allies, :enemies, :rounds, :result, :log
 
     def initialize(allies, enemies, rng = nil)
       @allies = allies
@@ -2378,19 +2380,33 @@ module Game
       @rng = rng || Rng.new(0x2000)
       @rounds = 0
       @result = nil
+      @log = []      # one entry per landed attack, in order (see #strike)
+      @queue = []    # battlers still to act this round, in agility order
     end
 
-    # Run the fight to completion and return :victory or :defeat.
-    def run
-      while alive?(@allies) && alive?(@enemies)
-        @rounds += 1
-        break if @rounds > MAX_ROUNDS
-        turn_order.each do |b|
-          next if b.dead?
-          strike(b)
-          break unless alive?(@allies) && alive?(@enemies)
-        end
+    # True once one side has been wiped out (the battle is decided).
+    def finished?; !alive?(@allies) || !alive?(@enemies); end
+
+    # Perform the next single action and return its log entry, or nil when the
+    # battle is already decided (or has hit the round cap). Living battlers act
+    # in agility order; a new round refills the queue.
+    def step
+      loop do
+        return nil if finished?
+        refill_queue if @queue.empty?
+        return nil if @queue.empty? # hit MAX_ROUNDS
+        b = @queue.shift
+        next if b.dead?
+        entry = strike(b)
+        next unless entry # attacker had no living target; try the next
+        @log << entry
+        return entry
       end
+    end
+
+    # Step the fight to completion and return :victory or :defeat.
+    def run
+      step until finished? || @rounds > MAX_ROUNDS
       @result = alive?(@allies) ? :victory : :defeat
     end
 
@@ -2398,18 +2414,27 @@ module Game
 
     def alive?(side); side.any? { |b| !b.dead? }; end
 
+    def refill_queue
+      @rounds += 1
+      @queue = turn_order unless @rounds > MAX_ROUNDS
+    end
+
     # Battlers ordered by agility (highest first); ties keep their listed order.
     def turn_order
       (@allies + @enemies).each_with_index
                           .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
     end
 
-    # `b` attacks a random living member of the opposing side.
+    # `b` attacks a random living member of the opposing side, returning a log
+    # entry (or nil when its side has no living target left).
     def strike(b)
       foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:dead?)
-      return if foes.empty?
+      return nil if foes.empty?
       target = foes[@rng.random(foes.size)]
-      target.hp -= Battle.attack_damage(b.atk, target.def)
+      dmg = Battle.attack_damage(b.atk, target.def)
+      target.hp -= dmg
+      { attacker: b.name, target: target.name, damage: dmg,
+        target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
     end
 
     def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
