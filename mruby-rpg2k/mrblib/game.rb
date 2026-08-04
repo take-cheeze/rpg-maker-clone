@@ -825,9 +825,10 @@ module Game
     # accessory.
     EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
 
-    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), and
-    # the ids of the skills the actor knows.
-    attr_reader :equipment, :skills
+    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), the
+    # ids of the skills the actor knows, and the ids of the status conditions
+    # (状態) currently afflicting the actor.
+    attr_reader :equipment, :skills, :states
 
     def initialize(db, id)
       @db = db
@@ -844,6 +845,7 @@ module Game
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
       @skills = []
+      @states = []
       # Base stats scale with level from the growth curve and equipment adds on
       # top, and levelling learns skills, so seed them all at the actor's initial
       # level, then start at full health.
@@ -922,6 +924,57 @@ module Game
     # Replace the known-skill set (Continue restoring the saved skills).
     def skills=(ids)
       @skills = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
+    end
+
+    # -- status conditions (状態) -------------------------------------------
+
+    # The incapacitation state (戦闘不能). RPG2000 hardcodes it as state id 1, and
+    # it is coupled to HP: a downed actor (HP 0) carries it, and it is cleared the
+    # moment HP is restored (matching EasyRPG's `lcf::rpg::State::kDeathID`).
+    DEATH_STATE = 1
+
+    # Whether the actor is knocked out. HP is authoritative and kept in sync with
+    # the death state, so either signal reports it.
+    def dead?; @hp <= 0 || @states.include?(DEATH_STATE); end
+
+    # Whether the actor is still standing (a live party member).
+    def alive?; !dead?; end
+
+    # Whether `state_id` is currently afflicting the actor.
+    def state?(state_id)
+      return false if state_id.nil? || state_id == 0
+      @states.include?(state_id)
+    end
+
+    # Inflict a status condition (no-ops for an absent/duplicate id). Inflicting
+    # the death state (戦闘不能) knocks the actor out, zeroing HP.
+    def add_state(state_id)
+      return if state_id.nil? || state_id == 0 || @states.include?(state_id)
+      @states.push(state_id)
+      @hp = 0 if state_id == DEATH_STATE
+    end
+
+    # Cure a status condition. Removing the death state revives a downed actor
+    # with 1 HP (RPG2000's revive floor); returns the removed id or nil.
+    def remove_state(state_id)
+      removed = @states.delete(state_id)
+      @hp = 1 if removed == DEATH_STATE && @hp <= 0
+      removed
+    end
+
+    # Cure every status condition (RPG2000 Full Recovery clears them). If the
+    # actor was down, curing the death state revives it with 1 HP.
+    def clear_states
+      revive = @hp <= 0 && @states.include?(DEATH_STATE)
+      @states = []
+      @hp = 1 if revive && @hp <= 0
+    end
+
+    # Replace the state set (Continue restoring the saved conditions). The saved
+    # HP is authoritative and restored separately, so this assigns without the
+    # HP-coupling side effects.
+    def states=(ids)
+      @states = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
     end
 
     # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
@@ -1105,10 +1158,16 @@ module Game
     # Apply a HP change (positive heals, negative damages), clamped to
     # [floor, max_hp]. The floor is 0 when death is allowed (the actor may be
     # knocked out) or 1 otherwise, matching RPG2000's Change HP "allow death"
-    # flag. Returns the new HP.
+    # flag. Reaching 0 with death allowed inflicts the death state (戦闘不能).
+    # A downed actor is unaffected -- HP changes cannot revive it (that needs the
+    # death state cured / Full Recovery), matching EasyRPG's ChangeHp. Returns the
+    # new HP.
     def change_hp(delta, allow_death = true)
+      return @hp if dead?
       floor = allow_death ? 0 : 1
       @hp = Game.clamp(@hp + delta, floor, @max_hp)
+      add_state(DEATH_STATE) if @hp <= 0
+      @hp
     end
 
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
@@ -1116,11 +1175,12 @@ module Game
       @mp = Game.clamp(@mp + delta, 0, @max_mp)
     end
 
-    # Restore HP and MP to their maxima (RPG2000 Full Recovery; state recovery
-    # is not modelled yet).
+    # Restore HP and MP to their maxima and cure every status condition
+    # (RPG2000 Full Recovery).
     def full_heal
       @hp = @max_hp
       @mp = @max_mp
+      clear_states
     end
 
     # Change Parameters base-stat types (the RPG2000 command's parameter field).
@@ -1198,7 +1258,7 @@ module Game
         meta[a.id] = { name: a.name, title: a.title,
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
-                       transparent: a.transparent }
+                       transparent: a.transparent, states: a.states.dup }
       end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
         hp: hp, mp: mp, exp: exp, actor_meta: meta }
@@ -1233,6 +1293,7 @@ module Game
         actor.set_charset(m[:charset_name], m[:charset_index] || actor.charset_index)
       end
       actor.transparent = m[:transparent] unless m[:transparent].nil?
+      actor.states = m[:states] if m[:states]
     end
 
     def each(&blk); @actors.each(&blk); end
@@ -1305,6 +1366,21 @@ module Game
       [hp, mp]
     end
 
+    # The status-condition ids a medicine cures. RPG2000 items list affected
+    # states in `state_set` (a 0/1 byte per state, index i -> state id i+1); when
+    # `reverse_state_effect` is set the item *removes* them (an antidote / herb),
+    # which is the only item-state effect the field menu applies -- an item that
+    # would *inflict* states (the non-reverse case, rolled against state_chance) is
+    # left to battle. Curing is unconditional, matching EasyRPG's item algorithm.
+    def item_cured_states(it)
+      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      set = it.state_set
+      return [] unless set
+      out = []
+      set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
+      out
+    end
+
     # Whether using item `id` on `actor` would change anything, so the menu can
     # grey out a no-op. A medicine is effective when the target is below full
     # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
@@ -1316,7 +1392,8 @@ module Game
       case it.type
       when ITEM_MEDICINE
         hp, mp = item_recovery(it, actor)
-        (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+        (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
+          item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
         !s.nil? && s != 0 && !actor.knows_skill?(s)
@@ -1344,18 +1421,30 @@ module Game
 
     # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
     # (scope 1) heals the whole party regardless of `actor`. Applies the recovery
-    # (clamped to each target's maxima) and consumes one from the bag only when it
-    # actually healed someone (so using it on a full party wastes nothing).
+    # (clamped to each target's maxima) and cures the item's status conditions,
+    # and consumes one from the bag only when it actually did something to someone
+    # (so using it on a full, unafflicted party wastes nothing).
     def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
+      cured = item_cured_states(it)
       affected = []
       targets.each do |t|
+        changed = false
+        # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
+        # the HP recovery below lands instead of being blocked as a no-op.
+        cured.each do |s|
+          if t.state?(s)
+            t.remove_state(s)
+            changed = true
+          end
+        end
         hp, mp = item_recovery(it, t)
         before_hp = t.hp
         before_mp = t.mp
         t.change_hp(hp) if hp > 0
         t.change_mp(mp) if mp > 0
-        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+        changed ||= t.hp != before_hp || t.mp != before_mp
+        affected.push(t) if changed
       end
       lose_item(id, 1) unless affected.empty?
       affected
@@ -3093,6 +3182,10 @@ module Game
         e[61] = a.equipment
         e[71] = a.hp
         e[72] = a.mp
+        unless a.states.empty?
+          e[81] = a.states.size
+          e[82] = a.states
+        end
         actors[a.id] = e
       end
       save[108] = actors
@@ -3156,6 +3249,7 @@ module Game
           actor.exp = sa.exp if sa.exp
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
+          actor.states = sa.states if sa.states
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp

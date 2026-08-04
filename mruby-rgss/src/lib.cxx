@@ -2221,33 +2221,143 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
 // sprite and is freed with it. The flip is a snapshot taken here; a sprite that
 // redraws its bitmap contents while mirrored must re-assign bitmap= (or set
 // mirror= again) to refresh it (tracked in docs/rpgxp-rgss-api-gap.md).
+static int clamp_byte(int v) {
+  return v < 0 ? 0 : (v > 255 ? 255 : v);
+}
+
+// Point the sprite's canvas at the bitmap it should display: the assigned
+// bitmap directly, or — when the sprite is mirrored, toned or colour-overlaid —
+// a scratch copy with those effects baked in (LVGL can express none of them, so
+// they are a software pre-composite). The scratch Bitmap is kept in @_fx_bitmap
+// so it lives as long as the sprite. The effects are a snapshot taken here; a
+// sprite that redraws its bitmap, or mutates its tone/color in place, must
+// re-assign bitmap= / tone= / color= to refresh (tracked in the gap doc).
 void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
   if (mrb_nil_p(bmp_v))
     return;
   Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
-  if (mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@mirror")))) {
-    RClass* bmp_class =
-        mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
-    const mrb_value flip_v =
-        DataType<Bitmap>::make(M, bmp_class, src.width, src.height, src.format);
-    Bitmap& flip = DataType<Bitmap>::get(M, flip_v);
-    const int px = lv_color_format_get_size(src.format);
-    const int w = src.width;
-    for (int y = 0; y < src.height; ++y) {
-      const uint8_t* srow = src.buffer.data() + static_cast<size_t>(y) * w * px;
-      uint8_t* drow = flip.buffer.data() + static_cast<size_t>(y) * w * px;
-      for (int x = 0; x < w; ++x)
-        std::memcpy(drow + static_cast<size_t>(x) * px,
-                    srow + static_cast<size_t>(w - 1 - x) * px, px);
+
+  const bool mirror =
+      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@mirror")));
+  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  Tone tn{};
+  Color cl{0, 0, 0, 0};
+  if (mrb_test(tone_v) && DATA_PTR(tone_v))
+    tn = DataType<Tone>::get(M, tone_v);
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    cl = DataType<Color>::get(M, color_v);
+  const bool has_tone =
+      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_color = cl.alpha != 0;
+
+  // bush_depth: the bottom N rows are drawn at half opacity, so a character
+  // wading through bushes fades out below the waist.
+  const mrb_value bush_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@bush_depth"));
+  const int bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
+
+  // flash: a timed colour pulse (Sprite#flash) that decays over its duration,
+  // advanced one frame per Sprite#update. A colour flash overlays that colour
+  // at a fading alpha; a nil-colour ("empty") flash instead blinks the sprite
+  // out and back in.
+  const mrb_value fcnt_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value fdur_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
+  const mrb_value fcol_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const int flash_count = mrb_test(fcnt_v) ? mrb_as_int(M, fcnt_v) : 0;
+  const int flash_dur = mrb_test(fdur_v) ? mrb_as_int(M, fdur_v) : 0;
+  const bool flash_on = flash_count > 0 && flash_dur > 0;
+  const bool flash_color_on = flash_on && mrb_test(fcol_v) && DATA_PTR(fcol_v);
+  const bool flash_empty = flash_on && !flash_color_on;
+  Color fcl{0, 0, 0, 0};
+  if (flash_color_on)
+    fcl = DataType<Color>::get(M, fcol_v);
+  // Colour flash intensity fades from full (count == duration) to nothing.
+  const int fa = flash_color_on
+                     ? static_cast<int>(fcl.alpha) * flash_count / flash_dur
+                     : 0;
+
+  // src_rect: display only a sub-region of the bitmap (character-animation
+  // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
+  int cx = 0, cy = 0, cw = src.width, ch = src.height;
+  bool cropped = false;
+  const mrb_value sr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
+  if (mrb_test(sr_v) && DATA_PTR(sr_v)) {
+    Rect& sr = DataType<Rect>::get(M, sr_v);
+    if (sr.width > 0 && sr.height > 0 &&
+        (sr.x != 0 || sr.y != 0 || sr.width != src.width ||
+         sr.height != src.height)) {
+      cx = sr.x;
+      cy = sr.y;
+      cw = sr.width;
+      ch = sr.height;
+      cropped = true;
     }
-    flip.dirty = true;
-    // Hold the scratch bitmap on the sprite so the GC keeps it alive.
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_mirror_bitmap"), flip_v);
-    lv_canvas_set_buffer(obj, flip.buffer.data(), src.width, src.height,
-                         src.format);
+  }
+
+  if (cropped || mirror || has_tone || has_color || bush > 0 || flash_on) {
+    // Reuse the scratch bitmap when its size still matches (src_rect changes
+    // every frame, so re-allocating here would churn the GC).
+    mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
+    Bitmap* fxp = nullptr;
+    if (mrb_test(fx_v) && DATA_PTR(fx_v)) {
+      Bitmap& e = DataType<Bitmap>::get(M, fx_v);
+      if (e.width == cw && e.height == ch && e.format == src.format)
+        fxp = &e;
+    }
+    if (!fxp) {
+      RClass* bmp_class =
+          mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+      fx_v = DataType<Bitmap>::make(M, bmp_class, cw, ch, src.format);
+      mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), fx_v);
+      fxp = &DataType<Bitmap>::get(M, fx_v);
+    }
+    Bitmap& fx = *fxp;
+    const int ca = static_cast<int>(cl.alpha);
+    for (int y = 0; y < ch; ++y) {
+      for (int x = 0; x < cw; ++x) {
+        const int srcx = cx + (mirror ? cw - 1 - x : x);
+        const int srcy = cy + y;
+        int r = 0, g = 0, b = 0, a = 0;
+        if (srcx >= 0 && srcy >= 0 && srcx < src.width && srcy < src.height)
+          bmp_read(src, srcx, srcy, r, g, b, a);
+        if (has_tone) {
+          const int gy = static_cast<int>(tn.gray);
+          if (gy != 0) {
+            const int lum = (r * 77 + g * 150 + b * 29) / 256;
+            r += (lum - r) * gy / 255;
+            g += (lum - g) * gy / 255;
+            b += (lum - b) * gy / 255;
+          }
+          r = clamp_byte(r + static_cast<int>(tn.red));
+          g = clamp_byte(g + static_cast<int>(tn.green));
+          b = clamp_byte(b + static_cast<int>(tn.blue));
+        }
+        if (has_color) {
+          r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
+          g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
+          b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
+        }
+        if (flash_color_on) {
+          r = clamp_byte(r + (static_cast<int>(fcl.red) - r) * fa / 255);
+          g = clamp_byte(g + (static_cast<int>(fcl.green) - g) * fa / 255);
+          b = clamp_byte(b + (static_cast<int>(fcl.blue) - b) * fa / 255);
+        }
+        if (flash_empty)
+          a = a * (flash_dur - flash_count) / flash_dur;
+        if (bush > 0 && y >= ch - bush)
+          a /= 2;
+        bmp_put(fx, x, y, r, g, b, a);
+      }
+    }
+    fx.dirty = true;
+    lv_canvas_set_buffer(obj, fx.buffer.data(), cw, ch, src.format);
   } else {
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_mirror_bitmap"), mrb_nil_value());
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), mrb_nil_value());
     lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
                          src.format);
   }
@@ -2353,6 +2463,123 @@ mrb_value spr_set_mirror(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   spr_bind_display(M, self, obj);
   return self;
+}
+
+// RGSS Sprite#tone= (a Tone tint) and #color= (a Color overlay). Both are baked
+// into the sprite's pixels by spr_bind_display, so assigning one re-composites.
+mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return v;
+}
+
+mrb_value spr_set_color(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return v;
+}
+
+// RGSS Sprite#src_rect= displays only a sub-rectangle of the bitmap.
+mrb_value spr_set_src_rect(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@src_rect"), v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return v;
+}
+
+// Per-frame tick: stock scripts (Sprite_Character etc.) mutate src_rect in
+// place via `src_rect.set(...)` each frame, which does not call src_rect=, so a
+// sprite that uses src_rect re-composites here to pick that up (and any
+// tone/color change). An active flash also decays one frame here. Sprites with
+// neither need no per-frame work.
+mrb_value spr_update(mrb_state* M, mrb_value self) {
+  bool recomposite = false;
+
+  // Advance an active flash: it fades one frame per update and clears (dropping
+  // its colour) once the duration runs out.
+  const mrb_value fcnt = mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  int fc = mrb_test(fcnt) ? mrb_as_int(M, fcnt) : 0;
+  if (fc > 0) {
+    --fc;
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+               mrb_fixnum_value(fc));
+    if (fc == 0)
+      mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), mrb_nil_value());
+    recomposite = true;
+  }
+
+  const mrb_value sr = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
+  if (mrb_test(sr) && DATA_PTR(sr)) {
+    Rect& r = DataType<Rect>::get(M, sr);
+    if (r.width > 0 && r.height > 0)
+      recomposite = true;
+  }
+
+  if (recomposite) {
+    lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+    if (obj)
+      spr_bind_display(M, self, obj);
+  }
+  return self;
+}
+
+// RGSS Sprite#blend_type= (0 normal, 1 add, 2 subtract) maps onto the sprite
+// canvas object's LVGL blend mode, which the compositor uses when drawing it
+// over the scene.
+mrb_value spr_set_blend_type(mrb_state* M, mrb_value self) {
+  mrb_int t;
+  mrb_get_args(M, "i", &t);
+  lv_blend_mode_t mode = LV_BLEND_MODE_NORMAL;
+  if (t == 1)
+    mode = LV_BLEND_MODE_ADDITIVE;
+  else if (t == 2)
+    mode = LV_BLEND_MODE_SUBTRACTIVE;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_style_blend_mode(obj, mode, 0);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@blend_type"), mrb_fixnum_value(t));
+  return self;
+}
+
+// RGSS Sprite#bush_depth= fades the bottom N rows of the sprite; baked into the
+// composite by spr_bind_display, so assigning it re-composites.
+mrb_value spr_set_bush_depth(mrb_state* M, mrb_value self) {
+  mrb_int d;
+  mrb_get_args(M, "i", &d);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bush_depth"), mrb_fixnum_value(d));
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return self;
+}
+
+// RGSS Sprite#flash(color, duration) starts a timed colour pulse; a nil colour
+// is an "empty" flash that blinks the sprite out. The state is baked into the
+// composite by spr_bind_display and decayed each frame by spr_update.
+mrb_value spr_flash(mrb_state* M, mrb_value self) {
+  mrb_value color;
+  mrb_int duration;
+  mrb_get_args(M, "oi", &color, &duration);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(duration));
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return mrb_nil_value();
 }
 
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
@@ -2558,13 +2785,73 @@ static void blit_blend(Bitmap& dst,
   }
 }
 
+// RMXP autotile quad table: 48 shapes x 4 quads (TL, TR, BL, BR), each the
+// source (x,y) of a 16x16 piece in the 96x128 autotile bitmap. Derived from
+// mkxp (Ancurio/mkxp, src/autotiles.cpp); the .5 texel-centre offsets there are
+// floored for CPU sampling.
+static const int AUTOTILE_QUADS[48][4][2] = {
+    {{32, 64}, {48, 64}, {32, 80}, {48, 80}},
+    {{64, 0}, {48, 64}, {32, 80}, {48, 80}},
+    {{32, 64}, {80, 0}, {32, 80}, {48, 80}},
+    {{64, 0}, {80, 0}, {32, 80}, {48, 80}},
+    {{32, 64}, {48, 64}, {32, 80}, {80, 16}},
+    {{64, 0}, {48, 64}, {32, 80}, {80, 16}},
+    {{32, 64}, {80, 0}, {32, 80}, {80, 16}},
+    {{64, 0}, {80, 0}, {32, 80}, {80, 16}},
+    {{32, 64}, {48, 64}, {64, 16}, {48, 80}},
+    {{64, 0}, {48, 64}, {64, 16}, {48, 80}},
+    {{32, 64}, {80, 0}, {64, 16}, {48, 80}},
+    {{64, 0}, {80, 0}, {64, 16}, {48, 80}},
+    {{32, 64}, {48, 64}, {64, 16}, {80, 16}},
+    {{64, 0}, {48, 64}, {64, 16}, {80, 16}},
+    {{32, 64}, {80, 0}, {64, 16}, {80, 16}},
+    {{64, 0}, {80, 0}, {64, 16}, {80, 16}},
+    {{0, 64}, {16, 64}, {0, 80}, {16, 80}},
+    {{0, 64}, {80, 0}, {0, 80}, {16, 80}},
+    {{0, 64}, {16, 64}, {0, 80}, {80, 16}},
+    {{0, 64}, {80, 0}, {0, 80}, {80, 16}},
+    {{32, 32}, {48, 32}, {32, 48}, {48, 48}},
+    {{32, 32}, {48, 32}, {32, 48}, {80, 16}},
+    {{32, 32}, {48, 32}, {64, 16}, {48, 48}},
+    {{32, 32}, {48, 32}, {64, 16}, {80, 16}},
+    {{64, 64}, {80, 64}, {64, 80}, {80, 80}},
+    {{64, 64}, {80, 64}, {64, 16}, {80, 80}},
+    {{64, 0}, {80, 64}, {64, 80}, {80, 80}},
+    {{64, 0}, {80, 64}, {64, 16}, {80, 80}},
+    {{32, 96}, {48, 96}, {32, 112}, {48, 112}},
+    {{64, 0}, {48, 96}, {32, 112}, {48, 112}},
+    {{32, 96}, {80, 0}, {32, 112}, {48, 112}},
+    {{64, 0}, {80, 0}, {32, 112}, {48, 112}},
+    {{0, 64}, {80, 64}, {0, 80}, {80, 80}},
+    {{32, 32}, {48, 32}, {32, 112}, {48, 112}},
+    {{0, 32}, {16, 32}, {0, 48}, {16, 48}},
+    {{0, 32}, {16, 32}, {0, 48}, {80, 16}},
+    {{64, 32}, {80, 32}, {64, 48}, {80, 48}},
+    {{64, 32}, {80, 32}, {64, 16}, {80, 48}},
+    {{64, 96}, {80, 96}, {64, 112}, {80, 112}},
+    {{64, 0}, {80, 96}, {64, 112}, {80, 112}},
+    {{0, 96}, {16, 96}, {0, 112}, {16, 112}},
+    {{0, 96}, {80, 0}, {0, 112}, {16, 112}},
+    {{0, 32}, {80, 32}, {0, 48}, {80, 48}},
+    {{0, 32}, {16, 32}, {0, 112}, {16, 112}},
+    {{0, 96}, {80, 96}, {0, 112}, {80, 112}},
+    {{64, 32}, {80, 32}, {64, 112}, {80, 112}},
+    {{0, 32}, {80, 32}, {0, 112}, {80, 112}},
+    {{0, 0}, {16, 0}, {0, 16}, {16, 16}},
+};
+
+// Destination offsets of the four autotile quads within a 32x32 tile, in the
+// table's TL, TR, BL, BR order.
+static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
+
 // Redraw the visible part of the map into the tilemap's canvas. For each of the
 // three map-data layers, the tiles overlapping the viewport (given ox/oy) are
-// blitted from the tileset. Only regular tiles (id >= 384) are drawn; the seven
-// autotiles (id 48..383) and the per-tile priority layering are future work
-// (tracked in docs/rpgxp-rgss-api-gap.md), so autotile-heavy ground is missing
-// for now. The canvas is invalidated directly (its buffer is not a sprite
-// @bitmap that Graphics.update's dirty sweep watches).
+// blitted from the tileset (regular tiles, id >= 384) or assembled from the
+// four autotile quads (id 48..383). Per-tile priority layering and autotile
+// animation are future work (tracked in docs/rpgxp-rgss-api-gap.md), so
+// everything renders on one flat layer using the first animation frame. The
+// canvas is invalidated directly (its buffer is not a sprite @bitmap that
+// Graphics.update's dirty sweep watches).
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -2592,6 +2879,9 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
   const mrb_int oy =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  const mrb_value autotiles_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@autotiles"));
+  const bool have_autotiles = mrb_array_p(autotiles_v);
 
   int tx0 = static_cast<int>(ox) / TILE_SIZE;
   int ty0 = static_cast<int>(oy) / TILE_SIZE;
@@ -2613,14 +2903,31 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
         if (idx < 0 || idx >= static_cast<int>(md.data.size()))
           continue;
         const int id = md.data[idx];
-        if (id < 384)  // empty / autotile — deferred
+        if (id < 48)  // 0 = empty; 1..47 are the unused blank autotile
           continue;
-        const int ti = id - 384;
-        const int sx = (ti % cols) * TILE_SIZE;
-        const int sy = (ti / cols) * TILE_SIZE;
-        blit_blend(dst, tx * TILE_SIZE - static_cast<int>(ox),
-                   ty * TILE_SIZE - static_cast<int>(oy), ts, sx, sy, TILE_SIZE,
-                   TILE_SIZE);
+        const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
+        const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        if (id < 384) {
+          // Autotile: id/48 selects autotiles[0..6], id%48 the 48-shape quad
+          // assembly. Uses the first animation frame (x offset 0).
+          if (!have_autotiles)
+            continue;
+          const mrb_value at = mrb_ary_ref(M, autotiles_v, id / 48 - 1);
+          if (!mrb_test(at) || !DATA_PTR(at))
+            continue;
+          Bitmap& ab = DataType<Bitmap>::get(M, at);
+          const int shape = id % 48;
+          for (int q = 0; q < 4; ++q)
+            blit_blend(dst, dx0 + AUTOTILE_QUAD_OFF[q][0],
+                       dy0 + AUTOTILE_QUAD_OFF[q][1], ab,
+                       AUTOTILE_QUADS[shape][q][0], AUTOTILE_QUADS[shape][q][1],
+                       16, 16);
+        } else {
+          // Regular tile from the tileset.
+          const int ti = id - 384;
+          blit_blend(dst, dx0, dy0, ts, (ti % cols) * TILE_SIZE,
+                     (ti / cols) * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
       }
     }
   }
@@ -3377,6 +3684,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "tone=", spr_set_tone, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "color=", spr_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "src_rect=", spr_set_src_rect, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
+  mrb_define_method(M, spr, "blend_type=", spr_set_blend_type, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);

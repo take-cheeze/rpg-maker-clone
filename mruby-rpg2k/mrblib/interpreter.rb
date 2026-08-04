@@ -32,6 +32,7 @@ module Game
       CHANGE_EQUIP     = 10440
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
+      CHANGE_CONDITION = 10480
       FULL_HEAL        = 10490
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
@@ -483,6 +484,7 @@ module Game
       when Cmd::CHANGE_EQUIP     then do_change_equipment cmd
       when Cmd::CHANGE_HP        then do_change_hp cmd
       when Cmd::CHANGE_MP        then do_change_mp cmd
+      when Cmd::CHANGE_CONDITION then do_change_condition cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
       when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
       when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
@@ -1002,6 +1004,19 @@ module Game
       stat_targets(cmd).each { |a| a.full_heal }
     end
 
+    # Change Condition: inflict or cure a status condition on the target actors.
+    # param0/param1 pick the targets (same scope layout as Change HP); param2 is
+    # the operation (0 add / inflict, non-zero remove / cure) and param3 the state
+    # id. Removing the death state (戦闘不能) revives a downed actor; inflicting it
+    # knocks the actor out — the HP coupling lives in Game::Actor.
+    def do_change_condition(cmd)
+      state_id = cmd.param(3)
+      remove = cmd.param(2) != 0
+      stat_targets(cmd).each do |a|
+        remove ? a.remove_state(state_id) : a.add_state(state_id)
+      end
+    end
+
     # -- actor identity / graphic ---------------------------------------------
 
     # Change Actor Name: rename the actor whose id is param0 to the command
@@ -1094,10 +1109,9 @@ module Game
 
     # Conditional type 5 (actor/hero): param1 is the actor id, param2 selects the
     # sub-condition — 0 in party, 1 name equals the command string, 2 level >=
-    # param3, 3 HP >= param3, 4 knows skill param3, 5 has item param3 equipped.
-    # The state sub-condition (6) is not modelled and reads as false. The stat
-    # checks need the actor to be in the party (the only actors this build
-    # instantiates); a missing actor is false.
+    # param3, 3 HP >= param3, 4 knows skill param3, 5 has item param3 equipped,
+    # 6 afflicted by state param3. The stat checks need the actor to be in the
+    # party (the only actors this build instantiates); a missing actor is false.
     def actor_condition(cmd)
       id = cmd.param(1)
       return party.include_actor?(id) if cmd.param(2) == 0
@@ -1109,6 +1123,7 @@ module Game
       when 3 then actor.hp >= cmd.param(3)
       when 4 then actor.knows_skill?(cmd.param(3))
       when 5 then actor.equipped?(cmd.param(3))
+      when 6 then actor.state?(cmd.param(3))
       else false
       end
     end

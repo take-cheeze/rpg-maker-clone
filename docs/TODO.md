@@ -219,8 +219,26 @@ The work below is roughly ordered by the critical path to a walkable game
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
-  conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
-  item equipped, skill known; state is not modelled). **Show / Move / Erase
+  conditions and **all** the **actor** sub-conditions (in party, name, level ≥,
+  HP ≥, item equipped, skill known, and **afflicted by a state**). Actors now
+  carry a **status-condition (状態) set** (`Game::Actor#states` with
+  `add_state` / `remove_state` / `state?`; **Full Recovery clears it**), which
+  persists in both the Marshal save and the `.lsd` (chunk 108 fields 81/82,
+  previously parsed-but-unused) and is restored by `from_lsd`, so a real save's
+  status ailments survive. The **item menu cures states**: a medicine with
+  `reverse_state_effect` set removes its `state_set` conditions from the target
+  (an antidote / herb — unconditional, matching EasyRPG's item algorithm), and
+  such an item now counts as usable when the target is afflicted even at full HP.
+  The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
+  `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
+  (zeroing HP), a downed actor can't be healed by HP changes, and curing the
+  death state (or Full Recovery) revives at 1 HP — `Game::Actor#dead?`/`alive?`
+  report it, and the KO'd HP-0 + state-1 pair round-trips through the `.lsd`. The
+  **Change Condition** event command (10480) inflicts / cures a state on the
+  target actors, so events can poison, cure, KO, or revive. Still remaining:
+  *inflicting* states from combat (the non-reverse item case rolled against
+  `state_chance`, and skill / battle infliction), and party-wipe game over.
+  **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
   `Game::State`, decoded with EasyRPG's parameter layout (literal or
@@ -681,3 +699,16 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     exact gate is `SceneManager.run` → `Utils.canUseWebGL()` throwing at
     `rmmz_managers.js:1890` unless `canvas.getContext("webgl")` returns a real
     (LVGL-backed) context.
+    - ✅ M6.3a EGL GLES2 backend foundation: `mruby-mvjs/src/mvgl.cxx`
+      (`MV::GL`) drives an off-screen surfaceless-EGL/GLES2 context (llvmpipe
+      into an FBO). `flake.nix` adds `libglvnd` (EGL/GLES2 headers + dispatch)
+      and `mesa.llvmpipeHook` (headless software-GL runtime), so
+      `MV::GL.smoke_test` — compile the PIXI-style GLSL ES 1.00 shaders, draw
+      and read back a green triangle — runs as a check in CI, not just the apt
+      dev build. (Started on OSMesa; Mesa removed that frontend, so this moved
+      to surfaceless EGL, its supported replacement.)
+    - 🚧 M6.3b WebGL method wrapper: map the `WebGLRenderingContext` surface
+      PIXI uses onto the GLES2 natives and make `getContext("webgl")` return it.
+    - 🚧 M6.3c PIXI v5 boots to a frame: fill the remaining gaps until
+      `MZ#boot_probe` renders `Scene_Boot`, verified against a user-supplied MZ
+      project.

@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity + zoom + angle + mirror rendered; rest stored)
+### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -54,12 +54,25 @@ scale (`lv_image_set_scale_x/y`, where 256 = 1.0), so the sprite scales;
 RGSS's counter-clockwise degrees to LVGL's clockwise 0.1° units, pivoting on the
 sprite's `ox`/`oy` origin); `Sprite#mirror=` re-binds the canvas to a
 horizontally-flipped scratch copy of the bitmap (LVGL's `lv_image` has no flip,
-so mirroring is a software pass — the flip is a snapshot, so a sprite that
-redraws its bitmap contents while mirrored must re-assign `bitmap=` to refresh).
-**Remaining:** **tone/color/src_rect/bush_depth** → a software pre-composite
-through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
-scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
-`Arrow_Base`, weather and the animation player depend on these.
+so mirroring is a software pass); `Sprite#tone=`/`color=` bake an RGSS tone (grey
+desaturation + RGB offset) and a colour overlay into that same scratch copy per
+pixel; and `Sprite#src_rect=` crops the display to a sub-rectangle (the scratch
+is that region, reused across frames to avoid GC churn). `Sprite#update` is native
+and re-composites when a `src_rect` is set, so the per-frame `src_rect.set` that
+character sprites do actually changes the shown cell. Crop/mirror/tone/colour
+share one pre-composite (`spr_bind_display`). `Sprite#blend_type=` maps 0/1/2 to
+the canvas object's LVGL blend mode (normal / additive / subtractive), so
+additive effects composite;
+`Sprite#bush_depth=` fades the bottom N rows to half opacity in the same
+pre-composite, so a character wading through bushes dims below the waist; and
+`Sprite#flash(color, duration)` runs a timed colour pulse — a colour flash
+overlays that colour at a fading alpha, a nil-colour "empty" flash blinks the
+sprite out, and `update` decays it one frame at a time until it clears. So all of
+`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, the weather sprites and the
+battle animation player now get their full visual treatment. **Snapshot caveat:**
+a sprite that redraws its bitmap, or mutates tone/colour in place, still needs a
+re-assign (`bitmap=`/`tone=`/`color=`) to re-composite unless it also has a
+`src_rect` or an active flash (which re-composite via `update`).
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
 
@@ -83,19 +96,20 @@ clip contents taller than the window; `stretch` (tiled vs stretched background) 
 ignored; and the RMXP windowskin source-rect constants are best-effort until a
 game exercises them.
 
-### 3. `Tilemap` ⚠️ (regular tiles rendered; autotiles + priority pending)
+### 3. `Tilemap` ⚠️ (tiles + autotiles rendered; priority layering pending)
 
 `Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
 `lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
 visible part of the map — for each of the three `map_data` layers it blits the
-tiles overlapping the viewport (given `ox`/`oy`) from the `tileset`. `tileset=`,
+tiles overlapping the viewport (given `ox`/`oy`). **Regular tiles** (id ≥ 384)
+come straight from the `tileset`; **autotiles** (id 48–383) are assembled from
+their four 16×16 quads using the RMXP 48-shape quad table (`AUTOTILE_QUADS`,
+derived from mkxp), so water/terrain ground now fills in. `tileset=`,
 `map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
-native, and re-render on change. **Remaining:** only **regular tiles** (id ≥ 384)
-are drawn — the seven **autotiles** (id 48–383, the 48-shape 2×2 quad assembly)
-and the per-tile **priority layering** are still stored-only (`autotiles`,
-`priorities`, `flash_data`), so autotile-heavy ground (water, terrain) is missing
-and everything renders on one flat layer. The RPG2000 side has a portable
-autotile reference in `Game::ChipsetLayout`.
+native and re-render on change. **Remaining:** the per-tile **priority layering**
+(`priorities`) — tiles that should draw above characters — is stored-only, so
+everything renders on one flat layer; **autotile animation** uses only the first
+frame; and `flash_data` is ignored.
 
 ### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
 

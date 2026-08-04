@@ -204,6 +204,9 @@ def check_game(dir)
   if state.party.leader
     state.party.leader.set_charset('HeroAlt', 5)
     state.party.leader.name = 'Renamed'
+    state.party.leader.add_state(3)   # afflict the leader with a couple of states
+    state.party.leader.add_state(7)
+    state.party.leader.change_hp(-99_999)  # ...and knock them out (HP 0 + 戦闘不能)
   end
 
   round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd.to_lcf)))
@@ -224,6 +227,16 @@ def check_game(dir)
     eq a.mp, b.mp, "to_lsd: actor #{a.id} mp"
     eq a.equipment, b.equipment, "to_lsd: actor #{a.id} equipment"
     eq a.skills.sort, b.skills.sort, "to_lsd: actor #{a.id} skills"
+    eq a.states.sort, b.states.sort, "to_lsd: actor #{a.id} states"
+    eq a.dead?, b.dead?, "to_lsd: actor #{a.id} dead? survives"
+  end
+  # The knocked-out leader specifically: HP 0 and the death state (戦闘不能) must
+  # both come back so a downed party member stays down across Continue.
+  if state.party.leader
+    rl = round.party.actor_by_id(state.party.leader.id)
+    eq 0, rl.hp, 'to_lsd: downed leader restores at HP 0'
+    eq true, rl.dead?, 'to_lsd: downed leader stays knocked out'
+    eq true, rl.state?(Game::Actor::DEATH_STATE), 'to_lsd: leader death state survives'
   end
   eq state.switches.to_h.select { |_k, v| v }.keys.sort,
      round.switches.to_h.select { |_k, v| v }.keys.sort, 'to_lsd: switches on'

@@ -139,18 +139,21 @@ module RGSS
     attr_reader :x, :y, :z
 
     # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
-    # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect.
-    # `opacity=`, `zoom_x=`, `zoom_y=`, `angle=` and `mirror=` are now honoured
-    # natively (src/lib.cxx sets the sprite canvas's LVGL object opacity / image
-    # scale / image rotation, and mirror re-binds the canvas to a flipped copy);
-    # they still store their ivars here so the readers below return the set
-    # values. The rest are stored so `sprite.tone = t` no longer raises, but the
-    # native renderer does not yet honour them visually (tracked in
-    # docs/rpgxp-rgss-api-gap.md). Readers fall back to RGSS's defaults because
-    # the native #initialize does not set these ivars (and cannot be wrapped from
-    # here without replacing it). `nil?` checks — not `||` — where 0/false is a
-    # meaningful value (opacity 0 = transparent).
-    attr_writer :ox, :oy, :bush_depth, :blend_type, :tone, :color, :src_rect
+    # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect,
+    # flash. `opacity=`, `zoom_x=`, `zoom_y=`, `angle=`, `mirror=`, `tone=`,
+    # `color=`, `src_rect=`, `blend_type=`, `bush_depth=` and `flash` are all now
+    # honoured natively (src/lib.cxx sets the sprite canvas's LVGL object opacity /
+    # image scale / image rotation / blend mode; mirror, tone, colour, the src_rect
+    # crop, the bush-depth bottom fade and the timed flash pulse are baked into a
+    # scratch copy the canvas points at, and `update` re-composites so per-frame
+    # `src_rect.set` shows and an active flash decays). `bush_depth=` and `flash`
+    # are native methods, so they must NOT be redefined by an `attr_writer` here —
+    # that would shadow them. Only `ox`/`oy` (read by the native tone/flash pass
+    # but not otherwise wired) stay Ruby-side. The readers below fall back to
+    # RGSS's defaults because the native #initialize does not set these ivars (and
+    # cannot be wrapped from here without replacing it). `nil?` checks — not `||` —
+    # where 0/false is a meaningful value (opacity 0 = transparent).
+    attr_writer :ox, :oy
 
     def opacity
       @opacity.nil? ? 255 : @opacity
@@ -199,26 +202,19 @@ module RGSS
     def src_rect
       @src_rect ||= Rect.new(0, 0, 0, 0)
     end
-
-    # Flash the sprite (colour + duration in frames). Stored; the visual flash is
-    # future native work.
-    def flash(color, duration)
-      @flash_color = color
-      @flash_duration = duration
-    end
   end
 
   # RGSS Tilemap: the layered, autotiled map ground Spriteset_Map builds from the
   # tileset, the seven autotiles, and the map's data/priority Tables. Now native
   # (src/lib.cxx): Tilemap.new builds an lv_canvas the size of the viewport and
-  # tilemap_refresh draws the visible regular tiles of the three map_data layers
-  # from the tileset, scrolled by ox/oy. `initialize`, `tileset=`, `map_data=`,
-  # `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native.
-  # This reopening keeps the plain readers plus the properties the native renderer
-  # does not yet honour — the seven `autotiles` (so id 48..383 autotile ground is
-  # missing for now), `priorities` (priority layering) and `flash_data` — stored
-  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md; the RPG2000 side has a
-  # portable autotile reference in Game::ChipsetLayout).
+  # tilemap_refresh draws the visible tiles of the three map_data layers scrolled
+  # by ox/oy — regular tiles from the tileset and autotiles assembled from their
+  # four quads (the seven `autotiles` bitmaps are read by the native renderer).
+  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`,
+  # `dispose`/`disposed?` are native. This reopening keeps the plain readers, the
+  # `autotiles` slot array (which the native renderer reads), and the properties
+  # not yet honoured — `priorities` (priority layering) and `flash_data` — stored
+  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md).
   class Tilemap
     attr_reader :tileset, :map_data, :ox, :oy, :viewport
     attr_accessor :flash_data, :priorities

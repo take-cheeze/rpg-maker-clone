@@ -1252,13 +1252,14 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
-                      :occasion_battle)
+                      :occasion_battle, :state_set, :reverse_state_effect)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
-              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true)
+              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
+              state_set: nil, reverse_state: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
-               atk2, dfn2, spi2, agi2, occ_battle)
+               atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -1346,8 +1347,8 @@ end
 check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
   hero = party_state.party.actor_by_id(1)
   hero.change_hp(-30);          eq 70, hero.hp
-  hero.change_hp(-1000, true);  eq 0, hero.hp   # death allowed -> floor 0
-  hero.change_hp(-5, false);    eq 1, hero.hp   # death disallowed -> floor 1
+  hero.change_hp(-1000, false);  eq 1, hero.hp  # death disallowed -> floor 1 (alive)
+  eq false, hero.dead?
   hero.change_hp(9999);         eq 100, hero.hp # capped at max_hp
   hero.change_mp(-1000);        eq 0, hero.mp
   hero.change_mp(9999);         eq 30, hero.mp  # capped at max_mp
@@ -1658,6 +1659,52 @@ check 'use_item restores MP and item_effective? tracks the SP deficit' do
   st.party.use_item(6, hero)
   eq 25, hero.mp                               # 10 + 15
   eq 0, st.party.item_count(6)
+end
+
+check 'a cure medicine (reverse_state_effect) removes only its listed states' do
+  # state_set: byte per state, index i -> state id i+1; states 3 and 7 marked.
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1, 0, 0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 2)
+  hero = st.party.leader
+  hero.add_state(3); hero.add_state(9)         # 3 is curable by the item, 9 is not
+  eq [3, 7], st.party.item_cured_states(st.party.db_item(5))
+  eq true, st.party.item_effective?(5, hero)
+  eq [hero], st.party.use_item(5, hero)
+  eq false, hero.state?(3)                      # cured
+  eq true, hero.state?(9)                       # a state the item does not list stays
+  eq 1, st.party.item_count(5)                  # consumed
+end
+
+check 'a cure medicine on an unafflicted, full target does nothing / not consumed' do
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  hero = st.party.leader                        # full HP, no states
+  eq false, st.party.item_effective?(5, hero)
+  eq [], st.party.use_item(5, hero)
+  eq 1, st.party.item_count(5)
+end
+
+check 'a heal+cure item counts either the heal or the cure as a use' do
+  items = { 5 => fake_item(type: 6, rhp: 40, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 3)
+  hero = st.party.leader
+  hero.add_state(3)                             # full HP but afflicted -> cures, consumes
+  eq [hero], st.party.use_item(5, hero)
+  eq false, hero.state?(3)
+  eq 2, st.party.item_count(5)
+  hero.change_hp(-50)                           # 100 -> 50, unafflicted -> heals, consumes
+  eq [hero], st.party.use_item(5, hero)
+  eq 90, hero.hp                                # 50 + 40
+  eq 1, st.party.item_count(5)
+end
+
+check 'a non-reverse item lists no cured states (infliction is battle-only)' do
+  st = item_party({})
+  it = fake_item(type: 6, state_set: [0, 0, 1], reverse_state: false)
+  eq [], st.party.item_cured_states(it)
 end
 
 check 'field_items includes skill books alongside medicines' do
@@ -1988,6 +2035,121 @@ check 'Conditional actor: equipped item (type 5, sub 5)' do
   eq true, st.switches[1]            # item 10 equipped -> if-branch
   st = run_actor_cond([5, 1, 5, 10]) # nothing equipped -> else
   eq true, st.switches[2]
+end
+
+check 'Conditional actor: afflicted by state (type 5, sub 6)' do
+  st = run_actor_cond([5, 1, 6, 4]) { |s| s.party.actor_by_id(1).add_state(4) }
+  eq true, st.switches[1]            # state 4 present -> if-branch
+  st = run_actor_cond([5, 1, 6, 4]) # no states -> else
+  eq true, st.switches[2]
+end
+
+# -- Change Condition (event command 10480) ---------------------------------
+
+check 'Change Condition inflicts a state on the targeted actor (op 0)' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed actor), actor 1, op 0 (add), state 4.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [1, 1, 0, 4])])
+  it.update
+  eq true, st.party.actor_by_id(1).state?(4)
+end
+
+check 'Change Condition removes a state on the targeted actor (op 1)' do
+  st = party_state
+  st.party.actor_by_id(1).add_state(4)
+  it = Game::Interpreter.new(st)
+  # op 1 (remove) clears state 4.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [1, 1, 1, 4])])
+  it.update
+  eq false, st.party.actor_by_id(1).state?(4)
+end
+
+check 'Change Condition can KO the whole party (scope 0) via the death state' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 0 (whole party), op 0 (add), state 1 (戦闘不能) -> everyone down.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [0, 0, 0, Game::Actor::DEATH_STATE])])
+  it.update
+  eq true, st.party.actors.all?(&:dead?)
+  eq [0, 0], st.party.actors.map(&:hp)
+end
+
+check 'Change Condition reviving the death state stands an actor back up' do
+  st = party_state
+  st.party.actor_by_id(1).add_state(Game::Actor::DEATH_STATE)  # down first
+  it = Game::Interpreter.new(st)
+  # op 1 (remove) state 1 -> revived with 1 HP.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [1, 1, 1, Game::Actor::DEATH_STATE])])
+  it.update
+  a = st.party.actor_by_id(1)
+  eq false, a.dead?
+  eq 1, a.hp
+end
+
+check 'Actor status states: add / remove / query, cleared by Full Recovery' do
+  a = party_state.party.actor_by_id(1)
+  eq [], a.states
+  eq false, a.state?(3)
+  a.add_state(3); a.add_state(3); a.add_state(7)     # duplicate is ignored
+  eq [3, 7], a.states
+  eq true, a.state?(3)
+  a.remove_state(3)
+  eq [7], a.states
+  a.states = [1, 0, nil, 2, 2]                        # setter drops 0/nil, dedups
+  eq [1, 2], a.states
+  a.full_heal
+  eq [], a.states                                     # Full Recovery clears states
+end
+
+check 'Actor death state: lethal HP inflicts 戦闘不能 (state 1), block on revive' do
+  a = party_state.party.actor_by_id(1)
+  eq false, a.dead?
+  a.change_hp(-1000, true)                            # lethal damage -> knocked out
+  eq 0, a.hp
+  eq true, a.dead?
+  eq true, a.state?(Game::Actor::DEATH_STATE)         # HP 0 couples to state 1
+  a.change_hp(500)                                    # a downed actor cannot be healed
+  eq 0, a.hp
+  eq true, a.dead?
+  a.remove_state(Game::Actor::DEATH_STATE)            # curing 戦闘不能 revives with 1 HP
+  eq 1, a.hp
+  eq false, a.dead?
+  a.change_hp(49); eq 50, a.hp                        # healing lands again once alive
+end
+
+check 'Actor death state: inflicting state 1 zeroes HP; Full Recovery revives' do
+  a = party_state.party.actor_by_id(1)
+  a.add_state(Game::Actor::DEATH_STATE)               # inflict KO directly
+  eq 0, a.hp
+  eq true, a.dead?
+  a.full_heal                                         # Full Recovery clears states + revives
+  eq 100, a.hp
+  eq false, a.dead?
+  eq false, a.state?(Game::Actor::DEATH_STATE)
+end
+
+check 'Actor death state: non-lethal damage floors HP at 1, no KO' do
+  a = party_state.party.actor_by_id(1)
+  a.change_hp(-1000, false)                           # death disallowed -> floor 1
+  eq 1, a.hp
+  eq false, a.dead?
+  eq false, a.state?(Game::Actor::DEATH_STATE)
+end
+
+check 'State save round-trips per-actor status states' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  db = FakeActorDB.new(players, [1, 2])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.actor_by_id(1).add_state(3)
+  st.party.actor_by_id(1).add_state(9)
+  st.party.actor_by_id(2).add_state(5)
+  loaded = Game::State.load(db, Marshal.load(Marshal.dump(st.to_h)))
+  eq [3, 9], loaded.party.actor_by_id(1).states.sort
+  eq [5], loaded.party.actor_by_id(2).states.sort
 end
 
 check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' do
