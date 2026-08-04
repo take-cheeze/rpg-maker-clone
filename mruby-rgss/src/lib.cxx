@@ -2558,13 +2558,73 @@ static void blit_blend(Bitmap& dst,
   }
 }
 
+// RMXP autotile quad table: 48 shapes x 4 quads (TL, TR, BL, BR), each the
+// source (x,y) of a 16x16 piece in the 96x128 autotile bitmap. Derived from
+// mkxp (Ancurio/mkxp, src/autotiles.cpp); the .5 texel-centre offsets there are
+// floored for CPU sampling.
+static const int AUTOTILE_QUADS[48][4][2] = {
+    {{32, 64}, {48, 64}, {32, 80}, {48, 80}},
+    {{64, 0}, {48, 64}, {32, 80}, {48, 80}},
+    {{32, 64}, {80, 0}, {32, 80}, {48, 80}},
+    {{64, 0}, {80, 0}, {32, 80}, {48, 80}},
+    {{32, 64}, {48, 64}, {32, 80}, {80, 16}},
+    {{64, 0}, {48, 64}, {32, 80}, {80, 16}},
+    {{32, 64}, {80, 0}, {32, 80}, {80, 16}},
+    {{64, 0}, {80, 0}, {32, 80}, {80, 16}},
+    {{32, 64}, {48, 64}, {64, 16}, {48, 80}},
+    {{64, 0}, {48, 64}, {64, 16}, {48, 80}},
+    {{32, 64}, {80, 0}, {64, 16}, {48, 80}},
+    {{64, 0}, {80, 0}, {64, 16}, {48, 80}},
+    {{32, 64}, {48, 64}, {64, 16}, {80, 16}},
+    {{64, 0}, {48, 64}, {64, 16}, {80, 16}},
+    {{32, 64}, {80, 0}, {64, 16}, {80, 16}},
+    {{64, 0}, {80, 0}, {64, 16}, {80, 16}},
+    {{0, 64}, {16, 64}, {0, 80}, {16, 80}},
+    {{0, 64}, {80, 0}, {0, 80}, {16, 80}},
+    {{0, 64}, {16, 64}, {0, 80}, {80, 16}},
+    {{0, 64}, {80, 0}, {0, 80}, {80, 16}},
+    {{32, 32}, {48, 32}, {32, 48}, {48, 48}},
+    {{32, 32}, {48, 32}, {32, 48}, {80, 16}},
+    {{32, 32}, {48, 32}, {64, 16}, {48, 48}},
+    {{32, 32}, {48, 32}, {64, 16}, {80, 16}},
+    {{64, 64}, {80, 64}, {64, 80}, {80, 80}},
+    {{64, 64}, {80, 64}, {64, 16}, {80, 80}},
+    {{64, 0}, {80, 64}, {64, 80}, {80, 80}},
+    {{64, 0}, {80, 64}, {64, 16}, {80, 80}},
+    {{32, 96}, {48, 96}, {32, 112}, {48, 112}},
+    {{64, 0}, {48, 96}, {32, 112}, {48, 112}},
+    {{32, 96}, {80, 0}, {32, 112}, {48, 112}},
+    {{64, 0}, {80, 0}, {32, 112}, {48, 112}},
+    {{0, 64}, {80, 64}, {0, 80}, {80, 80}},
+    {{32, 32}, {48, 32}, {32, 112}, {48, 112}},
+    {{0, 32}, {16, 32}, {0, 48}, {16, 48}},
+    {{0, 32}, {16, 32}, {0, 48}, {80, 16}},
+    {{64, 32}, {80, 32}, {64, 48}, {80, 48}},
+    {{64, 32}, {80, 32}, {64, 16}, {80, 48}},
+    {{64, 96}, {80, 96}, {64, 112}, {80, 112}},
+    {{64, 0}, {80, 96}, {64, 112}, {80, 112}},
+    {{0, 96}, {16, 96}, {0, 112}, {16, 112}},
+    {{0, 96}, {80, 0}, {0, 112}, {16, 112}},
+    {{0, 32}, {80, 32}, {0, 48}, {80, 48}},
+    {{0, 32}, {16, 32}, {0, 112}, {16, 112}},
+    {{0, 96}, {80, 96}, {0, 112}, {80, 112}},
+    {{64, 32}, {80, 32}, {64, 112}, {80, 112}},
+    {{0, 32}, {80, 32}, {0, 112}, {80, 112}},
+    {{0, 0}, {16, 0}, {0, 16}, {16, 16}},
+};
+
+// Destination offsets of the four autotile quads within a 32x32 tile, in the
+// table's TL, TR, BL, BR order.
+static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
+
 // Redraw the visible part of the map into the tilemap's canvas. For each of the
 // three map-data layers, the tiles overlapping the viewport (given ox/oy) are
-// blitted from the tileset. Only regular tiles (id >= 384) are drawn; the seven
-// autotiles (id 48..383) and the per-tile priority layering are future work
-// (tracked in docs/rpgxp-rgss-api-gap.md), so autotile-heavy ground is missing
-// for now. The canvas is invalidated directly (its buffer is not a sprite
-// @bitmap that Graphics.update's dirty sweep watches).
+// blitted from the tileset (regular tiles, id >= 384) or assembled from the
+// four autotile quads (id 48..383). Per-tile priority layering and autotile
+// animation are future work (tracked in docs/rpgxp-rgss-api-gap.md), so
+// everything renders on one flat layer using the first animation frame. The
+// canvas is invalidated directly (its buffer is not a sprite @bitmap that
+// Graphics.update's dirty sweep watches).
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -2592,6 +2652,9 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
   const mrb_int oy =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  const mrb_value autotiles_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@autotiles"));
+  const bool have_autotiles = mrb_array_p(autotiles_v);
 
   int tx0 = static_cast<int>(ox) / TILE_SIZE;
   int ty0 = static_cast<int>(oy) / TILE_SIZE;
@@ -2613,14 +2676,31 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
         if (idx < 0 || idx >= static_cast<int>(md.data.size()))
           continue;
         const int id = md.data[idx];
-        if (id < 384)  // empty / autotile — deferred
+        if (id < 48)  // 0 = empty; 1..47 are the unused blank autotile
           continue;
-        const int ti = id - 384;
-        const int sx = (ti % cols) * TILE_SIZE;
-        const int sy = (ti / cols) * TILE_SIZE;
-        blit_blend(dst, tx * TILE_SIZE - static_cast<int>(ox),
-                   ty * TILE_SIZE - static_cast<int>(oy), ts, sx, sy, TILE_SIZE,
-                   TILE_SIZE);
+        const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
+        const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        if (id < 384) {
+          // Autotile: id/48 selects autotiles[0..6], id%48 the 48-shape quad
+          // assembly. Uses the first animation frame (x offset 0).
+          if (!have_autotiles)
+            continue;
+          const mrb_value at = mrb_ary_ref(M, autotiles_v, id / 48 - 1);
+          if (!mrb_test(at) || !DATA_PTR(at))
+            continue;
+          Bitmap& ab = DataType<Bitmap>::get(M, at);
+          const int shape = id % 48;
+          for (int q = 0; q < 4; ++q)
+            blit_blend(dst, dx0 + AUTOTILE_QUAD_OFF[q][0],
+                       dy0 + AUTOTILE_QUAD_OFF[q][1], ab,
+                       AUTOTILE_QUADS[shape][q][0], AUTOTILE_QUADS[shape][q][1],
+                       16, 16);
+        } else {
+          // Regular tile from the tileset.
+          const int ti = id - 384;
+          blit_blend(dst, dx0, dy0, ts, (ti % cols) * TILE_SIZE,
+                     (ti / cols) * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
       }
     }
   }

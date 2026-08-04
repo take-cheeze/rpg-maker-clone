@@ -211,14 +211,14 @@ module RGSS
   # RGSS Tilemap: the layered, autotiled map ground Spriteset_Map builds from the
   # tileset, the seven autotiles, and the map's data/priority Tables. Now native
   # (src/lib.cxx): Tilemap.new builds an lv_canvas the size of the viewport and
-  # tilemap_refresh draws the visible regular tiles of the three map_data layers
-  # from the tileset, scrolled by ox/oy. `initialize`, `tileset=`, `map_data=`,
-  # `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native.
-  # This reopening keeps the plain readers plus the properties the native renderer
-  # does not yet honour — the seven `autotiles` (so id 48..383 autotile ground is
-  # missing for now), `priorities` (priority layering) and `flash_data` — stored
-  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md; the RPG2000 side has a
-  # portable autotile reference in Game::ChipsetLayout).
+  # tilemap_refresh draws the visible tiles of the three map_data layers scrolled
+  # by ox/oy — regular tiles from the tileset and autotiles assembled from their
+  # four quads (the seven `autotiles` bitmaps are read by the native renderer).
+  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`,
+  # `dispose`/`disposed?` are native. This reopening keeps the plain readers, the
+  # `autotiles` slot array (which the native renderer reads), and the properties
+  # not yet honoured — `priorities` (priority layering) and `flash_data` — stored
+  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md).
   class Tilemap
     attr_reader :tileset, :map_data, :ox, :oy, :viewport
     attr_accessor :flash_data, :priorities
