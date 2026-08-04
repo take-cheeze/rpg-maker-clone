@@ -2154,27 +2154,43 @@ class RPG2k
     false
   end
 
-  # Persist the running game state to a slot.
+  # Persist the running game state to a slot. Our own portable Marshal dump is
+  # the authoritative save (it carries the full state -- timer, message config,
+  # BGM, actor overrides, access flags -- that the .lsd format does not model
+  # here). Alongside it we also export a genuine editor Save<slot>.lsd via
+  # State#to_lsd, so the slot is readable by real RPG_RT/EasyRPG tooling. The
+  # export is best-effort: a failure there is logged but never fails the save.
   def save_game state, slot = 1
     data = Marshal.dump state.to_h
     File.open(save_path(slot), "wb") { |f| f.write data }
+    export_lsd(state, slot)
     true
   rescue StandardError => e
     $stderr.puts "[RPG2k] Failed to save: #{e.message}"
     false
   end
 
-  # Continue: resume a saved game and switch to its map. A genuine editor
-  # Save<N>.lsd is loaded through the LCF save schema when present (so a real
-  # save dropped into the game dir resumes correctly); otherwise our own Marshal
-  # save is used. Warns and stays on the title when there is nothing to load.
+  # Write a real Save<slot>.lsd next to the Marshal save. Best-effort: any error
+  # is logged and swallowed so it cannot break the primary save.
+  def export_lsd state, slot = 1
+    state.to_lsd.save_to(lsd_path(slot))
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] .lsd export failed for slot #{slot}: #{e.message}"
+  end
+
+  # Continue: resume a saved game and switch to its map. Our own Marshal save is
+  # preferred when present -- it is the full-fidelity record we wrote (save_game
+  # also exports a lower-fidelity Save<slot>.lsd beside it, which would drop the
+  # timer, message config, BGM and actor overrides if loaded instead). A genuine
+  # editor Save<N>.lsd is the fallback, so a real save dropped into the game dir
+  # (with no Marshal save) still resumes through the LCF save schema. Warns and
+  # stays on the title when there is nothing to load.
   def continue_game
-    lsd = existing_lsd
-    if lsd
-      state = Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd, "rb")))
-    elsif File.exist?(save_path)
+    if File.exist?(save_path)
       data = File.open(save_path, "rb") { |f| f.read }
       state = Game::State.load(@db, Marshal.load(data))
+    elsif (lsd = existing_lsd)
+      state = Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd, "rb")))
     else
       RGSS.warn_stub "Continue (no save data found)"
       return

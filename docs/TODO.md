@@ -222,15 +222,20 @@ The work below is roughly ordered by the critical path to a walkable game
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
   on and persist in the save)
-- 🚧 Save & Continue — implemented with a portable `Marshal` save of the game
-  state (`Game::State#to_h` / `State.load`) written via the menu's Save command;
-  "Continue" reloads it. **Reading** the real `LCF::SaveData` (`.lsd`) is done
-  (`Game::State.from_lsd`). **Writing** it now has its LCF foundation: `mruby-lcf`
-  can serialize a save back to bytes (`Array1D`/`Array2D`/`File#to_lcf`,
-  `LCF.write_ber`/`encode`, `Array1D#[]=`), proven byte-exact against the real
-  2000/2003 saves by `scripts/lcf_save_roundtrip.rb` (ADR 0018). The remaining
-  step is a `Game::State#to_lsd` that builds the `SAVE_DATA` chunks from live game
-  state and calls `SaveData#save_to`, replacing the `Marshal` save
+- 🚧 Save & Continue — the portable `Marshal` save of the game state
+  (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
+  menu's Save command; "Continue" reloads it. **Reading** the real
+  `LCF::SaveData` (`.lsd`) is done (`Game::State.from_lsd`), and **writing** it is
+  now done too: `Game::State#to_lsd` builds the `SAVE_DATA` chunks (system 101,
+  hero 104, party actors 108, inventory 109) from live game state and
+  `SaveData#save_to` writes a genuine `Save<slot>.lsd`, exported alongside the
+  Marshal save on every save (ADR 0019, on the `mruby-lcf` serializer of ADR
+  0018). It round-trips through `from_lsd` field-for-field
+  (`scripts/rpg2k_save_load_check.rb`). Remaining refinements to make the `.lsd`
+  the *primary* save (so Continue prefers it): model the fields the Marshal save
+  still holds but `.lsd` drops here — timer, message config, current/memorized
+  BGM, actor name/title/sprite overrides, access flags — plus the title chunk
+  (100, needs `:double` timestamp encoding) so the save-slot menu shows the party
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
