@@ -2219,6 +2219,21 @@ def run_actor_cond(params, string: '')
   st
 end
 
+# Like run_actor_cond but with a FakeMapInfo hook set (event 7 at (2,3) dir 6),
+# for conditions that read map events.
+def run_cond_with_mapinfo(params)
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  it.start([FakeCmd.new(IC::CONDITIONAL, params, indent: 0),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+            FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+            FakeCmd.new(IC::END_BRANCH, [], indent: 0)])
+  it.update
+  st
+end
+
 check 'Conditional actor: in-party sub-condition (type 5, sub 0)' do
   st = run_actor_cond([5, 1, 0])     # actor 1 is in the party
   eq true, st.switches[1]
@@ -2412,6 +2427,18 @@ check 'Conditional Branch: party riding a vehicle (type 7)' do
   eq true, st.switches[2]                            # asked about the boat -> else
   st = run_actor_cond([7, 2])                        # on foot (boarded nil)
   eq true, st.switches[2]                            # not aboard -> else
+end
+
+check 'Conditional Branch: character orientation (type 6)' do
+  # direction param 0 up / 1 right / 2 down / 3 left -> numpad 8/6/2/4.
+  st = run_actor_cond([6, 10001, 3]) { |s| s.direction = 4 } # hero facing left
+  eq true, st.switches[1]                            # facing left -> if-branch
+  st = run_actor_cond([6, 10001, 1]) { |s| s.direction = 4 } # asked facing right
+  eq true, st.switches[2]                            # not facing right -> else
+  # FakeMapInfo's event 7 faces right (numpad 6 = param 1).
+  eq true, run_cond_with_mapinfo([6, 7, 1]).switches[1]  # event faces right
+  eq true, run_cond_with_mapinfo([6, 7, 0]).switches[2]  # not facing up -> else
+  eq true, run_cond_with_mapinfo([6, 9, 1]).switches[2]  # unknown event -> else
 end
 
 # -- Input Number -------------------------------------------------------------
