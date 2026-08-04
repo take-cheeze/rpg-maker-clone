@@ -22,6 +22,7 @@ git.
 """
 
 import json
+import math
 import os
 import struct
 import zlib
@@ -62,8 +63,34 @@ def write_png(rel_path, w, h, pixels):
         f.write(chunk(b"IEND", b""))
 
 
-def sound():
-    return {"name": "", "pan": 0, "pitch": 100, "volume": 90}
+def write_wav(rel_path, freq=440, ms=120, rate=8000, vol=0.4):
+    """Write a tiny 16-bit mono PCM WAV (hand-encoded, no audio library).
+
+    A short sine beep with a 64-sample linear fade in/out to avoid clicks. Used
+    to give the sample real audio the engine can actually load: our MV audio
+    bridge routes AudioManager to RGSS::Audio, whose SDL_mixer backend resolves
+    a name to a file trying `.wav` among its extensions, so a committed `.wav`
+    is playable without shipping any copyrighted RTP sound. Deterministic
+    (math.sin is IEEE) so re-running is a no-op in git.
+    """
+    n = int(rate * ms / 1000)
+    frames = bytearray()
+    for i in range(n):
+        env = min(1.0, i / 64.0, (n - i) / 64.0)
+        s = int(vol * env * 32767 * math.sin(2 * math.pi * freq * i / rate))
+        frames += struct.pack("<h", s)
+    data = bytes(frames)
+    fmt = struct.pack("<HHIIHH", 1, 1, rate, rate * 2, 2, 16)  # PCM mono 16-bit
+    body = (b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt +
+            b"data" + struct.pack("<I", len(data)) + data)
+    path = os.path.join(ROOT, rel_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
+def sound(name=""):
+    return {"name": name, "pan": 0, "pitch": 100, "volume": 90}
 
 
 # --- System.json -----------------------------------------------------------
@@ -109,7 +136,10 @@ system = {
     "ship": {"bgm": sound(), "characterIndex": 0, "characterName": "",
              "startMapId": 0, "startX": 0, "startY": 0},
     "skillTypes": ["", "Magic", "Special"],
-    "sounds": [sound() for _ in range(24)],
+    # The 24 system SEs. Point the common UI sounds (0 Cursor, 1 OK, 2 Cancel,
+    # 3 Buzzer) at the authored Beep.wav so menu/interaction actually plays a
+    # sound through the audio bridge; the rest stay silent.
+    "sounds": [sound("Beep") if i < 4 else sound() for i in range(24)],
     "startMapId": 1, "startX": 8, "startY": 6,
     "switches": [""] * 21,
     "terms": {
@@ -135,6 +165,11 @@ system = {
     "windowTone": [0, 0, 0, 0],
 }
 write("System.json", system)
+
+# --- Audio -----------------------------------------------------------------
+# A tiny authored sound effect so the sample has real, loadable audio (see
+# System.sounds above). RGSS::Audio resolves "audio/se/Beep" to this file.
+write_wav("audio/se/Beep.wav")
 
 # --- Character sprite ------------------------------------------------------
 # A tiny authored walk sheet so the player is visible on the map (exercising

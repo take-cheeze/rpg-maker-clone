@@ -518,5 +518,11 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `DataManager` (save → `StorageManager.exists` → load) and logs
     `[MV-SAVE] saved=.. exists=.. loaded=..`, confirming the localStorage-backed
     save path writes and reloads.
+  - ✅ Audio smoke: the sample ships an authored `audio/se/Beep.wav` (wired to
+    its UI sounds), and `--mv_audio_test` plays it through the
+    `AudioManager` → `__mv_audioQueue` → `RGSS::Audio` bridge, logging
+    `[MV-AUDIO] op=.. dispatched=.. asset=..` — so the audio path is finally
+    exercised end to end (the downloaded beds ship no audio). Audible output
+    still wants a device / a native listen; CI only checks dispatch + resolve.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
