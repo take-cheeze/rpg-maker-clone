@@ -142,6 +142,29 @@ assert "LCF::Array1D#int16_values reads a raw short array past a named accessor"
   assert_false row.respond_to?(:no_such_field)
 end
 
+assert "LCF absent-field defaults: a lambda default is evaluated, not returned raw" do
+  row = LCF::Array1D.new(
+    lcf_array1d([lcf_int_field(1, 7)]),
+    { elements: { 1 => { name: :present, type: :int, default: 0 },
+                  2 => { name: :lazy,    type: :int, default: -> { 42 } },
+                  3 => { name: :static,  type: :int, default: 5 } } })
+  assert_equal 7, row.present   # a present chunk decodes normally
+  assert_equal 42, row.lazy     # absent + callable default -> its called value
+  assert_equal 5, row.static    # absent + plain default -> the value itself
+end
+
+assert "LCF edition-dependent helpers are callable as module methods (used by lazy defaults)" do
+  # The real schema uses `-> { LCF.level_max }` / `-> { LCF.exp_default }` etc.
+  # as lazy defaults, so these must be reachable as `LCF.<name>` -- otherwise
+  # evaluating an absent field's default raises NoMethodError for module LCF.
+  assert_equal LCF::MODE == 2003 ? 99 : 50, LCF.level_max
+  assert_equal LCF::MODE == 2003 ? 300 : 30, LCF.exp_default
+  assert_equal LCF::MODE == 2003 ? 9_999_999 : 999_999, LCF.var_max
+  assert_equal LCF::MODE == 2003 ? -9_999_999 : -999_999, LCF.var_min
+  assert_equal LCF::MODE == 2003 ? 9999 : 999, LCF.pc_hp_max
+  assert_equal LCF::MODE == 2003 ? 99_999 : 9999, LCF.npc_hp_max
+end
+
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
   actor = lcf_array1d([lcf_str_field(1, "Hero"), lcf_int_field(57, 3)])
   klass = lcf_array1d([lcf_str_field(1, "Soldier")])
@@ -419,4 +442,83 @@ assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
   assert_equal 0, save.actors[1].mp
   # Absent optional vitals read as nil, so the runtime restore leaves them alone.
   assert_nil save.actors[1].skills
+end
+
+# ---- LCF binary format WRITER (inverse of the readers, ADR 0018) -----------
+# uni-algo stand-in for the reverse transcoder, mirroring the cp932_to_utf8 the
+# harness relies on for reads; the writer only needs it for :string fields.
+module LCF
+  def utf8_to_cp932(s); s.dup; end
+  module_function :utf8_to_cp932
+end
+
+assert 'LCF.write_ber matches the reference encoder and round-trips read_ber' do
+  # write_ber is the exact inverse of read_ber; cross-check it against lcf_ber
+  # (the test's own reference encoder) and prove read(write(n)) == n.
+  [0, 1, 0x7f, 0x80, 0x3fff, 0x4000, 100, 200, 123_456, -1, -2, -1000].each do |n|
+    assert_equal lcf_ber(n), LCF.write_ber(n)
+    assert_equal n, LCF.read_ber(StringIO.new(LCF.write_ber(n)))
+  end
+  # The documented edge vectors, byte for byte (see the "Read BER number" test).
+  assert_equal "\x7f", LCF.write_ber(0x7f)
+  assert_equal "\x81\x00", LCF.write_ber(0x80)
+  assert_equal "\x8f\xff\xff\xff\x7f", LCF.write_ber(-1)
+end
+
+assert 'Array1D#to_lcf reproduces its source bytes (terminated and not)' do
+  body = lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),
+                      lcf_str_field(73, "chr")])
+  a = LCF::Array1D.new(body, nil)
+  # As embedded in an Array2D: keep the trailing 0 terminator.
+  assert_equal body, a.to_lcf
+  # As at the top level of a save file: no terminator.
+  assert_equal body[0...-1], a.to_lcf(false)
+end
+
+assert 'Array1D#[]= re-encodes int and string fields through the schema' do
+  schema = { elements: LCF::Schema::SAVE_MOVABLE }
+  a = LCF::Array1D.new(lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),
+                                    lcf_str_field(73, "old")]), schema)
+  assert_equal 5, a.x
+  a[12] = 9                 # :int field
+  a[73] = "newchr"          # :string field (exercises LCF.encode + utf8_to_cp932)
+  assert_equal 9, a.x
+  reread = LCF::Array1D.new(a.to_lcf, schema)
+  assert_equal 9, reread.x
+  assert_equal 7, reread.y             # untouched field preserved
+  assert_equal "newchr", reread.charset_name
+end
+
+assert 'Array2D#to_lcf reproduces its source bytes' do
+  e1 = lcf_array1d([lcf_int_field(31, 1)])
+  e3 = lcf_array1d([lcf_int_field(31, 5), lcf_int_field(32, 307)])
+  body = lcf_array2d([[1, e1], [3, e3]])
+  a = LCF::Array2D.new(body, { elements: LCF::Schema::SAVE_PARTY_ACTOR })
+  assert_equal body, a.to_lcf
+end
+
+assert 'SaveData#to_lcf round-trips a whole file byte-for-byte' do
+  # A real .lsd has no top-level terminator: the chunk list runs to EOF.
+  title = lcf_array1d([lcf_str_field(11, "Hero"), lcf_int_field(12, 3)])
+  sys   = lcf_array1d([lcf_int_field(131, 1)])
+  hero  = lcf_array1d([lcf_int_field(12, 11), lcf_int_field(13, 7)])
+  body  = lcf_field(100, title) + lcf_field(101, sys) + lcf_field(104, hero)
+  file  = lcf_ber("LcfSaveData".bytesize) + "LcfSaveData" + body
+  save  = LCF::SaveData.new(StringIO.new(file))
+  assert_equal file, save.to_lcf
+end
+
+assert 'SaveData edit survives a write/reload round-trip' do
+  sys   = lcf_array1d([lcf_int_field(131, 1)])
+  hero  = lcf_array1d([lcf_int_field(12, 11), lcf_int_field(13, 7)])
+  body  = lcf_field(101, sys) + lcf_field(104, hero)
+  save  = LCF::SaveData.new(lcf_file("LcfSaveData", body))
+
+  h = save[104]; h[12] = 42;               save[104] = h
+  s = save[101]; s[131] = s.save_count + 1; save[101] = s
+
+  reread = LCF::SaveData.new(StringIO.new(save.to_lcf))
+  assert_equal 42, reread.hero.x
+  assert_equal 7, reread.hero.y          # untouched field preserved
+  assert_equal 2, reread[101].save_count
 end

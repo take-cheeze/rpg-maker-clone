@@ -637,6 +637,62 @@ module Game
     end
   end
 
+  # Geometry of the map's parallax background (the `Panorama/<name>` image drawn
+  # behind the tile layers, `MAP_UNIT` fields 31–38). Given the camera position,
+  # the screen / map / image sizes and the per-axis loop + autoscroll settings,
+  # #axis_offset returns the top-left offset (<= 0) at which to start tiling the
+  # image for that axis. The behaviour follows EasyRPG Player's parallax model:
+  #
+  #   * A **looping** axis tiles the image and scrolls it at half the map's rate
+  #     (the classic parallax factor), plus an optional autoscroll that drifts it
+  #     over time at the speed field's rate.
+  #   * A **non-looping** axis anchors the image: it stays fixed to the screen
+  #     when it is no larger than the screen (the common RPG2000 full-screen
+  #     backdrop), and pans across its excess width/height in step with the map
+  #     when it is larger.
+  #
+  # Pure integer geometry with no rendering dependency, so it is exercised
+  # directly by scripts/rpg2k_render_check.rb. The exact scroll *rate* mirrors
+  # EasyRPG's formulae but has not been visually diffed against RPG_RT under
+  # wine — that native comparison is the remaining validation.
+  module Parallax
+    module_function
+
+    # Per-frame autoscroll offset in pixels for an RPG2000 speed field, ported
+    # from EasyRPG's `scroll_amt` with its pan->pixel (/32) scaling so small
+    # speeds move a fraction of a pixel per frame: the fine delta is
+    # -(1<<speed) for speed>0 and +(1<<-speed) for speed<0, accumulated over
+    # `frame` frames and divided by 32.
+    def autoscroll_px(speed, frame)
+      return 0 if speed.nil? || speed == 0
+      amt = speed > 0 ? -(1 << speed) : (1 << -speed)
+      (frame * amt) / 32
+    end
+
+    # Top-left draw offset (in (-img_px, 0]) for one panorama axis.
+    def axis_offset(loop, autoscroll, speed, frame, cam_px, screen_px, map_px, img_px)
+      return 0 if img_px.nil? || img_px <= 0
+      if loop
+        base = cam_px / 2
+        base += autoscroll_px(speed, frame) if autoscroll
+        -(base % img_px)
+      else
+        anchored_offset(cam_px, screen_px, map_px, img_px)
+      end
+    end
+
+    # A non-looping axis: fixed to the screen while the image is no larger than
+    # it, otherwise panned across the image's excess as the camera sweeps the
+    # map (0 at the west/north edge, -excess at the east/south edge).
+    def anchored_offset(cam_px, screen_px, map_px, img_px)
+      return 0 if img_px <= screen_px
+      cam_max = map_px - screen_px
+      return 0 if cam_max <= 0
+      cam = Game.clamp(cam_px, 0, cam_max)
+      -((img_px - screen_px) * cam / cam_max)
+    end
+  end
+
   # Game switches: a 1-indexed set of booleans, defaulting to false.
   class Switches
     def initialize; @data = {}; end
@@ -1657,19 +1713,125 @@ module Game
     end
   end
 
+  # One on-screen picture shown by the Show Picture (11110) event command. Holds
+  # its file name, the current visual parameters (centre position, zoom percent,
+  # 0..255 opacity and the four RPG2000 tone channels) and, while a Move Picture
+  # (11120) is in flight, linearly interpolates every parameter toward its target
+  # over the move's duration. Pure data — the owning Scene::Map reads the current
+  # values each frame to blit the picture; #update advances the interpolation.
+  #
+  # Positions are RPG2000 screen coordinates of the picture's *centre*; a picture
+  # flagged `fixed_to_map` scrolls with the map (the scene subtracts the camera)
+  # rather than staying put on screen. Tone channels are 0..200 (100 neutral);
+  # applying them is deferred (needs native tone support), so they are carried
+  # but not yet drawn.
+  class Picture
+    attr_reader :id, :name, :fixed_to_map, :use_transparent_color
+    attr_reader :x, :y, :zoom, :opacity, :red, :green, :blue, :saturation
+
+    def initialize(id, opts = {})
+      @id = id
+      @name = opts[:name] || ''
+      @x = opts[:x] || 0
+      @y = opts[:y] || 0
+      @zoom = opts[:zoom] || 100
+      @opacity = opts[:opacity] || 255
+      @red = opts[:red] || 100
+      @green = opts[:green] || 100
+      @blue = opts[:blue] || 100
+      @saturation = opts[:saturation] || 100
+      @fixed_to_map = opts[:fixed_to_map] ? true : false
+      @use_transparent_color = opts[:use_transparent_color] ? true : false
+      @frames = 0
+    end
+
+    # Begin a move toward new visual parameters over `frames` frames; with
+    # frames <= 0 the change applies immediately.
+    def move_to(x, y, zoom, opacity, red, green, blue, saturation, frames)
+      @tx = x; @ty = y; @tzoom = zoom; @topacity = opacity
+      @tred = red; @tgreen = green; @tblue = blue; @tsat = saturation
+      @frames = frames > 0 ? frames : 0
+      finish_move if @frames == 0
+    end
+
+    def moving?; @frames > 0; end
+
+    # Advance one frame of the in-flight move (a no-op when at rest). Every
+    # parameter eases a `1/remaining` fraction toward its target, so integer
+    # division still lands exactly on the target on the final frame.
+    def update
+      return unless moving?
+      @x = step(@x, @tx); @y = step(@y, @ty)
+      @zoom = step(@zoom, @tzoom); @opacity = step(@opacity, @topacity)
+      @red = step(@red, @tred); @green = step(@green, @tgreen)
+      @blue = step(@blue, @tblue); @saturation = step(@saturation, @tsat)
+      @frames -= 1
+    end
+
+    private
+
+    def step(cur, target); cur + (target - cur) / @frames; end
+
+    def finish_move
+      @x = @tx; @y = @ty; @zoom = @tzoom; @opacity = @topacity
+      @red = @tred; @green = @tgreen; @blue = @tblue; @saturation = @tsat
+    end
+  end
+
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
+  # Map weather set by the Weather Effects (11070) event command: a type (0 none,
+  # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
+  # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half
+  # model only — drawing the rain/snow particles is native renderer work still to
+  # come — but it round-trips through the save so a reloaded game keeps its
+  # weather.
+  class Weather
+    attr_reader :type, :strength
+
+    def initialize(type = 0, strength = 0)
+      @type = type
+      @strength = strength
+    end
+
+    def set(type, strength)
+      @type = type
+      @strength = strength
+    end
+
+    # Whether no weather is active (type 0).
+    def none?; @type == 0; end
+
+    def to_h; { type: @type, strength: @strength }; end
+
+    def load_h(h)
+      return unless h
+      @type = h[:type] || 0
+      @strength = h[:strength] || 0
+    end
+  end
+
   class State
-    attr_reader :party, :switches, :variables, :message_config, :screen
+    attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
     attr_accessor :menu_access, :save_access
+    # Whether the Teleport and Escape skills are usable, toggled by the Change
+    # Teleport Access (11820) and Change Escape Access (11840) event commands.
+    # Default off — RPG2000 games enable these once the skill's targets are set —
+    # and persisted in the save. (The skills themselves are not executed yet, so
+    # these gate nothing at runtime; they are modelled for save fidelity.)
+    attr_accessor :teleport_access, :escape_access
     # The BGM currently playing and the one stashed by Memorize BGM (11530),
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
     attr_accessor :current_bgm, :memorized_bgm
+    # Whether the party leader's map sprite is hidden, toggled by the Set
+    # Transparent Flag / Change Player Visibility (11310) event command. Defaults
+    # off (the hero is shown) and is persisted in the save.
+    attr_accessor :player_transparent
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -1685,12 +1847,42 @@ module Game
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
+      @teleport_access = false
+      @escape_access = false
       @current_bgm = nil
       @memorized_bgm = nil
+      @player_transparent = false
+      @weather = Weather.new
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
+      # Shown pictures, id => Game::Picture. Transient like @screen (RPG2000's
+      # HUD pictures are re-shown by parallel events on load), so not serialised.
+      @pictures = {}
     end
+
+    attr_reader :pictures
+
+    # Show (or replace) picture `id` with the given Picture options hash.
+    def show_picture(id, opts)
+      @pictures[id] = Picture.new(id, opts) if id && id > 0
+    end
+
+    # Start a move on picture `id` (a no-op if it is not shown). `args` are the
+    # Picture#move_to arguments (x, y, zoom, opacity, r, g, b, s, frames).
+    def move_picture(id, *args)
+      pic = @pictures[id]
+      pic.move_to(*args) if pic
+    end
+
+    def erase_picture(id); @pictures.delete(id); end
+
+    # Advance every shown picture's in-flight move one frame.
+    def update_pictures; @pictures.each_value(&:update); end
+
+    # Whether any picture is still interpolating a move (for the Move Picture
+    # "wait until done" flag).
+    def pictures_moving?; @pictures.values.any?(&:moving?); end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
     # on the frame the timer reaches zero.
@@ -1712,7 +1904,9 @@ module Game
         party: @party.to_h, timer_frames: @timer_frames,
         timer_running: @timer_running, message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
-        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm }
+        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
+        player_transparent: @player_transparent, weather: @weather.to_h,
+        teleport_access: @teleport_access, escape_access: @escape_access }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -1782,6 +1976,10 @@ module Game
       state.save_access = h[:save_access] unless h[:save_access].nil?
       state.current_bgm = h[:current_bgm]
       state.memorized_bgm = h[:memorized_bgm]
+      state.player_transparent = h[:player_transparent] ? true : false
+      state.weather.load_h(h[:weather])
+      state.teleport_access = h[:teleport_access] ? true : false
+      state.escape_access = h[:escape_access] ? true : false
       state
     end
   end

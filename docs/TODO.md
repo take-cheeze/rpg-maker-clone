@@ -67,16 +67,28 @@ The work below is roughly ordered by the critical path to a walkable game
   Passability still drives collision. Geometry is pinned by
   `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
   Tiles) substitution and screen-tone tinting of tiles.
+- ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
+  backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
+  EasyRPG's parallax model: a looping axis tiles the image and scrolls it at
+  half the camera rate with optional time-based autoscroll (`parallax_sx/sy`),
+  while a non-looping axis anchors it — fixed to the screen for the common
+  full-screen backdrop, panned across its excess for a larger image. Grounded
+  in the real Nepheshel data (all 45 parallax maps' images resolve and every
+  offset stays in range across a camera sweep) and pinned by
+  `scripts/rpg2k_render_check.rb`. The scroll *rate* mirrors EasyRPG's formulae
+  but still wants a native/wine visual diff to confirm.
 - ✅ Character sprites — the party leader and every map event render from their
   CharSet graphic (`Game::CharSet`, 4-direction, 3 walk frames). Events also
   draw a chipset tile when their graphic is a tile substitution (empty CharSet
   name), composite into the correct layer relative to the hero (below / above /
   same-layer y-sorted), honour the translucent flag, and pick their walk frame
   from the page's animation type (`Game::EventGraphic`: walk-while-moving,
-  continuous, fixed-direction, fixed-graphic, spin). Grounded in the real
-  Nepheshel data and pinned by `scripts/rpg2k_render_check.rb` /
-  `scripts/rpg2k_scene_check.rb`. Remaining polish: per-step pixel interpolation
-  of event movement (events currently hop tile-to-tile) and vehicle sprites
+  continuous, fixed-direction, fixed-graphic, spin). Events also **slide
+  smoothly between tiles** (per-step pixel interpolation, mirroring the player):
+  a single-tile step eases across over `TILE/SPEED` frames while the walk
+  animation cycles, and a longer hop snaps. Grounded in the real Nepheshel data
+  and pinned by `scripts/rpg2k_render_check.rb` /
+  `scripts/rpg2k_scene_check.rb`. Remaining polish: vehicle sprites
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
   animation and edge/tile/event collision. Move-route *data* decodes
   (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and
@@ -111,10 +123,13 @@ The work below is roughly ordered by the critical path to a walkable game
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
-  Name / Title / Sprite, Change Main Menu / Save Access, Tint
-  Screen, Flash Screen, Shake Screen, Call Event, Move Event, Proceed With
-  Movement, Halt All Movement, Erase Event, End Event) with a per-frame step cap
-  so a bad loop can't hang. **Memorize Location** stores the player's current map id, x and y
+  Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
+  Change Teleport / Escape Access,
+  Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
+  Event, Change / Trade Event Location, Change Map Tileset, Proceed With
+  Movement, Halt All Movement,
+  Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
+  loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
   uses). **Call Event**
@@ -131,7 +146,13 @@ The work below is roughly ordered by the critical path to a walkable game
   digit-entry widget and writes the entered value to a variable. **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
-  these edits survive Save / Continue. **Erase
+  these edits survive Save / Continue. **Set Transparent Flag** hides or shows
+  the party leader's map sprite (persisted in the save), and **Return to Title
+  Screen** stops the event and returns the app to a fresh title. **Change Event
+  Location** snaps a character (player / this event / a map event) to a tile and
+  **Trade Event Locations** swaps two of them, refreshing collision. **Change Map
+  Tileset** swaps the current map's chipset and rebuilds its tile graphic (until
+  the next map load). **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
@@ -145,9 +166,21 @@ The work below is roughly ordered by the critical path to a walkable game
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
-  item equipped, skill known; state is not modelled). The remaining commands
-  (pictures, weather, battles, shop / inn, EXP gain / level-up messages, ...) are
-  TODO
+  item equipped, skill known; state is not modelled). **Show / Move / Erase
+  Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
+  (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
+  `Game::State`, decoded with EasyRPG's parameter layout (literal or
+  variable-sourced coordinates, transparency → opacity); Move eases every
+  parameter to its target over the duration and its wait flag suspends the
+  interpreter (`:picture`) until the move settles; `Scene::Map` composites the
+  pictures (id-ordered, zoomed via `stretch_blt`, at their opacity) into a layer
+  above the map and below the message window. Picture **tone** is carried but not
+  yet drawn (needs the same native tone support as the screen tint). **Weather
+  Effects** (11070) records the map weather type (none / rain / snow) and strength
+  on `Game::State` — the Ruby-half model only, like the tint overlay, so it
+  round-trips through the save but drawing the rain/snow particles is native
+  renderer work still to come. The remaining commands (battles, shop / inn, EXP
+  gain / level-up
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
@@ -187,8 +220,9 @@ The work below is roughly ordered by the critical path to a walkable game
   a colour + strength that fades to zero over the duration; like the tint it is
   the Ruby half (drawing the full-screen colour overlay at its strength needs
   the same alpha-blend / viewport support in C++). All three share the `:screen`
-  wait. Pan, transitions/fade, Show Picture and weather remain, and the
-  tint/flash still need `RGSS::Viewport` tone/alpha support in C++ to show
+  wait. **Show Picture** now renders (see the interpreter bullet above). Pan,
+  transitions/fade and weather remain, and the tint/flash still need
+  `RGSS::Viewport` tone/alpha support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
@@ -200,8 +234,13 @@ The work below is roughly ordered by the critical path to a walkable game
   on and persist in the save)
 - 🚧 Save & Continue — implemented with a portable `Marshal` save of the game
   state (`Game::State#to_h` / `State.load`) written via the menu's Save command;
-  "Continue" reloads it. Reading/writing the real `LCF::SaveData` (`.lsd`) format
-  is still TODO
+  "Continue" reloads it. **Reading** the real `LCF::SaveData` (`.lsd`) is done
+  (`Game::State.from_lsd`). **Writing** it now has its LCF foundation: `mruby-lcf`
+  can serialize a save back to bytes (`Array1D`/`Array2D`/`File#to_lcf`,
+  `LCF.write_ber`/`encode`, `Array1D#[]=`), proven byte-exact against the real
+  2000/2003 saves by `scripts/lcf_save_roundtrip.rb` (ADR 0018). The remaining
+  step is a `Game::State#to_lsd` that builds the `SAVE_DATA` chunks from live game
+  state and calls `SaveData#save_to`, replacing the `Marshal` save
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
@@ -384,5 +423,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
   in the SDL window and the sixel/iTerm2 terminals.
+  - ✅ Test-bed data guard: `scripts/mv_testbed_check.rb` validates the MV
+    `data/*.json` boot invariants under CRuby (no JS engine) — start map size
+    (`width*height*6`), tileset/actor/class cross-references, party members —
+    and runs as a **blocking** CI step ahead of the non-blocking native MV
+    smokes, so a regression in the committed `data/mv-sample` fails the build.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).

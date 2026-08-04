@@ -49,12 +49,51 @@ jobs:
           key: rtp-${{ hashFiles('./scripts/rtp*_install.bash') }}
           restore-keys: rtp-
 
+      - name: cache test game
+        uses: actions/cache@v6
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html') }}
+
+      # The native compile is the long pole. Everything that does not feed the
+      # compiler — the RTP/game/MV downloads (network-bound) and pre-commit
+      # (lint) — is launched as a `background: true` step so it overlaps the
+      # build instead of running strictly before/after it. Each download script
+      # is idempotent (it skips work already present, e.g. on a cache hit), so
+      # the steps run unconditionally and no-op when their data is in place;
+      # that keeps them safe to `wait` on below (a skipped `if:` step is avoided
+      # so the wait always has a real step to join). Every write lands on a
+      # git-ignored path (build/, data/*, scripts/*.zip, the fetched MV engine
+      # files), so nothing here can race pre-commit's tracked-file `git diff`.
       - name: Download RTP
+        id: dl-rtp
+        background: true
         run: |
           nix develop -c ./scripts/rtp_install.bash
           nix develop -c ./scripts/rtp_xp_install.bash
 
+      - name: Download game
+        id: dl-game
+        background: true
+        run: |
+          nix develop -c ./scripts/download-nepheshel.bash
+          nix develop -c ./scripts/download-mtf-meido-action.bash
+          nix develop -c ./scripts/download-opengame-xp.bash
+
+      - name: Download MV test game
+        id: dl-mv
+        background: true
+        run: nix develop -c ./scripts/download-lunatic-core.bash
+
+      - name: Build MV sample engine
+        id: dl-mv-sample
+        background: true
+        run: nix develop -c ./scripts/download-mv-corescript.bash
+
       - name: pre-commit
+        id: pre-commit
+        background: true
         env:
           SKIP: nixfmt
         run: |
@@ -85,57 +124,87 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: cache test game
-        uses: actions/cache@v6
-        id: cache
-        with:
-          path: data
-          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html') }}
+      # Barrier: block until lint and every download have finished before the
+      # checks that consume them. A failed background step (e.g. pre-commit)
+      # surfaces here and fails the job, exactly as it did when these ran inline.
+      - name: Wait for lint and downloads
+        wait: [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample]
 
-      - name: Download game
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          nix develop -c ./scripts/download-nepheshel.bash
-          nix develop -c ./scripts/download-mtf-meido-action.bash
-          nix develop -c ./scripts/download-opengame-xp.bash
+      - name: Prepare screenshot dir
+        run: mkdir -p ss
 
-      - name: LCF test-bed smoke check
-        run: nix develop -c ruby scripts/lcf_testbed_check.rb
+      # Every post-build check is independent and each is a separate, mostly
+      # IO-/timeout-bound process that reads the (now built) binary and the
+      # downloaded data read-only, so they run concurrently in one `parallel`
+      # group (implicit wait at the end). The MV smoke tests stay non-blocking
+      # (continue-on-error) while the MV runtime is brought up; the required
+      # checks (LCF / RPG XP / RPG2k / ctest) fail the group — and the job — if
+      # they fail. Each MV run uses `xvfb-run -a` (auto-picked display) and a
+      # distinct screenshot path, so the concurrent runs never collide.
+      - parallel:
+          - name: LCF test-bed smoke check
+            run: nix develop -c ruby scripts/lcf_testbed_check.rb
 
-      - name: RPG XP test-bed smoke check
-        run: nix develop -c ruby scripts/rpgxp_testbed_check.rb
+          - name: RPG XP test-bed smoke check
+            run: nix develop -c ruby scripts/rpgxp_testbed_check.rb
 
-      - name: RPG XP script-host smoke check
-        run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
+          - name: RPG XP script-host smoke check
+            run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
 
-      - name: RPG2k game-logic checks
-        run: |
-          nix develop -c ruby scripts/rpg2k_logic_check.rb
-          nix develop -c ruby scripts/rpg2k_scene_check.rb
-          nix develop -c ruby scripts/rpg2k_render_check.rb
+          # Validate the committed MV test-bed database (data/mv-sample) before
+          # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
+          # a blocking guard against a sample-data regression that would
+          # silently break the map/battle/message smokes. Pinned to the
+          # committed bed so it stays deterministic even though this parallel
+          # group may run alongside the MV game download.
+          - name: MV test-bed data check
+            run: nix develop -c ruby scripts/mv_testbed_check.rb data/mv-sample
 
-      - name: test
-        run: |
-          nix develop -c cmake --build build -t test
+          - name: RPG2k game-logic checks
+            run: |
+              nix develop -c ruby scripts/rpg2k_logic_check.rb
+              nix develop -c ruby scripts/rpg2k_scene_check.rb
+              nix develop -c ruby scripts/rpg2k_render_check.rb
 
-      # Boot the RPG Maker MV test bed (KinoAR/Lunatic-Core) through the
-      # embedded JS host as a smoke test. Non-blocking while the MV runtime is
-      # brought up: the step logs the engine's output/errors for iteration but
-      # does not fail the build.
-      - name: Download MV test game
-        run: nix develop -c ./scripts/download-lunatic-core.bash
+          - name: test
+            run: |
+              nix develop -c cmake --build build -t test
 
-      - name: MV boot smoke test
-        continue-on-error: true
-        run: |
-          mkdir -p ss
-          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
-            --timeout_ms=5000 --game_dir data/Lunatic-Core \
-            --mv_screenshot=ss/mv_title.png
+          - name: MV boot smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=5000 --game_dir data/Lunatic-Core \
+                --mv_screenshot=ss/mv_title.png
 
-      # Upload the captured MV frame so the rendered output can be inspected
-      # while the maker is brought up. Best-effort: the boot is non-blocking, so
-      # the screenshot may be missing on some runs.
+          - name: MV sample smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=5000 --game_dir data/mv-sample \
+                --mv_new_game --mv_screenshot=ss/mv_sample.png
+
+          - name: MV battle smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=6000 --game_dir data/mv-sample \
+                --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
+
+          - name: MV movement smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=6000 --game_dir data/mv-sample \
+                --mv_new_game --mv_move_test
+
+          - name: MV message smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=6000 --game_dir data/mv-sample \
+                --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
+
       - name: Upload MV screenshot
         continue-on-error: true
         uses: actions/upload-artifact@v7
@@ -143,20 +212,6 @@ jobs:
           name: mv-screenshot
           path: ss/mv_title.png
           if-no-files-found: warn
-
-      # Also boot our own committed MV sample (data/mv-sample): its authored data
-      # is in git; the MIT engine is fetched here. A controlled bed that boots to
-      # a walkable map with a parallel test event. Non-blocking, like above.
-      - name: Build MV sample engine
-        run: nix develop -c ./scripts/download-mv-corescript.bash
-
-      - name: MV sample smoke test
-        continue-on-error: true
-        run: |
-          mkdir -p ss
-          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
-            --timeout_ms=5000 --game_dir data/mv-sample \
-            --mv_new_game --mv_screenshot=ss/mv_sample.png
 
       - name: Upload MV sample screenshot
         continue-on-error: true
@@ -166,17 +221,6 @@ jobs:
           path: ss/mv_sample.png
           if-no-files-found: warn
 
-      # Drive the sample into a test battle (New Game -> map -> Scene_Battle
-      # against troop 1) so the battle scene — its windows and HP/MP gauges — is
-      # exercised and captured. Non-blocking, like the other MV smoke tests.
-      - name: MV battle smoke test
-        continue-on-error: true
-        run: |
-          mkdir -p ss
-          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
-            --timeout_ms=6000 --game_dir data/mv-sample \
-            --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
-
       - name: Upload MV battle screenshot
         continue-on-error: true
         uses: actions/upload-artifact@v7
@@ -184,29 +228,6 @@ jobs:
           name: mv-battle-screenshot
           path: ss/mv_battle.png
           if-no-files-found: warn
-
-      # Confirm input actually walks the player (not just that the map renders):
-      # New Game -> map, then hold a direction for a spell and log the player's
-      # start/end tile with `[MV-MOVE] ... moved=<bool>`. Non-blocking, like the
-      # other MV smoke tests; the lines show up in the job log for inspection.
-      - name: MV movement smoke test
-        continue-on-error: true
-        run: |
-          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
-            --timeout_ms=6000 --game_dir data/mv-sample \
-            --mv_new_game --mv_move_test
-
-      # Confirm the message/dialogue path renders: New Game -> map, then show a
-      # text message and log with `[MV-MSG] ... window_open=<bool>` whether the
-      # message window opened. Captures a frame so the rendered box can be
-      # inspected. Non-blocking, like the other MV smoke tests.
-      - name: MV message smoke test
-        continue-on-error: true
-        run: |
-          mkdir -p ss
-          nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
-            --timeout_ms=6000 --game_dir data/mv-sample \
-            --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
 
       - name: Upload MV message screenshot
         continue-on-error: true

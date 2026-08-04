@@ -36,6 +36,8 @@ module Game
       CHANGE_ACTOR_SPRITE = 10630
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      CHANGE_EVENT_LOCATION = 10860
+      TRADE_EVENT_LOCATIONS = 10870
       STORE_TERRAIN_ID  = 10910
       STORE_EVENT_ID    = 10920
       CONDITIONAL      = 12010
@@ -55,6 +57,11 @@ module Game
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
+      WEATHER_EFFECTS  = 11070
+      SHOW_PICTURE     = 11110
+      MOVE_PICTURE     = 11120
+      ERASE_PICTURE    = 11130
+      PLAYER_VISIBILITY = 11310
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       HALT_ALL_MOVEMENT = 11350
@@ -63,8 +70,12 @@ module Game
       MEMORIZE_BGM     = 11530
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
+      CHANGE_MAP_TILESET = 11710
+      CHANGE_TELEPORT_ACCESS = 11820
+      CHANGE_ESCAPE_ACCESS   = 11840
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
+      RETURN_TO_TITLE  = 12510
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -88,9 +99,11 @@ module Game
       @call_stack = []
       @resolver = nil
       @move_route_requests = []
+      @location_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @tileset_request = nil
       @input_variable = nil
       @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
@@ -117,9 +130,11 @@ module Game
       @running = true
       @call_stack = []
       @move_route_requests = []
+      @location_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @tileset_request = nil
       reset_waits
     end
 
@@ -135,6 +150,17 @@ module Game
       reqs
     end
 
+    # Drain the instant event-repositioning requests (Change Event Location /
+    # Trade Event Locations) queued since the last call, returning them and
+    # clearing the queue. Each is a hash — `{ op: :set, target:, x:, y: }` or
+    # `{ op: :swap, a:, b: }`. Like Move Event these do not pause the interpreter;
+    # the owning scene polls this after #update and moves the characters.
+    def take_location_requests
+      reqs = @location_requests
+      @location_requests = []
+      reqs
+    end
+
     # True (once) if an Erase Event command ran since the last call, clearing the
     # flag. The owning scene polls this after #update and removes the event that
     # was running this interpreter from the map. Like Move Event, Erase Event does
@@ -143,6 +169,16 @@ module Game
       v = @erase_requested
       @erase_requested = false
       v
+    end
+
+    # The new tileset (chipset) id requested by a Change Map Tileset command since
+    # the last call, or nil if none. Reading it clears the request. The owning
+    # scene polls this after #update and rebuilds the map's chipset; non-blocking,
+    # so the rest of the command list runs on.
+    def take_tileset_request
+      id = @tileset_request
+      @tileset_request = nil
+      id
     end
 
     # True (once) if a Halt All Movement command ran since the last call, clearing
@@ -282,11 +318,18 @@ module Game
       when Cmd::TELEPORT         then do_teleport cmd
       when Cmd::MEMORIZE_LOCATION then do_memorize_location cmd
       when Cmd::RECALL_LOCATION   then do_recall_location cmd
+      when Cmd::CHANGE_EVENT_LOCATION then do_change_event_location cmd
+      when Cmd::TRADE_EVENT_LOCATIONS then do_trade_event_locations cmd
       when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
       when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
+      when Cmd::SHOW_PICTURE     then do_show_picture cmd
+      when Cmd::MOVE_PICTURE     then do_move_picture cmd
+      when Cmd::ERASE_PICTURE    then do_erase_picture cmd
+      when Cmd::WEATHER_EFFECTS  then do_weather cmd
+      when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::HALT_ALL_MOVEMENT then @halt_movement_requested = true
@@ -295,8 +338,12 @@ module Game
       when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
+      when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
+      when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
+      when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
@@ -792,6 +839,29 @@ module Game
       @waiting = true
     end
 
+    # Change Event Location (Set Event Location): instantly place a character on
+    # the current map at a tile. param0 selects the target (10001 player, 0 /
+    # 10005 this event, else a map event id); param1 the appointment mode (0 the
+    # constants param2/param3, 1 the values of those two variables); param2/param3
+    # the x and y. Queued as a `:set` request the scene applies — non-blocking,
+    # so the rest of the command list runs on.
+    def do_change_event_location(cmd)
+      x = cmd.param(2)
+      y = cmd.param(3)
+      if cmd.param(1) == 1
+        x = variables[x]
+        y = variables[y]
+      end
+      @location_requests.push(op: :set, target: cmd.param(0), x: x, y: y)
+    end
+
+    # Trade Event Locations (Swap Event Locations): exchange the tiles of the two
+    # characters named by param0 and param1 (same target ids as Change Event
+    # Location). Queued as a `:swap` request the scene applies; non-blocking.
+    def do_trade_event_locations(cmd)
+      @location_requests.push(op: :swap, a: cmd.param(0), b: cmd.param(1))
+    end
+
     # Store Terrain ID: write the terrain id of the tile at (x, y) into the
     # variable named by param3. Non-blocking; without a map_info hook (or on any
     # error) it stores 0.
@@ -888,6 +958,25 @@ module Game
       @waiting = true
     end
 
+    # Set Transparent Flag (Change Player Visibility): toggle whether the party
+    # leader's map sprite is hidden. Non-blocking — it only records the flag on
+    # the shared game state; the owning scene reads it each frame. The polarity
+    # (param0 non-zero = transparent / hidden) follows EasyRPG's
+    # `SetSpriteHidden(parameters[0] != 0)`; the flag persists through Save /
+    # Continue.
+    def do_player_visibility(cmd)
+      @state.player_transparent = cmd.param(0) != 0
+    end
+
+    # Return to Title Screen: abandon the running game and go back to the title.
+    # Raised as a :return_title request the owning scene answers by tearing the
+    # play scenes down and showing a fresh title (there is nothing to resume, so
+    # the request behaves like a one-way teleport out of the map).
+    def do_return_to_title(_cmd)
+      @wait_kind = :return_title
+      @waiting = true
+    end
+
     # Frames per tenth of a second at RPG2000's fixed 60 fps, for turning a
     # screen effect's 0.1s-unit duration into a frame count.
     FRAMES_PER_TENTH = 6
@@ -929,6 +1018,76 @@ module Game
       return unless cmd.param(3) != 0 && @state.screen.shaking?
       @wait_kind = :screen
       @waiting = true
+    end
+
+    # Show Picture (11110): display picture param0 from the string file name at
+    # the centre position param2/param3 (literal, or read from those variables
+    # when the position-mode param1 is non-zero), at zoom param5 (%), transparency
+    # param6 (0 opaque .. 100 clear), tone param8..11 (r/g/b/saturation) and the
+    # "make colour 0 transparent" flag param7; param4 pins it to the map (it then
+    # scrolls with the camera). The parameter layout is a direct port of EasyRPG
+    # Player's CommandShowPicture (RPG2000 branch).
+    def do_show_picture(cmd)
+      id = cmd.param(0)
+      return if id <= 0
+      @state.show_picture(id,
+                          name: picture_name(cmd),
+                          x: picture_coord(cmd, 2), y: picture_coord(cmd, 3),
+                          zoom: cmd.param(5),
+                          opacity: trans_to_opacity(cmd.param(6)),
+                          use_transparent_color: cmd.param(7) != 0,
+                          fixed_to_map: cmd.param(4) > 0,
+                          red: cmd.param(8), green: cmd.param(9),
+                          blue: cmd.param(10), saturation: cmd.param(11))
+    end
+
+    # Move Picture (11120): ease picture param0 to a new position/zoom/opacity/
+    # tone over param14 tenths of a second. When the wait flag (param15) is set,
+    # pause until the move finishes — the scene advances the pictures each frame
+    # and resumes us once none is moving. Same parameter layout as Show Picture,
+    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture).
+    def do_move_picture(cmd)
+      id = cmd.param(0)
+      frames = cmd.param(14) * FRAMES_PER_TENTH
+      @state.move_picture(id, picture_coord(cmd, 2), picture_coord(cmd, 3),
+                          cmd.param(5), trans_to_opacity(cmd.param(6)),
+                          cmd.param(8), cmd.param(9), cmd.param(10),
+                          cmd.param(11), frames)
+      return unless cmd.param(15) != 0 && @state.pictures[id] &&
+                    @state.pictures[id].moving?
+      @wait_kind = :picture
+      @waiting = true
+    end
+
+    # Erase Picture (11130): remove picture param0 from the screen.
+    def do_erase_picture(cmd)
+      @state.erase_picture(cmd.param(0))
+    end
+
+    # A picture coordinate: the literal param at `idx`, or the value of the
+    # variable it names when the position-mode param (index 1) is non-zero.
+    def picture_coord(cmd, idx)
+      cmd.param(1) != 0 ? variables[cmd.param(idx)] : cmd.param(idx)
+    end
+
+    # RPG2000 transparency (0 opaque .. 100 fully clear) -> a 0..255 opacity.
+    def trans_to_opacity(top_trans)
+      (100 - Game.clamp(top_trans, 0, 100)) * 255 / 100
+    end
+
+    # The picture's file name (the command's string parameter), or ''.
+    def picture_name(cmd)
+      (cmd.string || '').to_s
+    end
+
+    # Weather Effects: set the map weather type (param0 — 0 none, 1 rain, 2 snow;
+    # the RPG2003 additions come through as higher values) and strength (param1 —
+    # 0 weak .. 2 strong) on the shared game state. Non-blocking; like the picture
+    # / tint overlays this records the Ruby-half model only — compositing the
+    # rain/snow particles is native renderer work still to come — but the setting
+    # is applied and persists through Save / Continue.
+    def do_weather(cmd)
+      @state.weather.set(cmd.param(0), cmd.param(1))
     end
 
     # Memorize BGM: stash a copy of the currently-playing BGM so a later Play

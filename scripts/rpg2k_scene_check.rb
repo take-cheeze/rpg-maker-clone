@@ -122,19 +122,20 @@ R = Game::MoveRoute
 
 # A chipset with no passability table -> every tile is walkable, so movement is
 # bounded only by the map edges, the player and other events.
-def fake_chipset
+def fake_chipset(name = 'cs')
   # All tiles passable (no lower table); terrain tag 42 on chip index 0 (the id
   # every tile of the synthetic all-zero map maps to).
   td = Array.new(162, 0)
   td[0] = 42
-  OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil,
+  OpenStruct.new(name: name, chipset_name: name, passable_data_lower: nil,
                  terrain_data: td)
 end
 
 def fake_db(common = nil)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: ''),
-    chipset: { 1 => fake_chipset },
+    # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
+    chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
     common_event: common,
     player: {}
   )
@@ -183,14 +184,15 @@ def move_route(cmd_ids, repeat: true, skippable: true)
   OpenStruct.new(commands: cmds, repeat: repeat, skippable: skippable)
 end
 
-# A 6x5 map, all tiles walkable, holding the given events (id => ev).
-def fake_map(id, events)
+# A 6x5 map, all tiles walkable, holding the given events (id => ev). `parallax`
+# is an optional hash of MAP_UNIT parallax fields merged onto the unit.
+def fake_map(id, events, parallax: nil)
   w = 6; h = 5
-  unit = OpenStruct.new(width: w, height: h, chipset_id: 1,
-                        lower_layer: Array.new(w * h, 0),
-                        upper_layer: Array.new(w * h, 0),
-                        events: events)
-  Game::Map.new(id, unit)
+  fields = { width: w, height: h, chipset_id: 1,
+             lower_layer: Array.new(w * h, 0),
+             upper_layer: Array.new(w * h, 0), events: events }
+  fields.merge!(parallax) if parallax
+  Game::Map.new(id, OpenStruct.new(fields))
 end
 
 # A minimal parent (stands in for the RPG2k app) and party leader. load_map is
@@ -208,6 +210,9 @@ class FakeParent
   def load_map(id); @map_maker.call(id); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
+  # Return to Title Screen (12510) hands control back here; record that it fired.
+  attr_reader :returned_to_title
+  def return_to_title; @returned_to_title = true; end
 end
 
 def fake_parent(db)
@@ -218,10 +223,10 @@ def fake_party
   OpenStruct.new(leader: nil, actors: [])
 end
 
-def new_scene(events, player: [0, 0], common: nil)
+def new_scene(events, player: [0, 0], common: nil, parallax: nil)
   db = fake_db(common)
   state = Game::State.new(fake_party, 1, player[0], player[1])
-  state.map = fake_map(1, events)
+  state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
 end
 
@@ -464,6 +469,90 @@ check 'Halt All Movement cancels a forced player route in the scene' do
   ok scene.instance_variable_get(:@player_route).nil?,
      'the forced player route was cancelled'
   eq [0, 0], [st.x, st.y], 'the player never moved (movement was halted)'
+end
+
+check 'Set Transparent Flag hides and shows the player sprite' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [1])] # transparent ON
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  5.times { scene.update }
+  spr = scene.instance_variable_get(:@player_sprite)
+  eq false, spr.visible, 'the player sprite is hidden while transparent'
+  # A second event turns it back off.
+  st = scene.instance_variable_get(:@state)
+  st.player_transparent = false
+  scene.update
+  eq true, spr.visible, 'the player sprite shows again once transparency clears'
+end
+
+check 'Return to Title Screen hands control back to the app' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::RETURN_TO_TITLE, [])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  parent = scene.instance_variable_get(:@parent)
+  5.times { scene.update }
+  ok parent.returned_to_title, 'the app was told to return to the title screen'
+end
+
+check 'Change Event Location snaps another event to a tile' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: place event 2 at (5, 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [2, 0, 5, 3])]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(1, 1, page) },
+                    player: [5, 5])
+  5.times { scene.update }
+  c = chars(scene)[2]
+  eq [5, 3], [c.x, c.y], 'the event was moved to the target tile'
+  tiles = scene.instance_variable_get(:@event_tiles)
+  ok tiles[[5, 3]] && tiles[[5, 3]][:id] == 2, 'the occupied-tile cache followed'
+  ok !tiles[[1, 1]], 'its old tile was released'
+end
+
+check 'Change Event Location with "this event" moves the runner itself' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [10005, 0, 4, 4])]
+  scene = new_scene({ 1 => event(2, 0, auto) }, player: [5, 5])
+  5.times { scene.update }
+  c = chars(scene)[1]
+  eq [4, 4], [c.x, c.y], 'the running event moved itself'
+end
+
+check 'Change Event Location targeting the player snaps the hero' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [10001, 0, 3, 2])]
+  scene = new_scene({ 1 => event(0, 0, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update }
+  eq [3, 2], [st.x, st.y], 'the player was moved to the target tile'
+end
+
+check 'Trade Event Locations swaps two events' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: swap this event (1) with event 2
+  auto.event_commands = [ECmd.new(ic::TRADE_EVENT_LOCATIONS, [10005, 2])]
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(4, 1, page) },
+                    player: [5, 5])
+  5.times { scene.update }
+  a = chars(scene)[1]
+  b = chars(scene)[2]
+  eq [4, 1], [a.x, a.y], 'event 1 took event 2 old tile'
+  eq [2, 2], [b.x, b.y], 'event 2 took event 1 old tile'
+end
+
+check 'Change Map Tileset rebuilds the map chipset from the new id' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_MAP_TILESET, [2])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  eq 'cs', scene.instance_variable_get(:@chipset).name, 'starts on chipset 1'
+  5.times { scene.update }
+  eq 'cs2', scene.instance_variable_get(:@chipset).name,
+     'the chipset was rebuilt from the requested tileset id'
+  eq 2, scene.instance_variable_get(:@tileset_id), 'the override id is recorded'
 end
 
 check 'Input Number opens a widget; confirming stores the entered value' do
@@ -770,13 +859,45 @@ check 'a wandering event cycles its walk phase; a stationary one rests' do
   mover = event(3, 2, page(charset_name: 'c', x_move_type: Game::MoveType::RANDOM))
   still = event(1, 1, page(charset_name: 'c')) # stationary, non-continuous
   scene = new_scene({ 1 => mover, 2 => still }, player: [5, 4])
-  40.times { scene.update }
   eh = event_hashes(scene)
-  ok eh[1][:moving], 'a random mover is flagged moving'
-  ok eh[1][:anim_phase] != 0 || eh[1][:anim_count] != 0,
-     'the mover advanced its walk animation'
-  ok !eh[2][:moving], 'a stationary event is not flagged moving'
+  slid = false
+  200.times { scene.update; slid ||= eh[1][:moving] }
+  ok slid, 'a random mover slides between tiles at some point'
+  ok [eh[1][:char].x, eh[1][:char].y] != [3, 2], 'the mover changed tiles'
+  ok eh[1][:anim_phase] != 0, 'the mover advanced its walk animation while sliding'
+  ok !eh[2][:moving], 'a stationary event never slides'
+  eq [1, 1], [eh[2][:char].x, eh[2][:char].y], 'the stationary event held its tile'
   eq 0, eh[2][:anim_phase], 'a stationary non-continuous event holds its pose'
+end
+
+check 'an event slides smoothly between tiles instead of teleporting' do
+  # A forced route walks the event one tile east; sample its pixel position
+  # through the step and confirm it eases across rather than jumping a full tile.
+  ev = event(0, 2, page(charset_name: 'c', frequency: 6))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  scene.send(:force_event_route, e,
+             Game::MoveRoute.new(move_route([R::MOVE_RIGHT]).commands,
+                                 repeat: false, skippable: true), nil)
+  xs = []
+  20.times { scene.update; xs << scene.send(:event_pixel, e)[0] }
+  ok xs.include?(16), 'the slide completes on the destination tile (x px 16)'
+  mids = xs.select { |px| px.positive? && px < 16 }
+  ok !mids.empty?, "expected intermediate pixel offsets during the slide, got #{xs.inspect}"
+  ok xs.each_cons(2).all? { |a, b| b >= a }, 'the slide advances monotonically east'
+end
+
+check 'a multi-tile hop snaps rather than streaking across the map' do
+  # Reoccupy with a >1-tile jump should not start a slide (move_count stays at
+  # TILE, so event_pixel is the destination tile immediately).
+  ev = event(1, 1, page(charset_name: 'c'))
+  scene = new_scene({ 1 => ev })
+  e = event_hashes(scene)[1]
+  e[:char].x = 4 # simulate a jump landing (2 tiles east)
+  scene.send(:reoccupy, e, 1, 1)
+  eq RPG2k::Scene::Map::TILE, e[:move_count], 'a long hop does not slide'
+  eq [4 * RPG2k::Scene::Map::TILE, 1 * RPG2k::Scene::Map::TILE],
+     scene.send(:event_pixel, e), 'it snaps to the destination tile'
 end
 
 check 'a continuous-animation event advances even while standing still' do
@@ -787,6 +908,41 @@ check 'a continuous-animation event advances even while standing still' do
   e = event_hashes(scene)[1]
   eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
   ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+end
+
+check 'a map with a looping, autoscrolling parallax renders without raising' do
+  scene = new_scene({}, parallax: {
+    parallax_flag: true, parallax_name: 'BG',
+    parallax_loop_x: true, parallax_loop_y: true,
+    parallax_autoloop_x: true, parallax_sx: 4,
+    parallax_autoloop_y: false, parallax_sy: 0
+  })
+  ok scene.instance_variable_get(:@parallax_sprite), 'a parallax sprite is built'
+  ok scene.instance_variable_get(:@parallax_sprite).z < 0, 'drawn behind the tiles'
+  20.times { scene.update } # exercises the tiling + autoscroll draw path
+  ok true
+end
+
+check 'a map with no parallax builds no backdrop sprite' do
+  scene = new_scene({})
+  ok scene.instance_variable_get(:@parallax_sprite).nil?, 'no parallax sprite'
+  5.times { scene.update }
+  ok true
+end
+
+check 'a shown picture renders through the scene and its move advances' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  ok scene.instance_variable_get(:@picture_sprite), 'a picture layer sprite exists'
+  ok scene.instance_variable_get(:@picture_sprite).z < 300, 'below the message window'
+  # Show a picture on the state, start a move, then let the scene loop drive it:
+  # each update advances the pictures and re-renders (which must not raise).
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  st.move_picture(1, 160, 60, 200, 128, 100, 100, 100, 100, 6)
+  ok st.pictures_moving?, 'the picture is moving'
+  6.times { scene.update }
+  ok !st.pictures_moving?, 'the move completed under the scene loop'
+  eq 60, st.pictures[1].y, 'the picture reached its target'
 end
 
 check 'rendering a map with charset + tile-substitution events does not raise' do

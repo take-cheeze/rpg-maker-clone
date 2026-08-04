@@ -417,15 +417,18 @@ class RPG2k
 
       def dispose
         close_message
-        [@lower_sprite, @upper_sprite, @player_sprite].each do |s|
+        [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
+         @picture_sprite].each do |s|
           s.dispose if s
         end
         @chipset_bmp.dispose if @chipset_bmp
+        @parallax_img.dispose if @parallax_img
       end
 
       def update
         @state.tick_timer # the timer keeps counting during events too
         @state.screen.update # screen tint progresses every frame, even in events
+        @state.update_pictures # picture moves progress every frame too
         @anim_frame += 1 # water / animated tiles cycle even during events
         if event_busy?
           drive_event
@@ -471,6 +474,63 @@ class RPG2k
         # CharSet graphics for events, loaded on demand and cached by name (a
         # cached nil marks a name that failed to load, so we log it once).
         @event_charsets = {}
+
+        setup_parallax
+        setup_pictures
+      end
+
+      # Create the buffer that carries the Show Picture layer. Pictures composite
+      # into one screen-sized sprite above the map and characters (z = 250) but
+      # below the message window (z = 300); source images are cached by
+      # [name, transparent-colour] as they are shown.
+      def setup_pictures
+        @picture_sprite = Sprite.new
+        @picture_sprite.z = 250
+        @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @picture_sprite.bitmap = @picture_bmp
+        @picture_srcs = {}
+      end
+
+      # Load (and cache) a picture's source image (Picture/<name>). `transparent`
+      # loads it with the colour-key so palette index 0 shows through. A cached
+      # nil marks a missing file so a broken picture simply draws nothing.
+      def picture_src(name, transparent)
+        return nil if name.nil? || name.empty?
+        key = [name, transparent]
+        return @picture_srcs[key] if @picture_srcs.key?(key)
+        @picture_srcs[key] =
+          begin
+            Bitmap.new "Picture/#{name}", transparent
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] picture '#{name}' load failed, not drawn: #{e.message}"
+            nil
+          end
+      end
+
+      # Load the map's parallax background (Panorama/<name>) and its scroll
+      # settings, and create the sprite that carries it behind the tile layers
+      # (z = -1, below the lower tiles at z = 0). Skipped — leaving the map's
+      # backdrop the plain void — when the map has no parallax or the image is
+      # missing.
+      def setup_parallax
+        u = @map.unit
+        return unless (u.parallax_flag rescue false)
+        name = (u.parallax_name rescue '').to_s
+        return if name.empty?
+        @parallax_img = Bitmap.new "Panorama/#{name}"
+        @par_loop_x = (u.parallax_loop_x rescue false) ? true : false
+        @par_loop_y = (u.parallax_loop_y rescue false) ? true : false
+        @par_auto_x = (u.parallax_autoloop_x rescue false) ? true : false
+        @par_auto_y = (u.parallax_autoloop_y rescue false) ? true : false
+        @par_sx = (u.parallax_sx rescue 0) || 0
+        @par_sy = (u.parallax_sy rescue 0) || 0
+        @parallax_sprite = Sprite.new
+        @parallax_sprite.z = -1
+        @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @parallax_sprite.bitmap = @parallax_bmp
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] parallax load failed, no backdrop drawn: #{e.message}"
+        @parallax_img = nil
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -490,10 +550,20 @@ class RPG2k
       end
 
       def build_chipset
-        Game::ChipSet.new(@db, @map.chipset_id)
+        Game::ChipSet.new(@db, @tileset_id || @map.chipset_id)
       rescue StandardError => e
         $stderr.puts "[RPG2k] chipset load failed, tiles treated as passable: #{e.message}"
         nil
+      end
+
+      # Rebuild the chipset model and its tile graphic (after a Change Map Tileset
+      # swaps the tileset id), disposing the old graphic bitmap. Passability,
+      # terrain and rendering all read the refreshed chipset from here on.
+      def rebuild_chipset
+        @chipset = build_chipset
+        old = @chipset_bmp
+        @chipset_bmp = load_chipset_graphic
+        old.dispose if old && !old.equal?(@chipset_bmp)
       end
 
       # Load the chipset tile graphic (ChipSet/<name>). Chipsets are indexed
@@ -570,12 +640,14 @@ class RPG2k
         { id: id, char: ch, trigger: page_trigger(page),
           commands: page_commands(page), move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
-          # Rendering state: the page's static graphic fields plus a live walk
-          # animation phase / counter and a "stepping" flag (see step_event).
+          # Rendering state: the page's static graphic fields, a live walk
+          # animation phase / counter, a mid-step "moving" flag, and the pixel
+          # slide (display origin disp_x/disp_y + move_count 0..TILE) that eases
+          # the sprite between tiles. move_count == TILE means "at rest".
           layer: page_layer(page), translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
-          moving: false }
+          moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE }
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
@@ -714,7 +786,9 @@ class RPG2k
           it.update
         end
         apply_move_requests(it, p[:event])
+        apply_location_requests(it, p[:event])
         apply_erase_request(it, p[:event])
+        apply_tileset_request(it)
       rescue StandardError
         nil
       end
@@ -788,36 +862,36 @@ class RPG2k
         nil
       end
 
-      # Advance each event's walk-animation phase once per frame. An event
-      # "moves" for animation purposes when it has autonomous movement (a
-      # non-stationary move type) or a forced route in progress; such events —
-      # and any continuous/spin animation type — cycle their walk frames on the
-      # ANIM_FRAME_PERIOD cadence, while a stationary, non-continuous event rests
-      # on its page pose. Game::EventGraphic.frame reads @moving / @anim_phase to
-      # pick the drawn column.
+      # Advance each event's pixel slide and walk-animation phase once per frame.
+      # An event "moves" for animation purposes while it is sliding between two
+      # tiles (see reoccupy / event_sliding?); such events — and any
+      # continuous/spin animation type — cycle their walk frames on the
+      # ANIM_FRAME_PERIOD cadence, while an event resting on a tile shows its
+      # page pose. Game::EventGraphic.frame reads @moving / @anim_phase to pick
+      # the drawn column, and event_pixel reads the slide for the draw position.
       def animate_events
         @events.each { |e| animate_event(e) }
       end
 
       def animate_event(e)
+        # Advance the slide first so a fixed-graphic event still glides smoothly.
+        e[:move_count] += SPEED if e[:move_count] < TILE
+        sliding = event_sliding?(e)
+        e[:moving] = sliding
         type = e[:anim_type]
-        walking = event_walking?(e)
-        e[:moving] = walking
         return unless Game::EventGraphic.animated?(type)
-        return unless walking || Game::EventGraphic.continuous?(type)
+        return unless sliding || Game::EventGraphic.continuous?(type)
         e[:anim_count] += 1
         return if e[:anim_count] < ANIM_FRAME_PERIOD
         e[:anim_count] = 0
         e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
 
-      # Whether an event is currently in motion (so it shows its walk cycle
-      # rather than a standing pose): it has a forced route, or its page gives it
-      # an autonomous, non-stationary move type.
-      def event_walking?(e)
-        return true if e[:forced_route]
-        mt = e[:move_type]
-        !mt.nil? && mt != Game::MoveType::STATIONARY
+      # Whether an event is mid-step: its display origin has not yet caught up to
+      # its logical tile (the slide started by reoccupy is still in progress).
+      def event_sliding?(e)
+        e[:move_count] < TILE &&
+          (e[:disp_x] != e[:char].x || e[:disp_y] != e[:char].y)
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
@@ -839,9 +913,42 @@ class RPG2k
       # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
       # eagerly (rather than a single end-of-frame rebuild) so an event that has
       # already moved this frame blocks the next event from stepping onto it.
+      # Also begins the pixel slide from the old tile toward the new one so the
+      # sprite glides instead of teleporting (see event_pixel).
       def reoccupy(e, ox, oy)
         @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
         @event_tiles[[e[:char].x, e[:char].y]] = e
+        start_event_slide(e, ox, oy)
+      end
+
+      # Begin a render slide for event `e` that just stepped off (ox, oy): the
+      # sprite eases from that tile to its new one over TILE/SPEED frames. Only
+      # single-tile cardinal steps slide; a longer hop (a jump, or a diagonal of
+      # more than one tile) snaps so the sprite never streaks across the map.
+      def start_event_slide(e, ox, oy)
+        if (e[:char].x - ox).abs + (e[:char].y - oy).abs == 1
+          e[:disp_x] = ox
+          e[:disp_y] = oy
+          e[:move_count] = 0
+        else
+          e[:disp_x] = e[:char].x
+          e[:disp_y] = e[:char].y
+          e[:move_count] = TILE
+        end
+      end
+
+      # Current position of event `e` in map pixels, interpolated from its
+      # display origin toward its logical tile while a slide is in progress.
+      def event_pixel(e)
+        cx = e[:char].x
+        cy = e[:char].y
+        if event_sliding?(e)
+          t = e[:move_count]
+          [e[:disp_x] * TILE + (cx - e[:disp_x]) * t,
+           e[:disp_y] * TILE + (cy - e[:disp_y]) * t]
+        else
+          [cx * TILE, cy * TILE]
+        end
       end
 
       # -- Erase Event --------------------------------------------------------
@@ -901,9 +1008,31 @@ class RPG2k
       def refresh_player_graphic
         @charset = load_charset
         @last_frame = nil
-        leader = @state.party.leader
-        @player_sprite.visible = !(leader && leader.transparent)
+        @player_sprite.visible = !player_hidden?
         @player_bmp.clear unless @charset
+      end
+
+      # Whether the party leader's map sprite should be hidden this frame: either
+      # the Set Transparent Flag command hid the player, or the leader's own
+      # actor graphic carries the (rarely used) semi-transparent flag.
+      def player_hidden?
+        leader = @state.party.leader
+        @state.player_transparent || (leader && leader.transparent) ? true : false
+      end
+
+      # -- Change Map Tileset -------------------------------------------------
+
+      # If the interpreter ran a Change Map Tileset this step, swap the map's
+      # chipset to the requested id and rebuild its tile graphic. The override
+      # lasts until the next map load (see perform_teleport).
+      def apply_tileset_request(interp)
+        id = interp.take_tileset_request
+        return if id.nil?
+        @tileset_id = id
+        rebuild_chipset
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Change Map Tileset failed: #{e.message}"
+        nil
       end
 
       # -- Move Event (Set Move Route) ----------------------------------------
@@ -935,6 +1064,91 @@ class RPG2k
           ev = @events.find { |e| e[:id] == r[:target] }
           force_event_route(ev, route, r[:frequency]) if ev
         end
+      end
+
+      # -- Change / Trade Event Location --------------------------------------
+
+      # Apply the instant-reposition requests an interpreter queued this step
+      # (Change Event Location / Trade Event Locations). `this_event` is the map
+      # event running the process (or nil), so a request targeting "this event"
+      # reaches the right character.
+      def apply_location_requests(interp, this_event)
+        reqs = interp.take_location_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_location_request(r, this_event) }
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Event location change failed: #{e.message}"
+        nil
+      end
+
+      def apply_location_request(r, this_event)
+        if r[:op] == :swap
+          a = char_location(r[:a], this_event)
+          b = char_location(r[:b], this_event)
+          return unless a && b
+          set_char_location(r[:a], this_event, b[0], b[1])
+          set_char_location(r[:b], this_event, a[0], a[1])
+        else
+          set_char_location(r[:target], this_event, r[:x], r[:y])
+        end
+      end
+
+      # The current tile of a target character (the same target ids as Move
+      # Event), or nil for the player-less vehicle slots / a missing event.
+      def char_location(target, this_event)
+        case target
+        when MOVE_TARGET_PLAYER
+          [@state.x, @state.y]
+        when 0, MOVE_TARGET_THIS
+          this_event ? [this_event[:char].x, this_event[:char].y] : nil
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          nil # vehicles are not modelled yet
+        else
+          ev = @events.find { |e| e[:id] == target }
+          ev ? [ev[:char].x, ev[:char].y] : nil
+        end
+      end
+
+      # Instantly move a target character to a tile.
+      def set_char_location(target, this_event, x, y)
+        case target
+        when MOVE_TARGET_PLAYER
+          move_player_to(x, y)
+        when 0, MOVE_TARGET_THIS
+          move_event_to(this_event, x, y) if this_event
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          nil # vehicles are not modelled yet
+        else
+          ev = @events.find { |e| e[:id] == target }
+          move_event_to(ev, x, y) if ev
+        end
+      end
+
+      # Snap the player to a tile: cancel any in-progress step and keep a forced
+      # route's mirror character (if one is running) in sync so it steps on from
+      # the new tile.
+      def move_player_to(x, y)
+        @state.x = x
+        @state.y = y
+        @dest_x = x
+        @dest_y = y
+        @moving = false
+        @move_count = 0
+        if @player_char
+          @player_char.x = x
+          @player_char.y = y
+        end
+      end
+
+      # Snap an event to a tile and refresh the occupied-tile cache so collision
+      # and the marker follow it.
+      def move_event_to(ev, x, y)
+        return unless ev
+        ox = ev[:char].x
+        oy = ev[:char].y
+        ev[:char].x = x
+        ev[:char].y = y
+        reoccupy(ev, ox, oy)
       end
 
       # Give a map event a forced route, overriding its page movement until the
@@ -1077,13 +1291,17 @@ class RPG2k
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?
+          when :picture then @interpreter.resume unless @state.pictures_moving?
+          when :return_title then perform_return_to_title
           end
         else
           @interpreter.update
           apply_move_requests(@interpreter, @active_event)
+          apply_location_requests(@interpreter, @active_event)
           apply_erase_request(@interpreter, @active_event)
           apply_halt_request(@interpreter)
           apply_graphic_change(@interpreter)
+          apply_tileset_request(@interpreter)
         end
       end
 
@@ -1113,6 +1331,7 @@ class RPG2k
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
+        @tileset_id = nil # a Change Map Tileset override does not survive a teleport
         @chipset = build_chipset
         @started_auto = {}
         @started_common = {}
@@ -1128,6 +1347,17 @@ class RPG2k
         @interpreter.stop
       rescue StandardError => e
         $stderr.puts "[RPG2k] Teleport failed: #{e.message}"
+        @interpreter.stop
+      end
+
+      # Return to Title Screen: stop the running event and hand control back to
+      # the app, which tears the play scenes down and shows a fresh title. There
+      # is nothing to resume afterwards — this scene is being disposed.
+      def perform_return_to_title
+        @interpreter.stop
+        @parent.return_to_title
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Return to Title failed: #{e.message}"
         @interpreter.stop
       end
 
@@ -1453,11 +1683,90 @@ class RPG2k
         # of void during the shake, which is fine.
         cam_x -= @state.screen.shake_offset
 
+        draw_parallax cam_x, cam_y
         draw_layers cam_x, cam_y
 
         @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE)
+        # Reflect the Set Transparent Flag command (and any leader graphic flag)
+        # every frame so the hero hides/shows as events toggle it.
+        @player_sprite.visible = !player_hidden?
         draw_player_frame
+
+        draw_pictures cam_x, cam_y
+      end
+
+      # Composite the Show Picture layer into its buffer, drawing lowest-id first
+      # so higher-numbered pictures sit on top. Each picture is scaled by its zoom
+      # about its centre and blitted at its opacity; a picture pinned to the map
+      # scrolls with the camera, otherwise it holds its screen position. (Tone is
+      # carried on the picture but not yet applied — that needs native tone
+      # support, like the screen tint.)
+      def draw_pictures(cam_x, cam_y)
+        @picture_bmp.clear
+        pics = @state.pictures
+        return if pics.empty?
+        pics.keys.sort.each { |id| draw_picture pics[id], cam_x, cam_y }
+      end
+
+      def draw_picture(pic, cam_x, cam_y)
+        src = picture_src(pic.name, pic.use_transparent_color)
+        return unless src
+        zw = src.width * pic.zoom / 100
+        zh = src.height * pic.zoom / 100
+        return if zw <= 0 || zh <= 0
+        # RPG2000 positions a picture by its centre.
+        dx = pic.x - zw / 2
+        dy = pic.y - zh / 2
+        if pic.fixed_to_map
+          dx -= cam_x
+          dy -= cam_y
+        end
+        @picture_bmp.stretch_blt Rect.new(dx, dy, zw, zh), src,
+                                 Rect.new(0, 0, src.width, src.height),
+                                 pic.opacity
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] picture ##{pic.id} draw failed: #{e.message}"
+      end
+
+      # Composite the parallax background into its screen-sized buffer, tiling
+      # the image along any looping axis so it fills the view. The per-axis
+      # start offset (and, for a looping axis, the scroll/autoscroll) comes from
+      # Game::Parallax; @anim_frame drives the autoscroll. A non-looping axis
+      # draws a single copy at its anchored offset.
+      def draw_parallax cam_x, cam_y
+        return unless @parallax_img
+        iw = @parallax_img.width
+        ih = @parallax_img.height
+        ox = Game::Parallax.axis_offset(@par_loop_x, @par_auto_x, @par_sx,
+                                        @anim_frame, cam_x, SCREEN_W,
+                                        @map.width * TILE, iw)
+        oy = Game::Parallax.axis_offset(@par_loop_y, @par_auto_y, @par_sy,
+                                        @anim_frame, cam_y, SCREEN_H,
+                                        @map.height * TILE, ih)
+        @parallax_bmp.clear
+        src = Rect.new(0, 0, iw, ih)
+        parallax_tiles(oy, ih, SCREEN_H, @par_loop_y).each do |dy|
+          parallax_tiles(ox, iw, SCREEN_W, @par_loop_x).each do |dx|
+            @parallax_bmp.blt dx, dy, @parallax_img, src
+          end
+        end
+      end
+
+      # Draw positions along one axis so the image (size `size`, starting at
+      # `off` <= 0) covers `screen`: repeated every `size` when the axis loops,
+      # a single copy at `off` otherwise.
+      def parallax_tiles(off, size, screen, loop)
+        return [off] unless loop && size > 0
+        d = off
+        d -= size while d > 0        # begin at or left of the origin
+        d += size while d + size <= 0 # but not entirely off-screen
+        out = []
+        while d < screen
+          out << d
+          d += size
+        end
+        out
       end
 
       def draw_layers cam_x, cam_y
@@ -1549,8 +1858,9 @@ class RPG2k
                                             e[:char].direction, e[:anim_phase],
                                             e[:moving])
         sx, sy, sw, sh = Game::CharSet.frame_rect(e[:char].graphic_index, dir, col)
-        dx = e[:char].x * TILE - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-        dy = e[:char].y * TILE - cam_y - (Game::CharSet::HEIGHT - TILE)
+        epx, epy = event_pixel(e)
+        dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+        dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE)
         bmp.blt dx, dy, charset, Rect.new(sx, sy, sw, sh), opacity
       end
 
@@ -1560,8 +1870,9 @@ class RPG2k
       def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         return unless @chipset_bmp
         sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index)
-        dx = e[:char].x * TILE - cam_x
-        dy = e[:char].y * TILE - cam_y
+        epx, epy = event_pixel(e)
+        dx = epx - cam_x
+        dy = epy - cam_y
         bmp.blt dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity
       end
 

@@ -185,7 +185,7 @@ runtime can execute virtually all of it.
    | **Battle** | EnemyEncounter (10710) | Sample2 |
    | **BGM stack** ✅ | MemorizeBGM (11530), PlayMemorizedBGM (11540) — now implemented | Sample2 |
    | **Movement sync** ✅ | ProceedWithMovement (11340) — now implemented | Sample3 |
-   | **Menu/telep. access, misc** ✅ | ChangeMainMenuAccess (11960) and MemorizeLocation (10820) now implemented; PlayerVisibility (11310) remains | Sample3 |
+   | **Menu/telep. access, misc** ✅ | ChangeMainMenuAccess (11960), MemorizeLocation (10820) and PlayerVisibility (11310) — now implemented | Sample3 |
    | **Unidentified** | code 10660, 10690 (106xx range) | Sample2, Sample3 |
 
 ## Recommended priorities for the interpreter

@@ -86,7 +86,7 @@ module LCF
             4 => { name: :charset_index, type: :int, default: 0 },
             5 => { name: :semi_transparent, type: :bool, default: false },
             7 => { name: :initial_level, type: :int, default: 1 },
-            8 => { name: :max_level, type: :int, default: -> { LCF.max_level } },
+            8 => { name: :max_level, type: :int, default: -> { LCF.level_max } },
             9 => { name: :has_critical_rate, type: :bool, default: true },
             10 => { name: :critical_rate, type: :int, default: 30 },
 
@@ -1186,6 +1186,23 @@ module LCF
 
     def header; raise end
     def schema; raise end
+
+    # Serialise the whole file back to bytes: the BER-length-prefixed header
+    # string followed by the root object's own serialisation. The inverse of
+    # #initialize; a file read and written back without edits reproduces it
+    # byte-for-byte. The top-level chunk list runs to EOF with no terminator
+    # (matching a real .lsd), so the root Array1D is serialised with
+    # terminate=false. Multi-section (Array-schema) files are not yet writable.
+    def to_lcf
+      raise 'section-based file serialization not implemented' if schema.is_a? Array
+      root = @root.is_a?(LCF::Array1D) ? @root.to_lcf(false) : @root.to_lcf
+      LCF.write_ber(header.bytesize) + LCF.binstr(header) + LCF.binstr(root)
+    end
+
+    # Write #to_lcf to a path (binary). Uses ::File since LCF::File shadows it.
+    def save_to path
+      ::File.open(path, 'wb') { |f| f.write to_lcf }
+    end
 
     def method_missing sym, *args
       # Use __send__ rather than send: some mruby builds do not expose Kernel#send
