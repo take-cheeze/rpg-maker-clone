@@ -49,14 +49,18 @@ renderer does not yet honour them visually (opacity/zoom/tone/mirror compositing
 in the draw path). `Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather
 and the animation player depend on these.
 
-### 2. `Window` ❌ (the big one for menus & messages)
+### 2. `Window` ⚠️ (stored; native frame/cursor render pending)
 
-`class Window` is empty. Every `Window_Base` subclass (`Window_Message`,
-`Window_Command`, `Window_Selectable`, the whole menu/shop/battle UI) needs:
-`windowskin`, `contents` (a `Bitmap`), `cursor_rect`, `x`/`y`/`width`/`height`,
-`ox`/`oy`, `opacity`/`back_opacity`/`contents_opacity`, `visible`, `z`, `active`,
-`pause`, `update`, `dispose`. This is a real native widget (frame from the
-windowskin, cursor blink, pause arrow, contents blit).
+`Window` is now a pure-Ruby property holder (`mruby-rgss/mrblib/lib.rb`) with
+RGSS defaults: `windowskin`, `contents` (a `Bitmap` the game creates and draws
+into), `cursor_rect` (a `Rect`), `x`/`y`/`width`/`height`, `ox`/`oy`,
+`opacity`/`back_opacity`/`contents_opacity`, `visible`, `z`, `active`, `pause`,
+`stretch`, `viewport`, `update`, `dispose`/`disposed?`. So every `Window_Base`
+subclass (`Window_Message`, `Window_Command`, `Window_Selectable`, the whole
+menu/shop/battle UI) can construct, configure and draw into its `contents`
+without raising. **Remaining:** the native widget compositing — the frame built
+from the windowskin, the blinking cursor rect, the pause arrow, and blitting the
+scrolled `contents` at `contents_opacity` — is future work.
 
 ### 3. `Tilemap` ❌ (the big one for maps)
 
