@@ -55,6 +55,9 @@ module Game
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
+      SHOW_PICTURE     = 11110
+      MOVE_PICTURE     = 11120
+      ERASE_PICTURE    = 11130
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       HALT_ALL_MOVEMENT = 11350
@@ -287,6 +290,9 @@ module Game
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
+      when Cmd::SHOW_PICTURE     then do_show_picture cmd
+      when Cmd::MOVE_PICTURE     then do_move_picture cmd
+      when Cmd::ERASE_PICTURE    then do_erase_picture cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::HALT_ALL_MOVEMENT then @halt_movement_requested = true
@@ -929,6 +935,66 @@ module Game
       return unless cmd.param(3) != 0 && @state.screen.shaking?
       @wait_kind = :screen
       @waiting = true
+    end
+
+    # Show Picture (11110): display picture param0 from the string file name at
+    # the centre position param2/param3 (literal, or read from those variables
+    # when the position-mode param1 is non-zero), at zoom param5 (%), transparency
+    # param6 (0 opaque .. 100 clear), tone param8..11 (r/g/b/saturation) and the
+    # "make colour 0 transparent" flag param7; param4 pins it to the map (it then
+    # scrolls with the camera). The parameter layout is a direct port of EasyRPG
+    # Player's CommandShowPicture (RPG2000 branch).
+    def do_show_picture(cmd)
+      id = cmd.param(0)
+      return if id <= 0
+      @state.show_picture(id,
+                          name: picture_name(cmd),
+                          x: picture_coord(cmd, 2), y: picture_coord(cmd, 3),
+                          zoom: cmd.param(5),
+                          opacity: trans_to_opacity(cmd.param(6)),
+                          use_transparent_color: cmd.param(7) != 0,
+                          fixed_to_map: cmd.param(4) > 0,
+                          red: cmd.param(8), green: cmd.param(9),
+                          blue: cmd.param(10), saturation: cmd.param(11))
+    end
+
+    # Move Picture (11120): ease picture param0 to a new position/zoom/opacity/
+    # tone over param14 tenths of a second. When the wait flag (param15) is set,
+    # pause until the move finishes — the scene advances the pictures each frame
+    # and resumes us once none is moving. Same parameter layout as Show Picture,
+    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture).
+    def do_move_picture(cmd)
+      id = cmd.param(0)
+      frames = cmd.param(14) * FRAMES_PER_TENTH
+      @state.move_picture(id, picture_coord(cmd, 2), picture_coord(cmd, 3),
+                          cmd.param(5), trans_to_opacity(cmd.param(6)),
+                          cmd.param(8), cmd.param(9), cmd.param(10),
+                          cmd.param(11), frames)
+      return unless cmd.param(15) != 0 && @state.pictures[id] &&
+                    @state.pictures[id].moving?
+      @wait_kind = :picture
+      @waiting = true
+    end
+
+    # Erase Picture (11130): remove picture param0 from the screen.
+    def do_erase_picture(cmd)
+      @state.erase_picture(cmd.param(0))
+    end
+
+    # A picture coordinate: the literal param at `idx`, or the value of the
+    # variable it names when the position-mode param (index 1) is non-zero.
+    def picture_coord(cmd, idx)
+      cmd.param(1) != 0 ? variables[cmd.param(idx)] : cmd.param(idx)
+    end
+
+    # RPG2000 transparency (0 opaque .. 100 fully clear) -> a 0..255 opacity.
+    def trans_to_opacity(top_trans)
+      (100 - Game.clamp(top_trans, 0, 100)) * 255 / 100
+    end
+
+    # The picture's file name (the command's string parameter), or ''.
+    def picture_name(cmd)
+      (cmd.string || '').to_s
     end
 
     # Memorize BGM: stash a copy of the currently-playing BGM so a later Play

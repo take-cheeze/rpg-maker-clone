@@ -1713,6 +1713,71 @@ module Game
     end
   end
 
+  # One on-screen picture shown by the Show Picture (11110) event command. Holds
+  # its file name, the current visual parameters (centre position, zoom percent,
+  # 0..255 opacity and the four RPG2000 tone channels) and, while a Move Picture
+  # (11120) is in flight, linearly interpolates every parameter toward its target
+  # over the move's duration. Pure data — the owning Scene::Map reads the current
+  # values each frame to blit the picture; #update advances the interpolation.
+  #
+  # Positions are RPG2000 screen coordinates of the picture's *centre*; a picture
+  # flagged `fixed_to_map` scrolls with the map (the scene subtracts the camera)
+  # rather than staying put on screen. Tone channels are 0..200 (100 neutral);
+  # applying them is deferred (needs native tone support), so they are carried
+  # but not yet drawn.
+  class Picture
+    attr_reader :id, :name, :fixed_to_map, :use_transparent_color
+    attr_reader :x, :y, :zoom, :opacity, :red, :green, :blue, :saturation
+
+    def initialize(id, opts = {})
+      @id = id
+      @name = opts[:name] || ''
+      @x = opts[:x] || 0
+      @y = opts[:y] || 0
+      @zoom = opts[:zoom] || 100
+      @opacity = opts[:opacity] || 255
+      @red = opts[:red] || 100
+      @green = opts[:green] || 100
+      @blue = opts[:blue] || 100
+      @saturation = opts[:saturation] || 100
+      @fixed_to_map = opts[:fixed_to_map] ? true : false
+      @use_transparent_color = opts[:use_transparent_color] ? true : false
+      @frames = 0
+    end
+
+    # Begin a move toward new visual parameters over `frames` frames; with
+    # frames <= 0 the change applies immediately.
+    def move_to(x, y, zoom, opacity, red, green, blue, saturation, frames)
+      @tx = x; @ty = y; @tzoom = zoom; @topacity = opacity
+      @tred = red; @tgreen = green; @tblue = blue; @tsat = saturation
+      @frames = frames > 0 ? frames : 0
+      finish_move if @frames == 0
+    end
+
+    def moving?; @frames > 0; end
+
+    # Advance one frame of the in-flight move (a no-op when at rest). Every
+    # parameter eases a `1/remaining` fraction toward its target, so integer
+    # division still lands exactly on the target on the final frame.
+    def update
+      return unless moving?
+      @x = step(@x, @tx); @y = step(@y, @ty)
+      @zoom = step(@zoom, @tzoom); @opacity = step(@opacity, @topacity)
+      @red = step(@red, @tred); @green = step(@green, @tgreen)
+      @blue = step(@blue, @tblue); @saturation = step(@saturation, @tsat)
+      @frames -= 1
+    end
+
+    private
+
+    def step(cur, target); cur + (target - cur) / @frames; end
+
+    def finish_move
+      @x = @tx; @y = @ty; @zoom = @tzoom; @opacity = @topacity
+      @red = @tred; @green = @tgreen; @blue = @tblue; @saturation = @tsat
+    end
+  end
+
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
   class State
@@ -1746,7 +1811,33 @@ module Game
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
+      # Shown pictures, id => Game::Picture. Transient like @screen (RPG2000's
+      # HUD pictures are re-shown by parallel events on load), so not serialised.
+      @pictures = {}
     end
+
+    attr_reader :pictures
+
+    # Show (or replace) picture `id` with the given Picture options hash.
+    def show_picture(id, opts)
+      @pictures[id] = Picture.new(id, opts) if id && id > 0
+    end
+
+    # Start a move on picture `id` (a no-op if it is not shown). `args` are the
+    # Picture#move_to arguments (x, y, zoom, opacity, r, g, b, s, frames).
+    def move_picture(id, *args)
+      pic = @pictures[id]
+      pic.move_to(*args) if pic
+    end
+
+    def erase_picture(id); @pictures.delete(id); end
+
+    # Advance every shown picture's in-flight move one frame.
+    def update_pictures; @pictures.each_value(&:update); end
+
+    # Whether any picture is still interpolating a move (for the Move Picture
+    # "wait until done" flag).
+    def pictures_moving?; @pictures.values.any?(&:moving?); end
 
     # Advance the countdown timer one frame (call once per frame). Returns true
     # on the frame the timer reaches zero.

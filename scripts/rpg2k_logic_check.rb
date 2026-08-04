@@ -1647,6 +1647,116 @@ check 'Halt All Movement raises a one-shot request without pausing' do
   eq false, it.take_halt_movement_request, 'and it clears after the first read'
 end
 
+# -- Pictures (Game::Picture + Show/Move/Erase Picture) -----------------------
+
+check 'Game::Picture holds its shown parameters' do
+  p = Game::Picture.new(3, name: 'pic', x: 160, y: 120, zoom: 100,
+                        opacity: 255, fixed_to_map: true,
+                        use_transparent_color: true,
+                        red: 100, green: 100, blue: 100, saturation: 100)
+  eq [3, 'pic', 160, 120, 100, 255], [p.id, p.name, p.x, p.y, p.zoom, p.opacity]
+  ok p.fixed_to_map && p.use_transparent_color
+  ok !p.moving?
+end
+
+check 'Game::Picture eases a move and lands exactly on the last frame' do
+  p = Game::Picture.new(1, x: 0, y: 0, zoom: 100, opacity: 0)
+  p.move_to(40, 20, 200, 255, 100, 100, 100, 100, 4) # over 4 frames
+  ok p.moving?
+  p.update; eq [10, 5], [p.x, p.y]
+  p.update; eq [20, 10], [p.x, p.y]
+  p.update; eq [30, 15], [p.x, p.y]
+  p.update; eq [40, 20, 200, 255], [p.x, p.y, p.zoom, p.opacity]
+  ok !p.moving?, 'settled once the move completes'
+end
+
+check 'Game::Picture with non-divisible steps still lands exactly' do
+  p = Game::Picture.new(1, x: 0, y: 0)
+  p.move_to(10, 0, 100, 255, 100, 100, 100, 100, 3)
+  3.times { p.update }
+  eq 10, p.x
+  ok !p.moving?
+end
+
+check 'Game::Picture with zero duration applies immediately' do
+  p = Game::Picture.new(1, x: 5, y: 5, opacity: 0)
+  p.move_to(99, 88, 150, 128, 100, 100, 100, 100, 0)
+  eq [99, 88, 150, 128], [p.x, p.y, p.zoom, p.opacity]
+  ok !p.moving?
+end
+
+check 'Show Picture creates a picture from its parameters' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # id 1, pos-mode 0 (literal), x 160, y -32, fixed 0, zoom 100, trans 0,
+  # use-transp 1, tone 100/100/100/100, effect 0/60.
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [1, 0, 160, -32, 0, 100, 0, 1, 100, 100, 100, 100, 0, 60],
+                        string: 'pic01')])
+  it.update
+  p = st.pictures[1]
+  ok p, 'picture 1 exists'
+  eq ['pic01', 160, -32, 100, 255], [p.name, p.x, p.y, p.zoom, p.opacity]
+  ok p.use_transparent_color, 'transparent-colour flag decoded'
+  ok !p.fixed_to_map
+end
+
+check 'Show Picture transparency maps to opacity and reads position variables' do
+  st = new_state
+  st.variables[7] = 200
+  st.variables[8] = 40
+  it = Game::Interpreter.new(st)
+  # pos-mode 1 -> x/y come from variables 7/8; transparency 100 -> opacity 0.
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [2, 1, 7, 8, 1, 100, 100, 0, 100, 100, 100, 100, 0, 0],
+                        string: 'p')])
+  it.update
+  p = st.pictures[2]
+  eq [200, 40, 0], [p.x, p.y, p.opacity], 'x/y from vars, transparency 100 -> opacity 0'
+  ok p.fixed_to_map, 'fixed-to-map flag decoded'
+end
+
+check 'Move Picture eases the picture and its wait flag pauses the interpreter' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::SHOW_PICTURE,
+               [1, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0], string: 'p'),
+    # Move to (60,0) over 1 tenth (=6 frames) with the wait flag set, then a
+    # switch we can watch to prove the interpreter paused.
+    FakeCmd.new(IC::MOVE_PICTURE,
+               [1, 0, 60, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 1, 1]),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])
+  ])
+  it.update # Show
+  it.update # Move -> starts the move and waits
+  ok it.waiting?, 'the wait flag paused the interpreter'
+  ok st.pictures[1].moving?, 'the picture is interpolating'
+  # Drive the picture the way the scene does, then let the interpreter resume.
+  6.times { st.update_pictures }
+  ok !st.pictures_moving?, 'the move finished'
+  eq 60, st.pictures[1].x
+  it.resume
+  it.update
+  eq true, st.switches[1], 'the command after the waited move ran'
+end
+
+check 'Erase Picture removes the picture' do
+  st = new_state
+  # Show alone first, to confirm it is present before erasing.
+  its = Game::Interpreter.new(st)
+  its.start([FakeCmd.new(IC::SHOW_PICTURE,
+                         [5, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                         string: 'p')])
+  its.update
+  ok st.pictures[5], 'shown'
+  # Then Erase (both commands are non-blocking, so they run in one update).
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_PICTURE, [5])])
+  it.update
+  ok st.pictures[5].nil?, 'erased'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

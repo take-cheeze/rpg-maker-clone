@@ -842,6 +842,21 @@ check 'a map with no parallax builds no backdrop sprite' do
   ok true
 end
 
+check 'a shown picture renders through the scene and its move advances' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  ok scene.instance_variable_get(:@picture_sprite), 'a picture layer sprite exists'
+  ok scene.instance_variable_get(:@picture_sprite).z < 300, 'below the message window'
+  # Show a picture on the state, start a move, then let the scene loop drive it:
+  # each update advances the pictures and re-renders (which must not raise).
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  st.move_picture(1, 160, 60, 200, 128, 100, 100, 100, 100, 6)
+  ok st.pictures_moving?, 'the picture is moving'
+  6.times { scene.update }
+  ok !st.pictures_moving?, 'the move completed under the scene loop'
+  eq 60, st.pictures[1].y, 'the picture reached its target'
+end
+
 check 'rendering a map with charset + tile-substitution events does not raise' do
   charset_ev = event(2, 2, page(charset_name: 'npc', charset_index: 1, layer: 1))
   tile_ev    = event(3, 3, page(charset_name: '', charset_index: 97, layer: 0))

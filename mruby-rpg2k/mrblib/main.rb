@@ -417,7 +417,8 @@ class RPG2k
 
       def dispose
         close_message
-        [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite].each do |s|
+        [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
+         @picture_sprite].each do |s|
           s.dispose if s
         end
         @chipset_bmp.dispose if @chipset_bmp
@@ -427,6 +428,7 @@ class RPG2k
       def update
         @state.tick_timer # the timer keeps counting during events too
         @state.screen.update # screen tint progresses every frame, even in events
+        @state.update_pictures # picture moves progress every frame too
         @anim_frame += 1 # water / animated tiles cycle even during events
         if event_busy?
           drive_event
@@ -474,6 +476,35 @@ class RPG2k
         @event_charsets = {}
 
         setup_parallax
+        setup_pictures
+      end
+
+      # Create the buffer that carries the Show Picture layer. Pictures composite
+      # into one screen-sized sprite above the map and characters (z = 250) but
+      # below the message window (z = 300); source images are cached by
+      # [name, transparent-colour] as they are shown.
+      def setup_pictures
+        @picture_sprite = Sprite.new
+        @picture_sprite.z = 250
+        @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @picture_sprite.bitmap = @picture_bmp
+        @picture_srcs = {}
+      end
+
+      # Load (and cache) a picture's source image (Picture/<name>). `transparent`
+      # loads it with the colour-key so palette index 0 shows through. A cached
+      # nil marks a missing file so a broken picture simply draws nothing.
+      def picture_src(name, transparent)
+        return nil if name.nil? || name.empty?
+        key = [name, transparent]
+        return @picture_srcs[key] if @picture_srcs.key?(key)
+        @picture_srcs[key] =
+          begin
+            Bitmap.new "Picture/#{name}", transparent
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] picture '#{name}' load failed, not drawn: #{e.message}"
+            nil
+          end
       end
 
       # Load the map's parallax background (Panorama/<name>) and its scroll
@@ -1141,6 +1172,7 @@ class RPG2k
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?
+          when :picture then @interpreter.resume unless @state.pictures_moving?
           end
         else
           @interpreter.update
@@ -1523,6 +1555,41 @@ class RPG2k
         @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE)
         draw_player_frame
+
+        draw_pictures cam_x, cam_y
+      end
+
+      # Composite the Show Picture layer into its buffer, drawing lowest-id first
+      # so higher-numbered pictures sit on top. Each picture is scaled by its zoom
+      # about its centre and blitted at its opacity; a picture pinned to the map
+      # scrolls with the camera, otherwise it holds its screen position. (Tone is
+      # carried on the picture but not yet applied — that needs native tone
+      # support, like the screen tint.)
+      def draw_pictures(cam_x, cam_y)
+        @picture_bmp.clear
+        pics = @state.pictures
+        return if pics.empty?
+        pics.keys.sort.each { |id| draw_picture pics[id], cam_x, cam_y }
+      end
+
+      def draw_picture(pic, cam_x, cam_y)
+        src = picture_src(pic.name, pic.use_transparent_color)
+        return unless src
+        zw = src.width * pic.zoom / 100
+        zh = src.height * pic.zoom / 100
+        return if zw <= 0 || zh <= 0
+        # RPG2000 positions a picture by its centre.
+        dx = pic.x - zw / 2
+        dy = pic.y - zh / 2
+        if pic.fixed_to_map
+          dx -= cam_x
+          dy -= cam_y
+        end
+        @picture_bmp.stretch_blt Rect.new(dx, dy, zw, zh), src,
+                                 Rect.new(0, 0, src.width, src.height),
+                                 pic.opacity
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] picture ##{pic.id} draw failed: #{e.message}"
       end
 
       # Composite the parallax background into its screen-sized buffer, tiling
