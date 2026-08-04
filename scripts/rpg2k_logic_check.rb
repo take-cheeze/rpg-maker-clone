@@ -2903,6 +2903,44 @@ check 'Enemy Encounter escape-abort mode ends the event' do
   ok !st.switches[5], 'the rest of the event is abandoned on an aborting escape'
 end
 
+# -- Battle (headless auto-battle) --------------------------------------------
+
+def combatant(name, atk, dfn, agi, hp)
+  Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
+end
+
+check 'Battle.attack_damage is half attack less a quarter defence, min 1' do
+  eq 18, Game::Battle.attack_damage(40, 8),  '20 - 2'
+  eq 1,  Game::Battle.attack_damage(2, 40),  'floored at 1'
+  eq 1,  Game::Battle.attack_damage(0, 0)
+end
+
+check 'Battle: a stronger party wins, a weaker one is defeated' do
+  hero = combatant('Hero', 40, 20, 20, 200)
+  slime = combatant('Slime', 8, 4, 5, 30)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  eq :victory, b.run
+  ok slime.dead?, 'the enemy was defeated'
+  ok !hero.dead?
+  ok hero.hp < 200, 'the hero took some damage on the way'
+
+  weak = combatant('Weak', 6, 2, 3, 10)
+  boss = combatant('Boss', 60, 30, 40, 500)
+  b2 = Game::Battle.new([weak], [boss], Game::Rng.new(1))
+  eq :defeat, b2.run
+  ok weak.dead?
+  ok !boss.dead?
+end
+
+check 'Battle: the fastest battler strikes first' do
+  # A fast glass cannon one-shots a slow foe before it ever acts.
+  fast = combatant('Fast', 100, 0, 99, 20)
+  slow = combatant('Slow', 100, 0, 1, 40) # 50 damage kills it in one hit
+  b = Game::Battle.new([fast], [slow], Game::Rng.new(1))
+  eq :victory, b.run
+  eq 20, fast.hp, 'the slow enemy never landed a hit'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

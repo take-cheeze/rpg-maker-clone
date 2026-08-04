@@ -220,10 +220,15 @@ The work below is roughly ordered by the critical path to a walkable game
   and the command decodes its troop id, escape / defeat modes and first-strike
   and routes the `[Victory]` / `[Escape]` / `[Defeat]` handler branches on the
   outcome (the "end event processing" escape mode abandons the event). The
-  interpreter suspends on a `:battle` wait; the turn-based battle screen is not
-  built, so `Scene::Map` resolves an encounter as an immediate victory granting
-  the troop's EXP and gold — a placeholder until the battle system lands.
-  The remaining commands (the battle system proper, EXP gain / level-up
+  interpreter suspends on a `:battle` wait, and `Scene::Map` resolves it by
+  running a **headless auto-battle** (`Game::Battle`): battlers act in agility
+  order, each striking a random living opponent for `max(1, atk/2 − def/4)`
+  damage until one side is wiped (`:victory` / `:defeat`), granting the troop's
+  EXP / gold on a win. It runs on Combatant snapshots, so the party's real HP is
+  untouched for now. Still to come: skills / items / criticals / attributes /
+  variance / escape in the sim, and the on-screen turn-based battle (showing and
+  persisting HP) with game over on defeat.
+  The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
