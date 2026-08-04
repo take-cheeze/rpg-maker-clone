@@ -208,10 +208,11 @@
 - The page draws an **on-screen keypad** (D-pad plus OK/Cancel/Dash, the L/R
   shoulders and the A/X/Y/Z buttons) beneath the canvas, so the game is playable
   by touch or mouse without a physical keyboard; the keyboard keeps working too.
-- CI publishes this page automatically: pushes to `master` deploy it to
-  **GitHub Pages**, and every pull request gets a **Cloudflare Pages** preview
-  URL commented on the PR. See [`docs/deploy.md`](docs/deploy.md) for the
-  one-time repo setup (Pages source + Cloudflare secrets).
+- CI publishes this page: pushes to `master` deploy it to **GitHub Pages**, and
+  commenting `/preview` on a pull request builds that PR and posts a
+  **Cloudflare Pages** preview URL back on it. See
+  [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
+  Cloudflare secrets).
 
 ### Audio
 

@@ -8,7 +8,7 @@ map) as the `wasm` build artifact. Two downstream jobs publish that artifact:
 | Job | Trigger | Destination | URL |
 | --- | --- | --- | --- |
 | `deploy-pages` | push to `master` | GitHub Pages | `https://<owner>.github.io/<repo>/` |
-| `preview-cloudflare` | pull request | Cloudflare Pages preview | commented on the PR |
+| `preview-cloudflare` | `/preview` comment on a PR | Cloudflare Pages preview | commented on the PR |
 
 Neither job rebuilds anything — they reuse the exact bytes the `wasm` job
 produced, so what the preview shows is what ships.
@@ -44,14 +44,41 @@ and no `gh-pages` branch. The workflow already grants the job the required
    - `CLOUDFLARE_ACCOUNT_ID` — your account ID (shown in the dashboard URL and
      on any domain's overview page).
 
-Once the secrets exist, every pull request from a branch in this repo gets a
-fresh preview deployment and a sticky PR comment with its URL. Pull requests
-from forks are skipped because forked runs cannot read the secrets.
+## Publishing a preview: comment `/preview`
+
+Previews are **on request, not automatic**. Comment
+
+```
+/preview
+```
+
+on a pull request and CI builds that PR's head commit and publishes it to
+Cloudflare Pages, then edits a sticky comment on the PR with the URL. The
+command comment gets a 👀 reaction as soon as the run starts. Comment
+`/preview` again at any point to publish a fresh build of the latest head.
+
+Previews cost a full wasm build each, and most PRs never need one, so nothing
+is published until someone asks. Pushing new commits to a PR does **not**
+refresh an existing preview — the previous URL keeps serving the build it was
+made from until the next `/preview`.
+
+Who may run it, and against what:
+
+- Only comments from a repo **owner, org member or collaborator** are acted on;
+  anyone else's `/preview` is ignored silently. `issue_comment` runs on the base
+  repository with access to the secrets even for pull requests from forks, so
+  this check is the security boundary — a maintainer typing `/preview` is what
+  authorises a fork's code to be built and deployed.
+- Fork pull requests therefore work, unlike the old automatic previews (a forked
+  `pull_request` run cannot read the secrets; an `issue_comment` run can).
+- Each PR deploys to the Cloudflare branch `pr-<number>`, so its preview URL is
+  stable across repeated `/preview` runs and a fork branch that happens to be
+  named `master` can never reach the production deployment.
 
 Until the secrets are set, the `preview-cloudflare` job **skips the deploy and
-still passes** (it logs a notice pointing here), so a missing Cloudflare setup
-never blocks a PR — the preview is an optional add-on to the GitHub Pages
-deploy.
+still passes**, and comments on the PR to say the setup is missing — a missing
+Cloudflare setup never blocks a PR, since the preview is an optional add-on to
+the GitHub Pages deploy.
 
 > Renaming the Cloudflare project? Update `--project-name` in the
 > `preview-cloudflare` job to match.
