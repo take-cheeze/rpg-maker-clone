@@ -19,6 +19,7 @@ module Game
       CHOICE_OPTION    = 20140
       CHOICE_END       = 20141
       INPUT_NUMBER     = 10150
+      NAME_INPUT       = 10740
       KEY_INPUT_PROC   = 11610
       CONTROL_SWITCHES = 10210
       CONTROL_VARS     = 10220
@@ -143,7 +144,7 @@ module Game
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
                 :teleport, :input_digits, :key_input_request, :inn_request,
-                :shop_request, :battle_request
+                :shop_request, :battle_request, :name_input_request
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -306,6 +307,17 @@ module Game
       reset_waits
     end
 
+    # Resume Enter Hero Name (10740): rename the target actor to the entered
+    # `name` (a blank entry keeps the previous name, as RPG_RT does) and continue.
+    # The owning scene drives the character-entry widget while the interpreter is
+    # paused on the :name_input wait, then calls this with the entered name.
+    def resume_name_input(name)
+      req = @name_input_request
+      actor = req && party.actor_by_id(req[:actor_id])
+      actor.name = name if actor && name && !name.empty?
+      reset_waits
+    end
+
     # Resume a Key Input Processing request: store the pressed key's RPG2000
     # `code` (0 when nothing matched, only reached in no-wait mode) into the
     # target variable and continue. The owning scene samples input while the
@@ -453,6 +465,7 @@ module Game
       @inn_request = nil
       @shop_request = nil
       @battle_request = nil
+      @name_input_request = nil
     end
 
     def switches;  @state.switches;  end
@@ -478,6 +491,7 @@ module Game
       when Cmd::SHOP_TRANSACTION    then skip_to([Cmd::SHOP_END], cmd.indent); consume
       when Cmd::SHOP_NO_TRANSACTION then skip_to([Cmd::SHOP_END], cmd.indent); consume
       when Cmd::SHOP_END         then nil
+      when Cmd::NAME_INPUT       then do_name_input cmd
       when Cmd::SHOW_INN         then do_show_inn cmd
       when Cmd::INN_STAY         then skip_to([Cmd::INN_END], cmd.indent); consume
       when Cmd::INN_NO_STAY      then skip_to([Cmd::INN_END], cmd.indent); consume
@@ -767,6 +781,24 @@ module Game
     # suspends on an :inn wait; the scene shows the greeting, the accept / cancel
     # choices (accept selectable only when affordable) and the gold window, then
     # resumes via resume_inn. Charging gold and healing the party happen there.
+    # Enter Hero Name (10740): open the name-entry screen for the actor whose id
+    # is param0. param1 is the initial character set (0 hiragana, 1 katakana,
+    # 2 letters — our widget offers the letter set), param2 the "seed with the
+    # current name" flag. Suspends on a :name_input wait carrying the actor id and
+    # the seed name; the scene drives the entry widget and calls #resume_name_input
+    # with the entered name. A no-op (no wait) for an actor not in the party, since
+    # this build only instantiates party actors.
+    def do_name_input(cmd)
+      actor = party.actor_by_id(cmd.param(0))
+      return unless actor
+      @name_input_request = {
+        actor_id: cmd.param(0), charset: cmd.param(1),
+        seed: cmd.param(2) != 0 ? actor.name : ''
+      }
+      @wait_kind = :name_input
+      @waiting = true
+    end
+
     def do_show_inn(cmd)
       price = cmd.param(1)
       @inn_price = price

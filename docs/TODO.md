@@ -305,12 +305,13 @@ The work below is roughly ordered by the critical path to a walkable game
   handler. Still to come: criticals / attributes / damage variance and status
   effects in the sim, all-target skill/item scopes, HP persistence across a
   battle, the per-terrain backdrop and the RPG2000 Game Over graphic.
-  The remaining event commands (Inflict Damage, Name Input, Show Battle
-  Animation, vehicles, tile substitution, ...) are TODO. **Change System
-  Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the
-  scene reloads the skin), **Change Screen Transitions** (10690) records the six
-  teleport / battle transition styles (save chunks 111–116; modelled for save
-  fidelity) and **Game Over** (12520) returns to the title, all handled.
+  The remaining event commands (Inflict Damage, Show Battle Animation, vehicles,
+  tile substitution, ...) are TODO. **Enter Hero Name** (10740) opens a
+  character-entry widget that renames a party actor; **Change System Graphics**
+  (10680) overrides the windowskin / font (save chunks 15 / 17; the scene reloads
+  the skin); **Change Screen Transitions** (10690) records the six teleport /
+  battle transition styles (save chunks 111–116; modelled for save fidelity); and
+  **Game Over** (12520) returns to the title — all handled.
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

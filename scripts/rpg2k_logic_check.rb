@@ -2473,6 +2473,45 @@ check 'Change System Graphics overrides the windowskin / font; round-trips' do
   eq 1, loaded.font_id
 end
 
+# -- Enter Hero Name (Name Input) ---------------------------------------------
+
+check 'Enter Hero Name suspends on :name_input and resume renames the actor' do
+  st = party_state # Hero id 1, Ally id 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::NAME_INPUT, [1, 2, 1]), # actor 1, letters, seed name
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'the interpreter waits for the entry to finish'
+  eq :name_input, it.wait_kind
+  eq 1, it.name_input_request[:actor_id]
+  eq 'Hero', it.name_input_request[:seed], 'seeded with the current name'
+  eq false, st.switches[1], 'the following command has not run yet'
+  it.resume_name_input('Zephyr')
+  eq 'Zephyr', st.party.actor_by_id(1).name, 'the actor is renamed'
+  it.update
+  eq true, st.switches[1], 'execution continues after entry'
+end
+
+check 'Enter Hero Name without the seed flag starts from an empty name' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::NAME_INPUT, [1, 2, 0])]) # seed flag off
+  it.update
+  eq '', it.name_input_request[:seed]
+  it.resume_name_input('') # a blank entry keeps the old name (RPG_RT behaviour)
+  eq 'Hero', st.party.actor_by_id(1).name
+end
+
+check 'Enter Hero Name for an actor not in the party is a no-op' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::NAME_INPUT, [99, 0, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok !it.waiting?, 'no wait is raised for an actor this build never instantiated'
+  eq true, st.switches[2], 'execution runs straight past the command'
+end
+
 # -- Change / Trade Event Location --------------------------------------------
 
 check 'Change Event Location queues a :set request (constant and variable modes)' do

@@ -1445,6 +1445,56 @@ check 'Change System Graphics reloads the windowskin from the override' do
   ok scene.instance_variable_get(:@windowskin), 'the windowskin was reloaded from the override'
 end
 
+# A party with a renameable actor for the Name Input check.
+class NameStubActor
+  attr_accessor :name
+  attr_reader :id
+  def initialize(id, name); @id = id; @name = name; end
+end
+class NameStubParty
+  attr_reader :actors
+  attr_accessor :leader
+  # leader stays nil (no sprite to render) — the name widget doesn't need it.
+  def initialize; @actors = [NameStubActor.new(1, 'Hero')]; @leader = nil; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+end
+
+check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  # Let the encounter open the entry widget.
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  # The cursor starts on the first cell ('A'); C types it.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'A', ui[:name], 'confirming the first cell types an A'
+
+  # Jump the cursor to the OK cell and confirm to commit.
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'A', st.party.actor_by_id(1).name, 'the actor was renamed on confirm'
+  eq nil, scene.instance_variable_get(:@name_ui), 'the widget closed'
+  3.times { scene.update }
+  ok st.switches[5], 'the event resumed after entry'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

@@ -470,6 +470,7 @@ class RPG2k
         @inn_window = nil
         @shop = nil
         @battle_ui = nil
+        @name_ui = nil
         @wait_timer = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -1455,6 +1456,7 @@ class RPG2k
           when :picture then @interpreter.resume unless @state.pictures_moving?
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
+          when :name_input then drive_name_input
           end
         else
           @interpreter.update
@@ -2467,6 +2469,110 @@ class RPG2k
         return unless spr
         spr.bitmap.dispose if spr.bitmap
         spr.dispose
+      end
+
+      # -- Enter Hero Name (name-entry widget) --------------------------------
+
+      # The selectable cells: the character set, then two control cells — BS
+      # (backspace) and OK (confirm). RPG2000's own screen also offers hiragana /
+      # katakana / symbol pages; this build enters the Latin letters, digits and a
+      # few punctuation marks (the kana pages are a later refinement).
+      NAME_CHARS = (('A'..'Z').to_a + ('a'..'z').to_a + ('0'..'9').to_a +
+                    [' ', '-', "'", '.']).freeze
+      NAME_CELLS = (NAME_CHARS + %w[BS OK]).freeze
+      NAME_COLS = 13          # cells per row
+      NAME_MAX = 12           # longest name the widget accepts
+      NAME_CELL_W = 14
+      NAME_CELL_H = 14
+
+      # Drive the name-entry screen shown during a :name_input wait. It opens a
+      # character grid (seeded with the actor's current name when the command asked
+      # for it); arrows move the cursor, C types the highlighted character or acts
+      # on BS / OK, and B backspaces. Confirming on OK commits the name to the
+      # actor and resumes the event.
+      def drive_name_input
+        req = @interpreter.name_input_request
+        return @interpreter.resume_name_input('') unless req
+        if @name_ui.nil?
+          @name_ui = { name: req[:seed] || '', sel: 0, win: nil }
+          draw_name_input
+          return
+        end
+        handle_name_input
+      end
+
+      def handle_name_input
+        ui = @name_ui
+        if Input.trigger?(Input::RIGHT) && ui[:sel] < NAME_CELLS.length - 1
+          ui[:sel] += 1; draw_name_input
+        elsif Input.trigger?(Input::LEFT) && ui[:sel] > 0
+          ui[:sel] -= 1; draw_name_input
+        elsif Input.trigger?(Input::DOWN) && ui[:sel] + NAME_COLS < NAME_CELLS.length
+          ui[:sel] += NAME_COLS; draw_name_input
+        elsif Input.trigger?(Input::UP) && ui[:sel] - NAME_COLS >= 0
+          ui[:sel] -= NAME_COLS; draw_name_input
+        elsif Input.trigger?(Input::C)
+          name_input_confirm
+        elsif Input.trigger?(Input::B)
+          name_input_backspace
+        end
+      end
+
+      # Act on the highlighted cell: OK commits, BS backspaces, any other cell
+      # types its character (up to NAME_MAX).
+      def name_input_confirm
+        cell = NAME_CELLS[@name_ui[:sel]]
+        case cell
+        when 'OK' then commit_name_input
+        when 'BS' then name_input_backspace
+        else
+          @name_ui[:name] += cell if @name_ui[:name].length < NAME_MAX
+          draw_name_input
+        end
+      end
+
+      def name_input_backspace
+        @name_ui[:name] = @name_ui[:name].chop
+        draw_name_input
+      end
+
+      def commit_name_input
+        name = @name_ui[:name]
+        close_name_input
+        @interpreter.resume_name_input(name)
+      end
+
+      def draw_name_input
+        ui = @name_ui
+        ui[:win].dispose if ui[:win]
+        rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
+        inner_w = NAME_COLS * NAME_CELL_W
+        inner_h = (rows + 1) * NAME_CELL_H # +1 row for the name-so-far
+        win = Window.new((SCREEN_W - inner_w - Window::BORDER * 2) / 2, 30,
+                         inner_w + Window::BORDER * 2, inner_h + Window::BORDER * 2)
+        win.z = 400
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, NAME_CELL_H, "Name: #{ui[:name]}"
+        NAME_CELLS.each_with_index do |cell, i|
+          cx = (i % NAME_COLS) * NAME_CELL_W
+          cy = NAME_CELL_H + (i / NAME_COLS) * NAME_CELL_H
+          label = cell == 'BS' ? '<' : cell
+          c.draw_text cx, cy, NAME_CELL_W, NAME_CELL_H, label
+        end
+        win.contents = c
+        sel = ui[:sel]
+        win.cursor_rect = Rect.new((sel % NAME_COLS) * NAME_CELL_W,
+                                   NAME_CELL_H + (sel / NAME_COLS) * NAME_CELL_H,
+                                   NAME_CELL_W, NAME_CELL_H)
+        ui[:win] = win
+      end
+
+      def close_name_input
+        return unless @name_ui
+        @name_ui[:win].dispose if @name_ui[:win]
+        @name_ui = nil
       end
 
       def drive_wait
