@@ -145,7 +145,8 @@ jobs:
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
-      # `exe_open` test in CMakeLists.txt); MV runs=100..108 below. Every MV
+      # `exe_open` test in CMakeLists.txt); MV runs=100..108 and the RPG2k
+      # real-game boot smoke=109..110 below. Every MV
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -177,6 +178,18 @@ jobs:
           - name: test
             run: |
               nix develop -c cmake --build build -t test
+
+          # Boot the built engine on the real RPG2000/2003 test-beds and drive
+          # it past the title into the map with --rpg2k_new_game. The CRuby host
+          # checks above load the same game.rb/main.rb sources but cannot catch
+          # mruby/CRuby divergence (a bare `module_function` is a no-op in
+          # mruby, `Enumerable#none?` is absent), which had left the LCF map
+          # path raising on New Game while every check passed. Any uncaught
+          # mruby exception aborts the binary, so a non-zero exit or a missing
+          # [RPG2k-MAP] marker fails this step. It uses display 109 and up, one
+          # per game. See ADR 0021.
+          - name: RPG2k real-game boot smoke test
+            run: nix develop -c ./scripts/rpg2k_boot_check.bash 109
 
           - name: MV boot smoke test
             continue-on-error: true

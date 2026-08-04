@@ -131,15 +131,51 @@ module Game
     COLS = 10    # swatches per row
     Y_OFFSET = 48 # top of the palette region within the System image
 
-    module_function
-
-    def valid?(idx)
+    def self.valid?(idx)
       idx.is_a?(Integer) && idx >= 0 && idx < COUNT
     end
 
     # Top-left [x, y] of colour idx's swatch cell in the System graphic.
-    def cell_origin(idx)
+    def self.cell_origin(idx)
       [(idx % COLS) * CELL, (idx / COLS) * CELL + Y_OFFSET]
+    end
+
+    # RPG2000 draws every glyph twice: first a shadow offset one pixel down and
+    # right, filled from a dedicated 16x16 block of the System image, then the
+    # glyph itself from the colour swatch. The shadow block sits immediately
+    # right of the system-background block on the middle row.
+    SHADOW_X = 16
+    SHADOW_Y = 32
+    SHADOW_OFFSET = 1
+
+    # Top-left [x, y] of the shadow block in the System graphic.
+    def self.shadow_origin
+      [SHADOW_X, SHADOW_Y]
+    end
+  end
+
+  # Geometry of the selection cursor RPG2000 draws inside a window, ported from
+  # a genuine RPG_RT frame (see scripts/compare-nepheshel-wine.bash and ADR
+  # 0021). The cursor art is a 32x32 block of the System windowskin with 8px
+  # corners; RPG_RT draws it around the selected row four pixels wider on each
+  # side than the window's content area, but exactly the row's height — it is
+  # *not* inflated vertically the way the horizontal axis is.
+  module WindowCursor
+    SIZE = 32     # the cursor block is 32x32 in the System image
+    CORNER = 8    # its corners are 8x8, the classic RPG2000 9-patch
+    # Cursor frame 1 (the steady frame) and frame 2 (RPG_RT alternates between
+    # them while a window is active; Nepheshel's skin draws both identically).
+    FRAME1_X = 64
+    FRAME2_X = 96
+    FRAME_Y = 0
+    # Pixels the cursor overhangs the content area on the left and right.
+    OVERHANG = 4
+
+    # Destination rect [x, y, w, h] of the cursor for a contents-space
+    # `cursor_rect`, given the window's border thickness.
+    def self.dest_rect(rect_x, rect_y, rect_w, rect_h, border)
+      [border + rect_x - OVERHANG, border + rect_y,
+       rect_w + OVERHANG * 2, rect_h]
     end
   end
 
@@ -399,13 +435,11 @@ module Game
       [[[1, 2], [1, 2]], [[1, 2], [1, 2]]], [[[0, 0], [0, 0]], [[0, 0], [0, 0]]]
     ].freeze
 
-    module_function
-
     # Animation column (0..2) for the water autotiles (blocks A/B), from a frame
     # counter and the chipset's animation_type / animation_speed. Fast chipsets
     # advance every 12 frames, slow ones every 24. Type 0 walks 0,1,2,1 (a
     # back-and-forth); type 1 cycles 0,1,2.
-    def anim_ab(frame, animation_type, animation_speed)
+    def self.anim_ab(frame, animation_type, animation_speed)
       step = frame / (animation_speed != 0 ? 12 : 24)
       if animation_type != 0
         step % 3
@@ -417,13 +451,13 @@ module Game
 
     # Animation frame (0..3) for the block-C animated tiles (advances every 6
     # frames).
-    def anim_c(frame)
+    def self.anim_c(frame)
       (frame / 6) % 4
     end
 
     # The coarse block a tile id belongs to: :water, :animated, :terrain, :lower,
     # :upper, or nil for the empty tile (0) and ids outside every block.
-    def block(id)
+    def self.block(id)
       return nil if id.nil? || id <= 0
       if id >= BLOCK_F
         id < BLOCK_F + BLOCK_F_TILES ? :upper : nil
@@ -444,7 +478,7 @@ module Game
     # autotile blocks return a single 16x16 rect; autotiles return four 8x8
     # quarters. The empty tile (0) and out-of-range ids return []. `abf` / `cf`
     # are the current animation columns/frames from #anim_ab / #anim_c.
-    def quads(id, abf = 0, cf = 0)
+    def self.quads(id, abf = 0, cf = 0)
       case block(id)
       when :water    then water_quads(id, abf)
       when :animated then [full(3 + (id - BLOCK_C) / 50, 4 + cf)]
@@ -458,13 +492,13 @@ module Game
     # -- internals ----------------------------------------------------------
 
     # A whole 16x16 chip at chipset grid (col, row).
-    def full(col, row)
+    def self.full(col, row)
       [0, 0, col * TS, row * TS, TS, TS]
     end
 
     # Four 8x8 quarters assembled from `quarters[j][i] = [chip_col, chip_row]`:
     # quarter (j, i) is copied from the matching 8x8 sub-quadrant of that chip.
-    def quads_from_quarters(quarters)
+    def self.quads_from_quarters(quarters)
       out = []
       2.times do |j|
         2.times do |i|
@@ -478,7 +512,7 @@ module Game
     # Water autotile (blocks A/B). `set` (id/1000) selects the water set, then the
     # id's low digits select a block-B border combination and a block-A corner
     # combination; each quarter comes from block A or block B accordingly.
-    def water_quads(id, anim)
+    def self.water_quads(id, anim)
       set = id / 1000
       b_subtile = (id % 1000) / 50
       a_subtile = id % 50
@@ -519,7 +553,7 @@ module Game
 
     # Terrain autotile (block D). Each block is a 3x4 chip cell; the id's low
     # digits pick one of 50 corner combinations within it.
-    def terrain_quads(id)
+    def self.terrain_quads(id)
       blk = (id - BLOCK_D) / 50
       subtile = (id - BLOCK_D) % 50
       return [] if blk < 0 || blk >= 12 || subtile >= BLOCK_D_SUBTILES.size
@@ -541,7 +575,7 @@ module Game
     end
 
     # Plain lower-layer chip (block E), laid out in two 6-wide columns.
-    def lower_quad(idx)
+    def self.lower_quad(idx)
       if idx < 96
         full(12 + idx % 6, idx / 6)
       else
@@ -550,7 +584,7 @@ module Game
     end
 
     # Upper-layer chip (block F), in two 6-wide columns of the right half.
-    def upper_quad(idx)
+    def self.upper_quad(idx)
       if idx < 48
         full(18 + idx % 6, 8 + idx / 6)
       else
@@ -566,7 +600,7 @@ module Game
     # 480x256 chipset (block E/F region), addressed differently from the map's
     # own lower/upper chips. tile_id 0 and out-of-range ids fall back to the
     # first (empty) tile.
-    def event_tile_rect(tile_id)
+    def self.event_tile_rect(tile_id)
       if tile_id > 0 && tile_id < 48
         sub = tile_id;      bx = 288; by = 128
       elsif tile_id >= 48 && tile_id < 96
@@ -609,35 +643,33 @@ module Game
     # Facings a spinning event steps through (clockwise: down, left, up, right).
     SPIN_DIRECTIONS = [2, 4, 8, 6].freeze
 
-    module_function
-
-    def numpad_direction(lcf_dir)
+    def self.numpad_direction(lcf_dir)
       LCF_DIR_TO_NUMPAD[lcf_dir] || 2
     end
 
     # Whether the type keeps the sprite's facing pinned to the page direction
     # (movement does not turn it).
-    def fixed_direction?(anim_type)
+    def self.fixed_direction?(anim_type)
       anim_type == FIXED_NON_CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
         anim_type == FIXED_GRAPHIC
     end
 
     # Whether the walk animation runs even while the event stands still.
-    def continuous?(anim_type)
+    def self.continuous?(anim_type)
       anim_type == CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
         anim_type == SPIN
     end
 
     # Whether the graphic animates at all (a fixed graphic never does).
-    def animated?(anim_type)
+    def self.animated?(anim_type)
       anim_type != FIXED_GRAPHIC
     end
 
-    def pattern_column(phase)
+    def self.pattern_column(phase)
       WALK_COLUMNS[phase % WALK_COLUMNS.size]
     end
 
-    def spin_direction(phase)
+    def self.spin_direction(phase)
       SPIN_DIRECTIONS[phase % SPIN_DIRECTIONS.size]
     end
 
@@ -648,7 +680,7 @@ module Game
     # graphics stay on their page frame; spinning events derive facing from the
     # phase; the ordinary types walk (cycling columns) while moving/continuous
     # and rest on the page pattern when idle.
-    def frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
+    def self.frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
       case anim_type
       when SPIN
         [spin_direction(phase), 1]
@@ -682,21 +714,20 @@ module Game
   # EasyRPG's formulae but has not been visually diffed against RPG_RT under
   # wine — that native comparison is the remaining validation.
   module Parallax
-    module_function
 
     # Per-frame autoscroll offset in pixels for an RPG2000 speed field, ported
     # from EasyRPG's `scroll_amt` with its pan->pixel (/32) scaling so small
     # speeds move a fraction of a pixel per frame: the fine delta is
     # -(1<<speed) for speed>0 and +(1<<-speed) for speed<0, accumulated over
     # `frame` frames and divided by 32.
-    def autoscroll_px(speed, frame)
+    def self.autoscroll_px(speed, frame)
       return 0 if speed.nil? || speed == 0
       amt = speed > 0 ? -(1 << speed) : (1 << -speed)
       (frame * amt) / 32
     end
 
     # Top-left draw offset (in (-img_px, 0]) for one panorama axis.
-    def axis_offset(loop, autoscroll, speed, frame, cam_px, screen_px, map_px, img_px)
+    def self.axis_offset(loop, autoscroll, speed, frame, cam_px, screen_px, map_px, img_px)
       return 0 if img_px.nil? || img_px <= 0
       if loop
         base = cam_px / 2
@@ -710,7 +741,7 @@ module Game
     # A non-looping axis: fixed to the screen while the image is no larger than
     # it, otherwise panned across the image's excess as the camera sweeps the
     # map (0 at the west/north edge, -excess at the east/south edge).
-    def anchored_offset(cam_px, screen_px, map_px, img_px)
+    def self.anchored_offset(cam_px, screen_px, map_px, img_px)
       return 0 if img_px <= screen_px
       cam_max = map_px - screen_px
       return 0 if cam_max <= 0
@@ -2149,6 +2180,18 @@ module Game
     def pan_lock; @pan_locked = true; end
     def pan_unlock; @pan_locked = false; end
 
+    # Snap the pan back to the hero-centred origin and release the lock, with no
+    # scrolling. RPG2000 does this on every map change: a cutscene that panned
+    # the camera (and locked it) must not carry that offset into the map it
+    # teleports to, or the new map is drawn from far outside its bounds.
+    def pan_clear
+      @pan_x = 0
+      @pan_y = 0
+      @pan_tx = 0
+      @pan_ty = 0
+      @pan_locked = false
+    end
+
     # Advance every active effect one frame. Called once per frame by the scene.
     def update
       update_tint
@@ -2652,6 +2695,10 @@ module Game
     end
 
     def erase_picture(id); @pictures.delete(id); end
+
+    # Drop every shown picture. RPG2000 does this on every map change, so a
+    # cutscene's pictures never survive into the map it teleports to.
+    def erase_all_pictures; @pictures = {}; end
 
     # Advance every shown picture's in-flight move one frame.
     def update_pictures; @pictures.each_value(&:update); end

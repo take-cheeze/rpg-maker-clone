@@ -1997,7 +1997,6 @@ void update_z(mrb_state* M) {
 }
 
 mrb_value gfx_update(mrb_state* M, mrb_value self) {
-  const uint32_t frame_start = lv_tick_get();
   const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
 
   rgss_terminal_poll(M);
@@ -2103,7 +2102,35 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, gfx, mrb_intern_lit(M, "@frame_count"),
              mrb_fixnum_value((mrb_fixnum_p(fc) ? mrb_fixnum(fc) : 0) + 1));
 
-  const int32_t sleep = 1000 / 60 - lv_tick_elaps(frame_start);
+  // Frame pacing, against an absolute deadline rather than "sleep whatever is
+  // left of 16ms". lv_delay_ms overshoots by several milliseconds (it is a
+  // usleep at OS timer granularity), and sleeping the remainder every frame
+  // lets that overshoot accumulate: measured against a genuine RPG_RT under
+  // wine, ~9ms of work per frame settled at 44fps instead of 60, so every timed
+  // thing in the game -- walk cycles, animated tiles, message reveal, Wait
+  // commands -- ran about a quarter too slow (see ADR 0021). Carrying the
+  // deadline forward instead makes the next frame's sleep absorb the previous
+  // one's overshoot. If we fall more than one frame behind (a slow map build,
+  // a breakpoint), the deadline is re-based on now so we do not then spin
+  // through a burst of catch-up frames.
+  //
+  // A frame is 1000/60 ms, which is not an integer, so the deadline steps by
+  // 17,17,16,... driven by a 1/60-ms remainder accumulator rather than a flat
+  // 16 (which would run 4% fast).
+  static uint32_t next_frame = 0;
+  static uint32_t period_acc = 0;
+  static bool paced = false;
+  const uint32_t now = lv_tick_get();
+  period_acc += 1000;
+  const uint32_t period = period_acc / 60;
+  period_acc %= 60;
+  if (!paced ||
+      static_cast<int32_t>(now - next_frame) > static_cast<int32_t>(period)) {
+    next_frame = now;
+    paced = true;
+  }
+  next_frame += period;
+  const int32_t sleep = static_cast<int32_t>(next_frame - lv_tick_get());
   if (sleep > 0) {
     // Report the idle wait so the profiler can subtract it: the frame spans the
     // whole main_loop iteration (see RGSS::Profiler.frame), and we want its
@@ -2673,6 +2700,18 @@ extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display) {
                                 mrb_intern_lit(M, "_display")));
   mrb_const_set(M, mrb_obj_value(mrb_module_get(M, "RGSS")),
                 mrb_intern_lit(M, "_display"), mrb_cptr_value(M, display));
+
+  // The game screen is what shows wherever no sprite covers it, so it must be
+  // the black RPG Maker draws outside the map -- LVGL's default theme paints it
+  // light grey and hangs scrollbars off the edges, both of which showed up as
+  // artefacts next to a genuine RPG_RT frame (ADR 0021). Nothing about a game
+  // screen scrolls, either.
+  if (lv_obj_t* scr = lv_display_get_screen_active(display)) {
+    lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
+  }
 }
 
 // RGSS.mouse_x / mouse_y / mouse_pressed? — the pointer state captured by the

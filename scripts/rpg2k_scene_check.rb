@@ -881,6 +881,25 @@ check 'Recall to Location teleports the player to the stored position' do
   eq 1, st.map_id, 'on the recalled map'
 end
 
+check 'a teleport clears every shown picture' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    # Show a full-screen picture, then teleport to map 1. RPG2000 drops the
+    # picture on the map change, so it cannot cover the destination map.
+    ECmd.new(ic::SHOW_PICTURE, [1, 0, 160, 120, 0, 100, 0, 1, 0, 0, 0, 0],
+             string: 'pic'),
+    ECmd.new(ic::TELEPORT, [1, 4, 3]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.pictures.key?(1), 'the picture is shown before the teleport'
+  20.times { scene.update }
+  eq 1, st.map_id, 'teleported'
+  ok st.pictures.empty?, 'the picture did not survive the map change'
+end
+
 check 'the menu opens on cancel only when menu access is allowed' do
   scene = new_scene({}, player: [2, 2])
   parent = scene.instance_variable_get(:@parent)
@@ -1135,8 +1154,15 @@ check 'coloured message text blends with the windowskin swatch when present' do
   c = RGSS::Bitmap.new(100, 20)
   scene.send(:draw_message_run, c, 4, 0, 80, { text: 'hi', color: 3 })
   bc = c.blend_calls
-  ok bc && bc.size == 1, 'blend_text was used'
-  x, y, w, _h, txt, src, sx, sy, sw, sh = bc[0]
+  # RPG_RT draws each glyph twice: the shadow first, one pixel down and right,
+  # then the glyph from the colour swatch.
+  ok bc && bc.size == 2, 'blend_text was used for the shadow and the glyph'
+  sxx, syy, sww, _sh2, stxt, ssrc, ssx, ssy = bc[0]
+  eq [5, 1, 80], [sxx, syy, sww], 'shadow offset by one pixel'
+  eq 'hi', stxt
+  eq skin, ssrc, 'shadow blended against the windowskin'
+  eq [16, 32], [ssx, ssy], 'shadow taken from the System shadow block'
+  x, y, w, _h, txt, src, sx, sy, sw, sh = bc[1]
   eq [4, 0, 80], [x, y, w]
   eq 'hi', txt
   eq skin, src, 'blended against the windowskin'

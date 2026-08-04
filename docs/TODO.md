@@ -67,6 +67,18 @@ The work below is roughly ordered by the critical path to a walkable game
   Passability still drives collision. Geometry is pinned by
   `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
   Tiles) substitution and screen-tone tinting of tiles.
+- ✅ Render parity with the genuine runtime —
+  `scripts/compare-nepheshel-wine.bash` boots the real `RPG_RT.exe` under wine
+  beside our engine on the same game and diffs the frames (ADR 0021). It first
+  caught that the ported geometry was **not reachable at all** in the shipped
+  binary (a bare `module_function` is a no-op in mruby), then pinned the title
+  command window, the windowskin selection cursor, RPG_RT's shadow + colour-
+  swatch text, the fixed 320×80 message panel, 60fps frame pacing, and the
+  picture / camera-pan / chipset reset a map change performs. CI runs the cheap
+  half (`--rpg2k_new_game` on the real Nepheshel data). Remaining: the two
+  runtimes desynchronise through Nepheshel's timed opening, so an arbitrary
+  in-game map still cannot be diffed pixel-for-pixel — that wants both resumed
+  from the same `Save01.lsd` rather than driven by counting key presses.
 - ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
   backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
   EasyRPG's parallax model: a looping axis tiles the image and scrolls it at
