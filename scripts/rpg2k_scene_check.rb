@@ -412,13 +412,14 @@ end
 # A party the placeholder battle grants rewards to: gold plus actors that bank
 # EXP, with the leader Scene::Map reads while rendering.
 class BattleStubActor
-  attr_accessor :exp, :hp
-  attr_reader :id, :name, :atk, :def, :agi, :max_hp
+  attr_accessor :exp, :hp, :mp
+  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
   # a defeat test passes weaker stats.
-  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200)
+  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [])
     @exp = 0; @id = 1; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
+    @mp = mp; @max_mp = mp; @int = int; @skills = skills
   end
   def gain_exp(n); @exp += n; end
 end
@@ -1417,6 +1418,107 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   # The timer holds the next action back, so a mid-timer frame lands nothing more.
   scene.update
   eq 1, ui[:battle].log.length, 'the next action waits out BATTLE_ANIM_FRAMES'
+end
+
+# A party whose lone Hero (fast, so it acts first) knows a battle skill and
+# carries potions — enough for the scene to drive the Skill / Item sub-menus.
+# The battle_* hooks return canned commands so the checks assert the scene wires
+# them through (the numbers themselves are exercised in rpg2k_logic_check).
+class BattleMagicParty
+  attr_reader :actors, :gold, :items
+  attr_accessor :leader
+  def initialize(hurt: false)
+    @hero = BattleStubActor.new(atk: 40, agi: 20, mp: 10, skills: [1]) # max HP 200
+    @hero.hp = 100 if hurt # below max, so a heal has room to show
+    @actors = [@hero]
+    @gold = 0
+    @leader = nil
+    @items = { 5 => 2 }
+  end
+  def gain_gold(n); @gold += n; end
+  def item_count(id); @items[id] || 0; end
+  def gain_item(id, n = 1); @items[id] = item_count(id) + n; end
+  def lose_item(id, n = 1); @items[id] = [item_count(id) - n, 0].max; end
+
+  # Battle sub-menu hooks the scene calls (Game::Party provides these for real):
+  def battle_skills(actor, _caster); actor.skills.include?(1) ? [[1, 3]] : []; end
+  def db_skill(id); id == 1 ? OpenStruct.new(name: 'Fire', scope: 0) : nil; end
+  def battle_skill_target(sk); sk.scope == 0 ? :enemy : :ally; end
+  def battle_skill_command(_sk, _caster, _target); { cost: 3, hp: -15, mp: 0 }; end
+  def battle_items
+    @items.keys.sort.select { |id| item_count(id) > 0 }.map { |id| [id, item_count(id)] }
+  end
+  def db_item(id); id == 5 ? OpenStruct.new(name: 'Potion') : nil; end
+  def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
+end
+
+# Open a battle and step to the per-actor command menu.
+def battle_to_command(scene)
+  ui = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui
+end
+
+def press_key(scene, key)
+  RGSS::Input.triggered = [key]
+  scene.update
+  RGSS::Input.triggered = []
+end
+
+check 'Enemy Encounter scene: casting an attack Skill damages a foe and spends SP' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleMagicParty.new)
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN)   # move cursor Attack -> Skill
+  eq 1, ui[:cmd]
+  press_key(scene, RGSS::Input::C)      # open the skill list
+  eq :skill, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # choose Fire (enemy-scope) -> target
+  eq :target, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # confirm the first foe -> round animates
+  eq :animate, ui[:phase]
+
+  foe_hp = ui[:foes].first.hp
+  scene.update                          # the fast Hero's Fire lands first
+  entry = ui[:battle].log.first
+  eq 'Fire', entry[:skill], 'the skill resolved as the Hero\'s action'
+  eq 15, foe_hp - ui[:foes].first.hp, 'the foe took the skill damage'
+  eq 7, ui[:allies].first.mp, 'the caster spent 3 SP (10 -> 7)'
+end
+
+check 'Enemy Encounter scene: using an Item heals and consumes one from the bag' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleMagicParty.new(hurt: true))
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN)   # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN)   # Skill -> Item
+  eq 2, ui[:cmd]
+  press_key(scene, RGSS::Input::C)      # open the item list
+  eq :item, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # choose Potion -> ally target
+  eq :ally_target, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # heal the Hero -> round animates
+  eq :animate, ui[:phase]
+  eq 2, st.party.item_count(5), 'the potion is not spent until the action lands'
+
+  hp_before = ui[:allies].first.hp
+  scene.update                          # the Hero uses the Potion first
+  eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
+  eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------

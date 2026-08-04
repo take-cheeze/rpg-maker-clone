@@ -1769,12 +1769,12 @@ class RPG2k
       # their handlers.
       #
       # Drive the turn-based battle screen the map shows during a :battle wait.
-      # Each round the player commands every living party member (Attack a chosen
-      # enemy, or Defend), then the round plays out action by action in agility
-      # order — one attack landing per BATTLE_ANIM_FRAMES, each bannered with its
-      # HP tick — until a side falls. B on the first actor flees when the
-      # encounter allows it. Dismissing the result resumes the event with the
-      # outcome.
+      # Each round the player commands every living party member — Attack a chosen
+      # enemy, cast a Skill (on an enemy or ally), use an Item on an ally, or
+      # Defend — then the round plays out action by action in agility order (one
+      # action landing per BATTLE_ANIM_FRAMES, each bannered with its HP tick)
+      # until a side falls. B on the first actor flees when the encounter allows
+      # it. Dismissing the result resumes the event with the outcome.
       def drive_battle
         req = @interpreter.battle_request
         return @interpreter.resume_battle(:victory) unless req
@@ -1783,10 +1783,13 @@ class RPG2k
           return
         end
         case @battle_ui[:phase]
-        when :command then drive_battle_command
-        when :target  then drive_battle_target
-        when :animate then drive_battle_animate
-        when :result  then drive_battle_result
+        when :command     then drive_battle_command
+        when :target      then drive_battle_target
+        when :skill       then drive_battle_skill
+        when :item        then drive_battle_item
+        when :ally_target then drive_battle_ally_target
+        when :animate     then drive_battle_animate
+        when :result      then drive_battle_result
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
@@ -1801,7 +1804,10 @@ class RPG2k
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000)),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
+                       skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
+                       skills: [], items: [],
                        status_win: nil, cmd_win: nil, target_win: nil,
+                       skill_win: nil, item_win: nil, ally_win: nil,
                        action_win: nil, anim_timer: 0,
                        result_win: nil, result: nil }
         refresh_battle_status
@@ -1812,23 +1818,28 @@ class RPG2k
       def living_foes;   @battle_ui[:foes].reject(&:dead?);   end
       def current_actor; living_allies[@battle_ui[:actor_i]]; end
 
-      # Per-actor command menu: Attack (pick a target) or Defend.
+      # The real Game::Actor behind the current battler (the snapshots are built
+      # from the party in order), so the Skill menu can read its known skills.
+      def current_actor_row
+        idx = @battle_ui[:allies].index(current_actor)
+        idx ? @state.party.actors[idx] : nil
+      end
+
+      # The four per-actor commands, in menu order (the cursor row is 1 + index,
+      # below the actor-name header).
+      BATTLE_COMMANDS = %w[Attack Skill Item Defend].freeze
+
+      # Per-actor command menu: Attack, Skill, Item or Defend.
       def drive_battle_command
-        if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < 1
+        last = BATTLE_COMMANDS.length - 1
+        if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < last
           @battle_ui[:cmd] += 1
           draw_battle_command
         elsif Input.trigger?(Input::UP) && @battle_ui[:cmd] > 0
           @battle_ui[:cmd] -= 1
           draw_battle_command
         elsif Input.trigger?(Input::C)
-          if @battle_ui[:cmd].zero?
-            @battle_ui[:target_i] = 0
-            @battle_ui[:phase] = :target
-            draw_battle_target
-          else
-            @battle_ui[:battle].command_defend(current_actor)
-            advance_actor
-          end
+          select_battle_command
         elsif Input.trigger?(Input::B)
           if @battle_ui[:actor_i].zero?
             finish_battle(:escape) if @battle_ui[:req][:allow_escape]
@@ -1840,7 +1851,25 @@ class RPG2k
         end
       end
 
-      # Target-selection menu: pick which living enemy the current actor attacks.
+      # Act on the highlighted command: Attack / Skill open a selection, Defend
+      # is committed at once.
+      def select_battle_command
+        case @battle_ui[:cmd]
+        when 0 # Attack
+          @battle_ui[:pending] = { kind: :attack }
+          @battle_ui[:target_i] = 0
+          @battle_ui[:phase] = :target
+          draw_battle_target
+        when 1 then open_battle_skill
+        when 2 then open_battle_item
+        when 3 # Defend
+          @battle_ui[:battle].command_defend(current_actor)
+          advance_actor
+        end
+      end
+
+      # Enemy target-selection menu: pick which living enemy the Attack (or an
+      # enemy-scope Skill) hits.
       def drive_battle_target
         foes = living_foes
         if Input.trigger?(Input::DOWN) && @battle_ui[:target_i] < foes.length - 1
@@ -1850,15 +1879,174 @@ class RPG2k
           @battle_ui[:target_i] -= 1
           draw_battle_target
         elsif Input.trigger?(Input::C)
-          @battle_ui[:battle].command_attack(current_actor, foes[@battle_ui[:target_i]])
+          target = foes[@battle_ui[:target_i]]
           close_battle_target
-          @battle_ui[:phase] = :command
-          advance_actor
+          if pending_kind == :skill
+            apply_pending_skill(target)
+          else
+            @battle_ui[:battle].command_attack(current_actor, target)
+            @battle_ui[:pending] = nil
+            @battle_ui[:phase] = :command
+            advance_actor
+          end
         elsif Input.trigger?(Input::B)
           close_battle_target
+          if pending_kind == :skill
+            @battle_ui[:phase] = :skill
+            draw_battle_skill
+          else
+            @battle_ui[:pending] = nil
+            @battle_ui[:phase] = :command
+            draw_battle_command
+          end
+        end
+      end
+
+      def pending_kind; @battle_ui[:pending] && @battle_ui[:pending][:kind]; end
+
+      # -- Skill sub-menu ------------------------------------------------------
+
+      # Open the current actor's battle-skill list (nothing to open if they know
+      # no battle-usable skill).
+      def open_battle_skill
+        actor = current_actor_row
+        @battle_ui[:skills] = actor ? @state.party.battle_skills(actor, current_actor) : []
+        return if @battle_ui[:skills].empty?
+        @battle_ui[:skill_i] = 0
+        @battle_ui[:phase] = :skill
+        draw_battle_skill
+      end
+
+      def drive_battle_skill
+        skills = @battle_ui[:skills]
+        if Input.trigger?(Input::DOWN) && @battle_ui[:skill_i] < skills.length - 1
+          @battle_ui[:skill_i] += 1
+          draw_battle_skill
+        elsif Input.trigger?(Input::UP) && @battle_ui[:skill_i] > 0
+          @battle_ui[:skill_i] -= 1
+          draw_battle_skill
+        elsif Input.trigger?(Input::C)
+          confirm_battle_skill
+        elsif Input.trigger?(Input::B)
+          close_battle_skill
           @battle_ui[:phase] = :command
           draw_battle_command
         end
+      end
+
+      # Choose the highlighted skill: if the caster cannot afford its SP, ignore
+      # the press; otherwise route to enemy / ally target selection (or cast at
+      # once on a self-scope skill).
+      def confirm_battle_skill
+        sid, cost = @battle_ui[:skills][@battle_ui[:skill_i]]
+        return if current_actor.mp < cost # can't afford: stay on the list
+        sk = @state.party.db_skill(sid)
+        @battle_ui[:pending] = { kind: :skill, sk: sk }
+        close_battle_skill
+        case @state.party.battle_skill_target(sk)
+        when :self
+          apply_pending_skill(current_actor)
+        when :enemy
+          @battle_ui[:target_i] = 0
+          @battle_ui[:phase] = :target
+          draw_battle_target
+        else # :ally
+          @battle_ui[:ally_i] = 0
+          @battle_ui[:phase] = :ally_target
+          draw_battle_ally_target
+        end
+      end
+
+      # Commit the pending skill on `target` (SP cost / effect from the model),
+      # then move to the next actor.
+      def apply_pending_skill(target)
+        sk = @battle_ui[:pending][:sk]
+        c = @state.party.battle_skill_command(sk, current_actor, target)
+        @battle_ui[:battle].command_skill(current_actor, target,
+                                          name: sk.name, cost: c[:cost],
+                                          hp: c[:hp], mp: c[:mp])
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
+      end
+
+      # -- Item sub-menu -------------------------------------------------------
+
+      # Open the party's battle-usable items (nothing to open if the bag holds
+      # none).
+      def open_battle_item
+        @battle_ui[:items] = @state.party.battle_items
+        return if @battle_ui[:items].empty?
+        @battle_ui[:item_i] = 0
+        @battle_ui[:phase] = :item
+        draw_battle_item
+      end
+
+      def drive_battle_item
+        items = @battle_ui[:items]
+        if Input.trigger?(Input::DOWN) && @battle_ui[:item_i] < items.length - 1
+          @battle_ui[:item_i] += 1
+          draw_battle_item
+        elsif Input.trigger?(Input::UP) && @battle_ui[:item_i] > 0
+          @battle_ui[:item_i] -= 1
+          draw_battle_item
+        elsif Input.trigger?(Input::C)
+          item_id, _count = @battle_ui[:items][@battle_ui[:item_i]]
+          it = @state.party.db_item(item_id)
+          @battle_ui[:pending] = { kind: :item, item_id: item_id, it: it }
+          close_battle_item
+          @battle_ui[:ally_i] = 0
+          @battle_ui[:phase] = :ally_target
+          draw_battle_ally_target
+        elsif Input.trigger?(Input::B)
+          close_battle_item
+          @battle_ui[:phase] = :command
+          draw_battle_command
+        end
+      end
+
+      # -- Ally target (heal skill / medicine) --------------------------------
+
+      def drive_battle_ally_target
+        allies = living_allies
+        if Input.trigger?(Input::DOWN) && @battle_ui[:ally_i] < allies.length - 1
+          @battle_ui[:ally_i] += 1
+          draw_battle_ally_target
+        elsif Input.trigger?(Input::UP) && @battle_ui[:ally_i] > 0
+          @battle_ui[:ally_i] -= 1
+          draw_battle_ally_target
+        elsif Input.trigger?(Input::C)
+          target = allies[@battle_ui[:ally_i]]
+          close_battle_ally_target
+          if pending_kind == :skill
+            apply_pending_skill(target)
+          else
+            apply_pending_item(target)
+          end
+        elsif Input.trigger?(Input::B)
+          close_battle_ally_target
+          if pending_kind == :skill
+            @battle_ui[:phase] = :skill
+            draw_battle_skill
+          else
+            @battle_ui[:phase] = :item
+            draw_battle_item
+          end
+        end
+      end
+
+      # Commit the pending item on `target` (recovery from the model; the bag is
+      # consumed later, when the action lands), then move to the next actor.
+      def apply_pending_item(target)
+        pending = @battle_ui[:pending]
+        c = @state.party.battle_item_command(pending[:it], target)
+        @battle_ui[:battle].command_item(current_actor, target,
+                                         item_id: pending[:item_id],
+                                         name: pending[:it].name,
+                                         hp: c[:hp], mp: c[:mp])
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
       end
 
       # Move to the next living party member, or start playing out the round once
@@ -1901,6 +2089,9 @@ class RPG2k
         end
         entry = @battle_ui[:battle].step_action
         if entry
+          # An Item action consumes one from the real bag when it lands (so
+          # backing out during the command phase never spends it).
+          @state.party.lose_item(entry[:item_id], 1) if entry[:item_id]
           log_round([entry])
           refresh_battle_status
           show_battle_action(entry)
@@ -1947,10 +2138,24 @@ class RPG2k
       end
 
       def log_round(entries)
-        entries.each do |e|
-          line = "#{e[:attacker]} hits #{e[:target]} for #{e[:damage]}"
-          line += " — defeated!" if e[:defeated]
-          $stderr.puts "[RPG2k battle] #{line}"
+        entries.each { |e| $stderr.puts "[RPG2k battle] #{battle_action_line(e)}" }
+      end
+
+      # A one-line description of a battle log entry, for the on-screen banner and
+      # the console trace. A recovery (heal skill / medicine) reads as a restore;
+      # a skill attack names the skill; a plain attack is "A hits B for N".
+      def battle_action_line(e)
+        if e[:recover]
+          parts = []
+          parts << "#{e[:recover_hp]} HP" if e[:recover_hp] && e[:recover_hp] > 0
+          parts << "#{e[:recover_mp]} MP" if e[:recover_mp] && e[:recover_mp] > 0
+          body = parts.empty? ? 'no effect' : "+#{parts.join(' / ')}"
+          "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
+        else
+          hits = e[:skill] ? "'s #{e[:skill]} hits" : ' hits'
+          line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
+          line += ' — defeated!' if e[:defeated]
+          line
         end
       end
 
@@ -1972,23 +2177,24 @@ class RPG2k
       BATTLE_LINE_H = 14
 
       # Rebuild the status panel near the top: the enemy troop (marked down when
-      # defeated), then each party member with their HP.
+      # defeated), then each party member with their HP and SP.
       def refresh_battle_status
         @battle_ui[:status_win].dispose if @battle_ui[:status_win]
         lines = @battle_ui[:foes].map { |e| e.dead? ? "#{e.name} (down)" : e.name }
         lines += @battle_ui[:allies].map do |a|
-          "#{a.name}  HP #{a.hp < 0 ? 0 : a.hp}/#{a.max_hp}"
+          hp = a.hp < 0 ? 0 : a.hp
+          "#{a.name}  HP #{hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end
         @battle_ui[:status_win] = battle_text_window(lines, 6, 300)
       end
 
       # The current actor's command menu — their name as a header, then Attack /
-      # Defend with a cursor.
+      # Skill / Item / Defend with a cursor.
       def draw_battle_command
         actor = current_actor
         return unless actor
         @battle_ui[:cmd_win].dispose if @battle_ui[:cmd_win]
-        labels = [actor.name, 'Attack', 'Defend']
+        labels = [actor.name] + BATTLE_COMMANDS
         w = 96
         inner_h = labels.length * BATTLE_LINE_H
         win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
@@ -2001,7 +2207,7 @@ class RPG2k
           c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, label
         end
         win.contents = c
-        # The cursor sits over Attack / Defend (rows 1 and 2, below the name).
+        # The cursor sits over the commands (rows 1..N, below the name header).
         win.cursor_rect =
           Rect.new(0, (1 + @battle_ui[:cmd]) * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
         @battle_ui[:cmd_win] = win
@@ -2036,16 +2242,83 @@ class RPG2k
         @battle_ui[:target_win] = nil
       end
 
+      # A bottom-anchored list window of `labels` with the cursor on `sel`, at
+      # left edge `x` and width `w` — the shared shape of the Skill / Item and
+      # ally-target menus.
+      def battle_list_window(x, w, labels, sel, z)
+        inner_h = [labels.length, 1].max * BATTLE_LINE_H
+        win = Window.new(x, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         w, inner_h + Window::BORDER * 2)
+        win.z = z
+        win.windowskin = @windowskin
+        c = Bitmap.new(w - Window::BORDER * 2, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        labels.each_with_index do |label, i|
+          c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, label
+        end
+        win.contents = c
+        unless labels.empty?
+          win.cursor_rect = Rect.new(0, sel * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
+        end
+        win
+      end
+
+      # The current actor's battle skills as "Name  cost", with a cursor.
+      def draw_battle_skill
+        @battle_ui[:skill_win].dispose if @battle_ui[:skill_win]
+        labels = @battle_ui[:skills].map do |sid, cost|
+          sk = @state.party.db_skill(sid)
+          "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
+        end
+        @battle_ui[:skill_win] = battle_list_window(10, 130, labels, @battle_ui[:skill_i], 325)
+      end
+
+      def close_battle_skill
+        return unless @battle_ui[:skill_win]
+        @battle_ui[:skill_win].dispose
+        @battle_ui[:skill_win] = nil
+      end
+
+      # The party's battle items as "Name  xN", with a cursor.
+      def draw_battle_item
+        @battle_ui[:item_win].dispose if @battle_ui[:item_win]
+        labels = @battle_ui[:items].map do |id, count|
+          it = @state.party.db_item(id)
+          "#{it ? it.name : "Item #{id}"}  x#{count}"
+        end
+        @battle_ui[:item_win] = battle_list_window(10, 130, labels, @battle_ui[:item_i], 325)
+      end
+
+      def close_battle_item
+        return unless @battle_ui[:item_win]
+        @battle_ui[:item_win].dispose
+        @battle_ui[:item_win] = nil
+      end
+
+      # The living party members as heal targets ("Name HP h/mh"), with a cursor.
+      def draw_battle_ally_target
+        @battle_ui[:ally_win].dispose if @battle_ui[:ally_win]
+        labels = living_allies.map do |a|
+          "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.max_hp}"
+        end
+        @battle_ui[:ally_win] =
+          battle_list_window(SCREEN_W - 130 - 10, 130, labels, @battle_ui[:ally_i], 335)
+      end
+
+      def close_battle_ally_target
+        return unless @battle_ui[:ally_win]
+        @battle_ui[:ally_win].dispose
+        @battle_ui[:ally_win] = nil
+      end
+
       # Banner the attack that just landed ("Hero hits Slime for 12", "…
       # defeated!") low on the screen while the round animates, so each action
       # reads on screen as well as its HP tick. Replaced by the next action's
       # banner and dropped when the round settles.
       def show_battle_action(entry)
-        line = "#{entry[:attacker]} hits #{entry[:target]} for #{entry[:damage]}"
-        line += ' — defeated!' if entry[:defeated]
         @battle_ui[:action_win].dispose if @battle_ui[:action_win]
         y = SCREEN_H - BATTLE_LINE_H - Window::BORDER * 2 - 6
-        @battle_ui[:action_win] = battle_text_window([line], y, 340)
+        @battle_ui[:action_win] = battle_text_window([battle_action_line(entry)], y, 340)
       end
 
       def close_battle_action
@@ -2079,8 +2352,9 @@ class RPG2k
       def close_battle
         return unless @battle_ui
         [@battle_ui[:status_win], @battle_ui[:cmd_win],
-         @battle_ui[:target_win], @battle_ui[:action_win],
-         @battle_ui[:result_win]].each { |w| w.dispose if w }
+         @battle_ui[:target_win], @battle_ui[:skill_win],
+         @battle_ui[:item_win], @battle_ui[:ally_win],
+         @battle_ui[:action_win], @battle_ui[:result_win]].each { |w| w.dispose if w }
         @battle_ui = nil
       end
 

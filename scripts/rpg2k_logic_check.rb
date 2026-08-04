@@ -1251,22 +1251,24 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
                       :price, :skill_id,
-                      :atk_points2, :def_points2, :spi_points2, :agi_points2)
+                      :atk_points2, :def_points2, :spi_points2, :agi_points2,
+                      :occasion_battle)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
-              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0)
+              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
-               atk2, dfn2, spi2, agi2)
+               atk2, dfn2, spi2, agi2, occ_battle)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
-                       :affect_hp, :affect_sp)
+                       :affect_hp, :affect_sp, :occasion_battle)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
-               sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false)
+               sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
+               occ_battle: true)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
-                prate, mrate, hp, sp)
+                prate, mrate, hp, sp, occ_battle)
 end
 class FakeActorDB
   attr_reader :player, :system, :item, :skill
@@ -3000,6 +3002,14 @@ def combatant(name, atk, dfn, agi, hp)
   Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
 end
 
+# A combatant carrying SP, for the Skill checks (full SP at `mp`).
+def combatant_mp(name, atk, dfn, agi, hp, mp)
+  c = combatant(name, atk, dfn, agi, hp)
+  c.mp = mp
+  c.max_mp = mp
+  c
+end
+
 check 'Battle.attack_damage is half attack less a quarter defence, min 1' do
   eq 18, Game::Battle.attack_damage(40, 8),  '20 - 2'
   eq 1,  Game::Battle.attack_damage(2, 40),  'floored at 1'
@@ -3132,6 +3142,133 @@ check 'Battle#step_action skips a defending ally (no attack, no log entry)' do
   entry = bat.step_action
   eq 'Foe', entry[:attacker], 'the defending hero is skipped; only the foe acts'
   eq nil, bat.step_action, 'nothing else to animate this round'
+end
+
+# -- Battle Skill / Item commands ---------------------------------------------
+
+check 'battle_skills lists the caster\'s battle-usable skills with SP cost' do
+  skills = {
+    7  => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 20, mrate: 40),
+    8  => fake_skill(name: 'Heal', scope: 3, sp_cost: 5, power: 20, mrate: 40, hp: true),
+    9  => fake_skill(name: 'Guard', scope: 2, sp_cost: 3, power: 10, hp: true),
+    10 => fake_skill(name: 'FieldOnly', scope: 3, sp_cost: 4, hp: true, occ_battle: false),
+    11 => fake_skill(name: 'AllFoes', scope: 1, sp_cost: 8, power: 20) # scope 1 deferred
+  }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  [7, 8, 9, 10, 11].each { |s| hero.learn_skill(s) }
+  caster = Game::Battle.from_actor(hero)
+  eq [[7, 6], [8, 5], [9, 3]], st.party.battle_skills(hero, caster),
+     'single-target battle skills only, in id order'
+  eq :enemy, st.party.battle_skill_target(st.party.db_skill(7))
+  eq :ally,  st.party.battle_skill_target(st.party.db_skill(8))
+  eq :self,  st.party.battle_skill_target(st.party.db_skill(9))
+end
+
+check 'battle_skill_command yields attack damage, ally heal and self recovery' do
+  skills = {
+    7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 20, mrate: 40),
+    8 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5, power: 20, mrate: 40, hp: true),
+    9 => fake_skill(name: 'Cure', scope: 2, sp_cost: 4, power: 10, mrate: 40,
+                    hp: true, sp: true)
+  }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12, maxSP 30
+  foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
+  # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
+  eq({ cost: 6, hp: -30, mp: 0 },
+     st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
+  eq({ cost: 5, hp: 32, mp: 0 },
+     st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
+  # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
+  eq({ cost: 4, hp: 22, mp: 22 },
+     st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
+end
+
+check 'Battle command_skill resolves an attack skill: damage lands, SP is spent' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  foe  = combatant('Foe', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'Fire', cost: 6, hp: -30)
+  b.begin_round
+  e = b.step_action
+  eq 'Fire', e[:skill], 'the entry names the skill'
+  eq 30, e[:damage]
+  eq 70, foe.hp
+  eq 4, mage.mp, 'the caster paid 6 SP'
+  ok e[:skill] && !e[:recover], 'an attack skill reads as an attack, not a recovery'
+end
+
+check 'Battle command_skill resolves a heal, clamped to max HP' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  ally = combatant('Ally', 0, 0, 5, 50)
+  ally.hp = 30
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([mage, ally], [foe], Game::Rng.new(1))
+  b.command_skill(mage, ally, name: 'Heal', cost: 5, hp: 40) # 30 + 40 clamps at 50
+  b.command_defend(ally)
+  b.begin_round
+  e = b.step_action # the faster mage heals first
+  ok e[:recover], 'a recovery entry'
+  eq 'Ally', e[:target]
+  eq 50, ally.hp, 'clamped to max HP'
+  eq 20, e[:recover_hp], 'restored 20 (30 -> 50)'
+  eq 5, mage.mp
+end
+
+check 'Battle command_skill fizzles on a fallen target, sparing the SP' do
+  mage   = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  downed = combatant('Downed', 0, 0, 5, 40)
+  downed.hp = 0
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([mage, downed], [foe], Game::Rng.new(1))
+  b.command_skill(mage, downed, name: 'Heal', cost: 5, hp: 32)
+  b.begin_round
+  e = b.step_action # heal target is down -> fizzles -> the foe's attack surfaces
+  ok !e[:recover], 'the heal on a fallen ally did not resolve'
+  eq 10, mage.mp, 'no SP was spent on the fizzled cast'
+  eq 0, downed.hp, 'the fallen ally stayed down'
+end
+
+check 'Battle command_item restores HP and tags the entry for bag consumption' do
+  user = combatant('User', 0, 0, 20, 100)
+  ally = combatant('Ally', 0, 0, 5, 50)
+  ally.hp = 10
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([user, ally], [foe], Game::Rng.new(1))
+  b.command_item(user, ally, item_id: 5, name: 'Potion', hp: 30)
+  b.begin_round
+  e = b.step_action
+  ok e[:recover]
+  eq 5, e[:item_id], 'the item id rides along so the scene consumes it on land'
+  eq 'Potion', e[:source]
+  eq 40, ally.hp
+  eq 30, e[:recover_hp]
+end
+
+check 'battle_items lists battle medicines; battle_item_command recovers' do
+  items = { 5 => fake_item(type: 6, rhp: 40),                    # battle medicine
+            6 => fake_item(type: 6, rhp: 20, occ_battle: false), # field-only
+            7 => fake_item(type: 1, atk: 5) }                    # a weapon
+  st = item_party(items)
+  st.party.gain_item(5, 2)
+  st.party.gain_item(6, 1)
+  st.party.gain_item(7, 1)
+  eq [[5, 2]], st.party.battle_items, 'only the battle-flagged medicine'
+  ok st.party.battle_usable?(5)
+  ok !st.party.battle_usable?(6), 'a field-only medicine is not battle-usable'
+  target = combatant('T', 0, 0, 5, 100)
+  target.max_mp = 30
+  eq({ hp: 40, mp: 0 }, st.party.battle_item_command(st.party.db_item(5), target))
+end
+
+check 'Battle end_round clears a queued Skill / Item command' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  foe  = combatant('Foe', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'Fire', cost: 6, hp: -30)
+  b.run_round
+  eq nil, mage.command, 'the command is cleared for the next round'
 end
 
 # -- summary ------------------------------------------------------------------

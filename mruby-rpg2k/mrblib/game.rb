@@ -1535,6 +1535,89 @@ module Game
       caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
       affected
     end
+
+    # -- Battle-context skill / item use --------------------------------------
+    #
+    # The on-screen battle commands work on Game::Battle::Combatant snapshots but
+    # reuse the field menu's cost / effect formulas (#skill_cost, #skill_effect,
+    # #item_recovery). Scope is single-target for now: an attack skill hits one
+    # enemy, a recovery skill / medicine restores one ally (or the caster). The
+    # all-target scopes (1 all enemies, 4 all allies) and the battle SP / damage
+    # variance are later refinements.
+
+    # Single-target battle skill scopes: 0 single enemy, 2 the caster, 3 a single
+    # ally. (1 all enemies and 4 all allies are deferred.)
+    BATTLE_SKILL_SCOPES = [0, 2, 3].freeze
+
+    # `actor`'s known normal skills usable in battle — flagged `occasion_battle`
+    # with a single-target scope — as `[skill_id, cost]` pairs in ascending id
+    # order. `caster` is the battle snapshot the SP cost is figured from.
+    def battle_skills(actor, caster)
+      return [] unless actor && caster
+      actor.skills.sort.select do |sid|
+        sk = db_skill(sid)
+        sk && sk.type == SKILL_NORMAL && battle_occasion?(sk) &&
+          BATTLE_SKILL_SCOPES.include?(sk.scope)
+      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+    end
+
+    # Whether skill `sk` may be used in battle. Defaults to usable when the row
+    # (a bare fixture) carries no `occasion_battle` flag.
+    def battle_occasion?(sk)
+      sk.respond_to?(:occasion_battle) ? sk.occasion_battle : true
+    end
+
+    # Whom a battle skill targets: :enemy (scope 0), :self (scope 2) or :ally (3).
+    def battle_skill_target(sk)
+      case sk.scope
+      when 0 then :enemy
+      when 2 then :self
+      else :ally
+      end
+    end
+
+    # The command numbers for casting `sk` from `caster` on `target` (both
+    # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
+    # to the target — negative HP for an attack skill (base effect less a quarter
+    # of the target's defence, min 1), positive HP / SP for a recovery skill.
+    def battle_skill_command(sk, caster, target)
+      cost = skill_cost(sk, caster)
+      base = skill_effect(sk, caster)
+      if sk.scope == 0
+        dmg = base - (target ? target.def / 4 : 0)
+        dmg = 1 if dmg < 1
+        { cost: cost, hp: -dmg, mp: 0 }
+      else
+        { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
+      end
+    end
+
+    # Whether item `id` can be used in battle: a medicine flagged occasion_battle
+    # the party actually holds.
+    def battle_usable?(id)
+      it = db_item(id)
+      return false unless it && item_count(id) > 0
+      it.type == ITEM_MEDICINE && battle_item_occasion?(it)
+    end
+
+    # Whether medicine `it` may be used in battle. Defaults to usable when the row
+    # (a bare fixture) carries no `occasion_battle` flag.
+    def battle_item_occasion?(it)
+      it.respond_to?(:occasion_battle) ? it.occasion_battle : true
+    end
+
+    # The bag's battle-usable items as `[id, count]` pairs in ascending id order.
+    def battle_items
+      @items.keys.sort.select { |id| battle_usable?(id) }
+            .map { |id| [id, item_count(id)] }
+    end
+
+    # The HP / SP a medicine restores to a battle `target` (Combatant snapshot),
+    # as `{ hp:, mp: }` — the same recovery the field menu applies.
+    def battle_item_command(it, target)
+      hp, mp = item_recovery(it, target)
+      { hp: hp, mp: mp }
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
@@ -2496,15 +2579,28 @@ module Game
     # A battler reduced to what the fight needs. Snapshotting Game::Actor /
     # Game::Enemy keeps the real party untouched by a resolved battle.
     # `action` is the ally's chosen attack target for the round (nil = none /
-    # auto), `defending` halves damage taken that round; both are cleared each
-    # round. Enemies leave them nil and attack a random party member.
+    # auto), `defending` halves damage taken that round, and `command` is a
+    # queued Skill / Item action (see Battle#apply_command); all three are
+    # cleared each round. Enemies leave them nil and attack a random party
+    # member. `mp` / `max_mp` carry SP (skills spend it) and `spi` is the spirit
+    # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
-                           :action, :defending) do
+                           :action, :defending, :mp, :max_mp, :spi, :command) do
       def dead?; hp <= 0; end
+      # Spirit under the name Game::Party's skill formulas (#skill_effect,
+      # #skill_cost) read on a caster.
+      def int; spi; end
     end
 
-    def self.from_actor(a); Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp); end
-    def self.from_enemy(e); Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp); end
+    def self.from_actor(a)
+      Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
+                    nil, false, a.mp, a.max_mp, a.int, nil)
+    end
+
+    def self.from_enemy(e)
+      Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
+                    nil, false, e.sp, e.max_sp, e.spi, nil)
+    end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
     # the defender's defence, floored at 1 so a fight always terminates.
@@ -2556,8 +2652,33 @@ module Game
     # Assign an ally's action for the coming round: attack `target`, or defend
     # (take half damage and not attack). Player-driven battles command each ally
     # before running the round; enemies choose their own action.
-    def command_attack(ally, target); ally.action = target; ally.defending = false; end
-    def command_defend(ally); ally.action = nil; ally.defending = true; end
+    def command_attack(ally, target)
+      ally.action = target; ally.defending = false; ally.command = nil
+    end
+
+    def command_defend(ally)
+      ally.action = nil; ally.defending = true; ally.command = nil
+    end
+
+    # Queue a single-target Skill for `ally`: cast on `target` (an enemy for an
+    # attack skill, an ally / the caster for a recovery skill), spending `cost`
+    # SP and applying the signed HP / SP deltas (negative HP = damage, positive =
+    # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
+    # order by #apply_command when the round runs.
+    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0)
+      ally.command = { kind: :skill, target: target, name: name,
+                       cost: cost, hp: hp, mp: mp }
+      ally.action = nil; ally.defending = false
+    end
+
+    # Queue a single-target Item for `ally` on `target`: restore the HP / SP from
+    # Game::Party#battle_item_command. `item_id` rides along on the log entry so
+    # the scene consumes one from the bag when the action lands.
+    def command_item(ally, target, item_id:, name:, hp: 0, mp: 0)
+      ally.command = { kind: :item, target: target, item_id: item_id,
+                       name: name, hp: hp, mp: mp }
+      ally.action = nil; ally.defending = false
+    end
 
     # Execute one full round — living battlers act in agility order, allies using
     # their assigned action, enemies attacking a random party member — and return
@@ -2601,7 +2722,7 @@ module Game
     # Close a round begun with #begin_round: clear each ally's chosen action (so
     # the next round starts fresh) and settle the result once a side is wiped.
     def end_round
-      @allies.each { |a| a.action = nil; a.defending = false }
+      @allies.each { |a| a.action = nil; a.defending = false; a.command = nil }
       @result = alive?(@allies) ? :victory : :defeat if finished?
     end
 
@@ -2621,8 +2742,10 @@ module Game
     end
 
     # `b` attacks its target, returning a log entry (or nil when it defends or
-    # has no living target). A defending target takes half damage (min 1).
+    # has no living target). A defending target takes half damage (min 1). An
+    # ally with a queued Skill / Item command resolves that instead.
     def strike(b)
+      return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
       target = attack_target(b)
       return nil unless target
@@ -2645,6 +2768,37 @@ module Game
     end
 
     def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
+
+    # Resolve `b`'s queued Skill / Item command and return its log entry, or nil
+    # when the chosen target has already fallen this round (the action fizzles —
+    # no SP is spent and nothing animates). A skill first spends the caster's SP;
+    # then a negative-HP command (an attack skill) subtracts HP and reads like an
+    # attack (`skill:` names it), while a recovery command (heal skill / medicine)
+    # restores HP / SP clamped to the target's maxima and reads as a `recover`.
+    def apply_command(b)
+      cmd = b.command
+      target = cmd[:target]
+      return nil if target.nil? || target.dead?
+      b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
+      hp = cmd[:hp] || 0
+      mp = cmd[:mp] || 0
+      if hp < 0
+        dmg = -hp
+        target.hp -= dmg
+        { attacker: b.name, target: target.name, damage: dmg,
+          target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
+          skill: cmd[:name] }
+      else
+        before_hp = target.hp
+        before_mp = target.mp || 0
+        target.hp = [target.hp + hp, target.max_hp].min if hp > 0
+        target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
+        { recover: true, actor: b.name, source: cmd[:name],
+          item_id: cmd[:item_id], target: target.name,
+          recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
+          target_hp: target.hp, target_mp: target.mp }
+      end
+    end
   end
 
   # Map weather set by the Weather Effects (11070) event command: a type (0 none,
