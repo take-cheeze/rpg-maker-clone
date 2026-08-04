@@ -470,7 +470,10 @@ class RPG2k
         @inn_window = nil
         @shop = nil
         @battle_ui = nil
+        @name_ui = nil
         @wait_timer = nil
+        @anim_wait = nil
+        @map_animation = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
         # a Move Event targeting "this event" can be resolved. nil for common
@@ -507,6 +510,9 @@ class RPG2k
          @picture_sprite, @fade_sprite, @flash_sprite].each do |s|
           s.dispose if s
         end
+        (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
+        @airship_shadow.dispose if @airship_shadow
+        @animation_sprite.dispose if @animation_sprite
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -527,7 +533,9 @@ class RPG2k
             step_player_route
             step_events
             step_movement
-            try_action_trigger
+            # Boarding / disembarking claims the action button when it applies;
+            # otherwise it falls through to the usual event trigger.
+            try_action_trigger unless try_board_vehicle
             try_open_menu
           end
         end
@@ -552,6 +560,36 @@ class RPG2k
         @player_sprite.z = 100
         @player_bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
         @player_sprite.bitmap = @player_bmp
+
+        # One sprite per vehicle (drawn just under the hero, so a boarded party
+        # sits on top). Hidden unless the vehicle is placed on the current map.
+        @vehicle_sprites = {}
+        @vehicle_bmps = {}
+        Game::Vehicle::TYPES.each do |type|
+          spr = Sprite.new
+          spr.z = 99
+          spr.visible = false
+          bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+          spr.bitmap = bmp
+          @vehicle_sprites[type] = spr
+          @vehicle_bmps[type] = bmp
+        end
+        # The airship floats above the ground; a shadow sprite on the tile below
+        # it sells the altitude. A squat translucent dark blob approximates it.
+        @airship_shadow = Sprite.new
+        @airship_shadow.z = 98 # under the vehicles, over the ground / events
+        @airship_shadow.visible = false
+        shadow = Bitmap.new(TILE, TILE)
+        shadow.fill_rect 3, TILE - 8, TILE - 6, 5, Color.new(0, 0, 0, 96)
+        @airship_shadow.bitmap = shadow
+
+        # A screen-sized layer the Show Battle Animation renderer composites the
+        # current frame's cells into, over the map (above the hero).
+        @animation_sprite = Sprite.new
+        @animation_sprite.z = 150
+        @animation_sprite.visible = false
+        @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @animation_sprite.bitmap = @animation_bmp
         # Fallback marker when the CharSet graphic is unavailable.
         unless @charset
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
@@ -971,6 +1009,87 @@ class RPG2k
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
         start_event(ev) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
+      end
+
+      # On the action button, board a placed vehicle the party is standing on
+      # (airship) or facing (boat / ship), or — when already aboard — step off
+      # onto the tile ahead. Returns true when it claimed the button, so the
+      # ordinary event-action check is skipped that frame.
+      def try_board_vehicle
+        return false if event_busy?
+        return false unless Input.trigger?(Input::C)
+        if @state.boarded?
+          disembark_vehicle
+          true # aboard, the action button belongs to the vehicle
+        else
+          board_vehicle
+        end
+      end
+
+      # Board a vehicle placed on the current map at the party's tile (airship) or
+      # the tile it faces (boat / ship, boarded from the shore). Steps onto the
+      # vehicle's tile and returns whether a vehicle was boarded.
+      def board_vehicle
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        Game::Vehicle::TYPES.each do |type|
+          v = @state.vehicle(type)
+          next unless v.placed? && v.map_id == @state.map_id
+          if v.x == @state.x && v.y == @state.y
+            @state.boarded = type
+            return true
+          elsif v.x == fx && v.y == fy
+            @state.x = fx
+            @state.y = fy
+            @state.boarded = type
+            return true
+          end
+        end
+        false
+      end
+
+      # Step off the ridden vehicle onto the tile ahead when it is walkable on
+      # foot, leaving the vehicle on the tile the party vacates. A no-op when the
+      # way ahead is blocked (the party stays aboard).
+      def disembark_vehicle
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        return unless passable?(fx, fy, @state.direction)
+        follow_vehicle # the vehicle is left where the party is getting off
+        @state.x = fx
+        @state.y = fy
+        @state.boarded = nil
+      end
+
+      # Keep the ridden vehicle on the party's tile / facing.
+      def follow_vehicle
+        v = @state.vehicle(@state.boarded)
+        return unless v
+        v.map_id = @state.map_id
+        v.x = @state.x
+        v.y = @state.y
+        v.direction = @state.direction
+      end
+
+      # Whether vehicle `type` may enter tile (x, y) heading `dir`: the airship
+      # flies over any in-bounds tile; a boat / ship needs the tile's terrain to
+      # allow it (the database terrain's boat_pass / ship_pass flag) with no event
+      # in the way, falling back to on-foot passability when the map has no
+      # terrain data.
+      def vehicle_passable?(x, y, dir, type)
+        return false unless @map.in_bounds?(x, y)
+        return true if type == :airship
+        return false if @event_tiles[[x, y]]
+        row = terrain_row_at(x, y)
+        return passable?(x, y, dir) unless row
+        type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
+      end
+
+      # The database terrain row under tile (x, y), or nil when the chipset / map
+      # carry no terrain data (e.g. the colour-block fallback or a bare fixture).
+      def terrain_row_at(x, y)
+        return nil if @chipset.nil? || !@db.respond_to?(:terrain) || @db.terrain.nil?
+        @db.terrain[@chipset.terrain(@map.lower(x, y))]
+      rescue StandardError
+        nil
       end
 
       # Advance autonomous / custom-route event movement one frame. Skipped
@@ -1455,6 +1574,8 @@ class RPG2k
           when :picture then @interpreter.resume unless @state.pictures_moving?
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
+          when :name_input then drive_name_input
+          when :animation then drive_map_animation
           end
         else
           @interpreter.update
@@ -2481,6 +2602,272 @@ class RPG2k
         spr.dispose
       end
 
+      # -- Enter Hero Name (name-entry widget) --------------------------------
+
+      # The selectable cells: the character set, then two control cells — BS
+      # (backspace) and OK (confirm). RPG2000's own screen also offers hiragana /
+      # katakana / symbol pages; this build enters the Latin letters, digits and a
+      # few punctuation marks (the kana pages are a later refinement).
+      NAME_CHARS = (('A'..'Z').to_a + ('a'..'z').to_a + ('0'..'9').to_a +
+                    [' ', '-', "'", '.']).freeze
+      NAME_CELLS = (NAME_CHARS + %w[BS OK]).freeze
+      NAME_COLS = 13          # cells per row
+      NAME_MAX = 12           # longest name the widget accepts
+      NAME_CELL_W = 14
+      NAME_CELL_H = 14
+
+      # Drive the name-entry screen shown during a :name_input wait. It opens a
+      # character grid (seeded with the actor's current name when the command asked
+      # for it); arrows move the cursor, C types the highlighted character or acts
+      # on BS / OK, and B backspaces. Confirming on OK commits the name to the
+      # actor and resumes the event.
+      def drive_name_input
+        req = @interpreter.name_input_request
+        return @interpreter.resume_name_input('') unless req
+        if @name_ui.nil?
+          @name_ui = { name: req[:seed] || '', sel: 0, win: nil }
+          draw_name_input
+          return
+        end
+        handle_name_input
+      end
+
+      def handle_name_input
+        ui = @name_ui
+        if Input.trigger?(Input::RIGHT) && ui[:sel] < NAME_CELLS.length - 1
+          ui[:sel] += 1; draw_name_input
+        elsif Input.trigger?(Input::LEFT) && ui[:sel] > 0
+          ui[:sel] -= 1; draw_name_input
+        elsif Input.trigger?(Input::DOWN) && ui[:sel] + NAME_COLS < NAME_CELLS.length
+          ui[:sel] += NAME_COLS; draw_name_input
+        elsif Input.trigger?(Input::UP) && ui[:sel] - NAME_COLS >= 0
+          ui[:sel] -= NAME_COLS; draw_name_input
+        elsif Input.trigger?(Input::C)
+          name_input_confirm
+        elsif Input.trigger?(Input::B)
+          name_input_backspace
+        end
+      end
+
+      # Act on the highlighted cell: OK commits, BS backspaces, any other cell
+      # types its character (up to NAME_MAX).
+      def name_input_confirm
+        cell = NAME_CELLS[@name_ui[:sel]]
+        case cell
+        when 'OK' then commit_name_input
+        when 'BS' then name_input_backspace
+        else
+          @name_ui[:name] += cell if @name_ui[:name].length < NAME_MAX
+          draw_name_input
+        end
+      end
+
+      def name_input_backspace
+        @name_ui[:name] = @name_ui[:name].chop
+        draw_name_input
+      end
+
+      def commit_name_input
+        name = @name_ui[:name]
+        close_name_input
+        @interpreter.resume_name_input(name)
+      end
+
+      def draw_name_input
+        ui = @name_ui
+        ui[:win].dispose if ui[:win]
+        rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
+        inner_w = NAME_COLS * NAME_CELL_W
+        inner_h = (rows + 1) * NAME_CELL_H # +1 row for the name-so-far
+        win = Window.new((SCREEN_W - inner_w - Window::BORDER * 2) / 2, 30,
+                         inner_w + Window::BORDER * 2, inner_h + Window::BORDER * 2)
+        win.z = 400
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, NAME_CELL_H, "Name: #{ui[:name]}"
+        NAME_CELLS.each_with_index do |cell, i|
+          cx = (i % NAME_COLS) * NAME_CELL_W
+          cy = NAME_CELL_H + (i / NAME_COLS) * NAME_CELL_H
+          label = cell == 'BS' ? '<' : cell
+          c.draw_text cx, cy, NAME_CELL_W, NAME_CELL_H, label
+        end
+        win.contents = c
+        sel = ui[:sel]
+        win.cursor_rect = Rect.new((sel % NAME_COLS) * NAME_CELL_W,
+                                   NAME_CELL_H + (sel / NAME_COLS) * NAME_CELL_H,
+                                   NAME_CELL_W, NAME_CELL_H)
+        ui[:win] = win
+      end
+
+      def close_name_input
+        return unless @name_ui
+        @name_ui[:win].dispose if @name_ui[:win]
+        @name_ui = nil
+      end
+
+      # Display frames each animation frame is held; the fallback length (frames)
+      # when the database has no data for the requested animation; and the flash
+      # duration a timing fires.
+      ANIM_CELL_FRAMES = 3
+      ANIM_FALLBACK_FRAMES = 10
+      ANIM_FLASH_FRAMES = 8
+      # RPG2000 battle-animation cells: a 96x96 grid, 5 cells across the sheet.
+      ANIM_CELL = 96
+      ANIM_SHEET_COLS = 5
+
+      # Drive a Show Battle Animation (11210) wait: play the animation over its
+      # target, then resume the event. When the animation's data / sheet is
+      # available it advances frame by frame (composited by #draw_map_animation),
+      # firing the screen flashes its timings request; otherwise it degrades to a
+      # plain timed wait, so a cutscene paces the same as RPG_RT either way.
+      def drive_map_animation
+        init_map_animation if @map_animation.nil? && @anim_wait.nil?
+        @map_animation ? step_map_animation : step_animation_wait
+      end
+
+      # Begin the animation: build the frame-by-frame player from the request, or
+      # arm the timed-wait fallback when there is no drawable animation.
+      def init_map_animation
+        @map_animation = start_map_animation
+        if @map_animation
+          fire_animation_flashes(@map_animation) # frame 0 flashes
+        else
+          @anim_wait = ANIM_FALLBACK_FRAMES * ANIM_CELL_FRAMES
+        end
+      end
+
+      # Advance the drawable animation one frame per ANIM_CELL_FRAMES, firing that
+      # frame's flashes; finish (hide, resume) once the last frame has played.
+      def step_map_animation
+        ma = @map_animation
+        if ma[:timer] > 0
+          ma[:timer] -= 1
+          return
+        end
+        ma[:frame_i] += 1
+        if ma[:frame_i] >= ma[:frames].length
+          @animation_sprite.visible = false
+          ma[:sheet].dispose if ma[:sheet].respond_to?(:dispose)
+          @map_animation = nil
+          @interpreter.resume
+          return
+        end
+        fire_animation_flashes(ma)
+        ma[:timer] = ANIM_CELL_FRAMES
+      end
+
+      def step_animation_wait
+        if @anim_wait <= 0
+          @anim_wait = nil
+          @interpreter.resume
+        else
+          @anim_wait -= 1
+        end
+      end
+
+      # Build the animation player, or nil when the animation is unknown or its
+      # Battle/<name> sheet is missing (then the timed-wait fallback runs).
+      def start_map_animation
+        req = @interpreter.battle_animation
+        anim = animation_row(req && req[:animation])
+        return nil unless anim
+        frames = table_entries(anim.frames)
+        return nil if frames.empty?
+        sheet = animation_sheet(anim.animation_name)
+        return nil unless sheet
+        tx, ty = animation_target_pixel(req[:target])
+        { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
+          position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
+          timer: ANIM_CELL_FRAMES }
+      end
+
+      def animation_row(id)
+        return nil if id.nil? || !@db.respond_to?(:battle_anime) || @db.battle_anime.nil?
+        @db.battle_anime[id]
+      rescue StandardError
+        nil
+      end
+
+      def animation_sheet(name)
+        return nil if name.nil? || name.empty?
+        Bitmap.new "Battle/#{name}"
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle animation '#{name}' load failed: #{e.message}"
+        nil
+      end
+
+      # The target character's map-pixel position: the player, the running event
+      # ("this event" / 0), or a map event by id, defaulting to the player.
+      def animation_target_pixel(target)
+        case target
+        when MOVE_TARGET_PLAYER then player_pixel
+        when 0, MOVE_TARGET_THIS
+          @active_event ? event_pixel(@active_event) : player_pixel
+        else
+          ev = @events.find { |e| e[:id] == target }
+          ev ? event_pixel(ev) : player_pixel
+        end
+      end
+
+      # Fire the screen flashes the current frame's timings request (flash_scope
+      # 2 = whole screen); RPG2000 stores the colour / power as 0..31 (scaled up
+      # to the 0..255 the shared Game::Screen flash uses).
+      def fire_animation_flashes(ma)
+        ma[:timings].each do |t|
+          next unless (t.frame || 0) == ma[:frame_i]
+          next unless (t.flash_scope || 0) == 2
+          @state.screen.flash((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
+                              (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
+                              ANIM_FLASH_FRAMES)
+        end
+      end
+
+      # Collect an Array2D (or a plain Hash test double) into a dense array of its
+      # entries, in id order — both answer #each with (id, entry).
+      def table_entries(table)
+        out = []
+        table.each { |_id, entry| out << entry } if table
+        out
+      end
+
+      # Composite the animation's current frame over its target. Runs in the
+      # render pass (the camera is known here): each visible cell of the frame is
+      # blitted from the sheet's 96x96 grid to the target's screen position plus
+      # the cell's offset. Zoom / tone / per-cell transparency are approximated as
+      # a plain blit for now.
+      def draw_map_animation(cam_x, cam_y)
+        return unless @animation_sprite
+        ma = @map_animation
+        unless ma
+          @animation_sprite.visible = false
+          return
+        end
+        @animation_sprite.visible = true
+        @animation_sprite.x = 0
+        @animation_sprite.y = 0
+        @animation_bmp.clear
+        frame = ma[:frames][ma[:frame_i]]
+        return unless frame
+        cx = ma[:tx] - cam_x + TILE / 2
+        cy = ma[:ty] - cam_y + TILE / 2
+        table_entries(frame.cells).each do |cell|
+          next if cell.respond_to?(:visible) && cell.visible == false
+          blit_animation_cell(ma[:sheet], cell, cx, cy)
+        end
+      end
+
+      def blit_animation_cell(sheet, cell, cx, cy)
+        cid = cell.cell_id || 0
+        sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
+        sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
+        dx = cx + (cell.x || 0) - ANIM_CELL / 2
+        dy = cy + (cell.y || 0) - ANIM_CELL / 2
+        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+      rescue StandardError
+        nil
+      end
+
       def drive_wait
         @wait_timer = frames_from_tenths(@interpreter.wait_frames) if @wait_timer.nil?
         if @wait_timer <= 0
@@ -2836,6 +3223,7 @@ class RPG2k
             @state.y = @dest_y
             @moving = false
             @move_count = 0
+            follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
           end
           return
         end
@@ -2848,14 +3236,19 @@ class RPG2k
         @state.direction = dir
         nx, ny = target_tile(@state.x, @state.y, dir)
 
-        # Walking into a player-touch (trigger 1) event runs it instead of moving.
-        touched = event_at(nx, ny)
-        if touched && touched[:trigger] == TRIGGER_PLAYER_TOUCH && touched[:commands]
-          start_event(touched)
-          return
+        if @state.boarded?
+          # Aboard a vehicle: use the vehicle's passability and glide over touch
+          # events (you cannot trigger them from the water / air).
+          return unless vehicle_passable?(nx, ny, dir, @state.boarded)
+        else
+          # Walking into a player-touch (trigger 1) event runs it instead of moving.
+          touched = event_at(nx, ny)
+          if touched && touched[:trigger] == TRIGGER_PLAYER_TOUCH && touched[:commands]
+            start_event(touched)
+            return
+          end
+          return unless passable?(nx, ny, dir)
         end
-
-        return unless passable?(nx, ny, dir)
 
         @dest_x = nx
         @dest_y = ny
@@ -2922,9 +3315,68 @@ class RPG2k
         # every frame so the hero hides/shows as events toggle it.
         @player_sprite.visible = !player_hidden?
         draw_player_frame
+        draw_vehicles cam_x, cam_y, px, py
+        draw_map_animation cam_x, cam_y
 
         draw_pictures cam_x, cam_y
         update_screen_overlay
+      end
+
+      # Position and draw each vehicle placed on the current map. A parked vehicle
+      # sits on its own tile; the ridden one follows the party's pixel position
+      # (so it slides smoothly), drawn just under the hero. A vehicle on another
+      # map, or one with no CharSet graphic, is hidden.
+      # Pixels the airship floats above its shadow on the ground.
+      AIRSHIP_ALTITUDE = 8
+
+      def draw_vehicles(cam_x, cam_y, px, py)
+        return unless @vehicle_sprites
+        @airship_shadow.visible = false
+        Game::Vehicle::TYPES.each do |type|
+          spr = @vehicle_sprites[type]
+          v = @state.vehicle(type)
+          charset = (v.placed? && v.map_id == @state.map_id) ? vehicle_charset(v) : nil
+          unless charset
+            spr.visible = false
+            next
+          end
+          ridden = @state.boarded == type
+          vpx = ridden ? px : v.x * TILE
+          vpy = ridden ? py : v.y * TILE
+          sx = vpx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+          sy = vpy - cam_y - (Game::CharSet::HEIGHT - TILE)
+          if type == :airship
+            # The shadow marks the ground tile; the airship floats above it.
+            @airship_shadow.x = vpx - cam_x
+            @airship_shadow.y = vpy - cam_y
+            @airship_shadow.visible = true
+            sy -= AIRSHIP_ALTITUDE
+          end
+          spr.x = sx
+          spr.y = sy
+          spr.visible = true
+          draw_vehicle_frame(type, v, charset)
+        end
+      end
+
+      # Blit the vehicle's CharSet cell into its sprite buffer (standing pattern).
+      def draw_vehicle_frame(type, v, charset)
+        rx, ry, rw, rh = Game::CharSet.frame_rect(v.charset_index, v.direction, 1)
+        bmp = @vehicle_bmps[type]
+        bmp.clear
+        bmp.blt 0, 0, charset, Rect.new(rx, ry, rw, rh)
+      end
+
+      # The CharSet graphic for a vehicle: its own (set by Change Vehicle Graphic /
+      # the initial placement) or the database default (System boat/ship/airship
+      # name), loaded through the shared event-charset cache. nil when it has none.
+      def vehicle_charset(v)
+        name = v.charset_name
+        if (name.nil? || name.empty?)
+          field = "#{v.type}_name"
+          name = @db.system.send(field) if @db.system.respond_to?(field)
+        end
+        event_charset(name)
       end
 
       # Composite the Show Picture layer into its buffer, drawing lowest-id first

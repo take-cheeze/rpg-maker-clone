@@ -166,6 +166,20 @@ def fake_db(common = nil)
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
       1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
       2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) }) },
+    # A drawable battle animation (id 8): four frames, with a screen flash timing
+    # on frame 1. (Id 7 is intentionally absent so that test exercises the
+    # timed-wait fallback.)
+    battle_anime: { 8 => OpenStruct.new(
+      animation_name: 'Anim', position: 1,
+      frames: {
+        1 => OpenStruct.new(cells: { 1 => OpenStruct.new(visible: true, cell_id: 0, x: 0, y: 0) }),
+        2 => OpenStruct.new(cells: { 1 => OpenStruct.new(visible: true, cell_id: 1, x: 0, y: 0) }),
+        3 => OpenStruct.new(cells: {}),
+        4 => OpenStruct.new(cells: {})
+      },
+      timings: { 1 => OpenStruct.new(frame: 1, flash_scope: 2, flash_red: 31,
+                                     flash_green: 31, flash_blue: 31, flash_power: 20) }
+    ) },
     common_event: common,
     player: {}
   )
@@ -1470,6 +1484,250 @@ check 'Change System Graphics reloads the windowskin from the override' do
   5.times { scene.update }
   eq 'Skin2', st.system_graphic, 'the override is recorded on the state'
   ok scene.instance_variable_get(:@windowskin), 'the windowskin was reloaded from the override'
+end
+
+# A party with a renameable actor for the Name Input check.
+class NameStubActor
+  attr_accessor :name
+  attr_reader :id
+  def initialize(id, name); @id = id; @name = name; end
+end
+class NameStubParty
+  attr_reader :actors
+  attr_accessor :leader
+  # leader stays nil (no sprite to render) — the name widget doesn't need it.
+  def initialize; @actors = [NameStubActor.new(1, 'Hero')]; @leader = nil; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+end
+
+check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  # Let the encounter open the entry widget.
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  # The cursor starts on the first cell ('A'); C types it.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'A', ui[:name], 'confirming the first cell types an A'
+
+  # Jump the cursor to the OK cell and confirm to commit.
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'A', st.party.actor_by_id(1).name, 'the actor was renamed on confirm'
+  eq nil, scene.instance_variable_get(:@name_ui), 'the widget closed'
+  3.times { scene.update }
+  ok st.switches[5], 'the event resumed after entry'
+end
+
+# A party whose actor levels up on demand, for the level-up-message check.
+class LevelStubActor
+  attr_reader :name, :id
+  attr_accessor :level
+  def initialize; @id = 1; @name = 'Hero'; @level = 1; end
+  def change_level_by(n); @level += n; end
+end
+class LevelStubParty
+  attr_reader :actors
+  attr_accessor :leader
+  def initialize; @actors = [LevelStubActor.new]; @leader = nil; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+end
+
+check 'Change Level show-message: the scene shows a message per level, then resumes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_LEVEL, [1, 1, 0, 0, 2, 1], indent: 0), # +2 levels, show flag
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, LevelStubParty.new)
+  # The first level-up message opens.
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@message)
+  end
+  ok scene.instance_variable_get(:@message), 'a level-up message is shown'
+  eq 3, st.party.actor_by_id(1).level, 'both levels were applied at once'
+  # Confirm through both queued messages (two C presses each: reveal, dismiss).
+  40.times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+    break if st.switches[5]
+  end
+  ok st.switches[5], 'the event resumes once both level-up messages are dismissed'
+end
+
+check 'boarding a boat and disembarking onto the shore' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  # Press the action button while facing the boat: board and step onto it.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq [0, 1], [st.x, st.y], 'stepped onto the boat tile'
+  # Face back to the shore and press the button: step off.
+  st.direction = 8 # face up, toward (0, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'disembarked back onto foot'
+  eq [0, 0], [st.x, st.y], 'stepped off onto the shore tile'
+  eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
+end
+
+check 'the airship flies over a tile blocked on foot, and follows the party' do
+  # An event occupies (1, 0): impassable on foot, but the airship flies over it.
+  scene = new_scene({ 1 => event(1, 0, page) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0 # the airship sits under the party; board in place
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship in place'
+  # Fly east onto the blocked tile.
+  RGSS::Input.dir_value = 6
+  20.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, 'the airship crossed the on-foot-blocked tile'
+  eq [st.x, st.y], [air.x, air.y], 'the airship follows the party'
+end
+
+check 'Show Battle Animation with the wait flag holds the event then resumes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0), # animation, player, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  3.times { scene.update }
+  ok !st.switches[5], 'the event is held while the animation plays'
+  60.times { scene.update } # outlast the fallback animation length
+  ok st.switches[5], 'the event resumes once the animation finishes'
+end
+
+check 'Show Battle Animation plays: an animation sprite shows and a flash fires' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # animation 8 (a drawable one in the fake db) on the player, wait flag on.
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  shown = false
+  flashed = false
+  40.times do
+    scene.update
+    shown ||= spr.visible
+    flashed ||= st.screen.flashing?
+    break if st.switches[6]
+  end
+  ok shown, 'the animation sprite was shown while the animation played'
+  ok flashed, 'a screen-flash timing fired during the animation'
+  ok st.switches[6], 'the event resumed after the animation'
+  ok !spr.visible, 'the animation sprite is hidden once it finishes'
+end
+
+check 'a vehicle placed on the current map is drawn; one off-map or absent is not' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 2
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  scene.update
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  ok sprites[:boat].visible, 'the placed boat is drawn as a sprite'
+  ok !sprites[:ship].visible, 'an unplaced vehicle is not drawn'
+  # A vehicle on a different map stays hidden.
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id + 1
+  ship.x = 0
+  ship.y = 0
+  ship.charset_name = 'Ship'
+  scene.update
+  ok !sprites[:ship].visible, 'a vehicle on another map is not drawn'
+end
+
+check 'the ridden vehicle sprite follows the party, under the hero' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded
+  scene.update
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  player = scene.instance_variable_get(:@player_sprite)
+  ok sprites[:boat].visible, 'the ridden boat is drawn'
+  eq [player.x, player.y], [sprites[:boat].x, sprites[:boat].y],
+     'the boat tracks the party position'
+  ok sprites[:boat].z < player.z, 'the vehicle sits under the hero'
+end
+
+check 'the airship floats above a ground shadow; a boat casts none' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 2
+  air.y = 2
+  air.charset_name = 'Airship'
+  scene.update
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  shadow = scene.instance_variable_get(:@airship_shadow)
+  ok shadow.visible, 'the airship casts a shadow'
+  ok sprites[:airship].y < shadow.y, 'the airship floats above its shadow'
+  ok shadow.z < sprites[:airship].z, 'the shadow sits under the airship'
+  # A boat (no airship placed) casts no shadow.
+  air.map_id = 0 # unplace the airship
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 1
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  scene.update
+  ok !shadow.visible, 'a boat casts no airship shadow'
 end
 
 check 'Enemy Encounter scene: the round animates action by action, not at once' do

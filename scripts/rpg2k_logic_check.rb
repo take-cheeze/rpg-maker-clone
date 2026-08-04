@@ -1594,6 +1594,59 @@ check 'Change Level command raises the level and rescales stats' do
   eq 1, a.level
 end
 
+# A three-level growth curve (six stats per level) for the level-up-message
+# checks: enough levels to gain more than one at a time.
+def three_level_db
+  FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1,
+                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12]) },
+    [1])
+end
+
+check 'Change Level with the show-message flag queues a message per level gained' do
+  st = Game::State.new(Game::Party.new(three_level_db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, add, const, amount 2 (1 -> 3), show-message flag on.
+  it.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 0, 0, 2, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq 3, a.level, 'gained two levels'
+  ok it.waiting?, 'the first level-up message pauses the event'
+  eq :message, it.wait_kind
+  eq ['Hero is now level 2!'], it.message_lines
+  eq false, st.switches[1], 'the following command has not run yet'
+  it.resume
+  eq :message, it.wait_kind, 'the second level queues a second message'
+  eq ['Hero is now level 3!'], it.message_lines
+  it.resume
+  it.update
+  eq true, st.switches[1], 'the event resumes once the messages drain'
+end
+
+check 'Change Level / Change EXP without the flag show no level-up message' do
+  st = Game::State.new(Game::Party.new(three_level_db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 0, 0, 2, 0])]) # flag off
+  it.update
+  eq 3, st.party.actor_by_id(1).level
+  ok !it.waiting?, 'no message without the show flag'
+end
+
+check 'Change EXP with the show-message flag announces a level-up' do
+  st = Game::State.new(Game::Party.new(three_level_db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  need = a.exp_to_next # exactly enough EXP to reach level 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_EXP, [1, 1, 0, 0, need, 1])])
+  it.update
+  eq 2, a.level, 'crossed one level threshold'
+  ok it.waiting?
+  eq ['Hero is now level 2!'], it.message_lines
+  it.resume
+  ok !it.waiting?, 'a single level gained -> a single message'
+end
+
 check 'Change Equipment command equips into the type slot and removes' do
   items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
             8 => fake_item(dfn: 9, type: 3) }    # armour -> slot 2
@@ -2632,6 +2685,150 @@ check 'Change System Graphics overrides the windowskin / font; round-trips' do
   loaded = Game::State.load(db, st.to_h)
   eq 'Skin2', loaded.system_graphic, 'the override round-trips through the save'
   eq 1, loaded.font_id
+end
+
+# -- Enter Hero Name (Name Input) ---------------------------------------------
+
+check 'Enter Hero Name suspends on :name_input and resume renames the actor' do
+  st = party_state # Hero id 1, Ally id 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::NAME_INPUT, [1, 2, 1]), # actor 1, letters, seed name
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'the interpreter waits for the entry to finish'
+  eq :name_input, it.wait_kind
+  eq 1, it.name_input_request[:actor_id]
+  eq 'Hero', it.name_input_request[:seed], 'seeded with the current name'
+  eq false, st.switches[1], 'the following command has not run yet'
+  it.resume_name_input('Zephyr')
+  eq 'Zephyr', st.party.actor_by_id(1).name, 'the actor is renamed'
+  it.update
+  eq true, st.switches[1], 'execution continues after entry'
+end
+
+check 'Enter Hero Name without the seed flag starts from an empty name' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::NAME_INPUT, [1, 2, 0])]) # seed flag off
+  it.update
+  eq '', it.name_input_request[:seed]
+  it.resume_name_input('') # a blank entry keeps the old name (RPG_RT behaviour)
+  eq 'Hero', st.party.actor_by_id(1).name
+end
+
+check 'Enter Hero Name for an actor not in the party is a no-op' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::NAME_INPUT, [99, 0, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok !it.waiting?, 'no wait is raised for an actor this build never instantiated'
+  eq true, st.switches[2], 'execution runs straight past the command'
+end
+
+# -- Vehicle commands ---------------------------------------------------------
+
+check 'Set Vehicle Location places a vehicle (constant and variable modes)' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # boat (0), literal mode (param1 = 0): map 5, x 10, y 12.
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 5, 10, 12])])
+  it.update
+  boat = st.vehicle(:boat)
+  eq [5, 10, 12], [boat.map_id, boat.x, boat.y]
+  ok boat.placed?, 'a positioned vehicle reads as placed'
+  # ship (1), variable mode (param1 = 1): map / x / y come from variables.
+  st.variables[1] = 7
+  st.variables[2] = 3
+  st.variables[3] = 4
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [1, 1, 1, 2, 3])])
+  it2.update
+  ship = st.vehicle(:ship)
+  eq [7, 3, 4], [ship.map_id, ship.x, ship.y]
+end
+
+check 'Change Vehicle Graphic sets the vehicle charset' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # airship (2), charset 'Airship1', cell 3.
+  it.start([FakeCmd.new(IC::CHANGE_VEHICLE_GRAPHIC, [2, 3], string: 'Airship1')])
+  it.update
+  air = st.vehicle(:airship)
+  eq 'Airship1', air.charset_name
+  eq 3, air.charset_index
+end
+
+check 'an out-of-range vehicle id is a no-op' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [5, 0, 1, 2, 3]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 4, 4, 0])])
+  it.update
+  ok !st.vehicle(:boat).placed?, 'no vehicle was placed'
+  eq true, st.switches[4], 'execution continues past the command'
+end
+
+check 'vehicle placement / graphic round-trip through the save' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 5, 10, 12]),
+            FakeCmd.new(IC::CHANGE_VEHICLE_GRAPHIC, [0, 1], string: 'Boat1')])
+  it.update
+  loaded = Game::State.load(db, st.to_h)
+  boat = loaded.vehicle(:boat)
+  eq [5, 10, 12], [boat.map_id, boat.x, boat.y], 'position round-trips'
+  eq 'Boat1', boat.charset_name, 'graphic round-trips'
+  eq 1, boat.charset_index
+end
+
+check 'the ridden vehicle round-trips through the save' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ok !st.boarded?, 'the party starts on foot'
+  st.boarded = :ship
+  ok st.boarded?
+  eq :ship, Game::State.load(db, st.to_h).boarded, 'the ridden vehicle survives a save'
+  # A save written before boarding existed restores on-foot.
+  legacy = st.to_h
+  legacy.delete(:boarded)
+  ok !Game::State.load(db, legacy).boarded?
+end
+
+# -- Show Battle Animation ----------------------------------------------------
+
+check 'Show Battle Animation records the request and waits with the flag' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # animation 7 on the player (target 10001), wait flag on.
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM, [7, 10001, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'the wait flag pauses the event'
+  eq :animation, it.wait_kind
+  eq 7, it.battle_animation[:animation]
+  eq 10001, it.battle_animation[:target]
+  eq true, it.battle_animation[:wait]
+  eq false, st.switches[1], 'the next command waits for the animation'
+  it.resume
+  it.update
+  eq true, st.switches[1], 'execution continues after the animation'
+end
+
+check 'Show Battle Animation without the wait flag does not pause' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM, [7, 10001, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok !it.waiting?, 'no wait without the flag'
+  eq true, st.switches[2], 'execution runs straight through'
+  eq 7, it.battle_animation[:animation], 'the request is still recorded for the renderer'
 end
 
 # -- Change / Trade Event Location --------------------------------------------

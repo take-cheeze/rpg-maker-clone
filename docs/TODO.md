@@ -343,15 +343,29 @@ The work below is roughly ordered by the critical path to a walkable game
   off for seeded / headless fights. Still to come: enemy-cast infliction,
   criticals / attributes, all-target skill/item scopes, the per-terrain backdrop
   and the RPG2000 Game Over graphic.
-  The remaining event commands (Inflict Damage, Name Input, Show Battle
-  Animation, vehicle boarding, tile substitution, ...) are TODO. **Change System
-  Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the
-  scene reloads the skin), **Change Screen Transitions** (10690) records the six
-  teleport / battle transition styles (save chunks 111–116; modelled for save
-  fidelity) and **Game Over** (12520) returns to the title, all handled.
-  **Vehicle locations** (boat / ship / airship) now persist in the save
-  (`Game::Vehicle`, `.lsd` chunks 105–107 / the Marshal save), though boarding
-  and piloting are still to come.
+  The remaining event commands (tile substitution and other native-render
+  effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
+  scene composites the animation's cells from its `Battle/<name>` sheet over the
+  target frame by frame and fires its screen flashes, holding the event with the
+  wait flag (per-cell zoom / tone and target-only flashes are approximations for
+  now). **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
+  place a boat / ship / airship and set its CharSet (persisted via
+  `Game::Vehicle`), and the party can now **board and pilot** a placed vehicle on
+  the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow
+  their terrain). Placed vehicles are **drawn on the map** from their CharSet, the
+  ridden one following the party under the hero, and the **airship floats above a
+  ground shadow** (the vehicle's own BGM is still to come). **Enter Hero Name**
+  (10740) opens a character-entry widget that renames a
+  party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
+  "show message" flag — a level-up queues one message per level gained, shown
+  through the message window before the event continues (a small reusable
+  pending-message queue on the interpreter); **Change System Graphics** (10680)
+  overrides the windowskin / font (save chunks 15 / 17; the scene reloads the
+  skin); **Change Screen Transitions** (10690) records the six teleport / battle
+  transition styles (save chunks 111–116; modelled for save fidelity); and **Game
+  Over** (12520) returns to the title — all handled. **Vehicle locations** (boat /
+  ship / airship) also persist in the save (`Game::Vehicle`, `.lsd` chunks
+  105–107 / the Marshal save).
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
