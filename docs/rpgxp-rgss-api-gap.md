@@ -96,8 +96,9 @@ one axis and the centre fills the rest, so the selection box keeps a sharp borde
 at any size. So the whole menu/message/shop/battle UI renders — framed windows,
 text, selection cursor and message pause. The content blit already clips to the
 content area (its source rect is the content-area size, so taller `contents` are
-cropped and scrolled, not overflowed). **Remaining:** `stretch` (tiled vs stretched
-background) is ignored, and the RMXP windowskin source-rect constants are
+cropped and scrolled, not overflowed). `stretch=` picks between the stretched
+(default) windowskin background and a tiled one (the 128×128 tile repeated at 1:1
+across the window). **Remaining:** the RMXP windowskin source-rect constants are
 best-effort until a game exercises them.
 
 ### 3. `Tilemap` ⚠️ (tiles + animated autotiles rendered; priority layering pending)
