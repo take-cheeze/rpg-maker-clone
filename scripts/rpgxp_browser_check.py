@@ -562,6 +562,7 @@ def main():
             except subprocess.TimeoutExpired:
                 proc.kill()
             httpd.shutdown()
+            httpd.server_close()
 
     print(f"frames written to {args.out}/rpgxp-browser-*.png")
     if failures:
