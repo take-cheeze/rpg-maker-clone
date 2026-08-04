@@ -66,6 +66,31 @@ assert 'MZ.core_scripts keeps the MZ engine module order' do
   assert_equal indices, indices.sort
 end
 
+assert 'MZ.runnable_scripts drops the loader and the WASM-gated decoder' do
+  scripts = MZ.runnable_scripts
+  # The host drives the load order itself, so MZ's dynamic <script>-injection
+  # loader is never evaluated...
+  assert_false scripts.include?("js/main.js")
+  # ...and the Vorbis decoder needs WebAssembly (absent from the quickjs host)
+  # and is audio-only, so it is skipped rather than throwing at load.
+  assert_false scripts.include?("js/libs/vorbisdecoder.js")
+  # Everything else is kept, in the same order as CORE_SCRIPTS.
+  expected = MZ.core_scripts - ["js/main.js", "js/libs/vorbisdecoder.js"]
+  assert_equal expected, scripts
+  # The engine core and PIXI must survive the filtering.
+  assert_true scripts.include?("js/rmmz_core.js")
+  assert_true scripts.include?("js/libs/pixi.js")
+end
+
+assert 'MZ.host_globals_js defines the DOM globals rmmz_managers needs' do
+  js = MZ.host_globals_js
+  # rmmz_managers.js aborts its module if these are undefined; the shim must
+  # define both, and guard so re-evaluating does not clobber a real one.
+  assert_true js.include?("HTMLVideoElement")
+  assert_true js.include?("HTMLImageElement")
+  assert_true js.include?("=== 'undefined'")
+end
+
 assert 'MZ.runtime_available? is false until the WebGL backend lands' do
   assert_false MZ.runtime_available?
 end
