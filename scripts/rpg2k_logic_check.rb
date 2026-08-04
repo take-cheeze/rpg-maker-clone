@@ -1108,10 +1108,12 @@ end
 
 # -- Store Terrain ID / Store Event ID ---------------------------------------
 
-# A map_info hook: terrain id is x*10+y, and an event id 7 sits at (2, 3).
+# A map_info hook: terrain id is x*10+y, and an event id 7 sits at (2, 3) facing
+# right (6), for the Store Terrain / Event ID and Control Variables commands.
 class FakeMapInfo
   def terrain_id(x, y); x * 10 + y; end
   def event_id_at(x, y); (x == 2 && y == 3) ? 7 : 0; end
+  def event_position(id); id == 7 ? { x: 2, y: 3, direction: 6 } : nil; end
 end
 
 check 'Store Terrain ID reads a constant tile and a variable-addressed tile' do
@@ -2143,6 +2145,38 @@ check 'Control Variables reads item count and equipped count (operand type 4)' d
   eq 2, st.variables[2]                                        # two members equip it
 end
 
+check 'Control Variables reads the hero position (operand type 6, ref 10001)' do
+  st = new_state
+  st.map_id = 12; st.x = 5; st.y = 8; st.direction = 4
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10001, 0]),  # map id
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 10001, 1]),  # x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 6, 10001, 2]),  # y
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 6, 10001, 3])]) # facing
+  it.update
+  eq 12, st.variables[1]
+  eq 5, st.variables[2]
+  eq 8, st.variables[3]
+  eq 4, st.variables[4]
+end
+
+check 'Control Variables reads a map event position (operand type 6)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new                                  # event 7 at (2,3) dir 6
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 7, 1]),  # event 7 x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 7, 2]),  # event 7 y
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 6, 7, 3]),  # event 7 facing
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 6, 7, 0]),  # event map id -> 0
+            FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 6, 9, 1])]) # unknown event -> 0
+  it.update
+  eq 2, st.variables[1]
+  eq 3, st.variables[2]
+  eq 6, st.variables[3]
+  eq 0, st.variables[4]                                          # a map event's map id reads 0
+  eq 0, st.variables[5]                                          # unknown event reads 0
+end
+
 check 'Control Variables reads an actor stat (operand type 5)' do
   st = party_state
   a = st.party.actor_by_id(1) # atk 10, max_hp 100
@@ -2368,6 +2402,16 @@ end
 
 check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' do
   eq true, run_actor_cond([5, 1, 6, 3]).switches[2] # has-state -> false -> else
+end
+
+check 'Conditional Branch: party riding a vehicle (type 7)' do
+  # type 7, param1 the vehicle (0 boat / 1 ship / 2 airship).
+  st = run_actor_cond([7, 1]) { |s| s.boarded = :ship }
+  eq true, st.switches[1]                            # riding the ship -> if-branch
+  st = run_actor_cond([7, 0]) { |s| s.boarded = :ship }
+  eq true, st.switches[2]                            # asked about the boat -> else
+  st = run_actor_cond([7, 2])                        # on foot (boarded nil)
+  eq true, st.switches[2]                            # not aboard -> else
 end
 
 # -- Input Number -------------------------------------------------------------

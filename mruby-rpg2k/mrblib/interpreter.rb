@@ -918,8 +918,40 @@ module Game
       when 3 then random_operand(cmd)                      # random in a range
       when 4 then item_operand(cmd)                        # item count / equipped
       when 5 then actor_operand(cmd)                       # an actor's stat
+      when 6 then event_operand(cmd)                       # a character's position
       when 7 then other_operand(cmd)                       # gold / timer / ...
       else cmd.param(5)
+      end
+    end
+
+    # Operand type 6: a positional value of a character. param5 selects it (10001
+    # the hero / party, a positive id a map event); param6 the value (0 map id,
+    # 1 x tile, 2 y tile, 3 facing, in RPG2000's 2/4/6/8 numpad convention).
+    # Screen coordinates (4 / 5) are not modelled and read 0, and -- matching a
+    # long-standing RPG_RT quirk -- a *map event's* map id also reads 0. An
+    # unresolvable reference (no map_info hook, unknown event) reads 0.
+    def event_operand(cmd)
+      ref = cmd.param(5)
+      attr = cmd.param(6)
+      if ref == 10001 # the hero / party leader
+        case attr
+        when 0 then @state.map_id
+        when 1 then @state.x
+        when 2 then @state.y
+        when 3 then @state.direction
+        else 0
+        end
+      elsif ref > 0 && ref < 10000 && @map_info.respond_to?(:event_position)
+        pos = @map_info.event_position(ref)
+        return 0 unless pos
+        case attr
+        when 1 then pos[:x]
+        when 2 then pos[:y]
+        when 3 then pos[:direction]
+        else 0 # event map id (RPG2000 quirk) and screen coords read 0
+        end
+      else
+        0
       end
     end
 
@@ -1252,6 +1284,10 @@ module Game
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
+      when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
+             # 1 ship / 2 airship)
+        v = cmd.param(1)
+        v >= 0 && v < Vehicle::TYPES.size && @state.boarded == Vehicle::TYPES[v]
       else true
       end
     end
