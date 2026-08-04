@@ -128,7 +128,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
   Change Encounter Rate, Change System BGM / SFX, Show Inn,
-  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Show/Move/Erase Picture,
+  Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
+  Show/Move/Erase Picture,
   Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
@@ -250,15 +251,35 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
-  the view holds where locking began). All four share the `:screen` wait. **Show
-  Picture** now renders (see the interpreter bullet above). Transitions/fade and
-  weather remain, and the tint/flash still need `RGSS::Viewport` tone/alpha
-  support in C++ to show
+  the view holds where locking began). **Erase Screen** (11010) / **Show Screen**
+  (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) that
+  eases like the tint over a fixed transition and is held erased until a Show,
+  recording the requested transition style (fade / block / stripe / scroll) for
+  fidelity while modelling only the fade. All share the `:screen` wait, so event
+  timing around them is correct. **Show Picture** now renders (see the
+  interpreter bullet above). Weather remains, and the tint / flash / screen-fade
+  overlays still need `RGSS::Viewport` tone/alpha support in C++ to actually
+  darken or colour what is drawn
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
-  command list. Save and End Game work; item / skill / equip / status are
-  placeholders still to be built from the parsed `term`/item/skill/actor data.
+  command list. Save, End Game, **Item** and **Equip** work; skill / status are
+  placeholders still to be built from the parsed `term`/skill/actor data. The
+  **Item** command opens `Scene::ItemMenu`: it lists the party's usable medicines
+  (database item type 6) with their held counts, applies a single-target item to
+  a chosen ally or an all-ally item (scope 1) to the whole party, restores HP/SP
+  (flat + percentage of max, clamped), consumes one on a use that had any effect,
+  and greys out / reports a use with no effect (a target already full). The
+  **Equip** command opens `Scene::EquipMenu`: it shows a party member's five
+  equipment slots and stats (LEFT/RIGHT cycle members), and for a chosen slot
+  lists the bag's fitting items (plus Remove); equipping swaps the previously-worn
+  item back into the bag and recomputes stats. The decision logic is on
+  `Game::Party` (`field_items` / `item_recovery` / `item_effective?` / `use_item`
+  for items; `equip_candidates` / `equip_from_bag` / `unequip_to_bag` for equip),
+  covered by `scripts/rpg2k_logic_check.rb`; the RGSS windows are the
+  untestable-here UI. Book (7) / seed (8) / switch (9) item use, the item
+  usable-occasion gate, and two-handed / dual-wield equipping are later
+  refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -287,8 +308,9 @@ The work below is roughly ordered by the critical path to a walkable game
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
-- Item / Skill / Equip / Status menu screens — the menu framework and party
-  data are in place; these screens still need building
+- Skill / Status menu screens — the menu framework and party data are in place,
+  and the Item and Equip screens now exist (see Menu scene above); Skill and
+  Status still need building
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
@@ -484,5 +506,12 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     map interpreter instead of a bare out-of-loop `SceneManager.push`, which
     deadlocked on the frozen encounter-effect intro. Runs on Lunatic-Core (real
     battlers/battleback) and logs `[MV-BTL] reached_battle=<bool>`.
+  - ✅ Menu smoke: `--mv_menu_test` opens `Scene_Menu` via the engine's real
+    `callMenu` path (re-asserting `Scene_Map.menuCalling`) and logs
+    `[MV-MENU] reached_menu=<bool>`.
+  - ✅ Save smoke: `--mv_save_test` runs a save+load round-trip through
+    `DataManager` (save → `StorageManager.exists` → load) and logs
+    `[MV-SAVE] saved=.. exists=.. loaded=..`, confirming the localStorage-backed
+    save path writes and reloads.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).

@@ -197,7 +197,50 @@ module RGSS
   class Tilemap
   end
 
+  # RGSS Window: the framed, scrollable box every Window_Base subclass (message,
+  # command, menu, shop, battle status) builds on. Pure-Ruby property holder for
+  # now so the stock RGSS scripts that create and drive a Window run — they set a
+  # windowskin and draw into a real `contents` Bitmap, which works; the native
+  # frame/cursor/pause compositing is future work (tracked in
+  # docs/rpgxp-rgss-api-gap.md). `contents` defaults to nil (RGSS starts a Window
+  # with no contents until the game assigns one).
   class Window
+    attr_accessor :windowskin, :contents, :cursor_rect, :x, :y, :width, :height,
+                  :ox, :oy, :opacity, :back_opacity, :contents_opacity,
+                  :visible, :z, :active, :pause, :stretch
+    attr_reader :viewport
+
+    def initialize(viewport = nil)
+      @viewport = viewport
+      @windowskin = nil
+      @contents = nil
+      @cursor_rect = Rect.new(0, 0, 0, 0)
+      @x = 0
+      @y = 0
+      @width = 0
+      @height = 0
+      @ox = 0
+      @oy = 0
+      @opacity = 255
+      @back_opacity = 255
+      @contents_opacity = 255
+      @visible = true
+      @z = 0
+      @active = true
+      @pause = false
+      @stretch = true
+      @disposed = false
+    end
+
+    def update; end
+
+    def dispose
+      @disposed = true
+    end
+
+    def disposed?
+      @disposed
+    end
   end
 
   class RGSSError < StandardError

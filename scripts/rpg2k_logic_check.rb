@@ -1006,6 +1006,61 @@ check 'Pan Screen (op 2) with a wait pauses until the scroll finishes' do
   eq [16, 0], st.screen.pan_offset
 end
 
+# -- Erase / Show Screen ------------------------------------------------------
+
+check 'Erase Screen fades to black, pauses the event, then holds erased' do
+  st = new_state
+  eq 0, st.screen.fade_level, 'screen visible by default'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Erase Screen suspends until the fade settles'
+  eq :screen, it.wait_kind
+  ok st.screen.fading?, 'the fade is in progress'
+  ok !st.switches[1], 'the next command has not run yet'
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  eq 255, st.screen.fade_level, 'fully black'
+  ok st.screen.erased?, 'the screen is held erased'
+  it.resume
+  it.update
+  eq true, st.switches[1], 'the event continued once the fade settled'
+end
+
+check 'Show Screen fades back in from black' do
+  st = new_state
+  st.screen.erase(0, 32)
+  st.screen.update until !st.screen.fading? # start fully black
+  eq 255, st.screen.fade_level
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_SCREEN, [0])])
+  it.update
+  ok it.waiting?, 'Show Screen also waits for its fade'
+  st.screen.update until !st.screen.fading?
+  eq 0, st.screen.fade_level, 'fully visible again'
+  ok !st.screen.erased?
+end
+
+check 'Show Screen when already visible does not pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_SCREEN, [0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok !it.waiting?, 'a no-op show settles immediately'
+  eq true, st.switches[2], 'the event ran straight through'
+end
+
+check 'Erase Screen records the transition style and ramps the level' do
+  st = new_state
+  st.screen.erase(3, 32) # transition style 3 (a block/stripe variant)
+  eq 3, st.screen.fade_transition, 'the style is recorded for fidelity'
+  before = st.screen.fade_level
+  st.screen.update
+  ok st.screen.fade_level > before, 'the level eases toward black'
+  ok st.screen.fade_level < 255, 'over time, not instantly'
+end
+
 check 'conditional branch on the timer' do
   st = new_state
   st.timer_frames = 30 * 60 # 30 seconds remaining
@@ -1190,11 +1245,15 @@ class SkillRow < CurveRow
   def skills; FakeLearnTable.new(@learns); end
 end
 FakeActorSystem = Struct.new(:party)
-# A database item row exposing just the equipment-bonus fields Game::Actor reads.
+# A database item row exposing the equipment-bonus fields Game::Actor reads plus
+# the medicine recovery/scope fields Game::Party#use_item reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
-                      :max_hp_points, :max_sp_points, :type)
-def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0)
-  FakeItem.new(atk, dfn, spi, agi, mhp, msp, type)
+                      :max_hp_points, :max_sp_points, :type, :name, :scope,
+                      :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate)
+def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
+              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0)
+  FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
+               rhp, rhp_rate, rsp, rsp_rate)
 end
 class FakeActorDB
   attr_reader :player, :system, :item
@@ -1500,6 +1559,154 @@ check 'Change Equipment command equips into the type slot and removes' do
   eq 3, a.atk
   eq 0, a.equipment[0]
   eq 8, a.equipment[2] # armour still on
+end
+
+# -- Field item menu (Game::Party medicine use) ------------------------------
+
+# A two-actor party (Hero max 100/30, Ally max 50/20) plus the given item table,
+# for the medicine-use checks.
+def item_party(items)
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items)), 1, 0, 0)
+end
+
+check 'field_items lists only held medicines, in id order with counts' do
+  items = { 5 => fake_item(type: 6, rhp: 50),   # medicine
+            7 => fake_item(type: 1, atk: 10),   # weapon -- not field-usable
+            9 => fake_item(type: 6, rsp: 10) }  # medicine
+  st = item_party(items)
+  st.party.gain_item(9, 2)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
+  eq [[5, 1], [9, 2]], st.party.field_items
+end
+
+check 'item_recovery sums the flat amount and the percentage (integer math)' do
+  st = item_party({})
+  hero = st.party.leader                       # max_hp 100, max_mp 30
+  it = fake_item(type: 6, rhp: 10, rhp_rate: 25, rsp: 3, rsp_rate: 10)
+  eq [35, 6], st.party.item_recovery(it, hero) # 10 + 100*25/100 ; 3 + 30*10/100
+end
+
+check 'use_item heals a single-target medicine, clamps and consumes one' do
+  items = { 5 => fake_item(type: 6, rhp: 40) }
+  st = item_party(items)
+  st.party.gain_item(5, 3)
+  hero = st.party.leader
+  hero.change_hp(-70)                          # 100 -> 30
+  affected = st.party.use_item(5, hero)
+  eq [hero], affected
+  eq 70, hero.hp                               # 30 + 40
+  eq 2, st.party.item_count(5)
+  # A second use overheals but clamps to max, still consuming one.
+  st.party.use_item(5, hero)
+  eq 100, hero.hp
+  eq 1, st.party.item_count(5)
+end
+
+check 'use_item on an already-full target has no effect and consumes nothing' do
+  items = { 5 => fake_item(type: 6, rhp: 40) }
+  st = item_party(items)
+  st.party.gain_item(5, 2)
+  hero = st.party.leader                       # full HP
+  eq false, st.party.item_effective?(5, hero)
+  eq [], st.party.use_item(5, hero)
+  eq 2, st.party.item_count(5)                 # not consumed
+end
+
+check 'an all-ally medicine heals the whole party and consumes one' do
+  items = { 8 => fake_item(type: 6, scope: 1, rhp_rate: 100) } # full HP heal
+  st = item_party(items)
+  st.party.gain_item(8, 1)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.change_hp(-60)                          # 100 -> 40
+  ally.change_hp(-30)                          # 50  -> 20
+  affected = st.party.use_item(8, nil)         # all-ally: target arg ignored
+  eq [1, 2], affected.map { |a| a.id }.sort
+  eq 100, hero.hp
+  eq 50, ally.hp
+  eq 0, st.party.item_count(8)
+end
+
+check 'use_item restores MP and item_effective? tracks the SP deficit' do
+  items = { 6 => fake_item(type: 6, rsp: 15) }
+  st = item_party(items)
+  st.party.gain_item(6, 1)
+  hero = st.party.leader
+  hero.change_mp(-20)                          # 30 -> 10
+  eq true, st.party.item_effective?(6, hero)
+  st.party.use_item(6, hero)
+  eq 25, hero.mp                               # 10 + 15
+  eq 0, st.party.item_count(6)
+end
+
+# -- Field equip menu (Game::Party bag-aware equip) --------------------------
+
+# A single-hero party (base stats maxHP10/maxSP5/atk3/def2/int1/agi4) plus the
+# given item table, for the equip-menu checks.
+def equip_party(items)
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
+                       [1], items)
+  Game::State.new(Game::Party.new(db), 1, 0, 0)
+end
+
+check 'equip_candidates lists held items for a slot, in id order' do
+  items = { 7 => fake_item(atk: 15, type: 1),   # weapon  -> slot 0
+            9 => fake_item(atk: 5,  type: 1),   # weapon  -> slot 0
+            8 => fake_item(dfn: 9,  type: 3),   # armour  -> slot 2
+            5 => fake_item(type: 6, rhp: 10) }  # medicine (not equipment)
+  st = equip_party(items)
+  [7, 9, 8, 5].each { |id| st.party.gain_item(id, 1) }
+  eq [[7, 1], [9, 1]], st.party.equip_candidates(0)   # weapons
+  eq [[8, 1]], st.party.equip_candidates(2)           # armour
+  eq [], st.party.equip_candidates(1)                 # shield: none held
+end
+
+check 'equip_from_bag equips, consumes the item and returns the old one' do
+  items = { 7 => fake_item(atk: 15, type: 1), 9 => fake_item(atk: 5, type: 1) }
+  st = equip_party(items)
+  a = st.party.leader
+  st.party.gain_item(7, 1)
+  st.party.gain_item(9, 1)
+  eq 3, a.atk                        # base atk
+  ok st.party.equip_from_bag(a, 7)
+  eq 18, a.atk                       # +15
+  eq 7, a.equipment[0]
+  eq 0, st.party.item_count(7)       # consumed from the bag
+  # Swapping to weapon 9 returns weapon 7 to the bag.
+  ok st.party.equip_from_bag(a, 9)
+  eq 8, a.atk                        # base 3 + 5
+  eq 9, a.equipment[0]
+  eq 0, st.party.item_count(9)
+  eq 1, st.party.item_count(7)       # the replaced weapon came back
+end
+
+check 'unequip_to_bag clears the slot and returns the item to the bag' do
+  st = equip_party({ 8 => fake_item(dfn: 9, type: 3) })
+  a = st.party.leader
+  st.party.gain_item(8, 1)
+  st.party.equip_from_bag(a, 8)
+  eq 11, a.def                       # base 2 + 9
+  eq 8, st.party.unequip_to_bag(a, 2)
+  eq 2, a.def
+  eq 0, a.equipment[2]
+  eq 1, st.party.item_count(8)       # back in the bag
+  eq 0, st.party.unequip_to_bag(a, 2) # already empty -> 0
+end
+
+check 'equip_from_bag rejects a non-equippable or unheld item' do
+  items = { 5 => fake_item(type: 6, rhp: 10), 7 => fake_item(atk: 15, type: 1) }
+  st = equip_party(items)
+  a = st.party.leader
+  st.party.gain_item(5, 1)
+  eq false, st.party.equip_from_bag(a, 5)   # medicine: not equipment
+  eq false, st.party.equip_from_bag(a, 7)   # not held
+  eq 1, st.party.item_count(5)              # untouched
+  eq 0, a.equipment[0]
 end
 
 # -- Control Variables operands ----------------------------------------------

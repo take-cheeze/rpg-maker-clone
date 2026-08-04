@@ -2156,6 +2156,10 @@ class RPG2k
 
       def select_command
         case COMMANDS[@index]
+        when "Item"
+          @parent.push Scene::ItemMenu.new(@parent, @state)
+        when "Equip"
+          @parent.push Scene::EquipMenu.new(@parent, @state)
         when "Save"
           if @state.save_access
             show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
@@ -2193,6 +2197,405 @@ class RPG2k
         return unless @message
         @message[:window].dispose
         @message = nil
+      end
+    end
+
+    # The field item screen (main menu -> Item). Lists the party's usable
+    # medicines with their held counts; picking one either applies it to the
+    # whole party (an all-ally item) or asks which ally to use it on (a
+    # single-target item). Using an item consumes one and refreshes the list; an
+    # item that would have no effect (everyone already full) is reported and not
+    # consumed. All decision logic lives in Game::Party (field_items / use_item /
+    # item_effective?), which the host harnesses test; this class is the RGSS UI
+    # over it, mirroring Scene::Menu's window/cursor/message helpers.
+    class ItemMenu < Base
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      LINE_H = 16
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @skin = make_windowskin
+        @mode = :items          # :items list, or :target selection
+        @item_index = 0
+        @target_index = 0
+        @pending_item = nil
+        @message = nil
+        build_item_window
+      end
+
+      def dispose
+        close_message
+        @item_window.dispose if @item_window
+        @target_window.dispose if @target_window
+      end
+
+      def update
+        return drive_message if @message
+        @mode == :target ? update_target : update_items
+      end
+
+      private
+
+      # Cached list of [id, count] pairs; invalidated after a use changes counts.
+      def items
+        @items ||= @state.party.field_items
+      end
+
+      def invalidate_items
+        @items = nil
+      end
+
+      def update_items
+        if Input.trigger?(Input::B)
+          @parent.pop
+        elsif Input.trigger?(Input::DOWN) && @item_index < items.size - 1
+          @item_index += 1
+          refresh_item_cursor
+        elsif Input.trigger?(Input::UP) && @item_index > 0
+          @item_index -= 1
+          refresh_item_cursor
+        elsif Input.trigger?(Input::C)
+          choose_item
+        end
+      end
+
+      def choose_item
+        return if items.empty?
+        id, = items[@item_index]
+        it = @state.party.db_item(id)
+        if it && it.scope == 1
+          apply_item(id, nil)          # all-ally: no target prompt
+        else
+          @pending_item = id
+          @mode = :target
+          @target_index = 0
+          build_target_window
+        end
+      end
+
+      def update_target
+        party = @state.party.actors
+        if Input.trigger?(Input::B)
+          leave_target_mode
+        elsif Input.trigger?(Input::DOWN) && @target_index < party.size - 1
+          @target_index += 1
+          refresh_target_cursor
+        elsif Input.trigger?(Input::UP) && @target_index > 0
+          @target_index -= 1
+          refresh_target_cursor
+        elsif Input.trigger?(Input::C)
+          apply_item(@pending_item, party[@target_index])
+        end
+      end
+
+      def apply_item(id, actor)
+        affected = @state.party.use_item(id, actor)
+        if affected.empty?
+          show_message("It had no effect.")
+        else
+          names = affected.map { |a| a.name.to_s }.join(", ")
+          show_message("Used on #{names}.", :used)
+        end
+      end
+
+      def leave_target_mode
+        @pending_item = nil
+        @mode = :items
+        if @target_window
+          @target_window.dispose
+          @target_window = nil
+        end
+      end
+
+      # After a successful use, drop back to the item list and rebuild it (the
+      # count fell, and a depleted item leaves the list). Keeps the cursor in
+      # range when the last item is used up.
+      def refresh_after_use
+        leave_target_mode
+        invalidate_items
+        @item_index = items.size - 1 if @item_index >= items.size
+        @item_index = 0 if @item_index < 0
+        build_item_window
+      end
+
+      def build_item_window
+        @item_window.dispose if @item_window
+        rows = items
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = [rows.size, 1].max * LINE_H
+        @item_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
+        @item_window.z = 400
+        @item_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        if rows.empty?
+          c.draw_text 0, 2, inner_w, LINE_H, "No items"
+        else
+          rows.each_with_index do |(id, count), i|
+            it = @state.party.db_item(id)
+            name = (it && it.name.to_s)
+            name = "Item #{id}" if name.nil? || name.empty?
+            c.draw_text 0, i * LINE_H + 2, inner_w - 40, LINE_H, name
+            c.draw_text inner_w - 40, i * LINE_H + 2, 40, LINE_H, ":#{count}"
+          end
+        end
+        @item_window.contents = c
+        refresh_item_cursor
+      end
+
+      def refresh_item_cursor
+        return unless @item_window
+        h = items.empty? ? 0 : LINE_H
+        @item_window.cursor_rect =
+          Rect.new(0, @item_index * LINE_H, @item_window.contents.width, h)
+      end
+
+      def build_target_window
+        @target_window.dispose if @target_window
+        party = @state.party.actors
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = party.size * (LINE_H * 2)
+        @target_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
+                                    SCREEN_W, h + Window::BORDER * 2)
+        @target_window.z = 450
+        @target_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        party.each_with_index do |a, i|
+          y = i * LINE_H * 2
+          c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          c.draw_text 0, y + LINE_H, inner_w, LINE_H,
+                      "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+        end
+        @target_window.contents = c
+        refresh_target_cursor
+      end
+
+      def refresh_target_cursor
+        return unless @target_window
+        @target_window.cursor_rect =
+          Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
+                   LINE_H * 2)
+      end
+
+      def drive_message
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        done = @message[:done]
+        close_message
+        # A successful use drops back to the (rebuilt) item list; a no-effect use
+        # stays in the current mode so the player can pick another target/item.
+        refresh_after_use if done == :used
+      end
+
+      def show_message(text, done = nil)
+        return if @message
+        w = SCREEN_W - 40
+        win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
+        win.z = 500
+        win.windowskin = @skin
+        c = Bitmap.new(w - Window::BORDER * 2, 14)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, 14, text
+        win.contents = c
+        @message = { window: win, done: done }
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
+      end
+    end
+
+    # The field equip screen (main menu -> Equip). Shows one party member's five
+    # equipment slots and current stats; LEFT/RIGHT cycle the member. Choosing a
+    # slot lists the bag's items that fit it (plus Remove); choosing one equips it
+    # -- swapping the previously-worn item back into the bag -- or empties the
+    # slot. The bag-aware equip logic is Game::Party#equip_candidates /
+    # equip_from_bag / unequip_to_bag (host-tested); this is the RGSS UI over it,
+    # mirroring Scene::ItemMenu's helpers. Actor-cycling covers the party; two-
+    # handed weapons and dual-wield are later refinements.
+    class EquipMenu < Base
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      LINE_H = 16
+      SLOTS = ["Weapon", "Shield", "Armor", "Helmet", "Accessory"].freeze
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @skin = make_windowskin
+        @actor_index = 0
+        @slot_index = 0
+        @cand_index = 0
+        @mode = :slots          # :slots list, or :items candidate pick
+        build_stats_window
+        build_slot_window
+      end
+
+      def dispose
+        @stats_window.dispose if @stats_window
+        @slot_window.dispose if @slot_window
+        @cand_window.dispose if @cand_window
+      end
+
+      def update
+        @mode == :items ? update_items : update_slots
+      end
+
+      private
+
+      def actor
+        @state.party.actors[@actor_index]
+      end
+
+      def item_name(id)
+        return "-" if id.nil? || id == 0
+        it = @state.party.db_item(id)
+        n = it && it.name.to_s
+        n.nil? || n.empty? ? "Item #{id}" : n
+      end
+
+      def update_slots
+        party = @state.party.actors
+        if Input.trigger?(Input::B)
+          @parent.pop
+        elsif Input.trigger?(Input::DOWN) && @slot_index < SLOTS.size - 1
+          @slot_index += 1
+          refresh_slot_cursor
+        elsif Input.trigger?(Input::UP) && @slot_index > 0
+          @slot_index -= 1
+          refresh_slot_cursor
+        elsif Input.trigger?(Input::RIGHT) && @actor_index < party.size - 1
+          @actor_index += 1
+          rebuild_for_actor
+        elsif Input.trigger?(Input::LEFT) && @actor_index > 0
+          @actor_index -= 1
+          rebuild_for_actor
+        elsif Input.trigger?(Input::C)
+          @cand_index = 0
+          @mode = :items
+          build_cand_window
+        end
+      end
+
+      def candidates
+        # The slot's fitting bag items, with a leading Remove entry (id 0).
+        @candidates ||= [[0, 0]] + @state.party.equip_candidates(@slot_index)
+      end
+
+      def update_items
+        if Input.trigger?(Input::B)
+          leave_items
+        elsif Input.trigger?(Input::DOWN) && @cand_index < candidates.size - 1
+          @cand_index += 1
+          refresh_cand_cursor
+        elsif Input.trigger?(Input::UP) && @cand_index > 0
+          @cand_index -= 1
+          refresh_cand_cursor
+        elsif Input.trigger?(Input::C)
+          apply_choice
+        end
+      end
+
+      def apply_choice
+        id, = candidates[@cand_index]
+        if id == 0
+          @state.party.unequip_to_bag(actor, @slot_index)
+        else
+          @state.party.equip_from_bag(actor, id)
+        end
+        leave_items
+        rebuild_for_actor
+      end
+
+      def leave_items
+        @candidates = nil
+        @mode = :slots
+        if @cand_window
+          @cand_window.dispose
+          @cand_window = nil
+        end
+      end
+
+      def rebuild_for_actor
+        @slot_index = SLOTS.size - 1 if @slot_index >= SLOTS.size
+        build_stats_window
+        build_slot_window
+      end
+
+      def build_stats_window
+        @stats_window.dispose if @stats_window
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = LINE_H * 3
+        @stats_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
+        @stats_window.z = 400
+        @stats_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        a = actor
+        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  Lv #{a.level}"
+        c.draw_text 0, LINE_H, inner_w, LINE_H,
+                    "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+        c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
+                    "Atk #{a.atk}  Def #{a.def}  Int #{a.int}  Agi #{a.agi}"
+        @stats_window.contents = c
+      end
+
+      def build_slot_window
+        @slot_window.dispose if @slot_window
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = SLOTS.size * LINE_H
+        y = LINE_H * 3 + Window::BORDER * 2
+        @slot_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
+        @slot_window.z = 400
+        @slot_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        eq = actor.equipment
+        SLOTS.each_with_index do |label, i|
+          c.draw_text 0, i * LINE_H, 80, LINE_H, label
+          c.draw_text 80, i * LINE_H, inner_w - 80, LINE_H, item_name(eq[i])
+        end
+        @slot_window.contents = c
+        refresh_slot_cursor
+      end
+
+      def refresh_slot_cursor
+        return unless @slot_window
+        @slot_window.cursor_rect =
+          Rect.new(0, @slot_index * LINE_H, @slot_window.contents.width, LINE_H)
+      end
+
+      def build_cand_window
+        @cand_window.dispose if @cand_window
+        rows = candidates
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = rows.size * LINE_H
+        @cand_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
+                                  SCREEN_W, h + Window::BORDER * 2)
+        @cand_window.z = 450
+        @cand_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        rows.each_with_index do |(id, count), i|
+          if id == 0
+            c.draw_text 0, i * LINE_H, inner_w, LINE_H, "(Remove)"
+          else
+            c.draw_text 0, i * LINE_H, inner_w - 40, LINE_H, item_name(id)
+            c.draw_text inner_w - 40, i * LINE_H, 40, LINE_H, ":#{count}"
+          end
+        end
+        @cand_window.contents = c
+        refresh_cand_cursor
+      end
+
+      def refresh_cand_cursor
+        return unless @cand_window
+        @cand_window.cursor_rect =
+          Rect.new(0, @cand_index * LINE_H, @cand_window.contents.width, LINE_H)
       end
     end
 

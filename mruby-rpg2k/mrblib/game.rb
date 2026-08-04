@@ -1192,6 +1192,120 @@ module Game
       @gold = 0 if @gold < 0
       @gold = 999_999 if @gold > 999_999
     end
+
+    # RPG2000 database item type for a consumable medicine (薬). Types 1..5 are
+    # the equipment slots (see Actor::EQUIP_ORDER); 6 is the healing item the
+    # field menu can use. Book (7) / seed (8) / switch (9) menu use is a later
+    # refinement.
+    ITEM_MEDICINE = 6
+
+    # The database row for a held item id, or nil when the database has no item
+    # table (a bare test fixture) or no such row.
+    def db_item(id)
+      return nil unless @db.respond_to?(:item)
+      @db.item[id]
+    end
+
+    # Whether item `id` can be used from the field (main-menu) item screen.
+    # Currently: a medicine the party actually holds.
+    def field_usable?(id)
+      it = db_item(id)
+      !it.nil? && it.type == ITEM_MEDICINE && item_count(id) > 0
+    end
+
+    # The bag's field-usable items as `[id, count]` pairs in ascending id order,
+    # for the item menu's list.
+    def field_items
+      @items.keys.sort.select { |id| field_usable?(id) }
+            .map { |id| [id, item_count(id)] }
+    end
+
+    # The HP and SP a medicine restores to `actor`: the flat amount plus a
+    # percentage of the actor's maximum, summed with RPG2000's integer math.
+    def item_recovery(it, actor)
+      hp = (it.recover_hp || 0) + (actor.max_hp * (it.recover_hp_rate || 0)) / 100
+      mp = (it.recover_sp || 0) + (actor.max_mp * (it.recover_sp_rate || 0)) / 100
+      [hp, mp]
+    end
+
+    # Whether using medicine `id` on `actor` would change anything -- RPG_RT
+    # forbids using a pure-recovery item on a target already at full HP/SP, so the
+    # menu greys those out. A restore of 0 (an item with no recovery) is never
+    # effective.
+    def item_effective?(id, actor)
+      it = db_item(id)
+      return false unless it && it.type == ITEM_MEDICINE && actor
+      hp, mp = item_recovery(it, actor)
+      (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+    end
+
+    # Use medicine `id`. A single-target item (scope 0) heals `actor`; an all-ally
+    # item (scope 1) heals the whole party regardless of `actor`. Applies the
+    # recovery (clamped to each target's maxima), consumes one from the bag only
+    # when it actually healed someone, and returns the actors it affected (empty
+    # when nothing changed, e.g. everyone was already full -- then nothing is
+    # consumed).
+    def use_item(id, actor = nil)
+      it = db_item(id)
+      return [] unless it && it.type == ITEM_MEDICINE && item_count(id) > 0
+      targets = it.scope == 1 ? @actors : [actor].compact
+      affected = []
+      targets.each do |t|
+        hp, mp = item_recovery(it, t)
+        before_hp = t.hp
+        before_mp = t.mp
+        t.change_hp(hp) if hp > 0
+        t.change_mp(mp) if mp > 0
+        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+      end
+      lose_item(id, 1) unless affected.empty?
+      affected
+    end
+
+    # The equipment slot index (0..4) a held item occupies by its database type
+    # -- weapon(1)->0, shield(2)->1, armour(3)->2, helmet(4)->3, accessory(5)->4
+    # -- or nil when the item is not equipment (or unknown). Mirrors
+    # Actor#equip_item's `type - 1` mapping.
+    def equip_slot_for(id)
+      it = db_item(id)
+      return nil unless it
+      t = it.type
+      (t >= 1 && t <= Actor::EQUIP_ORDER.size) ? t - 1 : nil
+    end
+
+    # Held items equippable in equipment `slot` (0..4), as [id, count] pairs in
+    # ascending id order -- the candidate list for the equip menu's chosen slot.
+    def equip_candidates(slot)
+      @items.keys.sort.select { |id| item_count(id) > 0 && equip_slot_for(id) == slot }
+            .map { |id| [id, item_count(id)] }
+    end
+
+    # Equip bag item `item_id` on `actor`, moving it through the inventory the way
+    # the equip menu does: take one from the bag, equip it into the slot its type
+    # dictates, and return the previously-equipped item (if any) to the bag. A
+    # no-op returning false unless the party holds the item and it is equipment;
+    # true on success. (Unlike the Change Equipment event command, which does not
+    # touch the bag, the menu swaps through it.)
+    def equip_from_bag(actor, item_id)
+      return false unless actor && item_count(item_id) > 0
+      slot = equip_slot_for(item_id)
+      return false if slot.nil?
+      previous = actor.equipment[slot]
+      actor.equip_item(item_id)
+      lose_item(item_id, 1)
+      gain_item(previous, 1) if previous && previous != 0
+      true
+    end
+
+    # Unequip `actor`'s `slot`, returning the removed item to the bag. Returns the
+    # removed item id (0 when the slot was already empty or the slot is invalid).
+    def unequip_to_bag(actor, slot)
+      return 0 unless actor && slot >= 0 && slot < Actor::EQUIP_ORDER.size
+      removed = actor.equipment[slot]
+      actor.unequip(slot)
+      gain_item(removed, 1) if removed && removed != 0
+      removed || 0
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
@@ -1696,6 +1810,10 @@ module Game
       @pan_ty = 0
       @pan_step = 1     # pixels moved toward the target per frame
       @pan_locked = false # when true the scene stops the camera following the hero
+      @fade = 0            # screen erasure: 0 fully visible .. 255 fully black
+      @fade_target = 0     # the level the current transition eases toward
+      @fade_frames = 0     # frames left in the current fade (0 = settled)
+      @fade_transition = 0 # RPG2000 transition style (see Erase/Show Screen)
     end
 
     # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
@@ -1729,8 +1847,25 @@ module Game
     # True while a pan/reset scroll has not yet reached its target.
     def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
 
+    # Screen erasure level (0 fully visible .. 255 fully black). The scene draws
+    # a black overlay at this opacity — the native half still to come, like the
+    # tint and flash overlays — so the level is modelled but does not yet darken
+    # the screen.
+    def fade_level; @fade; end
+
+    # The RPG2000 transition style requested by the last Erase / Show Screen
+    # (0 = fade, higher = block / stripe / scroll variants). Recorded for
+    # fidelity; only the fade is modelled.
+    def fade_transition; @fade_transition; end
+
+    # True while an erase / show fade is still in progress.
+    def fading?; @fade_frames > 0; end
+
+    # True once the screen is fully erased (held black until a Show Screen).
+    def erased?; @fade >= 255; end
+
     # True while any screen effect is still animating (drives the wait flag).
-    def busy?; tinting? || shaking? || flashing? || panning?; end
+    def busy?; tinting? || shaking? || flashing? || panning? || fading?; end
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
@@ -1778,6 +1913,19 @@ module Game
       end
     end
 
+    # Erase Screen: fade the screen out to black over `frames` frames using the
+    # given RPG2000 transition style. Held black afterwards until #show. A no-op
+    # (settles immediately) when the screen is already fully erased.
+    def erase(transition, frames)
+      fade_to(255, transition, frames)
+    end
+
+    # Show Screen: fade the screen back in from black over `frames` frames. A
+    # no-op when the screen is already fully visible.
+    def show(transition, frames)
+      fade_to(0, transition, frames)
+    end
+
     # Pan-operation direction (RPG2000: 0 up, 1 right, 2 down, 3 left) -> unit
     # camera delta. A positive x pans the view right, a positive y pans it down.
     PAN_DELTA = { 0 => [0, -1], 1 => [1, 0], 2 => [0, 1], 3 => [-1, 0] }.freeze
@@ -1809,9 +1957,30 @@ module Game
       update_shake
       update_flash
       update_pan
+      update_fade
     end
 
     private
+
+    # Start a fade toward `target` (0 visible / 255 black) over `frames` frames.
+    # Already at the target -> settle immediately so the command does not wait.
+    def fade_to(target, transition, frames)
+      @fade_transition = transition
+      @fade_target = target
+      if frames <= 0 || @fade == target
+        @fade = target
+        @fade_frames = 0
+      else
+        @fade_frames = frames
+      end
+    end
+
+    def update_fade
+      return if @fade_frames <= 0
+      @fade += (@fade_target - @fade) / @fade_frames
+      @fade_frames -= 1
+      @fade = @fade_target if @fade_frames.zero? # land exactly on the target
+    end
 
     def update_tint
       return if @frames <= 0
