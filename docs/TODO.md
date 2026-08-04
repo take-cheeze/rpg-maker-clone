@@ -486,23 +486,25 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   *skill learned* (2), *weapon equipped* (3) and *armor equipped* (4), matched to
   RMXP's `command_111`. The model's **Change Actor** commands mutate it: **Change
   HP** (311, with the allow-knockout floor), **Change SP** (312), **Recover All**
-  (314), **Change Level** (316, which learns newly-reached class skills and
-  regrows the level-derived stats), **Change Skills** (318 learn / forget) and
-  **Change Equipment** (319, weapon + four armor slots), each targeting a fixed or
-  variable-held actor id; the mutated per-actor state now persists through the
-  Marshal save. **Battle Processing** (301) navigates its result
+  (314), **Change EXP** (315) and **Change Level** (316) — both routed through the
+  RMXP EXP curve (`make_exp_list`: `Integer(exp_basis*(L+3)**pow / 5**pow)`,
+  `pow = 2.4 + exp_inflation/100`, ported from the editor's `Game_Actor`), so
+  levelling learns each level's class skills on the way up and keeps them on the
+  way down — **Change Skills** (318 learn / forget) and **Change Equipment** (319,
+  weapon + four armor slots), each targeting a fixed or variable-held actor id;
+  the mutated per-actor state (level, EXP, HP/SP, skills, equipment) now persists
+  through the Marshal save. **Battle Processing** (301) navigates its result
   branches — If Win (601), If Escape (602), If Lose (603), branch end (604) —
   running only the branch that matches the resolved outcome (a win by default,
   configurable via the interpreter's `battle_outcome`, since there is no battle
   system yet); the real `OpenGame.exe` XP test bed uses this structure. Covered
   by `mruby-rpgxp/test` and driven over the real test bed by
   `scripts/rpgxp_testbed_check.rb` (which now builds a `Game::Actor` for every
-  database actor). Still to come: the remaining **Change Actor** commands that need
-  the RMXP EXP curve — **Change EXP** (315) and **Change Level**'s exp alignment —
-  and **Change Parameters** (317, permanent stat deltas on top of the table); the
-  actor *state* (5) and enemy / character conditional sub-conditions; vehicle
-  move-route targets; and the many screen-effect / picture commands, plus the
-  battle system itself that Battle Processing would drive (skipped for now).
+  database actor). Still to come: **Change Parameters** (317, permanent stat deltas
+  on top of the table, via a per-actor `*_plus` set); the actor *state* (5) and
+  enemy / character conditional sub-conditions; vehicle move-route targets; and
+  the many screen-effect / picture commands, plus the battle system itself that
+  Battle Processing would drive (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1
