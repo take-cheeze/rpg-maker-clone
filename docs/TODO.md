@@ -235,8 +235,17 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
-  command list. Save and End Game work; item / skill / equip / status are
-  placeholders still to be built from the parsed `term`/item/skill/actor data.
+  command list. Save, End Game and **Item** work; skill / equip / status are
+  placeholders still to be built from the parsed `term`/skill/actor data. The
+  **Item** command opens `Scene::ItemMenu`: it lists the party's usable medicines
+  (database item type 6) with their held counts, applies a single-target item to
+  a chosen ally or an all-ally item (scope 1) to the whole party, restores HP/SP
+  (flat + percentage of max, clamped), consumes one on a use that had any effect,
+  and greys out / reports a use with no effect (a target already full). The
+  decision logic is `Game::Party#field_items` / `item_recovery` / `item_effective?`
+  / `use_item`, covered by `scripts/rpg2k_logic_check.rb`; the RGSS windows are
+  the untestable-here UI. Book (7) / seed (8) / switch (9) item use and the
+  usable-occasion gate are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -265,8 +274,9 @@ The work below is roughly ordered by the critical path to a walkable game
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
-- Item / Skill / Equip / Status menu screens — the menu framework and party
-  data are in place; these screens still need building
+- Skill / Equip / Status menu screens — the menu framework and party data are in
+  place, and the Item screen now exists (see Menu scene above); Skill / Equip /
+  Status still need building
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an

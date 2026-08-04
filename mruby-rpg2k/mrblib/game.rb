@@ -1192,6 +1192,75 @@ module Game
       @gold = 0 if @gold < 0
       @gold = 999_999 if @gold > 999_999
     end
+
+    # RPG2000 database item type for a consumable medicine (薬). Types 1..5 are
+    # the equipment slots (see Actor::EQUIP_ORDER); 6 is the healing item the
+    # field menu can use. Book (7) / seed (8) / switch (9) menu use is a later
+    # refinement.
+    ITEM_MEDICINE = 6
+
+    # The database row for a held item id, or nil when the database has no item
+    # table (a bare test fixture) or no such row.
+    def db_item(id)
+      return nil unless @db.respond_to?(:item)
+      @db.item[id]
+    end
+
+    # Whether item `id` can be used from the field (main-menu) item screen.
+    # Currently: a medicine the party actually holds.
+    def field_usable?(id)
+      it = db_item(id)
+      !it.nil? && it.type == ITEM_MEDICINE && item_count(id) > 0
+    end
+
+    # The bag's field-usable items as `[id, count]` pairs in ascending id order,
+    # for the item menu's list.
+    def field_items
+      @items.keys.sort.select { |id| field_usable?(id) }
+            .map { |id| [id, item_count(id)] }
+    end
+
+    # The HP and SP a medicine restores to `actor`: the flat amount plus a
+    # percentage of the actor's maximum, summed with RPG2000's integer math.
+    def item_recovery(it, actor)
+      hp = (it.recover_hp || 0) + (actor.max_hp * (it.recover_hp_rate || 0)) / 100
+      mp = (it.recover_sp || 0) + (actor.max_mp * (it.recover_sp_rate || 0)) / 100
+      [hp, mp]
+    end
+
+    # Whether using medicine `id` on `actor` would change anything -- RPG_RT
+    # forbids using a pure-recovery item on a target already at full HP/SP, so the
+    # menu greys those out. A restore of 0 (an item with no recovery) is never
+    # effective.
+    def item_effective?(id, actor)
+      it = db_item(id)
+      return false unless it && it.type == ITEM_MEDICINE && actor
+      hp, mp = item_recovery(it, actor)
+      (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+    end
+
+    # Use medicine `id`. A single-target item (scope 0) heals `actor`; an all-ally
+    # item (scope 1) heals the whole party regardless of `actor`. Applies the
+    # recovery (clamped to each target's maxima), consumes one from the bag only
+    # when it actually healed someone, and returns the actors it affected (empty
+    # when nothing changed, e.g. everyone was already full -- then nothing is
+    # consumed).
+    def use_item(id, actor = nil)
+      it = db_item(id)
+      return [] unless it && it.type == ITEM_MEDICINE && item_count(id) > 0
+      targets = it.scope == 1 ? @actors : [actor].compact
+      affected = []
+      targets.each do |t|
+        hp, mp = item_recovery(it, t)
+        before_hp = t.hp
+        before_mp = t.mp
+        t.change_hp(hp) if hp > 0
+        t.change_mp(mp) if mp > 0
+        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+      end
+      lose_item(id, 1) unless affected.empty?
+      affected
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.

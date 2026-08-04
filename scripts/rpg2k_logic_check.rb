@@ -1190,11 +1190,15 @@ class SkillRow < CurveRow
   def skills; FakeLearnTable.new(@learns); end
 end
 FakeActorSystem = Struct.new(:party)
-# A database item row exposing just the equipment-bonus fields Game::Actor reads.
+# A database item row exposing the equipment-bonus fields Game::Actor reads plus
+# the medicine recovery/scope fields Game::Party#use_item reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
-                      :max_hp_points, :max_sp_points, :type)
-def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0)
-  FakeItem.new(atk, dfn, spi, agi, mhp, msp, type)
+                      :max_hp_points, :max_sp_points, :type, :name, :scope,
+                      :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate)
+def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
+              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0)
+  FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
+               rhp, rhp_rate, rsp, rsp_rate)
 end
 class FakeActorDB
   attr_reader :player, :system, :item
@@ -1500,6 +1504,89 @@ check 'Change Equipment command equips into the type slot and removes' do
   eq 3, a.atk
   eq 0, a.equipment[0]
   eq 8, a.equipment[2] # armour still on
+end
+
+# -- Field item menu (Game::Party medicine use) ------------------------------
+
+# A two-actor party (Hero max 100/30, Ally max 50/20) plus the given item table,
+# for the medicine-use checks.
+def item_party(items)
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items)), 1, 0, 0)
+end
+
+check 'field_items lists only held medicines, in id order with counts' do
+  items = { 5 => fake_item(type: 6, rhp: 50),   # medicine
+            7 => fake_item(type: 1, atk: 10),   # weapon -- not field-usable
+            9 => fake_item(type: 6, rsp: 10) }  # medicine
+  st = item_party(items)
+  st.party.gain_item(9, 2)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
+  eq [[5, 1], [9, 2]], st.party.field_items
+end
+
+check 'item_recovery sums the flat amount and the percentage (integer math)' do
+  st = item_party({})
+  hero = st.party.leader                       # max_hp 100, max_mp 30
+  it = fake_item(type: 6, rhp: 10, rhp_rate: 25, rsp: 3, rsp_rate: 10)
+  eq [35, 6], st.party.item_recovery(it, hero) # 10 + 100*25/100 ; 3 + 30*10/100
+end
+
+check 'use_item heals a single-target medicine, clamps and consumes one' do
+  items = { 5 => fake_item(type: 6, rhp: 40) }
+  st = item_party(items)
+  st.party.gain_item(5, 3)
+  hero = st.party.leader
+  hero.change_hp(-70)                          # 100 -> 30
+  affected = st.party.use_item(5, hero)
+  eq [hero], affected
+  eq 70, hero.hp                               # 30 + 40
+  eq 2, st.party.item_count(5)
+  # A second use overheals but clamps to max, still consuming one.
+  st.party.use_item(5, hero)
+  eq 100, hero.hp
+  eq 1, st.party.item_count(5)
+end
+
+check 'use_item on an already-full target has no effect and consumes nothing' do
+  items = { 5 => fake_item(type: 6, rhp: 40) }
+  st = item_party(items)
+  st.party.gain_item(5, 2)
+  hero = st.party.leader                       # full HP
+  eq false, st.party.item_effective?(5, hero)
+  eq [], st.party.use_item(5, hero)
+  eq 2, st.party.item_count(5)                 # not consumed
+end
+
+check 'an all-ally medicine heals the whole party and consumes one' do
+  items = { 8 => fake_item(type: 6, scope: 1, rhp_rate: 100) } # full HP heal
+  st = item_party(items)
+  st.party.gain_item(8, 1)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.change_hp(-60)                          # 100 -> 40
+  ally.change_hp(-30)                          # 50  -> 20
+  affected = st.party.use_item(8, nil)         # all-ally: target arg ignored
+  eq [1, 2], affected.map { |a| a.id }.sort
+  eq 100, hero.hp
+  eq 50, ally.hp
+  eq 0, st.party.item_count(8)
+end
+
+check 'use_item restores MP and item_effective? tracks the SP deficit' do
+  items = { 6 => fake_item(type: 6, rsp: 15) }
+  st = item_party(items)
+  st.party.gain_item(6, 1)
+  hero = st.party.leader
+  hero.change_mp(-20)                          # 30 -> 10
+  eq true, st.party.item_effective?(6, hero)
+  st.party.use_item(6, hero)
+  eq 25, hero.mp                               # 10 + 15
+  eq 0, st.party.item_count(6)
 end
 
 # -- Control Variables operands ----------------------------------------------
