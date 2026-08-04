@@ -3032,6 +3032,34 @@ check 'Battle: the fastest battler strikes first' do
   eq 20, fast.hp, 'the slow enemy never landed a hit'
 end
 
+check 'Battle#step performs one action at a time and logs it' do
+  hero = combatant('Hero', 40, 20, 20, 200)
+  slime = combatant('Slime', 8, 4, 5, 30)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  ok !b.finished?
+  first = b.step
+  ok first, 'a step returns its log entry'
+  eq 1, b.log.length
+  # Hero (agility 20) acts before the Slime (5): 40/2 - 4/4 = 19 damage.
+  eq 'Hero', first[:attacker]
+  eq 'Slime', first[:target]
+  eq 19, first[:damage]
+  eq 11, first[:target_hp]
+  ok !first[:defeated]
+  b.step until b.finished?
+  ok slime.dead?
+  ok b.log.last[:defeated], 'the final logged hit downed the enemy'
+  eq nil, b.step, 'stepping a decided battle yields nothing'
+end
+
+check 'Battle#run records a combat log of every hit' do
+  b = Game::Battle.new([combatant('Hero', 40, 20, 20, 200)],
+                       [combatant('Slime', 8, 4, 5, 30)], Game::Rng.new(1))
+  eq :victory, b.run
+  ok b.log.length >= 2, 'the Slime took at least two hits'
+  ok b.log.all? { |e| e[:damage] >= 1 }, 'every hit did at least 1 damage'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

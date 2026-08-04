@@ -1638,7 +1638,9 @@ class RPG2k
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
-        result = Game::Battle.new(allies, foes, Game::Rng.new(0x2000)).run
+        battle = Game::Battle.new(allies, foes, Game::Rng.new(0x2000))
+        result = battle.run
+        log_battle(battle, result) # until the battle screen lands, trace it to the console
         if result == :victory
           exp = troop.total_exp
           @state.party.actors.each { |a| a.gain_exp(exp) }
@@ -1648,6 +1650,17 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle resolution failed: #{e.message}"
         @interpreter.resume_battle(:victory)
+      end
+
+      # Trace a resolved battle blow-by-blow to the console — a stand-in for the
+      # on-screen battle log until the battle screen exists.
+      def log_battle(battle, result)
+        battle.log.each do |e|
+          line = "#{e[:attacker]} hits #{e[:target]} for #{e[:damage]}"
+          line += " — defeated!" if e[:defeated]
+          $stderr.puts "[RPG2k battle] #{line}"
+        end
+        $stderr.puts "[RPG2k battle] #{result}"
       end
 
       def drive_wait
