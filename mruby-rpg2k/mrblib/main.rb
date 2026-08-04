@@ -802,6 +802,9 @@ class RPG2k
           else
             p[:wait_timer] -= 1
           end
+        elsif it.wait_kind == :key_input
+          # Parallel processes commonly poll a key each frame into a variable.
+          resolve_key_input(it)
         else
           it.resume # background: ignore message/choice/teleport requests
         end
@@ -1287,6 +1290,7 @@ class RPG2k
           when :message then open_message(@interpreter.message_lines, false)
           when :choice then open_message(@interpreter.choice_labels, true)
           when :number then open_number_input(@interpreter.input_digits)
+          when :key_input then drive_key_input
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -1302,6 +1306,42 @@ class RPG2k
           apply_halt_request(@interpreter)
           apply_graphic_change(@interpreter)
           apply_tileset_request(@interpreter)
+        end
+      end
+
+      # Maps the interpreter's accepted-key symbols onto RGSS input buttons.
+      # Decision (OK) is the confirm button C, Cancel is B — the same mapping the
+      # message and menu widgets use.
+      KEY_INPUT_BUTTONS = {
+        down: Input::DOWN, left: Input::LEFT, right: Input::RIGHT,
+        up: Input::UP, decision: Input::C, cancel: Input::B, shift: Input::SHIFT
+      }.freeze
+
+      def drive_key_input
+        resolve_key_input(@interpreter)
+      end
+
+      # Drive a Key Input Processing wait for interpreter `it` (the foreground
+      # event or a parallel process): sample the accepted buttons and hand back
+      # the resulting RPG2000 key code. A waiting proc uses triggered edges and
+      # only resumes once a key is actually pressed; a no-wait proc reads the
+      # held state and resumes immediately (storing 0 when nothing is down),
+      # matching RPG_RT.
+      def resolve_key_input(it)
+        req = it.key_input_request
+        return it.resume_key_input(0) unless req
+        accepted = req[:accepted]
+        active = []
+        KEY_INPUT_BUTTONS.each do |sym, btn|
+          next unless accepted[sym]
+          hit = req[:wait] ? Input.trigger?(btn) : Input.press?(btn)
+          active << sym if hit
+        end
+        code = it.key_input_result(active)
+        if req[:wait]
+          it.resume_key_input(code) if code != 0
+        else
+          it.resume_key_input(code)
         end
       end
 

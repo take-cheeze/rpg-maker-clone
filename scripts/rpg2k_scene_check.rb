@@ -63,7 +63,7 @@ module RGSS
   # Scriptable input: tests set `dir_value` (a numpad direction held down) and
   # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
-    C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6
+    C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6; SHIFT = 7
     class << self
       attr_accessor :dir_value, :triggered
     end
@@ -72,6 +72,7 @@ module RGSS
     # The scene treats a held key like a triggered one for widget navigation; the
     # stub answers both from the same `triggered` set.
     def self.repeat?(k); Array(@triggered).include?(k); end
+    def self.press?(k); Array(@triggered).include?(k); end
     def self.dir4; @dir_value || 0; end
     def self.update; end
   end
@@ -362,6 +363,49 @@ check 'parallel common event runs only while its switch gate is on' do
   st.switches[2] = true
   5.times { scene.update }
   ok st.variables[3] > 0, 'it should run once the gate switch is on'
+end
+
+check 'Key Input Proc waits for a key, stores its code, then continues' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Wait-mode proc into var 1 accepting Decision + all directions (1.50
+  # layout: [var, wait, _, decision, cancel, shift, down, left, right, up]),
+  # then flip switch 5 to prove it resumed.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 1, 1, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update } # no key pressed: the proc keeps waiting
+  eq 0, st.variables[1], 'no key yet -> variable stays 0'
+  ok !st.switches[5], 'the proc has not resumed'
+  RGSS::Input.triggered = [RGSS::Input::C] # press Decision (OK)
+  scene.update # this frame resumes the proc and stores the code
+  eq 5, st.variables[1], 'Decision stored code 5'
+  scene.update # the following command runs once the proc has resumed
+  ok st.switches[5], 'the event continued after the key press'
+end
+
+check 'Key Input Proc ignores keys it was not told to accept' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Accept Decision only; a Cancel press must not resume it.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0, 0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::B] # Cancel: not accepted
+  3.times { scene.update }
+  ok !st.switches[5], 'an unaccepted key must not resume the proc'
+  eq 0, st.variables[1]
+  RGSS::Input.triggered = [RGSS::Input::C] # Decision: accepted
+  scene.update # resumes and stores the code
+  eq 5, st.variables[1]
+  scene.update # the following command runs
+  ok st.switches[5]
 end
 
 check 'parallel processes pause while a foreground event is running' do

@@ -123,7 +123,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
-  Message Options, Change Face Graphic, Input Number, Change Actor
+  Message Options, Change Face Graphic, Input Number, Key Input Processing,
+  Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
   Change Encounter Rate, Change System BGM / SFX,
@@ -145,7 +146,11 @@ The work below is roughly ordered by the critical path to a walkable game
   progress has finished — the scene advances those routes while it waits and
   resumes it once none remain. **Halt All Movement** cancels every forced route
   at once (the player's and each event's). **Input Number** suspends on a
-  digit-entry widget and writes the entered value to a variable. **Change Actor
+  digit-entry widget and writes the entered value to a variable. **Key Input
+  Processing** waits for (or, in no-wait mode, samples) a chosen set of buttons
+  and writes the pressed key's RPG2000 code to a variable — the scene drives it
+  for foreground and parallel events alike, following RPG_RT's pre-1.50 /
+  1.50+ parameter layouts (number / operator keys and mouse are not modelled). **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
   these edits survive Save / Continue. **Set Transparent Flag** hides or shows

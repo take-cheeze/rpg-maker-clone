@@ -2228,6 +2228,67 @@ check 'Targets / rate / system audio round-trip through the save' do
   eq({}, legacy_loaded.system_sfx)
 end
 
+# -- Key Input Processing -----------------------------------------------------
+
+check 'Key Input Proc (1.50 layout) waits, clears the var, resolves by priority' do
+  st = party_state
+  st.variables[1] = 99 # a stale value the waiting proc must clear
+  it = Game::Interpreter.new(st)
+  # var 1, wait, (legacy dir slot 0), decision, cancel, shift, down, left,
+  # right, up — every key accepted.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 1, 1, 1, 1, 1, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])])
+  it.update
+  ok it.waiting?, 'a waiting proc suspends the interpreter'
+  eq :key_input, it.wait_kind
+  eq 0, st.variables[1], 'the target variable is cleared while waiting'
+  eq true, it.key_input_request[:wait]
+  # Highest-valued matching key wins: Shift(7) > Cancel(6) > Decision(5) >
+  # Up(4) > Right(3) > Left(2) > Down(1); nothing pressed yields 0.
+  eq 7, it.key_input_result([:down, :decision, :shift])
+  eq 6, it.key_input_result([:cancel, :decision, :down])
+  eq 5, it.key_input_result([:decision, :down])
+  eq 1, it.key_input_result([:down])
+  eq 0, it.key_input_result([])
+  # A key press resumes, stores the code, and the next command runs.
+  it.resume_key_input(it.key_input_result([:decision, :down]))
+  ok !it.waiting?, 'the proc resumed'
+  it.update
+  eq 5, st.variables[1]
+  eq true, st.switches[3], 'the command after the proc ran'
+end
+
+check 'Key Input Proc pre-1.50 layout enables the whole D-pad, no Shift' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # Five params (<6): var 2, no-wait, all-directions flag on, decision on,
+  # cancel off.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [2, 0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'even a no-wait proc routes through the scene once'
+  req = it.key_input_request
+  eq false, req[:wait], 'no-wait requests read held state, not edges'
+  acc = req[:accepted]
+  [:down, :left, :right, :up, :decision].each { |k| eq true, acc[k], "#{k} on" }
+  eq false, acc[:cancel], 'cancel not accepted'
+  eq false, acc[:shift], 'pre-1.50 has no Shift'
+  eq 4, it.key_input_result([:up])
+  eq 0, it.key_input_result([:cancel]), 'an unaccepted key yields 0'
+  # No-wait mode does not pre-clear the variable; the resume writes the read.
+  it.resume_key_input(it.key_input_result([]))
+  eq 0, st.variables[2]
+end
+
+check 'Key Input Proc accepts only the chosen keys' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # Accept Decision only (all direction / shift / cancel flags off).
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0, 0])])
+  it.update
+  eq 5, it.key_input_result([:decision])
+  eq 0, it.key_input_result([:cancel, :up, :down]), 'unlisted keys ignored'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
