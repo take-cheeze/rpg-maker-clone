@@ -166,10 +166,14 @@ still assumed and not yet provided.
   host on by default is reconciling the scripts' blocking `$scene.main while
   $scene` loop with the web build's per-frame `emscripten_set_main_loop` callback
   (the desktop build blocks fine; the web build calls `RPGXP#main_loop` once per
-  browser frame, so an unmodified blocking script loop would hang the tab). The
-  design for this — run `Main` inside an mruby `Fiber` that yields at
-  `Graphics.update`, resumed once per frame — is
-  [ADR 0023](adr/0023-rpgxp-script-host-frame-driver.md).
+  browser frame, so an unmodified blocking script loop would hang the tab). This
+  is now **implemented** ([ADR 0023](adr/0023-rpgxp-script-host-frame-driver.md)):
+  when the host is enabled, `RPGXP` runs `Main` inside an mruby `Fiber` and the
+  wrapped `Graphics.update` yields it once per frame, so `main_loop` drives one
+  game frame per browser callback. It is gated behind `RGSS_SCRIPT_HOST` (off by
+  default), so the built-in flow is unchanged; the remaining step is to boot a real
+  project under the web build with the flag on and confirm it end to end (plus
+  wiring `exit`, the one Kernel built-in the `Interpreter` still assumes).
 - None of the above can be built or run in the current CI sandbox; each item is
   verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
   `scripts/rpgxp_script_host_check.rb`.
