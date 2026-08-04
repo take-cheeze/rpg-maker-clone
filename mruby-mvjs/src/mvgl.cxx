@@ -60,6 +60,34 @@ void warn(const char* what, const char* detail) {
                detail ? detail : "");
 }
 
+// Hide DISPLAY for the lifetime of an EGL display-open / make-current, then
+// restore it. Our GL is entirely off-screen (surfaceless EGL + an FBO) and
+// never needs a window-system connection, but when DISPLAY is set — the main
+// binary runs under Xvfb — Mesa's surfaceless-platform context bind fails with
+// EGL_BAD_ACCESS (0x3002), while the headless gl_test (no DISPLAY) running the
+// identical code succeeds. Unsetting DISPLAY forces the same pure-surfaceless
+// path the headless test takes. It is safe: SDL has already opened its X
+// connection by the time any WebGL context exists and does not re-read the env
+// var, and the value is restored the moment the EGL call returns.
+struct ScopedNoDisplay {
+  char saved[256];
+  bool had;
+  ScopedNoDisplay() {
+    const char* d = std::getenv("DISPLAY");
+    had = d != nullptr;
+    if (had) {
+      std::snprintf(saved, sizeof(saved), "%s", d);
+      unsetenv("DISPLAY");
+    }
+  }
+  ~ScopedNoDisplay() {
+    if (had)
+      setenv("DISPLAY", saved, 1);
+  }
+  ScopedNoDisplay(const ScopedNoDisplay&) = delete;
+  ScopedNoDisplay& operator=(const ScopedNoDisplay&) = delete;
+};
+
 // Compile a GLES2 shader, logging and returning 0 on failure.
 GLuint compile(GLenum type, const char* src) {
   GLuint sh = glCreateShader(type);
@@ -163,6 +191,14 @@ Context* create(int width, int height) {
     return nullptr;
   }
 
+  // Settle whether a foreign EGL context is the culprit (it is not, in the
+  // main binary: LVGL's SDL backend uses the software renderer and creates no
+  // GL context) — a bind conflict would show up here.
+  if (eglGetCurrentContext() != EGL_NO_CONTEXT)
+    warn("create: an EGL context was already current on this thread", nullptr);
+
+  ScopedNoDisplay no_display;
+
   EGLDisplay dpy = open_display();
   if (dpy == EGL_NO_DISPLAY) {
     warn("create: no EGL display (surfaceless platform unavailable)", nullptr);
@@ -211,13 +247,13 @@ Context* create(int width, int height) {
     return nullptr;
   }
 
-  // Bind the context. Prefer surfaceless (EGL_KHR_surfaceless_context, which
-  // llvmpipe advertises with no display) — an FBO is the render target, so no
-  // draw/read surface is needed. Some environments reject a no-surface
-  // make-current though: notably the main binary under Xvfb (DISPLAY set, SDL
-  // up), where gl_test's headless mruby binary succeeds but this one returned
-  // "eglMakeCurrent(surfaceless) failed". Fall back to a 1x1 pbuffer (the
-  // config advertises EGL_PBUFFER_BIT); it exists only to satisfy make-current.
+  // Bind the context (DISPLAY is hidden by ScopedNoDisplay above so this takes
+  // the same pure-surfaceless path the headless gl_test proves works). Prefer
+  // surfaceless (EGL_KHR_surfaceless_context, which llvmpipe advertises with no
+  // display) — an FBO is the render target, so no draw/read surface is needed.
+  // A driver that still rejects a no-surface make-current falls back to a 1x1
+  // pbuffer (the config advertises EGL_PBUFFER_BIT); it exists only to satisfy
+  // make-current.
   EGLSurface surf = EGL_NO_SURFACE;
   if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl)) {
     const EGLint surfaceless_err = eglGetError();
@@ -280,6 +316,7 @@ void destroy(Context* ctx) {
   if (!ctx)
     return;
   if (ctx->dpy != EGL_NO_DISPLAY && ctx->egl != EGL_NO_CONTEXT) {
+    ScopedNoDisplay no_display;
     eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl);
     if (ctx->fbo)
       glDeleteFramebuffers(1, &ctx->fbo);
@@ -300,6 +337,7 @@ void destroy(Context* ctx) {
 bool make_current(Context* ctx) {
   if (!ctx || ctx->dpy == EGL_NO_DISPLAY || ctx->egl == EGL_NO_CONTEXT)
     return false;
+  ScopedNoDisplay no_display;
   if (!eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl))
     return false;
   // A fresh make-current binds the default framebuffer; rebind ours (the
