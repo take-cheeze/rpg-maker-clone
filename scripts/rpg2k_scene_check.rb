@@ -691,6 +691,35 @@ check 'Pan Screen locks the camera and holds the interpreter while scrolling' do
   ok st.switches[1], 'the interpreter resumed after the pan'
 end
 
+check 'Show / Move / Erase Picture drive the picture layer through the scene' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    # Show picture 1 at (0, 0).
+    ECmd.new(ic::SHOW_PICTURE,
+             [1, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0], string: 'Pic'),
+    # Move it to (60, 0) over 0.3s with the wait flag.
+    ECmd.new(ic::MOVE_PICTURE,
+             [1, 0, 60, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 3, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+    # Then erase it.
+    ECmd.new(ic::ERASE_PICTURE, [1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [3, 3])
+  st = scene.instance_variable_get(:@state)
+
+  5.times { scene.update } # mid-move: the picture is shown and still tweening
+  ok st.pictures.shown?(1), 'the picture is on screen'
+  ok st.pictures.moving?, 'still moving toward the target'
+  ok !st.switches[1], 'the command after the move waits'
+
+  40.times { scene.update } # 0.3s -> 18 frames, plenty for the tween + erase
+  eq true, st.switches[1], 'resumed once the picture stopped moving'
+  eq true, st.switches[2], 'ran past the erase'
+  ok !st.pictures.shown?(1), 'the picture was erased'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

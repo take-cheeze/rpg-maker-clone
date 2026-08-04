@@ -523,6 +523,72 @@ check 'Screen pan lock / unlock toggles the follow flag' do
   ok !s.pan_locked?
 end
 
+# -- Pictures (Show / Move / Erase Picture model) ----------------------------
+
+check 'Pictures show places a picture with its attributes' do
+  ps = Game::Pictures.new
+  eq 0, ps.count
+  ps.show(3, 'Title', 40, 24, false, 150, 20, 110, 90, 100, 120, 1, 5)
+  ok ps.shown?(3)
+  eq 1, ps.count
+  p = ps[3]
+  eq 'Title', p.name
+  eq [40, 24], [p.x, p.y]
+  eq 150, p.zoom
+  eq 20, p.top_trans
+  eq [110, 90, 100, 120], [p.red, p.green, p.blue, p.saturation]
+  eq [1, 5], [p.effect_mode, p.effect_power]
+  ok !p.moving?, 'a freshly shown picture is not moving'
+end
+
+check 'Move Picture tweens position/zoom/tone and lands exactly' do
+  ps = Game::Pictures.new
+  ps.show(1, 'Pic', 0, 0, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  # move to (40, 20), zoom 200, top_trans 100, tone (200,0,0,0) over 4 frames.
+  ps.move(1, 40, 20, 200, 100, 200, 0, 0, 0, 0, 0, 4)
+  p = ps[1]
+  ok p.moving?
+  ok ps.moving?, 'the set reports a moving picture'
+  ps.update; eq [10, 5], [p.x, p.y]      # 1/4 of the way
+  eq 125, p.zoom
+  ps.update; eq [20, 10], [p.x, p.y]
+  ps.update; eq [30, 15], [p.x, p.y]
+  ps.update
+  eq [40, 20], [p.x, p.y], 'settles exactly on the target'
+  eq 200, p.zoom
+  eq 100, p.top_trans
+  eq [200, 0, 0, 0], [p.red, p.green, p.blue, p.saturation]
+  ok !p.moving?
+  ok !ps.moving?
+end
+
+check 'Move Picture with zero duration applies immediately' do
+  ps = Game::Pictures.new
+  ps.show(2, 'Pic', 5, 5, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  ps.move(2, 99, 88, 100, 0, 100, 100, 100, 100, 0, 0, 0)
+  ok !ps[2].moving?
+  eq [99, 88], [ps[2].x, ps[2].y]
+end
+
+check 'Erase Picture removes one; erase_all clears the set' do
+  ps = Game::Pictures.new
+  ps.show(1, 'A', 0, 0, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  ps.show(2, 'B', 0, 0, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  ps.erase(1)
+  ok !ps.shown?(1)
+  ok ps.shown?(2)
+  ps.erase_all
+  eq 0, ps.count
+end
+
+check 'Pictures#active is ordered by id (lower ids draw first)' do
+  ps = Game::Pictures.new
+  ps.show(5, 'e', 0, 0, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  ps.show(1, 'a', 0, 0, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  ps.show(3, 'c', 0, 0, false, 100, 0, 100, 100, 100, 100, 0, 0)
+  eq [1, 3, 5], ps.active.map { |p| p.id }
+end
+
 # -- Message parsing (control codes / colour) --------------------------------
 
 check 'Message.expand fills v/n codes and drops display codes' do
@@ -1004,6 +1070,89 @@ check 'Pan Screen (op 2) with a wait pauses until the scroll finishes' do
   it.update
   eq true, st.switches[2], 'resumed once the pan reached its target'
   eq [16, 0], st.screen.pan_offset
+end
+
+check 'Show Picture places a picture from the RPG2000 parameter layout' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # id 1, position const (0), x 60, y 40, fixed-to-map 1, zoom 150, top_trans 25,
+  # use-transp 1, tone (120,80,60,140), effect mode 2, power 7.
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [1, 0, 60, 40, 1, 150, 25, 1, 120, 80, 60, 140, 2, 7],
+                        string: 'Backdrop'),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Show Picture is instant'
+  eq true, st.switches[1]
+  p = st.pictures[1]
+  ok p, 'the picture is shown'
+  eq 'Backdrop', p.name
+  eq [60, 40], [p.x, p.y]
+  ok p.scrolls_with_map, 'fixed-to-map flag honoured'
+  eq 150, p.zoom
+  eq 25, p.top_trans
+  eq [120, 80, 60, 140], [p.red, p.green, p.blue, p.saturation]
+  eq [2, 7], [p.effect_mode, p.effect_power]
+end
+
+check 'Show Picture reads its position from variables when addressed by them' do
+  st = new_state
+  st.variables[10] = 88
+  st.variables[11] = 77
+  it = Game::Interpreter.new(st)
+  # position mode 1 (variable): param2/param3 are variable ids 10/11.
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [4, 1, 10, 11, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                        string: 'Pic')])
+  it.update
+  eq [88, 77], [st.pictures[4].x, st.pictures[4].y]
+end
+
+check 'Move Picture with a wait pauses until the tween settles' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [1, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                        string: 'Pic'),
+            # move to (60, 0): duration 1 tenth (6 frames), wait flag set.
+            FakeCmd.new(IC::MOVE_PICTURE,
+                        [1, 0, 60, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 1, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok it.waiting?, 'a waiting Move Picture pauses the interpreter'
+  eq :picture, it.wait_kind
+  ok !st.switches[2]
+  st.pictures.update until !st.pictures.moving? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[2], 'resumed once the picture stopped moving'
+  eq 60, st.pictures[1].x
+end
+
+check 'Move Picture without a wait keeps running' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [1, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                        string: 'Pic'),
+            FakeCmd.new(IC::MOVE_PICTURE,
+                        [1, 0, 60, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 1, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])])
+  it.update
+  ok !it.waiting?, 'a no-wait Move Picture does not pause'
+  eq true, st.switches[3]
+  ok st.pictures[1].moving?
+end
+
+check 'Erase Picture removes the picture' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [7, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                        string: 'Pic'),
+            FakeCmd.new(IC::ERASE_PICTURE, [7])])
+  it.update
+  ok !st.pictures.shown?(7)
 end
 
 check 'conditional branch on the timer' do

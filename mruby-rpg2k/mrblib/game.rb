@@ -1591,10 +1591,147 @@ module Game
     end
   end
 
+  # One on-screen picture placed by the Show Picture (11110) event command: a
+  # graphic drawn at a screen (or map-fixed) position with a magnification, a top
+  # transparency, a colour tone and an optional rotation/wave effect. Move Picture
+  # (11120) tweens those toward new values over a duration; the fields interpolate
+  # with integer division (float-free, so it runs on the mruby build) exactly like
+  # the screen tint. This is the Ruby-half model only — actually compositing the
+  # picture bitmap (loading it, magnify/rotate/tone blit with per-picture alpha)
+  # is native (C++) renderer work still to come, like the tint/flash overlays.
+  class Picture
+    attr_reader :id, :name
+    attr_reader :x, :y, :zoom, :top_trans
+    attr_reader :red, :green, :blue, :saturation
+    attr_reader :effect_mode, :effect_power
+    # Whether the picture scrolls with the map (fixed to map) or stays put on the
+    # screen. Set once by Show Picture; Move Picture does not change it.
+    attr_reader :scrolls_with_map
+
+    def initialize(id, name, x, y, scrolls_with_map, zoom, top_trans,
+                   r, g, b, sat, effect_mode, effect_power)
+      @id = id
+      @name = name
+      @scrolls_with_map = scrolls_with_map ? true : false
+      @x = x
+      @y = y
+      @zoom = zoom
+      @top_trans = top_trans
+      @red = r
+      @green = g
+      @blue = b
+      @saturation = sat
+      @effect_mode = effect_mode
+      @effect_power = effect_power
+      reset_targets
+      @frames = 0 # frames left in the current Move Picture tween (0 = settled)
+    end
+
+    # True while a Move Picture tween is still in progress.
+    def moving?; @frames > 0; end
+
+    # Begin a Move Picture transition toward the given attributes over `frames`
+    # frames (frames <= 0 applies them at once). The effect mode switches
+    # immediately (RPG_RT does not blend rotation/wave modes); its power tweens.
+    def move_to(x, y, zoom, top_trans, r, g, b, sat, effect_mode, effect_power, frames)
+      @tx = x
+      @ty = y
+      @tzoom = zoom
+      @ttop = top_trans
+      @tred = r
+      @tgreen = g
+      @tblue = b
+      @tsat = sat
+      @effect_mode = effect_mode
+      @teffect = effect_power
+      if frames <= 0
+        apply_targets
+        @frames = 0
+      else
+        @frames = frames
+      end
+    end
+
+    # Advance the tween one frame, landing exactly on the target on the last one.
+    def update
+      return if @frames <= 0
+      @x += (@tx - @x) / @frames
+      @y += (@ty - @y) / @frames
+      @zoom += (@tzoom - @zoom) / @frames
+      @top_trans += (@ttop - @top_trans) / @frames
+      @red += (@tred - @red) / @frames
+      @green += (@tgreen - @green) / @frames
+      @blue += (@tblue - @blue) / @frames
+      @saturation += (@tsat - @saturation) / @frames
+      @effect_power += (@teffect - @effect_power) / @frames
+      @frames -= 1
+      apply_targets if @frames.zero?
+    end
+
+    private
+
+    def reset_targets
+      @tx = @x; @ty = @y; @tzoom = @zoom; @ttop = @top_trans
+      @tred = @red; @tgreen = @green; @tblue = @blue; @tsat = @saturation
+      @teffect = @effect_power
+    end
+
+    def apply_targets
+      @x = @tx; @y = @ty; @zoom = @tzoom; @top_trans = @ttop
+      @red = @tred; @green = @tgreen; @blue = @tblue; @saturation = @tsat
+      @effect_power = @teffect
+    end
+  end
+
+  # The set of on-screen pictures (RPG2000 numbers them 1..50), keyed by id. Show
+  # Picture creates/replaces one, Move Picture tweens one, Erase Picture removes
+  # one. Like the screen effects this is transient state — not serialised, so a
+  # reloaded game starts with no pictures (persisting them is a later refinement).
+  class Pictures
+    def initialize
+      @pics = {}
+    end
+
+    # Show Picture: create (or replace) picture `id`. Returns the new Picture.
+    def show(id, name, x, y, scrolls_with_map, zoom, top_trans,
+             r, g, b, sat, effect_mode, effect_power)
+      @pics[id] = Picture.new(id, name, x, y, scrolls_with_map, zoom, top_trans,
+                              r, g, b, sat, effect_mode, effect_power)
+    end
+
+    # Move Picture: tween picture `id` toward new attributes over `frames` frames.
+    # A no-op (returns nil) when the picture is not shown.
+    def move(id, x, y, zoom, top_trans, r, g, b, sat, effect_mode, effect_power, frames)
+      pic = @pics[id]
+      return nil unless pic
+      pic.move_to(x, y, zoom, top_trans, r, g, b, sat, effect_mode, effect_power, frames)
+      pic
+    end
+
+    # Erase Picture: remove picture `id` (a no-op when it is not shown).
+    def erase(id); @pics.delete(id); end
+
+    # Remove every picture (RPG_RT clears them on a map change / new game).
+    def erase_all; @pics.clear; end
+
+    def [](id); @pics[id]; end
+    def shown?(id); @pics.key?(id); end
+    def count; @pics.size; end
+
+    # Every shown picture, ordered by id so lower ids draw under higher ones.
+    def active; @pics.keys.sort.map { |k| @pics[k] }; end
+
+    # True while any picture is still tweening (drives the Move Picture wait flag).
+    def moving?; @pics.values.any? { |p| p.moving? }; end
+
+    # Advance every picture's tween one frame. Called once per frame by the scene.
+    def update; @pics.each_value { |p| p.update }; end
+  end
+
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
   class State
-    attr_reader :party, :switches, :variables, :message_config, :screen
+    attr_reader :party, :switches, :variables, :message_config, :screen, :pictures
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
@@ -1624,6 +1761,8 @@ module Game
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
+      # Transient picture layer (Show/Move/Erase Picture); also not serialised.
+      @pictures = Pictures.new
     end
 
     # Advance the countdown timer one frame (call once per frame). Returns true

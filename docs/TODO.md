@@ -105,7 +105,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
-  Screen, Flash Screen, Shake Screen, Pan Screen, Call Event, Move Event,
+  Screen, Flash Screen, Shake Screen, Pan Screen, Show/Move/Erase Picture,
+  Call Event, Move Event,
   Proceed With Movement, Erase Event, End Event) with a per-frame step cap so a
   bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
@@ -139,8 +140,17 @@ The work below is roughly ordered by the critical path to a walkable game
   quantities** (party gold, timer seconds). Conditional Branch covers switch /
   variable / **timer** / gold / item conditions and the **actor** sub-conditions
   (in party, name, level ≥, HP ≥, item equipped; skill / state are not modelled).
-  The remaining commands (pictures, battles, the EXP-gain / level-up messages
-  RPG_RT shows, ...) are TODO
+  **Show / Move / Erase Picture** (11110 / 11120 / 11130) place, tween and
+  remove numbered on-screen pictures: a `Game::Pictures` layer on `Game::State`
+  holds each picture's position, magnification, top transparency, colour tone and
+  rotation/wave effect (read from the RPG2000 parameter layout, with the position
+  optionally taken from variables), Move Picture interpolates those toward new
+  values over its duration (integer-division tween like the screen tint, honouring
+  the wait flag via a `:picture` wait the scene resumes once nothing is moving),
+  and Erase Picture drops one. Like the tint/flash overlays this is the Ruby-half
+  model only — actually compositing the picture bitmap (magnify/rotate/tone blit)
+  is native (C++) renderer work still to come. The remaining commands (battles,
+  the EXP-gain / level-up messages RPG_RT shows, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
@@ -184,8 +194,10 @@ The work below is roughly ordered by the critical path to a walkable game
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
   the view holds where locking began). All four share the `:screen` wait.
-  Transitions/fade, Show Picture and weather remain, and the tint/flash still
-  need `RGSS::Viewport` tone/alpha support in C++ to show
+  Transitions/fade and weather remain; **Show / Move / Erase Picture** (11110 /
+  11120 / 11130) now model the picture layer in Ruby (see the interpreter
+  section) but, like the tint/flash, still need `RGSS::Viewport` tone/alpha
+  support in C++ to actually draw
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a

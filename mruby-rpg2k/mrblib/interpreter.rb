@@ -53,6 +53,9 @@ module Game
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
       PAN_SCREEN       = 11060
+      SHOW_PICTURE     = 11110
+      MOVE_PICTURE     = 11120
+      ERASE_PICTURE    = 11130
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       WAIT             = 11410
@@ -247,6 +250,9 @@ module Game
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
       when Cmd::PAN_SCREEN       then do_pan_screen cmd
+      when Cmd::SHOW_PICTURE     then do_show_picture cmd
+      when Cmd::MOVE_PICTURE     then do_move_picture cmd
+      when Cmd::ERASE_PICTURE    then do_erase_picture cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::WAIT             then do_wait cmd
@@ -871,6 +877,60 @@ module Game
       return unless cmd.param(3) != 0 && @state.screen.shaking?
       @wait_kind = :screen
       @waiting = true
+    end
+
+    # Show Picture: place picture param0 (1..50) at a screen position with the
+    # RPG2000 attributes — param4 fixed-to-map flag, param5 magnification %,
+    # param6 top transparency (0..100), param8..11 the red/green/blue/saturation
+    # colour tone (0..200, 100 neutral) and param12/param13 the effect mode/power.
+    # `cmd.string` is the picture graphic name. The position (param2/param3) is a
+    # constant or, when param1 is 1, held in the variables those params name.
+    # Instant (no wait).
+    def do_show_picture(cmd)
+      id = cmd.param(0)
+      return if id <= 0
+      x, y = picture_position(cmd)
+      @state.pictures.show(id, cmd.string, x, y, cmd.param(4) != 0,
+                           cmd.param(5), cmd.param(6),
+                           cmd.param(8), cmd.param(9), cmd.param(10), cmd.param(11),
+                           cmd.param(12), cmd.param(13))
+    end
+
+    # Move Picture: tween picture param0 toward new attributes over param14 tenths
+    # of a second, reusing the same layout as Show Picture (the graphic itself is
+    # not changed). When param15 (the wait flag) is set, pause until the tween
+    # finishes — the scene advances Game::Pictures each frame and resumes us once
+    # nothing is moving. A no-op when the picture is not shown.
+    def do_move_picture(cmd)
+      id = cmd.param(0)
+      return if id <= 0
+      x, y = picture_position(cmd)
+      frames = cmd.param(14) * FRAMES_PER_TENTH
+      @state.pictures.move(id, x, y, cmd.param(5), cmd.param(6),
+                           cmd.param(8), cmd.param(9), cmd.param(10), cmd.param(11),
+                           cmd.param(12), cmd.param(13), frames)
+      pic = @state.pictures[id]
+      return unless cmd.param(15) != 0 && pic && pic.moving?
+      @wait_kind = :picture
+      @waiting = true
+    end
+
+    # Erase Picture: remove picture param0. A no-op when it is not shown. Instant.
+    def do_erase_picture(cmd)
+      id = cmd.param(0)
+      return if id <= 0
+      @state.pictures.erase(id)
+    end
+
+    # Resolve a Show/Move Picture position. param1 selects the addressing mode: 0
+    # takes param2/param3 as literal pixel coordinates, 1 takes them as variable
+    # ids whose values hold the coordinates.
+    def picture_position(cmd)
+      if cmd.param(1) == 1
+        [@state.variables[cmd.param(2)], @state.variables[cmd.param(3)]]
+      else
+        [cmd.param(2), cmd.param(3)]
+      end
     end
 
     # Memorize BGM: stash a copy of the currently-playing BGM so a later Play
