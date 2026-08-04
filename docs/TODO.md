@@ -256,9 +256,11 @@ The work below is roughly ordered by the critical path to a walkable game
   above the map and below the message window. Picture **tone** is carried but not
   yet drawn (needs the same native tone support as the screen tint). **Weather
   Effects** (11070) records the map weather type (none / rain / snow) and strength
-  on `Game::State` — the Ruby-half model only, like the tint overlay, so it
-  round-trips through the save but drawing the rain/snow particles is native
-  renderer work still to come.
+  on `Game::State`, and `Scene::Map` now draws it: a screen-sized overlay sprite
+  (z 430, above the weather-less tint layer and below the animation layer) onto
+  which `draw_weather` paints rain streaks (falling, wind-skewed 1×6 marks) or
+  snow (drifting 2×2 flecks), the particle count scaling with strength and the
+  positions advancing with the scene's animation frame so the field animates.
   **Set Teleport / Escape Target** (11810 / 11830), **Change Encounter Rate**
   (11740) and **Change System BGM / SFX** (10660 / 10670) record their payloads
   on `Game::State` — a per-map teleport-target registry, a single escape target,
@@ -426,7 +428,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Confirmed in the real binary before the code was written — forcing the fade
   layer to opacity 128 halves the rendered frame's mean brightness (31.9 → 15.2).
 
-  Still open here: **weather**, and the **tint** (Tint Screen). The tint really
+  Both the **weather** particle overlay and the **tint** (Tint Screen) layer are
+  now composited by `Scene::Map` alongside the fade and flash. The tint really
   does need native work, unlike the fade and flash — a tone rescales what is
   already drawn rather than laying a colour over it. That native half now
   exists: `RGSS::Bitmap#tone_blt(src, tone)` copies a bitmap applying an

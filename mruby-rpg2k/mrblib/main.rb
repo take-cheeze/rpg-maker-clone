@@ -507,7 +507,7 @@ class RPG2k
         close_shop
         close_battle
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
-         @picture_sprite, @fade_sprite, @flash_sprite].each do |s|
+         @picture_sprite, @fade_sprite, @flash_sprite, @weather_sprite].each do |s|
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
@@ -632,6 +632,14 @@ class RPG2k
         @flash_sprite.bitmap = @flash_bmp
         @flash_sprite.opacity = 0
         @flash_rgb = nil
+
+        # Weather Effects: rain / snow particles drawn on a screen-sized layer
+        # (under the flash / fade overlays), animated by @anim_frame.
+        @weather_sprite = Sprite.new
+        @weather_sprite.z = 430
+        @weather_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @weather_sprite.bitmap = @weather_bmp
+        @weather_sprite.visible = false
       end
 
       # Push this frame's fade and flash levels onto the two overlay sprites.
@@ -653,6 +661,59 @@ class RPG2k
           end
           @flash_sprite.opacity = strength
         end
+
+        draw_weather
+      end
+
+      WEATHER_RAIN = 1
+      WEATHER_SNOW = 2
+      # Particles at the lightest strength; each step up adds another band.
+      WEATHER_BASE_PARTICLES = 48
+      RAIN_COLOR = Color.new(200, 210, 255, 200)
+      SNOW_COLOR = Color.new(255, 255, 255, 220)
+
+      # Draw the active weather onto its overlay: falling rain streaks or drifting
+      # snow flecks, their count scaling with the strength (0..2). Positions are a
+      # deterministic hash of the particle index advanced by @anim_frame, so the
+      # field falls smoothly without needing a per-frame RNG. Cleared / hidden
+      # when there is no weather.
+      def draw_weather
+        w = @state.weather
+        if w.none? || (w.type != WEATHER_RAIN && w.type != WEATHER_SNOW)
+          @weather_sprite.visible = false
+          return
+        end
+        @weather_sprite.visible = true
+        @weather_bmp.clear
+        n = weather_particle_count(w)
+        n.times { |i| draw_weather_particle(w.type, i) }
+      end
+
+      def weather_particle_count(w)
+        WEATHER_BASE_PARTICLES * ((w.strength || 0) + 1)
+      end
+
+      # A single particle's on-screen cell, spread across the screen by a cheap
+      # hash of its index and falling as @anim_frame advances (wrapping at the
+      # bottom). Rain is a slanted streak; snow a small fleck that also drifts.
+      def draw_weather_particle(type, i)
+        x0 = (i * 97) % SCREEN_W
+        y0 = (i * 59) % SCREEN_H
+        if type == WEATHER_RAIN
+          y = (y0 + @anim_frame * 8) % SCREEN_H
+          x = (x0 - @anim_frame * 2) % SCREEN_W
+          @weather_bmp.fill_rect x, y, 1, 6, RAIN_COLOR
+        else
+          y = (y0 + @anim_frame * 3) % SCREEN_H
+          x = (x0 + weather_drift(i)) % SCREEN_W
+          @weather_bmp.fill_rect x, y, 2, 2, SNOW_COLOR
+        end
+      end
+
+      # A small side-to-side snow drift, from a triangle wave over @anim_frame.
+      def weather_drift(i)
+        phase = (@anim_frame / 8 + i) % 8
+        phase < 4 ? phase : 8 - phase
       end
 
       # Create the buffer that carries the Show Picture layer. Pictures composite

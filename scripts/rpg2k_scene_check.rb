@@ -1730,6 +1730,28 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   ok !shadow.visible, 'a boat casts no airship shadow'
 end
 
+check 'Weather draws a particle overlay when active and hides it when clear' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  wsp = scene.instance_variable_get(:@weather_sprite)
+  scene.update
+  ok !wsp.visible, 'no weather -> no overlay'
+  st.weather.set(1, 2) # heavy rain
+  scene.update
+  ok wsp.visible, 'rain draws an overlay'
+  # A stronger downpour draws more particles than a light one.
+  heavy = scene.send(:weather_particle_count, st.weather)
+  st.weather.set(1, 0) # light rain
+  light = scene.send(:weather_particle_count, st.weather)
+  ok heavy > light, 'strength scales the particle count'
+  st.weather.set(2, 1) # snow
+  scene.update
+  ok wsp.visible, 'snow draws an overlay too'
+  st.weather.set(0, 0) # clear
+  scene.update
+  ok !wsp.visible, 'clearing weather hides the overlay'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
