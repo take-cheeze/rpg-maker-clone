@@ -493,5 +493,12 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     map interpreter instead of a bare out-of-loop `SceneManager.push`, which
     deadlocked on the frozen encounter-effect intro. Runs on Lunatic-Core (real
     battlers/battleback) and logs `[MV-BTL] reached_battle=<bool>`.
+  - ✅ Menu smoke: `--mv_menu_test` opens `Scene_Menu` via the engine's real
+    `callMenu` path (re-asserting `Scene_Map.menuCalling`) and logs
+    `[MV-MENU] reached_menu=<bool>`.
+  - ✅ Save smoke: `--mv_save_test` runs a save+load round-trip through
+    `DataManager` (save → `StorageManager.exists` → load) and logs
+    `[MV-SAVE] saved=.. exists=.. loaded=..`, confirming the localStorage-backed
+    save path writes and reloads.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).

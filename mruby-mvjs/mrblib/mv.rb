@@ -261,6 +261,7 @@ class MV
     maybe_move_test # CI: hold a direction on the map and log that the player moved
     maybe_message_test # CI: show a text message on the map and log the window opened
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
+    maybe_save_test # CI: save+load round-trip on the map and log the result
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -395,7 +396,8 @@ class MV
       false
     end
     return unless new_game || battle_test_troop > 0 || move_test_requested? ||
-                  message_test_requested? || menu_test_requested?
+                  message_test_requested? || menu_test_requested? ||
+                  save_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -628,6 +630,44 @@ class MV
     $stderr.puts "[MV-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MV] menu test error: #{e.message}"
+  end
+
+  # Whether --mv_save_test was requested (a launcher constant set by main.cxx).
+  def save_test_requested?
+    (begin
+      MV_SAVE_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mv_save_test is set (CI), once on the map run a save+load round-trip
+  # through the real DataManager and log the result. This drives the save path
+  # every game relies on: DataManager.saveGame serializes $game* into a save
+  # slot via StorageManager (our host keeps Utils.isNwjs() false, so this goes
+  # through the localStorage shim that persists to disk), StorageManager.exists
+  # confirms the slot, and DataManager.loadGame reads it back and rebuilds the
+  # game objects. A headless run thus confirms saves actually write and reload.
+  # One-shot; a no-op during normal play (flag unset).
+  def maybe_save_test
+    return if @save_test_done
+    return unless save_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @save_test_done = true
+    res = MV::JS.eval(
+      "(function(){ try { " \
+      "if (typeof DataManager === 'undefined') return 'no DataManager'; " \
+      "var saved = DataManager.saveGame(1); " \
+      "var exists = StorageManager.exists(1); " \
+      "var loaded = DataManager.loadGame(1); " \
+      "return 'saved=' + (!!saved) + ' exists=' + (!!exists) + " \
+      "' loaded=' + (!!loaded); " \
+      "} catch (e) { return 'error: ' + String(e && e.message || e); } })()"
+    )
+    $stderr.puts "[MV-SAVE] #{res}"
+  rescue StandardError => e
+    $stderr.puts "[MV] save test error: #{e.message}"
   end
 
   # Log the running scene's class name whenever it changes, so the boot's
