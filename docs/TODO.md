@@ -217,7 +217,10 @@ The work below is roughly ordered by the critical path to a walkable game
   equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
-  spirit / agility) and **game quantities** (party gold, timer seconds).
+  spirit / agility), an **item** count (number held, or number equipped across the
+  party) and **game quantities** (party gold, timer seconds, party size). The
+  event-reference operand (map id / position / facing of an event or the hero)
+  is still TODO.
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and **all** the **actor** sub-conditions (in party, name, level ≥,
   HP ≥, item equipped, skill known, and **afflicted by a state**). Actors now
@@ -336,11 +339,12 @@ The work below is roughly ordered by the critical path to a walkable game
   so a temporary ailment wears off. **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random
-  member of its own side. Basic attacks apply RPG2000's **damage variance** (a
-  `var` of 4 spread via `Algo::VarianceAdjustEffect`), enabled for the live game
-  and off for seeded / headless fights. Still to come: enemy-cast infliction,
-  criticals / attributes / skill damage variance, all-target skill/item scopes,
-  the per-terrain backdrop and the RPG2000 Game Over graphic.
+  member of its own side. Basic attacks **and attack skills** apply RPG2000's
+  **damage variance** (a `var` of 4 for attacks, each skill's own `variance` for
+  skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
+  off for seeded / headless fights. Still to come: enemy-cast infliction,
+  criticals / attributes, all-target skill/item scopes, the per-terrain backdrop
+  and the RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
@@ -352,7 +356,8 @@ The work below is roughly ordered by the critical path to a walkable game
   the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow
   their terrain). Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
-  ground shadow** (the vehicle's own BGM is still to come). **Enter Hero Name**
+  ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
+  boat / ship / airship music) and disembarking restores the map BGM. **Enter Hero Name**
   (10740) opens a character-entry widget that renames a
   party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
   "show message" flag — a level-up queues one message per level gained, shown

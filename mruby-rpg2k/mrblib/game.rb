@@ -1742,6 +1742,12 @@ module Game
       sk.respond_to?(:hit) ? (sk.hit || 100) : 100
     end
 
+    # A skill's damage variance (its `variance` field on the 0-10 scale, default
+    # 4), the spread applied to its battle damage when the fight rolls variance.
+    def skill_variance(sk)
+      sk.respond_to?(:variance) ? (sk.variance || 4) : 4
+    end
+
     # The command numbers for casting `sk` from `caster` on `target` (both
     # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
     # to the target — negative HP for an attack skill (base effect less a quarter
@@ -1754,7 +1760,8 @@ module Game
         dmg = base - (target ? target.def / 4 : 0)
         dmg = 1 if dmg < 1
         { cost: cost, hp: -dmg, mp: 0,
-          inflict: skill_state_ids(sk), chance: skill_hit(sk) }
+          inflict: skill_state_ids(sk), chance: skill_hit(sk),
+          variance: skill_variance(sk) }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
       end
@@ -2885,10 +2892,11 @@ module Game
     # SP and applying the signed HP / SP deltas (negative HP = damage, positive =
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
     # order by #apply_command when the round runs.
-    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil, chance: 100)
+    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
+                      chance: 100, variance: 0)
       ally.command = { kind: :skill, target: target, name: name,
                        cost: cost, hp: hp, mp: mp,
-                       inflict: inflict || [], chance: chance }
+                       inflict: inflict || [], chance: chance, variance: variance }
       ally.action = nil; ally.defending = false
     end
 
@@ -3103,6 +3111,8 @@ module Game
       mp = cmd[:mp] || 0
       if hp < 0
         dmg = -hp
+        # Spread the skill's damage by its own variance when the fight rolls it.
+        dmg = varied(dmg, cmd[:variance]) if @variance && cmd[:variance] && cmd[:variance] > 0
         target.hp -= dmg
         # An attack skill may inflict its states on a surviving target, each
         # rolled against the skill's accuracy.

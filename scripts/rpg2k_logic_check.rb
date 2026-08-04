@@ -1265,12 +1265,14 @@ end
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
                        :affect_hp, :affect_sp, :occasion_battle,
-                       :state_effects, :reverse_state_effect, :hit)
+                       :state_effects, :reverse_state_effect, :hit, :variance)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
-               occ_battle: true, state_effects: nil, reverse_state: false, hit: 100)
+               occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
+               variance: 4)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
-                prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit)
+                prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
+                variance)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -2118,6 +2120,27 @@ check 'Control Variables reads party gold and the timer (operand type 7)' do
   it.update
   eq 500, st.variables[1]
   eq 90, st.variables[2]
+end
+
+check 'Control Variables reads the party size (operand type 7, selector 2)' do
+  st = party_state                                             # 2 members
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 2])]) # var1 = party size
+  it.update
+  eq 2, st.variables[1]
+end
+
+check 'Control Variables reads item count and equipped count (operand type 4)' do
+  st = party_state
+  st.party.gain_item(7, 3)                                     # 3 of item 7 in the bag
+  st.party.actor_by_id(1).equip([7, 0, 0, 0, 0])              # hero equips item 7
+  st.party.actor_by_id(2).equip([0, 7, 0, 0, 0])              # ally equips item 7
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 4, 7, 0]),   # var1 = held
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 4, 7, 1])])  # var2 = equipped
+  it.update
+  eq 3, st.variables[1]                                        # 3 held in the bag
+  eq 2, st.variables[2]                                        # two members equip it
 end
 
 check 'Control Variables reads an actor stat (operand type 5)' do
@@ -3612,6 +3635,28 @@ check 'without variance a seeded fight deals exactly the base damage' do
   eq 20, bat.step_action[:damage]                    # exact base, unaffected
 end
 
+check 'battle skill damage varies by the skill variance when the fight rolls it' do
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
+                             mrate: 40, variance: 4) }
+  st = skill_party(skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))    # spi 12 -> effect 32
+  slime = combatant('Slime', 0, 0, 5, 100_000)               # def 0, tanky
+  bat = Game::Battle.new([mage], [slime], Game::Rng.new(1), nil, true) # variance on
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, slime) # base 32
+  dmgs = []
+  20.times do
+    bat.command_skill(mage, slime, name: 'Fire', cost: c[:cost], hp: c[:hp],
+                      mp: c[:mp], inflict: c[:inflict], chance: c[:chance],
+                      variance: c[:variance])
+    e = bat.run_round.find { |x| x[:skill] == 'Fire' }
+    dmgs << e[:damage] if e
+    break if bat.finished?
+  end
+  # base 32, var 4 -> adj = 12, spread 32-6 .. 32+12-6 = 26..38.
+  ok dmgs.uniq.length > 1, "skill damage varies (#{dmgs.uniq.sort.inspect})"
+  ok dmgs.all? { |d| d >= 26 && d <= 38 }, "within 26..38 (#{dmgs.inspect})"
+end
+
 check 'Battle: a stronger party wins, a weaker one is defeated' do
   hero = combatant('Hero', 40, 20, 20, 200)
   slime = combatant('Slime', 8, 4, 5, 30)
@@ -3813,7 +3858,7 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12, maxSP 30
   foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
   # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
-  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100 },
+  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4 },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
