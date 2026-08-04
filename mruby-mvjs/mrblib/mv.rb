@@ -260,6 +260,7 @@ class MV
     maybe_battle_test # CI: start a test battle once on the map, if requested
     maybe_move_test # CI: hold a direction on the map and log that the player moved
     maybe_message_test # CI: show a text message on the map and log the window opened
+    maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -394,7 +395,7 @@ class MV
       false
     end
     return unless new_game || battle_test_troop > 0 || move_test_requested? ||
-                  message_test_requested?
+                  message_test_requested? || menu_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -570,6 +571,63 @@ class MV
     $stderr.puts "[MV-MSG] busy=#{busy} window_open=#{open}"
   rescue StandardError => e
     $stderr.puts "[MV] message test error: #{e.message}"
+  end
+
+  # Whether --mv_menu_test was requested (a launcher constant set by main.cxx).
+  def menu_test_requested?
+    (begin
+      MV_MENU_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # Frames to keep watching for Scene_Menu after requesting it before giving up.
+  MENU_PROBE_FRAMES = 60
+
+  # When --mv_menu_test is set (CI), once on the map open the party menu the way
+  # the engine does — set Scene_Map's own `menuCalling` flag and let its
+  # `updateCallMenu` run `callMenu` (SoundManager.playOk + push Scene_Menu)
+  # inside the scene loop — then log whether Scene_Menu actually opened. This
+  # drives the menu path every RPG uses (map -> Scene_Menu -> the command /
+  # status windows), so a headless run confirms the menu opens. We flip the
+  # scene's flag rather than press a key because MV's keyboard keyMapper has no
+  # 'menu' binding (only the gamepad Y); `menuCalling` is exactly what
+  # `isMenuCalled` sets, so this takes the real callMenu path.
+  #
+  # The flag is re-asserted every frame, not set once: `updateCallMenu` clears
+  # `menuCalling` on any frame the menu is momentarily disabled (an autorun or
+  # the New Game transfer still settling right after reaching the map), so a
+  # single set can be dropped before it ever fires. One-shot report.
+  def maybe_menu_test
+    return if @menu_test_done
+    return unless menu_test_requested?
+    return unless @menu_requested || current_scene == "Scene_Map"
+
+    if current_scene == "Scene_Menu"
+      @menu_test_done = true
+      $stderr.puts "[MV-MENU] reached_menu=true"
+      return
+    end
+
+    @menu_frame ||= 0
+    $stderr.puts "[MV] auto menu test" if @menu_frame == 0
+    @menu_frame += 1
+
+    # (Re)assert the menu call this frame; Scene_Map's updateCallMenu runs
+    # callMenu once the menu is enabled and the player is not moving.
+    @menu_requested = true
+    MV::JS.eval(
+      "if (SceneManager._scene && " \
+      "SceneManager._scene.constructor.name === 'Scene_Map') { " \
+      "SceneManager._scene.menuCalling = true; }"
+    )
+    return if @menu_frame < MENU_PROBE_FRAMES
+
+    @menu_test_done = true
+    $stderr.puts "[MV-MENU] reached_menu=false scene=#{current_scene}"
+  rescue StandardError => e
+    $stderr.puts "[MV] menu test error: #{e.message}"
   end
 
   # Log the running scene's class name whenever it changes, so the boot's
