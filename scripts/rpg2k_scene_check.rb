@@ -1388,6 +1388,31 @@ check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
   ok st.switches[2], 'the Escape handler ran'
 end
 
+check 'Enemy Encounter scene: a game-over defeat returns to the title' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Defeat mode 0 (param 4) = game over, with no [Defeat] handler; the switch
+  # after the encounter must never run once the game ends.
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # A frail hero the two Slimes overwhelm.
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  scene.update
+  battle_attack_to_end(scene) # the hero is worn down -> the defeat result shows
+  parent = scene.instance_variable_get(:@parent)
+  ok !parent.returned_to_title, 'still on the defeat result, not yet game over'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result
+  scene.update
+  RGSS::Input.triggered = []
+  ok parent.returned_to_title, 'a game-over defeat returned to the title'
+  ok !st.switches[5], 'the rest of the event never ran'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

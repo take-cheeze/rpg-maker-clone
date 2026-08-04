@@ -1764,9 +1764,10 @@ class RPG2k
 
       # The battle runs on Combatant snapshots of the party (Game::Battle), so a
       # resolved fight leaves the real party HP untouched for now — persisting HP
-      # and a game over on defeat are still to come. On victory the troop's EXP /
-      # gold are granted and the [Victory] handler runs; escape and defeat route
-      # their handlers.
+      # is still to come. On victory the troop's EXP / gold are granted and the
+      # [Victory] handler runs; escape routes its handler. A defeat routes the
+      # [Defeat] handler when the encounter defines one, or ends the game (return
+      # to title) when its defeat mode is "game over".
       #
       # Drive the turn-based battle screen the map shows during a :battle wait.
       # Each round the player commands every living party member — Attack a chosen
@@ -2132,9 +2133,31 @@ class RPG2k
         finish_battle(@battle_ui[:result])
       end
 
+      # Close the battle and hand the outcome back to the event. A defeat in an
+      # encounter whose defeat mode is "game over" (rather than a [Defeat]
+      # handler) ends the game instead of resuming the event; every other outcome
+      # — victory, escape, or a defeat with a custom handler — resumes it.
       def finish_battle(result)
+        game_over = result == :defeat && @battle_ui[:req][:defeat_game_over]
         close_battle
-        @interpreter.resume_battle(result)
+        if game_over
+          perform_game_over
+        else
+          @interpreter.resume_battle(result)
+        end
+      end
+
+      # Game over: the party was wiped in an encounter that ends the game on
+      # defeat. Stop the event and return to the title screen — the faithful end
+      # state. (RPG2000 shows a Game Over graphic first; that screen is native
+      # renderer work still to come.)
+      def perform_game_over
+        $stderr.puts '[RPG2k] game over'
+        @interpreter.stop
+        @parent.return_to_title
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Game over failed: #{e.message}"
+        @interpreter.stop
       end
 
       def log_round(entries)
