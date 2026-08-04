@@ -140,6 +140,48 @@ assert "RGSS::Bitmap blt" do
   assert_equal 0.0, dst.get_pixel(0, 0).alpha # untouched
 end
 
+assert "RGSS::Bitmap tone_blt" do
+  src = RGSS::Bitmap.new(2, 2)
+  src.fill_rect(0, 0, 2, 2, RGSS::Color.new(100, 150, 200, 255))
+
+  # A neutral tone copies the source through untouched.
+  dst = RGSS::Bitmap.new(2, 2)
+  dst.tone_blt(src, RGSS::Tone.new(0, 0, 0, 0))
+  assert_equal 100.0, dst.get_pixel(0, 0).red
+  assert_equal 150.0, dst.get_pixel(0, 0).green
+  assert_equal 200.0, dst.get_pixel(0, 0).blue
+  assert_equal 255.0, dst.get_pixel(0, 0).alpha
+
+  # Offsets are added per channel and clamped at both ends.
+  dst.tone_blt(src, RGSS::Tone.new(50, -200, 100, 0))
+  assert_equal 150.0, dst.get_pixel(1, 1).red
+  assert_equal 0.0, dst.get_pixel(1, 1).green   # 150 - 200 clamps to 0
+  assert_equal 255.0, dst.get_pixel(1, 1).blue  # 200 + 100 clamps to 255
+
+  # Full gray pulls every channel to the luminance of the source pixel:
+  # (100*299 + 150*587 + 200*114) / 1000 = 140.75, truncated to 140 by the
+  # integer pixel path (no rounding, as elsewhere in the blitters).
+  dst.tone_blt(src, RGSS::Tone.new(0, 0, 0, 255))
+  assert_equal 140.0, dst.get_pixel(0, 1).red
+  assert_equal 140.0, dst.get_pixel(0, 1).green
+  assert_equal 140.0, dst.get_pixel(0, 1).blue
+
+  # Toning reads the source every time rather than accumulating: repeating the
+  # same call is idempotent, which is what stops a per-frame tone marching a
+  # cached layer to black.
+  before = dst.get_pixel(0, 1).red
+  dst.tone_blt(src, RGSS::Tone.new(0, 0, 0, 255))
+  assert_equal before, dst.get_pixel(0, 1).red
+
+  # Alpha is carried through untouched -- a tone tints what shows, it does not
+  # change what is visible.
+  faded = RGSS::Bitmap.new(2, 2)
+  faded.fill_rect(0, 0, 2, 2, RGSS::Color.new(10, 10, 10, 77))
+  dst.tone_blt(faded, RGSS::Tone.new(90, 0, 0, 0))
+  assert_equal 77.0, dst.get_pixel(0, 0).alpha
+  assert_equal 100.0, dst.get_pixel(0, 0).red
+end
+
 assert "RGSS::Bitmap stretch_blt" do
   src = RGSS::Bitmap.new(2, 2)
   src.fill_rect(0, 0, 2, 2, RGSS::Color.new(0, 0, 255, 255))
@@ -150,6 +192,28 @@ assert "RGSS::Bitmap stretch_blt" do
   assert_equal 255.0, dst.get_pixel(5, 5).blue
   assert_equal 0.0, dst.get_pixel(0, 0).alpha # outside the destination rect
   assert_equal 0.0, dst.get_pixel(6, 6).alpha
+end
+
+assert "RGSS::Bitmap gradient_fill_rect" do
+  red = RGSS::Color.new(255, 0, 0, 255)
+  blue = RGSS::Color.new(0, 0, 255, 255)
+
+  # Horizontal gradient across the full width (span 9 => denominator 8).
+  b = RGSS::Bitmap.new(9, 2)
+  b.gradient_fill_rect(0, 0, 9, 2, red, blue)
+  assert_equal 255.0, b.get_pixel(0, 0).red  # left end is color1
+  assert_equal 0.0, b.get_pixel(0, 0).blue
+  assert_equal 0.0, b.get_pixel(8, 1).red    # right end is color2
+  assert_equal 255.0, b.get_pixel(8, 1).blue
+  mid = b.get_pixel(4, 0)                     # halfway: t = 4/8 = 0.5
+  assert_equal 127.0, mid.red                 # 255 - 255*0.5 = 127.5 -> 127
+  assert_equal 127.0, mid.blue
+
+  # Vertical gradient via the Rect overload + the vertical flag.
+  v = RGSS::Bitmap.new(2, 9)
+  v.gradient_fill_rect(RGSS::Rect.new(0, 0, 2, 9), red, blue, true)
+  assert_equal 255.0, v.get_pixel(1, 0).red   # top row is color1
+  assert_equal 255.0, v.get_pixel(1, 8).blue  # bottom row is color2
 end
 
 assert "RGSS::Viewport API surface" do
@@ -480,7 +544,8 @@ assert "RGSS::Plane API surface" do
   # and tiles the bitmap into it, so construction needs a live display the
   # headless test binary lacks. Assert only the method surface here (the tiling
   # itself is exercised by the game runs), matching the Viewport/Sprite tests.
-  %i[bitmap= ox= oy= opacity= z= visible visible= dispose disposed?].each do |m|
+  %i[bitmap= ox= oy= opacity= tone= color= blend_type= zoom_x= zoom_y= z=
+     visible visible= dispose disposed?].each do |m|
     assert_true RGSS::Plane.method_defined?(m), "Plane##{m} missing"
   end
 end

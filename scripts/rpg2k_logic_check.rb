@@ -1264,12 +1264,13 @@ end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
-                       :affect_hp, :affect_sp, :occasion_battle)
+                       :affect_hp, :affect_sp, :occasion_battle,
+                       :state_effects, :reverse_state_effect)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
-               occ_battle: true)
+               occ_battle: true, state_effects: nil, reverse_state: false)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
-                prate, mrate, hp, sp, occ_battle)
+                prate, mrate, hp, sp, occ_battle, state_effects, reverse_state)
 end
 class FakeActorDB
   attr_reader :player, :system, :item, :skill
@@ -1322,6 +1323,37 @@ check 'State save round-trips the message configuration' do
   legacy_loaded = Game::State.load(db, legacy)
   eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
   eq true, legacy_loaded.save_access, 'absent save access defaults on'
+end
+
+check 'Vehicle: unplaced by default, placed once positioned' do
+  v = Game::Vehicle.new(:boat)
+  eq :boat, v.type
+  eq false, v.placed?                          # map_id 0 -> never positioned
+  v.map_id = 4; v.x = 8; v.y = 6; v.direction = 1
+  eq true, v.placed?
+  h = v.to_h
+  w = Game::Vehicle.new(:boat)
+  w.load_h(h)
+  eq [4, 8, 6, 1], [w.map_id, w.x, w.y, w.direction]
+end
+
+check 'State save round-trips vehicle locations (boat / ship / airship)' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.vehicle(:boat).map_id = 4; st.vehicle(:boat).x = 8; st.vehicle(:boat).y = 6
+  st.vehicle(:airship).map_id = 2; st.vehicle(:airship).x = 3
+  st.vehicle(:airship).y = 5; st.vehicle(:airship).direction = 3
+  loaded = Game::State.load(db, st.to_h)
+  eq [4, 8, 6], [loaded.vehicle(:boat).map_id, loaded.vehicle(:boat).x,
+                 loaded.vehicle(:boat).y]
+  eq true, loaded.vehicle(:airship).placed?
+  eq 3, loaded.vehicle(:airship).direction
+  eq false, loaded.vehicle(:ship).placed?      # never positioned -> stays unplaced
+  # A save written before vehicles existed simply restores them unplaced.
+  legacy = st.to_h
+  legacy.delete(:vehicles)
+  eq false, Game::State.load(db, legacy).vehicle(:boat).placed?
 end
 
 check 'Party save round-trips actor name / title / sprite overrides' do
@@ -1895,6 +1927,79 @@ check 'casting a heal with the target already full spends no SP' do
   eq 30, hero.mp                               # unchanged
 end
 
+# -- Field skill status effects (cure / inflict, deterministic) --------------
+
+check 'a cure skill removes only its state_effects states (usable at full HP)' do
+  # state_effects index i -> state id i+1; [0,0,1,0,0,0,1] flags states 3 and 7.
+  skills = { 5 => fake_skill(name: 'Refresh', scope: 3, sp_cost: 4,
+                             state_effects: [0, 0, 1, 0, 0, 0, 1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)               # full HP
+  hero.learn_skill(5)
+  ally.add_state(3); ally.add_state(7); ally.add_state(9)
+  eq true, st.party.skill_effective?(hero, 5, ally)   # afflicted -> usable at full HP
+  eq [ally], st.party.cast_skill(hero, 5, ally)
+  eq false, ally.state?(3)                     # cured
+  eq false, ally.state?(7)                     # cured
+  eq true, ally.state?(9)                      # not listed -> stays
+  eq 26, hero.mp                               # 30 - 4, consumed
+end
+
+check 'a revive skill cures the death state, then its HP recovery lands' do
+  # Cures state 1 (戦闘不能) and heals. States apply first: the cure revives the
+  # ally to 1 HP, then the recovery lands. effect = power 20 + mrate 40*int12/40 = 32.
+  skills = { 6 => fake_skill(name: 'Life', scope: 3, sp_cost: 6,
+                             power: 20, mrate: 40, hp: true, state_effects: [1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(6)
+  ally.change_hp(-9999)                        # KO: HP 0 + state 1
+  eq true, ally.dead?
+  eq [ally], st.party.cast_skill(hero, 6, ally)
+  eq false, ally.dead?
+  eq 33, ally.hp                               # revived to 1, then +32
+end
+
+check 'a plain heal skill cannot revive a downed ally' do
+  skills = { 7 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5,
+                             power: 20, mrate: 40, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(7)
+  ally.change_hp(-9999)                        # KO
+  eq [], st.party.cast_skill(hero, 7, ally)    # a plain heal can't touch a KO'd actor
+  eq true, ally.dead?
+  eq 30, hero.mp                               # nothing spent
+end
+
+check 'a reverse skill inflicts its state_effects states' do
+  skills = { 8 => fake_skill(name: 'Curse', scope: 3, sp_cost: 3,
+                             state_effects: [0, 0, 1], reverse_state: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(8)
+  eq true, st.party.skill_effective?(hero, 8, ally)   # can inflict -> usable
+  eq [ally], st.party.cast_skill(hero, 8, ally)
+  eq true, ally.state?(3)                      # inflicted
+  eq 27, hero.mp                               # 30 - 3
+end
+
+check 'a pure cure skill on an unafflicted ally does nothing and spends no SP' do
+  skills = { 5 => fake_skill(name: 'Refresh', scope: 3, sp_cost: 4,
+                             state_effects: [0, 0, 1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(5)
+  eq false, st.party.skill_effective?(hero, 5, ally)
+  eq [], st.party.cast_skill(hero, 5, ally)
+  eq 30, hero.mp
+end
+
 # -- Field equip menu (Game::Party bag-aware equip) --------------------------
 
 # A single-hero party (base stats maxHP10/maxSP5/atk3/def2/int1/agi4) plus the
@@ -2188,6 +2293,34 @@ check 'Actor death state: non-lethal damage floors HP at 1, no KO' do
   eq 1, a.hp
   eq false, a.dead?
   eq false, a.state?(Game::Actor::DEATH_STATE)
+end
+
+check 'Actor#set_hp sets an absolute HP and syncs the death state' do
+  a = party_state.party.actor_by_id(1)                # max 100
+  a.set_hp(9999); eq 100, a.hp                        # clamped to max
+  a.set_hp(0)
+  eq 0, a.hp
+  eq true, a.dead?                                    # 0 -> knocked out
+  eq true, a.state?(Game::Actor::DEATH_STATE)
+  a.set_hp(25)
+  eq 25, a.hp
+  eq false, a.dead?                                   # positive -> revived
+  eq false, a.state?(Game::Actor::DEATH_STATE)        # death state cleared
+end
+
+check 'Party#all_dead? / any_alive? track the game-over condition' do
+  st = party_state
+  eq true, st.party.any_alive?
+  eq false, st.party.all_dead?
+  st.party.actor_by_id(1).change_hp(-9999)            # leader down
+  eq true, st.party.any_alive?                        # the ally still stands
+  eq false, st.party.all_dead?
+  st.party.actor_by_id(2).change_hp(-9999)            # ally down too
+  eq false, st.party.any_alive?
+  eq true, st.party.all_dead?                         # whole party wiped
+  st.party.actor_by_id(1).full_heal                   # revive one
+  eq true, st.party.any_alive?
+  eq false, st.party.all_dead?
 end
 
 check 'State save round-trips per-actor status states' do
@@ -3407,6 +3540,47 @@ check 'Battle: a defending ally takes half damage and does not attack' do
   bat.run_round
   eq 100, foe.hp, 'the defending hero did not strike back'
   eq 90, hero.hp, 'took half of 20 = 10'
+end
+
+check 'Battle#apply_to_party writes post-battle HP back, KOing at 0' do
+  st = party_state
+  hero = st.party.actor_by_id(1)   # hp 100
+  ally = st.party.actor_by_id(2)   # hp 50
+  hc = Game::Battle.from_actor(hero)
+  ac = Game::Battle.from_actor(ally)
+  hc.hp = 30                       # hero ended the fight wounded
+  hc.mp = 12                       # ...and spent some SP on a battle skill
+  ac.hp = -5                       # ally was knocked out
+  bat = Game::Battle.new([hc, ac], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 30, hero.hp                   # damage persisted to the real actor
+  eq 12, hero.mp                   # SP spent in battle persisted too
+  eq false, hero.dead?
+  eq 0, ally.hp                    # clamped to 0
+  eq true, ally.dead?
+  eq true, ally.state?(Game::Actor::DEATH_STATE)  # a KO inflicts 戦闘不能
+end
+
+check 'Battle#apply_to_party revives a previously-downed actor that survives' do
+  st = party_state
+  ally = st.party.actor_by_id(2)
+  ally.change_hp(-9999)            # currently KO'd from a prior fight
+  eq true, ally.dead?
+  c = Game::Battle.from_actor(ally)
+  c.hp = 20                        # ...took part in a fight and came out at 20 HP
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 20, ally.hp
+  eq false, ally.dead?
+  eq false, ally.state?(Game::Actor::DEATH_STATE)  # revived, death state cleared
+end
+
+check 'Battle#apply_to_party ignores combatants with no source actor' do
+  # A bare snapshot (from_enemy / test combatant) must not raise on write-back.
+  bat = Game::Battle.new([combatant('Ghost', 10, 0, 5, 0)],
+                         [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party                # no source actor -> silently skipped
+  ok true, 'write-back skipped bare combatants without error'
 end
 
 check 'Battle#step_action walks a round one attack at a time for animation' do

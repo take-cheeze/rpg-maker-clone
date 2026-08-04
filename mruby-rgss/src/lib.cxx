@@ -1171,6 +1171,100 @@ mrb_value bmp_fill_rect(mrb_state* M, V self) {
   return self;
 }
 
+int clamp_channel(int v) {
+  return v < 0 ? 0 : (v > 255 ? 255 : v);
+}
+
+// RGSS Bitmap#tone_blt(src, tone): copy `src` into this bitmap, same size,
+// applying an RGSS Tone.
+//
+// A tone is *not* a colour drawn on top -- it rescales what is already there,
+// which is why it cannot be done the way the screen fade and flash are (a solid
+// sprite composited at some opacity). Hence a real pixel pass.
+//
+// RGSS order, which RPG2000's Tint Screen reduces to: desaturate toward
+// luminance by `gray` (0..255), then add the per-channel offsets (-255..255).
+// Luminance uses the usual 299/587/114 weights. Alpha is copied untouched: a
+// tone tints what is visible, it does not make anything more or less so.
+//
+// It writes into a separate destination rather than transforming in place
+// because the caller redraws its layers only when they change; toning in place
+// would re-tone an already-toned layer every frame and march it to black.
+mrb_value bmp_tone_blt(mrb_state* M, V self) {
+  Bitmap& dst = bmp_self(M, self);
+  V src_v, tone_v;
+  mrb_get_args(M, "oo", &src_v, &tone_v);
+  Bitmap& src = DataType<Bitmap>::get(M, src_v);
+  Tone& t = DataType<Tone>::get(M, tone_v);
+
+  if (src.width != dst.width || src.height != dst.height) {
+    RClass* mod = mrb_module_get(M, "RGSS");
+    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    mrb_raisef(M, err, "tone_blt: size mismatch (self %dx%d, src %dx%d)",
+               dst.width, dst.height, src.width, src.height);
+  }
+
+  const int tr = (int)t.red;
+  const int tg = (int)t.green;
+  const int tb = (int)t.blue;
+  const int gray = (int)t.gray;
+  for (int32_t y = 0; y < src.height; ++y) {
+    for (int32_t x = 0; x < src.width; ++x) {
+      int r, g, b, a;
+      bmp_read(src, x, y, r, g, b, a);
+      if (gray > 0) {
+        const int lum = (r * 299 + g * 587 + b * 114) / 1000;
+        r += (lum - r) * gray / 255;
+        g += (lum - g) * gray / 255;
+        b += (lum - b) * gray / 255;
+      }
+      r = clamp_channel(r + tr);
+      g = clamp_channel(g + tg);
+      b = clamp_channel(b + tb);
+      bmp_put(dst, x, y, r, g, b, a);
+    }
+  }
+  dst.dirty = true;
+  return self;
+}
+
+// RGSS Bitmap#gradient_fill_rect(rect, color1, color2, vertical=false) or
+// (x, y, width, height, color1, color2, vertical=false): fill the rect with a
+// linear gradient from color1 to color2, left-to-right (or top-to-bottom when
+// vertical). Like fill_rect, it overwrites the pixels (colour + alpha).
+mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  mrb_int x, y, w, h;
+  V col1, col2;
+  mrb_bool vertical = false;
+  if (mrb_get_argc(M) <= 4) {
+    V r;
+    mrb_get_args(M, "ooo|b", &r, &col1, &col2, &vertical);
+    Rect& rc = DataType<Rect>::get(M, r);
+    x = rc.x;
+    y = rc.y;
+    w = rc.width;
+    h = rc.height;
+  } else {
+    mrb_get_args(M, "iiiioo|b", &x, &y, &w, &h, &col1, &col2, &vertical);
+  }
+  Color& c1 = DataType<Color>::get(M, col1);
+  Color& c2 = DataType<Color>::get(M, col2);
+  const mrb_int span = vertical ? h : w;
+  for (mrb_int j = y; j < y + h; ++j) {
+    for (mrb_int i = x; i < x + w; ++i) {
+      const mrb_int pos = vertical ? (j - y) : (i - x);
+      const double t = span > 1 ? static_cast<double>(pos) / (span - 1) : 0.0;
+      bmp_put(b, i, j, c1.red + (c2.red - c1.red) * t,
+              c1.green + (c2.green - c1.green) * t,
+              c1.blue + (c2.blue - c1.blue) * t,
+              c1.alpha + (c2.alpha - c1.alpha) * t);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
 mrb_value bmp_get_pixel(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y;
@@ -2662,14 +2756,63 @@ void plane_retile(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
   const mrb_int oy =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+
+  // zoom_x/zoom_y scale the tiled pattern (nearest-neighbour): a zoom of 2.0
+  // samples the source at half the rate, so the bitmap appears twice as large.
+  // A non-positive or absent zoom is treated as 1.0 (the fast integer path).
+  const mrb_value zx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_x"));
+  const mrb_value zy_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_y"));
+  double zx = mrb_test(zx_v) ? mrb_as_float(M, zx_v) : 1.0;
+  double zy = mrb_test(zy_v) ? mrb_as_float(M, zy_v) : 1.0;
+  if (zx <= 0.0)
+    zx = 1.0;
+  if (zy <= 0.0)
+    zy = 1.0;
+  const bool scaled = zx != 1.0 || zy != 1.0;
+
+  // Tone (grey desaturation + RGB offset) and colour overlay are baked into the
+  // tiled buffer per pixel, the same way Sprite does — so a tinted fog/parallax
+  // Plane renders its tint. (Same maths as spr_bind_display.)
+  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  Tone tn{};
+  Color cl{0, 0, 0, 0};
+  if (mrb_test(tone_v) && DATA_PTR(tone_v))
+    tn = DataType<Tone>::get(M, tone_v);
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    cl = DataType<Color>::get(M, color_v);
+  const bool has_tone =
+      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_color = cl.alpha != 0;
+  const int ca = static_cast<int>(cl.alpha);
+
   for (int y = 0; y < dst.height; ++y) {
-    const int sy =
-        static_cast<int>(((y + oy) % src.height + src.height) % src.height);
+    const int syb = scaled ? static_cast<int>(std::floor((y + oy) / zy))
+                           : static_cast<int>(y + oy);
+    const int sy = (syb % src.height + src.height) % src.height;
     for (int x = 0; x < dst.width; ++x) {
-      const int sx =
-          static_cast<int>(((x + ox) % src.width + src.width) % src.width);
+      const int sxb = scaled ? static_cast<int>(std::floor((x + ox) / zx))
+                             : static_cast<int>(x + ox);
+      const int sx = (sxb % src.width + src.width) % src.width;
       int r, g, b, a;
       bmp_read(src, sx, sy, r, g, b, a);
+      if (has_tone) {
+        const int gy = static_cast<int>(tn.gray);
+        if (gy != 0) {
+          const int lum = (r * 77 + g * 150 + b * 29) / 256;
+          r += (lum - r) * gy / 255;
+          g += (lum - g) * gy / 255;
+          b += (lum - b) * gy / 255;
+        }
+        r = clamp_byte(r + static_cast<int>(tn.red));
+        g = clamp_byte(g + static_cast<int>(tn.green));
+        b = clamp_byte(b + static_cast<int>(tn.blue));
+      }
+      if (has_color) {
+        r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
+        g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
+        b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
+      }
       bmp_put(dst, x, y, r, g, b, a);
     }
   }
@@ -2740,6 +2883,42 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
   mrb_int oy;
   mrb_get_args(M, "i", &oy);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
+  plane_retile(M, self);
+  return self;
+}
+
+// Plane#tone= / #color= tint the tiled buffer (baked in by plane_retile), so a
+// fog/parallax Plane re-tiles with its new tint on assign.
+mrb_value plane_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  plane_retile(M, self);
+  return v;
+}
+
+mrb_value plane_set_color(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  plane_retile(M, self);
+  return v;
+}
+
+// Plane#zoom_x= / #zoom_y= scale the tiled pattern; plane_retile samples the
+// source at the reciprocal rate, so assigning a zoom re-tiles.
+mrb_value plane_set_zoom_x(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
+  plane_retile(M, self);
+  return self;
+}
+
+mrb_value plane_set_zoom_y(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
   plane_retile(M, self);
   return self;
 }
@@ -3741,6 +3920,12 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "ox=", plane_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "oy=", plane_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "tone=", plane_set_tone, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "color=", plane_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "zoom_x=", plane_set_zoom_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "zoom_y=", plane_set_zoom_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "blend_type=", spr_set_blend_type,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
@@ -3806,9 +3991,12 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "clear", bmp_clear, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "fill_rect", bmp_fill_rect,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(3));
+  mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
+                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "draw_text", bmp_draw_text,

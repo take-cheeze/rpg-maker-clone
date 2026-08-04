@@ -14,6 +14,13 @@
 // draws into. Defined in mvcanvas.cxx.
 void mv_install_canvas(JSContext* ctx);
 
+// Install the WebGL bridge: the __mv_gl* natives and the WebGLRenderingContext
+// prototype that getContext('webgl') returns, backed by the surfaceless-EGL
+// GLES2 backend (mvgl.cxx). Called right after mv_install_canvas. A no-op where
+// the EGL backend is absent (Emscripten/darwin), which keeps
+// getContext('webgl') returning null. Defined in mvwebgl.cxx.
+void mv_install_webgl(JSContext* ctx);
+
 // Return the RGBA8 pixel buffer of the canvas registered under `handle` (as
 // created by the Canvas2D bridge), setting *w/*h to its dimensions. Returns
 // nullptr for an unknown handle. Used to present the MV main canvas on-screen

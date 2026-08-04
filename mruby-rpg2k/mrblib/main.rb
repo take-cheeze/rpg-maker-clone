@@ -2218,7 +2218,13 @@ class RPG2k
       # handler) ends the game instead of resuming the event; every other outcome
       # — victory, escape, or a defeat with a custom handler — resumes it.
       def finish_battle(result)
-        game_over = result == :defeat && @battle_ui[:req][:defeat_game_over]
+        # Persist the party's post-battle HP (and any knock-outs) before leaving
+        # the fight, so damage taken sticks and a downed member stays down.
+        @battle_ui[:battle].apply_to_party
+        # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
+        # party knocked out ends the game; every other outcome resumes the event.
+        game_over = result == :defeat && @battle_ui[:req][:defeat_game_over] &&
+                    @state.party.all_dead?
         close_battle
         if game_over
           perform_game_over
@@ -2228,9 +2234,9 @@ class RPG2k
       end
 
       # Game over: the party was wiped in an encounter that ends the game on
-      # defeat. Stop the event and return to the title screen — the faithful end
-      # state. (RPG2000 shows a Game Over graphic first; that screen is native
-      # renderer work still to come.)
+      # defeat (also the target of the Game Over event command). Stop the event
+      # and return to the title screen — the faithful end state. (RPG2000 shows a
+      # Game Over graphic first; that screen is native renderer work still to come.)
       def perform_game_over
         $stderr.puts '[RPG2k] game over'
         @interpreter.stop

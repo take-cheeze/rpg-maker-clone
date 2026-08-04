@@ -277,6 +277,10 @@ const std::uint8_t* pixels(Context* ctx, int* out_w, int* out_h) {
   return ctx->flipped.data();
 }
 
+unsigned default_framebuffer(Context* ctx) {
+  return ctx ? ctx->fbo : 0u;
+}
+
 bool smoke_test(std::uint8_t out_rgba[4]) {
   const int W = 64, H = 64;
   Context* ctx = create(W, H);
@@ -379,6 +383,9 @@ bool make_current(Context*) {
 }
 const std::uint8_t* pixels(Context*, int*, int*) {
   return nullptr;
+}
+unsigned default_framebuffer(Context*) {
+  return 0u;
 }
 bool smoke_test(std::uint8_t[4]) {
   return false;
