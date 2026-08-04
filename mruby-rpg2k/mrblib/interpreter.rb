@@ -19,6 +19,7 @@ module Game
       CHOICE_OPTION    = 20140
       CHOICE_END       = 20141
       INPUT_NUMBER     = 10150
+      NAME_INPUT       = 10740
       KEY_INPUT_PROC   = 11610
       CONTROL_SWITCHES = 10210
       CONTROL_VARS     = 10220
@@ -37,6 +38,7 @@ module Game
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_VEHICLE_GRAPHIC = 10650
       CHANGE_SYSTEM_GFX   = 10680
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
@@ -56,6 +58,7 @@ module Game
       INN_END          = 20732
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      SET_VEHICLE_LOCATION = 10850
       CHANGE_EVENT_LOCATION = 10860
       TRADE_EVENT_LOCATIONS = 10870
       STORE_TERRAIN_ID  = 10910
@@ -84,6 +87,7 @@ module Game
       SHOW_PICTURE     = 11110
       MOVE_PICTURE     = 11120
       ERASE_PICTURE    = 11130
+      SHOW_BATTLE_ANIM = 11210
       PLAYER_VISIBILITY = 11310
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
@@ -143,7 +147,8 @@ module Game
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
                 :teleport, :input_digits, :key_input_request, :inn_request,
-                :shop_request, :battle_request
+                :shop_request, :battle_request, :name_input_request,
+                :battle_animation
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -164,6 +169,11 @@ module Game
       @actor_graphic_changed = false
       @system_graphic_changed = false
       @tileset_request = nil
+      # Messages queued by a stat command (a Change Level / Change EXP with its
+      # "show message" flag set) and shown one after another before the event
+      # continues. Drained by #resume, so it survives the reset_waits between
+      # messages; abandoned by #stop.
+      @pending_messages = []
       reset_waits
     end
 
@@ -278,6 +288,9 @@ module Game
 
     # Resume after a message/wait/teleport request has been handled.
     def resume
+      # A stat command may have queued several level-up messages; show the next
+      # one instead of continuing until the queue drains.
+      return if show_next_pending_message
       reset_waits
     end
 
@@ -287,6 +300,7 @@ module Game
       @running = false
       @index = @list.size
       @call_stack = []
+      @pending_messages = []
       reset_waits
     end
 
@@ -303,6 +317,17 @@ module Game
     # number the player entered.
     def resume_number(value)
       variables[@input_variable] = value.to_i if @input_variable
+      reset_waits
+    end
+
+    # Resume Enter Hero Name (10740): rename the target actor to the entered
+    # `name` (a blank entry keeps the previous name, as RPG_RT does) and continue.
+    # The owning scene drives the character-entry widget while the interpreter is
+    # paused on the :name_input wait, then calls this with the entered name.
+    def resume_name_input(name)
+      req = @name_input_request
+      actor = req && party.actor_by_id(req[:actor_id])
+      actor.name = name if actor && name && !name.empty?
       reset_waits
     end
 
@@ -453,6 +478,8 @@ module Game
       @inn_request = nil
       @shop_request = nil
       @battle_request = nil
+      @name_input_request = nil
+      @battle_animation = nil
     end
 
     def switches;  @state.switches;  end
@@ -478,6 +505,7 @@ module Game
       when Cmd::SHOP_TRANSACTION    then skip_to([Cmd::SHOP_END], cmd.indent); consume
       when Cmd::SHOP_NO_TRANSACTION then skip_to([Cmd::SHOP_END], cmd.indent); consume
       when Cmd::SHOP_END         then nil
+      when Cmd::NAME_INPUT       then do_name_input cmd
       when Cmd::SHOW_INN         then do_show_inn cmd
       when Cmd::INN_STAY         then skip_to([Cmd::INN_END], cmd.indent); consume
       when Cmd::INN_NO_STAY      then skip_to([Cmd::INN_END], cmd.indent); consume
@@ -499,6 +527,8 @@ module Game
       when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
       when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
       when Cmd::CHANGE_ACTOR_SPRITE then do_change_actor_sprite cmd
+      when Cmd::CHANGE_VEHICLE_GRAPHIC then do_change_vehicle_graphic cmd
+      when Cmd::SET_VEHICLE_LOCATION then do_set_vehicle_location cmd
       when Cmd::CONDITIONAL      then do_conditional cmd
       when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
       when Cmd::END_BRANCH       then nil
@@ -522,6 +552,7 @@ module Game
       when Cmd::SHOW_PICTURE     then do_show_picture cmd
       when Cmd::MOVE_PICTURE     then do_move_picture cmd
       when Cmd::ERASE_PICTURE    then do_erase_picture cmd
+      when Cmd::SHOW_BATTLE_ANIM then do_show_battle_animation cmd
       when Cmd::WEATHER_EFFECTS  then do_weather cmd
       when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
@@ -767,6 +798,24 @@ module Game
     # suspends on an :inn wait; the scene shows the greeting, the accept / cancel
     # choices (accept selectable only when affordable) and the gold window, then
     # resumes via resume_inn. Charging gold and healing the party happen there.
+    # Enter Hero Name (10740): open the name-entry screen for the actor whose id
+    # is param0. param1 is the initial character set (0 hiragana, 1 katakana,
+    # 2 letters — our widget offers the letter set), param2 the "seed with the
+    # current name" flag. Suspends on a :name_input wait carrying the actor id and
+    # the seed name; the scene drives the entry widget and calls #resume_name_input
+    # with the entered name. A no-op (no wait) for an actor not in the party, since
+    # this build only instantiates party actors.
+    def do_name_input(cmd)
+      actor = party.actor_by_id(cmd.param(0))
+      return unless actor
+      @name_input_request = {
+        actor_id: cmd.param(0), charset: cmd.param(1),
+        seed: cmd.param(2) != 0 ? actor.name : ''
+      }
+      @wait_kind = :name_input
+      @waiting = true
+    end
+
     def do_show_inn(cmd)
       price = cmd.param(1)
       @inn_price = price
@@ -964,17 +1013,55 @@ module Game
     # stats from the growth curve. Uses the same scope/operation/operand layout
     # as Change HP (stat_targets / stat_amount); the show-level-up-message flag is
     # ignored (no battle/message UI drives it here).
+    # Change EXP: add or remove experience for the target actors, which may cross
+    # one or more level thresholds. param5 is the "show message" flag — when set,
+    # each level an actor gains queues a level-up message (drained by #resume).
     def do_change_exp(cmd)
       amount = stat_amount(cmd)
-      stat_targets(cmd).each { |a| a.gain_exp(amount) }
+      show_msg = cmd.param(5) != 0
+      stat_targets(cmd).each do |a|
+        before = a.level
+        a.gain_exp(amount)
+        queue_level_up_messages(a, before, a.level) if show_msg
+      end
+      show_next_pending_message
     end
 
     # Change Level: add or subtract levels for the target actors, recomputing
     # their base stats and re-aligning EXP to the new level. Same scope/operation/
     # operand layout as Change EXP.
+    # Change Level: add or remove levels for the target actors. param5 is the
+    # "show message" flag — when set, each level an actor gains queues a level-up
+    # message (drained by #resume).
     def do_change_level(cmd)
       amount = stat_amount(cmd)
-      stat_targets(cmd).each { |a| a.change_level_by(amount) }
+      show_msg = cmd.param(5) != 0
+      stat_targets(cmd).each do |a|
+        before = a.level
+        a.change_level_by(amount)
+        queue_level_up_messages(a, before, a.level) if show_msg
+      end
+      show_next_pending_message
+    end
+
+    # Queue one level-up message per level `actor` gained going from `old_level`
+    # to `new_level` (nothing when the level did not rise). RPG_RT phrases these
+    # from the database terms; this build uses a plain English line for now.
+    def queue_level_up_messages(actor, old_level, new_level)
+      return unless new_level > old_level
+      ((old_level + 1)..new_level).each do |lv|
+        @pending_messages.push(["#{actor.name} is now level #{lv}!"])
+      end
+    end
+
+    # Enter the next queued level-up message as a :message wait; returns false
+    # (and does nothing) when the queue is empty.
+    def show_next_pending_message
+      return false if @pending_messages.empty?
+      @message_lines = @pending_messages.shift
+      @wait_kind = :message
+      @waiting = true
+      true
     end
 
     # -- actor HP / MP --------------------------------------------------------
@@ -1060,6 +1147,43 @@ module Game
       actor.set_charset(cmd.string || '', cmd.param(1))
       actor.transparent = cmd.param(2) != 0
       @actor_graphic_changed = true
+    end
+
+    # The vehicle a vehicle command targets: param0 is 0 boat / 1 ship /
+    # 2 airship (Game::Vehicle::TYPES order), or nil for an out-of-range value.
+    def vehicle_target(cmd)
+      type = Vehicle::TYPES[cmd.param(0)]
+      type && @state.vehicle(type)
+    end
+
+    # Set Vehicle Location (10850): place a vehicle on a map. param0 is the
+    # vehicle; param1 the operand mode (0 the values are literal, 1 they are
+    # variable ids), and param2/param3/param4 the map id, x and y (like Change
+    # Event Location's designation). A no-op for an out-of-range vehicle.
+    def do_set_vehicle_location(cmd)
+      v = vehicle_target(cmd)
+      return unless v
+      map_id = cmd.param(2)
+      x = cmd.param(3)
+      y = cmd.param(4)
+      if cmd.param(1) == 1
+        map_id = variables[map_id]
+        x = variables[x]
+        y = variables[y]
+      end
+      v.map_id = map_id
+      v.x = x
+      v.y = y
+    end
+
+    # Change Vehicle Graphic (10650): give a vehicle a new CharSet graphic — the
+    # command string names the file and param1 the cell index. A no-op for an
+    # out-of-range vehicle.
+    def do_change_vehicle_graphic(cmd)
+      v = vehicle_target(cmd)
+      return unless v
+      v.charset_name = cmd.string || ''
+      v.charset_index = cmd.param(1)
     end
 
     # Change Parameters: adjust a base stat. param3 selects the stat (0 max HP,
@@ -1456,6 +1580,21 @@ module Game
     # Erase Picture (11130): remove picture param0 from the screen.
     def do_erase_picture(cmd)
       @state.erase_picture(cmd.param(0))
+    end
+
+    # Show Battle Animation (11210): play battle animation param0 over a target
+    # character on the map. param1 is the target id (the player, an event, or
+    # this event — the Move Event target scheme) and param2 the "wait until it
+    # finishes" flag. Records the request (which a future map-animation renderer
+    # will draw) and, when the wait flag is set, suspends on an :animation wait so
+    # the owning scene can hold the event for the animation's duration. Drawing
+    # the animation itself is native renderer work still to come.
+    def do_show_battle_animation(cmd)
+      @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
+                            wait: cmd.param(2) != 0 }
+      return unless cmd.param(2) != 0
+      @wait_kind = :animation
+      @waiting = true
     end
 
     # A picture coordinate: the literal param at `idx`, or the value of the

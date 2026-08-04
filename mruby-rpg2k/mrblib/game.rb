@@ -3308,6 +3308,7 @@ module Game
       # `.lsd` chunks 105-107. Unplaced until a save restores them.
       @vehicles = { boat: Vehicle.new(:boat), ship: Vehicle.new(:ship),
                     airship: Vehicle.new(:airship) }
+      @boarded = nil
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -3317,9 +3318,15 @@ module Game
     end
 
     attr_reader :pictures, :vehicles
+    # The vehicle the party is currently riding (:boat / :ship / :airship), or
+    # nil when on foot. Set by boarding on the map and persisted in the save.
+    attr_accessor :boarded
 
     # The saved location of vehicle `type` (:boat / :ship / :airship), or nil.
     def vehicle(type); @vehicles[type]; end
+
+    # Whether the party is aboard a vehicle.
+    def boarded?; !@boarded.nil?; end
 
     # Show (or replace) picture `id` with the given Picture options hash.
     def show_picture(id, opts)
@@ -3392,7 +3399,7 @@ module Game
         system_sfx: @system_sfx, screen_transitions: @screen_transitions,
         system_graphic: @system_graphic, font_id: @font_id,
         vehicles: { boat: @vehicles[:boat].to_h, ship: @vehicles[:ship].to_h,
-                    airship: @vehicles[:airship].to_h } }
+                    airship: @vehicles[:airship].to_h }, boarded: @boarded }
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
@@ -3761,6 +3768,7 @@ module Game
         state.vehicle(:ship).load_h(v[:ship])
         state.vehicle(:airship).load_h(v[:airship])
       end
+      state.boarded = h[:boarded]
       state
     end
   end
