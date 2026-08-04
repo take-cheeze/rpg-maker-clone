@@ -116,9 +116,13 @@ maps do no per-frame work. `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
 `visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
 **Remaining:** the per-tile **priority layering** (`priorities`) — tiles that
 should draw above characters — is stored-only, so everything still renders on one
-flat layer (a correct fix needs the above-priority tiles to become their own
-z-ordered objects that interleave with character sprites per row); and
-`flash_data` is ignored.
+flat layer. A correct fix needs the above-priority tiles to become their own
+z-ordered objects that interleave with character sprites per row; the design is
+worked out in
+[ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md) (per-row `z` strips as
+companion z-objects) and is held for review before it lands, because it mints new
+z-ordered objects and a custom dispose path that can only be verified in a running
+game. `flash_data` is also still ignored.
 
 ### 4. `Plane` ✅ (tiling + scroll + tint/blend + zoom all rendered)
 
