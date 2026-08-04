@@ -186,9 +186,21 @@ JavaScript loads and interprets the JSON.
       Where the EGL backend is absent (Emscripten/darwin) the natives are not
       installed and `getContext("webgl")` stays `null`, so PIXI keeps its Canvas
       path there.
-    - **M6.3c — PIXI v5 boots to a frame.** Fill the gaps PIXI exercises (VAO
-      emulation, texture params, FBOs, uniform introspection) until `MZ#boot_probe`
-      renders `Scene_Boot`, verified against a user-supplied MZ project.
+    - **M6.3c — PIXI v5 boots to a frame (reaches Scene_Boot).** `data/mz-sample`
+      commits a minimal authored database and fetches the rmmz engine (community
+      mirror `stak/rmmz-corescript`, CI-only fixture) via
+      `scripts/download-mz-corescript.bash`. The one host global MZ's boot needs
+      beyond MV's — `indexedDB` (the `SceneManager.checkBrowser` guard after
+      `Utils.canUseWebGL`) — is added to `MZ::HOST_GLOBALS_JS`, and `MZ#boot_probe`
+      drives `SceneManager.run(Scene_Boot)` plus a few frames past the old WebGL
+      wall: `Graphics` builds the PIXI renderer on the surfaceless-EGL backend and
+      the scene runs. `scripts/mz_boot_check.bash` asserts the `[MZ-BOOT]` marker
+      in CI. The gap set was found by booting PIXI v5.2.4 + rmmz under Node
+      against the wrapper's method surface — the single wrapper fix it required
+      was the enum statics (above); VAO/instancing are feature-detected and fall
+      back cleanly. Remaining for full play: per-frame on-screen present + FBO
+      resize (input/present, not just the probe), verified against a real MZ
+      project.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
