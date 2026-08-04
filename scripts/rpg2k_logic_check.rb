@@ -1078,6 +1078,35 @@ check 'conditional branch on the timer' do
   eq false, st.switches[5]
 end
 
+check 'Timer Operation start carries the show-timer flag; text is M:SS' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Set 90 s (constant operand), then start with the show-timer flag on.
+  it.start([
+    FakeCmd.new(IC::TIMER_OPERATION, [0, 0, 90]),        # set = 90 s
+    FakeCmd.new(IC::TIMER_OPERATION, [1, 0, 0, 1, 0]),   # start, visible
+  ])
+  it.update
+  eq 90 * 60, st.timer_frames
+  eq true, st.timer_running
+  eq true, st.timer_visible, 'the show-timer flag turns the display on'
+  eq '1:30', st.timer_display_text, '90 s reads as 1:30'
+  # Stopping freezes the count but leaves the display shown.
+  it.start([FakeCmd.new(IC::TIMER_OPERATION, [2])])
+  it.update
+  eq false, st.timer_running
+  eq true, st.timer_visible, 'a stopped timer stays on screen'
+  # A start with the flag clear hides it again.
+  it.start([FakeCmd.new(IC::TIMER_OPERATION, [1, 0, 0, 0, 0])])
+  it.update
+  eq false, st.timer_visible, 'starting without the flag hides the timer'
+  # Padding: seconds below ten keep a leading zero, minutes are uncapped.
+  st.timer_frames = 5 * 60
+  eq '0:05', st.timer_display_text
+  st.timer_frames = 605 * 60 # 10 min 5 s
+  eq '10:05', st.timer_display_text
+end
+
 # -- Memorize / Recall Location ----------------------------------------------
 
 check 'Memorize Location stores map/x/y into three variables' do

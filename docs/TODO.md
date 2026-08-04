@@ -415,7 +415,11 @@ The work below is roughly ordered by the critical path to a walkable game
   the message/choice UI (those requests are skipped) — full parallel UI is a
   later refinement
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
-  `Game::State` countdown). The **Tint Screen** (11030) command now drives a
+  `Game::State` countdown) and is now **drawn**: the start operation's
+  "show timer" flag sets a `timer_visible` state (persisted in the save), and
+  while set `Scene::Map` shows a small top-centre window counting down as
+  `M:SS`, independent of whether the timer is still running. The **Tint Screen**
+  (11030) command now drives a
   `Game::Screen` tint state machine on `Game::State`: it interpolates the four
   RPG2000 channels (red/green/blue/saturation, 0..200) toward their target over
   the command's duration (advanced each frame by `Scene::Map`), and the wait
