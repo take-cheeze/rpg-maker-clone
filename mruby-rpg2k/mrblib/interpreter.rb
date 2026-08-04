@@ -1252,6 +1252,10 @@ module Game
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
+      when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
+             # 1 ship / 2 airship)
+        v = cmd.param(1)
+        v >= 0 && v < Vehicle::TYPES.size && @state.boarded == Vehicle::TYPES[v]
       else true
       end
     end

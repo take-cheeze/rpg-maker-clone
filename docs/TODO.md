@@ -237,9 +237,11 @@ The work below is roughly ordered by the critical path to a walkable game
   party) and **game quantities** (party gold, timer seconds, party size). The
   event-reference operand (map id / position / facing of an event or the hero)
   is still TODO.
-  Conditional Branch covers switch / variable / **timer** / gold / item
-  conditions and **all** the **actor** sub-conditions (in party, name, level ≥,
-  HP ≥, item equipped, skill known, and **afflicted by a state**). Actors now
+  Conditional Branch covers switch / variable / **timer** / gold / item /
+  **vehicle** (is the party aboard the boat / ship / airship) conditions and
+  **all** the **actor** sub-conditions (in party, name, level ≥, HP ≥, item
+  equipped, skill known, and **afflicted by a state**); the event-facing
+  condition (type 6) is still TODO. Actors now
   carry a **status-condition (状態) set** (`Game::Actor#states` with
   `add_state` / `remove_state` / `state?`; **Full Recovery clears it**), which
   persists in both the Marshal save and the `.lsd` (chunk 108 fields 81/82,

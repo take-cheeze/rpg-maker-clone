@@ -2370,6 +2370,16 @@ check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' 
   eq true, run_actor_cond([5, 1, 6, 3]).switches[2] # has-state -> false -> else
 end
 
+check 'Conditional Branch: party riding a vehicle (type 7)' do
+  # type 7, param1 the vehicle (0 boat / 1 ship / 2 airship).
+  st = run_actor_cond([7, 1]) { |s| s.boarded = :ship }
+  eq true, st.switches[1]                            # riding the ship -> if-branch
+  st = run_actor_cond([7, 0]) { |s| s.boarded = :ship }
+  eq true, st.switches[2]                            # asked about the boat -> else
+  st = run_actor_cond([7, 2])                        # on foot (boarded nil)
+  eq true, st.switches[2]                            # not aboard -> else
+end
+
 # -- Input Number -------------------------------------------------------------
 
 check 'Input Number pauses with a :number request, resume stores the value' do
