@@ -161,7 +161,10 @@ assert "RGSS::Viewport API surface" do
 end
 
 assert "RGSS::Sprite API surface" do
-  %i[bitmap= x= y= z= visible visible= dispose disposed?].each do |m|
+  # opacity= is native (honoured by the LVGL compositor, src/lib.cxx); the rest
+  # are native too. Sprite.new needs a live display, so this only asserts the
+  # method surface — the compositing itself is exercised by the game runs.
+  %i[bitmap= x= y= z= visible visible= opacity= dispose disposed?].each do |m|
     assert_true RGSS::Sprite.method_defined?(m), "Sprite##{m} missing"
   end
 end

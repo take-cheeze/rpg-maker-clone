@@ -37,17 +37,24 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (stored; render pending)
+### 1. `Sprite` extended properties ⚠️ (opacity rendered; rest stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
-`visible`/`visible=`, `dispose`, `update`, and now **stores** the extra
-properties the stock scripts set — `opacity` (~18), `ox`/`oy`, `zoom_x`/`zoom_y`
-(~3 each), `angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2),
-`src_rect` and `flash` — with RGSS defaults (`mruby-rgss/mrblib/lib.rb`), so a
-script's `sprite.opacity = n` no longer raises. **Remaining:** the native
-renderer does not yet honour them visually (opacity/zoom/tone/mirror compositing
-in the draw path). `Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather
-and the animation player depend on these.
+`visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
+stock scripts set — `opacity` (~18), `ox`/`oy`, `zoom_x`/`zoom_y` (~3 each),
+`angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2), `src_rect`
+and `flash` — with RGSS defaults (`mruby-rgss/mrblib/lib.rb`).
+
+**`opacity` is now rendered natively:** `Sprite#opacity=` sets the sprite
+canvas's LVGL object opacity (`src/lib.cxx`), so the compositor multiplies the
+bitmap's alpha by it — fades (`sprite.opacity = n`) now actually fade. Since a
+Sprite's native handle is an `lv_canvas` (an LVGL image subclass), the remaining
+transforms map to LVGL image styles too: **zoom_x/zoom_y** →
+`transform_scale_x/y`, **angle** → `transform_rotation`, **mirror** → negative
+scale; **tone/color/src_rect/bush_depth** need a software pre-composite through
+the existing `bmp_blt`/`bmp_stretch_blt` blend loops. Those are the next slices.
+`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather and the animation
+player depend on these.
 
 ### 2. `Window` ⚠️ (stored; native frame/cursor render pending)
 
