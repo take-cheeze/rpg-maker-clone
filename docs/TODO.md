@@ -337,11 +337,12 @@ The work below is roughly ordered by the critical path to a walkable game
   so a temporary ailment wears off. **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random
-  member of its own side. Basic attacks apply RPG2000's **damage variance** (a
-  `var` of 4 spread via `Algo::VarianceAdjustEffect`), enabled for the live game
-  and off for seeded / headless fights. Still to come: enemy-cast infliction,
-  criticals / attributes / skill damage variance, all-target skill/item scopes,
-  the per-terrain backdrop and the RPG2000 Game Over graphic.
+  member of its own side. Basic attacks **and attack skills** apply RPG2000's
+  **damage variance** (a `var` of 4 for attacks, each skill's own `variance` for
+  skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
+  off for seeded / headless fights. Still to come: enemy-cast infliction,
+  criticals / attributes, all-target skill/item scopes, the per-terrain backdrop
+  and the RPG2000 Game Over graphic.
   The remaining event commands (Inflict Damage, Name Input, Show Battle
   Animation, vehicle boarding, tile substitution, ...) are TODO. **Change System
   Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the
