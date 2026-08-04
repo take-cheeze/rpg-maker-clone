@@ -219,8 +219,15 @@ The work below is roughly ordered by the critical path to a walkable game
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
-  conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
-  item equipped, skill known; state is not modelled). **Show / Move / Erase
+  conditions and **all** the **actor** sub-conditions (in party, name, level ≥,
+  HP ≥, item equipped, skill known, and **afflicted by a state**). Actors now
+  carry a **status-condition (状態) set** (`Game::Actor#states` with
+  `add_state` / `remove_state` / `state?`; **Full Recovery clears it**), which
+  persists in both the Marshal save and the `.lsd` (chunk 108 fields 81/82,
+  previously parsed-but-unused) and is restored by `from_lsd`, so a real save's
+  status ailments survive. Applying states from battle / items / skills (the
+  item `state_set` + `reverse_state_effect` fields) is the remaining piece.
+  **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
   `Game::State`, decoded with EasyRPG's parameter layout (literal or
