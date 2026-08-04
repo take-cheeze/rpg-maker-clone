@@ -1,0 +1,1 @@
+[null,{"id":1,"name":"Attack","mpCost":0,"tpCost":0,"scope":1,"occasion":0,"damage":{"type":1,"elementId":0,"formula":"a.atk","variance":20,"critical":true},"effects":[],"iconIndex":0,"description":"","message1":"","message2":"","requiredWtypeId1":0,"requiredWtypeId2":0,"hitType":1,"animationId":1,"repeats":1,"stypeId":0,"note":"","messageType":0,"successRate":100,"speed":0}]

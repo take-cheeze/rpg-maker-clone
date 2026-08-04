@@ -2,10 +2,12 @@
 /wasm-build
 /emsdk
 # Downloaded test-bed games live under data/ and are not committed, except the
-# hand-authored MV sample (data/mv-sample), which has its own .gitignore for the
-# engine files it fetches. Ignore data/ contents but re-include that one.
+# hand-authored MV and MZ samples (data/mv-sample, data/mz-sample), which each
+# have their own .gitignore for the engine files they fetch. Ignore data/
+# contents but re-include those two.
 /data/*
 !/data/mv-sample
+!/data/mz-sample
 /ss
 
 # Runtime save artifacts written by the MV/websave (localStorage) shim.

@@ -763,8 +763,17 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
       context and `Utils.canUseWebGL()` is true. `gl_test.rb` renders a green
       triangle end to end through the wrapper. Stubs cleanly (getContext →
       `null`) where the EGL backend is absent.
-    - 🚧 M6.3c PIXI v5 boots to a frame: fill the remaining gaps PIXI exercises
-      (getExtension/VAO emulation, texture Y-flip + image uploads, uniform
-      introspection wiring, presenting the GL frame on-screen) until
-      `MZ#boot_probe` renders `Scene_Boot`, verified against a user-supplied MZ
-      project.
+    - 🚧 M6.3c PIXI v5 boots to a frame:
+      - ✅ MZ reaches `Scene_Boot` through the renderer: `data/mz-sample` commits
+        a minimal authored database and fetches the rmmz engine
+        (`scripts/download-mz-corescript.bash`, community mirror, CI-only); `MZ`
+        adds the one host global MZ's boot needs (`indexedDB`), and
+        `MZ#boot_probe` drives `SceneManager.run(Scene_Boot)` + a few frames past
+        the old `Utils.canUseWebGL()` wall. `scripts/mz_boot_check.bash` asserts
+        the `[MZ-BOOT] booted to <scene>` marker in CI. Discovered/validated by
+        booting PIXI v5.2.4 + rmmz under Node against the wrapper's surface.
+      - 🚧 Remaining: present the GL frame on-screen each frame + resize the FBO
+        to the canvas (continuous play, not just the boot probe); optional VAO /
+        `vertexAttribDivisor` fast path (PIXI falls back without it); texture
+        Y-flip + image uploads and uniform-introspection polish as real content
+        (a user-supplied MZ project) exercises them.
