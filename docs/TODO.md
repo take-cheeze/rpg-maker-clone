@@ -124,8 +124,10 @@ The work below is roughly ordered by the critical path to a walkable game
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
-  Tint Screen, Flash Screen, Shake Screen, Call Event, Move Event, Change / Trade
-  Event Location, Change Map Tileset, Proceed With Movement, Halt All Movement,
+  Change Teleport / Escape Access,
+  Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
+  Event, Change / Trade Event Location, Change Map Tileset, Proceed With
+  Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
   loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
@@ -164,9 +166,12 @@ The work below is roughly ordered by the critical path to a walkable game
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
-  item equipped, skill known; state is not modelled). The remaining commands
-  (pictures, weather, battles, shop / inn, EXP gain / level-up messages, ...) are
-  TODO
+  item equipped, skill known; state is not modelled). **Weather Effects** (11070)
+  records the map weather type (none / rain / snow) and strength on `Game::State`
+  — the Ruby-half model only, like the tint overlay, so it round-trips through the
+  save but drawing the rain/snow particles is native renderer work still to come.
+  The remaining commands (pictures, battles, shop / inn, EXP gain / level-up
+  messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
