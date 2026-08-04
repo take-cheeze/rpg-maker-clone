@@ -1590,9 +1590,8 @@ void blit_glyph_tex(Bitmap& bmp,
                      : 0;
     int srow = sy;
     if (sh > 1 && tline_h > 0.0) {
-      int r = static_cast<int>(
-          std::lround((static_cast<double>(ty) - tline_top) * (sh - 1) /
-                      tline_h));
+      int r = static_cast<int>(std::lround(
+          (static_cast<double>(ty) - tline_top) * (sh - 1) / tline_h));
       srow = sy + std::clamp(r, 0, sh - 1);
     }
     int sr = 255, sg = 255, sb = 255, sa = 255;
@@ -1873,10 +1872,9 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
 
   const FontAttr fa = read_font(M, self);
   if (fa.ttf && fa.ttf->ok) {
-    draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h,
-                      static_cast<int>(align), *src, static_cast<int>(sx),
-                      static_cast<int>(sy), static_cast<int>(sw),
-                      static_cast<int>(sh));
+    draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align),
+                      *src, static_cast<int>(sx), static_cast<int>(sy),
+                      static_cast<int>(sw), static_cast<int>(sh));
     return self;
   }
 
@@ -1895,11 +1893,11 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
       // down the text; a flat swatch reads as a single colour.
       int srow = static_cast<int>(sy);
       if (sh > 1 && c.HEIGHT > 1)
-        srow = static_cast<int>(sy) +
-               std::clamp(static_cast<int>(std::lround(
-                              static_cast<double>(i) * (sh - 1) /
-                              (c.HEIGHT - 1))),
-                          0, static_cast<int>(sh) - 1);
+        srow =
+            static_cast<int>(sy) +
+            std::clamp(static_cast<int>(std::lround(static_cast<double>(i) *
+                                                    (sh - 1) / (c.HEIGHT - 1))),
+                       0, static_cast<int>(sh) - 1);
       int sr = 255, sg = 255, sb = 255, sa = 255;
       if (scol >= 0 && srow >= 0 && scol < src->width && srow < src->height)
         bmp_read(*src, scol, srow, sr, sg, sb, sa);
