@@ -388,6 +388,7 @@ class RPG2k
         build_parallels
         @message = nil
         @inn_window = nil
+        @shop = nil
         @wait_timer = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -419,6 +420,7 @@ class RPG2k
       def dispose
         close_message
         close_inn_window
+        close_shop
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
          @picture_sprite].each do |s|
           s.dispose if s
@@ -1294,6 +1296,7 @@ class RPG2k
           when :number then open_number_input(@interpreter.input_digits)
           when :key_input then drive_key_input
           when :inn then drive_inn
+          when :shop then drive_shop
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -1462,6 +1465,161 @@ class RPG2k
         @inn_window[:window].dispose
         @inn_window[:gold].dispose if @inn_window[:gold]
         @inn_window = nil
+      end
+
+      # -- Open Shop (buy / sell) ---------------------------------------------
+
+      SHOP_LINE_H = 14
+
+      # Drive an Open Shop wait. On the first frame the shop opens (a command
+      # menu for a buy+sell shop, or straight to the buy / sell list for a
+      # single-mode shop). Buying and selling happen one unit per confirm on
+      # Game::Shop; leaving resumes the interpreter with whether anything was
+      # traded (which picks the [Transaction] / [No Transaction] branch).
+      def drive_shop
+        req = @interpreter.shop_request
+        return @interpreter.resume_shop(false) unless req
+        if @shop.nil?
+          open_shop(req) # opened this frame; take input from the next one
+          return
+        end
+        @shop[:screen] == :command ? drive_shop_command : drive_shop_list
+      end
+
+      def open_shop(req)
+        model = Game::Shop.new(db, @state.party, req[:goods],
+                               req[:allow_buy], req[:allow_sell])
+        has_menu = req[:allow_buy] && req[:allow_sell]
+        screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
+        @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
+                  window: nil, gold: build_shop_gold_window }
+        draw_shop
+      end
+
+      def shop_gold_term; nonblank(db.term.gold, 'G'); end
+
+      def build_shop_gold_window
+        gw = 88
+        win = Window.new(SCREEN_W - gw - 6, 6, gw, SHOP_LINE_H + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+        win
+      end
+
+      # The [label, target] rows for the current shop screen: the command menu's
+      # actions, the goods on the buy list, or the party's sellable items.
+      def shop_lines
+        m = @shop[:model]
+        case @shop[:screen]
+        when :command
+          rows = []
+          rows << ['Buy', :buy] if m.allow_buy?
+          rows << ['Sell', :sell] if m.allow_sell?
+          rows << ['Leave', :leave]
+          rows
+        when :buy
+          m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
+        else # :sell
+          m.sellable_items.map do |id|
+            ["#{m.name(id)} x#{@state.party.item_count(id)}  " \
+             "#{m.sell_price(id)}#{shop_gold_term}", id]
+          end
+        end
+      end
+
+      def draw_shop
+        lines = shop_lines
+        @shop[:index] = Game.clamp(@shop[:index], 0, [lines.length - 1, 0].max)
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = [lines.length, 1].max * SHOP_LINE_H
+        @shop[:window].dispose if @shop[:window]
+        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |(label, _), i|
+          c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
+        end
+        win.contents = c
+        unless lines.empty?
+          win.cursor_rect =
+            Rect.new(0, @shop[:index] * SHOP_LINE_H, inner_w, SHOP_LINE_H)
+        end
+        @shop[:window] = win
+        draw_shop_gold
+      end
+
+      def draw_shop_gold
+        gw = 88
+        c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, SHOP_LINE_H,
+                    "#{@state.party.gold}#{shop_gold_term}"
+        @shop[:gold].contents = c
+      end
+
+      def drive_shop_command
+        lines = shop_lines
+        if shop_move_cursor(lines)
+          # cursor moved
+        elsif Input.trigger?(Input::C)
+          case lines[@shop[:index]][1]
+          when :buy  then shop_switch(:buy)
+          when :sell then shop_switch(:sell)
+          when :leave then leave_shop
+          end
+        elsif Input.trigger?(Input::B)
+          leave_shop
+        end
+      end
+
+      def drive_shop_list
+        lines = shop_lines
+        if shop_move_cursor(lines)
+          # cursor moved
+        elsif Input.trigger?(Input::C) && !lines.empty?
+          id = lines[@shop[:index]][1]
+          @shop[:screen] == :buy ? @shop[:model].buy(id) : @shop[:model].sell(id)
+          draw_shop # refresh gold and, after a sale, the (shrunk) list
+        elsif Input.trigger?(Input::B)
+          @shop[:has_menu] ? shop_switch(:command) : leave_shop
+        end
+      end
+
+      # Move the shop cursor with Up / Down; returns true if it moved.
+      def shop_move_cursor(lines)
+        if Input.trigger?(Input::DOWN) && @shop[:index] < lines.length - 1
+          @shop[:index] += 1
+          draw_shop
+          true
+        elsif Input.trigger?(Input::UP) && @shop[:index] > 0
+          @shop[:index] -= 1
+          draw_shop
+          true
+        else
+          false
+        end
+      end
+
+      def shop_switch(screen)
+        @shop[:screen] = screen
+        @shop[:index] = 0
+        draw_shop
+      end
+
+      def leave_shop
+        transacted = @shop[:model].did_transaction
+        close_shop
+        @interpreter.resume_shop(transacted)
+      end
+
+      def close_shop
+        return unless @shop
+        @shop[:window].dispose if @shop[:window]
+        @shop[:gold].dispose if @shop[:gold]
+        @shop = nil
       end
 
       def drive_wait

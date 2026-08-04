@@ -2141,6 +2141,75 @@ module Game
 
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
+  # An open shop (Open Shop, 10720). Holds the goods on offer and the buy / sell
+  # rules, and performs the transactions against the party's gold and inventory.
+  # RPG2000 buys at the item's database price and sells at half of it; the party
+  # caps items at 99 and gold at 999999 (Party enforces both). `did_transaction`
+  # records whether anything was actually bought or sold, which decides the
+  # event's [Transaction] / [No Transaction] branch. The scene drives the UI and
+  # calls #buy / #sell one unit at a time.
+  class Shop
+    attr_reader :goods, :did_transaction
+
+    def initialize(db, party, goods, allow_buy, allow_sell)
+      @db = db
+      @party = party
+      @goods = (goods || []).select { |id| id && id > 0 }
+      @allow_buy = allow_buy
+      @allow_sell = allow_sell
+      @did_transaction = false
+    end
+
+    def allow_buy?;  @allow_buy;  end
+    def allow_sell?; @allow_sell; end
+
+    # Database price of item `id` (0 when the item is missing or free).
+    def price(id)
+      it = @db.item[id]
+      it ? (it.price || 0) : 0
+    end
+
+    # Display name of item `id` ('' when missing).
+    def name(id)
+      it = @db.item[id]
+      it ? it.name.to_s : ''
+    end
+
+    # Half the database price — what a sale returns (RPG2000 rounds down).
+    def sell_price(id); price(id) / 2; end
+
+    # Whether item `id` can be sold: the party owns at least one and it has a
+    # non-zero price (RPG2000 marks price-0 / key items as unsellable).
+    def sellable?(id); price(id) > 0 && @party.item_count(id) > 0; end
+
+    # The party's sellable items, id-ordered, for the sell list.
+    def sellable_items
+      @party.items.keys.select { |id| sellable?(id) }.sort
+    end
+
+    # Buy one unit of `id`: must be stocked, buying allowed, affordable and not
+    # already capped at 99. Returns whether the purchase happened.
+    def buy(id)
+      return false unless @allow_buy && @goods.include?(id)
+      cost = price(id)
+      return false if @party.gold < cost || @party.item_count(id) >= 99
+      @party.gain_gold(-cost)
+      @party.gain_item(id, 1)
+      @did_transaction = true
+      true
+    end
+
+    # Sell one unit of `id` at half price: must be allowed and sellable. Returns
+    # whether the sale happened.
+    def sell(id)
+      return false unless @allow_sell && sellable?(id)
+      @party.gain_gold(sell_price(id))
+      @party.gain_item(id, -1)
+      @did_transaction = true
+      true
+    end
+  end
+
   # Map weather set by the Weather Effects (11070) event command: a type (0 none,
   # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
   # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half

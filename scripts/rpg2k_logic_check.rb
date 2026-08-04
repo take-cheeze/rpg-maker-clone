@@ -1249,11 +1249,12 @@ FakeActorSystem = Struct.new(:party)
 # the medicine recovery/scope fields Game::Party#use_item reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
-                      :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate)
+                      :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
+                      :price)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
-              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0)
+              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
-               rhp, rhp_rate, rsp, rsp_rate)
+               rhp, rhp_rate, rsp, rsp_rate, price)
 end
 class FakeActorDB
   attr_reader :player, :system, :item
@@ -2584,6 +2585,120 @@ check 'Show Inn: Stay / No Stay handler branches route on the outcome' do
   ok !st2.switches[1], 'the Stay branch was skipped'
   eq true, st2.switches[2], 'the No Stay branch ran'
   eq true, st2.switches[3], 'execution continued past the inn'
+end
+
+# -- Open Shop ----------------------------------------------------------------
+
+# A shop over a party with `gold` gold and the given goods (id => price). Item
+# names are irrelevant to the logic, so they are left blank.
+def shop_setup(gold, goods, allow_buy: true, allow_sell: true)
+  items = {}
+  goods.each { |id, price| items[id] = fake_item(name: "i#{id}", price: price) }
+  db = FakeActorDB.new(
+    { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                             atk: 10, def: 8) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.gain_gold(gold)
+  shop = Game::Shop.new(db, st.party, goods.keys, allow_buy, allow_sell)
+  [st, shop]
+end
+
+check 'Shop buy deducts gold, adds the item, and records a transaction' do
+  st, shop = shop_setup(500, { 3 => 100 })
+  ok shop.buy(3), 'the purchase succeeds'
+  eq 400, st.party.gold, 'price deducted'
+  eq 1, st.party.item_count(3), 'item added'
+  ok shop.did_transaction
+end
+
+check 'Shop buy refuses when unaffordable, unstocked, capped, or sell-only' do
+  st, shop = shop_setup(50, { 3 => 100 })
+  ok !shop.buy(3), 'cannot afford 100 with 50'
+  eq 50, st.party.gold
+  ok !shop.buy(7), 'item 7 is not stocked'
+  ok !shop.did_transaction, 'no failed purchase counts as a transaction'
+  # capped at 99
+  st2, shop2 = shop_setup(999_999, { 3 => 1 })
+  st2.party.gain_item(3, 99)
+  ok !shop2.buy(3), 'cannot exceed 99 of an item'
+  # sell-only shop refuses buys
+  _st3, shop3 = shop_setup(500, { 3 => 100 }, allow_buy: false, allow_sell: true)
+  ok !shop3.buy(3)
+end
+
+check 'Shop sell adds half price, removes the item, records a transaction' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  st.party.gain_item(3, 2)
+  ok shop.sell(3), 'the sale succeeds'
+  eq 50, st.party.gold, 'half of 100'
+  eq 1, st.party.item_count(3), 'one removed'
+  ok shop.did_transaction
+end
+
+check 'Shop sell refuses unowned, price-0 (key), or in a buy-only shop' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  ok !shop.sell(3), 'nothing owned to sell'
+  # a price-0 item is unsellable even when held
+  st2, shop2 = shop_setup(0, { 4 => 0 })
+  st2.party.gain_item(4, 1)
+  ok !shop2.sell(4), 'key / price-0 items cannot be sold'
+  # buy-only shop refuses sells
+  st3, shop3 = shop_setup(0, { 3 => 100 }, allow_buy: true, allow_sell: false)
+  st3.party.gain_item(3, 1)
+  ok !shop3.sell(3)
+end
+
+check 'Shop sellable_items lists only held, priced goods in id order' do
+  st, shop = shop_setup(0, { 3 => 100, 5 => 40, 8 => 0 })
+  st.party.gain_item(8, 1) # price 0 -> not sellable
+  st.party.gain_item(5, 2)
+  st.party.gain_item(3, 1)
+  eq [3, 5], shop.sellable_items
+end
+
+check 'Open Shop parses the mode and goods and suspends on :shop' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # mode 1 (buy only), type 0, param2 handlers flag, param3 unused, goods 3/5/7.
+  it.start([FakeCmd.new(IC::OPEN_SHOP, [1, 0, 0, 0, 3, 5, 7])])
+  it.update
+  ok it.waiting?, 'Open Shop suspends the interpreter'
+  eq :shop, it.wait_kind
+  req = it.shop_request
+  eq true, req[:allow_buy]
+  eq false, req[:allow_sell], 'mode 1 is buy-only'
+  eq [3, 5, 7], req[:goods]
+end
+
+check 'Open Shop routes Transaction / No Transaction handler branches' do
+  list = [
+    FakeCmd.new(IC::OPEN_SHOP, [0, 0, 0, 0, 3], indent: 0),
+    FakeCmd.new(IC::SHOP_TRANSACTION, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::SHOP_NO_TRANSACTION, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::SHOP_END, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 0)
+  ]
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start(list)
+  it.update
+  it.resume_shop(true) # bought something
+  it.update
+  eq true, st.switches[1], 'the Transaction branch ran'
+  ok !st.switches[2], 'the No Transaction branch was skipped'
+  eq true, st.switches[3], 'execution continued past the shop'
+  # And the no-transaction path on a fresh run.
+  st2 = party_state
+  it2 = Game::Interpreter.new(st2)
+  it2.start(list)
+  it2.update
+  it2.resume_shop(false)
+  it2.update
+  ok !st2.switches[1]
+  eq true, st2.switches[2], 'the No Transaction branch ran'
+  eq true, st2.switches[3]
 end
 
 # -- summary ------------------------------------------------------------------
