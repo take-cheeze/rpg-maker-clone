@@ -69,6 +69,9 @@ module RGSS
     end
     def self.reset; @dir_value = 0; @triggered = []; end
     def self.trigger?(k); Array(@triggered).include?(k); end
+    # The scene treats a held key like a triggered one for widget navigation; the
+    # stub answers both from the same `triggered` set.
+    def self.repeat?(k); Array(@triggered).include?(k); end
     def self.dir4; @dir_value || 0; end
     def self.update; end
   end
@@ -151,16 +154,26 @@ end
 
 # One event page. Defaults: an action-trigger, stationary event with no route.
 def page(x_move_type: Game::MoveType::STATIONARY, route: nil, trigger: 0,
-         frequency: 6)
+         frequency: 6, direction: 2, charset_name: '', charset_index: 0,
+         layer: 0, pattern: 1, animation_type: 0, translucent: false)
   OpenStruct.new(
-    condition: nil, direction: 2, move_type: x_move_type, move_speed: 3,
-    move_frequency: frequency, charset_name: '', charset_index: 0,
-    trigger: trigger, event_commands: nil, move_route: route
+    condition: nil, direction: direction, move_type: x_move_type, move_speed: 3,
+    move_frequency: frequency, charset_name: charset_name,
+    charset_index: charset_index, trigger: trigger, event_commands: nil,
+    move_route: route, layer: layer, pattern: pattern,
+    animation_type: animation_type, translucent: translucent
   )
 end
 
 def event(x, y, pg)
   OpenStruct.new(x: x, y: y, pages: { 1 => pg })
+end
+
+# The runtime event hash (id => {char:, layer:, anim_type:, ...}) the scene built.
+def event_hashes(scene)
+  h = {}
+  scene.instance_variable_get(:@events).each { |e| h[e[:id]] = e }
+  h
 end
 
 def move_route(cmd_ids, repeat: true, skippable: true)
@@ -436,6 +449,48 @@ check 'Erase Event stops a parallel process that erases itself' do
      'erased from the event list'
   ok scene.instance_variable_get(:@parallels).empty?,
      'its background process was removed'
+end
+
+check 'Halt All Movement cancels a forced player route in the scene' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Force the player onto a repeating downward route, then immediately halt all
+  # movement: the route must be cancelled before it can step the player.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 1, 1, R::MOVE_DOWN]),
+                         ECmd.new(ic::HALT_ALL_MOVEMENT, [])]
+  scene = new_scene({ 1 => event(3, 0, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  20.times { scene.update }
+  ok scene.instance_variable_get(:@player_route).nil?,
+     'the forced player route was cancelled'
+  eq [0, 0], [st.x, st.y], 'the player never moved (movement was halted)'
+end
+
+check 'Input Number opens a widget; confirming stores the entered value' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Two digits into variable 5, then flip switch 1 so we can see it resumed.
+  auto.event_commands = [ECmd.new(ic::INPUT_NUMBER, [2, 5]),
+                         ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  ni = nil
+  12.times do
+    scene.update
+    ni = scene.instance_variable_get(:@number_input)
+    break if ni
+  end
+  ok ni, 'the number-entry widget opened'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]  # confirm
+  scene.update
+  ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
+  5.times { RGSS::Input.reset; scene.update }
+  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
 check 'a message types out gradually, then a button completes and dismisses it' do
@@ -718,6 +773,112 @@ check 'Show / Move / Erase Picture drive the picture layer through the scene' do
   eq true, st.switches[1], 'resumed once the picture stopped moving'
   eq true, st.switches[2], 'ran past the erase'
   ok !st.pictures.shown?(1), 'the picture was erased'
+end
+
+# -- event graphic rendering --------------------------------------------------
+
+check 'an event page facing is converted from LCF (0..3) to numpad' do
+  # LCF facing 1 = right -> numpad 6; 0 = up -> 8; 3 = left -> 4.
+  { 0 => 8, 1 => 6, 2 => 2, 3 => 4 }.each do |lcf, numpad|
+    ev = event(2, 2, page(direction: lcf))
+    scene = new_scene({ 1 => ev })
+    eq numpad, chars(scene)[1].direction, "LCF dir #{lcf}"
+  end
+end
+
+check 'build_event captures the page graphic + layer fields' do
+  ev = event(2, 2, page(charset_name: 'hero', charset_index: 3, layer: 2,
+                        pattern: 2, animation_type: Game::EventGraphic::SPIN,
+                        translucent: true))
+  e = event_hashes(new_scene({ 1 => ev }))[1]
+  eq 'hero', e[:char].graphic_name
+  eq 3, e[:char].graphic_index
+  eq 2, e[:layer]
+  eq 2, e[:base_pattern]
+  eq Game::EventGraphic::SPIN, e[:anim_type]
+  ok e[:translucent], 'translucent page flagged'
+end
+
+check 'events route into the tile buffer matching their layer / y-order' do
+  below = event(2, 2, page(charset_name: 'c', layer: 0))
+  above = event(3, 2, page(charset_name: 'c', layer: 2))
+  # Same-layer events sort around the player (at y=4 below both): a same-layer
+  # event north of the player (smaller y) draws behind him, south draws in front.
+  same_behind = event(4, 1, page(charset_name: 'c', layer: 1))
+  same_front  = event(5, 4, page(charset_name: 'c', layer: 1))
+  scene = new_scene({ 1 => below, 2 => above, 3 => same_behind, 4 => same_front },
+                    player: [0, 3])
+  eh = event_hashes(scene)
+  lower = scene.instance_variable_get(:@lower_bmp)
+  upper = scene.instance_variable_get(:@upper_bmp)
+  eq lower, scene.send(:event_target_buffer, eh[1]), 'below-hero -> lower'
+  eq upper, scene.send(:event_target_buffer, eh[2]), 'above-hero -> upper'
+  eq lower, scene.send(:event_target_buffer, eh[3]), 'same layer, north -> lower'
+  eq upper, scene.send(:event_target_buffer, eh[4]), 'same layer, south -> upper'
+end
+
+check 'a wandering event cycles its walk phase; a stationary one rests' do
+  mover = event(3, 2, page(charset_name: 'c', x_move_type: Game::MoveType::RANDOM))
+  still = event(1, 1, page(charset_name: 'c')) # stationary, non-continuous
+  scene = new_scene({ 1 => mover, 2 => still }, player: [5, 4])
+  eh = event_hashes(scene)
+  slid = false
+  200.times { scene.update; slid ||= eh[1][:moving] }
+  ok slid, 'a random mover slides between tiles at some point'
+  ok [eh[1][:char].x, eh[1][:char].y] != [3, 2], 'the mover changed tiles'
+  ok eh[1][:anim_phase] != 0, 'the mover advanced its walk animation while sliding'
+  ok !eh[2][:moving], 'a stationary event never slides'
+  eq [1, 1], [eh[2][:char].x, eh[2][:char].y], 'the stationary event held its tile'
+  eq 0, eh[2][:anim_phase], 'a stationary non-continuous event holds its pose'
+end
+
+check 'an event slides smoothly between tiles instead of teleporting' do
+  # A forced route walks the event one tile east; sample its pixel position
+  # through the step and confirm it eases across rather than jumping a full tile.
+  ev = event(0, 2, page(charset_name: 'c', frequency: 6))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  scene.send(:force_event_route, e,
+             Game::MoveRoute.new(move_route([R::MOVE_RIGHT]).commands,
+                                 repeat: false, skippable: true), nil)
+  xs = []
+  20.times { scene.update; xs << scene.send(:event_pixel, e)[0] }
+  ok xs.include?(16), 'the slide completes on the destination tile (x px 16)'
+  mids = xs.select { |px| px.positive? && px < 16 }
+  ok !mids.empty?, "expected intermediate pixel offsets during the slide, got #{xs.inspect}"
+  ok xs.each_cons(2).all? { |a, b| b >= a }, 'the slide advances monotonically east'
+end
+
+check 'a multi-tile hop snaps rather than streaking across the map' do
+  # Reoccupy with a >1-tile jump should not start a slide (move_count stays at
+  # TILE, so event_pixel is the destination tile immediately).
+  ev = event(1, 1, page(charset_name: 'c'))
+  scene = new_scene({ 1 => ev })
+  e = event_hashes(scene)[1]
+  e[:char].x = 4 # simulate a jump landing (2 tiles east)
+  scene.send(:reoccupy, e, 1, 1)
+  eq RPG2k::Scene::Map::TILE, e[:move_count], 'a long hop does not slide'
+  eq [4 * RPG2k::Scene::Map::TILE, 1 * RPG2k::Scene::Map::TILE],
+     scene.send(:event_pixel, e), 'it snaps to the destination tile'
+end
+
+check 'a continuous-animation event advances even while standing still' do
+  ev = event(2, 2, page(charset_name: 'c',
+                        animation_type: Game::EventGraphic::CONTINUOUS))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  40.times { scene.update }
+  e = event_hashes(scene)[1]
+  eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
+  ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+end
+
+check 'rendering a map with charset + tile-substitution events does not raise' do
+  charset_ev = event(2, 2, page(charset_name: 'npc', charset_index: 1, layer: 1))
+  tile_ev    = event(3, 3, page(charset_name: '', charset_index: 97, layer: 0))
+  invisible  = event(4, 4, page(charset_name: '', charset_index: 0, trigger: 1))
+  scene = new_scene({ 1 => charset_ev, 2 => tile_ev, 3 => invisible })
+  10.times { scene.update }
+  ok true
 end
 
 # -- summary ------------------------------------------------------------------

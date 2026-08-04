@@ -67,9 +67,18 @@ The work below is roughly ordered by the critical path to a walkable game
   Passability still drives collision. Geometry is pinned by
   `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
   Tiles) substitution and screen-tone tinting of tiles.
-- 🚧 Character sprites — the party leader renders from its CharSet graphic
-  (`Game::CharSet`, 4-direction, 3 walk frames); NPC/event sprites are drawn as
-  markers for now
+- ✅ Character sprites — the party leader and every map event render from their
+  CharSet graphic (`Game::CharSet`, 4-direction, 3 walk frames). Events also
+  draw a chipset tile when their graphic is a tile substitution (empty CharSet
+  name), composite into the correct layer relative to the hero (below / above /
+  same-layer y-sorted), honour the translucent flag, and pick their walk frame
+  from the page's animation type (`Game::EventGraphic`: walk-while-moving,
+  continuous, fixed-direction, fixed-graphic, spin). Events also **slide
+  smoothly between tiles** (per-step pixel interpolation, mirroring the player):
+  a single-tile step eases across over `TILE/SPEED` frames while the walk
+  animation cycles, and a longer hop snaps. Grounded in the real Nepheshel data
+  and pinned by `scripts/rpg2k_render_check.rb` /
+  `scripts/rpg2k_scene_check.rb`. Remaining polish: vehicle sprites
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
   animation and edge/tile/event collision. Move-route *data* decodes
   (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and
@@ -104,11 +113,11 @@ The work below is roughly ordered by the critical path to a walkable game
   Equipment, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
-  Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
+  Message Options, Change Face Graphic, Input Number, Change Actor
+  Name / Title / Sprite, Change Main Menu / Save Access, Tint
   Screen, Flash Screen, Shake Screen, Pan Screen, Show/Move/Erase Picture,
-  Call Event, Move Event,
-  Proceed With Movement, Erase Event, End Event) with a per-frame step cap so a
-  bad loop
+  Call Event, Move Event, Proceed With Movement, Halt All Movement, Erase Event,
+  End Event) with a per-frame step cap so a bad loop
   can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
@@ -121,7 +130,12 @@ The work below is roughly ordered by the critical path to a walkable game
   map event, "this event" or the player) along it in the background. **Proceed
   With Movement** then pauses the interpreter until every forced route in
   progress has finished — the scene advances those routes while it waits and
-  resumes it once none remain. **Erase
+  resumes it once none remain. **Halt All Movement** cancels every forced route
+  at once (the player's and each event's). **Input Number** suspends on a
+  digit-entry widget and writes the entered value to a variable. **Change Actor
+  Name / Title / Sprite** rename a party actor, set its status-screen title or
+  swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
+  these edits survive Save / Continue. **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal**, **Change Parameters**, **Change EXP**, **Change
@@ -139,18 +153,19 @@ The work below is roughly ordered by the critical path to a walkable game
   EXP / HP / MP / max HP-MP / attack / defence / spirit / agility) and **game
   quantities** (party gold, timer seconds). Conditional Branch covers switch /
   variable / **timer** / gold / item conditions and the **actor** sub-conditions
-  (in party, name, level ≥, HP ≥, item equipped; skill / state are not modelled).
-  **Show / Move / Erase Picture** (11110 / 11120 / 11130) place, tween and
-  remove numbered on-screen pictures: a `Game::Pictures` layer on `Game::State`
-  holds each picture's position, magnification, top transparency, colour tone and
-  rotation/wave effect (read from the RPG2000 parameter layout, with the position
-  optionally taken from variables), Move Picture interpolates those toward new
-  values over its duration (integer-division tween like the screen tint, honouring
-  the wait flag via a `:picture` wait the scene resumes once nothing is moving),
-  and Erase Picture drops one. Like the tint/flash overlays this is the Ruby-half
-  model only — actually compositing the picture bitmap (magnify/rotate/tone blit)
-  is native (C++) renderer work still to come. The remaining commands (battles,
-  the EXP-gain / level-up messages RPG_RT shows, ...) are TODO
+  (in party, name, level ≥, HP ≥, item equipped, skill known; state is not
+  modelled). **Show / Move / Erase Picture** (11110 / 11120 / 11130) place, tween
+  and remove numbered on-screen pictures: a `Game::Pictures` layer on
+  `Game::State` holds each picture's position, magnification, top transparency,
+  colour tone and rotation/wave effect (read from the RPG2000 parameter layout,
+  with the position optionally taken from variables), Move Picture interpolates
+  those toward new values over its duration (integer-division tween like the
+  screen tint, honouring the wait flag via a `:picture` wait the scene resumes
+  once nothing is moving), and Erase Picture drops one. Like the tint/flash
+  overlays this is the Ruby-half model only — actually compositing the picture
+  bitmap (magnify/rotate/tone blit) is native (C++) renderer work still to come.
+  The remaining commands (weather, battles, shop / inn, the EXP-gain / level-up
+  messages RPG_RT shows, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
@@ -285,10 +300,16 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   its operand. *Change Party Member* (129) adds/removes actors from the party,
   the **actor "is in the party"** conditional (type 4) is evaluated, and Control
   Variables also reads the **"other" game quantities** — map id, party size and
-  gold (operand type 7). Covered by `mruby-rpgxp/test` and driven over the real
-  test bed by `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route
-  targets, the remaining actor / enemy / character conditional sub-conditions,
-  and the many screen-effect / picture / battle commands (skipped for now).
+  gold (operand type 7). **Battle Processing** (301) navigates its result
+  branches — If Win (601), If Escape (602), If Lose (603), branch end (604) —
+  running only the branch that matches the resolved outcome (a win by default,
+  configurable via the interpreter's `battle_outcome`, since there is no battle
+  system yet); the real `OpenGame.exe` XP test bed uses this structure. Covered
+  by `mruby-rpgxp/test` and driven over the real test bed by
+  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets,
+  the remaining actor / enemy / character conditional sub-conditions, and the
+  many screen-effect / picture commands, plus the battle system itself that
+  Battle Processing would drive (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1

@@ -40,6 +40,17 @@ directly. Before opening one:
   includes code that needs review. Each PR gets a **Cloudflare Pages** preview
   and must keep CI green before it is merged; pushes to `master` deploy the page
   to **GitHub Pages**.
+- **Auto-merge counts as approval — keep moving.** When a PR has auto-merge
+  enabled, treat it as already review-approved: do not block waiting for the
+  merge to land. Move straight on to the next task if there is work left to do;
+  the PR merges itself once CI passes.
+- **Resolve conflicts when you find them.** When a branch or PR has merge
+  conflicts against `master` (a push to `master` made the PR un-mergeable, or a
+  merge/rebase stops on a conflict), resolve them yourself rather than leaving
+  them: merge the latest `master` into the branch (or rebase onto it, per the
+  branch's convention), fix the conflicted files, re-run the checks you can, and
+  push. Only ask when a conflict is genuinely ambiguous — both sides changed the
+  same logic and picking one silently drops behavior.
 
 ## Architecture Decision Records
 
@@ -74,9 +85,19 @@ Create ADRs in /docs/adr for:
 - The `LcfSaveData` schema lives in `mruby-lcf/mrblib/schema.rb` (`SAVE_DATA`).
   Analyse a real save with `ruby scripts/lcf_save_check.rb <path/to/Save01.lsd>`;
   it lists documented vs. undocumented top-level chunks and reads every
-  documented field. Generate a real save by running an RPG Maker 2000 game under
-  wine (headless via Xvfb) and saving in-game — synthetic blobs cannot catch a
-  mistyped field, so validate against genuine output.
+  documented field. Synthetic blobs cannot catch a mistyped field, so validate
+  against genuine output.
+- Generate a real save headlessly with `./scripts/gen-lcf-save-wine.bash`: it
+  boots a game's EasyRPG Player under wine (Xvfb + `matchbox-window-manager` so
+  the SDL window gets input focus) with `--test-play` and uses the **debug menu**
+  (F9 → Save → slot) to write a genuine `Save<N>.lsd` from anywhere — no
+  playthrough needed, which is how a real **RPG2003** save is obtained despite
+  those games' menu-disabled intros (and Nepheshel's Gate-only saving). It then
+  runs `lcf_save_check.rb`. Defaults to the mtf-meido-action RPG2003 test-bed;
+  pass a game dir + slot for others. Input notes for driving EasyRPG under Xvfb:
+  a window manager is required (no WM → wine never focuses the window → keys are
+  dropped), decision keys must be *held* (keydown/pause/keyup, not a tap), and
+  menu-cursor moves want short taps. See ADR 0017.
 - Top-level chunk map, from a real save (Nepheshel, saved at the town Gate).
   Documented in `SAVE_DATA`: 100 title, 101 system, 103 pictures, 104–107
   hero/boat/ship/airship, 108 party actors, 110 teleport targets, 111 map
@@ -109,8 +130,8 @@ Create ADRs in /docs/adr for:
   the data (or the rpg2kpsp analysis wiki) spells out, per ADR 0002.
 - The runtime can resume from a real save: `Game::State.from_lsd(db, save)`
   rebuilds a `State` from a parsed `LcfSaveData` (leader position, party roster,
-  gold, items, switches, variables, and each roster actor's saved level/exp and
-  current HP/MP from chunk 108), and `continue_game` loads an editor
+  gold, items, switches, variables, and each roster actor's saved level/exp,
+  current HP/MP, equipment and skills from chunk 108), and `continue_game` loads an editor
   `Save<N>.lsd` when present. Actor base stats scale with level from the database
   growth curve (chunk 31, six shorts per level, via `LCF::Array1D#int16_values`),
   so a restored level rescales the maxima — see ADR 0015. `Game::Actor` also
@@ -130,9 +151,11 @@ Create ADRs in /docs/adr for:
   asserts the Classes table decodes and every actor's `class_id` resolves. The
   2003-specific content lives almost entirely in the database (`RPG_RT.ldb`),
   which is validated against real 2003 games (Song-of-the-Sea, mtf-meido-action);
-  the `.lsd` layout is largely shared with 2000, and generating a real 2003 save
-  is gated behind those games' menu-disabled intros (save-level 2003 validation
-  is follow-up — see ADR 0013).
+  the `.lsd` layout is largely shared with 2000. A real 2003 save is now
+  validated too: `gen-lcf-save-wine.bash` writes one from mtf-meido-action via
+  the debug menu (bypassing its menu-disabled intro), and it parses through
+  `SAVE_DATA` and round-trips into the runtime cleanly — see ADR 0017 (this was
+  the follow-up deferred by ADR 0013).
 
 ## Testing Standards
 

@@ -3,6 +3,7 @@ def rpg_maker_gems(conf)
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
   conf.gem core: 'mruby-io'
+  conf.gem core: 'mruby-numeric-ext'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 

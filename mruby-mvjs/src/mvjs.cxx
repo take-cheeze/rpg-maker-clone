@@ -812,12 +812,46 @@ mrb_value js_screenshot(mrb_state* mrb, mrb_value self) {
   return mrb_true_value();
 }
 
+// Decode %XX percent-escapes. MV builds asset URLs with
+// encodeURIComponent(filename) (see ImageManager.loadBitmap / AudioManager), so
+// a "$Hero" character sheet is requested as "%24Hero.png", "!Door" as
+// "%21Door.png", and a space as "%20" — none of which match the file on disk
+// until decoded. Only well-formed %HH triples are decoded; a lone '%' or bad
+// hex is passed through unchanged, so already-decoded paths are untouched.
+std::string url_decode(const std::string& s) {
+  auto hex = [](char c) -> int {
+    if (c >= '0' && c <= '9')
+      return c - '0';
+    if (c >= 'a' && c <= 'f')
+      return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+      return c - 'A' + 10;
+    return -1;
+  };
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '%' && i + 2 < s.size()) {
+      const int h = hex(s[i + 1]), l = hex(s[i + 2]);
+      if (h >= 0 && l >= 0) {
+        out.push_back(static_cast<char>((h << 4) | l));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(s[i]);
+  }
+  return out;
+}
+
 }  // namespace
 
 // Root a game-relative path at the configured base dir. Declared in mvhost.hxx
 // and shared with the Canvas2D image loader (mvcanvas.cxx). Kept at file scope
 // (external linkage) so it can reach the anonymous-namespace `g_base_dir`.
-std::string mv_resolve_path(const std::string& p) {
+std::string mv_resolve_path(const std::string& raw) {
+  // MV percent-encodes asset filenames; decode before touching the filesystem.
+  const std::string p = url_decode(raw);
   if (p.empty() || p[0] == '/' || g_base_dir.empty())
     return p;
   // Already rooted at the base dir (e.g. a path the Ruby side pre-joined)?

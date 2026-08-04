@@ -531,6 +531,110 @@ module Game
         full(24 + (idx - 48) % 6, (idx - 48) / 6)
       end
     end
+
+    # Source rect [sx, sy, w, h] in the chipset image for an event whose graphic
+    # is a *chipset tile* rather than a CharSet character: an RPG2000 event with
+    # an empty CharSet name draws tile `tile_id` (its stored graphic index) from
+    # the chipset. This is a direct port of EasyRPG Player's Cache::Tile — the
+    # event-tile palette occupies three 6-wide columns in the lower-right of the
+    # 480x256 chipset (block E/F region), addressed differently from the map's
+    # own lower/upper chips. tile_id 0 and out-of-range ids fall back to the
+    # first (empty) tile.
+    def event_tile_rect(tile_id)
+      if tile_id > 0 && tile_id < 48
+        sub = tile_id;      bx = 288; by = 128
+      elsif tile_id >= 48 && tile_id < 96
+        sub = tile_id - 48; bx = 384; by = 0
+      elsif tile_id >= 96 && tile_id < 144
+        sub = tile_id - 96; bx = 384; by = 128
+      else
+        sub = 0;            bx = 288; by = 128 # invalid -> first tile
+      end
+      [bx + sub % 6 * TS, by + sub / 6 * TS, TS, TS]
+    end
+  end
+
+  # How an RPG2000 map event's graphic is drawn each frame: which CharSet frame
+  # (facing row + walk-pattern column) or chipset tile to show, given the event
+  # page's static graphic fields and the character's live movement state.
+  #
+  # Pure geometry / selection logic with no rendering dependency (like
+  # ChipsetLayout), so it is exercised directly by scripts/rpg2k_render_check.rb.
+  # The owning Scene::Map keeps a per-event walk `phase` counter and a `moving`
+  # flag and asks #frame for the (direction, column) to blit.
+  module EventGraphic
+    # Event-page facing is stored 0..3 (0 up, 1 right, 2 down, 3 left); the
+    # runtime characters use RPG2000's numpad convention (8/6/2/4). Map between
+    # them so movement and the CharSet row (Game::CharSet::DIR_ROW) agree.
+    LCF_DIR_TO_NUMPAD = { 0 => 8, 1 => 6, 2 => 2, 3 => 4 }.freeze
+
+    # Event-page animation types (MAP_EVENT_PAGE field 36).
+    NON_CONTINUOUS       = 0 # walk animation only while stepping, faces movement
+    CONTINUOUS           = 1 # walk animation always runs, faces movement
+    FIXED_NON_CONTINUOUS = 2 # facing fixed, walk animation only while stepping
+    FIXED_CONTINUOUS     = 3 # facing fixed, walk animation always runs
+    FIXED_GRAPHIC        = 4 # a single frame, facing fixed, never animates
+    SPIN                 = 5 # facing cycles through the four directions
+
+    # Walk-frame columns cycled by an animated character: standing middle, right
+    # foot, middle, left foot. RPG2000 reads its 0,1,2,1 walk as CharSet columns
+    # middle(1), right(2), middle(1), left(0); `phase` is a 0..3 counter.
+    WALK_COLUMNS = [1, 2, 1, 0].freeze
+    # Facings a spinning event steps through (clockwise: down, left, up, right).
+    SPIN_DIRECTIONS = [2, 4, 8, 6].freeze
+
+    module_function
+
+    def numpad_direction(lcf_dir)
+      LCF_DIR_TO_NUMPAD[lcf_dir] || 2
+    end
+
+    # Whether the type keeps the sprite's facing pinned to the page direction
+    # (movement does not turn it).
+    def fixed_direction?(anim_type)
+      anim_type == FIXED_NON_CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
+        anim_type == FIXED_GRAPHIC
+    end
+
+    # Whether the walk animation runs even while the event stands still.
+    def continuous?(anim_type)
+      anim_type == CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
+        anim_type == SPIN
+    end
+
+    # Whether the graphic animates at all (a fixed graphic never does).
+    def animated?(anim_type)
+      anim_type != FIXED_GRAPHIC
+    end
+
+    def pattern_column(phase)
+      WALK_COLUMNS[phase % WALK_COLUMNS.size]
+    end
+
+    def spin_direction(phase)
+      SPIN_DIRECTIONS[phase % SPIN_DIRECTIONS.size]
+    end
+
+    # The [direction, column] CharSet frame to draw for an event this render.
+    # `char_dir` is the character's live facing (updated by movement),
+    # `base_dir`/`base_pattern` the page's initial facing/pattern, `phase` the
+    # walk counter and `moving` whether the event is currently stepping. Fixed
+    # graphics stay on their page frame; spinning events derive facing from the
+    # phase; the ordinary types walk (cycling columns) while moving/continuous
+    # and rest on the page pattern when idle.
+    def frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
+      case anim_type
+      when SPIN
+        [spin_direction(phase), 1]
+      when FIXED_GRAPHIC
+        [base_dir, base_pattern]
+      else
+        dir = fixed_direction?(anim_type) ? base_dir : char_dir
+        col = (moving || continuous?(anim_type)) ? pattern_column(phase)
+                                                  : base_pattern
+        [dir, col]
+      end
+    end
   end
 
   # Game switches: a 1-indexed set of booleans, defaulting to false.
@@ -552,10 +656,48 @@ module Game
     def replace(h); @data = h || {}; end
   end
 
+  # A digit-entry model backing the Input Number event command: `digits` cells,
+  # a movable cursor, and per-cell 0..9 increment/decrement, exposing the entered
+  # integer via #value. The scene draws it and feeds it input; the logic (cursor
+  # bounds, wrap-around, place value) lives here so it is unit-testable.
+  class NumberInput
+    MAX_DIGITS = 7 # RPG2000 caps Input Number at seven digits (0..9,999,999)
+
+    attr_reader :digits, :cursor
+
+    def initialize(digits)
+      d = digits.to_i
+      d = 1 if d < 1
+      d = MAX_DIGITS if d > MAX_DIGITS
+      @digits = d
+      @values = Array.new(d, 0)
+      @cursor = 0
+    end
+
+    # The digit shown at position i (0 = most significant, leftmost).
+    def digit(i); @values[i] || 0; end
+
+    def inc; @values[@cursor] = (@values[@cursor] + 1) % 10; end
+    def dec; @values[@cursor] = (@values[@cursor] + 9) % 10; end
+    def left;  @cursor -= 1 if @cursor > 0; end
+    def right; @cursor += 1 if @cursor < @digits - 1; end
+
+    # The entered value as a base-10 integer (leftmost cell is most significant).
+    def value
+      v = 0
+      @values.each { |d| v = v * 10 + d }
+      v
+    end
+  end
+
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
-    attr_reader :id, :name, :level, :exp, :charset_name, :charset_index
+    attr_reader :id, :level, :exp, :charset_name, :charset_index
     attr_accessor :hp, :mp
+    # Name and title (the status-screen subtitle) are mutable via the Change
+    # Actor Name / Title event commands. `transparent` hides the actor's map
+    # sprite (the Change Sprite Association transparency flag).
+    attr_accessor :name, :title, :transparent
     attr_reader :max_hp, :max_mp, :atk, :def, :int, :agi
 
     # The six base stats in database parameter-curve order (chunk 31 stores six
@@ -570,8 +712,9 @@ module Game
     # accessory.
     EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
 
-    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot).
-    attr_reader :equipment
+    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), and
+    # the ids of the skills the actor knows.
+    attr_reader :equipment, :skills
 
     def initialize(db, id)
       @db = db
@@ -580,13 +723,17 @@ module Game
       raise "No such actor: #{id}" if a.nil?
 
       @name = a.name
+      @title = a.respond_to?(:title) ? (a.title || '') : ''
       @charset_name = a.charset_name
       @charset_index = a.charset_index
+      @transparent = a.respond_to?(:semi_transparent) ? (a.semi_transparent ? true : false) : false
       @db_row = a
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
+      @skills = []
       # Base stats scale with level from the growth curve and equipment adds on
-      # top, so seed them at the actor's initial level, then start at full health.
+      # top, and levelling learns skills, so seed them all at the actor's initial
+      # level, then start at full health.
       set_level(a.initial_level || 1)
       @exp = exp_for_level(@level) # EXP consistent with the starting level
       @hp = @max_hp
@@ -602,7 +749,54 @@ module Game
     def set_level(level)
       @level = level && level >= 1 ? level : 1
       @base = base_stats(@level)
+      learn_level_skills
       recompute_stats
+    end
+
+    # Learn every skill the database growth table grants at or below the current
+    # level (RPG2000 never un-learns on the way down), on top of whatever the
+    # actor already knows. Confirmed against a real save: the skills learnt up to
+    # an actor's level match the saved skill list exactly.
+    def learn_level_skills
+      learn_table.each { |skill_id, at| learn_skill(skill_id) if at <= @level }
+    end
+
+    # The database learn table as [skill_id, level] pairs (empty for a row that
+    # exposes no learn table, e.g. the test fixtures).
+    def learn_table
+      a = @db_row
+      return [] unless a.respond_to?(:skills) && a.skills
+      out = []
+      a.skills.each { |_i, l| out.push([l.skill_id, l.level]) }
+      out
+    end
+
+    # Replace the actor's CharSet graphic (the Change Sprite Association event
+    # command): `name` is the file and `index` the cell within it.
+    def set_charset(name, index)
+      @charset_name = name
+      @charset_index = index
+    end
+
+    # Whether the actor knows `skill_id`.
+    def knows_skill?(skill_id)
+      return false if skill_id.nil? || skill_id == 0
+      @skills.include?(skill_id)
+    end
+
+    # Learn / forget a skill (the Change Skill operations and levelling).
+    def learn_skill(skill_id)
+      return if skill_id.nil? || skill_id == 0 || @skills.include?(skill_id)
+      @skills.push(skill_id)
+    end
+
+    def forget_skill(skill_id)
+      @skills.delete(skill_id)
+    end
+
+    # Replace the known-skill set (Continue restoring the saved skills).
+    def skills=(ids)
+      @skills = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
     end
 
     # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
@@ -847,30 +1041,57 @@ module Game
       @gold = 0
     end
 
-    # Serialise the mutable party state (see State#to_h).
+    # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
+    # the fields the Change Actor Name / Title / Sprite commands mutate, so those
+    # edits survive a Save / Continue instead of reverting to the database row.
     def to_h
       hp = {}
       mp = {}
       exp = {}
-      @actors.each { |a| hp[a.id] = a.hp; mp[a.id] = a.mp; exp[a.id] = a.exp }
+      meta = {}
+      @actors.each do |a|
+        hp[a.id] = a.hp
+        mp[a.id] = a.mp
+        exp[a.id] = a.exp
+        meta[a.id] = { name: a.name, title: a.title,
+                       charset_name: a.charset_name,
+                       charset_index: a.charset_index,
+                       transparent: a.transparent }
+      end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
-        hp: hp, mp: mp, exp: exp }
+        hp: hp, mp: mp, exp: exp, actor_meta: meta }
     end
 
-    # Restore item/gold and per-actor exp/hp/mp from a saved party hash. EXP is
-    # restored first (it re-derives the level and its base stats), then the
-    # saved HP/MP are laid over the recomputed maxima.
+    # Restore item/gold, per-actor exp/hp/mp and the name/title/sprite overrides
+    # from a saved party hash. EXP is restored first (it re-derives the level and
+    # its base stats), then the saved HP/MP are laid over the recomputed maxima,
+    # and finally the name/title/sprite overrides; a save written before a field
+    # existed simply keeps the database defaults.
     def load_state(data)
       @items = data[:items] || {}
       @gold = data[:gold] || 0
       exp = data[:exp] || {}
       hp = data[:hp] || {}
       mp = data[:mp] || {}
+      meta = data[:actor_meta] || {}
       @actors.each do |a|
         a.set_exp(exp[a.id]) if exp[a.id]
         a.hp = hp[a.id] if hp[a.id]
         a.mp = mp[a.id] if mp[a.id]
+        apply_actor_meta(a, meta[a.id])
       end
+    end
+
+    # Apply a saved name/title/sprite override hash to an actor (nil = no
+    # override, keeping the database defaults).
+    def apply_actor_meta(actor, m)
+      return unless m
+      actor.name = m[:name] if m[:name]
+      actor.title = m[:title] unless m[:title].nil?
+      if m[:charset_name]
+        actor.set_charset(m[:charset_name], m[:charset_index] || actor.charset_index)
+      end
+      actor.transparent = m[:transparent] unless m[:transparent].nil?
     end
 
     def each(&blk); @actors.each(&blk); end
@@ -1818,6 +2039,7 @@ module Game
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp
           actor.equip(sa.equipment) if sa.equipment
+          actor.skills = sa.skills if sa.skills
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp

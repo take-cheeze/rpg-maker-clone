@@ -345,6 +345,10 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
+      # Rendered frames between walk-animation phase advances for an animating
+      # event (a moving event or a continuous/spin animation type).
+      ANIM_FRAME_PERIOD = 6
+
       # Event-page start conditions (the page `trigger` field): how the event's
       # command list is set off.
       TRIGGER_ACTION       = 0 # player presses the action button facing it
@@ -439,6 +443,7 @@ class RPG2k
             try_open_menu
           end
         end
+        animate_events
         render
       end
 
@@ -464,6 +469,25 @@ class RPG2k
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
                                 Color.new(240, 240, 80, 255)
         end
+        # CharSet graphics for events, loaded on demand and cached by name (a
+        # cached nil marks a name that failed to load, so we log it once).
+        @event_charsets = {}
+      end
+
+      # The CharSet bitmap for an event graphic `name`, cached (including a
+      # cached nil for a missing file so the event simply draws nothing rather
+      # than a placeholder). Empty names have no graphic.
+      def event_charset(name)
+        return nil if name.nil? || name.empty?
+        return @event_charsets[name] if @event_charsets.key?(name)
+        @event_charsets[name] =
+          begin
+            Bitmap.new "CharSet/#{name}"
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] event charset '#{name}' load failed, " \
+                         "event drawn empty: #{e.message}"
+            nil
+          end
       end
 
       def build_chipset
@@ -536,7 +560,8 @@ class RPG2k
       end
 
       def build_event(id, ev, page)
-        ch = Game::Character.new(ev.x, ev.y, page_direction(page))
+        dir = Game::EventGraphic.numpad_direction(page_direction(page))
+        ch = Game::Character.new(ev.x, ev.y, dir)
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
@@ -545,7 +570,15 @@ class RPG2k
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
         { id: id, char: ch, trigger: page_trigger(page),
           commands: page_commands(page), move_type: move_type, route: route,
-          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40 }
+          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
+          # Rendering state: the page's static graphic fields, a live walk
+          # animation phase / counter, a mid-step "moving" flag, and the pixel
+          # slide (display origin disp_x/disp_y + move_count 0..TILE) that eases
+          # the sprite between tiles. move_count == TILE means "at rest".
+          layer: page_layer(page), translucent: page_translucent(page),
+          anim_type: page_anim_type(page), base_dir: dir,
+          base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
+          moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE }
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
@@ -579,18 +612,24 @@ class RPG2k
 
       def page_trigger(page); page_field(:trigger, 0) { page.trigger }; end
       def page_commands(page); page_field(:commands, nil) { page.event_commands }; end
-      def page_direction(page); page_field(:direction, 2) { d = page.direction; d && d > 0 ? d : 2 }; end
+      # The page's stored facing (0..3: up/right/down/left), default down (2).
+      # Converted to the runtime numpad convention by build_event.
+      def page_direction(page); page_field(:direction, 2) { d = page.direction; (0..3).include?(d) ? d : 2 }; end
       def page_move_type(page); page_field(:move_type, 0) { page.move_type || 0 }; end
       def page_move_speed(page); page_field(:move_speed, 3) { page.move_speed || 3 }; end
       def page_move_frequency(page); page_field(:move_frequency, 3) { page.move_frequency || 3 }; end
       def page_move_route(page); page_field(:move_route, nil) { page.move_route }; end
       def page_charset_name(page); page_field(:charset_name, nil) { page.charset_name }; end
       def page_charset_index(page); page_field(:charset_index, 0) { page.charset_index || 0 }; end
+      def page_layer(page); page_field(:layer, 0) { page.layer || 0 }; end
+      def page_pattern(page); page_field(:pattern, 1) { p = page.pattern; (0..2).include?(p) ? p : 1 }; end
+      def page_anim_type(page); page_field(:anim_type, 0) { page.animation_type || 0 }; end
+      def page_translucent(page); page_field(:translucent, false) { page.translucent ? true : false }; end
 
       # -- event execution ----------------------------------------------------
 
       def event_busy?
-        @message || @interpreter.running? || @interpreter.waiting?
+        @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
       # Start the first not-yet-run auto-start process in the foreground: map
@@ -752,6 +791,38 @@ class RPG2k
         nil
       end
 
+      # Advance each event's pixel slide and walk-animation phase once per frame.
+      # An event "moves" for animation purposes while it is sliding between two
+      # tiles (see reoccupy / event_sliding?); such events — and any
+      # continuous/spin animation type — cycle their walk frames on the
+      # ANIM_FRAME_PERIOD cadence, while an event resting on a tile shows its
+      # page pose. Game::EventGraphic.frame reads @moving / @anim_phase to pick
+      # the drawn column, and event_pixel reads the slide for the draw position.
+      def animate_events
+        @events.each { |e| animate_event(e) }
+      end
+
+      def animate_event(e)
+        # Advance the slide first so a fixed-graphic event still glides smoothly.
+        e[:move_count] += SPEED if e[:move_count] < TILE
+        sliding = event_sliding?(e)
+        e[:moving] = sliding
+        type = e[:anim_type]
+        return unless Game::EventGraphic.animated?(type)
+        return unless sliding || Game::EventGraphic.continuous?(type)
+        e[:anim_count] += 1
+        return if e[:anim_count] < ANIM_FRAME_PERIOD
+        e[:anim_count] = 0
+        e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
+      end
+
+      # Whether an event is mid-step: its display origin has not yet caught up to
+      # its logical tile (the slide started by reoccupy is still in progress).
+      def event_sliding?(e)
+        e[:move_count] < TILE &&
+          (e[:disp_x] != e[:char].x || e[:disp_y] != e[:char].y)
+      end
+
       # Move an autonomous event one step in `dir`. Walking into the player fires
       # an event-touch (trigger 2) event instead of moving; any other obstacle
       # just turns the event to face it.
@@ -771,9 +842,42 @@ class RPG2k
       # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
       # eagerly (rather than a single end-of-frame rebuild) so an event that has
       # already moved this frame blocks the next event from stepping onto it.
+      # Also begins the pixel slide from the old tile toward the new one so the
+      # sprite glides instead of teleporting (see event_pixel).
       def reoccupy(e, ox, oy)
         @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
         @event_tiles[[e[:char].x, e[:char].y]] = e
+        start_event_slide(e, ox, oy)
+      end
+
+      # Begin a render slide for event `e` that just stepped off (ox, oy): the
+      # sprite eases from that tile to its new one over TILE/SPEED frames. Only
+      # single-tile cardinal steps slide; a longer hop (a jump, or a diagonal of
+      # more than one tile) snaps so the sprite never streaks across the map.
+      def start_event_slide(e, ox, oy)
+        if (e[:char].x - ox).abs + (e[:char].y - oy).abs == 1
+          e[:disp_x] = ox
+          e[:disp_y] = oy
+          e[:move_count] = 0
+        else
+          e[:disp_x] = e[:char].x
+          e[:disp_y] = e[:char].y
+          e[:move_count] = TILE
+        end
+      end
+
+      # Current position of event `e` in map pixels, interpolated from its
+      # display origin toward its logical tile while a slide is in progress.
+      def event_pixel(e)
+        cx = e[:char].x
+        cy = e[:char].y
+        if event_sliding?(e)
+          t = e[:move_count]
+          [e[:disp_x] * TILE + (cx - e[:disp_x]) * t,
+           e[:disp_y] * TILE + (cy - e[:disp_y]) * t]
+        else
+          [cx * TILE, cy * TILE]
+        end
       end
 
       # -- Erase Event --------------------------------------------------------
@@ -797,6 +901,45 @@ class RPG2k
         tile = [ev[:char].x, ev[:char].y]
         @event_tiles.delete(tile) if @event_tiles[tile].equal?(ev)
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
+      end
+
+      # -- Halt All Movement --------------------------------------------------
+
+      # If the interpreter ran a Halt All Movement this step, cancel every forced
+      # move route in progress — the player's and each event's — so a route set by
+      # an earlier Move Event stops where it is. Events fall back to their page's
+      # autonomous movement; the player returns to input control.
+      def apply_halt_request(interp)
+        return unless interp.take_halt_movement_request
+        @player_route = nil
+        @player_char = nil
+        @events.each { |e| e[:forced_route] = nil } if @events
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Halt All Movement failed: #{e.message}"
+        nil
+      end
+
+      # -- Change Sprite Association (Change Actor Graphic) --------------------
+
+      # If the interpreter changed an actor's sprite this step, reload the party
+      # leader's on-screen graphic so the change shows immediately (a change to a
+      # non-leader actor is held in the model until that actor leads the party).
+      def apply_graphic_change(interp)
+        refresh_player_graphic if interp.take_actor_graphic_changed
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Change Actor Graphic failed: #{e.message}"
+        nil
+      end
+
+      # Reload the party leader's CharSet graphic and apply its transparency to
+      # the player sprite, forcing a redraw on the next frame. The transparency
+      # flag hides the sprite outright (the renderer has no partial-opacity path).
+      def refresh_player_graphic
+        @charset = load_charset
+        @last_frame = nil
+        leader = @state.party.leader
+        @player_sprite.visible = !(leader && leader.transparent)
+        @player_bmp.clear unless @charset
       end
 
       # -- Move Event (Set Move Route) ----------------------------------------
@@ -956,10 +1099,16 @@ class RPG2k
           return
         end
 
+        if @number_input
+          drive_number_input
+          return
+        end
+
         if @interpreter.waiting?
           case @interpreter.wait_kind
           when :message then open_message(@interpreter.message_lines, false)
           when :choice then open_message(@interpreter.choice_labels, true)
+          when :number then open_number_input(@interpreter.input_digits)
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -970,6 +1119,8 @@ class RPG2k
           @interpreter.update
           apply_move_requests(@interpreter, @active_event)
           apply_erase_request(@interpreter, @active_event)
+          apply_halt_request(@interpreter)
+          apply_graphic_change(@interpreter)
         end
       end
 
@@ -1200,6 +1351,74 @@ class RPG2k
         @message = nil
       end
 
+      # -- number input (Input Number command) --------------------------------
+
+      # Pixels per digit cell in the Input Number widget.
+      NUM_CELL = 16
+
+      # Open a digit-entry window for the Input Number command. A compact panel
+      # near the bottom of the screen shows `digits` cells with an editable
+      # cursor; the interpreter is resumed with the entered value on confirm.
+      def open_number_input(digits)
+        return if @number_input
+        model = Game::NumberInput.new(digits || 1)
+        inner_w = model.digits * NUM_CELL
+        inner_h = MSG_LINE_H
+        win_w = inner_w + Window::BORDER * 2
+        win_h = inner_h + Window::BORDER * 2
+        win = Window.new((SCREEN_W - win_w) / 2, SCREEN_H - win_h - 6, win_w, win_h)
+        win.z = 320
+        win.windowskin = @windowskin
+        contents = Bitmap.new(inner_w, inner_h)
+        @number_input = { window: win, contents: contents, model: model }
+        draw_number_input
+        win.contents = contents
+      end
+
+      def draw_number_input
+        ni = @number_input
+        return unless ni
+        model = ni[:model]
+        c = ni[:contents]
+        c.clear
+        (0...model.digits).each do |i|
+          x = i * NUM_CELL
+          if i == model.cursor
+            c.fill_rect x, 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
+          end
+          c.font.color = Color.new(255, 255, 255, 255)
+          c.draw_text x, 0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
+        end
+      end
+
+      def drive_number_input
+        ni = @number_input
+        model = ni[:model]
+        if Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          model.inc
+          draw_number_input
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          model.dec
+          draw_number_input
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          model.left
+          draw_number_input
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          model.right
+          draw_number_input
+        elsif Input.trigger?(Input::C)
+          value = model.value
+          close_number_input
+          @interpreter.resume_number(value)
+        end
+      end
+
+      def close_number_input
+        return unless @number_input
+        @number_input[:window].dispose
+        @number_input = nil
+      end
+
       def step_movement
         if @moving
           @move_count += SPEED
@@ -1326,13 +1545,77 @@ class RPG2k
               @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
               @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
             end
-
-            if @event_tiles[[tx, ty]]
-              @lower_bmp.fill_rect dx + 3, dy + 3, TILE - 6, TILE - 6,
-                                   Color.new(230, 90, 90, 255)
-            end
           end
         end
+
+        draw_events cam_x, cam_y
+      end
+
+      # Draw every event's graphic into the tile buffers, layered so it composits
+      # correctly with the player sprite (z=100, between the lower buffer at z=0
+      # and the upper buffer at z=200):
+      #   * below-hero events (page layer 0) go in the lower buffer, under the
+      #     player;
+      #   * above-hero events (layer 2) go in the upper buffer, over the player;
+      #   * same-layer events (layer 1) go under the player when they stand
+      #     behind him (smaller y) and over him when in front (larger-or-equal
+      #     y), the y-sort RPG2000 applies within the character layer.
+      # A translucent page is blitted at half opacity. Events with no graphic
+      # (empty CharSet name and no tile substitution) draw nothing.
+      def draw_events(cam_x, cam_y)
+        @events.each { |e| draw_event e, cam_x, cam_y }
+      end
+
+      def draw_event(e, cam_x, cam_y)
+        bmp = event_target_buffer(e)
+        return unless bmp
+        opacity = e[:translucent] ? 128 : 255
+        ch = e[:char]
+        name = ch.graphic_name
+        if name && !name.empty?
+          draw_event_charset(e, bmp, cam_x, cam_y, opacity)
+        elsif ch.graphic_index && ch.graphic_index > 0
+          draw_event_tile(e, bmp, cam_x, cam_y, opacity)
+        end
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] event ##{e[:id]} draw failed: #{ex.message}"
+      end
+
+      # Which tile buffer an event composits into, per its page layer and (for
+      # the same-as-hero layer) its y relative to the player.
+      def event_target_buffer(e)
+        case e[:layer]
+        when 2 then @upper_bmp                                   # above hero
+        when 1 then e[:char].y >= @state.y ? @upper_bmp : @lower_bmp
+        else @lower_bmp                                          # below hero
+        end
+      end
+
+      # Blit an event's CharSet frame (24x32), feet-on-tile like the player.
+      def draw_event_charset(e, bmp, cam_x, cam_y, opacity)
+        charset = event_charset(e[:char].graphic_name)
+        return unless charset
+        dir, col = Game::EventGraphic.frame(e[:anim_type], e[:base_dir],
+                                            e[:base_pattern],
+                                            e[:char].direction, e[:anim_phase],
+                                            e[:moving])
+        sx, sy, sw, sh = Game::CharSet.frame_rect(e[:char].graphic_index, dir, col)
+        epx, epy = event_pixel(e)
+        dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+        dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE)
+        bmp.blt dx, dy, charset, Rect.new(sx, sy, sw, sh), opacity
+      end
+
+      # Blit an event whose graphic is a chipset tile (16x16), aligned to its
+      # tile. Needs the chipset image; with none loaded (colour-block fallback)
+      # the tile event is skipped.
+      def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
+        return unless @chipset_bmp
+        sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index)
+        epx, epy = event_pixel(e)
+        dx = epx - cam_x
+        dy = epy - cam_y
+        bmp.blt dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity
       end
 
       # Blit one map tile from the chipset image into `bmp` at (dx, dy). A plain

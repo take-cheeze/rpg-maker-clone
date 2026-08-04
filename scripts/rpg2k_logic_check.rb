@@ -1321,6 +1321,23 @@ class CurveRow < FakePlayerRow
     idx == 31 ? @curve : nil
   end
 end
+
+# A database learn-table row (skill_id learnt at level), plus an Array2D-alike
+# table exposing them the way the real player row's #skills does (each yields
+# id, entry). Lets Game::Actor seed its skills by level without the LCF parser.
+FakeLearn = Struct.new(:skill_id, :level)
+class FakeLearnTable
+  def initialize(pairs); @pairs = pairs; end # [[skill_id, level], ...]
+  def each; @pairs.each_index { |i| yield i, FakeLearn.new(*@pairs[i]) }; end
+end
+class SkillRow < CurveRow
+  def initialize(name, cs, ci, level, curve, learns)
+    super(name, cs, ci, level, curve)
+    @learns = learns
+  end
+
+  def skills; FakeLearnTable.new(@learns); end
+end
 FakeActorSystem = Struct.new(:party)
 # A database item row exposing just the equipment-bonus fields Game::Actor reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
@@ -1378,6 +1395,26 @@ check 'State save round-trips the message configuration' do
   legacy_loaded = Game::State.load(db, legacy)
   eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
   eq true, legacy_loaded.save_access, 'absent save access defaults on'
+end
+
+check 'Party save round-trips actor name / title / sprite overrides' do
+  players = {
+    1 => FakePlayerRow.new('Hero', 'Base', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.name = 'Renamed'
+  hero.title = 'Champion'
+  hero.set_charset('Monster', 3)
+  hero.transparent = true
+  loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  eq 'Renamed', loaded.name
+  eq 'Champion', loaded.title
+  eq 'Monster', loaded.charset_name
+  eq 3, loaded.charset_index
+  eq true, loaded.transparent
 end
 
 check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
@@ -1441,6 +1478,27 @@ check 'Actor without a growth curve falls back to a level-independent status' do
   eq [100, 30], [hero.max_hp, hero.max_mp]
   hero.set_level(2)
   eq [100, 30], [hero.max_hp, hero.max_mp]
+end
+
+check 'Actor learns skills from the growth table up to its level' do
+  # 25@L1, 32@L1, 27@L5 -- mirrors a real actor whose L5 skill set is 25/27/32.
+  learns = [[25, 1], [32, 1], [27, 5]]
+  db = FakeActorDB.new(
+    { 1 => SkillRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4], learns) }, [1])
+  a = Game::Party.new(db).leader
+  eq [25, 32], a.skills.sort            # only the L1 skills at level 1
+  a.set_level(5)
+  eq [25, 27, 32], a.skills.sort        # 27 joins at level 5
+  a.set_level(1)
+  eq [25, 27, 32], a.skills.sort        # levelling down keeps learnt skills
+  ok a.knows_skill?(27)
+  ok !a.knows_skill?(99)
+  # learn / forget mutate the set.
+  a.learn_skill(99); ok a.knows_skill?(99)
+  a.forget_skill(27); ok !a.knows_skill?(27)
+  # restoring a saved set replaces it.
+  a.skills = [1, 2, 2, 0]
+  eq [1, 2], a.skills.sort
 end
 
 check 'Change HP command damages a fixed actor' do
@@ -1685,6 +1743,13 @@ check 'Conditional actor: name equals the command string (type 5, sub 1)' do
   eq true, run_actor_cond([5, 1, 1], string: 'Nope').switches[2]
 end
 
+check 'Conditional actor: knows skill (type 5, sub 4)' do
+  st = run_actor_cond([5, 1, 4, 12]) { |s| s.party.actor_by_id(1).learn_skill(12) }
+  eq true, st.switches[1]            # skill 12 known -> if-branch
+  st = run_actor_cond([5, 1, 4, 12]) # skill not known -> else
+  eq true, st.switches[2]
+end
+
 check 'Conditional actor: equipped item (type 5, sub 5)' do
   st = run_actor_cond([5, 1, 5, 10]) { |s| s.party.actor_by_id(1).equip([10, 0, 0, 0, 0]) }
   eq true, st.switches[1]            # item 10 equipped -> if-branch
@@ -1839,6 +1904,107 @@ check 'party save round-trips actor EXP and re-derives the level' do
   la = loaded.party.actor_by_id(1)
   eq 250, la.exp, 'EXP restored from the save'
   eq 3, la.level, 'level re-derived from the restored EXP'
+end
+
+# -- Input Number -------------------------------------------------------------
+
+check 'Input Number pauses with a :number request, resume stores the value' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # RPG2000 layout is [digits, variable_id]: 3 digits into variable 7.
+  it.start([FakeCmd.new(IC::INPUT_NUMBER, [3, 7]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Input Number must pause the interpreter'
+  eq :number, it.wait_kind
+  eq 3, it.input_digits
+  it.resume_number(123)
+  it.update
+  eq 123, st.variables[7], 'the entered value lands in the target variable'
+  eq true, st.switches[1], 'the command after Input Number still ran'
+end
+
+check 'Input Number clamps a zero digit count to at least one cell' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::INPUT_NUMBER, [0, 4])])
+  it.update
+  eq 1, it.input_digits
+end
+
+check 'NumberInput edits digits and reads out the entered value' do
+  m = Game::NumberInput.new(3)
+  eq 3, m.digits
+  eq 0, m.cursor
+  m.left # already leftmost: no move
+  eq 0, m.cursor
+  m.inc; m.inc          # leftmost digit -> 2
+  m.right; m.inc        # middle digit  -> 1
+  m.right; m.right      # clamp at the rightmost cell
+  eq 2, m.cursor
+  m.dec                 # rightmost 0 -> 9 (wraps)
+  eq 219, m.value
+end
+
+check 'NumberInput clamps its digit count to the 1..7 range' do
+  eq 1, Game::NumberInput.new(0).digits
+  eq 7, Game::NumberInput.new(99).digits
+end
+
+# -- Change Actor Name / Title / Sprite ---------------------------------------
+
+check 'Change Actor Name renames the actor; a blank name is ignored' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_ACTOR_NAME, [1], string: 'Zelda')])
+  it.update
+  eq 'Zelda', st.party.actor_by_id(1).name
+  ok !it.waiting?, 'Change Actor Name must not pause the interpreter'
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_ACTOR_NAME, [1], string: '')])
+  it2.update
+  eq 'Zelda', st.party.actor_by_id(1).name # unchanged by the blank name
+end
+
+check 'Change Actor Title sets the title; an empty string clears it' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_ACTOR_TITLE, [2], string: 'Sage')])
+  it.update
+  eq 'Sage', st.party.actor_by_id(2).title
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_ACTOR_TITLE, [2], string: '')])
+  it2.update
+  eq '', st.party.actor_by_id(2).title
+end
+
+check 'Change Sprite Association swaps the CharSet and flags a graphic change' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # actor 1, charset "Monster", cell 4, transparent = 1.
+  it.start([FakeCmd.new(IC::CHANGE_ACTOR_SPRITE, [1, 4, 1], string: 'Monster')])
+  it.update
+  a = st.party.actor_by_id(1)
+  eq 'Monster', a.charset_name
+  eq 4, a.charset_index
+  eq true, a.transparent
+  ok !it.waiting?, 'Change Actor Graphic must not pause the interpreter'
+  eq true, it.take_actor_graphic_changed, 'a one-shot graphic-change request is set'
+  eq false, it.take_actor_graphic_changed, 'and it clears after the first read'
+end
+
+# -- Halt All Movement --------------------------------------------------------
+
+check 'Halt All Movement raises a one-shot request without pausing' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::HALT_ALL_MOVEMENT, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])])
+  it.update
+  ok !it.waiting?, 'Halt All Movement must not pause the interpreter'
+  eq true, st.switches[3], 'the command after Halt All Movement still ran'
+  eq true, it.take_halt_movement_request, 'a one-shot halt request is set'
+  eq false, it.take_halt_movement_request, 'and it clears after the first read'
 end
 
 # -- summary ------------------------------------------------------------------
