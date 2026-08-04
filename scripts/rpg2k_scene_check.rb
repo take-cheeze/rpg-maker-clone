@@ -159,12 +159,13 @@ def fake_db(common = nil)
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
     # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
-    enemy: { 2 => OpenStruct.new(name: 'Slime', max_hp: 30, max_sp: 0, attack: 8,
+    enemy: { 2 => OpenStruct.new(name: 'Slime', battler_name: 'Slime',
+                                 max_hp: 30, max_sp: 0, attack: 8,
                                  defense: 4, spirit: 3, agility: 5, exp: 5,
                                  gold: 10) },
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
-      1 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false),
-      2 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false) }) },
+      1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
+      2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) }) },
     common_event: common,
     player: {}
   )
@@ -412,13 +413,14 @@ end
 # A party the placeholder battle grants rewards to: gold plus actors that bank
 # EXP, with the leader Scene::Map reads while rendering.
 class BattleStubActor
-  attr_accessor :exp, :hp
-  attr_reader :id, :name, :atk, :def, :agi, :max_hp
+  attr_accessor :exp, :hp, :mp
+  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
   # a defeat test passes weaker stats.
-  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200)
+  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [])
     @exp = 0; @id = 1; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
+    @mp = mp; @max_mp = mp; @int = int; @skills = skills
   end
   def gain_exp(n); @exp += n; end
 end
@@ -1314,8 +1316,10 @@ end
 
 # Drive a battle by having each living actor Attack the first enemy every round
 # until the result window appears (command / target cursors start on Attack /
-# the first target).
-def battle_attack_to_end(scene, max = 100)
+# the first target). The budget is generous: between command phases each round
+# now animates action by action (BATTLE_ANIM_FRAMES per hit), so a multi-round
+# fight spans a few hundred frames.
+def battle_attack_to_end(scene, max = 600)
   max.times do
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :result
@@ -1383,6 +1387,218 @@ check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
   eq 0, st.party.gold, 'fleeing grants nothing'
   ok !st.switches[1], 'the Victory handler was skipped'
   ok st.switches[2], 'the Escape handler ran'
+end
+
+check 'Enemy Encounter scene: a game-over defeat returns to the title' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Defeat mode 0 (param 4) = game over, with no [Defeat] handler; the switch
+  # after the encounter must never run once the game ends.
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # A frail hero the two Slimes overwhelm.
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  scene.update
+  battle_attack_to_end(scene) # the hero is worn down -> the defeat result shows
+  parent = scene.instance_variable_get(:@parent)
+  ok !parent.returned_to_title, 'still on the defeat result, not yet game over'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result
+  scene.update
+  RGSS::Input.triggered = []
+  ok parent.returned_to_title, 'a game-over defeat returned to the title'
+  ok !st.switches[5], 'the rest of the event never ran'
+end
+
+check 'Game Over event command returns to the title, abandoning the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::GAME_OVER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  parent = scene.instance_variable_get(:@parent)
+  5.times do
+    scene.update
+    break if parent.returned_to_title
+  end
+  ok parent.returned_to_title, 'Game Over returned to the title'
+  ok !st.switches[5], 'the rest of the event never ran'
+end
+
+check 'Change System Graphics reloads the windowskin from the override' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_SYSTEM_GFX, [0, 0], indent: 0, string: 'Skin2')]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # The fake db's system graphic is blank, so the scene opens with no windowskin.
+  eq nil, scene.instance_variable_get(:@windowskin), 'no windowskin from the blank db default'
+  5.times { scene.update }
+  eq 'Skin2', st.system_graphic, 'the override is recorded on the state'
+  ok scene.instance_variable_get(:@windowskin), 'the windowskin was reloaded from the override'
+end
+
+check 'Enemy Encounter scene: the round animates action by action, not at once' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  # Let the encounter open the per-actor command menu (it takes a frame or two).
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  # Command the sole hero to Attack the first enemy: C picks Attack, C confirms
+  # the target; with one ally that starts the round animation.
+  2.times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  eq :animate, ui[:phase], 'the commanded round now plays out as an animation'
+  eq 0, ui[:battle].log.length, 'no hit has landed the instant the round starts'
+
+  scene.update # lands exactly the first action of the round
+  eq 1, ui[:battle].log.length, 'one attack landed on the first animation step'
+  ok ui[:action_win], 'and it is bannered on screen'
+  # The timer holds the next action back, so a mid-timer frame lands nothing more.
+  scene.update
+  eq 1, ui[:battle].log.length, 'the next action waits out BATTLE_ANIM_FRAMES'
+end
+
+# A party whose lone Hero (fast, so it acts first) knows a battle skill and
+# carries potions — enough for the scene to drive the Skill / Item sub-menus.
+# The battle_* hooks return canned commands so the checks assert the scene wires
+# them through (the numbers themselves are exercised in rpg2k_logic_check).
+class BattleMagicParty
+  attr_reader :actors, :gold, :items
+  attr_accessor :leader
+  def initialize(hurt: false)
+    @hero = BattleStubActor.new(atk: 40, agi: 20, mp: 10, skills: [1]) # max HP 200
+    @hero.hp = 100 if hurt # below max, so a heal has room to show
+    @actors = [@hero]
+    @gold = 0
+    @leader = nil
+    @items = { 5 => 2 }
+  end
+  def gain_gold(n); @gold += n; end
+  def item_count(id); @items[id] || 0; end
+  def gain_item(id, n = 1); @items[id] = item_count(id) + n; end
+  def lose_item(id, n = 1); @items[id] = [item_count(id) - n, 0].max; end
+
+  # Battle sub-menu hooks the scene calls (Game::Party provides these for real):
+  def battle_skills(actor, _caster); actor.skills.include?(1) ? [[1, 3]] : []; end
+  def db_skill(id); id == 1 ? OpenStruct.new(name: 'Fire', scope: 0) : nil; end
+  def battle_skill_target(sk); sk.scope == 0 ? :enemy : :ally; end
+  def battle_skill_command(_sk, _caster, _target); { cost: 3, hp: -15, mp: 0 }; end
+  def battle_items
+    @items.keys.sort.select { |id| item_count(id) > 0 }.map { |id| [id, item_count(id)] }
+  end
+  def db_item(id); id == 5 ? OpenStruct.new(name: 'Potion') : nil; end
+  def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
+end
+
+# Open a battle and step to the per-actor command menu.
+def battle_to_command(scene)
+  ui = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui
+end
+
+def press_key(scene, key)
+  RGSS::Input.triggered = [key]
+  scene.update
+  RGSS::Input.triggered = []
+end
+
+check 'Enemy Encounter scene: casting an attack Skill damages a foe and spends SP' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleMagicParty.new)
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN)   # move cursor Attack -> Skill
+  eq 1, ui[:cmd]
+  press_key(scene, RGSS::Input::C)      # open the skill list
+  eq :skill, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # choose Fire (enemy-scope) -> target
+  eq :target, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # confirm the first foe -> round animates
+  eq :animate, ui[:phase]
+
+  foe_hp = ui[:foes].first.hp
+  scene.update                          # the fast Hero's Fire lands first
+  entry = ui[:battle].log.first
+  eq 'Fire', entry[:skill], 'the skill resolved as the Hero\'s action'
+  eq 15, foe_hp - ui[:foes].first.hp, 'the foe took the skill damage'
+  eq 7, ui[:allies].first.mp, 'the caster spent 3 SP (10 -> 7)'
+end
+
+check 'Enemy Encounter scene: using an Item heals and consumes one from the bag' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleMagicParty.new(hurt: true))
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN)   # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN)   # Skill -> Item
+  eq 2, ui[:cmd]
+  press_key(scene, RGSS::Input::C)      # open the item list
+  eq :item, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # choose Potion -> ally target
+  eq :ally_target, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # heal the Hero -> round animates
+  eq :animate, ui[:phase]
+  eq 2, st.party.item_count(5), 'the potion is not spent until the action lands'
+
+  hp_before = ui[:allies].first.hp
+  scene.update                          # the Hero uses the Potion first
+  eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
+  eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
+end
+
+check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+
+  sprites = ui[:enemy_sprites]
+  eq 2, sprites.compact.length, 'one battler sprite per visible troop member'
+  ok ui[:back_sprite], 'a battle background sprite is drawn behind them'
+  ok sprites.all? { |s| s.visible }, 'both enemies are shown at the start'
+  # Centred on the member's troop position (member 1 at x = 100, y = 80).
+  eq 100 - sprites[0].bitmap.width / 2, sprites[0].x, 'sprite centred on its x'
+  eq 80 - sprites[0].bitmap.height / 2, sprites[0].y, 'sprite centred on its y'
+  ok sprites[0].z < 300, 'battlers sit below the UI windows (z >= 300)'
+  ok ui[:back_sprite].z < sprites[0].z, 'the backdrop sits behind the battlers'
+
+  battle_attack_to_end(scene) # both Slimes fall
+  ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------

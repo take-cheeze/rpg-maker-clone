@@ -294,13 +294,23 @@ The work below is roughly ordered by the critical path to a walkable game
   damage, no attack that round), then the round executes in agility order,
   repeating until a side falls. Cancelling on the first actor flees when escape
   is allowed. `Game::Battle` has the round-based API (`command_attack` /
-  `command_defend` / `run_round`) alongside the headless `run`. Dismissing the
-  result resumes the event and routes the `[Victory]` / `[Escape]` / `[Defeat]`
-  branch. Still to come: Skill / Item commands, criticals / attributes / variance
-  in the sim, per-turn animation from the log, enemy / battler sprites, and game
-  over on defeat.
-  The remaining commands (EXP gain / level-up
-  messages, ...) are TODO
+  `command_defend` / `command_skill` / `command_item` / `run_round`) alongside
+  the headless `run`. The round now **animates action by action** (agility order,
+  one hit per `BATTLE_ANIM_FRAMES`, HP/SP ticking and each blow bannered); the
+  per-actor menu is **Attack / Skill / Item / Defend** (single-target skills and
+  battle medicines reuse the field formulas); the enemy troop is **drawn as
+  battler sprites** (`Monster/<battler_name>`, placeholder block fallback, hidden
+  on death) over a plain battle field; and a **defeat ends the game** (return to
+  title) when the encounter's defeat mode is "game over" rather than a `[Defeat]`
+  handler. Still to come: criticals / attributes / damage variance and status
+  effects in the sim, all-target skill/item scopes, HP persistence across a
+  battle, the per-terrain backdrop and the RPG2000 Game Over graphic.
+  The remaining event commands (Inflict Damage, Name Input, Show Battle
+  Animation, vehicles, tile substitution, ...) are TODO. **Change System
+  Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the
+  scene reloads the skin), **Change Screen Transitions** (10690) records the six
+  teleport / battle transition styles (save chunks 111–116; modelled for save
+  fidelity) and **Game Over** (12520) returns to the title, all handled.
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

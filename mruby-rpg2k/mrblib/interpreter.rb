@@ -37,8 +37,10 @@ module Game
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_SYSTEM_GFX   = 10680
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
+      CHANGE_TRANSITION   = 10690
       ENEMY_ENCOUNTER  = 10710
       VICTORY_HANDLER  = 20710
       ESCAPE_HANDLER   = 20711
@@ -100,6 +102,7 @@ module Game
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
       RETURN_TO_TITLE  = 12510
+      GAME_OVER        = 12520
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -159,6 +162,7 @@ module Game
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @system_graphic_changed = false
       @tileset_request = nil
       reset_waits
     end
@@ -223,6 +227,14 @@ module Game
     def take_actor_graphic_changed
       v = @actor_graphic_changed
       @actor_graphic_changed = false
+      v
+    end
+
+    # Drain the one-shot Change System Graphics (10680) request so the scene
+    # reloads the windowskin. Non-blocking.
+    def take_system_graphic_changed
+      v = @system_graphic_changed
+      @system_graphic_changed = false
       v
     end
 
@@ -524,13 +536,16 @@ module Game
       when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
       when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
       when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
+      when Cmd::CHANGE_SYSTEM_GFX     then do_change_system_graphic cmd
       when Cmd::CHANGE_SYSTEM_BGM    then do_change_system_bgm cmd
       when Cmd::CHANGE_SYSTEM_SFX    then do_change_system_sfx cmd
+      when Cmd::CHANGE_TRANSITION    then @state.set_screen_transition(cmd.param(0), cmd.param(1))
       when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
       when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
+      when Cmd::GAME_OVER        then do_game_over cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
@@ -1303,6 +1318,14 @@ module Game
       @waiting = true
     end
 
+    # Game Over (12520): raised as a :game_over request the owning scene answers
+    # by ending the game (RPG2000 shows the Game Over screen, then the title).
+    # Like Return to Title there is nothing to resume — the event stops here.
+    def do_game_over(_cmd)
+      @wait_kind = :game_over
+      @waiting = true
+    end
+
     # Frames per tenth of a second at RPG2000's fixed 60 fps, for turning a
     # screen effect's 0.1s-unit duration into a frame count.
     FRAMES_PER_TENTH = 6
@@ -1497,6 +1520,17 @@ module Game
       @state.escape_target =
         { map_id: cmd.param(0), x: cmd.param(1), y: cmd.param(2),
           switch_id: switch_id }
+    end
+
+    # Change System Graphics: override the windowskin graphic and font. The
+    # command string names the System/<name> windowskin; param0 is the message
+    # background stretch style (not modelled — it is not in the save) and param1
+    # the font id (RPG2000 games leave it 0). Records a one-shot request so the
+    # scene reloads the windowskin, and the override persists across Save /
+    # Continue.
+    def do_change_system_graphic(cmd)
+      @state.set_system_graphic(cmd.string || '', cmd.param(1))
+      @system_graphic_changed = true
     end
 
     # Change System BGM: override one of the system music slots (battle,
