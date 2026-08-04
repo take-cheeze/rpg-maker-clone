@@ -162,9 +162,14 @@ still assumed and not yet provided.
 
 ## Notes
 
-- Turning the host on by default also requires reconciling the scripts' blocking
-  `$scene.main while $scene` loop with the emscripten frame loop (Asyncify or a
-  per-frame `Scene#main` driver) — see ADR 0017.
+- With the display classes now rendering, the remaining blocker to turning the
+  host on by default is reconciling the scripts' blocking `$scene.main while
+  $scene` loop with the web build's per-frame `emscripten_set_main_loop` callback
+  (the desktop build blocks fine; the web build calls `RPGXP#main_loop` once per
+  browser frame, so an unmodified blocking script loop would hang the tab). The
+  design for this — run `Main` inside an mruby `Fiber` that yields at
+  `Graphics.update`, resumed once per frame — is
+  [ADR 0023](adr/0023-rpgxp-script-host-frame-driver.md).
 - None of the above can be built or run in the current CI sandbox; each item is
   verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
   `scripts/rpgxp_script_host_check.rb`.
