@@ -410,5 +410,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
 - 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
   in the SDL window and the sixel/iTerm2 terminals.
+  - ✅ Test-bed data guard: `scripts/mv_testbed_check.rb` validates the MV
+    `data/*.json` boot invariants under CRuby (no JS engine) — start map size
+    (`width*height*6`), tileset/actor/class cross-references, party members —
+    and runs as a **blocking** CI step ahead of the non-blocking native MV
+    smokes, so a regression in the committed `data/mv-sample` fails the build.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
