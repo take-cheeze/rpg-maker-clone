@@ -483,60 +483,18 @@ assert "RGSS::Plane API surface" do
   end
 end
 
-assert("RGSS::Window property defaults and accessors") do
-  w = RGSS::Window.new
-  # RGSS defaults.
-  assert_true w.windowskin.nil?
-  assert_true w.contents.nil?
-  assert_true w.cursor_rect.is_a?(RGSS::Rect)
-  assert_equal 0, w.x
-  assert_equal 0, w.y
-  assert_equal 0, w.width
-  assert_equal 0, w.height
-  assert_equal 0, w.ox
-  assert_equal 0, w.oy
-  assert_equal 255, w.opacity
-  assert_equal 255, w.back_opacity
-  assert_equal 255, w.contents_opacity
-  assert_true w.visible
-  assert_equal 0, w.z
-  assert_true w.active
-  assert_false w.pause
-  assert_true w.stretch
-  assert_true w.viewport.nil?
-  assert_false w.disposed?
-
-  # Writable — the stock Window_Base sets these on every window.
-  w.x = 80
-  w.y = 64
-  w.width = 160
-  w.height = 128
-  w.back_opacity = 200
-  w.contents_opacity = 128
-  w.active = false
-  w.pause = true
-  w.z = 100
-  w.cursor_rect = RGSS::Rect.new(0, 0, 32, 32)
-  assert_equal 80, w.x
-  assert_equal 64, w.y
-  assert_equal 160, w.width
-  assert_equal 128, w.height
-  assert_equal 200, w.back_opacity
-  assert_equal 128, w.contents_opacity
-  assert_false w.active
-  assert_true w.pause
-  assert_equal 100, w.z
-  assert_equal 32, w.cursor_rect.width
-
-  # A viewport-bound window remembers whatever viewport it was constructed with.
-  # (A real RGSS::Viewport needs a live display the headless test binary lacks,
-  # so a marker object stands in — Window only stores the reference.)
-  marker = Object.new
-  assert_equal marker, RGSS::Window.new(marker).viewport
-
-  w.update
-  w.dispose
-  assert_true w.disposed?
+assert "RGSS::Window API surface" do
+  # Window is now native: Window.new builds an lv_canvas the size of the window
+  # and blits the contents into it, so construction needs a live display the
+  # headless test binary lacks. Assert only the method surface here (the
+  # compositing itself is exercised by the game runs), matching Sprite/Plane. The
+  # still-Ruby deferred accessors (windowskin, cursor_rect, opacity,
+  # back_opacity, active, pause, stretch) are covered by being defined below.
+  %i[contents= x= y= width= height= ox= oy= contents_opacity= z= visible
+     visible= dispose disposed? windowskin windowskin= cursor_rect cursor_rect=
+     opacity opacity= back_opacity active pause stretch update].each do |m|
+    assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
+  end
 end
 
 assert("RGSS::Tilemap property defaults and accessors") do
