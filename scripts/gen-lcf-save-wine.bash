@@ -159,3 +159,6 @@ echo "Wrote ${GAME_DIR}/${LSD}"
 
 # Analyse the genuine save with the same parser the runtime uses.
 ruby scripts/lcf_save_check.rb "${GAME_DIR}/${LSD}"
+
+# Prove the writer against it too: re-serialise byte-for-byte and edit/reload.
+ruby scripts/lcf_save_roundtrip.rb "${GAME_DIR}/${LSD}"

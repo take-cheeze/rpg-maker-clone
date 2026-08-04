@@ -224,8 +224,13 @@ The work below is roughly ordered by the critical path to a walkable game
   on and persist in the save)
 - 🚧 Save & Continue — implemented with a portable `Marshal` save of the game
   state (`Game::State#to_h` / `State.load`) written via the menu's Save command;
-  "Continue" reloads it. Reading/writing the real `LCF::SaveData` (`.lsd`) format
-  is still TODO
+  "Continue" reloads it. **Reading** the real `LCF::SaveData` (`.lsd`) is done
+  (`Game::State.from_lsd`). **Writing** it now has its LCF foundation: `mruby-lcf`
+  can serialize a save back to bytes (`Array1D`/`Array2D`/`File#to_lcf`,
+  `LCF.write_ber`/`encode`, `Array1D#[]=`), proven byte-exact against the real
+  2000/2003 saves by `scripts/lcf_save_roundtrip.rb` (ADR 0018). The remaining
+  step is a `Game::State#to_lsd` that builds the `SAVE_DATA` chunks from live game
+  state and calls `SaveData#save_to`, replacing the `Marshal` save
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
