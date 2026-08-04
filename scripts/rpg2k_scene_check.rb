@@ -42,11 +42,20 @@ module RGSS
     def fill_rect(*); end
     def blt(*); end
     def stretch_blt(*); end
-    def draw_text(*); end
+    # Record draw_text / blend_text calls so message-rendering checks can assert
+    # which path (flat colour vs windowskin blend) was taken.
+    def draw_text(*a); (@draw_calls ||= []) << a; end
+    def blend_text(*a); (@blend_calls ||= []) << a; end
+    attr_reader :draw_calls, :blend_calls
     def text_size(_); Rect.new(0, 0, 0, 0); end
     def font; @font ||= OpenStruct.new; end
+    def get_pixel(x, y); Color2.new(x % 256, y % 256, 42, 255); end
     def dispose; end
   end
+
+  # A readable colour (the real Color stub above swallows its args); get_pixel
+  # returns one of these so tests can inspect the sampled components.
+  Color2 = Struct.new(:red, :green, :blue, :alpha)
 
   class Sprite
     attr_accessor :bitmap, :x, :y, :z, :visible
@@ -1071,6 +1080,42 @@ check 'a shown picture renders through the scene and its move advances' do
   6.times { scene.update }
   ok !st.pictures_moving?, 'the move completed under the scene loop'
   eq 60, st.pictures[1].y, 'the picture reached its target'
+end
+
+check 'coloured message text blends with the windowskin swatch when present' do
+  scene = new_scene({})
+  skin = RGSS::Bitmap.new('System/skin')
+  scene.instance_variable_set(:@windowskin, skin)
+  c = RGSS::Bitmap.new(100, 20)
+  scene.send(:draw_message_run, c, 4, 0, 80, { text: 'hi', color: 3 })
+  bc = c.blend_calls
+  ok bc && bc.size == 1, 'blend_text was used'
+  x, y, w, _h, txt, src, sx, sy, sw, sh = bc[0]
+  eq [4, 0, 80], [x, y, w]
+  eq 'hi', txt
+  eq skin, src, 'blended against the windowskin'
+  # colour 3 -> swatch cell (3%10*16, 3/10*16+48) = (48, 48), 16x16.
+  eq [48, 48, 16, 16], [sx, sy, sw, sh]
+  ok (c.draw_calls || []).empty?, 'no flat draw_text used'
+end
+
+check 'message text falls back to a flat colour without a windowskin' do
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, nil)
+  c = RGSS::Bitmap.new(100, 20)
+  scene.send(:draw_message_run, c, 4, 0, 80, { text: 'hi', color: 3 })
+  ok (c.blend_calls || []).empty?, 'no blend without a windowskin'
+  eq 1, (c.draw_calls || []).size, 'flat draw_text used'
+end
+
+check 'an out-of-range colour index falls back to a flat colour' do
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
+  c = RGSS::Bitmap.new(100, 20)
+  scene.send(:draw_message_run, c, 0, 0, 80, { text: 'x', color: 99 })
+  ok (c.blend_calls || []).empty?, 'an invalid \\c[n] index does not blend'
+  eq 1, (c.draw_calls || []).size, 'flat draw_text used'
+  ok scene.send(:message_color, 99), 'out-of-range flat colour is safe'
 end
 
 check 'rendering a map with charset + tile-substitution events does not raise' do

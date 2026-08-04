@@ -1558,6 +1558,65 @@ void blit_glyph_cov(Bitmap& bmp,
   }
 }
 
+// Like blit_glyph_cov, but instead of a flat colour the glyph is filled from a
+// source region (`src` rect sx,sy,sw,sh) — the System windowskin's text-colour
+// swatch — so the swatch's own shading blends into the text (RPG2000 draws its
+// message text this way). The fill colour for a device row `ty` is sampled from
+// the swatch column centre at the row mapped by the glyph's vertical position
+// within the text line [tline_top, tline_top+tline_h], so a vertically-shaded
+// swatch reads as a top-to-bottom gradient on the glyphs.
+void blit_glyph_tex(Bitmap& bmp,
+                    const uint8_t* cov,
+                    int gw,
+                    int gh,
+                    int ox,
+                    int oy,
+                    int baseline_y,
+                    double slant,
+                    const Bitmap& src,
+                    int sx,
+                    int sy,
+                    int sw,
+                    int sh,
+                    double tline_top,
+                    double tline_h) {
+  const int scol = sx + sw / 2;
+  for (int j = 0; j < gh; ++j) {
+    const int ty = oy + j;
+    if (ty < 0 || ty >= bmp.height)
+      continue;
+    const int shear =
+        slant != 0.0 ? static_cast<int>(std::lround(slant * (baseline_y - ty)))
+                     : 0;
+    int srow = sy;
+    if (sh > 1 && tline_h > 0.0) {
+      int r = static_cast<int>(std::lround(
+          (static_cast<double>(ty) - tline_top) * (sh - 1) / tline_h));
+      srow = sy + std::clamp(r, 0, sh - 1);
+    }
+    int sr = 255, sg = 255, sb = 255, sa = 255;
+    if (scol >= 0 && srow >= 0 && scol < src.width && srow < src.height)
+      bmp_read(src, scol, srow, sr, sg, sb, sa);
+    for (int i = 0; i < gw; ++i) {
+      const int m = cov[j * gw + i];
+      if (m <= 0)
+        continue;
+      const int tx = ox + i + shear;
+      if (tx < 0 || tx >= bmp.width)
+        continue;
+      const int alpha = m * sa / 255;
+      if (alpha <= 0)
+        continue;
+      int dr, dg, db, da;
+      bmp_read(bmp, tx, ty, dr, dg, db, da);
+      const int inv = 255 - alpha;
+      bmp_put(bmp, tx, ty, (sr * alpha + dr * inv) / 255,
+              (sg * alpha + dg * inv) / 255, (sb * alpha + db * inv) / 255,
+              std::max(da, alpha));
+    }
+  }
+}
+
 // Draw `s` into `bmp` with a TrueType font, laid out in the rect (x,y,w,h) with
 // horizontal `align` (0 left, 1 centre, 2 right) and vertically centred. Shadow
 // and outline (from the font's out_color) are painted under the fill; bold is a
@@ -1616,6 +1675,77 @@ void draw_text_ttf(Bitmap& bmp,
       if (fa.bold)
         blit_glyph_cov(bmp, g, gw, gh, ox + 1, oy, by, fa.color[0], fa.color[1],
                        fa.color[2], fa.color[3], 0, slant);
+      stbtt_FreeBitmap(g, nullptr);
+    }
+    int adv = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(&f.info, static_cast<int>(c), &adv, &lsb);
+    penX += scale * adv;
+    prev = static_cast<int>(c);
+  }
+  bmp.dirty = true;
+}
+
+// Like draw_text_ttf, but the glyph fill is textured from a source swatch
+// region (see blit_glyph_tex) rather than a flat colour. Shadow and outline
+// stay the font's flat out_colour; only the main (and bold) fill is textured.
+void draw_text_tex_ttf(Bitmap& bmp,
+                       const FontAttr& fa,
+                       TtfFont& f,
+                       std::string_view s,
+                       mrb_int x,
+                       mrb_int y,
+                       mrb_int w,
+                       mrb_int h,
+                       int align,
+                       const Bitmap& src,
+                       int sx,
+                       int sy,
+                       int sw,
+                       int sh) {
+  const float scale =
+      stbtt_ScaleForMappingEmToPixels(&f.info, static_cast<float>(fa.size));
+  int asc = 0, desc = 0, gap = 0;
+  stbtt_GetFontVMetrics(&f.info, &asc, &desc, &gap);
+
+  int tw = 0, th = 0;
+  measure_text_ttf(f, s, fa.size, tw, th);
+  if (align == 1)
+    x += (w - tw) / 2;
+  else if (align == 2)
+    x += w - tw;
+
+  const double top = y + (h - scale * (asc - desc)) / 2.0;
+  const double baseY = top + scale * asc;
+  const double tline_h = scale * (asc - desc);
+  const double slant = fa.italic ? 0.25 : 0.0;
+  const bool do_outline = fa.outline && fa.out_color[3] > 0;
+
+  double penX = static_cast<double>(x);
+  int prev = 0;
+  for (const char32_t c : s | una::views::utf8) {
+    if (prev)
+      penX += scale *
+              stbtt_GetCodepointKernAdvance(&f.info, prev, static_cast<int>(c));
+    int gw = 0, gh = 0, gx = 0, gy = 0;
+    uint8_t* g = stbtt_GetCodepointBitmap(
+        &f.info, scale, scale, static_cast<int>(c), &gw, &gh, &gx, &gy);
+    if (g) {
+      const int by = static_cast<int>(std::lround(baseY));
+      const int ox = static_cast<int>(std::lround(penX)) + gx;
+      const int oy = by + gy;
+      if (fa.shadow)
+        blit_glyph_cov(bmp, g, gw, gh, ox + 1, oy + 1, by, fa.out_color[0],
+                       fa.out_color[1], fa.out_color[2], fa.out_color[3], 0,
+                       slant);
+      if (do_outline)
+        blit_glyph_cov(bmp, g, gw, gh, ox, oy, by, fa.out_color[0],
+                       fa.out_color[1], fa.out_color[2], fa.out_color[3], 1,
+                       slant);
+      blit_glyph_tex(bmp, g, gw, gh, ox, oy, by, slant, src, sx, sy, sw, sh,
+                     top, tline_h);
+      if (fa.bold)
+        blit_glyph_tex(bmp, g, gw, gh, ox + 1, oy, by, slant, src, sx, sy, sw,
+                       sh, top, tline_h);
       stbtt_FreeBitmap(g, nullptr);
     }
     int adv = 0, lsb = 0;
@@ -1695,6 +1825,90 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
         if (c.data[idx / 32] & (1 << (idx % 32)))
           std::memcpy(bmp.buffer.data() + (py * bmp.width + px) * col_len, col,
                       col_len);
+      }
+    }
+    x += c.WIDTH;
+  };
+
+  for (const char32_t c : sv | una::views::utf8) {
+    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    if (f) {
+      draw(*f);
+      continue;
+    }
+    auto hh = find_char(c, shinonome::LATIN1, shinonome::LATIN1_LEN);
+    if (hh) {
+      draw(*hh);
+      continue;
+    }
+    hh = find_char(c, shinonome::HANKAKU, shinonome::HANKAKU_LEN);
+    if (hh) {
+      draw(*hh);
+      continue;
+    }
+  }
+
+  bmp.dirty = true;
+  return self;
+}
+
+// Draw text whose glyphs are filled from a source region of `src` (a System
+// windowskin's text-colour swatch) instead of a flat colour, so the swatch's
+// shading blends into the text — RPG2000's message-colour rendering. Same
+// layout as draw_text; args: (x, y, w, h, text, src, sx, sy, sw, sh[, align]).
+// Uses the TrueType path when a game font is present, else the shinonome bitmap
+// font (what RPG2000 games use), sampling the swatch by vertical position for a
+// top-to-bottom gradient.
+mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
+  auto& bmp = bmp_self(M, self);
+
+  mrb_int x, y, w, h, len, sx, sy, sw, sh;
+  mrb_int align = 0;
+  const char* s;
+  Bitmap* src;
+  mrb_get_args(M, "iiiisdiiii|i", &x, &y, &w, &h, &s, &len, &src,
+               &DataType<Bitmap>::data_type, &sx, &sy, &sw, &sh, &align);
+  const std::string_view sv(s, len);
+
+  const FontAttr fa = read_font(M, self);
+  if (fa.ttf && fa.ttf->ok) {
+    draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align),
+                      *src, static_cast<int>(sx), static_cast<int>(sy),
+                      static_cast<int>(sw), static_cast<int>(sh));
+    return self;
+  }
+
+  int tw = 0;
+  unsigned th = 0;
+  measure_text(sv, tw, th);
+  if (align == 1)
+    x += (w - tw) / 2;
+  else if (align == 2)
+    x += w - tw;
+
+  const int scol = static_cast<int>(sx + sw / 2);
+  auto draw = [&x, y, &bmp, src, scol, sy, sh](const auto& c) {
+    for (unsigned i = 0; i < c.HEIGHT; ++i) {
+      // Sample the swatch row for this glyph row so a shaded swatch gradients
+      // down the text; a flat swatch reads as a single colour.
+      int srow = static_cast<int>(sy);
+      if (sh > 1 && c.HEIGHT > 1)
+        srow =
+            static_cast<int>(sy) +
+            std::clamp(static_cast<int>(std::lround(static_cast<double>(i) *
+                                                    (sh - 1) / (c.HEIGHT - 1))),
+                       0, static_cast<int>(sh) - 1);
+      int sr = 255, sg = 255, sb = 255, sa = 255;
+      if (scol >= 0 && srow >= 0 && scol < src->width && srow < src->height)
+        bmp_read(*src, scol, srow, sr, sg, sb, sa);
+      for (unsigned j = 0; j < c.WIDTH; ++j) {
+        const unsigned idx = i * c.WIDTH + j;
+        const mrb_int px = x + j;
+        const mrb_int py = y + i;
+        if (px < 0 || py < 0 || px >= bmp.width || py >= bmp.height)
+          continue;
+        if (c.data[idx / 32] & (1 << (idx % 32)))
+          bmp_put(bmp, px, py, sr, sg, sb, sa);
       }
     }
     x += c.WIDTH;
@@ -2415,6 +2629,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
                     MRB_ARGS_REQ(5) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "blend_text", bmp_blend_text,
+                    MRB_ARGS_REQ(10) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "text_size", bmp_text_size, MRB_ARGS_REQ(1));
   mrb_define_method(M, bmp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "disposed?", obj_disposed, MRB_ARGS_NONE());

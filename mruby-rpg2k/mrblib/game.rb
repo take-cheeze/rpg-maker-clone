@@ -117,6 +117,32 @@ module Game
     end
   end
 
+  # Geometry of the 20 message text colours (`\c[n]`) baked into a System
+  # windowskin (`System/<name>.png`). RPG2000 stores them as a 10×2 grid of
+  # 16×16 swatches in the lower part of the 160×80 image, starting at y = 48;
+  # colour n sits at cell (n%10, n/10). The owning scene passes a swatch's cell
+  # rect to `Bitmap#blend_text`, which fills the message glyphs from it so the
+  # text takes the windowskin's own colour and shading. Pure geometry (a port of
+  # EasyRPG Player's system-colour layout), exercised by
+  # scripts/rpg2k_render_check.rb.
+  module MessagePalette
+    COUNT = 20   # colour indices 0..19
+    CELL = 16    # swatch size in pixels
+    COLS = 10    # swatches per row
+    Y_OFFSET = 48 # top of the palette region within the System image
+
+    module_function
+
+    def valid?(idx)
+      idx.is_a?(Integer) && idx >= 0 && idx < COUNT
+    end
+
+    # Top-left [x, y] of colour idx's swatch cell in the System graphic.
+    def cell_origin(idx)
+      [(idx % COLS) * CELL, (idx / COLS) * CELL + Y_OFFSET]
+    end
+  end
+
   # Gradual message text reveal (RPG2000's typewriter effect): a cursor over a
   # set of already-expanded message lines that exposes them a few characters per
   # frame. Pure data — the owning scene reads #visible_lines to (re)draw the

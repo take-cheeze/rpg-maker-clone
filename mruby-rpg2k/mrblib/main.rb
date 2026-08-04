@@ -1623,10 +1623,27 @@ class RPG2k
           x = @message[:text_x]
           y = i * MSG_LINE_H
           segs.each do |seg|
-            c.font.color = message_color(seg[:color])
-            c.draw_text x, y, right - x, MSG_LINE_H, seg[:text]
+            draw_message_run(c, x, y, right - x, seg)
             x += c.text_size(seg[:text]).width
           end
+        end
+      end
+
+      # Draw one coloured message run. When the System windowskin is present and
+      # the colour index is one of its 20 text swatches, blend the glyphs with
+      # that swatch (`Bitmap#blend_text`), so the text takes the windowskin's own
+      # colour and shading the way RPG2000 draws it. Otherwise fall back to a
+      # flat font colour (the approximation, or an out-of-range `\c[n]`).
+      def draw_message_run(c, x, y, w, seg)
+        idx = seg[:color]
+        if @windowskin && Game::MessagePalette.valid?(idx)
+          sx, sy = Game::MessagePalette.cell_origin(idx)
+          cell = Game::MessagePalette::CELL
+          c.blend_text x, y, w, MSG_LINE_H, seg[:text], @windowskin,
+                       sx, sy, cell, cell
+        else
+          c.font.color = message_color(idx)
+          c.draw_text x, y, w, MSG_LINE_H, seg[:text]
         end
       end
 
@@ -1651,6 +1668,9 @@ class RPG2k
         9 => [160, 160, 255]
       }.freeze
 
+      # The flat fallback colour for a `\c[n]` run — used only when there is no
+      # System windowskin to blend the glyphs with (see draw_message_run), or for
+      # an out-of-range colour index. Always opaque.
       def message_color(idx)
         rgb = MSG_COLORS[idx] || MSG_COLORS[0]
         Color.new(rgb[0], rgb[1], rgb[2], 255)
