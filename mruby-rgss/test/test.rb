@@ -166,7 +166,8 @@ assert "RGSS::Sprite API surface" do
   # display, so this only asserts the method surface — the compositing itself is
   # exercised by the game runs.
   %i[bitmap= x= y= z= visible visible= opacity= zoom_x= zoom_y= angle= mirror=
-     tone= color= src_rect= update blend_type= dispose disposed?].each do |m|
+     tone= color= src_rect= update blend_type= bush_depth= dispose
+     disposed?].each do |m|
     assert_true RGSS::Sprite.method_defined?(m), "Sprite##{m} missing"
   end
 end

@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type rendered; bush_depth/flash stored)
+### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth rendered; flash stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -64,9 +64,12 @@ share one pre-composite (`spr_bind_display`). **Snapshot caveat:** a sprite that
 redraws its bitmap, or mutates tone/colour in place, still needs a re-assign
 (`bitmap=`/`tone=`/`color=`) unless it also has a `src_rect` (which re-composites
 via `update`). `Sprite#blend_type=` maps 0/1/2 to the canvas object's LVGL blend
-mode (normal / additive / subtractive), so additive effects composite. **Remaining:**
-**bush_depth** and **flash**. `Sprite_Character`,
-`Sprite_Battler`, `Arrow_Base`, weather and the animation player depend on these.
+mode (normal / additive / subtractive), so additive effects composite;
+`Sprite#bush_depth=` fades the bottom N rows to half opacity in the same
+pre-composite, so a character wading through bushes dims below the waist.
+**Remaining:** **flash** (a timed colour pulse — needs `update`-driven timing).
+`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather and the animation
+player depend on it.
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
 
