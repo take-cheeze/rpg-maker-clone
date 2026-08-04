@@ -165,6 +165,11 @@ module Game
       @actor_graphic_changed = false
       @system_graphic_changed = false
       @tileset_request = nil
+      # Messages queued by a stat command (a Change Level / Change EXP with its
+      # "show message" flag set) and shown one after another before the event
+      # continues. Drained by #resume, so it survives the reset_waits between
+      # messages; abandoned by #stop.
+      @pending_messages = []
       reset_waits
     end
 
@@ -279,6 +284,9 @@ module Game
 
     # Resume after a message/wait/teleport request has been handled.
     def resume
+      # A stat command may have queued several level-up messages; show the next
+      # one instead of continuing until the queue drains.
+      return if show_next_pending_message
       reset_waits
     end
 
@@ -288,6 +296,7 @@ module Game
       @running = false
       @index = @list.size
       @call_stack = []
+      @pending_messages = []
       reset_waits
     end
 
@@ -996,17 +1005,55 @@ module Game
     # stats from the growth curve. Uses the same scope/operation/operand layout
     # as Change HP (stat_targets / stat_amount); the show-level-up-message flag is
     # ignored (no battle/message UI drives it here).
+    # Change EXP: add or remove experience for the target actors, which may cross
+    # one or more level thresholds. param5 is the "show message" flag — when set,
+    # each level an actor gains queues a level-up message (drained by #resume).
     def do_change_exp(cmd)
       amount = stat_amount(cmd)
-      stat_targets(cmd).each { |a| a.gain_exp(amount) }
+      show_msg = cmd.param(5) != 0
+      stat_targets(cmd).each do |a|
+        before = a.level
+        a.gain_exp(amount)
+        queue_level_up_messages(a, before, a.level) if show_msg
+      end
+      show_next_pending_message
     end
 
     # Change Level: add or subtract levels for the target actors, recomputing
     # their base stats and re-aligning EXP to the new level. Same scope/operation/
     # operand layout as Change EXP.
+    # Change Level: add or remove levels for the target actors. param5 is the
+    # "show message" flag — when set, each level an actor gains queues a level-up
+    # message (drained by #resume).
     def do_change_level(cmd)
       amount = stat_amount(cmd)
-      stat_targets(cmd).each { |a| a.change_level_by(amount) }
+      show_msg = cmd.param(5) != 0
+      stat_targets(cmd).each do |a|
+        before = a.level
+        a.change_level_by(amount)
+        queue_level_up_messages(a, before, a.level) if show_msg
+      end
+      show_next_pending_message
+    end
+
+    # Queue one level-up message per level `actor` gained going from `old_level`
+    # to `new_level` (nothing when the level did not rise). RPG_RT phrases these
+    # from the database terms; this build uses a plain English line for now.
+    def queue_level_up_messages(actor, old_level, new_level)
+      return unless new_level > old_level
+      ((old_level + 1)..new_level).each do |lv|
+        @pending_messages.push(["#{actor.name} is now level #{lv}!"])
+      end
+    end
+
+    # Enter the next queued level-up message as a :message wait; returns false
+    # (and does nothing) when the queue is empty.
+    def show_next_pending_message
+      return false if @pending_messages.empty?
+      @message_lines = @pending_messages.shift
+      @wait_kind = :message
+      @waiting = true
+      true
     end
 
     # -- actor HP / MP --------------------------------------------------------

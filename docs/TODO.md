@@ -305,8 +305,12 @@ The work below is roughly ordered by the critical path to a walkable game
   handler. Still to come: criticals / attributes / damage variance and status
   effects in the sim, all-target skill/item scopes, HP persistence across a
   battle, the per-terrain backdrop and the RPG2000 Game Over graphic.
-  The remaining event commands (Inflict Damage, Show Battle Animation, vehicles,
-  tile substitution, ...) are TODO. **Enter Hero Name** (10740) opens a
+  The remaining event commands (Show Battle Animation, vehicles, tile
+  substitution, ...) are TODO. **Change Level** (10420) / **Change EXP** (10410)
+  now honour their "show message" flag — a level-up queues one message per level
+  gained, shown through the message window before the event continues (a small
+  reusable pending-message queue on the interpreter). **Enter Hero Name** (10740)
+  opens a
   character-entry widget that renames a party actor; **Change System Graphics**
   (10680) overrides the windowskin / font (save chunks 15 / 17; the scene reloads
   the skin); **Change Screen Transitions** (10690) records the six teleport /

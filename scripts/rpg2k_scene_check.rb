@@ -1495,6 +1495,47 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+# A party whose actor levels up on demand, for the level-up-message check.
+class LevelStubActor
+  attr_reader :name, :id
+  attr_accessor :level
+  def initialize; @id = 1; @name = 'Hero'; @level = 1; end
+  def change_level_by(n); @level += n; end
+end
+class LevelStubParty
+  attr_reader :actors
+  attr_accessor :leader
+  def initialize; @actors = [LevelStubActor.new]; @leader = nil; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+end
+
+check 'Change Level show-message: the scene shows a message per level, then resumes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_LEVEL, [1, 1, 0, 0, 2, 1], indent: 0), # +2 levels, show flag
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, LevelStubParty.new)
+  # The first level-up message opens.
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@message)
+  end
+  ok scene.instance_variable_get(:@message), 'a level-up message is shown'
+  eq 3, st.party.actor_by_id(1).level, 'both levels were applied at once'
+  # Confirm through both queued messages (two C presses each: reveal, dismiss).
+  40.times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+    break if st.switches[5]
+  end
+  ok st.switches[5], 'the event resumes once both level-up messages are dismissed'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

@@ -1555,6 +1555,59 @@ check 'Change Level command raises the level and rescales stats' do
   eq 1, a.level
 end
 
+# A three-level growth curve (six stats per level) for the level-up-message
+# checks: enough levels to gain more than one at a time.
+def three_level_db
+  FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1,
+                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12]) },
+    [1])
+end
+
+check 'Change Level with the show-message flag queues a message per level gained' do
+  st = Game::State.new(Game::Party.new(three_level_db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, add, const, amount 2 (1 -> 3), show-message flag on.
+  it.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 0, 0, 2, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq 3, a.level, 'gained two levels'
+  ok it.waiting?, 'the first level-up message pauses the event'
+  eq :message, it.wait_kind
+  eq ['Hero is now level 2!'], it.message_lines
+  eq false, st.switches[1], 'the following command has not run yet'
+  it.resume
+  eq :message, it.wait_kind, 'the second level queues a second message'
+  eq ['Hero is now level 3!'], it.message_lines
+  it.resume
+  it.update
+  eq true, st.switches[1], 'the event resumes once the messages drain'
+end
+
+check 'Change Level / Change EXP without the flag show no level-up message' do
+  st = Game::State.new(Game::Party.new(three_level_db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 0, 0, 2, 0])]) # flag off
+  it.update
+  eq 3, st.party.actor_by_id(1).level
+  ok !it.waiting?, 'no message without the show flag'
+end
+
+check 'Change EXP with the show-message flag announces a level-up' do
+  st = Game::State.new(Game::Party.new(three_level_db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  need = a.exp_to_next # exactly enough EXP to reach level 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_EXP, [1, 1, 0, 0, need, 1])])
+  it.update
+  eq 2, a.level, 'crossed one level threshold'
+  ok it.waiting?
+  eq ['Hero is now level 2!'], it.message_lines
+  it.resume
+  ok !it.waiting?, 'a single level gained -> a single message'
+end
+
 check 'Change Equipment command equips into the type slot and removes' do
   items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
             8 => fake_item(dfn: 9, type: 3) }    # armour -> slot 2
