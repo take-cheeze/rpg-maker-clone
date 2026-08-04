@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 // ES3 renderbuffer/attachment enums the base <GLES2/gl2.h> may not declare. The
@@ -63,34 +64,58 @@ void warn(const char* what, const char* detail) {
                detail ? detail : "");
 }
 
-// Hide DISPLAY for the lifetime of an EGL display-open / make-current, then
-// restore it. Our GL is entirely off-screen (EGL + an FBO) and never needs a
-// window-system connection, so this keeps the surfaceless attempt as close as
-// possible to the headless gl_test environment (no DISPLAY) where it is proven
-// to bind. It is safe: SDL has already opened its X connection by the time any
-// WebGL context exists and does not re-read the env var, and the value is
-// restored the moment the EGL call returns. Note this is not on its own
-// sufficient under Xvfb — the surfaceless make-current there still fails with
-// EGL_BAD_ACCESS (0x3002) because SDL's X11 connection has already perturbed
-// the process's window-system EGL state; the explicit device-platform fallback
-// (see open_device_display / create) is what actually keeps MZ booting.
-struct ScopedNoDisplay {
-  char saved[256];
-  bool had;
-  ScopedNoDisplay() {
-    const char* d = std::getenv("DISPLAY");
-    had = d != nullptr;
-    if (had) {
-      std::snprintf(saved, sizeof(saved), "%s", d);
-      unsetenv("DISPLAY");
+// Pin EGL/GLES to the pure-software surfaceless path and cut off every route to
+// an X server for the duration of an EGL call, restoring the environment after.
+// Our GL is entirely off-screen (surfaceless llvmpipe + an FBO) and must never
+// touch the window system — but under Xvfb Mesa otherwise dispatches even a
+// surfaceless `eglMakeCurrent` through GLX to the X server, which denies it
+// with a fatal `X BadAccess` on `X_GLXMakeCurrent` (hiding DISPLAY alone did
+// not stop this: Mesa still reached X). Unsetting DISPLAY *and* XAUTHORITY
+// removes the route to X, and EGL_PLATFORM/GALLIUM_DRIVER/LIBGL_ALWAYS_SOFTWARE
+// pin the software surfaceless path — together reproducing the headless gl_test
+// environment (no display), where the identical code binds cleanly. Safe:
+// nothing else in the process uses EGL/GLX (LVGL's SDL backend is the software
+// renderer), and every variable is restored the moment the EGL call returns.
+class ScopedSoftwareEGL {
+ public:
+  ScopedSoftwareEGL() {
+    hide("DISPLAY");
+    hide("XAUTHORITY");
+    force("EGL_PLATFORM", "surfaceless");
+    force("GALLIUM_DRIVER", "llvmpipe");
+    force("LIBGL_ALWAYS_SOFTWARE", "1");
+  }
+  ~ScopedSoftwareEGL() {
+    // Restore in reverse so a name touched twice ends on its original value.
+    for (auto it = saved_.rbegin(); it != saved_.rend(); ++it) {
+      if (it->had)
+        setenv(it->name, it->prev.c_str(), 1);
+      else
+        unsetenv(it->name);
     }
   }
-  ~ScopedNoDisplay() {
-    if (had)
-      setenv("DISPLAY", saved, 1);
+  ScopedSoftwareEGL(const ScopedSoftwareEGL&) = delete;
+  ScopedSoftwareEGL& operator=(const ScopedSoftwareEGL&) = delete;
+
+ private:
+  struct Var {
+    const char* name;
+    bool had;
+    std::string prev;
+  };
+  std::vector<Var> saved_;
+  void snapshot(const char* name) {
+    const char* v = std::getenv(name);
+    saved_.push_back({name, v != nullptr, v ? v : std::string()});
   }
-  ScopedNoDisplay(const ScopedNoDisplay&) = delete;
-  ScopedNoDisplay& operator=(const ScopedNoDisplay&) = delete;
+  void hide(const char* name) {
+    snapshot(name);
+    unsetenv(name);
+  }
+  void force(const char* name, const char* value) {
+    snapshot(name);
+    setenv(name, value, 1);
+  }
 };
 
 // Compile a GLES2 shader, logging and returning 0 on failure.
@@ -311,7 +336,7 @@ Context* create(int width, int height) {
   if (eglGetCurrentContext() != EGL_NO_CONTEXT)
     warn("create: an EGL context was already current on this thread", nullptr);
 
-  ScopedNoDisplay no_display;
+  ScopedSoftwareEGL no_x;
 
   // Try the surfaceless platform first (what the headless gl_test uses), then
   // an explicit software EGL device. In the main binary (SDL + Xvfb) the
@@ -386,7 +411,7 @@ void destroy(Context* ctx) {
   if (!ctx)
     return;
   if (ctx->dpy != EGL_NO_DISPLAY && ctx->egl != EGL_NO_CONTEXT) {
-    ScopedNoDisplay no_display;
+    ScopedSoftwareEGL no_x;
     eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl);
     if (ctx->fbo)
       glDeleteFramebuffers(1, &ctx->fbo);
@@ -407,7 +432,7 @@ void destroy(Context* ctx) {
 bool make_current(Context* ctx) {
   if (!ctx || ctx->dpy == EGL_NO_DISPLAY || ctx->egl == EGL_NO_CONTEXT)
     return false;
-  ScopedNoDisplay no_display;
+  ScopedSoftwareEGL no_x;
   if (!eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl))
     return false;
   // A fresh make-current binds the default framebuffer; rebind ours (the
