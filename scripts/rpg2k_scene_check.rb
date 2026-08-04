@@ -408,10 +408,11 @@ end
 class BattleStubActor
   attr_accessor :exp, :hp
   attr_reader :id, :name, :atk, :def, :agi, :max_hp
-  def initialize
+  # Defaults are strong enough to beat the two-Slime troop the scene db defines;
+  # a defeat test passes weaker stats.
+  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200)
     @exp = 0; @id = 1; @name = 'Hero'
-    # Strong enough to beat the two-Slime troop the scene db defines.
-    @atk = 40; @def = 20; @agi = 20; @hp = 200; @max_hp = 200
+    @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
   end
   def gain_exp(n); @exp += n; end
 end
@@ -419,7 +420,7 @@ end
 class BattleStubParty
   attr_reader :actors, :gold
   attr_accessor :leader
-  def initialize; @actors = [BattleStubActor.new]; @gold = 0; @leader = nil; end
+  def initialize(actor = BattleStubActor.new); @actors = [actor]; @gold = 0; @leader = nil; end
   def gain_gold(n); @gold += n; end
 end
 
@@ -1305,11 +1306,44 @@ check 'Enemy Encounter scene: winning the battle grants rewards, runs Victory' d
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  5.times { scene.update } # the headless battle runs; the strong party wins
+  5.times { scene.update } # battle runs (strong party wins); result window opens
   eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
   eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
-  ok st.switches[1], 'the Victory handler ran'
+  ok !st.switches[1], 'still showing the Victory result window'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result window
+  scene.update
+  RGSS::Input.triggered = []
+  3.times { scene.update } # interpreter resumes -> runs the Victory handler
+  ok st.switches[1], 'the Victory handler ran after the result was dismissed'
   ok !st.switches[2], 'the Escape handler was skipped'
+end
+
+check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 1, 0], indent: 0),
+    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::DEFEAT_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 1),
+    ECmd.new(ic::END_BATTLE, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # A frail hero the two Slimes overwhelm.
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  5.times { scene.update } # battle runs; the party loses; result window opens
+  ok !st.switches[1] && !st.switches[3], 'result window is up'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  3.times { scene.update }
+  eq 0, st.party.gold, 'no gold on a loss'
+  eq 0, st.party.actors.first.exp, 'no EXP on a loss'
+  ok !st.switches[1], 'the Victory handler was skipped'
+  ok st.switches[3], 'the Defeat handler ran'
 end
 
 # -- summary ------------------------------------------------------------------
