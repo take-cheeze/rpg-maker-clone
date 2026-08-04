@@ -1414,6 +1414,24 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   ok !st.switches[5], 'the rest of the event never ran'
 end
 
+check 'Game Over event command returns to the title, abandoning the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::GAME_OVER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  parent = scene.instance_variable_get(:@parent)
+  5.times do
+    scene.update
+    break if parent.returned_to_title
+  end
+  ok parent.returned_to_title, 'Game Over returned to the title'
+  ok !st.switches[5], 'the rest of the event never ran'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

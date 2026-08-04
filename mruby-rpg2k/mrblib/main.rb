@@ -1441,6 +1441,7 @@ class RPG2k
           when :screen then @interpreter.resume unless @state.screen.busy?
           when :picture then @interpreter.resume unless @state.pictures_moving?
           when :return_title then perform_return_to_title
+          when :game_over then perform_game_over
           end
         else
           @interpreter.update

@@ -2871,6 +2871,13 @@ module Game
     # battle / menu scenes that would play them are not built yet; stored for
     # save fidelity.
     attr_accessor :system_bgm, :system_sfx
+    # Screen-transition styles set by Change Screen Transitions (10690): six
+    # slots, in save order — 0 teleport-erase, 1 teleport-show, 2 battle-start-
+    # erase, 3 battle-start-show, 4 battle-end-erase, 5 battle-end-show — each a
+    # style id. Modelled for save fidelity (they round-trip through the save,
+    # LSD chunks 111–116); the teleport / battle fades that would read them still
+    # use their own transition, so nothing consumes these at runtime yet.
+    attr_accessor :screen_transitions
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -2896,6 +2903,7 @@ module Game
       @escape_target = nil
       @system_bgm = {}
       @system_sfx = {}
+      @screen_transitions = Array.new(SCREEN_TRANSITION_SLOTS, 0)
       @weather = Weather.new
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
@@ -2944,6 +2952,16 @@ module Game
     # Remaining timer seconds (assuming 60 fps).
     def timer_seconds; @timer_frames / 60; end
 
+    # The six Change Screen Transitions (10690) slots (see #screen_transitions).
+    SCREEN_TRANSITION_SLOTS = 6
+
+    # Change Screen Transitions: set slot `which` (0..5) to transition style
+    # `style`. An out-of-range slot is ignored.
+    def set_screen_transition(which, style)
+      return unless which >= 0 && which < SCREEN_TRANSITION_SLOTS
+      @screen_transitions[which] = style
+    end
+
     # Serialise to a plain hash of primitives (Marshal-friendly) for saving. The
     # map itself is not stored; it is reloaded from map_id on load.
     def to_h
@@ -2957,7 +2975,7 @@ module Game
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
         escape_target: @escape_target, system_bgm: @system_bgm,
-        system_sfx: @system_sfx }
+        system_sfx: @system_sfx, screen_transitions: @screen_transitions }
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
@@ -3059,6 +3077,8 @@ module Game
       sys[122] = @escape_access ? true : false
       sys[123] = @save_access ? true : false
       sys[124] = @menu_access ? true : false
+      # Screen-transition slots 0..5 map to chunks 111..116 in order.
+      @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
       sys[131] = save_count
       sys[132] = 1
       save[101] = sys
@@ -3175,6 +3195,12 @@ module Game
       state.escape_access = sys.escape_allowed unless sys.escape_allowed.nil?
       state.save_access = sys.save_allowed unless sys.save_allowed.nil?
       state.menu_access = sys.menu_allowed unless sys.menu_allowed.nil?
+      # Screen-transition slots (chunks 111..116), defaulting to 0 when unset.
+      state.screen_transitions = [
+        sys.teleport_erase_transition, sys.teleport_show_transition,
+        sys.battle_start_erase_transition, sys.battle_start_show_transition,
+        sys.battle_end_erase_transition, sys.battle_end_show_transition
+      ].map { |v| v || 0 }
       # The leader's display name from the file-screen title chunk (a Change
       # Actor Name override survives for the leader).
       title = save[100]
@@ -3272,6 +3298,11 @@ module Game
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}
+      # A save written before screen transitions existed restores all-default.
+      stx = h[:screen_transitions]
+      if stx && stx.length == SCREEN_TRANSITION_SLOTS
+        state.screen_transitions = stx.dup
+      end
       state
     end
   end

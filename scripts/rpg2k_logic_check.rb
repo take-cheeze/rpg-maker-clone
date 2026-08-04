@@ -2248,6 +2248,45 @@ check 'Return to Title Screen raises a :return_title request' do
   eq false, st.switches[1], 'the command after it does not run (the game is ending)'
 end
 
+check 'Game Over raises a :game_over request and stops the event' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::GAME_OVER, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Game Over pauses the interpreter'
+  eq :game_over, it.wait_kind
+  eq false, st.switches[1], 'the command after it does not run (the game is ending)'
+end
+
+# -- Change Screen Transitions ------------------------------------------------
+
+check 'Change Screen Transitions sets the chosen slot; round-trips through save' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq [0, 0, 0, 0, 0, 0], st.screen_transitions, 'all slots default to 0'
+
+  it = Game::Interpreter.new(st)
+  # Slot 2 (battle-start erase) -> style 5, slot 5 (battle-end show) -> style 9.
+  it.start([FakeCmd.new(IC::CHANGE_TRANSITION, [2, 5]),
+            FakeCmd.new(IC::CHANGE_TRANSITION, [5, 9])])
+  it.update
+  eq [0, 0, 5, 0, 0, 9], st.screen_transitions
+  # An out-of-range slot is ignored.
+  st.set_screen_transition(6, 3)
+  st.set_screen_transition(-1, 3)
+  eq [0, 0, 5, 0, 0, 9], st.screen_transitions
+
+  loaded = Game::State.load(db, st.to_h)
+  eq [0, 0, 5, 0, 0, 9], loaded.screen_transitions, 'transitions round-trip'
+  # A save written before transitions existed restores all-default.
+  legacy = st.to_h
+  legacy.delete(:screen_transitions)
+  eq [0, 0, 0, 0, 0, 0], Game::State.load(db, legacy).screen_transitions
+end
+
 # -- Change / Trade Event Location --------------------------------------------
 
 check 'Change Event Location queues a :set request (constant and variable modes)' do

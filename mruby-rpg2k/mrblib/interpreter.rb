@@ -38,6 +38,7 @@ module Game
       CHANGE_ACTOR_SPRITE = 10630
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
+      CHANGE_TRANSITION   = 10690
       ENEMY_ENCOUNTER  = 10710
       VICTORY_HANDLER  = 20710
       ESCAPE_HANDLER   = 20711
@@ -99,6 +100,7 @@ module Game
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
       RETURN_TO_TITLE  = 12510
+      GAME_OVER        = 12520
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -524,11 +526,13 @@ module Game
       when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
       when Cmd::CHANGE_SYSTEM_BGM    then do_change_system_bgm cmd
       when Cmd::CHANGE_SYSTEM_SFX    then do_change_system_sfx cmd
+      when Cmd::CHANGE_TRANSITION    then @state.set_screen_transition(cmd.param(0), cmd.param(1))
       when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
       when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
+      when Cmd::GAME_OVER        then do_game_over cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
@@ -1285,6 +1289,14 @@ module Game
     # the request behaves like a one-way teleport out of the map).
     def do_return_to_title(_cmd)
       @wait_kind = :return_title
+      @waiting = true
+    end
+
+    # Game Over (12520): raised as a :game_over request the owning scene answers
+    # by ending the game (RPG2000 shows the Game Over screen, then the title).
+    # Like Return to Title there is nothing to resume — the event stops here.
+    def do_game_over(_cmd)
+      @wait_kind = :game_over
       @waiting = true
     end
 
