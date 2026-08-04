@@ -201,12 +201,12 @@ mrb_data_type DataType<T>::data_type{
 };
 
 // Generic floating point component getter/setter usable by Color and Tone.
-template <class T, double T::* Field>
+template <class T, double T::*Field>
 mrb_value component_get(mrb_state* M, V self) {
   return mrb_float_value(M, DataType<T>::get(M, self).*Field);
 }
 
-template <class T, double T::* Field, int Lo, int Hi>
+template <class T, double T::*Field, int Lo, int Hi>
 mrb_value component_set(mrb_state* M, V self) {
   mrb_float v;
   mrb_get_args(M, "f", &v);
@@ -1168,6 +1168,60 @@ mrb_value bmp_fill_rect(mrb_state* M, V self) {
     for (mrb_int i = x; i < x + w; ++i)
       bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
   b.dirty = true;
+  return self;
+}
+
+int clamp_channel(int v) {
+  return v < 0 ? 0 : (v > 255 ? 255 : v);
+}
+
+// RGSS Bitmap#tone_blt(src, tone): copy `src` into this bitmap, same size,
+// applying an RGSS Tone.
+//
+// A tone is *not* a colour drawn on top -- it rescales what is already there,
+// which is why it cannot be done the way the screen fade and flash are (a solid
+// sprite composited at some opacity). Hence a real pixel pass.
+//
+// RGSS order, which RPG2000's Tint Screen reduces to: desaturate toward
+// luminance by `gray` (0..255), then add the per-channel offsets (-255..255).
+// Luminance uses the usual 299/587/114 weights. Alpha is copied untouched: a
+// tone tints what is visible, it does not make anything more or less so.
+//
+// It writes into a separate destination rather than transforming in place
+// because the caller redraws its layers only when they change; toning in place
+// would re-tone an already-toned layer every frame and march it to black.
+mrb_value bmp_tone_blt(mrb_state* M, V self) {
+  Bitmap& dst = bmp_self(M, self);
+  V src_v, tone_v;
+  mrb_get_args(M, "oo", &src_v, &tone_v);
+  Bitmap& src = DataType<Bitmap>::get(M, src_v);
+  Tone& t = DataType<Tone>::get(M, tone_v);
+
+  if (src.width != dst.width || src.height != dst.height)
+    mrb_raisef(M,
+               mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
+               "tone_blt: size mismatch (self %dx%d, src %dx%d)", dst.width,
+               dst.height, src.width, src.height);
+
+  const int tr = (int)t.red, tg = (int)t.green, tb = (int)t.blue;
+  const int gray = (int)t.gray;
+  for (int32_t y = 0; y < src.height; ++y) {
+    for (int32_t x = 0; x < src.width; ++x) {
+      int r, g, b, a;
+      bmp_read(src, x, y, r, g, b, a);
+      if (gray > 0) {
+        const int lum = (r * 299 + g * 587 + b * 114) / 1000;
+        r += (lum - r) * gray / 255;
+        g += (lum - g) * gray / 255;
+        b += (lum - b) * gray / 255;
+      }
+      r = clamp_channel(r + tr);
+      g = clamp_channel(g + tg);
+      b = clamp_channel(b + tb);
+      bmp_put(dst, x, y, r, g, b, a);
+    }
+  }
+  dst.dirty = true;
   return self;
 }
 
@@ -3698,6 +3752,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
