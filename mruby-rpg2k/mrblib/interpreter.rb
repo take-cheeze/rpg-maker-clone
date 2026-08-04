@@ -68,6 +68,8 @@ module Game
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
       CHANGE_MAP_TILESET = 11710
+      CHANGE_TELEPORT_ACCESS = 11820
+      CHANGE_ESCAPE_ACCESS   = 11840
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
       RETURN_TO_TITLE  = 12510
@@ -331,6 +333,8 @@ module Game
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
+      when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
+      when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd

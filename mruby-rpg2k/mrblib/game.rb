@@ -1753,6 +1753,12 @@ module Game
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
     attr_accessor :menu_access, :save_access
+    # Whether the Teleport and Escape skills are usable, toggled by the Change
+    # Teleport Access (11820) and Change Escape Access (11840) event commands.
+    # Default off — RPG2000 games enable these once the skill's targets are set —
+    # and persisted in the save. (The skills themselves are not executed yet, so
+    # these gate nothing at runtime; they are modelled for save fidelity.)
+    attr_accessor :teleport_access, :escape_access
     # The BGM currently playing and the one stashed by Memorize BGM (11530),
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
@@ -1776,6 +1782,8 @@ module Game
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
+      @teleport_access = false
+      @escape_access = false
       @current_bgm = nil
       @memorized_bgm = nil
       @player_transparent = false
@@ -1806,7 +1814,8 @@ module Game
         timer_running: @timer_running, message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
-        player_transparent: @player_transparent, weather: @weather.to_h }
+        player_transparent: @player_transparent, weather: @weather.to_h,
+        teleport_access: @teleport_access, escape_access: @escape_access }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -1878,6 +1887,8 @@ module Game
       state.memorized_bgm = h[:memorized_bgm]
       state.player_transparent = h[:player_transparent] ? true : false
       state.weather.load_h(h[:weather])
+      state.teleport_access = h[:teleport_access] ? true : false
+      state.escape_access = h[:escape_access] ? true : false
       state
     end
   end

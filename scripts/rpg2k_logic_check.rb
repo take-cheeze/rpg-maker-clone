@@ -1766,6 +1766,49 @@ check 'Weather round-trips through the save' do
   ok Game::State.load(db, legacy).weather.none?
 end
 
+# -- Change Teleport / Escape Access ------------------------------------------
+
+check 'Change Teleport / Escape Access toggle their flags, non-blocking' do
+  st = party_state
+  eq false, st.teleport_access, 'teleport access defaults off'
+  eq false, st.escape_access, 'escape access defaults off'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_TELEPORT_ACCESS, [1]),
+            FakeCmd.new(IC::CHANGE_ESCAPE_ACCESS, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'the access commands must not pause the interpreter'
+  eq true, st.teleport_access
+  eq true, st.escape_access
+  eq true, st.switches[1], 'the command after them still ran'
+  # And they can be turned back off.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_TELEPORT_ACCESS, [0])])
+  it2.update
+  eq false, st.teleport_access
+end
+
+check 'Teleport / Escape access round-trip through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.teleport_access = true
+  st.escape_access = true
+  loaded = Game::State.load(db, st.to_h)
+  eq true, loaded.teleport_access
+  eq true, loaded.escape_access
+  # A save written before these existed defaults them off.
+  legacy = st.to_h
+  legacy.delete(:teleport_access)
+  legacy.delete(:escape_access)
+  legacy_loaded = Game::State.load(db, legacy)
+  eq false, legacy_loaded.teleport_access
+  eq false, legacy_loaded.escape_access
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

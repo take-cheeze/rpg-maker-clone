@@ -124,6 +124,7 @@ The work below is roughly ordered by the critical path to a walkable game
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
+  Change Teleport / Escape Access,
   Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
   Event, Change / Trade Event Location, Change Map Tileset, Proceed With
   Movement, Halt All Movement,
