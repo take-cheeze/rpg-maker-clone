@@ -528,7 +528,9 @@ class RPG2k
             step_player_route
             step_events
             step_movement
-            try_action_trigger
+            # Boarding / disembarking claims the action button when it applies;
+            # otherwise it falls through to the usual event trigger.
+            try_action_trigger unless try_board_vehicle
             try_open_menu
           end
         end
@@ -972,6 +974,87 @@ class RPG2k
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
         start_event(ev) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
+      end
+
+      # On the action button, board a placed vehicle the party is standing on
+      # (airship) or facing (boat / ship), or — when already aboard — step off
+      # onto the tile ahead. Returns true when it claimed the button, so the
+      # ordinary event-action check is skipped that frame.
+      def try_board_vehicle
+        return false if event_busy?
+        return false unless Input.trigger?(Input::C)
+        if @state.boarded?
+          disembark_vehicle
+          true # aboard, the action button belongs to the vehicle
+        else
+          board_vehicle
+        end
+      end
+
+      # Board a vehicle placed on the current map at the party's tile (airship) or
+      # the tile it faces (boat / ship, boarded from the shore). Steps onto the
+      # vehicle's tile and returns whether a vehicle was boarded.
+      def board_vehicle
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        Game::Vehicle::TYPES.each do |type|
+          v = @state.vehicle(type)
+          next unless v.placed? && v.map_id == @state.map_id
+          if v.x == @state.x && v.y == @state.y
+            @state.boarded = type
+            return true
+          elsif v.x == fx && v.y == fy
+            @state.x = fx
+            @state.y = fy
+            @state.boarded = type
+            return true
+          end
+        end
+        false
+      end
+
+      # Step off the ridden vehicle onto the tile ahead when it is walkable on
+      # foot, leaving the vehicle on the tile the party vacates. A no-op when the
+      # way ahead is blocked (the party stays aboard).
+      def disembark_vehicle
+        fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        return unless passable?(fx, fy, @state.direction)
+        follow_vehicle # the vehicle is left where the party is getting off
+        @state.x = fx
+        @state.y = fy
+        @state.boarded = nil
+      end
+
+      # Keep the ridden vehicle on the party's tile / facing.
+      def follow_vehicle
+        v = @state.vehicle(@state.boarded)
+        return unless v
+        v.map_id = @state.map_id
+        v.x = @state.x
+        v.y = @state.y
+        v.direction = @state.direction
+      end
+
+      # Whether vehicle `type` may enter tile (x, y) heading `dir`: the airship
+      # flies over any in-bounds tile; a boat / ship needs the tile's terrain to
+      # allow it (the database terrain's boat_pass / ship_pass flag) with no event
+      # in the way, falling back to on-foot passability when the map has no
+      # terrain data.
+      def vehicle_passable?(x, y, dir, type)
+        return false unless @map.in_bounds?(x, y)
+        return true if type == :airship
+        return false if @event_tiles[[x, y]]
+        row = terrain_row_at(x, y)
+        return passable?(x, y, dir) unless row
+        type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
+      end
+
+      # The database terrain row under tile (x, y), or nil when the chipset / map
+      # carry no terrain data (e.g. the colour-block fallback or a bare fixture).
+      def terrain_row_at(x, y)
+        return nil if @chipset.nil? || !@db.respond_to?(:terrain) || @db.terrain.nil?
+        @db.terrain[@chipset.terrain(@map.lower(x, y))]
+      rescue StandardError
+        nil
       end
 
       # Advance autonomous / custom-route event movement one frame. Skipped
@@ -2936,6 +3019,7 @@ class RPG2k
             @state.y = @dest_y
             @moving = false
             @move_count = 0
+            follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
           end
           return
         end
@@ -2948,14 +3032,19 @@ class RPG2k
         @state.direction = dir
         nx, ny = target_tile(@state.x, @state.y, dir)
 
-        # Walking into a player-touch (trigger 1) event runs it instead of moving.
-        touched = event_at(nx, ny)
-        if touched && touched[:trigger] == TRIGGER_PLAYER_TOUCH && touched[:commands]
-          start_event(touched)
-          return
+        if @state.boarded?
+          # Aboard a vehicle: use the vehicle's passability and glide over touch
+          # events (you cannot trigger them from the water / air).
+          return unless vehicle_passable?(nx, ny, dir, @state.boarded)
+        else
+          # Walking into a player-touch (trigger 1) event runs it instead of moving.
+          touched = event_at(nx, ny)
+          if touched && touched[:trigger] == TRIGGER_PLAYER_TOUCH && touched[:commands]
+            start_event(touched)
+            return
+          end
+          return unless passable?(nx, ny, dir)
         end
-
-        return unless passable?(nx, ny, dir)
 
         @dest_x = nx
         @dest_y = ny

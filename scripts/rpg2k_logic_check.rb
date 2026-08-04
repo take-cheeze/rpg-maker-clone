@@ -2757,6 +2757,21 @@ check 'vehicle placement / graphic round-trip through the save' do
   eq 1, boat.charset_index
 end
 
+check 'the ridden vehicle round-trips through the save' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ok !st.boarded?, 'the party starts on foot'
+  st.boarded = :ship
+  ok st.boarded?
+  eq :ship, Game::State.load(db, st.to_h).boarded, 'the ridden vehicle survives a save'
+  # A save written before boarding existed restores on-foot.
+  legacy = st.to_h
+  legacy.delete(:boarded)
+  ok !Game::State.load(db, legacy).boarded?
+end
+
 # -- Change / Trade Event Location --------------------------------------------
 
 check 'Change Event Location queues a :set request (constant and variable modes)' do

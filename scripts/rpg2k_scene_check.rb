@@ -1563,6 +1563,50 @@ check 'Change Level show-message: the scene shows a message per level, then resu
   ok st.switches[5], 'the event resumes once both level-up messages are dismissed'
 end
 
+check 'boarding a boat and disembarking onto the shore' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  # Press the action button while facing the boat: board and step onto it.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq [0, 1], [st.x, st.y], 'stepped onto the boat tile'
+  # Face back to the shore and press the button: step off.
+  st.direction = 8 # face up, toward (0, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'disembarked back onto foot'
+  eq [0, 0], [st.x, st.y], 'stepped off onto the shore tile'
+  eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
+end
+
+check 'the airship flies over a tile blocked on foot, and follows the party' do
+  # An event occupies (1, 0): impassable on foot, but the airship flies over it.
+  scene = new_scene({ 1 => event(1, 0, page) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0 # the airship sits under the party; board in place
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship in place'
+  # Fly east onto the blocked tile.
+  RGSS::Input.dir_value = 6
+  20.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, 'the airship crossed the on-foot-blocked tile'
+  eq [st.x, st.y], [air.x, air.y], 'the airship follows the party'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
