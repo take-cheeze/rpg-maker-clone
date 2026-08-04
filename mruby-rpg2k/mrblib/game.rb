@@ -2801,16 +2801,23 @@ module Game
     # `sp_change_max`, e.g. the database's `situation` table). When given, a
     # battler's afflicted states take effect each turn (slip damage, skip if it
     # cannot act); omitted, states are inert as before.
-    def initialize(allies, enemies, rng = nil, states = nil)
+    # `variance`, when true, applies RPG2000's +/- spread to each basic attack's
+    # damage (a `var` of 4, per EasyRPG's Algo::VarianceAdjustEffect). Off by
+    # default so a seeded fight is exactly reproducible; the live game turns it on.
+    def initialize(allies, enemies, rng = nil, states = nil, variance = false)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
       @states = states
+      @variance = variance
       @rounds = 0
       @result = nil
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
     end
+
+    # RPG2000 normal-attack damage variance on the 0-10 `var` scale.
+    NORMAL_ATTACK_VARIANCE = 4
 
     # State `restriction` values (lcf::rpg::State::Restriction): the battler
     # cannot act (asleep / paralysed), is forced to attack a random enemy
@@ -3024,13 +3031,26 @@ module Game
       deal_attack(b, target)
     end
 
-    # `b` lands a basic attack on `target`, halved (min 1) if the target defends.
+    # `b` lands a basic attack on `target`: the base damage (optionally spread by
+    # variance), halved (min 1) if the target defends.
     def deal_attack(b, target)
       dmg = Battle.attack_damage(b.atk, target.def)
+      dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance
       dmg = [dmg / 2, 1].max if target.defending
       target.hp -= dmg
       { attacker: b.name, target: target.name, damage: dmg,
         target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
+    end
+
+    # Spread `base` by a `var` (0-10) amount: an adjustment of `var*base/10` (min
+    # 1) is centred on the base with a random offset, floored at 1. Port of
+    # EasyRPG's Algo::VarianceAdjustEffect.
+    def varied(base, var)
+      return base unless var > 0 && base > 0
+      adj = var * base / 10
+      adj = 1 if adj < 1
+      d = base + @rng.random(adj + 1) - adj / 2
+      d < 1 ? 1 : d
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act

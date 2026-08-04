@@ -3379,6 +3379,42 @@ check 'Battle.attack_damage is half attack less a quarter defence, min 1' do
   eq 1,  Game::Battle.attack_damage(0, 0)
 end
 
+# base 20 (atk 40 vs def 0); variance 4 -> adj = 8, spread 20-4 .. 20+8-4 = 16..24.
+def variance_hit(seed)
+  hero = combatant('Hero', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 1000)          # tanky, survives the hit
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(seed), nil, true)
+  bat.begin_round
+  bat.step_action[:damage]
+end
+
+check 'battle damage variance spreads a basic attack within its range' do
+  d = variance_hit(1)
+  ok d >= 16 && d <= 24, "in 16..24 (got #{d})"
+end
+
+check 'battle damage variance is seed-deterministic' do
+  eq variance_hit(1), variance_hit(1), 'same seed -> same damage'
+end
+
+check 'battle damage variance produces a spread of values across hits' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 100_000)       # huge HP: many hits land
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, true)
+  20.times { bat.run_round }
+  hits = bat.log.select { |e| e[:attacker] == 'Hero' }.map { |e| e[:damage] }
+  ok hits.uniq.length > 1, "variance spreads damage (#{hits.uniq.sort.inspect})"
+  ok hits.all? { |d| d >= 16 && d <= 24 }, 'every hit within 16..24'
+end
+
+check 'without variance a seeded fight deals exactly the base damage' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 1000)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))  # 3-arg: variance off
+  bat.begin_round
+  eq 20, bat.step_action[:damage]                    # exact base, unaffected
+end
+
 check 'Battle: a stronger party wins, a weaker one is defeated' do
   hero = combatant('Hero', 40, 20, 20, 200)
   slime = combatant('Slime', 8, 4, 5, 30)
