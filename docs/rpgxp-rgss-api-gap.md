@@ -61,7 +61,7 @@ through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
 scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
 `Arrow_Base`, weather and the animation player depend on these.
 
-### 2. `Window` ⚠️ (background + frame + contents rendered; cursor/pause pending)
+### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
 
 `Window` is now **native** (`mruby-rgss/src/lib.cxx`): `Window.new` creates an
 `lv_canvas` the size of the window and `window_refresh` composites it — when a
@@ -72,12 +72,16 @@ area (inset 16px, scrolled by `ox`/`oy`) at `contents_opacity`. The compositing
 reuses the tested `Bitmap#clear`/`#stretch_blt`/`#blt` via `mrb_funcall`; only the
 RMXP windowskin source rects are new. `contents=`, `windowskin=`, `x=`/`y=`,
 `width=`/`height=`, `ox=`/`oy=`, `opacity=`/`back_opacity=`/`contents_opacity=`,
-`z=`, `visible`/`visible=`, `dispose`/`disposed?` are native. So the whole
-menu/message/shop/battle UI shows its framed windows. **Remaining:** the blinking
-cursor rect and the pause arrow (both need per-frame animation via `update`) are
-stored (`cursor_rect`, `active`, `pause`, `stretch`) but not yet drawn; the
-content blit does not yet clip contents taller than the window; and the RMXP
-windowskin source-rect constants are best-effort until a game exercises them.
+`z=`, `visible`/`visible=`, `dispose`/`disposed?` are native. It also draws the
+**blinking cursor** highlight at `cursor_rect` (when `active`) and the **pause
+arrow** (when `pause`); `Window#update` advances the blink/pause animation and
+redraws (also picking up in-place `cursor_rect` mutation, which scripts do via
+`cursor_rect.set`). So the whole menu/message/shop/battle UI renders — framed
+windows, text, selection cursor and message pause. **Remaining:** the cursor is a
+stretched highlight rather than a crisp 9-slice; the content blit does not yet
+clip contents taller than the window; `stretch` (tiled vs stretched background) is
+ignored; and the RMXP windowskin source-rect constants are best-effort until a
+game exercises them.
 
 ### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
 

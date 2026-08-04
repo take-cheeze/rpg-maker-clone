@@ -492,8 +492,8 @@ assert "RGSS::Window API surface" do
   # back_opacity, active, pause, stretch) are covered by being defined below.
   %i[contents= x= y= width= height= ox= oy= contents_opacity= z= visible
      visible= dispose disposed? windowskin windowskin= cursor_rect cursor_rect=
-     opacity opacity= back_opacity back_opacity= active pause stretch
-     update].each do |m|
+     opacity opacity= back_opacity back_opacity= cursor_rect= active active=
+     pause pause= stretch update].each do |m|
     assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
   end
 end
