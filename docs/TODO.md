@@ -350,7 +350,8 @@ The work below is roughly ordered by the critical path to a walkable game
   the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow
   their terrain). Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
-  ground shadow** (the vehicle's own BGM is still to come). **Enter Hero Name**
+  ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
+  boat / ship / airship music) and disembarking restores the map BGM. **Enter Hero Name**
   (10740) opens a character-entry widget that renames a
   party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
   "show message" flag — a level-up queues one message per level gained, shown
