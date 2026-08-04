@@ -314,8 +314,8 @@ if(NOT EMSCRIPTEN)
   # (exe_open=99, MV runs=100..104 in .github/workflows/build.yml) so they can
   # never collide.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(exe_open_cmd xvfb-run --server-num=99 "--server-args=-screen 0 640x480x24"
-                     ${exe_open_cmd})
+    set(exe_open_cmd xvfb-run --server-num=99
+                     "--server-args=-screen 0 640x480x24" ${exe_open_cmd})
   endif()
   add_test(
     NAME exe_open
