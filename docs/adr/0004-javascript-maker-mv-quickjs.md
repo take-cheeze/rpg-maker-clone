@@ -120,7 +120,23 @@ JavaScript loads and interprets the JSON.
 - **M5 — Play.** Input + save/load (`require('fs')` shim) + audio wiring; a
   walkable MV game in the SDL window and the sixel/iTerm2 terminals.
 - **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs on
-  the same foundation.
+  the same foundation. Broken into sub-milestones:
+  - **M6.1 — Foundation (landed).** An `MZ` class (`mruby-mvjs/mrblib/mz.rb`)
+    that detects an MZ project (`js/rmmz_core.js` + `data/System.json`) and
+    knows the canonical `rmmz_*` load order, wired into `src/main.cxx`'s maker
+    sniff. When the binary is pointed at an MZ game it reports the pending
+    WebGL backend cleanly instead of the "no project found" error. Covered by
+    host specs (`mruby-mvjs/test/mz_test.rb`).
+  - **M6.2 — Host reuse.** Drive the shared quickjs host / host-globals / IO /
+    input / audio bridges (all maker-agnostic) with the `rmmz_*` scripts, so an
+    MZ game reaches `Scene_Boot` in logic (no pixels). A committed MZ sample is
+    authorable the same way `data/mv-sample` is: MZ's corescript has an MIT
+    community reimplementation ([stak/rmmz-corescript]), fetched (never
+    vendored) like the MV corescript, so no proprietary engine is redistributed.
+  - **M6.3 — WebGL rendering.** The WebGL-subset backend behind PIXI v5, the
+    bulk of the work — MZ dropped the Canvas2D renderer the MV bridge targets.
+
+[stak/rmmz-corescript]: https://github.com/stak/rmmz-corescript
 
 ## Consequences
 
