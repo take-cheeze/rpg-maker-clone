@@ -928,24 +928,51 @@ module Game
 
     # -- status conditions (状態) -------------------------------------------
 
+    # The incapacitation state (戦闘不能). RPG2000 hardcodes it as state id 1, and
+    # it is coupled to HP: a downed actor (HP 0) carries it, and it is cleared the
+    # moment HP is restored (matching EasyRPG's `lcf::rpg::State::kDeathID`).
+    DEATH_STATE = 1
+
+    # Whether the actor is knocked out. HP is authoritative and kept in sync with
+    # the death state, so either signal reports it.
+    def dead?; @hp <= 0 || @states.include?(DEATH_STATE); end
+
+    # Whether the actor is still standing (a live party member).
+    def alive?; !dead?; end
+
     # Whether `state_id` is currently afflicting the actor.
     def state?(state_id)
       return false if state_id.nil? || state_id == 0
       @states.include?(state_id)
     end
 
-    # Inflict / cure a status condition (no-ops for an absent/duplicate id).
+    # Inflict a status condition (no-ops for an absent/duplicate id). Inflicting
+    # the death state (戦闘不能) knocks the actor out, zeroing HP.
     def add_state(state_id)
       return if state_id.nil? || state_id == 0 || @states.include?(state_id)
       @states.push(state_id)
+      @hp = 0 if state_id == DEATH_STATE
     end
 
-    def remove_state(state_id); @states.delete(state_id); end
+    # Cure a status condition. Removing the death state revives a downed actor
+    # with 1 HP (RPG2000's revive floor); returns the removed id or nil.
+    def remove_state(state_id)
+      removed = @states.delete(state_id)
+      @hp = 1 if removed == DEATH_STATE && @hp <= 0
+      removed
+    end
 
-    # Cure every status condition (RPG2000 Full Recovery clears them).
-    def clear_states; @states = []; end
+    # Cure every status condition (RPG2000 Full Recovery clears them). If the
+    # actor was down, curing the death state revives it with 1 HP.
+    def clear_states
+      revive = @hp <= 0 && @states.include?(DEATH_STATE)
+      @states = []
+      @hp = 1 if revive && @hp <= 0
+    end
 
-    # Replace the state set (Continue restoring the saved conditions).
+    # Replace the state set (Continue restoring the saved conditions). The saved
+    # HP is authoritative and restored separately, so this assigns without the
+    # HP-coupling side effects.
     def states=(ids)
       @states = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
     end
@@ -1131,10 +1158,16 @@ module Game
     # Apply a HP change (positive heals, negative damages), clamped to
     # [floor, max_hp]. The floor is 0 when death is allowed (the actor may be
     # knocked out) or 1 otherwise, matching RPG2000's Change HP "allow death"
-    # flag. Returns the new HP.
+    # flag. Reaching 0 with death allowed inflicts the death state (戦闘不能).
+    # A downed actor is unaffected -- HP changes cannot revive it (that needs the
+    # death state cured / Full Recovery), matching EasyRPG's ChangeHp. Returns the
+    # new HP.
     def change_hp(delta, allow_death = true)
+      return @hp if dead?
       floor = allow_death ? 0 : 1
       @hp = Game.clamp(@hp + delta, floor, @max_hp)
+      add_state(DEATH_STATE) if @hp <= 0
+      @hp
     end
 
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
@@ -1396,18 +1429,21 @@ module Game
       cured = item_cured_states(it)
       affected = []
       targets.each do |t|
-        hp, mp = item_recovery(it, t)
-        before_hp = t.hp
-        before_mp = t.mp
-        t.change_hp(hp) if hp > 0
-        t.change_mp(mp) if mp > 0
-        changed = t.hp != before_hp || t.mp != before_mp
+        changed = false
+        # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
+        # the HP recovery below lands instead of being blocked as a no-op.
         cured.each do |s|
           if t.state?(s)
             t.remove_state(s)
             changed = true
           end
         end
+        hp, mp = item_recovery(it, t)
+        before_hp = t.hp
+        before_mp = t.mp
+        t.change_hp(hp) if hp > 0
+        t.change_mp(mp) if mp > 0
+        changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
       lose_item(id, 1) unless affected.empty?

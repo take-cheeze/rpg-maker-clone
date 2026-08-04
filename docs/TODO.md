@@ -229,8 +229,15 @@ The work below is roughly ordered by the critical path to a walkable game
   `reverse_state_effect` set removes its `state_set` conditions from the target
   (an antidote / herb — unconditional, matching EasyRPG's item algorithm), and
   such an item now counts as usable when the target is afflicted even at full HP.
-  Still remaining: *inflicting* states (the non-reverse item case rolled against
-  `state_chance`, and skill / battle infliction).
+  The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
+  `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
+  (zeroing HP), a downed actor can't be healed by HP changes, and curing the
+  death state (or Full Recovery) revives at 1 HP — `Game::Actor#dead?`/`alive?`
+  report it, and the KO'd HP-0 + state-1 pair round-trips through the `.lsd`. The
+  **Change Condition** event command (10480) inflicts / cures a state on the
+  target actors, so events can poison, cure, KO, or revive. Still remaining:
+  *inflicting* states from combat (the non-reverse item case rolled against
+  `state_chance`, and skill / battle infliction), and party-wipe game over.
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on

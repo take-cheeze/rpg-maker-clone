@@ -32,6 +32,7 @@ module Game
       CHANGE_EQUIP     = 10440
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
+      CHANGE_CONDITION = 10480
       FULL_HEAL        = 10490
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
@@ -481,6 +482,7 @@ module Game
       when Cmd::CHANGE_EQUIP     then do_change_equipment cmd
       when Cmd::CHANGE_HP        then do_change_hp cmd
       when Cmd::CHANGE_MP        then do_change_mp cmd
+      when Cmd::CHANGE_CONDITION then do_change_condition cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
       when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
       when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
@@ -996,6 +998,19 @@ module Game
     # Full recovery: restore HP and MP to their maxima for the target actors.
     def do_full_heal(cmd)
       stat_targets(cmd).each { |a| a.full_heal }
+    end
+
+    # Change Condition: inflict or cure a status condition on the target actors.
+    # param0/param1 pick the targets (same scope layout as Change HP); param2 is
+    # the operation (0 add / inflict, non-zero remove / cure) and param3 the state
+    # id. Removing the death state (戦闘不能) revives a downed actor; inflicting it
+    # knocks the actor out — the HP coupling lives in Game::Actor.
+    def do_change_condition(cmd)
+      state_id = cmd.param(3)
+      remove = cmd.param(2) != 0
+      stat_targets(cmd).each do |a|
+        remove ? a.remove_state(state_id) : a.add_state(state_id)
+      end
     end
 
     # -- actor identity / graphic ---------------------------------------------

@@ -1346,8 +1346,8 @@ end
 check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
   hero = party_state.party.actor_by_id(1)
   hero.change_hp(-30);          eq 70, hero.hp
-  hero.change_hp(-1000, true);  eq 0, hero.hp   # death allowed -> floor 0
-  hero.change_hp(-5, false);    eq 1, hero.hp   # death disallowed -> floor 1
+  hero.change_hp(-1000, false);  eq 1, hero.hp  # death disallowed -> floor 1 (alive)
+  eq false, hero.dead?
   hero.change_hp(9999);         eq 100, hero.hp # capped at max_hp
   hero.change_mp(-1000);        eq 0, hero.mp
   hero.change_mp(9999);         eq 30, hero.mp  # capped at max_mp
@@ -2043,6 +2043,49 @@ check 'Conditional actor: afflicted by state (type 5, sub 6)' do
   eq true, st.switches[2]
 end
 
+# -- Change Condition (event command 10480) ---------------------------------
+
+check 'Change Condition inflicts a state on the targeted actor (op 0)' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed actor), actor 1, op 0 (add), state 4.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [1, 1, 0, 4])])
+  it.update
+  eq true, st.party.actor_by_id(1).state?(4)
+end
+
+check 'Change Condition removes a state on the targeted actor (op 1)' do
+  st = party_state
+  st.party.actor_by_id(1).add_state(4)
+  it = Game::Interpreter.new(st)
+  # op 1 (remove) clears state 4.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [1, 1, 1, 4])])
+  it.update
+  eq false, st.party.actor_by_id(1).state?(4)
+end
+
+check 'Change Condition can KO the whole party (scope 0) via the death state' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # scope 0 (whole party), op 0 (add), state 1 (戦闘不能) -> everyone down.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [0, 0, 0, Game::Actor::DEATH_STATE])])
+  it.update
+  eq true, st.party.actors.all?(&:dead?)
+  eq [0, 0], st.party.actors.map(&:hp)
+end
+
+check 'Change Condition reviving the death state stands an actor back up' do
+  st = party_state
+  st.party.actor_by_id(1).add_state(Game::Actor::DEATH_STATE)  # down first
+  it = Game::Interpreter.new(st)
+  # op 1 (remove) state 1 -> revived with 1 HP.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [1, 1, 1, Game::Actor::DEATH_STATE])])
+  it.update
+  a = st.party.actor_by_id(1)
+  eq false, a.dead?
+  eq 1, a.hp
+end
+
 check 'Actor status states: add / remove / query, cleared by Full Recovery' do
   a = party_state.party.actor_by_id(1)
   eq [], a.states
@@ -2056,6 +2099,41 @@ check 'Actor status states: add / remove / query, cleared by Full Recovery' do
   eq [1, 2], a.states
   a.full_heal
   eq [], a.states                                     # Full Recovery clears states
+end
+
+check 'Actor death state: lethal HP inflicts 戦闘不能 (state 1), block on revive' do
+  a = party_state.party.actor_by_id(1)
+  eq false, a.dead?
+  a.change_hp(-1000, true)                            # lethal damage -> knocked out
+  eq 0, a.hp
+  eq true, a.dead?
+  eq true, a.state?(Game::Actor::DEATH_STATE)         # HP 0 couples to state 1
+  a.change_hp(500)                                    # a downed actor cannot be healed
+  eq 0, a.hp
+  eq true, a.dead?
+  a.remove_state(Game::Actor::DEATH_STATE)            # curing 戦闘不能 revives with 1 HP
+  eq 1, a.hp
+  eq false, a.dead?
+  a.change_hp(49); eq 50, a.hp                        # healing lands again once alive
+end
+
+check 'Actor death state: inflicting state 1 zeroes HP; Full Recovery revives' do
+  a = party_state.party.actor_by_id(1)
+  a.add_state(Game::Actor::DEATH_STATE)               # inflict KO directly
+  eq 0, a.hp
+  eq true, a.dead?
+  a.full_heal                                         # Full Recovery clears states + revives
+  eq 100, a.hp
+  eq false, a.dead?
+  eq false, a.state?(Game::Actor::DEATH_STATE)
+end
+
+check 'Actor death state: non-lethal damage floors HP at 1, no KO' do
+  a = party_state.party.actor_by_id(1)
+  a.change_hp(-1000, false)                           # death disallowed -> floor 1
+  eq 1, a.hp
+  eq false, a.dead?
+  eq false, a.state?(Game::Actor::DEATH_STATE)
 end
 
 check 'State save round-trips per-actor status states' do
