@@ -1661,6 +1661,17 @@ class RPG2k
       end
       public :event_id_at
 
+      # Position of the map event with the given id (its tile x/y and facing), for
+      # the Control Variables "character" operand, or nil when there is no such
+      # event. Queried by the interpreter via map_info.
+      def event_position(id)
+        ev = @events.find { |e| e[:id] == id }
+        return nil unless ev
+        c = ev[:char]
+        { x: c.x, y: c.y, direction: c.direction }
+      end
+      public :event_position
+
       # The cancel button opens the main menu over the map, unless a Change Main
       # Menu Access command has forbidden it.
       def try_open_menu
