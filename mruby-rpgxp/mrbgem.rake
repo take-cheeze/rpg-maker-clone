@@ -10,6 +10,9 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # The RGSS script host (script_host.rb) runs the game's bundled Ruby scripts
   # with Kernel#eval.
   add_dependency 'mruby-eval'
+  # The script-host driver runs the scripts' blocking main loop inside a Fiber
+  # (docs/adr/0023-rpgxp-script-host-frame-driver.md).
+  add_dependency 'mruby-fiber'
   # Kernel#sprintf / #format and String#% (used by the stock RGSS scripts, and by
   # the sprintf availability test). It is also enabled in build_config.rb, but
   # declaring the dependency here forces mruby-sprintf to initialize before this

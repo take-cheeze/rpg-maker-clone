@@ -41,7 +41,14 @@ class RPGXP
     # game's own Ruby drives everything (see script_host.rb); skip building the
     # built-in title scene, which #start would otherwise run instead.
     @use_script_host = ScriptHost.enabled? && @db.scripts?
-    push Scene::Title.new(self) unless @use_script_host
+    if @use_script_host
+      # The scripts own their whole blocking main loop; drive it one frame at a
+      # time through a Fiber so the web build's per-frame callback still gets
+      # control back each frame (docs/adr/0023-rpgxp-script-host-frame-driver.md).
+      setup_script_host_driver
+    else
+      push Scene::Title.new(self)
+    end
   end
 
   attr_reader :db, :title
@@ -113,7 +120,15 @@ class RPGXP
     false
   end
 
+  # One frame of the game. Both the desktop `loop { main_loop }` and the web
+  # per-frame `emscripten_set_main_loop` callback (src/main.cxx) call this. When
+  # the script host is driving, a frame is one resume of its Fiber (which runs
+  # the scripts' loop up to their next Graphics.update); otherwise it is the
+  # built-in scene/input/graphics tick. The `@host_fiber` guard is nil in the
+  # default flow, so that path is unchanged.
   def main_loop
+    return drive_script_host if @host_fiber
+
     RGSS::Profiler.frame do
       RGSS::Profiler.section("scene.update") { @scenes.last.update }
       RGSS::Profiler.section("input.update") { Input.update }
@@ -122,29 +137,68 @@ class RPGXP
   end
 
   def start
-    return if run_script_host
-    # The built-in flow needs a scene. When the script host was enabled the
-    # title was not built up front, so a fallback here (host returned false or
-    # failed) guarantees one before the loop reads @scenes.last.
-    push Scene::Title.new(self) if @scenes.empty?
-    loop { main_loop }
+    # The built-in flow needs a scene; a script-host boot builds its Fiber in
+    # #initialize instead. `@host_done` only becomes true once the host's Main
+    # returns, so the built-in flow loops forever exactly as before.
+    push Scene::Title.new(self) if @scenes.empty? && !@host_fiber
+    loop do
+      main_loop
+      break if @host_done
+    end
   rescue RGSS::Timeout
   end
 
   private
 
-  # Run the project's bundled RGSS scripts, which own their whole main loop, and
-  # report whether they ran. Any failure to boot the scripts is logged and falls
-  # back to the built-in flow rather than crashing to a blank screen.
-  def run_script_host
-    return false unless @use_script_host
-    ScriptHost.run(@db)
+  # Build the driver Fiber for the bundled scripts and install the per-frame
+  # yield. Only reached when the host is enabled, so the built-in flow never
+  # creates a Fiber nor wraps Graphics.update.
+  def setup_script_host_driver
+    install_graphics_yield
+    db = @db
+    @host_fiber = Fiber.new do
+      ScriptHost.driving = true
+      begin
+        ScriptHost.run(db)
+      ensure
+        ScriptHost.driving = false
+      end
+    end
+  end
+
+  # Advance the script host by one frame. When its Main returns the Fiber is
+  # dead and the game is over; a boot failure logs and falls back to the
+  # built-in flow rather than crashing to a blank screen.
+  def drive_script_host
+    if @host_fiber.alive?
+      @host_fiber.resume
+    else
+      @host_fiber = nil
+      @host_done = true
+    end
   rescue RGSS::Timeout
-    true
+    @host_fiber = nil
+    @host_done = true
   rescue StandardError => e
     $stderr.puts "[RGSS] script host failed (#{e.class}: #{e.message}); " \
                  "falling back to the built-in flow"
-    false
+    @host_fiber = nil
+    @use_script_host = false
+    push Scene::Title.new(self) if @scenes.empty?
+  end
+
+  # Wrap the native Graphics.update so a scene's `loop { Graphics.update; ... }`
+  # yields the driver Fiber once per frame. Idempotent, and installed only on
+  # the script-host path — the built-in flow keeps the pristine native method.
+  def install_graphics_yield
+    return if RGSS::Graphics.respond_to?(:_update_native)
+    RGSS::Graphics.singleton_class.class_eval do
+      alias_method :_update_native, :update
+      def update
+        _update_native
+        Fiber.yield if ::RPGXP::ScriptHost.driving?
+      end
+    end
   end
 
   # The window title from Game.ini's [Game] Title=, falling back to the folder

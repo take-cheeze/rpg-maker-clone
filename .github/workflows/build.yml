@@ -452,6 +452,22 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
+      # Fetch + build the MIT MV engine into the committed sample so it can be
+      # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
+      # Like the `build` job's downloads, this is network-bound work that feeds
+      # nothing in the configure step, so it runs as a `background: true` step
+      # and overlaps the cache restores and `emcmake cmake` below instead of
+      # holding them up. WASM_SAMPLE_DIR is only consumed at *link* time (it
+      # becomes an emcc `--preload-file`, see CMakeLists.txt), and configure
+      # merely resolves the path of the committed data/mv-sample directory, so
+      # the barrier before `build` is early enough. The script is idempotent and
+      # writes only inside data/ (git-ignored engine files plus its
+      # data/.mv-corescript clone), so nothing here races the concurrent steps.
+      - name: Build MV sample engine
+        id: mv-sample
+        background: true
+        run: nix develop -c ./scripts/download-mv-corescript.bash
+
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
@@ -473,11 +489,6 @@ jobs:
       # command itself (after the hook runs) so the libraries are built once and
       # restored on later runs. It must be set for both configure and build,
       # since emcc runs in both.
-      # Fetch + build the MIT MV engine into the committed sample so it can be
-      # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
-      - name: Build MV sample engine
-        run: nix develop -c ./scripts/download-mv-corescript.bash
-
       - name: cmake
         # CMAKE_<LANG>_COMPILER_LAUNCHER is initialised from the environment at
         # configure time and stored in CMakeCache.txt, so setting ccache here is
@@ -490,6 +501,13 @@ jobs:
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja \
             -DWASM_SAMPLE_DIR=data/mv-sample
+
+      # Barrier: the link step packages data/mv-sample into index.data, so the
+      # engine files must be in place before the build starts. A failed
+      # background fetch surfaces here and fails the job, exactly as it did when
+      # this ran inline.
+      - name: Wait for the MV sample engine
+        wait: [mv-sample]
 
       - name: build
         run: |

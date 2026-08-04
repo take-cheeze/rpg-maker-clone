@@ -4,7 +4,8 @@ Date: 2026-08-04
 
 ## Status
 
-Proposed
+Accepted — driver implemented (gated behind `RGSS_SCRIPT_HOST`); needs a real
+project booted under the web build to verify end to end.
 
 ## Context
 

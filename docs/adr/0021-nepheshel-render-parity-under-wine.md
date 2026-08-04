@@ -203,3 +203,87 @@ their defaults, so they are left to `Picture`'s defaults rather than guessed at.
 
 Making `to_lsd`'s own output loadable by RPG_RT remains open, and is tracked in
 `docs/TODO.md`.
+
+## Addendum: comparing an ordinary map, and the two bugs it found
+
+The save-based harness above still could not diff a *map*. It resumed the save
+`gen-lcf-save-wine.bash` writes, and that save is taken from Nepheshel's demo
+mode — mid-opening, with the demo's choice held in chunk 113 and its backdrop
+picture in chunk 103 — so resuming it put both runtimes back into a **timed**
+cutscene and they drifted apart exactly as the key-driven harness does.
+`scripts/gen-rpg2k-save.rb --clear-scene` drops those two chunks (removing them
+outright, not blanking them: `LCF::Array1D#delete`, since an absent chunk and an
+empty one are different files to RPG_RT). Both runtimes then stand on a plain
+map, which does not move until a key is pressed.
+
+That alone was not enough, and the reason is a decoded field.
+
+**RPG_RT restores the camera from the save; it does not derive it from the
+hero.** Moving the party to another map/tile and resuming drew the map's
+*top-left corner* whatever tile the hero was put on. `AGENTS.md` listed chunk
+111's two leading int fields as "the map scroll/pan … undecoded"; they are the
+view's top-left corner in **1/16 pixel**:
+
+| chunk 111 fields 1/2 | RPG_RT's view |
+| --- | --- |
+| absent | (0, 0) — the map's top-left corner |
+| 320 / 240 | scrolled ~20px, *not* to (320, 240) |
+| 5120 / 3840 | (320, 240) exactly — 16× the pixels |
+
+At 5120/3840 RPG_RT's frame matched ours (which centres the view on the hero,
+and puts it at (320,240) for that tile) over all but 260 of 307200 pixels, the
+residual being one animated coastline autotile. `gen-rpg2k-save.rb` now writes
+this whenever it moves the party, and `LCF::Schema::SAVE_MAP_EVENT` documents
+the unit. Without it the harness compared two different parts of the map and
+reported a whole-screen difference that was never a rendering fault.
+
+With both runtimes finally drawing the same place, two real defects showed up
+immediately — neither of which any unit check could have found, because both are
+about what the *data* means rather than what our geometry computes:
+
+| Fixed | Symptom against RPG_RT | Cause |
+| --- | --- | --- |
+| CharSet / FaceSet / `Scene::Base` windowskin | a solid **pink rectangle** over a wall on the town map, where RPG_RT drew nothing | loaded without the colour key, so the indexed PNG's palette entry 0 was blitted opaque (`CharSet/door.png`'s entry 0 is `#FF678B`). The chipset, the title screen and the map's own windowskin already passed the flag; these four call sites did not |
+| Lower-layer tile id **0** | large **black holes** in the sea — 90 of the 320 on-screen tiles on map 204 | `Game::ChipsetLayout.block` treated 0 as the empty tile. It is not: 0 is water set 0's plain chip, and RPG_RT draws deep water for it. Only the *upper* layer uses 0 to mean "no tile" (its own ids start at 10000), so that layer's caller now skips 0 before asking |
+
+After both fixes the frames are **pixel-identical** to the genuine RPG_RT: 0 of
+307200 differing pixels on Nepheshel's town map (12), on an interior (315) and
+on the open-water map (473) — chipset layers, autotiles, upper/lower layering
+and event sprites all landing on RPG_RT's exact pixels.
+
+### What this comparison can and cannot diff
+
+The harness is only meaningful on a map where **nothing moves on its own**, and
+Nepheshel has fewer of those than one would hope — a scan of all 543 maps finds
+no map with events whose pages are all stationary fixed graphics with no
+auto-start or parallel page. Two classes of map produce large diffs that are not
+defects, and both were mistaken for one before being run down:
+
+- **Roaming events.** Map 531's monsters and map 204's sea creatures walk under
+  their own move types; the two runtimes step them at different moments, so the
+  terrain diffs to zero and every sprite appears twice in the difference image.
+- **Parallel processes.** Map 114 is a needle-trap room whose driver event
+  cycles switches 281–290, raising and lowering needles and erasing a hidden
+  door. Both runtimes run it; they are simply not in the same phase.
+
+Two harness hazards are worth recording as well. `xwd` can catch RPG_RT
+mid-flip, giving a horizontally torn reference frame (a re-capture fixes it),
+and a longer settle on an encounter map lets the reference walk into a random
+battle. Prefer a short settle and a static map.
+
+The hero sprite stays outside the comparison. The debug save has Set Transparent
+Flag on (chunk 101 field 55) and its hero graphic override empty, so neither
+runtime draws him. Clearing the flag *and* filling the override from the party
+leader's database CharSet makes our engine draw him correctly — which is how the
+colour-key fix was confirmed on the hero as well as on the door — but the
+genuine RPG_RT resumed from the same edited file still does not, so shipping
+that as a harness option would only manufacture a difference. Character-sprite
+rendering is compared through the map's events instead, which both runtimes do
+draw, and that is what caught the colour-key bug.
+
+The font remains the floor for the *title* screen, as recorded above, with one
+correction to how that reads in practice: under this wine prefix RPG_RT's own
+kanji do not render — it substitutes a font without them and draws blobs where
+we draw 最初から / 続きから / 終了する. The residual title difference is
+therefore the reference's font handling as much as ours, and is not evidence
+about our text rendering either way.

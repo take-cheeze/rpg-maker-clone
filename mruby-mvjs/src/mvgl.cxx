@@ -136,6 +136,10 @@ bool choose_config(EGLDisplay dpy, EGLConfig* out) {
 struct Context {
   EGLDisplay dpy = EGL_NO_DISPLAY;
   EGLContext egl = EGL_NO_CONTEXT;
+  // The surface bound by eglMakeCurrent. Normally EGL_NO_SURFACE (surfaceless),
+  // but a 1x1 pbuffer where the driver rejects a no-surface make-current (see
+  // create). Rendering always targets `fbo`, so the surface is unused for draw.
+  EGLSurface surf = EGL_NO_SURFACE;
   GLuint fbo = 0;
   GLuint color_rb = 0;  // RGBA8 colour renderbuffer (the render target)
   GLuint ds_rb = 0;     // packed depth24/stencil8 renderbuffer
@@ -187,16 +191,31 @@ Context* create(int width, int height) {
     return nullptr;
   }
 
-  // Surfaceless: no draw/read surface, an FBO is the render target instead.
+  // Bind the context. Prefer surfaceless (EGL_KHR_surfaceless_context, which
+  // llvmpipe advertises with no display) — an FBO is the render target, so no
+  // draw/read surface is needed. Some environments reject a no-surface
+  // make-current though: notably the main binary under Xvfb (DISPLAY set, SDL
+  // up), where gl_test's headless mruby binary succeeds but this one returned
+  // "eglMakeCurrent(surfaceless) failed". Fall back to a 1x1 pbuffer (the
+  // config advertises EGL_PBUFFER_BIT); it exists only to satisfy make-current.
+  EGLSurface surf = EGL_NO_SURFACE;
   if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl)) {
-    warn("create: eglMakeCurrent(surfaceless) failed", nullptr);
-    eglDestroyContext(dpy, egl);
-    return nullptr;
+    const EGLint pb_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+    surf = eglCreatePbufferSurface(dpy, cfg, pb_attribs);
+    if (surf == EGL_NO_SURFACE || !eglMakeCurrent(dpy, surf, surf, egl)) {
+      warn("create: eglMakeCurrent failed (surfaceless and 1x1 pbuffer)",
+           nullptr);
+      if (surf != EGL_NO_SURFACE)
+        eglDestroySurface(dpy, surf);
+      eglDestroyContext(dpy, egl);
+      return nullptr;
+    }
   }
 
   Context* ctx = new Context();
   ctx->dpy = dpy;
   ctx->egl = egl;
+  ctx->surf = surf;
   ctx->w = width;
   ctx->h = height;
   const size_t bytes = static_cast<size_t>(width) * height * 4;
@@ -228,7 +247,7 @@ void destroy(Context* ctx) {
   if (!ctx)
     return;
   if (ctx->dpy != EGL_NO_DISPLAY && ctx->egl != EGL_NO_CONTEXT) {
-    eglMakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx->egl);
+    eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl);
     if (ctx->fbo)
       glDeleteFramebuffers(1, &ctx->fbo);
     if (ctx->color_rb)
@@ -236,6 +255,8 @@ void destroy(Context* ctx) {
     if (ctx->ds_rb)
       glDeleteRenderbuffers(1, &ctx->ds_rb);
     eglMakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (ctx->surf != EGL_NO_SURFACE)
+      eglDestroySurface(ctx->dpy, ctx->surf);
     eglDestroyContext(ctx->dpy, ctx->egl);
     // The display is process-shared and refcounted by eglInitialize; leave it
     // initialised rather than tearing it down under any other live context.
@@ -246,10 +267,10 @@ void destroy(Context* ctx) {
 bool make_current(Context* ctx) {
   if (!ctx || ctx->dpy == EGL_NO_DISPLAY || ctx->egl == EGL_NO_CONTEXT)
     return false;
-  if (!eglMakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx->egl))
+  if (!eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl))
     return false;
-  // A fresh make-current binds the default framebuffer; rebind ours (there is
-  // no window-system surface) so draws and readback hit the render target.
+  // A fresh make-current binds the default framebuffer; rebind ours (the
+  // pbuffer/none surface is not a render target) so draws and readback hit it.
   glBindFramebuffer(GL_FRAMEBUFFER, ctx->fbo);
   glViewport(0, 0, ctx->w, ctx->h);
   return true;

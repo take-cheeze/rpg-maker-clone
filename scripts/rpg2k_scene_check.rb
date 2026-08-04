@@ -149,7 +149,10 @@ end
 
 def fake_db(common = nil)
   OpenStruct.new(
-    system: OpenStruct.new(system_graphic: ''),
+    system: OpenStruct.new(system_graphic: '',
+                           boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
+                           ship_music: OpenStruct.new(file: 'ShipBGM', volume: 80, pitch: 100),
+                           airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100)),
     # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
     chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
     # Terms the Show Inn window reads; blank greeting fields exercise the
@@ -1748,6 +1751,53 @@ check 'Tint Screen darkens the view through a black overlay; neutral clears it' 
   st.screen.tint_to(100, 100, 100, 100, 0)
   scene.update
   eq 0, tint.opacity, 'a neutral tint clears the overlay'
+end
+
+check 'Weather draws a particle overlay when active and hides it when clear' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  wsp = scene.instance_variable_get(:@weather_sprite)
+  scene.update
+  ok !wsp.visible, 'no weather -> no overlay'
+  st.weather.set(1, 2) # heavy rain
+  scene.update
+  ok wsp.visible, 'rain draws an overlay'
+  # A stronger downpour draws more particles than a light one.
+  heavy = scene.send(:weather_particle_count, st.weather)
+  st.weather.set(1, 0) # light rain
+  light = scene.send(:weather_particle_count, st.weather)
+  ok heavy > light, 'strength scales the particle count'
+  st.weather.set(2, 1) # snow
+  scene.update
+  ok wsp.visible, 'snow draws an overlay too'
+  st.weather.set(0, 0) # clear
+  scene.update
+  ok !wsp.visible, 'clearing weather hides the overlay'
+end
+
+check 'boarding plays the vehicle BGM; disembarking restores the map BGM' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's BGM
+  st.direction = 2
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded
+  eq 'BoatBGM', st.current_bgm[:name], 'the boat BGM plays while aboard'
+  eq 80, st.current_bgm[:volume]
+  # face the shore and disembark
+  st.direction = 8
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'disembarked'
+  eq 'Field', st.current_bgm[:name], 'the map BGM resumes on disembark'
 end
 
 check 'Enemy Encounter scene: the round animates action by action, not at once' do

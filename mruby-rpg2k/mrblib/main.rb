@@ -307,11 +307,14 @@ class RPG2k
       attr_reader :parent, :db, :map_tree
 
       # Load the System/ windowskin declared in the database (nil when missing,
-      # so Window falls back to a plain panel).
+      # so Window falls back to a plain panel). Colour-keyed, matching the map
+      # and title scenes' own loads of the same file: the skin's palette entry 0
+      # is transparent, and every menu built on this would otherwise draw the
+      # cursor and frame corners on opaque blocks.
       def make_windowskin
         name = @db.system.system_graphic
         return nil if name.nil? || name.empty?
-        Bitmap.new "System/#{name}"
+        Bitmap.new "System/#{name}", true
       rescue StandardError => e
         $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
@@ -474,6 +477,7 @@ class RPG2k
         @wait_timer = nil
         @anim_wait = nil
         @map_animation = nil
+        @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
         # a Move Event targeting "this event" can be resolved. nil for common
@@ -507,7 +511,8 @@ class RPG2k
         close_shop
         close_battle
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
-         @picture_sprite, @fade_sprite, @flash_sprite, @tint_sprite].each do |s|
+         @picture_sprite, @fade_sprite, @flash_sprite, @tint_sprite,
+         @weather_sprite].each do |s|
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
@@ -642,6 +647,14 @@ class RPG2k
         @tint_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
         @tint_sprite.bitmap = @tint_bmp
         @tint_sprite.opacity = 0
+
+        # Weather Effects: rain / snow particles drawn on a screen-sized layer
+        # (under the flash / fade overlays), animated by @anim_frame.
+        @weather_sprite = Sprite.new
+        @weather_sprite.z = 430
+        @weather_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @weather_sprite.bitmap = @weather_bmp
+        @weather_sprite.visible = false
       end
 
       # Push this frame's fade and flash levels onto the two overlay sprites.
@@ -664,6 +677,59 @@ class RPG2k
           end
           @flash_sprite.opacity = strength
         end
+
+        draw_weather
+      end
+
+      WEATHER_RAIN = 1
+      WEATHER_SNOW = 2
+      # Particles at the lightest strength; each step up adds another band.
+      WEATHER_BASE_PARTICLES = 48
+      RAIN_COLOR = Color.new(200, 210, 255, 200)
+      SNOW_COLOR = Color.new(255, 255, 255, 220)
+
+      # Draw the active weather onto its overlay: falling rain streaks or drifting
+      # snow flecks, their count scaling with the strength (0..2). Positions are a
+      # deterministic hash of the particle index advanced by @anim_frame, so the
+      # field falls smoothly without needing a per-frame RNG. Cleared / hidden
+      # when there is no weather.
+      def draw_weather
+        w = @state.weather
+        if w.none? || (w.type != WEATHER_RAIN && w.type != WEATHER_SNOW)
+          @weather_sprite.visible = false
+          return
+        end
+        @weather_sprite.visible = true
+        @weather_bmp.clear
+        n = weather_particle_count(w)
+        n.times { |i| draw_weather_particle(w.type, i) }
+      end
+
+      def weather_particle_count(w)
+        WEATHER_BASE_PARTICLES * ((w.strength || 0) + 1)
+      end
+
+      # A single particle's on-screen cell, spread across the screen by a cheap
+      # hash of its index and falling as @anim_frame advances (wrapping at the
+      # bottom). Rain is a slanted streak; snow a small fleck that also drifts.
+      def draw_weather_particle(type, i)
+        x0 = (i * 97) % SCREEN_W
+        y0 = (i * 59) % SCREEN_H
+        if type == WEATHER_RAIN
+          y = (y0 + @anim_frame * 8) % SCREEN_H
+          x = (x0 - @anim_frame * 2) % SCREEN_W
+          @weather_bmp.fill_rect x, y, 1, 6, RAIN_COLOR
+        else
+          y = (y0 + @anim_frame * 3) % SCREEN_H
+          x = (x0 + weather_drift(i)) % SCREEN_W
+          @weather_bmp.fill_rect x, y, 2, 2, SNOW_COLOR
+        end
+      end
+
+      # A small side-to-side snow drift, from a triangle wave over @anim_frame.
+      def weather_drift(i)
+        phase = (@anim_frame / 8 + i) % 8
+        phase < 4 ? phase : 8 - phase
       end
 
       # Approximate the darkening of a Tint Screen tone (`[r, g, b, sat]`, each
@@ -734,12 +800,19 @@ class RPG2k
       # The CharSet bitmap for an event graphic `name`, cached (including a
       # cached nil for a missing file so the event simply draws nothing rather
       # than a placeholder). Empty names have no graphic.
+      #
+      # Loaded colour-keyed, like the chipset: a CharSet is an indexed PNG whose
+      # palette entry 0 is the background, and without the key that background is
+      # blitted opaque -- a solid rectangle over the map instead of a sprite.
+      # Caught by the wine comparison, where Nepheshel's `door` event drew as a
+      # solid pink block (door.png's palette entry 0 is #FF678B) on a wall the
+      # genuine RPG_RT left alone.
       def event_charset(name)
         return nil if name.nil? || name.empty?
         return @event_charsets[name] if @event_charsets.key?(name)
         @event_charsets[name] =
           begin
-            Bitmap.new "CharSet/#{name}"
+            Bitmap.new "CharSet/#{name}", true
           rescue StandardError => e
             $stderr.puts "[RPG2k] event charset '#{name}' load failed, " \
                          "event drawn empty: #{e.message}"
@@ -779,14 +852,15 @@ class RPG2k
       end
 
       # Load the leader's CharSet graphic. Returns nil (falling back to a marker)
-      # when there is no party or the file is missing.
+      # when there is no party or the file is missing. Colour-keyed for the same
+      # reason event graphics are (see event_charset).
       def load_charset
         leader = @state.party.leader
         return nil if leader.nil?
         name = leader.charset_name
         @charset_index = leader.charset_index || 0
         return nil if name.nil? || name.empty?
-        Bitmap.new "CharSet/#{name}"
+        Bitmap.new "CharSet/#{name}", true
       rescue StandardError => e
         $stderr.puts "[RPG2k] party charset load failed, using marker: #{e.message}"
         nil
@@ -1057,16 +1131,22 @@ class RPG2k
           v = @state.vehicle(type)
           next unless v.placed? && v.map_id == @state.map_id
           if v.x == @state.x && v.y == @state.y
-            @state.boarded = type
+            board_as(type)
             return true
           elsif v.x == fx && v.y == fy
             @state.x = fx
             @state.y = fy
-            @state.boarded = type
+            board_as(type)
             return true
           end
         end
         false
+      end
+
+      # Mark the party aboard `type` and switch to the vehicle's BGM.
+      def board_as(type)
+        @state.boarded = type
+        play_vehicle_bgm(type)
       end
 
       # Step off the ridden vehicle onto the tile ahead when it is walkable on
@@ -1079,7 +1159,51 @@ class RPG2k
         @state.x = fx
         @state.y = fy
         @state.boarded = nil
+        restore_pre_vehicle_bgm # the map BGM resumes
       end
+
+      # Play the vehicle's own BGM (the database System boat / ship / airship
+      # music), remembering the BGM that was playing so #restore_pre_vehicle_bgm
+      # can bring it back on disembark. A vehicle with no configured BGM leaves
+      # the current music playing.
+      def play_vehicle_bgm(type)
+        music = vehicle_bgm(type)
+        name = music && music_name(music)
+        return if name.nil? || name.empty?
+        @pre_vehicle_bgm = @state.current_bgm
+        vol = music_volume(music)
+        tempo = music_tempo(music)
+        RGSS::Audio.bgm_play(name, vol, tempo)
+        @state.current_bgm = { name: name, volume: vol, tempo: tempo }
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] vehicle BGM failed: #{e.message}"
+      end
+
+      # Restore the BGM that was playing before the party boarded (the map BGM).
+      # A no-op when boarding did not switch the music.
+      def restore_pre_vehicle_bgm
+        bgm = @pre_vehicle_bgm
+        @pre_vehicle_bgm = nil
+        return unless bgm && bgm[:name] && !bgm[:name].empty?
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        @state.current_bgm = bgm
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
+      end
+
+      # The database System BGM configured for vehicle `type` (boat / ship /
+      # airship), or nil when the database has none.
+      def vehicle_bgm(type)
+        field = "#{type}_music"
+        return nil unless @db.system.respond_to?(field)
+        @db.system.send(field)
+      end
+
+      # A parsed BGM chunk exposes file / volume / pitch; read them defensively so
+      # a bare fixture that omits a field still works.
+      def music_name(m); m.file rescue nil; end
+      def music_volume(m); (m.volume rescue nil) || 100; end
+      def music_tempo(m); (m.pitch rescue nil) || 100; end
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle
@@ -2190,7 +2314,8 @@ class RPG2k
         @battle_ui[:battle].command_skill(current_actor, target,
                                           name: sk.name, cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
-                                          inflict: c[:inflict], chance: c[:chance])
+                                          inflict: c[:inflict], chance: c[:chance],
+                                          variance: c[:variance] || 0)
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -3048,9 +3173,11 @@ class RPG2k
 
       # Load the FaceSet graphic named by the message config, or nil when no face
       # is selected or the file is missing (the message then shows text only).
+      # Colour-keyed like the other character art: a FaceSet's palette entry 0 is
+      # its background, and drawing it opaque boxes the portrait in.
       def load_face(cfg)
         return nil unless cfg.face?
-        Bitmap.new "FaceSet/#{cfg.face_name}"
+        Bitmap.new "FaceSet/#{cfg.face_name}", true
       rescue StandardError => e
         $stderr.puts "[RPG2k] face graphic '#{cfg.face_name}' load failed: #{e.message}"
         nil
@@ -3501,7 +3628,10 @@ class RPG2k
 
             if @chipset_bmp
               draw_tile @lower_bmp, lower, dx, dy, abf, cf
-              draw_tile @upper_bmp, upper, dx, dy, abf, cf
+              # 0 means "no upper tile" (the upper layer's own ids start at
+              # BLOCK_F); on the lower layer the same value is water set 0, so
+              # only this call may skip it. See Game::ChipsetLayout.block.
+              draw_tile @upper_bmp, upper, dx, dy, abf, cf if upper && upper != 0
             else
               # Fallback: solid colour blocks keyed by tile id (no chipset image).
               @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)

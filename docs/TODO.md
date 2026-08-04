@@ -83,6 +83,22 @@ The work below is roughly ordered by the critical path to a walkable game
   harness did through Nepheshel's timed opening.
   `scripts/gen-rpg2k-save.rb` moves the party in that save to any map. See the
   addendum in ADR 0021. Two gaps it uncovered, both still open:
+  - ✅ **An ordinary map now diffs to zero.** Resuming the debug save landed
+    back in the demo's timed cutscene (its choice lives in chunk 113, its
+    backdrop in 103), and moving the party left RPG_RT drawing a different part
+    of the map entirely — it **restores the camera from the save** rather than
+    deriving it from the hero. Chunk 111's two leading ints, previously listed
+    here as undecoded, are that camera in **1/16 pixel** (measured against
+    RPG_RT: 5120/3840 puts its view at exactly (320, 240)).
+    `gen-rpg2k-save.rb` now writes them and grew `--clear-scene` to drop chunks
+    113/103. With both runtimes on the same tile the comparison found two real
+    rendering bugs — CharSet/FaceSet/menu-windowskin graphics loaded without the
+    colour key (a solid pink block over a wall) and lower-layer tile id 0 treated
+    as empty when it is water set 0 (black holes in the sea) — after which the
+    town, interior and open-water frames are **pixel-identical** to RPG_RT.
+    The comparison is only meaningful on a map where nothing moves on its own:
+    roaming events and parallel processes (needle traps, monsters) drift between
+    the runtimes, and no Nepheshel map with events is fully static.
   - ✅ **Shown pictures are restored on load.** Resuming mid-cutscene, RPG_RT
     drew the saved background picture and we drew black. `Game::State` treated
     `@pictures` as transient — true for a HUD re-shown by parallel events, false
@@ -217,7 +233,10 @@ The work below is roughly ordered by the critical path to a walkable game
   equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
-  spirit / agility) and **game quantities** (party gold, timer seconds).
+  spirit / agility), an **item** count (number held, or number equipped across the
+  party) and **game quantities** (party gold, timer seconds, party size). The
+  event-reference operand (map id / position / facing of an event or the hero)
+  is still TODO.
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and **all** the **actor** sub-conditions (in party, name, level ≥,
   HP ≥, item equipped, skill known, and **afflicted by a state**). Actors now
@@ -256,9 +275,11 @@ The work below is roughly ordered by the critical path to a walkable game
   above the map and below the message window. Picture **tone** is carried but not
   yet drawn (needs the same native tone support as the screen tint). **Weather
   Effects** (11070) records the map weather type (none / rain / snow) and strength
-  on `Game::State` — the Ruby-half model only, like the tint overlay, so it
-  round-trips through the save but drawing the rain/snow particles is native
-  renderer work still to come.
+  on `Game::State`, and `Scene::Map` now draws it: a screen-sized overlay sprite
+  (z 430, above the weather-less tint layer and below the animation layer) onto
+  which `draw_weather` paints rain streaks (falling, wind-skewed 1×6 marks) or
+  snow (drifting 2×2 flecks), the particle count scaling with strength and the
+  positions advancing with the scene's animation frame so the field animates.
   **Set Teleport / Escape Target** (11810 / 11830), **Change Encounter Rate**
   (11740) and **Change System BGM / SFX** (10660 / 10670) record their payloads
   on `Game::State` — a per-map teleport-target registry, a single escape target,
@@ -334,11 +355,12 @@ The work below is roughly ordered by the critical path to a walkable game
   so a temporary ailment wears off. **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random
-  member of its own side. Basic attacks apply RPG2000's **damage variance** (a
-  `var` of 4 spread via `Algo::VarianceAdjustEffect`), enabled for the live game
-  and off for seeded / headless fights. Still to come: enemy-cast infliction,
-  criticals / attributes / skill damage variance, all-target skill/item scopes,
-  the per-terrain backdrop and the RPG2000 Game Over graphic.
+  member of its own side. Basic attacks **and attack skills** apply RPG2000's
+  **damage variance** (a `var` of 4 for attacks, each skill's own `variance` for
+  skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
+  off for seeded / headless fights. Still to come: enemy-cast infliction,
+  criticals / attributes, all-target skill/item scopes, the per-terrain backdrop
+  and the RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
@@ -350,7 +372,8 @@ The work below is roughly ordered by the critical path to a walkable game
   the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow
   their terrain). Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
-  ground shadow** (the vehicle's own BGM is still to come). **Enter Hero Name**
+  ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
+  boat / ship / airship music) and disembarking restores the map BGM. **Enter Hero Name**
   (10740) opens a character-entry widget that renames a
   party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
   "show message" flag — a level-up queues one message per level gained, shown
@@ -429,7 +452,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Confirmed in the real binary before the code was written — forcing the fade
   layer to opacity 128 halves the rendered frame's mean brightness (31.9 → 15.2).
 
-  Still open here: **weather**, and the **tint** (Tint Screen). The tint really
+  Both the **weather** particle overlay and the **tint** (Tint Screen) layer are
+  now composited by `Scene::Map` alongside the fade and flash. The tint really
   does need native work, unlike the fade and flash — a tone rescales what is
   already drawn rather than laying a colour over it. That native half now
   exists: `RGSS::Bitmap#tone_blt(src, tone)` copies a bitmap applying an

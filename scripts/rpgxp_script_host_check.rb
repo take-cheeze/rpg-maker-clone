@@ -95,6 +95,7 @@ class Checker
     puts "  decoded #{sections.size} script sections (e.g. #{sections.first[0].inspect})"
 
     check_eval_available
+    check_driving_flag
     check_kernel_builtins(db)
     check_eval_subset(sections)
   rescue => ex
@@ -103,6 +104,20 @@ class Checker
 
   def check_eval_available
     expect(RPGXP::ScriptHost.available?, "ScriptHost.available? is false (no eval)")
+  end
+
+  # The per-frame Fiber driver reads ScriptHost.driving? from the wrapped
+  # Graphics.update to decide whether to yield (ADR 0023). The wrapping needs the
+  # native runtime, but the flag itself is plain Ruby, so guard its default and
+  # round-trip here.
+  def check_driving_flag
+    expect(RPGXP::ScriptHost.driving? == false,
+           "ScriptHost.driving? should default to false")
+    RPGXP::ScriptHost.driving = true
+    expect(RPGXP::ScriptHost.driving? == true, "ScriptHost.driving= did not set")
+    RPGXP::ScriptHost.driving = false
+    expect(RPGXP::ScriptHost.driving? == false, "ScriptHost.driving= did not clear")
+    puts "  ScriptHost.driving? defaults false and round-trips"
   end
 
   # install_kernel wires load_data/save_data through the database, so a script's
