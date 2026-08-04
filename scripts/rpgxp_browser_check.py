@@ -412,6 +412,9 @@ def main():
                     help="report every failed assertion instead of stopping at "
                          "the first one")
     args = ap.parse_args()
+    # Each step is minutes apart; block buffering would hold the whole log back
+    # to the end of the run, which is exactly when a CI log is least useful.
+    sys.stdout.reconfigure(line_buffering=True)
 
     index = os.path.join(args.page, "index.html")
     if not os.path.exists(index):
