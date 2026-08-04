@@ -2725,6 +2725,127 @@ check 'Open Shop routes Transaction / No Transaction handler branches' do
   eq true, st2.switches[3]
 end
 
+# -- Enemy Encounter (troop model + command) ----------------------------------
+
+EnemyRow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                      :agility, :exp, :gold)
+GroupMember = Struct.new(:enemy_id, :x, :y, :invisible)
+GroupRow = Struct.new(:name, :members)
+BattleDB = Struct.new(:enemy, :enemy_group)
+
+# A database with two enemies and one troop of three (two Slimes + a hidden Bat).
+def battle_db
+  enemies = {
+    2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10),
+    3 => EnemyRow.new('Bat',   12, 0, 6, 2, 2, 9, 3, 4)
+  }
+  groups = {
+    1 => GroupRow.new('Slimes', { 1 => GroupMember.new(2, 10, 20, false),
+                                  2 => GroupMember.new(2, 40, 20, false),
+                                  3 => GroupMember.new(3, 70, 20, true) })
+  }
+  BattleDB.new(enemies, groups)
+end
+
+check 'Game::Troop instantiates its members and totals EXP / gold' do
+  troop = Game::Troop.new(battle_db, 1)
+  eq 'Slimes', troop.name
+  eq [2, 2, 3], troop.members.map(&:id)
+  eq 13, troop.total_exp, '5 + 5 + 3'
+  eq 24, troop.total_gold, '10 + 10 + 4'
+  first = troop.members.first
+  eq 30, first.max_hp
+  eq 30, first.hp, 'starts at full HP'
+  eq [10, 20], [first.x, first.y]
+  ok !first.hidden
+  ok troop.members.last.hidden, 'the Bat is invisible'
+end
+
+check 'Game::Enemy reads its combat stats from the database' do
+  e = Game::Enemy.new(battle_db, 3)
+  eq 'Bat', e.name
+  eq 12, e.max_hp
+  eq 9, e.agi
+  eq 3, e.exp
+  ok !e.dead?
+  e.hp = 0
+  ok e.dead?
+end
+
+check 'a missing troop / enemy degrades to an empty, harmless model' do
+  troop = Game::Troop.new(battle_db, 99)
+  eq [], troop.members
+  eq 0, troop.total_exp
+  eq 1, Game::Enemy.new(battle_db, 99).max_hp, 'defaults for a missing enemy'
+end
+
+check 'Enemy Encounter parses the troop and modes and suspends on :battle' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # const troop 4, setup 0, escape mode 2 (custom), defeat mode 1 (custom),
+  # first-strike on.
+  it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 4, 0, 2, 1, 1])])
+  it.update
+  ok it.waiting?
+  eq :battle, it.wait_kind
+  req = it.battle_request
+  eq 4, req[:troop_id]
+  eq true, req[:allow_escape]
+  eq true, req[:first_strike]
+  eq false, req[:defeat_game_over], 'defeat mode 1 uses a handler'
+end
+
+check 'Enemy Encounter reads a variable troop id and escape-disallow' do
+  st = party_state
+  st.variables[7] = 12
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [1, 7, 0, 0, 0, 0])])
+  it.update
+  eq 12, it.battle_request[:troop_id]
+  eq false, it.battle_request[:allow_escape], 'escape mode 0 disallows escape'
+  eq true, it.battle_request[:defeat_game_over], 'defeat mode 0 is game over'
+end
+
+check 'Enemy Encounter routes Victory / Escape / Defeat handler branches' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 2, 1, 0], indent: 0),
+    FakeCmd.new(IC::VICTORY_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::ESCAPE_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::DEFEAT_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 1),
+    FakeCmd.new(IC::END_BATTLE, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 4, 4, 0], indent: 0)
+  ]
+  { victory: 1, escape: 2, defeat: 3 }.each do |result, branch_switch|
+    st = party_state
+    it = Game::Interpreter.new(st)
+    it.start(list)
+    it.update
+    it.resume_battle(result)
+    it.update
+    [1, 2, 3].each do |s|
+      eq(s == branch_switch, st.switches[s] || false, "#{result} -> switch #{s}")
+    end
+    eq true, st.switches[4], 'execution continues past the encounter'
+  end
+end
+
+check 'Enemy Encounter escape-abort mode ends the event' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 1, 0, 0], indent: 0), # escape=abort
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start(list)
+  it.update
+  it.resume_battle(:escape)
+  it.update
+  ok !st.switches[5], 'the rest of the event is abandoned on an aborting escape'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
