@@ -69,6 +69,9 @@ module RGSS
     end
     def self.reset; @dir_value = 0; @triggered = []; end
     def self.trigger?(k); Array(@triggered).include?(k); end
+    # The scene treats a held key like a triggered one for widget navigation; the
+    # stub answers both from the same `triggered` set.
+    def self.repeat?(k); Array(@triggered).include?(k); end
     def self.dir4; @dir_value || 0; end
     def self.update; end
   end
@@ -436,6 +439,48 @@ check 'Erase Event stops a parallel process that erases itself' do
      'erased from the event list'
   ok scene.instance_variable_get(:@parallels).empty?,
      'its background process was removed'
+end
+
+check 'Halt All Movement cancels a forced player route in the scene' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Force the player onto a repeating downward route, then immediately halt all
+  # movement: the route must be cancelled before it can step the player.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 1, 1, R::MOVE_DOWN]),
+                         ECmd.new(ic::HALT_ALL_MOVEMENT, [])]
+  scene = new_scene({ 1 => event(3, 0, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  20.times { scene.update }
+  ok scene.instance_variable_get(:@player_route).nil?,
+     'the forced player route was cancelled'
+  eq [0, 0], [st.x, st.y], 'the player never moved (movement was halted)'
+end
+
+check 'Input Number opens a widget; confirming stores the entered value' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Two digits into variable 5, then flip switch 1 so we can see it resumed.
+  auto.event_commands = [ECmd.new(ic::INPUT_NUMBER, [2, 5]),
+                         ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  ni = nil
+  12.times do
+    scene.update
+    ni = scene.instance_variable_get(:@number_input)
+    break if ni
+  end
+  ok ni, 'the number-entry widget opened'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]  # confirm
+  scene.update
+  ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
+  5.times { RGSS::Input.reset; scene.update }
+  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
 check 'a message types out gradually, then a button completes and dismisses it' do

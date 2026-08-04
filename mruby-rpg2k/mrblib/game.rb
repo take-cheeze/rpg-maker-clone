@@ -552,10 +552,48 @@ module Game
     def replace(h); @data = h || {}; end
   end
 
+  # A digit-entry model backing the Input Number event command: `digits` cells,
+  # a movable cursor, and per-cell 0..9 increment/decrement, exposing the entered
+  # integer via #value. The scene draws it and feeds it input; the logic (cursor
+  # bounds, wrap-around, place value) lives here so it is unit-testable.
+  class NumberInput
+    MAX_DIGITS = 7 # RPG2000 caps Input Number at seven digits (0..9,999,999)
+
+    attr_reader :digits, :cursor
+
+    def initialize(digits)
+      d = digits.to_i
+      d = 1 if d < 1
+      d = MAX_DIGITS if d > MAX_DIGITS
+      @digits = d
+      @values = Array.new(d, 0)
+      @cursor = 0
+    end
+
+    # The digit shown at position i (0 = most significant, leftmost).
+    def digit(i); @values[i] || 0; end
+
+    def inc; @values[@cursor] = (@values[@cursor] + 1) % 10; end
+    def dec; @values[@cursor] = (@values[@cursor] + 9) % 10; end
+    def left;  @cursor -= 1 if @cursor > 0; end
+    def right; @cursor += 1 if @cursor < @digits - 1; end
+
+    # The entered value as a base-10 integer (leftmost cell is most significant).
+    def value
+      v = 0
+      @values.each { |d| v = v * 10 + d }
+      v
+    end
+  end
+
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
-    attr_reader :id, :name, :level, :exp, :charset_name, :charset_index
+    attr_reader :id, :level, :exp, :charset_name, :charset_index
     attr_accessor :hp, :mp
+    # Name and title (the status-screen subtitle) are mutable via the Change
+    # Actor Name / Title event commands. `transparent` hides the actor's map
+    # sprite (the Change Sprite Association transparency flag).
+    attr_accessor :name, :title, :transparent
     attr_reader :max_hp, :max_mp, :atk, :def, :int, :agi
 
     # The six base stats in database parameter-curve order (chunk 31 stores six
@@ -581,8 +619,10 @@ module Game
       raise "No such actor: #{id}" if a.nil?
 
       @name = a.name
+      @title = a.respond_to?(:title) ? (a.title || '') : ''
       @charset_name = a.charset_name
       @charset_index = a.charset_index
+      @transparent = a.respond_to?(:semi_transparent) ? (a.semi_transparent ? true : false) : false
       @db_row = a
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
@@ -624,6 +664,13 @@ module Game
       out = []
       a.skills.each { |_i, l| out.push([l.skill_id, l.level]) }
       out
+    end
+
+    # Replace the actor's CharSet graphic (the Change Sprite Association event
+    # command): `name` is the file and `index` the cell within it.
+    def set_charset(name, index)
+      @charset_name = name
+      @charset_index = index
     end
 
     # Whether the actor knows `skill_id`.
@@ -803,25 +850,51 @@ module Game
       @gold = 0
     end
 
-    # Serialise the mutable party state (see State#to_h).
+    # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
+    # the fields the Change Actor Name / Title / Sprite commands mutate, so those
+    # edits survive a Save / Continue instead of reverting to the database row.
     def to_h
       hp = {}
       mp = {}
-      @actors.each { |a| hp[a.id] = a.hp; mp[a.id] = a.mp }
+      meta = {}
+      @actors.each do |a|
+        hp[a.id] = a.hp
+        mp[a.id] = a.mp
+        meta[a.id] = { name: a.name, title: a.title,
+                       charset_name: a.charset_name,
+                       charset_index: a.charset_index,
+                       transparent: a.transparent }
+      end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
-        hp: hp, mp: mp }
+        hp: hp, mp: mp, actor_meta: meta }
     end
 
-    # Restore item/gold and per-actor hp/mp from a saved party hash.
+    # Restore item/gold, per-actor hp/mp and the name/title/sprite overrides from
+    # a saved party hash. A save written before actor_meta existed simply keeps
+    # the database defaults.
     def load_state(data)
       @items = data[:items] || {}
       @gold = data[:gold] || 0
       hp = data[:hp] || {}
       mp = data[:mp] || {}
+      meta = data[:actor_meta] || {}
       @actors.each do |a|
         a.hp = hp[a.id] if hp[a.id]
         a.mp = mp[a.id] if mp[a.id]
+        apply_actor_meta(a, meta[a.id])
       end
+    end
+
+    # Apply a saved name/title/sprite override hash to an actor (nil = no
+    # override, keeping the database defaults).
+    def apply_actor_meta(actor, m)
+      return unless m
+      actor.name = m[:name] if m[:name]
+      actor.title = m[:title] unless m[:title].nil?
+      if m[:charset_name]
+        actor.set_charset(m[:charset_name], m[:charset_index] || actor.charset_index)
+      end
+      actor.transparent = m[:transparent] unless m[:transparent].nil?
     end
 
     def each(&blk); @actors.each(&blk); end
