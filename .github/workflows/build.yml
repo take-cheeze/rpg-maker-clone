@@ -32,6 +32,14 @@ jobs:
         with:
           submodules: recursive
 
+      # Keep the tc39/test262 clone out of CI — `nix develop` fetches this flake
+      # with submodules and would otherwise trip over quickjs-ng's unused nested
+      # entry. See the script for the full story.
+      - name: Skip the quickjs test262 submodule
+        run: ./scripts/skip-quickjs-test262.bash
+        env:
+          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
@@ -342,6 +350,13 @@ jobs:
         with:
           submodules: recursive
 
+      # Same as the `build` job: keep the tc39/test262 clone out of the nix
+      # submodule walk that `nix develop` triggers.
+      - name: Skip the quickjs test262 submodule
+        run: ./scripts/skip-quickjs-test262.bash
+        env:
+          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
@@ -594,12 +609,18 @@ jobs:
         with:
           submodules: recursive
 
-      # quickjs-ng pins a nested `test262` submodule with `update = none`, so the
-      # recursive checkout above skips it. `nix build '.?submodules=1'` still
-      # recurses into every nested submodule and fails to fetch test262 when it
-      # is absent, so materialise it here (shallow). It is only needed to satisfy
-      # nix's recursive fetch; nothing in the build uses it.
+      # Same as the `build` job — `nix build '.?submodules=1'` walks every entry
+      # of every nested `.gitmodules`, so drop quickjs-ng's unused test262 entry
+      # rather than cloning tc39/test262 to satisfy the walk.
+      - name: Skip the quickjs test262 submodule
+        run: ./scripts/skip-quickjs-test262.bash
+        env:
+          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+
+      # The opt-out (`CLONE_TEST262=1`) leaves the submodule registered, so it
+      # has to be materialised for the walk to find it.
       - name: Materialize quickjs test262 submodule for the flake build
+        if: ${{ vars.CLONE_TEST262 == '1' }}
         run: git -C 3rd/quickjs -c submodule.test262.update=checkout submodule update --init --depth 1 test262
 
       - uses: nixbuild/nix-quick-install-action@v35
