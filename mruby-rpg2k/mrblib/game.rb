@@ -1236,11 +1236,11 @@ module Game
       @gold = 999_999 if @gold > 999_999
     end
 
-    # RPG2000 database item type for a consumable medicine (薬). Types 1..5 are
-    # the equipment slots (see Actor::EQUIP_ORDER); 6 is the healing item the
-    # field menu can use. Book (7) / seed (8) / switch (9) menu use is a later
-    # refinement.
+    # RPG2000 database item types. Types 1..5 are the equipment slots (see
+    # Actor::EQUIP_ORDER); 6 is a healing medicine (薬); 7 is a skill book (本)
+    # that teaches a skill. Seed (8) / switch (9) menu use is a later refinement.
     ITEM_MEDICINE = 6
+    ITEM_SKILL_BOOK = 7
 
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
@@ -1249,11 +1249,12 @@ module Game
       @db.item[id]
     end
 
-    # Whether item `id` can be used from the field (main-menu) item screen.
-    # Currently: a medicine the party actually holds.
+    # Whether item `id` can be used from the field (main-menu) item screen: a
+    # medicine or a skill book the party actually holds.
     def field_usable?(id)
       it = db_item(id)
-      !it.nil? && it.type == ITEM_MEDICINE && item_count(id) > 0
+      return false unless it && item_count(id) > 0
+      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK
     end
 
     # The bag's field-usable items as `[id, count]` pairs in ascending id order,
@@ -1271,26 +1272,44 @@ module Game
       [hp, mp]
     end
 
-    # Whether using medicine `id` on `actor` would change anything -- RPG_RT
-    # forbids using a pure-recovery item on a target already at full HP/SP, so the
-    # menu greys those out. A restore of 0 (an item with no recovery) is never
-    # effective.
+    # Whether using item `id` on `actor` would change anything, so the menu can
+    # grey out a no-op. A medicine is effective when the target is below full
+    # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
+    # full target); a skill book is effective when the target does not already
+    # know its skill.
     def item_effective?(id, actor)
       it = db_item(id)
-      return false unless it && it.type == ITEM_MEDICINE && actor
-      hp, mp = item_recovery(it, actor)
-      (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+      return false unless it && actor
+      case it.type
+      when ITEM_MEDICINE
+        hp, mp = item_recovery(it, actor)
+        (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+      when ITEM_SKILL_BOOK
+        s = it.skill_id
+        !s.nil? && s != 0 && !actor.knows_skill?(s)
+      else
+        false
+      end
     end
 
-    # Use medicine `id`. A single-target item (scope 0) heals `actor`; an all-ally
-    # item (scope 1) heals the whole party regardless of `actor`. Applies the
-    # recovery (clamped to each target's maxima), consumes one from the bag only
-    # when it actually healed someone, and returns the actors it affected (empty
-    # when nothing changed, e.g. everyone was already full -- then nothing is
-    # consumed).
+    # Use item `id` from the field menu, dispatching on its database type, and
+    # return the actors it affected (empty when it did nothing -- then nothing is
+    # consumed). A medicine heals; a skill book teaches its skill.
     def use_item(id, actor = nil)
       it = db_item(id)
-      return [] unless it && it.type == ITEM_MEDICINE && item_count(id) > 0
+      return [] unless it && item_count(id) > 0
+      case it.type
+      when ITEM_MEDICINE then use_medicine(it, id, actor)
+      when ITEM_SKILL_BOOK then use_skill_book(it, id, actor)
+      else []
+      end
+    end
+
+    # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
+    # (scope 1) heals the whole party regardless of `actor`. Applies the recovery
+    # (clamped to each target's maxima) and consumes one from the bag only when it
+    # actually healed someone (so using it on a full party wastes nothing).
+    def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
       affected = []
       targets.each do |t|
@@ -1303,6 +1322,17 @@ module Game
       end
       lose_item(id, 1) unless affected.empty?
       affected
+    end
+
+    # A skill book teaches its skill (item field 53) to `actor` if the actor does
+    # not already know it, consuming one book. A book with no skill, or used on an
+    # actor who already knows the skill, does nothing and is not consumed.
+    def use_skill_book(it, id, actor)
+      skill = it.skill_id
+      return [] unless actor && skill && skill != 0 && !actor.knows_skill?(skill)
+      actor.learn_skill(skill)
+      lose_item(id, 1)
+      [actor]
     end
 
     # The equipment slot index (0..4) a held item occupies by its database type
