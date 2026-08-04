@@ -37,6 +37,7 @@ module Game
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_SYSTEM_GFX   = 10680
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
       CHANGE_TRANSITION   = 10690
@@ -161,6 +162,7 @@ module Game
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @system_graphic_changed = false
       @tileset_request = nil
       reset_waits
     end
@@ -225,6 +227,14 @@ module Game
     def take_actor_graphic_changed
       v = @actor_graphic_changed
       @actor_graphic_changed = false
+      v
+    end
+
+    # Drain the one-shot Change System Graphics (10680) request so the scene
+    # reloads the windowskin. Non-blocking.
+    def take_system_graphic_changed
+      v = @system_graphic_changed
+      @system_graphic_changed = false
       v
     end
 
@@ -526,6 +536,7 @@ module Game
       when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
       when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
       when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
+      when Cmd::CHANGE_SYSTEM_GFX     then do_change_system_graphic cmd
       when Cmd::CHANGE_SYSTEM_BGM    then do_change_system_bgm cmd
       when Cmd::CHANGE_SYSTEM_SFX    then do_change_system_sfx cmd
       when Cmd::CHANGE_TRANSITION    then @state.set_screen_transition(cmd.param(0), cmd.param(1))
@@ -1509,6 +1520,17 @@ module Game
       @state.escape_target =
         { map_id: cmd.param(0), x: cmd.param(1), y: cmd.param(2),
           switch_id: switch_id }
+    end
+
+    # Change System Graphics: override the windowskin graphic and font. The
+    # command string names the System/<name> windowskin; param0 is the message
+    # background stretch style (not modelled — it is not in the save) and param1
+    # the font id (RPG2000 games leave it 0). Records a one-shot request so the
+    # scene reloads the windowskin, and the override persists across Save /
+    # Continue.
+    def do_change_system_graphic(cmd)
+      @state.set_system_graphic(cmd.string || '', cmd.param(1))
+      @system_graphic_changed = true
     end
 
     # Change System BGM: override one of the system music slots (battle,

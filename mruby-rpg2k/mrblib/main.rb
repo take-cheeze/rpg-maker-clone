@@ -734,7 +734,10 @@ class RPG2k
 
       # Load the System/ windowskin for message windows (nil -> plain panel).
       def load_windowskin
-        name = @db.system.system_graphic
+        # A Change System Graphics override (persisted in the save) wins over the
+        # database's own windowskin.
+        name = @state.system_graphic
+        name = @db.system.system_graphic if name.nil?
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}", true
       rescue StandardError => e
@@ -1138,9 +1141,19 @@ class RPG2k
       # non-leader actor is held in the model until that actor leads the party).
       def apply_graphic_change(interp)
         refresh_player_graphic if interp.take_actor_graphic_changed
+        reload_windowskin if interp.take_system_graphic_changed
       rescue StandardError => e
         $stderr.puts "[RPG2k] Change Actor Graphic failed: #{e.message}"
         nil
+      end
+
+      # Rebuild the windowskin after a Change System Graphics override. Windows
+      # created from here on (messages, menus, battle) pick up the new skin;
+      # windows already open keep theirs until they are next recreated.
+      def reload_windowskin
+        old = @windowskin
+        @windowskin = load_windowskin
+        old.dispose if old && !old.equal?(@windowskin)
       end
 
       # Reload the party leader's CharSet graphic and apply its transparency to

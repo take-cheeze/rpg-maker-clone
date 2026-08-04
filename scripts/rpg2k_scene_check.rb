@@ -1432,6 +1432,19 @@ check 'Game Over event command returns to the title, abandoning the event' do
   ok !st.switches[5], 'the rest of the event never ran'
 end
 
+check 'Change System Graphics reloads the windowskin from the override' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_SYSTEM_GFX, [0, 0], indent: 0, string: 'Skin2')]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # The fake db's system graphic is blank, so the scene opens with no windowskin.
+  eq nil, scene.instance_variable_get(:@windowskin), 'no windowskin from the blank db default'
+  5.times { scene.update }
+  eq 'Skin2', st.system_graphic, 'the override is recorded on the state'
+  ok scene.instance_variable_get(:@windowskin), 'the windowskin was reloaded from the override'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

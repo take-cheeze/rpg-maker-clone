@@ -2967,6 +2967,13 @@ module Game
     # LSD chunks 111–116); the teleport / battle fades that would read them still
     # use their own transition, so nothing consumes these at runtime yet.
     attr_accessor :screen_transitions
+    # The system windowskin graphic (System/<name>) and font id set by Change
+    # System Graphics (10680), overriding the database defaults. `system_graphic`
+    # is nil until a command sets it (the database's own graphic then applies)
+    # and `font_id` defaults to 0. Both persist in the save (LSD SAVE_SYSTEM
+    # chunks 15 / 17); Scene::Map reloads the windowskin when the override
+    # changes.
+    attr_accessor :system_graphic, :font_id
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -2993,6 +3000,8 @@ module Game
       @system_bgm = {}
       @system_sfx = {}
       @screen_transitions = Array.new(SCREEN_TRANSITION_SLOTS, 0)
+      @system_graphic = nil
+      @font_id = 0
       @weather = Weather.new
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
@@ -3051,6 +3060,14 @@ module Game
       @screen_transitions[which] = style
     end
 
+    # Change System Graphics: override the windowskin graphic (System/<name>) and
+    # font id. Scene::Map reloads the windowskin so windows created afterwards use
+    # the new skin.
+    def set_system_graphic(name, font)
+      @system_graphic = name
+      @font_id = font || 0
+    end
+
     # Serialise to a plain hash of primitives (Marshal-friendly) for saving. The
     # map itself is not stored; it is reloaded from map_id on load.
     def to_h
@@ -3064,7 +3081,8 @@ module Game
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
         escape_target: @escape_target, system_bgm: @system_bgm,
-        system_sfx: @system_sfx, screen_transitions: @screen_transitions }
+        system_sfx: @system_sfx, screen_transitions: @screen_transitions,
+        system_graphic: @system_graphic, font_id: @font_id }
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
@@ -3168,6 +3186,9 @@ module Game
       sys[124] = @menu_access ? true : false
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
       @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
+      # System windowskin / font override (Change System Graphics).
+      sys[15] = @system_graphic if @system_graphic
+      sys[17] = @font_id
       sys[131] = save_count
       sys[132] = 1
       save[101] = sys
@@ -3295,6 +3316,11 @@ module Game
         sys.battle_start_erase_transition, sys.battle_start_show_transition,
         sys.battle_end_erase_transition, sys.battle_end_show_transition
       ].map { |v| v || 0 }
+      # System windowskin / font override; an empty graphic means "use the
+      # database default" (left unset).
+      sg = sys.system_graphic
+      state.system_graphic = sg unless sg.nil? || sg.empty?
+      state.font_id = sys.font || 0
       # The leader's display name from the file-screen title chunk (a Change
       # Actor Name override survives for the leader).
       title = save[100]
@@ -3397,6 +3423,8 @@ module Game
       if stx && stx.length == SCREEN_TRANSITION_SLOTS
         state.screen_transitions = stx.dup
       end
+      state.system_graphic = h[:system_graphic]
+      state.font_id = h[:font_id] || 0
       state
     end
   end

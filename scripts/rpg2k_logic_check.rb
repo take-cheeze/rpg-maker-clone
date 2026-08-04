@@ -2449,6 +2449,30 @@ check 'Change Screen Transitions sets the chosen slot; round-trips through save'
   eq [0, 0, 0, 0, 0, 0], Game::State.load(db, legacy).screen_transitions
 end
 
+# -- Change System Graphics ---------------------------------------------------
+
+check 'Change System Graphics overrides the windowskin / font; round-trips' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.system_graphic, 'no override until a command sets one'
+  eq 0, st.font_id
+
+  it = Game::Interpreter.new(st)
+  # string = windowskin name, param0 = stretch (ignored), param1 = font id.
+  it.start([FakeCmd.new(IC::CHANGE_SYSTEM_GFX, [0, 1], string: 'Skin2')])
+  it.update
+  eq 'Skin2', st.system_graphic
+  eq 1, st.font_id
+  ok it.take_system_graphic_changed, 'a windowskin-reload request was raised'
+  ok !it.take_system_graphic_changed, 'the request is one-shot'
+
+  loaded = Game::State.load(db, st.to_h)
+  eq 'Skin2', loaded.system_graphic, 'the override round-trips through the save'
+  eq 1, loaded.font_id
+end
+
 # -- Change / Trade Event Location --------------------------------------------
 
 check 'Change Event Location queues a :set request (constant and variable modes)' do
