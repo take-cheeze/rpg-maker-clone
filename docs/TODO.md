@@ -420,9 +420,12 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG2000 channels (red/green/blue/saturation, 0..200) toward their target over
   the command's duration (advanced each frame by `Scene::Map`), and the wait
   flag pauses the interpreter until the effect settles (a `:screen` wait,
-  resumed by the scene once `Game::Screen#busy?` clears). The tint is the Ruby
-  half only — **applying** it as an `RGSS::Viewport` tone is native (C++) work
-  still to come, so it does not yet change what is drawn. **Shake Screen**
+  resumed by the scene once `Game::Screen#busy?` clears). The **darkening** half
+  of the tint now draws: `Scene::Map` overlays a black screen sprite (below the
+  flash / fade overlays) whose opacity approximates how far the tone averages
+  below neutral, so a night / cave tint dims the map. A full tone — the colour
+  cast, brightening above neutral and saturation — still needs an
+  `RGSS::Viewport` tone in C++. **Shake Screen**
   (11050) also drives `Game::Screen`: a timed, float-free triangle-wave
   horizontal offset (amplitude from power, rate from speed) that `Scene::Map`
   subtracts from the camera, so — unlike the tint — the shake **is** visible
