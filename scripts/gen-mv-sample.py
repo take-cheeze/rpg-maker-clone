@@ -10,13 +10,14 @@ Game, into `Scene_Map`. The MIT engine (rpg_core.js + PIXI) is fetched
 separately by scripts/download-mv-corescript.bash; only this authored data is
 committed.
 
-No copyrighted RTP art is referenced, but we author a tiny two-tile A5 tileset
-(a grass floor and a stone wall, written as a hand-encoded PNG) so the map
-renders as a visible tiled room — enough to exercise the engine's canvas Tilemap
-path, not just blank space. The player is still invisible (no character art).
-Run from the repo root; it writes data/mv-sample/data/*.json and
-data/mv-sample/img/tilesets/Sample_A5.png. Deterministic (no timestamps) so
-re-running is a no-op in git.
+No copyrighted RTP art is referenced, but we author tiny hand-encoded PNGs (no
+Pillow dependency) so the sample is actually visible: a two-tile A5 tileset (a
+grass floor and a stone wall) so the map renders as a tiled room, and a small
+walk sheet for the player so the hero shows on the map. This exercises the
+engine's canvas Tilemap and Sprite_Character paths, not just blank space. Run
+from the repo root; it writes data/mv-sample/data/*.json and the PNGs under
+data/mv-sample/img/. Deterministic (no timestamps) so re-running is a no-op in
+git.
 """
 
 import json
@@ -134,11 +135,45 @@ system = {
 }
 write("System.json", system)
 
+# --- Character sprite ------------------------------------------------------
+# A tiny authored walk sheet so the player is visible on the map (exercising
+# Sprite_Character's sheet frame selection). The "$" prefix marks a single-
+# character (big) sheet: 3 walk columns x 4 direction rows, each cell 48x48
+# (Sprite_Character.patternWidth = width/3 for such files).
+CHAR_NAME = "$Hero"
+
+
+def gen_character():
+    cw, ch, cols, rows = 48, 48, 3, 4
+    w, h = cw * cols, ch * rows   # 144 x 192
+    px = bytearray(w * h * 4)
+
+    def rect(x0, y0, rw, rh, c):
+        for yy in range(y0, y0 + rh):
+            for xx in range(x0, x0 + rw):
+                if 0 <= xx < w and 0 <= yy < h:
+                    i = (yy * w + xx) * 4
+                    px[i], px[i + 1], px[i + 2], px[i + 3] = c[0], c[1], c[2], 255
+
+    skin, shirt, legs = (245, 205, 170), (200, 60, 60), (60, 60, 110)
+    for row in range(rows):        # direction: down/left/right/up
+        for col in range(cols):    # walk frame 0..2
+            ox, oy, cx = col * cw, row * ch, col * cw + cw // 2
+            rect(cx - 6, oy + 10, 12, 12, skin)    # head
+            rect(cx - 9, oy + 22, 18, 16, shirt)   # body
+            lift = (0, 2, 0)[col]                  # simple alternating stride
+            rect(cx - 8, oy + 38 - lift, 6, 8, legs)
+            rect(cx + 2, oy + 38 - (2 - lift), 6, 8, legs)
+    write_png("img/characters/%s.png" % CHAR_NAME, w, h, bytes(px))
+
+
+gen_character()
+
 # --- Actors / Classes ------------------------------------------------------
 write("Actors.json", [None, {
     "id": 1, "name": "Hero", "nickname": "", "note": "", "profile": "",
     "classId": 1, "initialLevel": 1, "maxLevel": 99,
-    "characterName": "", "characterIndex": 0,
+    "characterName": CHAR_NAME, "characterIndex": 0,
     "faceName": "", "faceIndex": 0,
     "battlerName": "", "equips": [0, 0, 0, 0, 0], "traits": [],
 }])
