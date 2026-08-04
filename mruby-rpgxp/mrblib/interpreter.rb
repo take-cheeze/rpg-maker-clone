@@ -94,6 +94,14 @@ class RPGXP
       PLAY_BGS        = 245
       PLAY_ME         = 249
       PLAY_SE         = 250
+      BATTLE_PROCESS  = 301
+
+      # Battle Processing (301) result branches, at the 301's own indent: If Win
+      # (601), If Escape (602), If Lose (603) and the branch terminator (604).
+      IF_WIN     = 601
+      IF_ESCAPE  = 602
+      IF_LOSE    = 603
+      BATTLE_END = 604
 
       MAX_STEPS_PER_FRAME = 10_000
       MAX_CALL_DEPTH = 100
@@ -107,11 +115,17 @@ class RPGXP
         @state = state
         @rng = Rng.new
         @resolver = nil
+        @battle_outcome = :win
         reset
       end
 
       # resolver#common_event_list(id) -> the command list of a common event.
       attr_accessor :resolver
+      # The result a Battle Processing (301) command resolves to while there is
+      # no battle system: :win (default, so the victory branch runs and the game
+      # progresses), :escape or :lose. A future battle scene sets this from the
+      # real outcome before the interpreter navigates the result branches.
+      attr_accessor :battle_outcome
       attr_reader :wait_kind, :message_lines, :choice_labels, :choice_cancel,
                   :wait_frames, :teleport, :input_variable, :input_digits
 
@@ -266,6 +280,9 @@ class RPGXP
         when CHANGE_PARTY    then do_change_party(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
+        when BATTLE_PROCESS  then do_battle_process(cmd)
+        when IF_WIN, IF_ESCAPE, IF_LOSE then skip_past_battle(cmd) # fell through a branch
+        when BATTLE_END      then consume
         when PLAY_BGM        then do_play(cmd, :bgm)
         when PLAY_BGS        then do_play(cmd, :bgs)
         when PLAY_ME         then do_play(cmd, :me)
@@ -365,6 +382,60 @@ class RPGXP
       # just past the choice block's 404.
       def skip_past_choices(cmd)
         skip_to_after([CHOICES_END], cmd.indent)
+      end
+
+      # -- battle processing --------------------------------------------------
+
+      # Battle Processing (301): [troop_id, can_escape, can_lose]. There is no
+      # battle system yet, so resolve the fight to @battle_outcome (a win by
+      # default, so the common victory branch runs and the game progresses) and
+      # jump into the matching result branch — If Win (601) / If Escape (602) /
+      # If Lose (603) — skipping the others. The 601/602/603 markers sit at the
+      # 301's own indent, like a choice's When markers, terminated by 604. The
+      # stub is logged so a skipped battle is visible rather than silent.
+      def do_battle_process(cmd)
+        troop_id = param(cmd, 0)
+        code = case @battle_outcome
+               when :escape then IF_ESCAPE
+               when :lose   then IF_LOSE
+               else IF_WIN
+               end
+        $stderr.puts "[RGSS] Battle Processing (troop #{troop_id.inspect}) " \
+                     "not implemented; resolving as #{@battle_outcome}"
+        target = seek_battle_branch([code], cmd.indent, @index + 1)
+        @index = target ? target + 1 : skip_to_battle_end(cmd.indent)
+      end
+
+      # A branch marker reached by falling through the previous branch's body:
+      # jump to just past the block's 604.
+      def skip_past_battle(cmd)
+        skip_to_after([BATTLE_END], cmd.indent)
+      end
+
+      # First command at `indent` whose code is in `codes`, searched from `from`
+      # and bounded by the block terminator (604); nil if none precedes it.
+      def seek_battle_branch(codes, indent, from)
+        i = from
+        while i < @list.size
+          c = @list[i]
+          if c.indent == indent
+            return i if codes.include?(c.code)
+            break if c.code == BATTLE_END
+          end
+          i += 1
+        end
+        nil
+      end
+
+      # Index just past the block's 604 at `indent` (or the list end).
+      def skip_to_battle_end(indent)
+        i = @index + 1
+        while i < @list.size
+          c = @list[i]
+          return i + 1 if c.indent == indent && c.code == BATTLE_END
+          i += 1
+        end
+        @list.size
       end
 
       # Input Number (103): [variable_id, digits]. Suspends with a :number request

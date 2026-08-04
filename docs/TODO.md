@@ -262,10 +262,16 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   its operand. *Change Party Member* (129) adds/removes actors from the party,
   the **actor "is in the party"** conditional (type 4) is evaluated, and Control
   Variables also reads the **"other" game quantities** — map id, party size and
-  gold (operand type 7). Covered by `mruby-rpgxp/test` and driven over the real
-  test bed by `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route
-  targets, the remaining actor / enemy / character conditional sub-conditions,
-  and the many screen-effect / picture / battle commands (skipped for now).
+  gold (operand type 7). **Battle Processing** (301) navigates its result
+  branches — If Win (601), If Escape (602), If Lose (603), branch end (604) —
+  running only the branch that matches the resolved outcome (a win by default,
+  configurable via the interpreter's `battle_outcome`, since there is no battle
+  system yet); the real `OpenGame.exe` XP test bed uses this structure. Covered
+  by `mruby-rpgxp/test` and driven over the real test bed by
+  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets,
+  the remaining actor / enemy / character conditional sub-conditions, and the
+  many screen-effect / picture commands, plus the battle system itself that
+  Battle Processing would drive (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1
