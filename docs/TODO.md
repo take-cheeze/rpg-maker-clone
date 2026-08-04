@@ -194,9 +194,12 @@ The work below is roughly ordered by the critical path to a walkable game
   position (top/middle/bottom) and the FaceSet graphic, and `Scene::Map` places
   the window at the configured position, draws it transparent when asked and
   blits the selected 48×48 face cell beside the text (left or right, with the
-  text inset). The palette is still a built-in approximation (the real 20-colour
-  row from the System windowskin), auto-positioning the window away from the
-  hero (when not pinned) and the mirrored-face flag are later refinements
+  text inset). The `\c[n]` **text colours are now the game's own**: `Scene::Map`
+  samples the 20-swatch palette baked into the System windowskin
+  (`Game::MessagePalette`, a 10×2 grid of 16×16 cells from y = 48, per EasyRPG's
+  layout) via `Bitmap#get_pixel`, falling back to the built-in approximation only
+  when no windowskin loaded. Auto-positioning the window away from the hero (when
+  not pinned) and the mirrored-face flag are later refinements
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by

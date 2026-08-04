@@ -333,6 +333,41 @@ check 'a zero-size or absent panorama axis offsets to 0' do
   eq 0, PX.axis_offset(false, false, 0, 0, 100, 640, 4096, nil)
 end
 
+# -- message text palette geometry (Game::MessagePalette) ---------------------
+
+MP = Game::MessagePalette
+
+check 'message palette swatches form a 10x2 grid from y=48' do
+  eq [0, 48],   MP.cell_origin(0)
+  eq [16, 48],  MP.cell_origin(1)
+  eq [144, 48], MP.cell_origin(9)   # last of the top row
+  eq [0, 64],   MP.cell_origin(10)  # second row
+  eq [144, 64], MP.cell_origin(19)  # last swatch
+end
+
+check 'every swatch sample point lands inside the 160x80 System image' do
+  seen = {}
+  (0...MP::COUNT).each do |i|
+    x, y = MP.sample_point(i)
+    ok x >= 0 && x < 160, "sample x #{x} for #{i}"
+    ok y >= 48 && y < 80, "sample y #{y} for #{i}"
+    ok !seen[[x, y]], "sample point #{[x, y]} reused"
+    seen[[x, y]] = true
+    # The sample sits inside swatch i's cell.
+    ox, oy = MP.cell_origin(i)
+    ok x >= ox && x < ox + MP::CELL && y >= oy && y < oy + MP::CELL, 'inside cell'
+  end
+  eq 20, seen.size, 'twenty distinct sample points'
+end
+
+check 'MessagePalette.valid? bounds the colour index' do
+  ok MP.valid?(0)
+  ok MP.valid?(19)
+  ok !MP.valid?(20)
+  ok !MP.valid?(-1)
+  ok !MP.valid?(nil)
+end
+
 if $failures.zero?
   puts "rpg2k render check: #{$checks} checks passed"
   exit 0

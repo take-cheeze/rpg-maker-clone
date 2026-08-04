@@ -374,6 +374,7 @@ class RPG2k
         @chipset_bmp = load_chipset_graphic
         @charset = load_charset
         @windowskin = load_windowskin
+        @msg_palette = build_msg_palette(@windowskin)
         @interpreter = Game::Interpreter.new(@state)
         @started_auto = {}
         @started_common = {}
@@ -1492,9 +1493,32 @@ class RPG2k
         9 => [160, 160, 255]
       }.freeze
 
+      # The colour for a `\c[n]` text run: the real swatch sampled from the
+      # game's own System windowskin when one loaded, else the built-in
+      # approximation. Always opaque.
       def message_color(idx)
+        if @msg_palette && idx && idx >= 0 && idx < @msg_palette.size
+          r, g, b = @msg_palette[idx]
+          return Color.new(r, g, b, 255)
+        end
         rgb = MSG_COLORS[idx] || MSG_COLORS[0]
         Color.new(rgb[0], rgb[1], rgb[2], 255)
+      end
+
+      # Sample the 20 RPG2000 message text colours from the loaded windowskin
+      # (their swatch grid — see Game::MessagePalette). Returns an array of
+      # [r, g, b] triples, or nil when there is no windowskin or the pixels
+      # cannot be read (so message_color falls back to MSG_COLORS).
+      def build_msg_palette(skin)
+        return nil unless skin && skin.respond_to?(:get_pixel)
+        Array.new(Game::MessagePalette::COUNT) do |i|
+          px, py = Game::MessagePalette.sample_point(i)
+          c = skin.get_pixel(px, py)
+          [c.red.to_i, c.green.to_i, c.blue.to_i]
+        end
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] message palette sample failed, using approximation: #{e.message}"
+        nil
       end
 
       def set_choice_cursor

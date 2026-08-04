@@ -45,8 +45,15 @@ module RGSS
     def draw_text(*); end
     def text_size(_); Rect.new(0, 0, 0, 0); end
     def font; @font ||= OpenStruct.new; end
+    # Deterministic pixel readback so the message-palette sampler has something
+    # to read: the colour encodes the sampled coordinates (r=x, g=y).
+    def get_pixel(x, y); Color2.new(x % 256, y % 256, 42, 255); end
     def dispose; end
   end
+
+  # A readable colour (the real Color stub above swallows its args); get_pixel
+  # returns one of these so tests can inspect the sampled components.
+  Color2 = Struct.new(:red, :green, :blue, :alpha)
 
   class Sprite
     attr_accessor :bitmap, :x, :y, :z, :visible
@@ -943,6 +950,25 @@ check 'a shown picture renders through the scene and its move advances' do
   6.times { scene.update }
   ok !st.pictures_moving?, 'the move completed under the scene loop'
   eq 60, st.pictures[1].y, 'the picture reached its target'
+end
+
+check 'the message palette samples 20 swatches from the windowskin' do
+  scene = new_scene({})
+  skin = RGSS::Bitmap.new('System/skin') # stub get_pixel encodes (x,y) as (r,g)
+  pal = scene.send(:build_msg_palette, skin)
+  eq 20, pal.size, 'twenty colours'
+  eq [8, 56, 42], pal[0],    'swatch 0 sampled at (8,56)'
+  eq [152, 72, 42], pal[19], 'swatch 19 sampled at (152,72)'
+  # message_color returns a colour from the sampled palette without raising.
+  scene.instance_variable_set(:@msg_palette, pal)
+  ok scene.send(:message_color, 3), 'a sampled colour is returned'
+end
+
+check 'message colour falls back to the approximation without a windowskin' do
+  scene = new_scene({})
+  scene.instance_variable_set(:@msg_palette, nil)
+  ok scene.send(:message_color, 0), 'still returns a colour'
+  ok scene.send(:message_color, 99), 'out-of-range index is safe'
 end
 
 check 'rendering a map with charset + tile-substitution events does not raise' do
