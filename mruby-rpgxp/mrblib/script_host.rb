@@ -38,16 +38,15 @@ class RPGXP
         Kernel.private_method_defined?(:eval)
     end
 
-    # Whether to run the bundled scripts instead of the built-in flow. Requires
-    # eval support and an explicit opt-in: the env var when the runtime exposes
-    # ENV, otherwise the ENABLED constant (default false).
+    # Whether to run the bundled scripts instead of the built-in flow: requires
+    # eval support and an explicit opt-in via the RGSS_SCRIPT_HOST env var (when
+    # the runtime exposes ENV). Off by default. Uses const_defined? rather than
+    # defined?(CONST), which raises on an undefined constant in this mruby build.
     def self.enabled?
       return false unless available?
-      if defined?(ENV) && ENV.respond_to?(:[]) && !ENV[ENABLED_ENV].nil?
-        flag = ENV[ENABLED_ENV]
-        return !(flag.empty? || flag == "0" || flag == "false")
-      end
-      defined?(ENABLED) ? ENABLED : false
+      return false unless Object.const_defined?(:ENV)
+      flag = ENV[ENABLED_ENV]
+      !(flag.nil? || flag.empty? || flag == "0" || flag == "false")
     end
 
     # Run the project's bundled scripts to completion. `db` answers #scripts
@@ -68,7 +67,11 @@ class RPGXP
       # some scripts read it (e.g. to hot-reload). Mirror that shape.
       idx = -1
       $RGSS_SCRIPTS = sections.map { |name, source| [idx += 1, name, source] }
-      top = defined?(TOPLEVEL_BINDING) ? TOPLEVEL_BINDING : nil
+      # CRuby needs the top-level binding so class defs become global constants;
+      # mruby has no TOPLEVEL_BINDING and evaluates a nil-binding eval at the top
+      # level already. const_defined? avoids defined?(CONST), which raises on an
+      # undefined constant here. (The TOPLEVEL_BINDING branch never runs on mruby.)
+      top = Object.const_defined?(:TOPLEVEL_BINDING) ? TOPLEVEL_BINDING : nil
       sections.each do |name, source|
         # eval(str, binding, file, line): the section name becomes the "file" in
         # any backtrace, and top-level class/module definitions land on Object —
