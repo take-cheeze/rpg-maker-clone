@@ -2257,6 +2257,63 @@ module Game
     end
   end
 
+  # A single enemy instantiated from the database (chunk 14) for a battle: its
+  # combat stats plus the EXP / gold it is worth and its battle-screen position.
+  # Current HP / SP start full. The turn-based battle that would reduce them is
+  # not built yet, so for now this backs the Enemy Encounter reward model.
+  class Enemy
+    attr_reader :id, :name, :max_hp, :max_sp, :atk, :def, :spi, :agi,
+                :exp, :gold, :x, :y, :hidden
+    attr_accessor :hp, :sp
+
+    def initialize(db, id, x = 0, y = 0, hidden = false)
+      row = db.enemy[id]
+      @id = id
+      @name    = row ? row.name.to_s : ''
+      @max_hp  = row ? row.max_hp : 1
+      @max_sp  = row ? row.max_sp : 0
+      @atk     = row ? row.attack : 0
+      @def     = row ? row.defense : 0
+      @spi     = row ? row.spirit : 0
+      @agi     = row ? row.agility : 0
+      @exp     = row ? row.exp : 0
+      @gold    = row ? row.gold : 0
+      @x = x
+      @y = y
+      @hidden = hidden ? true : false
+      @hp = @max_hp
+      @sp = @max_sp
+    end
+
+    def dead?; @hp <= 0; end
+  end
+
+  # An enemy troop (敵グループ, chunk 15) instantiated for a battle: the live
+  # Enemy members at their positions. Also totals the EXP / gold the troop is
+  # worth, which the Enemy Encounter command grants on victory. The battle
+  # simulation itself is still to come.
+  class Troop
+    attr_reader :id, :name, :members
+
+    def initialize(db, id)
+      row = db.enemy_group[id]
+      @id = id
+      @name = row ? row.name.to_s : ''
+      @members = []
+      # Array2D#each yields (id, entry); a plain Hash test double does the same.
+      row.members.each { |_, m| @members << member(db, m) } if row && row.members
+    end
+
+    def total_exp;  @members.reduce(0) { |s, e| s + e.exp } end
+    def total_gold; @members.reduce(0) { |s, e| s + e.gold } end
+
+    private
+
+    def member(db, m)
+      Enemy.new(db, m.enemy_id, m.x, m.y, m.invisible)
+    end
+  end
+
   # Map weather set by the Weather Effects (11070) event command: a type (0 none,
   # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
   # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half

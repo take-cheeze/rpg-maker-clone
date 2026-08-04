@@ -152,6 +152,13 @@ def fake_db(common = nil)
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
+    # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
+    enemy: { 2 => OpenStruct.new(name: 'Slime', max_hp: 30, max_sp: 0, attack: 8,
+                                 defense: 4, spirit: 3, agility: 5, exp: 5,
+                                 gold: 10) },
+    enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
+      1 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false),
+      2 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false) }) },
     common_event: common,
     player: {}
   )
@@ -393,6 +400,22 @@ class InnStubParty
   attr_reader :actors, :gold
   attr_accessor :leader
   def initialize(gold); @gold = gold; @actors = [InnStubActor.new('Hero')]; @leader = nil; end
+  def gain_gold(n); @gold += n; end
+end
+
+# A party the placeholder battle grants rewards to: gold plus actors that bank
+# EXP, with the leader Scene::Map reads while rendering.
+class BattleStubActor
+  attr_accessor :exp
+  attr_reader :id
+  def initialize; @exp = 0; @id = 1; end
+  def gain_exp(n); @exp += n; end
+end
+
+class BattleStubParty
+  attr_reader :actors, :gold
+  attr_accessor :leader
+  def initialize; @actors = [BattleStubActor.new]; @gold = 0; @leader = nil; end
   def gain_gold(n); @gold += n; end
 end
 
@@ -1236,6 +1259,27 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
   eq 500, st.party.gold, 'no gold spent'
   ok !st.switches[1], 'the Transaction branch was skipped'
   ok st.switches[2], 'the No Transaction branch ran'
+end
+
+check 'Enemy Encounter scene: a placeholder victory grants rewards, runs Victory' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 1, 0], indent: 0), # troop 1
+    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::ESCAPE_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::END_BATTLE, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  5.times { scene.update } # the encounter auto-resolves to victory
+  eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
+  eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
+  ok st.switches[1], 'the Victory handler ran'
+  ok !st.switches[2], 'the Escape handler was skipped'
 end
 
 # -- summary ------------------------------------------------------------------

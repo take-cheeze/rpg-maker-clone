@@ -128,6 +128,7 @@ The work below is roughly ordered by the critical path to a walkable game
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
   Change Encounter Rate, Change System BGM / SFX, Show Inn, Open Shop,
+  Enemy Encounter,
   Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
   Show/Move/Erase Picture,
   Weather Effects, Call
@@ -214,7 +215,15 @@ The work below is roughly ordered by the critical path to a walkable game
   branches. The interpreter suspends on a `:shop` wait; `Scene::Map` drives the
   buy / sell menus (one unit per confirm — the quantity selector is a later
   refinement).
-  The remaining commands (battles, EXP gain / level-up
+  **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
+  instantiate a database enemy group into live members and total its EXP / gold,
+  and the command decodes its troop id, escape / defeat modes and first-strike
+  and routes the `[Victory]` / `[Escape]` / `[Defeat]` handler branches on the
+  outcome (the "end event processing" escape mode abandons the event). The
+  interpreter suspends on a `:battle` wait; the turn-based battle screen is not
+  built, so `Scene::Map` resolves an encounter as an immediate victory granting
+  the troop's EXP and gold — a placeholder until the battle system lands.
+  The remaining commands (the battle system proper, EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;

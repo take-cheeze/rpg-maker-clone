@@ -1297,6 +1297,7 @@ class RPG2k
           when :key_input then drive_key_input
           when :inn then drive_inn
           when :shop then drive_shop
+          when :battle then drive_battle
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -1620,6 +1621,26 @@ class RPG2k
         @shop[:window].dispose if @shop[:window]
         @shop[:gold].dispose if @shop[:gold]
         @shop = nil
+      end
+
+      # -- Enemy Encounter (placeholder battle) -------------------------------
+
+      # Resolve an Enemy Encounter. The turn-based battle screen is not built
+      # yet, so an encounter is treated as an immediate victory: the troop is
+      # instantiated from the database, its EXP is granted to every party member
+      # and its gold to the party, then the [Victory] handler runs. Escape /
+      # defeat outcomes, rewards drops and the battle UI are still to come.
+      def drive_battle
+        req = @interpreter.battle_request
+        return @interpreter.resume_battle(:victory) unless req
+        troop = Game::Troop.new(db, req[:troop_id])
+        exp = troop.total_exp
+        @state.party.actors.each { |a| a.gain_exp(exp) }
+        @state.party.gain_gold(troop.total_gold)
+        @interpreter.resume_battle(:victory)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle placeholder failed: #{e.message}"
+        @interpreter.resume_battle(:victory)
       end
 
       def drive_wait
