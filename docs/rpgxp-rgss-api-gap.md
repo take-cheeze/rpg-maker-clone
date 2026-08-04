@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity rendered; rest stored)
+### 1. `Sprite` extended properties ⚠️ (opacity + zoom rendered; rest stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -45,14 +45,15 @@ stock scripts set — `opacity` (~18), `ox`/`oy`, `zoom_x`/`zoom_y` (~3 each),
 `angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2), `src_rect`
 and `flash` — with RGSS defaults (`mruby-rgss/mrblib/lib.rb`).
 
-**`opacity` is now rendered natively:** `Sprite#opacity=` sets the sprite
-canvas's LVGL object opacity (`src/lib.cxx`), so the compositor multiplies the
-bitmap's alpha by it — fades (`sprite.opacity = n`) now actually fade. Since a
-Sprite's native handle is an `lv_canvas` (an LVGL image subclass), the remaining
-transforms map to LVGL image styles too: **zoom_x/zoom_y** →
-`transform_scale_x/y`, **angle** → `transform_rotation`, **mirror** → negative
-scale; **tone/color/src_rect/bush_depth** need a software pre-composite through
-the existing `bmp_blt`/`bmp_stretch_blt` blend loops. Those are the next slices.
+**`opacity` and `zoom_x`/`zoom_y` are now rendered natively.** A Sprite's native
+handle is an `lv_canvas` (an LVGL image subclass), so: `Sprite#opacity=` sets the
+canvas's LVGL object opacity (the compositor multiplies the bitmap's alpha by it,
+so fades actually fade); `Sprite#zoom_x=`/`zoom_y=` set the image's scale
+(`lv_image_set_scale_x/y`, where 256 = 1.0), so the sprite scales. **Remaining:**
+**angle** → `lv_image_set_rotation` (needs the CCW→CW/0.1° convention and a
+pivot), **mirror** (LVGL image scale is unsigned, so it needs a flip pass), and
+**tone/color/src_rect/bush_depth** → a software pre-composite through the existing
+`bmp_blt`/`bmp_stretch_blt` blend loops. Those are the next slices.
 `Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather and the animation
 player depend on these.
 
