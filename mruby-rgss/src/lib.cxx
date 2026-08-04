@@ -2403,6 +2403,120 @@ mrb_value obj_visible(mrb_state* M, mrb_value self) {
   return mrb_nil_p(v) ? mrb_true_value() : v;
 }
 
+// ---- Plane ----------------------------------------------------------------
+
+// Redraw the plane's canvas: fill it by tiling the source bitmap, wrapping the
+// ox/oy scroll around the bitmap's size. The canvas buffer is a scratch Bitmap
+// (@_plane_canvas) sized to the viewport; bmp_read/bmp_put bridge any source /
+// canvas format difference. The canvas is invalidated directly (its backing
+// buffer is not the sprite @bitmap that Graphics.update's dirty sweep watches).
+void plane_retile(mrb_state* M, mrb_value self) {
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!obj)
+    return;
+  const mrb_value canvas_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_plane_canvas"));
+  if (mrb_nil_p(canvas_v))
+    return;
+  Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
+  const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
+  if (mrb_nil_p(bmp_v)) {
+    std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+    lv_obj_invalidate(obj);
+    return;
+  }
+  Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
+  if (src.width <= 0 || src.height <= 0) {
+    std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+    lv_obj_invalidate(obj);
+    return;
+  }
+  const mrb_int ox =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+  const mrb_int oy =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  for (int y = 0; y < dst.height; ++y) {
+    const int sy =
+        static_cast<int>(((y + oy) % src.height + src.height) % src.height);
+    for (int x = 0; x < dst.width; ++x) {
+      const int sx =
+          static_cast<int>(((x + ox) % src.width + src.width) % src.width);
+      int r, g, b, a;
+      bmp_read(src, sx, sy, r, g, b, a);
+      bmp_put(dst, x, y, r, g, b, a);
+    }
+  }
+  lv_obj_invalidate(obj);
+}
+
+mrb_value plane_init(mrb_state* M, mrb_value self) {
+  mrb_value vp = mrb_nil_value();
+  mrb_get_args(M, "|o", &vp);
+
+  mrb_int w = 0, h = 0;
+  if (mrb_nil_p(vp)) {
+    lv_display_t* d = get_display(M);
+    w = lv_display_get_horizontal_resolution(d);
+    h = lv_display_get_vertical_resolution(d);
+  } else {
+    Rect& r =
+        DataType<Rect>::get(M, mrb_iv_get(M, vp, mrb_intern_lit(M, "@rect")));
+    w = r.width;
+    h = r.height;
+  }
+  if (w <= 0)
+    w = 1;
+  if (h <= 0)
+    h = 1;
+
+  lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
+  wrap_lv_obj(M, self, c);
+  register_zobj(M, self);
+  lv_obj_set_pos(c, 0, 0);
+
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value canvas_v =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& canvas = DataType<Bitmap>::get(M, canvas_v);
+  std::fill(canvas.buffer.begin(), canvas.buffer.end(),
+            static_cast<uint8_t>(0));
+  lv_canvas_set_buffer(c, canvas.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+
+  // Hold the canvas buffer (a Bitmap) and the viewport on the plane so the GC
+  // keeps them alive for its lifetime.
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_plane_canvas"), canvas_v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), mrb_nil_value());
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  return self;
+}
+
+mrb_value plane_set_bmp(mrb_state* M, mrb_value self) {
+  mrb_value bmp;
+  mrb_get_args(M, "o", &bmp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
+  plane_retile(M, self);
+  return bmp;
+}
+
+mrb_value plane_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int ox;
+  mrb_get_args(M, "i", &ox);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(ox));
+  plane_retile(M, self);
+  return self;
+}
+
+mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int oy;
+  mrb_get_args(M, "i", &oy);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
+  plane_retile(M, self);
+  return self;
+}
+
 // ---- Viewport -------------------------------------------------------------
 
 // Build an RGSS::Rect value.
@@ -2776,6 +2890,19 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
+
+  RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
+  MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
+  mrb_define_method(M, plane, "initialize", plane_init, MRB_ARGS_OPT(1));
+  mrb_define_method(M, plane, "bitmap=", plane_set_bmp, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "ox=", plane_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "oy=", plane_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "dispose", obj_dispose, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
