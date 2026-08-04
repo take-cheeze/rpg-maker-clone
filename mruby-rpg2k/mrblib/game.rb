@@ -2801,19 +2801,30 @@ module Game
     # `sp_change_max`, e.g. the database's `situation` table). When given, a
     # battler's afflicted states take effect each turn (slip damage, skip if it
     # cannot act); omitted, states are inert as before.
-    def initialize(allies, enemies, rng = nil, states = nil)
+    # `variance`, when true, applies RPG2000's +/- spread to each basic attack's
+    # damage (a `var` of 4, per EasyRPG's Algo::VarianceAdjustEffect). Off by
+    # default so a seeded fight is exactly reproducible; the live game turns it on.
+    def initialize(allies, enemies, rng = nil, states = nil, variance = false)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
       @states = states
+      @variance = variance
       @rounds = 0
       @result = nil
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
     end
 
-    # State `restriction` value meaning "cannot act" (asleep / paralysed).
-    RESTRICTION_DO_NOTHING = 1
+    # RPG2000 normal-attack damage variance on the 0-10 `var` scale.
+    NORMAL_ATTACK_VARIANCE = 4
+
+    # State `restriction` values (lcf::rpg::State::Restriction): the battler
+    # cannot act (asleep / paralysed), is forced to attack a random enemy
+    # (berserk / provoke), or attacks a random member of its own side (confused).
+    RESTRICTION_DO_NOTHING   = 1
+    RESTRICTION_ATTACK_ENEMY = 2
+    RESTRICTION_ATTACK_ALLY  = 3
 
     # True once one side has been wiped out (the battle is decided).
     def finished?; !alive?(@allies) || !alive?(@enemies); end
@@ -3006,15 +3017,62 @@ module Game
     # has no living target). A defending target takes half damage (min 1). An
     # ally with a queued Skill / Item command resolves that instead.
     def strike(b)
+      # A "forced action" restriction (berserk / confused) overrides the chosen
+      # command / defend with a basic attack on a forced target.
+      r = battler_restriction(b)
+      if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
+        target = restricted_target(b, r)
+        return target ? deal_attack(b, target) : nil
+      end
       return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
       target = attack_target(b)
       return nil unless target
+      deal_attack(b, target)
+    end
+
+    # `b` lands a basic attack on `target`: the base damage (optionally spread by
+    # variance), halved (min 1) if the target defends.
+    def deal_attack(b, target)
       dmg = Battle.attack_damage(b.atk, target.def)
+      dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance
       dmg = [dmg / 2, 1].max if target.defending
       target.hp -= dmg
       { attacker: b.name, target: target.name, damage: dmg,
         target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
+    end
+
+    # Spread `base` by a `var` (0-10) amount: an adjustment of `var*base/10` (min
+    # 1) is centred on the base with a random offset, floored at 1. Port of
+    # EasyRPG's Algo::VarianceAdjustEffect.
+    def varied(base, var)
+      return base unless var > 0 && base > 0
+      adj = var * base / 10
+      adj = 1 if adj < 1
+      d = base + @rng.random(adj + 1) - adj / 2
+      d < 1 ? 1 : d
+    end
+
+    # The most disruptive "forced action" restriction among `b`'s states (0 = act
+    # normally). A "do nothing" state has already skipped the turn upstream, so
+    # only the attack-enemy / attack-ally restrictions matter here; the higher
+    # value (attack-ally) wins when several are present.
+    def battler_restriction(b)
+      r = 0
+      (b.states || []).each do |id|
+        v = state_field(state_def(id), :restriction)
+        r = v if v > r && (v == RESTRICTION_ATTACK_ENEMY || v == RESTRICTION_ATTACK_ALLY)
+      end
+      r
+    end
+
+    # A random living target for a forced attack: an enemy (attack-enemy) or a
+    # member of the battler's own side including itself (attack-ally / confusion).
+    def restricted_target(b, r)
+      own = side_of(b) == :ally ? @allies : @enemies
+      pool = r == RESTRICTION_ATTACK_ALLY ? own : (side_of(b) == :ally ? @enemies : @allies)
+      living = pool.reject(&:dead?)
+      living.empty? ? nil : living[@rng.random(living.size)]
     end
 
     # The living target `b` attacks: an ally uses its chosen target while it
