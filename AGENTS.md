@@ -145,8 +145,14 @@ present:
   - **111** — `SAVE_MAP_EVENT`: field 11 is each map event's live position
     (`SAVE_MOVABLE`) — confirmed because all 21 saved entries match map 12's 21
     defined events by id and sit in-bounds (`lcf_save_check.rb` re-checks this
-    when the map's `.lmu` is beside the save). Two leading int fields (1, 2, the
-    map scroll/pan) stay undecoded pending differential saves.
+    when the map's `.lmu` is beside the save). The two leading int fields (1, 2)
+    are the **camera scroll in 1/16 pixel** — the view's top-left corner, which
+    RPG_RT restores from here rather than deriving it from the hero. Measured
+    against the genuine runtime under wine (ADR 0021): with them absent it draws
+    the map's top-left corner whatever tile the hero is on, and 5120/3840 puts
+    its view at exactly (320, 240). `scripts/gen-rpg2k-save.rb` writes them
+    whenever it moves the party, without which the two runtimes render different
+    parts of the map.
   - **108** — `SAVE_PARTY_ACTOR`, one entry per actor the party has held. Beyond
     the state block, the decoded fields are level (31), exp (32), skills (51/52),
     equipment (61, five item ids `[weapon,shield,armour,helmet,accessory]`) and

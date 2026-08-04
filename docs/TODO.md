@@ -83,6 +83,22 @@ The work below is roughly ordered by the critical path to a walkable game
   harness did through Nepheshel's timed opening.
   `scripts/gen-rpg2k-save.rb` moves the party in that save to any map. See the
   addendum in ADR 0021. Two gaps it uncovered, both still open:
+  - ✅ **An ordinary map now diffs to zero.** Resuming the debug save landed
+    back in the demo's timed cutscene (its choice lives in chunk 113, its
+    backdrop in 103), and moving the party left RPG_RT drawing a different part
+    of the map entirely — it **restores the camera from the save** rather than
+    deriving it from the hero. Chunk 111's two leading ints, previously listed
+    here as undecoded, are that camera in **1/16 pixel** (measured against
+    RPG_RT: 5120/3840 puts its view at exactly (320, 240)).
+    `gen-rpg2k-save.rb` now writes them and grew `--clear-scene` to drop chunks
+    113/103. With both runtimes on the same tile the comparison found two real
+    rendering bugs — CharSet/FaceSet/menu-windowskin graphics loaded without the
+    colour key (a solid pink block over a wall) and lower-layer tile id 0 treated
+    as empty when it is water set 0 (black holes in the sea) — after which the
+    town, interior and open-water frames are **pixel-identical** to RPG_RT.
+    The comparison is only meaningful on a map where nothing moves on its own:
+    roaming events and parallel processes (needle traps, monsters) drift between
+    the runtimes, and no Nepheshel map with events is fully static.
   - ✅ **Shown pictures are restored on load.** Resuming mid-cutscene, RPG_RT
     drew the saved background picture and we drew black. `Game::State` treated
     `@pictures` as transient — true for a HUD re-shown by parallel events, false

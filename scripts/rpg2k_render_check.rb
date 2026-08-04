@@ -51,8 +51,7 @@ end
 
 # -- block classification -----------------------------------------------------
 
-check 'empty and out-of-range ids classify as nil' do
-  eq nil, L.block(0)
+check 'absent and out-of-range ids classify as nil' do
   eq nil, L.block(nil)
   eq nil, L.block(-5)
   eq nil, L.block(5000 + 144)   # one past block E
@@ -61,6 +60,11 @@ check 'empty and out-of-range ids classify as nil' do
 end
 
 check 'ids classify into the six blocks' do
+  # Id 0 is water set 0's plain chip, NOT an empty tile: the genuine RPG_RT
+  # draws deep water for it, and treating it as empty punched black holes in
+  # Nepheshel's sea. Only the upper layer uses 0 to mean "no tile", and that
+  # layer's caller skips it before asking.
+  eq :water,    L.block(0)
   eq :water,    L.block(1)
   eq :water,    L.block(2500)
   eq :animated, L.block(3000)
@@ -73,13 +77,21 @@ check 'ids classify into the six blocks' do
   eq :upper,    L.block(10143)
 end
 
-# -- empty tile draws nothing -------------------------------------------------
+# -- absent tile draws nothing ------------------------------------------------
 
-check 'empty / invalid tiles produce no quads' do
-  eq [], L.quads(0)
+check 'absent / invalid tiles produce no quads' do
   eq [], L.quads(nil)
   eq [], L.quads(5000 + 144)
   eq [], L.quads(10000 + 144)
+end
+
+# Tile 0 is the plain chip of water set 0: four quarters out of block B's first
+# row pair, exactly like every other borderless, cornerless water tile.
+check 'tile 0 draws water set 0' do
+  quads = L.quads(0)
+  eq 4, quads.size
+  assert_quads_valid quads
+  eq L.quads(0), L.water_quads(0, 0)
 end
 
 # -- single-chip blocks (C, E, F) ---------------------------------------------

@@ -457,6 +457,18 @@ module LCF
       d && d.unpack('s<*')
     end
 
+    # Drop a chunk entirely, so #to_lcf omits it rather than writing an empty
+    # one. An absent chunk and a present-but-empty chunk are different files to
+    # the genuine runtime, and only the former means "nothing here": clearing
+    # the running-event continuation (113) by writing empty bytes leaves a
+    # zero-command interpreter state behind, where removing the chunk resumes
+    # with no event running at all. Returns the removed raw bytes, or nil.
+    def delete idx
+      was = @data[idx]
+      @data[idx] = nil
+      was
+    end
+
     # Set the raw bytes of a chunk from a Ruby value, encoding it through the
     # schema type of that field (LCF.encode) so an authored/edited section can
     # be written back out. With no schema attached a raw String is stored as-is.
