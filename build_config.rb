@@ -32,6 +32,7 @@ def rpg_maker_gems(conf)
   conf.gem "#{MRUBY_ROOT}/../../mruby-rgss"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
   conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs"
 end
 
