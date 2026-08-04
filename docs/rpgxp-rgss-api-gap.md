@@ -61,18 +61,20 @@ through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
 scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
 `Arrow_Base`, weather and the animation player depend on these.
 
-### 2. `Window` ⚠️ (stored; native frame/cursor render pending)
+### 2. `Window` ⚠️ (contents rendered; windowskin frame/cursor/pause pending)
 
-`Window` is now a pure-Ruby property holder (`mruby-rgss/mrblib/lib.rb`) with
-RGSS defaults: `windowskin`, `contents` (a `Bitmap` the game creates and draws
-into), `cursor_rect` (a `Rect`), `x`/`y`/`width`/`height`, `ox`/`oy`,
-`opacity`/`back_opacity`/`contents_opacity`, `visible`, `z`, `active`, `pause`,
-`stretch`, `viewport`, `update`, `dispose`/`disposed?`. So every `Window_Base`
-subclass (`Window_Message`, `Window_Command`, `Window_Selectable`, the whole
-menu/shop/battle UI) can construct, configure and draw into its `contents`
-without raising. **Remaining:** the native widget compositing — the frame built
-from the windowskin, the blinking cursor rect, the pause arrow, and blitting the
-scrolled `contents` at `contents_opacity` — is future work.
+`Window` is now **native** (`mruby-rgss/src/lib.cxx`): `Window.new` creates an
+`lv_canvas` the size of the window and `window_refresh` blits the game's
+`contents` `Bitmap` into the content area (inset 16px, scrolled by `ox`/`oy`) at
+`contents_opacity`, so **window text now renders**. `contents=`, `x=`/`y=`,
+`width=`/`height=` (which re-allocate the canvas), `ox=`/`oy=`,
+`contents_opacity=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
+native. So every `Window_Base` subclass (`Window_Message`, `Window_Command`, the
+menu/shop/battle UI) shows its text. **Remaining:** the windowskin compositing —
+the stretched background at `back_opacity`, the 9-slice frame, the blinking
+cursor rect and the pause arrow — is stored (`windowskin`, `cursor_rect`,
+`opacity`, `back_opacity`, `active`, `pause`, `stretch`) but not yet drawn; and
+the content blit does not yet clip contents taller than the window.
 
 ### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
 

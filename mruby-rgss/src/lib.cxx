@@ -2517,6 +2517,160 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// ---- Window ---------------------------------------------------------------
+
+// RGSS insets a window's contents 16px from its frame on every side, so the
+// drawable content area is (width - 32) x (height - 32).
+static const int WINDOW_PADDING = 16;
+
+// (Re)allocate the window's canvas Bitmap to w x h when the size changes and
+// point the lv_canvas at it. Held in @_win_canvas so the GC keeps it alive.
+Bitmap& window_ensure_canvas(mrb_state* M,
+                             mrb_value self,
+                             mrb_int w,
+                             mrb_int h) {
+  if (w < 1)
+    w = 1;
+  if (h < 1)
+    h = 1;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
+  if (!mrb_nil_p(cur)) {
+    Bitmap& c = DataType<Bitmap>::get(M, cur);
+    if (c.width == w && c.height == h)
+      return c;
+  }
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value cv =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& c = DataType<Bitmap>::get(M, cv);
+  lv_canvas_set_buffer(obj, c.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+  lv_obj_set_size(obj, w, h);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_canvas"), cv);
+  return c;
+}
+
+// Repaint the window canvas: clear it, then blit the contents bitmap into the
+// content area (inset by WINDOW_PADDING, scrolled by ox/oy) at
+// contents_opacity. The windowskin background/frame and the cursor/pause
+// overlays are not drawn yet (tracked in docs/rpgxp-rgss-api-gap.md).
+void window_refresh(mrb_state* M, mrb_value self) {
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!obj)
+    return;
+  const mrb_int w =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@width")));
+  const mrb_int h =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@height")));
+  Bitmap& dst = window_ensure_canvas(M, self, w, h);
+  std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+
+  const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
+  if (!mrb_nil_p(cont)) {
+    Bitmap& src = DataType<Bitmap>::get(M, cont);
+    mrb_int op = mrb_as_int(
+        M, mrb_iv_get(M, self, mrb_intern_lit(M, "@contents_opacity")));
+    if (op < 0)
+      op = 0;
+    else if (op > 255)
+      op = 255;
+    const mrb_int ox =
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+    const mrb_int oy =
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+    const mrb_int cw = w - 2 * WINDOW_PADDING;
+    const mrb_int ch = h - 2 * WINDOW_PADDING;
+    for (mrb_int j = 0; j < ch; ++j) {
+      const mrb_int sy = oy + j;
+      const mrb_int dy = WINDOW_PADDING + j;
+      if (sy < 0 || sy >= src.height || dy < 0 || dy >= dst.height)
+        continue;
+      for (mrb_int i = 0; i < cw; ++i) {
+        const mrb_int sx = ox + i;
+        const mrb_int dx = WINDOW_PADDING + i;
+        if (sx < 0 || sx >= src.width || dx < 0 || dx >= dst.width)
+          continue;
+        int r, g, b, a;
+        bmp_read(src, sx, sy, r, g, b, a);
+        const int alpha = a * static_cast<int>(op) / 255;
+        if (alpha <= 0)
+          continue;
+        bmp_put(dst, dx, dy, r, g, b, alpha);
+      }
+    }
+  }
+  lv_obj_invalidate(obj);
+}
+
+mrb_value window_init(mrb_state* M, mrb_value self) {
+  mrb_value vp = mrb_nil_value();
+  mrb_get_args(M, "|o", &vp);
+  lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
+  wrap_lv_obj(M, self, c);
+  register_zobj(M, self);
+  lv_obj_set_pos(c, 0, 0);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), mrb_nil_value());
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
+             mrb_fixnum_value(255));
+  window_ensure_canvas(M, self, 1, 1);
+  return self;
+}
+
+mrb_value window_set_contents(mrb_state* M, mrb_value self) {
+  mrb_value bmp;
+  mrb_get_args(M, "o", &bmp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), bmp);
+  window_refresh(M, self);
+  return bmp;
+}
+
+mrb_value window_set_width(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_height(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_contents_opacity(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
+             mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
 // ---- Viewport -------------------------------------------------------------
 
 // Build an RGSS::Rect value.
@@ -2903,6 +3057,25 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
+
+  RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
+  MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
+  mrb_define_method(M, window, "initialize", window_init, MRB_ARGS_OPT(1));
+  mrb_define_method(M, window, "contents=", window_set_contents,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "x=", obj_set_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "y=", obj_set_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "width=", window_set_width, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "height=", window_set_height, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "ox=", window_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "oy=", window_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "contents_opacity=", window_set_contents_opacity,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "dispose", obj_dispose, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
