@@ -243,13 +243,16 @@ The work below is roughly ordered by the critical path to a walkable game
   for now, and `Scene::Map` traces the fight to the console from the log.
   Encounters now open a **battle screen** (driven by `Scene::Map` during the
   `:battle` wait, like the shop / inn): a status panel of the troop and each
-  party member's HP over a **Fight / Flee** command menu. Fight resolves the
-  battle and shows the result (`Victory!` with EXP / gold, or defeat); Flee
-  escapes when allowed; dismissing the result resumes the event and routes the
-  `[Victory]` / `[Escape]` / `[Defeat]` branch. Still to come: skills / items /
-  criticals / attributes / variance in the sim, the per-actor command menu
-  (Attack / Skill / Item / Defend + targeting) and per-turn animation from the
-  log, enemy / battler sprites, and game over on defeat.
+  party member's HP, and **per-actor commands each round** — for every living
+  member the player picks **Attack** (choosing a target) or **Defend** (half
+  damage, no attack that round), then the round executes in agility order,
+  repeating until a side falls. Cancelling on the first actor flees when escape
+  is allowed. `Game::Battle` has the round-based API (`command_attack` /
+  `command_defend` / `run_round`) alongside the headless `run`. Dismissing the
+  result resumes the event and routes the `[Victory]` / `[Escape]` / `[Defeat]`
+  branch. Still to come: Skill / Item commands, criticals / attributes / variance
+  in the sim, per-turn animation from the log, enemy / battler sprites, and game
+  over on defeat.
   The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the

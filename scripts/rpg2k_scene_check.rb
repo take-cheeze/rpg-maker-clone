@@ -1292,60 +1292,67 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
   ok st.switches[2], 'the No Transaction branch ran'
 end
 
-check 'Enemy Encounter scene: winning the battle grants rewards, runs Victory' do
-  ic = Game::Interpreter::Cmd
-  auto = page(trigger: 3)
-  auto.event_commands = [
-    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 1, 0], indent: 0), # troop 1
+# Battle command / result command lists for the encounter tests below.
+def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil)
+  handler2 = second_switch_code || ic::ESCAPE_HANDLER
+  [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, escape_mode, 1, 0], indent: 0),
     ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
-    ECmd.new(ic::ESCAPE_HANDLER, [], indent: 0),
-    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(handler2, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, (handler2 == ic::DEFEAT_HANDLER ? 3 : 2),
+                                    (handler2 == ic::DEFEAT_HANDLER ? 3 : 2), 0], indent: 1),
     ECmd.new(ic::END_BATTLE, [], indent: 0)
   ]
+end
+
+# Drive a battle by having each living actor Attack the first enemy every round
+# until the result window appears (command / target cursors start on Attack /
+# the first target).
+def battle_attack_to_end(scene, max = 100)
+  max.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :result
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target].include?(ui[:phase])
+    scene.update # a nil ui just means the battle is still opening
+    RGSS::Input.triggered = []
+  end
+end
+
+check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Victory' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  3.times { scene.update } # the battle UI opens on the Fight command menu
-  eq 0, st.party.gold, 'no rewards until the fight is resolved'
-  RGSS::Input.triggered = [RGSS::Input::C] # choose Fight
-  scene.update
-  RGSS::Input.triggered = []
-  scene.update # battle resolves (strong party wins); rewards + result window
+  scene.update # opens the per-actor command menu (Attack / Defend)
+  eq 0, st.party.gold, 'no rewards mid-battle'
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
   eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
   eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
   ok !st.switches[1], 'showing the Victory result'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss result
   scene.update
   RGSS::Input.triggered = []
-  3.times { scene.update } # interpreter resumes -> runs the Victory handler
-  ok st.switches[1], 'the Victory handler ran after the result was dismissed'
+  3.times { scene.update }
+  ok st.switches[1], 'the Victory handler ran'
   ok !st.switches[2], 'the Escape handler was skipped'
 end
 
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
-  auto.event_commands = [
-    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 1, 0], indent: 0),
-    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
-    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
-    ECmd.new(ic::DEFEAT_HANDLER, [], indent: 0),
-    ECmd.new(ic::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 1),
-    ECmd.new(ic::END_BATTLE, [], indent: 0)
-  ]
+  auto.event_commands = battle_event_commands(ic, second_switch_code: ic::DEFEAT_HANDLER)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   # A frail hero the two Slimes overwhelm.
   st.instance_variable_set(:@party,
                            BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
-  3.times { scene.update } # command menu opens
-  RGSS::Input.triggered = [RGSS::Input::C] # Fight
   scene.update
-  RGSS::Input.triggered = []
-  scene.update # the party loses; defeat result window opens
-  ok !st.switches[1] && !st.switches[3], 'result window is up'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss
+  battle_attack_to_end(scene)
+  ok !st.switches[1] && !st.switches[3], 'defeat result window is up'
+  RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
   3.times { scene.update }
@@ -1355,26 +1362,15 @@ check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   ok st.switches[3], 'the Defeat handler ran'
 end
 
-check 'Enemy Encounter scene: Flee escapes when allowed, runs Escape' do
+check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
-  auto.event_commands = [
-    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 2, 1, 0], indent: 0), # escape mode 2 (custom)
-    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
-    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
-    ECmd.new(ic::ESCAPE_HANDLER, [], indent: 0),
-    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
-    ECmd.new(ic::END_BATTLE, [], indent: 0)
-  ]
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2) # custom escape handler
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  3.times { scene.update } # command menu offers Fight / Flee
-  RGSS::Input.triggered = [RGSS::Input::DOWN] # cursor to Flee
-  scene.update
-  RGSS::Input.triggered = []
-  scene.update
-  RGSS::Input.triggered = [RGSS::Input::C] # Flee -> escape
+  2.times { scene.update } # the encounter runs, then the command menu opens
+  RGSS::Input.triggered = [RGSS::Input::B] # Flee (cancel on the first actor)
   scene.update
   RGSS::Input.triggered = []
   3.times { scene.update } # interpreter resumes -> Escape handler
