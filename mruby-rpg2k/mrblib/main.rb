@@ -1723,6 +1723,13 @@ class RPG2k
       # when allowed. Dismissing the result resumes the interpreter with the
       # outcome. The per-turn animation (stepping Game::Battle#log on screen) is a
       # later stage; for now Fight resolves the fight at once.
+      # Drive the turn-based battle screen the map shows during a :battle wait.
+      # Each round the player commands every living party member (Attack a chosen
+      # enemy, or Defend), then the round executes (party actions + enemy attacks,
+      # in agility order); this repeats until a side falls. B on the first actor
+      # flees when the encounter allows it. The per-turn animation of the round is
+      # still to come — for now the round applies at once and the status HP
+      # updates. Dismissing the result resumes the event with the outcome.
       def drive_battle
         req = @interpreter.battle_request
         return @interpreter.resume_battle(:victory) unless req
@@ -1730,7 +1737,11 @@ class RPG2k
           open_battle(req) # opened this frame; take input from the next one
           return
         end
-        @battle_ui[:phase] == :command ? drive_battle_command : drive_battle_result
+        case @battle_ui[:phase]
+        when :command then drive_battle_command
+        when :target  then drive_battle_target
+        when :result  then drive_battle_result
+        end
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
         close_battle
@@ -1741,37 +1752,99 @@ class RPG2k
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
-        commands = ['Fight']
-        commands << 'Flee' if req[:allow_escape]
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000)),
-                       allies: allies, foes: foes, commands: commands, cmd: 0,
-                       status_win: build_battle_status(allies, foes),
-                       cmd_win: nil, result_win: nil, result: nil }
+                       allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
+                       status_win: nil, cmd_win: nil, target_win: nil,
+                       result_win: nil, result: nil }
+        refresh_battle_status
         draw_battle_command
       end
 
+      def living_allies; @battle_ui[:allies].reject(&:dead?); end
+      def living_foes;   @battle_ui[:foes].reject(&:dead?);   end
+      def current_actor; living_allies[@battle_ui[:actor_i]]; end
+
+      # Per-actor command menu: Attack (pick a target) or Defend.
       def drive_battle_command
-        cmds = @battle_ui[:commands]
-        if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < cmds.length - 1
+        if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < 1
           @battle_ui[:cmd] += 1
           draw_battle_command
         elsif Input.trigger?(Input::UP) && @battle_ui[:cmd] > 0
           @battle_ui[:cmd] -= 1
           draw_battle_command
         elsif Input.trigger?(Input::C)
-          cmds[@battle_ui[:cmd]] == 'Flee' ? finish_battle(:escape) : battle_fight
+          if @battle_ui[:cmd].zero?
+            @battle_ui[:target_i] = 0
+            @battle_ui[:phase] = :target
+            draw_battle_target
+          else
+            @battle_ui[:battle].command_defend(current_actor)
+            advance_actor
+          end
+        elsif Input.trigger?(Input::B)
+          if @battle_ui[:actor_i].zero?
+            finish_battle(:escape) if @battle_ui[:req][:allow_escape]
+          else
+            @battle_ui[:actor_i] -= 1 # re-command the previous member
+            @battle_ui[:cmd] = 0
+            draw_battle_command
+          end
         end
       end
 
-      # Resolve the fight, grant rewards on a win, and switch to the result
-      # window (the status / command windows come down).
-      def battle_fight
+      # Target-selection menu: pick which living enemy the current actor attacks.
+      def drive_battle_target
+        foes = living_foes
+        if Input.trigger?(Input::DOWN) && @battle_ui[:target_i] < foes.length - 1
+          @battle_ui[:target_i] += 1
+          draw_battle_target
+        elsif Input.trigger?(Input::UP) && @battle_ui[:target_i] > 0
+          @battle_ui[:target_i] -= 1
+          draw_battle_target
+        elsif Input.trigger?(Input::C)
+          @battle_ui[:battle].command_attack(current_actor, foes[@battle_ui[:target_i]])
+          close_battle_target
+          @battle_ui[:phase] = :command
+          advance_actor
+        elsif Input.trigger?(Input::B)
+          close_battle_target
+          @battle_ui[:phase] = :command
+          draw_battle_command
+        end
+      end
+
+      # Move to the next living party member, or execute the round once every
+      # member has a command.
+      def advance_actor
+        @battle_ui[:actor_i] += 1
+        @battle_ui[:cmd] = 0
+        if @battle_ui[:actor_i] >= living_allies.length
+          execute_round
+        else
+          draw_battle_command
+        end
+      end
+
+      # Run one round, refresh the HP display, and either show the result or open
+      # the next command phase.
+      def execute_round
         battle = @battle_ui[:battle]
-        result = battle.run
-        log_battle(battle, result)
-        lines = battle_result_lines(result, @battle_ui[:troop])
+        log_round(battle.run_round)
+        refresh_battle_status
+        if battle.finished?
+          enter_battle_result(battle.result)
+        else
+          @battle_ui[:actor_i] = 0
+          @battle_ui[:cmd] = 0
+          @battle_ui[:phase] = :command
+          draw_battle_command
+        end
+      end
+
+      def enter_battle_result(result)
         @battle_ui[:result] = result
+        lines = battle_result_lines(result, @battle_ui[:troop])
         [@battle_ui[:status_win], @battle_ui[:cmd_win]].each { |w| w.dispose if w }
         @battle_ui[:status_win] = nil
         @battle_ui[:cmd_win] = nil
@@ -1787,6 +1860,14 @@ class RPG2k
       def finish_battle(result)
         close_battle
         @interpreter.resume_battle(result)
+      end
+
+      def log_round(entries)
+        entries.each do |e|
+          line = "#{e[:attacker]} hits #{e[:target]} for #{e[:damage]}"
+          line += " — defeated!" if e[:defeated]
+          $stderr.puts "[RPG2k battle] #{line}"
+        end
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained
@@ -1806,33 +1887,69 @@ class RPG2k
 
       BATTLE_LINE_H = 14
 
-      # A full-width panel near the top listing the enemy troop, then each party
-      # member with their HP — the battle's status display.
-      def build_battle_status(allies, foes)
-        lines = foes.map(&:name)
-        lines += allies.map { |a| "#{a.name}  HP #{a.hp}/#{a.max_hp}" }
-        battle_text_window(lines, 6, 300)
+      # Rebuild the status panel near the top: the enemy troop (marked down when
+      # defeated), then each party member with their HP.
+      def refresh_battle_status
+        @battle_ui[:status_win].dispose if @battle_ui[:status_win]
+        lines = @battle_ui[:foes].map { |e| e.dead? ? "#{e.name} (down)" : e.name }
+        lines += @battle_ui[:allies].map do |a|
+          "#{a.name}  HP #{a.hp < 0 ? 0 : a.hp}/#{a.max_hp}"
+        end
+        @battle_ui[:status_win] = battle_text_window(lines, 6, 300)
       end
 
-      # The Fight / Flee command menu, a small panel at the bottom with a cursor.
+      # The current actor's command menu — their name as a header, then Attack /
+      # Defend with a cursor.
       def draw_battle_command
-        cmds = @battle_ui[:commands]
+        actor = current_actor
+        return unless actor
         @battle_ui[:cmd_win].dispose if @battle_ui[:cmd_win]
-        w = 88
-        inner_h = cmds.length * BATTLE_LINE_H
+        labels = [actor.name, 'Attack', 'Defend']
+        w = 96
+        inner_h = labels.length * BATTLE_LINE_H
         win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
                          w, inner_h + Window::BORDER * 2)
         win.z = 320
         win.windowskin = @windowskin
         c = Bitmap.new(w - Window::BORDER * 2, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
-        cmds.each_with_index do |label, i|
+        labels.each_with_index do |label, i|
           c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, label
         end
         win.contents = c
+        # The cursor sits over Attack / Defend (rows 1 and 2, below the name).
         win.cursor_rect =
-          Rect.new(0, @battle_ui[:cmd] * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
+          Rect.new(0, (1 + @battle_ui[:cmd]) * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
         @battle_ui[:cmd_win] = win
+      end
+
+      # The target-selection menu — the living enemies, with a cursor.
+      def draw_battle_target
+        foes = living_foes
+        @battle_ui[:target_win].dispose if @battle_ui[:target_win]
+        w = 120
+        inner_h = [foes.length, 1].max * BATTLE_LINE_H
+        win = Window.new(SCREEN_W - w - 10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         w, inner_h + Window::BORDER * 2)
+        win.z = 330
+        win.windowskin = @windowskin
+        c = Bitmap.new(w - Window::BORDER * 2, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        foes.each_with_index do |e, i|
+          c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, e.name
+        end
+        win.contents = c
+        unless foes.empty?
+          win.cursor_rect =
+            Rect.new(0, @battle_ui[:target_i] * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
+        end
+        @battle_ui[:target_win] = win
+      end
+
+      def close_battle_target
+        return unless @battle_ui[:target_win]
+        @battle_ui[:target_win].dispose
+        @battle_ui[:target_win] = nil
       end
 
       def open_battle_result(lines)
@@ -1860,19 +1977,8 @@ class RPG2k
       def close_battle
         return unless @battle_ui
         [@battle_ui[:status_win], @battle_ui[:cmd_win],
-         @battle_ui[:result_win]].each { |w| w.dispose if w }
+         @battle_ui[:target_win], @battle_ui[:result_win]].each { |w| w.dispose if w }
         @battle_ui = nil
-      end
-
-      # Trace a resolved battle blow-by-blow to the console — a stand-in for the
-      # on-screen battle log until the battle screen exists.
-      def log_battle(battle, result)
-        battle.log.each do |e|
-          line = "#{e[:attacker]} hits #{e[:target]} for #{e[:damage]}"
-          line += " — defeated!" if e[:defeated]
-          $stderr.puts "[RPG2k battle] #{line}"
-        end
-        $stderr.puts "[RPG2k battle] #{result}"
       end
 
       def drive_wait

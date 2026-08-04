@@ -3060,6 +3060,28 @@ check 'Battle#run records a combat log of every hit' do
   ok b.log.all? { |e| e[:damage] >= 1 }, 'every hit did at least 1 damage'
 end
 
+check 'Battle: a commanded attack hits the chosen enemy; run_round clears it' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  a = combatant('A', 0, 0, 5, 100) # harmless, slow enemies
+  b = combatant('B', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [a, b], Game::Rng.new(1))
+  bat.command_attack(hero, b) # target B specifically
+  bat.run_round
+  eq 100, a.hp, 'A was not the chosen target'
+  eq 80, b.hp, 'B took 20 damage (40/2 - 0/4)'
+  eq nil, hero.action, 'the command is cleared for the next round'
+end
+
+check 'Battle: a defending ally takes half damage and does not attack' do
+  hero = combatant('Hero', 40, 0, 1, 100) # slow, so the foe acts first
+  foe = combatant('Foe', 40, 0, 20, 100)  # 40/2 = 20 damage, halved to 10
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.command_defend(hero)
+  bat.run_round
+  eq 100, foe.hp, 'the defending hero did not strike back'
+  eq 90, hero.hp, 'took half of 20 = 10'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

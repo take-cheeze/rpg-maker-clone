@@ -2495,7 +2495,11 @@ module Game
   class Battle
     # A battler reduced to what the fight needs. Snapshotting Game::Actor /
     # Game::Enemy keeps the real party untouched by a resolved battle.
-    Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp) do
+    # `action` is the ally's chosen attack target for the round (nil = none /
+    # auto), `defending` halves damage taken that round; both are cleared each
+    # round. Enemies leave them nil and attack a random party member.
+    Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
+                           :action, :defending) do
       def dead?; hp <= 0; end
     end
 
@@ -2549,6 +2553,32 @@ module Game
       @result = alive?(@allies) ? :victory : :defeat
     end
 
+    # Assign an ally's action for the coming round: attack `target`, or defend
+    # (take half damage and not attack). Player-driven battles command each ally
+    # before running the round; enemies choose their own action.
+    def command_attack(ally, target); ally.action = target; ally.defending = false; end
+    def command_defend(ally); ally.action = nil; ally.defending = true; end
+
+    # Execute one full round — living battlers act in agility order, allies using
+    # their assigned action, enemies attacking a random party member — and return
+    # the round's log entries. Ally commands are cleared afterwards for the next
+    # round. `finished?` / `result` report the outcome once a side is wiped.
+    def run_round
+      entries = []
+      refill_queue
+      until @queue.empty? || finished?
+        b = @queue.shift
+        next if b.dead?
+        entry = strike(b)
+        next unless entry
+        @log << entry
+        entries << entry
+      end
+      @allies.each { |a| a.action = nil; a.defending = false }
+      @result = alive?(@allies) ? :victory : :defeat if finished?
+      entries
+    end
+
     private
 
     def alive?(side); side.any? { |b| !b.dead? }; end
@@ -2564,16 +2594,28 @@ module Game
                           .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
     end
 
-    # `b` attacks a random living member of the opposing side, returning a log
-    # entry (or nil when its side has no living target left).
+    # `b` attacks its target, returning a log entry (or nil when it defends or
+    # has no living target). A defending target takes half damage (min 1).
     def strike(b)
-      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:dead?)
-      return nil if foes.empty?
-      target = foes[@rng.random(foes.size)]
+      return nil if side_of(b) == :ally && b.defending # defending = no attack
+      target = attack_target(b)
+      return nil unless target
       dmg = Battle.attack_damage(b.atk, target.def)
+      dmg = [dmg / 2, 1].max if target.defending
       target.hp -= dmg
       { attacker: b.name, target: target.name, damage: dmg,
         target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
+    end
+
+    # The living target `b` attacks: an ally uses its chosen target while it
+    # lives, otherwise a random living foe; enemies always pick a random party
+    # member.
+    def attack_target(b)
+      if side_of(b) == :ally && b.action && !b.action.dead?
+        return b.action
+      end
+      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:dead?)
+      foes.empty? ? nil : foes[@rng.random(foes.size)]
     end
 
     def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
