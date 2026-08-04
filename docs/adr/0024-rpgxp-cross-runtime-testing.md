@@ -51,13 +51,17 @@ marker so the three checks assert the same thing.
   build's gem set).
 - **Native: `scripts/rpgxp_boot_check.bash`.** Boots the built binary on the XP
   test bed under Xvfb and fails unless `[RPGXP-MAP]` shows up. This is the guard
-  against mruby/CRuby divergence in the XP runtime, and it runs in CI.
+  against mruby/CRuby divergence in the XP runtime, and it runs in CI as a
+  blocking check.
 - **Browser: `scripts/rpgxp_browser_check.py`.** Serves the built page, hands it
   a zip of the XP project through the shell's own loader, presses the decision
   key, and asserts: the runtime initialises, the project mounts, the game starts
   and the loader panel goes away, the display is XP-sized, `[RPGXP-MAP]` appears,
   arrow keys change the frame, the canvas is not blank, and nothing in the page
   log looks like an mruby exception. Screenshots of every step are written out.
+  It runs in the `wasm` CI job, uploading those frames — non-blocking at first,
+  the way the MV/MZ smokes were staged, since it is the repo's first check to
+  drive a real browser and a flake would block the page deployment.
 - **Reference: `scripts/compare-rpgxp-wine.bash`.** Boots the project's own
   `Game.exe`/`RGSS104E.dll` under wine and our engine on two Xvfb displays at
   640x480, feeds both the same key script, and writes per-step ref/ours/diff/cmp
@@ -111,6 +115,11 @@ browser build has, both now fixed here:
   (`RGSS_SCRIPT_HOST`, ADR 0017/0023) in the page is the natural next step for it
   — the frame driver added in ADR 0023 was written for the browser but has never
   been verified there.
+- The browser check loads an *unpacked* project. A packed release (`Game.ini` +
+  `Game.rgssad`, no loose `Data/`) is the shape most XP games ship in and takes a
+  different path through both the shell's loader and `RGSSData`; packing the test
+  bed into one (as `rpgxp_testbed_check.rb` already does) and loading that too is
+  the obvious next case.
 - The page has no way to pass engine flags, so the browser check reaches the map
   by pressing keys rather than with `--rpgxp_new_game`. That is the more faithful
   test (it exercises DOM input), but it means a title-screen regression and an

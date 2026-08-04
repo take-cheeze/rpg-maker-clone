@@ -69,6 +69,11 @@
                 ninja
                 nixfmt
                 pre-commit
+                # Python is used by the repo's tooling scripts (the MV
+                # corescript build, scripts/serve.py and the browser check).
+                # It has been reaching them transitively through other inputs;
+                # name it so a required CI step cannot lose it.
+                python3
                 ruby
                 sccache
                 unar

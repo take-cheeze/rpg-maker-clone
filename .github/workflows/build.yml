@@ -557,7 +557,13 @@ jobs:
       - name: Wait for the RPG XP test bed
         wait: [xp-testbed]
 
+      # Non-blocking on its first outings, the way the MV/MZ smokes were staged:
+      # this is the first check in the repo that drives a real browser, and a
+      # flake here would block the page deployment. The same runtime logic is
+      # covered blockingly by the native boot smoke in the `build` job; what is
+      # only covered here is the browser itself.
       - name: RPG XP browser smoke test
+        continue-on-error: true
         run: nix develop -c python3 scripts/rpgxp_browser_check.py
 
       - name: Upload RPG XP browser frames

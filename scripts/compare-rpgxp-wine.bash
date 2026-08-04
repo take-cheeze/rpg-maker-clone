@@ -203,6 +203,17 @@ for step in "${STEPS[@]}" ; do
         "${OUT_DIR}/rpgxp-diff-${label}.png"
     convert "${ref}" "${our}" "${OUT_DIR}/rpgxp-diff-${label}.png" \
         +append "${OUT_DIR}/rpgxp-cmp-${label}.png"
+    # A reference frame with almost no colours means the genuine runtime did not
+    # render at all (no GL, a missing RTP asset behind an error dialog, a window
+    # that never got focus). Say so, or the pixel counts below read as a huge
+    # regression in *our* renderer.
+    ref_colours=$(convert "${ref}" -format %k info:)
+    if [ "${ref_colours}" -le 2 ] ; then
+        echo "warning: the reference frame for '${label}' has ${ref_colours}" \
+             "colour(s) -- the genuine runtime probably rendered nothing;" \
+             "check /tmp/rpgxp-ref-player.log" >&2
+    fi
+
     total=$(identify -format '%[fx:w*h]' "${ref}")
     differing=$(compare -metric AE -fuzz "${DIFF_FUZZ:-3%}" "${ref}" "${our}" \
         null: 2>&1 || true)
