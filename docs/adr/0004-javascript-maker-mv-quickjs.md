@@ -145,6 +145,37 @@ JavaScript loads and interprets the JSON.
     instead.
   - **M6.3 — WebGL rendering.** The WebGL-subset backend behind PIXI v5, the
     bulk of the work — MZ dropped the Canvas2D renderer the MV bridge targets.
+    The renderer is **OSMesa** (Mesa's off-screen software rasteriser) driving
+    the **GLES2** entry points, wrapped as WebGL. OSMesa renders into a CPU RGBA
+    buffer with no GPU or display — the same software model as the LVGL/Canvas2D
+    paths — so it works identically in the SDL window, the terminals and headless
+    CI. GLES2 is the right target because PIXI v5's WebGL1 shaders are GLSL ES
+    1.00, which Mesa's compiler accepts verbatim: **no shader-translation layer
+    is needed** (contrast ANGLE, which targets a native GPU API and would need
+    SwiftShader underneath to run GPU-less — heavier, for no fidelity gain on a
+    software target).
+    - **M6.3a — GL foundation (landed).** `mruby-mvjs/src/mvgl.cxx` creates an
+      OSMesa GLES2 context bound to an RGBA buffer, exposed to Ruby as `MV::GL`.
+      A self-test (`MV::GL.smoke_test`) compiles the PIXI-style ES 1.00 shaders,
+      draws and reads a pixel back, pinned by `mruby-mvjs/test/gl_test.rb` — the
+      one part of M6.3 that can be exercised without the proprietary MZ engine.
+      The backend is **build-optional**: `mvgl.cxx` compiles to inert stubs (an
+      `__has_include` guard) and `MV::GL.available?` reports false where OSMesa
+      is absent, so the CMake link and the gem test only pick it up where the
+      libraries exist. It is present and verified on the apt-based dev build
+      (`libosmesa6-dev`/`libgles2-mesa-dev`). **nixpkgs 26.05 no longer ships
+      `libOSMesa` as a plain package** (mesa dropped the osmesa frontend; there
+      is no top-level `osmesa`), so the nix/CI build stubs it out and the smoke
+      test skips there for now — packaging OSMesa for nix (a `mesa` override with
+      `-Dosmesa=true`, or a dedicated derivation) so the test also runs in CI is
+      an explicit follow-up. The Emscripten build likewise stubs it (it renders
+      MZ through the browser's own WebGL).
+    - **M6.3b — WebGL wrapper.** Map the `WebGLRenderingContext` surface PIXI
+      uses onto the GLES2 natives, have `getContext("webgl")` return it (instead
+      of `null`, see below) and `Utils.canUseWebGL()` become true.
+    - **M6.3c — PIXI v5 boots to a frame.** Fill the gaps PIXI exercises (VAO
+      emulation, texture params, FBOs, uniform introspection) until `MZ#boot_probe`
+      renders `Scene_Boot`, verified against a user-supplied MZ project.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

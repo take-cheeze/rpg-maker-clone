@@ -75,6 +75,23 @@ set(BUILD_TESTING OFF)
 add_subdirectory(3rd/quickjs EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
+# OSMesa (off-screen software Mesa) + GLES2 back the RPG Maker MZ WebGL renderer
+# (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3). OSMesa renders into a CPU RGBA
+# buffer with no GPU or display, matching the software LVGL pipeline. This is
+# optional: where the libraries are absent (Emscripten uses the browser's WebGL;
+# the nix build until OSMesa is packaged) mvgl.cxx compiles to inert stubs (its
+# __has_include guard), so we only link them when found rather than REQUIRE
+# them.
+if(NOT EMSCRIPTEN)
+  find_library(OSMESA_LIB OSMesa)
+  find_library(GLESV2_LIB GLESv2)
+endif()
+if(OSMESA_LIB AND GLESV2_LIB)
+  set(GL_LIBS ${OSMESA_LIB} ${GLESV2_LIB})
+else()
+  set(GL_LIBS "")
+endif()
+
 set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
 add_library(mruby STATIC IMPORTED)
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
@@ -207,7 +224,8 @@ target_link_libraries(
   ${SDL2_MIXER_LIB}
   gflags
   uni-algo::uni-algo
-  qjs)
+  qjs
+  ${GL_LIBS})
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
 
