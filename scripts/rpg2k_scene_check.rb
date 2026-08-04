@@ -1104,6 +1104,24 @@ check 'Pan Screen locks the camera and holds the interpreter while scrolling' do
   ok st.switches[1], 'the interpreter resumed after the pan'
 end
 
+check 'Erase Screen pauses the event until the fade settles, then continues' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ERASE_SCREEN, [0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  scene.update # runs Erase Screen -> suspends on :screen
+  ok !st.switches[5], 'the event pauses while the screen fades'
+  ok st.screen.fading?, 'the fade is in progress'
+  40.times { scene.update } # the scene advances Game::Screen each frame
+  eq 255, st.screen.fade_level, 'the screen is fully erased'
+  ok st.screen.erased?, 'held erased'
+  ok st.switches[5], 'the event resumed after the fade settled'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

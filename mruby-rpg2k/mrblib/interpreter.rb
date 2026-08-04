@@ -62,6 +62,8 @@ module Game
       ERASE_EVENT      = 12320
       CALL_EVENT       = 12330
       TELEPORT         = 10810
+      ERASE_SCREEN     = 11010
+      SHOW_SCREEN      = 11020
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
@@ -407,6 +409,8 @@ module Game
       when Cmd::TRADE_EVENT_LOCATIONS then do_trade_event_locations cmd
       when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
       when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
+      when Cmd::ERASE_SCREEN     then do_erase_screen cmd
+      when Cmd::SHOW_SCREEN      then do_show_screen cmd
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
@@ -1148,6 +1152,33 @@ module Game
     # Frames per tenth of a second at RPG2000's fixed 60 fps, for turning a
     # screen effect's 0.1s-unit duration into a frame count.
     FRAMES_PER_TENTH = 6
+
+    # Fixed length of an Erase / Show Screen transition. RPG_RT runs these for a
+    # set per-style duration rather than an event-supplied one; this approximates
+    # the common fade at ~0.5s.
+    SCREEN_FADE_FRAMES = 32
+
+    # Erase Screen (11010) / Show Screen (11020): fade the whole screen out to
+    # black or back in over a fixed duration, using the transition style in
+    # param0 (0 = fade; higher = block / stripe / scroll variants, of which only
+    # the fade is modelled). Both always run their transition and pause the event
+    # until it settles — the owning scene advances Game::Screen each frame and
+    # resumes us on the :screen wait. Only the fade *level* is modelled; drawing
+    # the black overlay is the native refinement still pending for the tint and
+    # flash overlays too.
+    def do_erase_screen(cmd)
+      @state.screen.erase(cmd.param(0), SCREEN_FADE_FRAMES)
+      return unless @state.screen.fading?
+      @wait_kind = :screen
+      @waiting = true
+    end
+
+    def do_show_screen(cmd)
+      @state.screen.show(cmd.param(0), SCREEN_FADE_FRAMES)
+      return unless @state.screen.fading?
+      @wait_kind = :screen
+      @waiting = true
+    end
 
     # Tint Screen: transition the shared screen tint to the RPG2000 channels
     # param0..3 (red / green / blue / saturation, each 0..200) over param4 tenths

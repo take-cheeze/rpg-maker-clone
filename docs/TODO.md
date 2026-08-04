@@ -128,7 +128,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
   Change Encounter Rate, Change System BGM / SFX, Show Inn,
-  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
+  Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
+  Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
@@ -249,10 +250,15 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
-  the view holds where locking began). All four share the `:screen` wait. **Show
-  Picture** now renders (see the interpreter bullet above). Transitions/fade and
-  weather remain, and the tint/flash still need `RGSS::Viewport` tone/alpha
-  support in C++ to show
+  the view holds where locking began). **Erase Screen** (11010) / **Show Screen**
+  (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) that
+  eases like the tint over a fixed transition and is held erased until a Show,
+  recording the requested transition style (fade / block / stripe / scroll) for
+  fidelity while modelling only the fade. All share the `:screen` wait, so event
+  timing around them is correct. **Show Picture** now renders (see the
+  interpreter bullet above). Weather remains, and the tint / flash / screen-fade
+  overlays still need `RGSS::Viewport` tone/alpha support in C++ to actually
+  darken or colour what is drawn
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
