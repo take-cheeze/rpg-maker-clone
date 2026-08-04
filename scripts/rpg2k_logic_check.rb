@@ -1589,6 +1589,71 @@ check 'use_item restores MP and item_effective? tracks the SP deficit' do
   eq 0, st.party.item_count(6)
 end
 
+# -- Field equip menu (Game::Party bag-aware equip) --------------------------
+
+# A single-hero party (base stats maxHP10/maxSP5/atk3/def2/int1/agi4) plus the
+# given item table, for the equip-menu checks.
+def equip_party(items)
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
+                       [1], items)
+  Game::State.new(Game::Party.new(db), 1, 0, 0)
+end
+
+check 'equip_candidates lists held items for a slot, in id order' do
+  items = { 7 => fake_item(atk: 15, type: 1),   # weapon  -> slot 0
+            9 => fake_item(atk: 5,  type: 1),   # weapon  -> slot 0
+            8 => fake_item(dfn: 9,  type: 3),   # armour  -> slot 2
+            5 => fake_item(type: 6, rhp: 10) }  # medicine (not equipment)
+  st = equip_party(items)
+  [7, 9, 8, 5].each { |id| st.party.gain_item(id, 1) }
+  eq [[7, 1], [9, 1]], st.party.equip_candidates(0)   # weapons
+  eq [[8, 1]], st.party.equip_candidates(2)           # armour
+  eq [], st.party.equip_candidates(1)                 # shield: none held
+end
+
+check 'equip_from_bag equips, consumes the item and returns the old one' do
+  items = { 7 => fake_item(atk: 15, type: 1), 9 => fake_item(atk: 5, type: 1) }
+  st = equip_party(items)
+  a = st.party.leader
+  st.party.gain_item(7, 1)
+  st.party.gain_item(9, 1)
+  eq 3, a.atk                        # base atk
+  ok st.party.equip_from_bag(a, 7)
+  eq 18, a.atk                       # +15
+  eq 7, a.equipment[0]
+  eq 0, st.party.item_count(7)       # consumed from the bag
+  # Swapping to weapon 9 returns weapon 7 to the bag.
+  ok st.party.equip_from_bag(a, 9)
+  eq 8, a.atk                        # base 3 + 5
+  eq 9, a.equipment[0]
+  eq 0, st.party.item_count(9)
+  eq 1, st.party.item_count(7)       # the replaced weapon came back
+end
+
+check 'unequip_to_bag clears the slot and returns the item to the bag' do
+  st = equip_party({ 8 => fake_item(dfn: 9, type: 3) })
+  a = st.party.leader
+  st.party.gain_item(8, 1)
+  st.party.equip_from_bag(a, 8)
+  eq 11, a.def                       # base 2 + 9
+  eq 8, st.party.unequip_to_bag(a, 2)
+  eq 2, a.def
+  eq 0, a.equipment[2]
+  eq 1, st.party.item_count(8)       # back in the bag
+  eq 0, st.party.unequip_to_bag(a, 2) # already empty -> 0
+end
+
+check 'equip_from_bag rejects a non-equippable or unheld item' do
+  items = { 5 => fake_item(type: 6, rhp: 10), 7 => fake_item(atk: 15, type: 1) }
+  st = equip_party(items)
+  a = st.party.leader
+  st.party.gain_item(5, 1)
+  eq false, st.party.equip_from_bag(a, 5)   # medicine: not equipment
+  eq false, st.party.equip_from_bag(a, 7)   # not held
+  eq 1, st.party.item_count(5)              # untouched
+  eq 0, a.equipment[0]
+end
+
 # -- Control Variables operands ----------------------------------------------
 
 check 'Control Variables random operand stays within its range' do

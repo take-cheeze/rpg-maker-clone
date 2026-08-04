@@ -1261,6 +1261,51 @@ module Game
       lose_item(id, 1) unless affected.empty?
       affected
     end
+
+    # The equipment slot index (0..4) a held item occupies by its database type
+    # -- weapon(1)->0, shield(2)->1, armour(3)->2, helmet(4)->3, accessory(5)->4
+    # -- or nil when the item is not equipment (or unknown). Mirrors
+    # Actor#equip_item's `type - 1` mapping.
+    def equip_slot_for(id)
+      it = db_item(id)
+      return nil unless it
+      t = it.type
+      (t >= 1 && t <= Actor::EQUIP_ORDER.size) ? t - 1 : nil
+    end
+
+    # Held items equippable in equipment `slot` (0..4), as [id, count] pairs in
+    # ascending id order -- the candidate list for the equip menu's chosen slot.
+    def equip_candidates(slot)
+      @items.keys.sort.select { |id| item_count(id) > 0 && equip_slot_for(id) == slot }
+            .map { |id| [id, item_count(id)] }
+    end
+
+    # Equip bag item `item_id` on `actor`, moving it through the inventory the way
+    # the equip menu does: take one from the bag, equip it into the slot its type
+    # dictates, and return the previously-equipped item (if any) to the bag. A
+    # no-op returning false unless the party holds the item and it is equipment;
+    # true on success. (Unlike the Change Equipment event command, which does not
+    # touch the bag, the menu swaps through it.)
+    def equip_from_bag(actor, item_id)
+      return false unless actor && item_count(item_id) > 0
+      slot = equip_slot_for(item_id)
+      return false if slot.nil?
+      previous = actor.equipment[slot]
+      actor.equip_item(item_id)
+      lose_item(item_id, 1)
+      gain_item(previous, 1) if previous && previous != 0
+      true
+    end
+
+    # Unequip `actor`'s `slot`, returning the removed item to the bag. Returns the
+    # removed item id (0 when the slot was already empty or the slot is invalid).
+    def unequip_to_bag(actor, slot)
+      return 0 unless actor && slot >= 0 && slot < Actor::EQUIP_ORDER.size
+      removed = actor.equipment[slot]
+      actor.unequip(slot)
+      gain_item(removed, 1) if removed && removed != 0
+      removed || 0
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
