@@ -2948,7 +2948,34 @@ module Game
         nm = title.hero_name
         party.leader.name = nm if nm && !nm.empty?
       end
+      restore_pictures(state, save[103])
       state
+    end
+
+    # Re-show the pictures the save was holding (chunk 103, one entry per picture
+    # number). Only entries with a file name are live; the rest are the empty
+    # slots RPG2000 always writes out.
+    #
+    # These used to be dropped, on the reasoning that a game's HUD pictures are
+    # re-shown by parallel events right after a load. That is true of a HUD and
+    # false of a save taken mid-cutscene, where the event that showed the picture
+    # has already run and will not run again: resuming Nepheshel's opening, the
+    # genuine RPG_RT drew the backdrop and we drew black. See ADR 0021.
+    #
+    # Only the fields the save actually pins down are restored -- the file name
+    # and the centre position. Zoom, opacity and tone have their own save fields,
+    # but this build has never had a sample where they are not at their defaults,
+    # so reading them would be guesswork; they take Picture's defaults instead.
+    def self.restore_pictures(state, pictures)
+      return unless pictures
+      pictures.each do |id, pic|
+        next unless pic
+        name = pic.name
+        next if name.nil? || name.empty?
+        state.show_picture(id, name: name,
+                               x: (pic.current_x || 0).to_i,
+                               y: (pic.current_y || 0).to_i)
+      end
     end
 
     # Rebuild our `{ name:, volume:, tempo: }` BGM hash from a parsed BGM chunk

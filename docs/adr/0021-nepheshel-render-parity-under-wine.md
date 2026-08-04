@@ -137,14 +137,39 @@ caught this: it only proves we can re-read our own output. So the harness starts
 from a save `gen-lcf-save-wine.bash` produced with EasyRPG and *edits* it, which
 preserves every untouched chunk byte-for-byte.
 
-**The first thing the comparison found: shown pictures are not restored on
-load.** Resuming Nepheshel's opening, RPG_RT draws the cutscene's background
-picture and we draw black — the choice window on top of it is already
-pixel-identical. `Game::State` treats `@pictures` as transient on the stated
+**The first thing the comparison found: shown pictures were not restored on
+load.** Resuming Nepheshel's opening, RPG_RT drew the cutscene's background
+picture and we drew black — the choice window on top of it was already
+pixel-identical. `Game::State` treated `@pictures` as transient on the stated
 assumption that "RPG2000's HUD pictures are re-shown by parallel events on
 load", which holds for a HUD but not for a save taken mid-cutscene, where the
-event that showed the picture has already run. The genuine runtime saves them in
-chunk 103. Fixing it needs `LCF::Schema::SAVE_PICTURE` extended first: it models
-name, visibility, zoom, transparency and tone, but *not* the picture's
-position, so there is nothing to restore a picture's placement from yet. Both
-that and making `to_lsd`'s own output loadable are tracked in `docs/TODO.md`.
+event that showed the picture has already run and will not run again. The
+genuine runtime saves them in chunk 103.
+
+Restoring them needed the picture's position, which `LCF::Schema::SAVE_PICTURE`
+did not model: the schema noted slots 2–5, 8, 11–14, 31 and 32 as doubles "whose
+exact meaning is undocumented", and the rpg2kpsp analysis it cites does not
+label them. They were identified by experiment against the genuine RPG_RT —
+rewrite a candidate pair in a real save, resume, and diff the frame against the
+unedited one:
+
+| Edit | Result |
+| --- | --- |
+| field 1 (name) → another image | image on screen changes — so the runtime really does restore picture state from the save, rather than re-showing it from an event |
+| fields 31/32: (160,120) → (80,60) | picture shifts up-left by exactly that, black at the right and bottom edges — **this is the live centre position** |
+| fields 2/3 → (80,60) | no change on screen |
+| fields 4/5 → (80,60) | no change on screen |
+
+2/3 and 4/5 look like a move's start and finish, which a still picture does not
+use — both read 160/120 here, the centre of the 320×240 screen — but that is not
+proven, so they stay unnamed.
+
+With 31/32 modelled and `State.restore_pictures` re-showing each named entry,
+the picture region of the resumed frame is **pixel-identical** to RPG_RT (0
+differing pixels over the top 320 rows; the rest of that frame's diff is the
+choice window, which the two runtimes had reached at different moments). Zoom,
+opacity and tone have their own save fields but no sample where they are off
+their defaults, so they are left to `Picture`'s defaults rather than guessed at.
+
+Making `to_lsd`'s own output loadable by RPG_RT remains open, and is tracked in
+`docs/TODO.md`.

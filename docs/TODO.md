@@ -83,15 +83,17 @@ The work below is roughly ordered by the critical path to a walkable game
   harness did through Nepheshel's timed opening.
   `scripts/gen-rpg2k-save.rb` moves the party in that save to any map. See the
   addendum in ADR 0021. Two gaps it uncovered, both still open:
-  - **Shown pictures are not restored on load.** Resuming mid-cutscene, RPG_RT
-    draws the saved background picture and we draw black (the choice window over
-    it already matches pixel-for-pixel). `Game::State` treats `@pictures` as
-    transient — true for a HUD re-shown by parallel events, false for a save
-    taken while a cutscene's picture is up, which the real runtime persists in
-    chunk 103. Blocked on `LCF::Schema::SAVE_PICTURE`, which models name,
-    visibility, zoom, transparency and tone but **not the picture's position**;
-    those fields need decoding from real saves before there is anything to
-    restore placement from.
+  - ✅ **Shown pictures are restored on load.** Resuming mid-cutscene, RPG_RT
+    drew the saved background picture and we drew black. `Game::State` treated
+    `@pictures` as transient — true for a HUD re-shown by parallel events, false
+    for a save taken while a cutscene's picture is up, which the real runtime
+    persists in chunk 103. `LCF::Schema::SAVE_PICTURE` recorded the position
+    slots as doubles of unknown meaning; **31/32 are the centre position**,
+    identified by rewriting each candidate pair in a real save and diffing the
+    resumed frame against the unedited one (see the ADR 0021 table). The picture
+    region of the resumed frame is now pixel-identical to RPG_RT. Zoom, opacity
+    and tone have save fields but no sample where they are off their defaults,
+    so they are still left at `Picture`'s defaults rather than guessed at.
   - **`Game::State#to_lsd` output is not loadable by RPG_RT.** It round-trips
     through our own parser (`scripts/lcf_save_roundtrip.rb`), but the genuine
     runtime just leaves "Continue" dead: a real save is sixteen chunks and
