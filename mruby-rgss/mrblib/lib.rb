@@ -90,36 +90,47 @@ module RGSS
   end
 
   # RGSS Plane: a tiling, scrolling full-viewport bitmap (map parallax / fog).
-  # Pure-Ruby property holder for now so the stock RGSS scripts that create and
-  # drive a Plane run; the native tiling render is future work (tracked in
-  # docs/rpgxp-rgss-api-gap.md).
+  # The tiling render is native (src/lib.cxx creates an lv_canvas the size of the
+  # viewport and fills it by tiling the bitmap with the ox/oy scroll — see
+  # plane_init/plane_retile); `initialize`, `bitmap=`, `ox=`, `oy=`, `opacity=`,
+  # `z=`, `visible`/`visible=`, `dispose`/`disposed?` are all native. This
+  # reopening adds the plain readers plus the properties the native renderer does
+  # not yet honour visually (zoom, blend mode, tone, colour) — stored so scripts
+  # that set them run (tracked in docs/rpgxp-rgss-api-gap.md).
   class Plane
-    attr_accessor :bitmap, :visible, :z, :ox, :oy, :opacity, :zoom_x, :zoom_y,
-                  :blend_type, :tone, :color
-    attr_reader :viewport
+    attr_reader :bitmap, :ox, :oy, :z, :viewport
+    attr_writer :zoom_x, :zoom_y, :blend_type
 
-    def initialize(viewport = nil)
-      @viewport = viewport
-      @bitmap = nil
-      @visible = true
-      @z = 0
-      @ox = 0
-      @oy = 0
-      @opacity = 255
-      @zoom_x = 1.0
-      @zoom_y = 1.0
-      @blend_type = 0
-      @tone = Tone.new(0, 0, 0, 0)
-      @color = Color.new(0, 0, 0, 0)
-      @disposed = false
+    def opacity
+      @opacity.nil? ? 255 : @opacity
     end
 
-    def dispose
-      @disposed = true
+    def zoom_x
+      @zoom_x.nil? ? 1.0 : @zoom_x
     end
 
-    def disposed?
-      @disposed
+    def zoom_y
+      @zoom_y.nil? ? 1.0 : @zoom_y
+    end
+
+    def blend_type
+      @blend_type || 0
+    end
+
+    def tone
+      @tone ||= Tone.new(0, 0, 0, 0)
+    end
+
+    def tone=(t)
+      @tone = t
+    end
+
+    def color
+      @color ||= Color.new(0, 0, 0, 0)
+    end
+
+    def color=(c)
+      @color = c
     end
   end
 

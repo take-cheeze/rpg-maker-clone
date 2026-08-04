@@ -85,12 +85,18 @@ data/priorities, scroll it, and dispose it — without raising. **Remaining:** t
 native render — autotile assembly + priority layering (the RPG2000 side already
 implements a portable reference in `Game::ChipsetLayout`).
 
-### 4. `Plane` ⚠️ (stored; render pending)
+### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
 
-`Plane` is now a pure-Ruby property holder (`bitmap`, `ox`/`oy`, `opacity`,
-`visible`, `z`, `zoom_x`/`zoom_y`, `blend_type`, `tone`, `color`, `dispose`) with
-RGSS defaults, so scripts that create and drive a `Plane` run. **Remaining:** the
-native tiling, scrolling full-viewport blit (map parallax and fog).
+`Plane` is now **native** (`mruby-rgss/src/lib.cxx`): `Plane.new` creates an
+`lv_canvas` the size of the viewport (or screen) whose buffer is filled by tiling
+the `bitmap` with the `ox`/`oy` scroll wrapped around it (`plane_retile`), so map
+parallax and fog now actually tile and scroll. `bitmap=`, `ox=`/`oy=`,
+`opacity=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native; the
+canvas is invalidated directly on each re-tile. **Remaining:** `zoom_x`/`zoom_y`,
+`blend_type`, `tone` and `color` are stored but not yet applied to the tiled blit
+(the tile is a straight copy — no scale/blend/tint yet). The per-scroll re-tile is
+a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based scroll is a
+possible optimization.
 
 ### 5. `Kernel#sprintf` / `String#%` ✅ (mruby-sprintf gem)
 
