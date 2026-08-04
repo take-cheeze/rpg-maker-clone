@@ -145,7 +145,7 @@ jobs:
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
-      # `exe_open` test in CMakeLists.txt); MV runs=100..105 below. Every MV
+      # `exe_open` test in CMakeLists.txt); MV runs=100..106 below. Every MV
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -233,6 +233,17 @@ jobs:
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
 
+          # Confirm the menu path works: New Game -> map, then open the party
+          # menu (Scene_Map's own callMenu) and log `[MV-MENU] reached_menu=
+          # <bool>`, capturing the rendered menu. Uses the committed sample
+          # (its windowskin frames the menu windows).
+          - name: MV menu smoke test
+            continue-on-error: true
+            run: |
+              nix develop -c xvfb-run --server-num=106 timeout 120 ./build/rpg_maker_clone \
+                --timeout_ms=6000 --game_dir data/mv-sample \
+                --mv_new_game --mv_menu_test --mv_screenshot=ss/mv_menu.png
+
       - name: Upload MV screenshot
         continue-on-error: true
         uses: actions/upload-artifact@v7
@@ -271,6 +282,14 @@ jobs:
         with:
           name: mv-message-screenshot
           path: ss/mv_message.png
+          if-no-files-found: warn
+
+      - name: Upload MV menu screenshot
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mv-menu-screenshot
+          path: ss/mv_menu.png
           if-no-files-found: warn
 
   wasm:
