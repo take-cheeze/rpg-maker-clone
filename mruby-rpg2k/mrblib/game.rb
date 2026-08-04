@@ -1736,17 +1736,25 @@ module Game
       end
     end
 
+    # A skill's state-infliction accuracy (its `hit` field, default 100), used as
+    # the per-state roll when an attack skill inflicts its `state_effects`.
+    def skill_hit(sk)
+      sk.respond_to?(:hit) ? (sk.hit || 100) : 100
+    end
+
     # The command numbers for casting `sk` from `caster` on `target` (both
     # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
     # to the target — negative HP for an attack skill (base effect less a quarter
-    # of the target's defence, min 1), positive HP / SP for a recovery skill.
+    # of the target's defence, min 1), positive HP / SP for a recovery skill. An
+    # attack skill also carries the states it may inflict and the roll chance.
     def battle_skill_command(sk, caster, target)
       cost = skill_cost(sk, caster)
       base = skill_effect(sk, caster)
       if sk.scope == 0
         dmg = base - (target ? target.def / 4 : 0)
         dmg = 1 if dmg < 1
-        { cost: cost, hp: -dmg, mp: 0 }
+        { cost: cost, hp: -dmg, mp: 0,
+          inflict: skill_state_ids(sk), chance: skill_hit(sk) }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
       end
@@ -2866,9 +2874,10 @@ module Game
     # SP and applying the signed HP / SP deltas (negative HP = damage, positive =
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
     # order by #apply_command when the round runs.
-    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0)
+    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil, chance: 100)
       ally.command = { kind: :skill, target: target, name: name,
-                       cost: cost, hp: hp, mp: mp }
+                       cost: cost, hp: hp, mp: mp,
+                       inflict: inflict || [], chance: chance }
       ally.action = nil; ally.defending = false
     end
 
@@ -3018,9 +3027,12 @@ module Game
       if hp < 0
         dmg = -hp
         target.hp -= dmg
+        # An attack skill may inflict its states on a surviving target, each
+        # rolled against the skill's accuracy.
+        inflicted = target.dead? ? [] : roll_inflict(target, cmd)
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          skill: cmd[:name] }
+          inflicted: inflicted, skill: cmd[:name] }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -3035,6 +3047,21 @@ module Game
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, target_hp: target.hp, target_mp: target.mp }
       end
+    end
+
+    # Inflict a skill command's `inflict` states on `target`, each landing only if
+    # a 0..99 roll comes in under the skill's `chance` (its accuracy). Skips a
+    # state the target already carries. Returns the states actually inflicted.
+    def roll_inflict(target, cmd)
+      chance = cmd[:chance] || 100
+      inflicted = []
+      (cmd[:inflict] || []).each do |sid|
+        next if target.state?(sid)
+        next unless @rng.random(100) < chance
+        target.states = (target.states || []) + [sid]
+        inflicted << sid
+      end
+      inflicted
     end
   end
 
