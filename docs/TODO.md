@@ -289,12 +289,15 @@ The work below is roughly ordered by the critical path to a walkable game
   **Skill** remains a placeholder (it shares the battle effect formula, so it is
   best built with / after the battle system). The **Item** command opens
   `Scene::ItemMenu`: it lists the party's usable **medicines** (database item type
-  6) and **skill books** (type 7) with their held counts. A medicine heals its
-  target — a single-target item a chosen ally, an all-ally item (scope 1) the
-  whole party — restoring HP/SP (flat + percentage of max, clamped); a skill book
-  teaches its skill (item field 53) to a chosen ally who does not already know it.
-  Either consumes one on a use that had any effect, and greys out / reports a use
-  with no effect (a full target, or an actor who already knows the skill). The
+  6), **skill books** (type 7) and **seeds** (type 8) with their held counts. A
+  medicine heals its target — a single-target item a chosen ally, an all-ally item
+  (scope 1) the whole party — restoring HP/SP (flat + percentage of max, clamped);
+  a skill book teaches its skill (item field 53) to a chosen ally who does not
+  already know it; a seed permanently raises a chosen ally's base stats (the
+  item's `max_hp_points` / `max_sp_points` and the `*_points2` stat set, applied
+  through `Actor#change_param` so the stat caps hold). Each consumes one on a use
+  that had any effect, and greys out / reports a use with no effect (a full
+  target, an actor who already knows the skill, or a seed with no boost). The
   **Equip** command
   opens `Scene::EquipMenu`: it shows a party member's five equipment slots and
   stats (LEFT/RIGHT cycle members), and for a chosen slot lists the bag's fitting
@@ -306,8 +309,8 @@ The work below is roughly ordered by the critical path to a walkable game
   `use_item` for items; `equip_candidates` / `equip_from_bag` / `unequip_to_bag`
   for equip) and `Game::Actor` (`next_level_exp` / `exp_to_next` for status),
   covered by `scripts/rpg2k_logic_check.rb`; the RGSS windows are the
-  untestable-here UI. Seed (8) / switch (9) item use, the item usable-occasion
-  gate, and two-handed / dual-wield equipping are later refinements.
+  untestable-here UI. Switch (type 9) item use, the item usable-occasion gate,
+  and two-handed / dual-wield equipping are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default

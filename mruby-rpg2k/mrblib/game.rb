@@ -1238,9 +1238,11 @@ module Game
 
     # RPG2000 database item types. Types 1..5 are the equipment slots (see
     # Actor::EQUIP_ORDER); 6 is a healing medicine (薬); 7 is a skill book (本)
-    # that teaches a skill. Seed (8) / switch (9) menu use is a later refinement.
+    # that teaches a skill; 8 is a seed (種) that permanently raises a stat.
+    # Switch (9) menu use is a later refinement.
     ITEM_MEDICINE = 6
     ITEM_SKILL_BOOK = 7
+    ITEM_SEED = 8
 
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
@@ -1250,11 +1252,11 @@ module Game
     end
 
     # Whether item `id` can be used from the field (main-menu) item screen: a
-    # medicine or a skill book the party actually holds.
+    # medicine, a skill book or a seed the party actually holds.
     def field_usable?(id)
       it = db_item(id)
       return false unless it && item_count(id) > 0
-      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK
+      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK || it.type == ITEM_SEED
     end
 
     # The bag's field-usable items as `[id, count]` pairs in ascending id order,
@@ -1287,6 +1289,8 @@ module Game
       when ITEM_SKILL_BOOK
         s = it.skill_id
         !s.nil? && s != 0 && !actor.knows_skill?(s)
+      when ITEM_SEED
+        seed_boosts(it).any? { |b| b != 0 }
       else
         false
       end
@@ -1294,13 +1298,15 @@ module Game
 
     # Use item `id` from the field menu, dispatching on its database type, and
     # return the actors it affected (empty when it did nothing -- then nothing is
-    # consumed). A medicine heals; a skill book teaches its skill.
+    # consumed). A medicine heals; a skill book teaches its skill; a seed raises a
+    # stat.
     def use_item(id, actor = nil)
       it = db_item(id)
       return [] unless it && item_count(id) > 0
       case it.type
       when ITEM_MEDICINE then use_medicine(it, id, actor)
       when ITEM_SKILL_BOOK then use_skill_book(it, id, actor)
+      when ITEM_SEED then use_seed(it, id, actor)
       else []
       end
     end
@@ -1331,6 +1337,29 @@ module Game
       skill = it.skill_id
       return [] unless actor && skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
+      lose_item(id, 1)
+      [actor]
+    end
+
+    # The six permanent stat boosts a seed grants, in Actor::STAT_NAMES order
+    # (max HP, max SP, attack, defence, spirit, agility). RPG2000 seeds use the
+    # item's max_hp_points / max_sp_points and the *_points2 stat set -- distinct
+    # from the *_points1 fields that carry equipment bonuses -- confirmed against
+    # EasyRPG's Game_Actor seed handling.
+    def seed_boosts(it)
+      [it.max_hp_points || 0, it.max_sp_points || 0,
+       it.atk_points2 || 0, it.def_points2 || 0,
+       it.spi_points2 || 0, it.agi_points2 || 0]
+    end
+
+    # A seed permanently raises `actor`'s base stats by seed_boosts (each applied
+    # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
+    # it carries any boost; a seed with no boost does nothing and is not consumed.
+    def use_seed(it, id, actor)
+      return [] unless actor
+      boosts = seed_boosts(it)
+      return [] unless boosts.any? { |b| b != 0 }
+      boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
       lose_item(id, 1)
       [actor]
     end
