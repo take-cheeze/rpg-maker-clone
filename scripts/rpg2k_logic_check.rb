@@ -2698,6 +2698,65 @@ check 'Enter Hero Name for an actor not in the party is a no-op' do
   eq true, st.switches[2], 'execution runs straight past the command'
 end
 
+# -- Vehicle commands ---------------------------------------------------------
+
+check 'Set Vehicle Location places a vehicle (constant and variable modes)' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # boat (0), literal mode (param1 = 0): map 5, x 10, y 12.
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 5, 10, 12])])
+  it.update
+  boat = st.vehicle(:boat)
+  eq [5, 10, 12], [boat.map_id, boat.x, boat.y]
+  ok boat.placed?, 'a positioned vehicle reads as placed'
+  # ship (1), variable mode (param1 = 1): map / x / y come from variables.
+  st.variables[1] = 7
+  st.variables[2] = 3
+  st.variables[3] = 4
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [1, 1, 1, 2, 3])])
+  it2.update
+  ship = st.vehicle(:ship)
+  eq [7, 3, 4], [ship.map_id, ship.x, ship.y]
+end
+
+check 'Change Vehicle Graphic sets the vehicle charset' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # airship (2), charset 'Airship1', cell 3.
+  it.start([FakeCmd.new(IC::CHANGE_VEHICLE_GRAPHIC, [2, 3], string: 'Airship1')])
+  it.update
+  air = st.vehicle(:airship)
+  eq 'Airship1', air.charset_name
+  eq 3, air.charset_index
+end
+
+check 'an out-of-range vehicle id is a no-op' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [5, 0, 1, 2, 3]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 4, 4, 0])])
+  it.update
+  ok !st.vehicle(:boat).placed?, 'no vehicle was placed'
+  eq true, st.switches[4], 'execution continues past the command'
+end
+
+check 'vehicle placement / graphic round-trip through the save' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 5, 10, 12]),
+            FakeCmd.new(IC::CHANGE_VEHICLE_GRAPHIC, [0, 1], string: 'Boat1')])
+  it.update
+  loaded = Game::State.load(db, st.to_h)
+  boat = loaded.vehicle(:boat)
+  eq [5, 10, 12], [boat.map_id, boat.x, boat.y], 'position round-trips'
+  eq 'Boat1', boat.charset_name, 'graphic round-trips'
+  eq 1, boat.charset_index
+end
+
 # -- Change / Trade Event Location --------------------------------------------
 
 check 'Change Event Location queues a :set request (constant and variable modes)' do

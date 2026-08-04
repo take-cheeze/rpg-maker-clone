@@ -38,6 +38,7 @@ module Game
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_VEHICLE_GRAPHIC = 10650
       CHANGE_SYSTEM_GFX   = 10680
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
@@ -57,6 +58,7 @@ module Game
       INN_END          = 20732
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      SET_VEHICLE_LOCATION = 10850
       CHANGE_EVENT_LOCATION = 10860
       TRADE_EVENT_LOCATIONS = 10870
       STORE_TERRAIN_ID  = 10910
@@ -522,6 +524,8 @@ module Game
       when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
       when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
       when Cmd::CHANGE_ACTOR_SPRITE then do_change_actor_sprite cmd
+      when Cmd::CHANGE_VEHICLE_GRAPHIC then do_change_vehicle_graphic cmd
+      when Cmd::SET_VEHICLE_LOCATION then do_set_vehicle_location cmd
       when Cmd::CONDITIONAL      then do_conditional cmd
       when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
       when Cmd::END_BRANCH       then nil
@@ -1139,6 +1143,43 @@ module Game
       actor.set_charset(cmd.string || '', cmd.param(1))
       actor.transparent = cmd.param(2) != 0
       @actor_graphic_changed = true
+    end
+
+    # The vehicle a vehicle command targets: param0 is 0 boat / 1 ship /
+    # 2 airship (Game::Vehicle::TYPES order), or nil for an out-of-range value.
+    def vehicle_target(cmd)
+      type = Vehicle::TYPES[cmd.param(0)]
+      type && @state.vehicle(type)
+    end
+
+    # Set Vehicle Location (10850): place a vehicle on a map. param0 is the
+    # vehicle; param1 the operand mode (0 the values are literal, 1 they are
+    # variable ids), and param2/param3/param4 the map id, x and y (like Change
+    # Event Location's designation). A no-op for an out-of-range vehicle.
+    def do_set_vehicle_location(cmd)
+      v = vehicle_target(cmd)
+      return unless v
+      map_id = cmd.param(2)
+      x = cmd.param(3)
+      y = cmd.param(4)
+      if cmd.param(1) == 1
+        map_id = variables[map_id]
+        x = variables[x]
+        y = variables[y]
+      end
+      v.map_id = map_id
+      v.x = x
+      v.y = y
+    end
+
+    # Change Vehicle Graphic (10650): give a vehicle a new CharSet graphic — the
+    # command string names the file and param1 the cell index. A no-op for an
+    # out-of-range vehicle.
+    def do_change_vehicle_graphic(cmd)
+      v = vehicle_target(cmd)
+      return unless v
+      v.charset_name = cmd.string || ''
+      v.charset_index = cmd.param(1)
     end
 
     # Change Parameters: adjust a base stat. param3 selects the stat (0 max HP,

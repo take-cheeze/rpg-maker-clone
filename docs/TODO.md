@@ -320,8 +320,10 @@ The work below is roughly ordered by the critical path to a walkable game
   come: criticals / attributes / damage variance and in-battle status infliction
   (rolling `state_chance`), all-target skill/item scopes, the per-terrain
   backdrop and the RPG2000 Game Over graphic.
-  The remaining event commands (Show Battle Animation, vehicle boarding, tile
-  substitution, ...) are TODO. **Enter Hero Name** (10740) opens a
+  The remaining event commands (Show Battle Animation, vehicle boarding /
+  piloting, tile substitution, ...) are TODO. **Set Vehicle Location** (10850) and
+  **Change Vehicle Graphic** (10650) place a boat / ship / airship and set its
+  CharSet (persisted via `Game::Vehicle`). **Enter Hero Name** (10740) opens a
   character-entry widget that renames a party actor; **Change Level** (10420) /
   **Change EXP** (10410) honour their "show message" flag — a level-up queues one
   message per level gained, shown through the message window before the event
