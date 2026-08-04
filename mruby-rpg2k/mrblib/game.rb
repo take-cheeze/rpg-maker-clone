@@ -1772,11 +1772,12 @@ module Game
             .map { |id| [id, item_count(id)] }
     end
 
-    # The HP / SP a medicine restores to a battle `target` (Combatant snapshot),
-    # as `{ hp:, mp: }` — the same recovery the field menu applies.
+    # The HP / SP a medicine restores to a battle `target` (Combatant snapshot)
+    # plus the status conditions it cures, as `{ hp:, mp:, cured: [ids] }` — the
+    # same recovery and (antidote / herb) cure the field menu applies.
     def battle_item_command(it, target)
       hp, mp = item_recovery(it, target)
-      { hp: hp, mp: mp }
+      { hp: hp, mp: mp, cured: item_cured_states(it) }
     end
   end
 
@@ -2749,23 +2750,31 @@ module Game
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor) do
+                           :actor, :states) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
       def int; spi; end
+      # Whether `id` is currently afflicting this battler.
+      def state?(id); (states || []).include?(id); end
     end
+
+    # Seed the combatant's status set from the actor, so a member who walked into
+    # the fight afflicted (a map Change Condition) is still afflicted in battle,
+    # and a cure applied here can be written back. A bare fixture without #states
+    # starts clean.
+    def self.actor_states(a); a.respond_to?(:states) ? (a.states || []).dup : []; end
 
     def self.from_actor(a)
       Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
-                    nil, false, a.mp, a.max_mp, a.int, nil, a)
+                    nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a))
     end
 
-    # Enemies have no source actor (the last field stays nil), so the post-battle
-    # HP write-back skips them.
+    # Enemies have no source actor (that field stays nil), so the post-battle
+    # write-back skips them; they carry no status set into this simple sim.
     def self.from_enemy(e)
       Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
-                    nil, false, e.sp, e.max_sp, e.spi, nil)
+                    nil, false, e.sp, e.max_sp, e.spi, nil, nil, [])
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -2793,14 +2802,15 @@ module Game
     def finished?; !alive?(@allies) || !alive?(@enemies); end
 
     # Persist the fight's outcome onto the real party: write each ally combatant's
-    # final HP (and SP, which battle skills spend) back to its source actor, so
-    # damage taken in battle sticks and a combatant reduced to 0 comes out knocked
-    # out (戦闘不能). Combatants without a source actor -- enemies, or bare test
-    # snapshots -- are skipped. RPG2000 keeps the party's post-battle HP/SP; a
-    # downed member stays down until revived.
+    # final status set, HP and SP back to its source actor, so damage taken in
+    # battle sticks, a status cured (or inflicted) in battle carries out, and a
+    # combatant reduced to 0 comes out knocked out (戦闘不能). Combatants without a
+    # source actor -- enemies, or bare test snapshots -- are skipped. States are
+    # written before HP so `set_hp` gets the last word on the death state.
     def apply_to_party
       @allies.each do |c|
         next unless c.actor
+        c.actor.states = c.states if c.states && c.actor.respond_to?(:states=)
         c.actor.set_hp(c.hp)
         c.actor.mp = Game.clamp(c.mp, 0, c.actor.max_mp) if c.mp
       end
@@ -2851,12 +2861,13 @@ module Game
       ally.action = nil; ally.defending = false
     end
 
-    # Queue a single-target Item for `ally` on `target`: restore the HP / SP from
-    # Game::Party#battle_item_command. `item_id` rides along on the log entry so
-    # the scene consumes one from the bag when the action lands.
-    def command_item(ally, target, item_id:, name:, hp: 0, mp: 0)
+    # Queue a single-target Item for `ally` on `target`: restore the HP / SP and
+    # cure the status conditions from Game::Party#battle_item_command. `item_id`
+    # rides along on the log entry so the scene consumes one from the bag when the
+    # action lands.
+    def command_item(ally, target, item_id:, name:, hp: 0, mp: 0, cured: nil)
       ally.command = { kind: :item, target: target, item_id: item_id,
-                       name: name, hp: hp, mp: mp }
+                       name: name, hp: hp, mp: mp, cured: cured || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -2973,10 +2984,14 @@ module Game
         before_mp = target.mp || 0
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
+        # Cure the item's status conditions from the target (an antidote / herb),
+        # unconditionally, matching the field item cure.
+        cured = (cmd[:cured] || []).select { |s| target.state?(s) }
+        target.states = (target.states || []) - cured unless cured.empty?
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], target: target.name,
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
-          target_hp: target.hp, target_mp: target.mp }
+          cured: cured, target_hp: target.hp, target_mp: target.mp }
       end
     end
   end

@@ -2121,7 +2121,7 @@ class RPG2k
         @battle_ui[:battle].command_item(current_actor, target,
                                          item_id: pending[:item_id],
                                          name: pending[:it].name,
-                                         hp: c[:hp], mp: c[:mp])
+                                         hp: c[:hp], mp: c[:mp], cured: c[:cured])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor

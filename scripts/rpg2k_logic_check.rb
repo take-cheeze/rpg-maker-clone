@@ -3658,7 +3658,41 @@ check 'battle_items lists battle medicines; battle_item_command recovers' do
   ok !st.party.battle_usable?(6), 'a field-only medicine is not battle-usable'
   target = combatant('T', 0, 0, 5, 100)
   target.max_mp = 30
-  eq({ hp: 40, mp: 0 }, st.party.battle_item_command(st.party.db_item(5), target))
+  eq({ hp: 40, mp: 0, cured: [] },
+     st.party.battle_item_command(st.party.db_item(5), target))
+end
+
+check 'a battle item cures the target status; states carry out via apply_to_party' do
+  # An antidote (reverse item curing state 3) used in battle on a poisoned ally.
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  ally = st.party.actor_by_id(1)
+  ally.add_state(3); ally.add_state(9)         # afflicted entering the fight
+  c = Game::Battle.from_actor(ally)
+  eq true, c.state?(3)                          # the status walked into battle
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.command_item(c, c, item_id: 5, name: 'Antidote',
+                   **st.party.battle_item_command(st.party.db_item(5), c))
+  bat.run_round
+  eq false, c.state?(3)                         # cured in battle
+  eq true, c.state?(9)                          # an unlisted state stays
+  bat.apply_to_party
+  eq false, ally.state?(3)                      # ...and the cure persisted out
+  eq true, ally.state?(9)
+end
+
+check 'battle carries an actor status through unchanged when nothing cures it' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(5)                             # afflicted before the fight
+  hc = Game::Battle.from_actor(hero)
+  eq true, hc.state?(5)
+  hc.hp = 40                                    # took some damage on the way
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 40, hero.hp
+  eq true, hero.state?(5)                       # the status survived the battle
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do
