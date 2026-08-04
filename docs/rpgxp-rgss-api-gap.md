@@ -19,7 +19,8 @@ These are complete enough for the stock scripts:
 - **Value types** — `Table`, `Color`, `Tone`, `Rect` (native, with RGSS Marshal).
 - **`Bitmap`** — `new`, `draw_text` (~96), `fill_rect`, `gradient_fill_rect`,
   `blt`, `stretch_blt`, `clear` (~33), `text_size`, `get_pixel`/`set_pixel`,
-  `rect`, `width`/`height`, `font`, `dispose`. _Missing: `hue_change`._
+  `rect`, `width`/`height`, `font`, `hue_change`, `dispose`. _Complete for the
+  stock scripts._
 - **`Font`** — instance `name`/`size`/`bold`/`italic`/`shadow`/`outline`/`color`/
   `out_color`, class defaults (`default_name`/`default_size`/…), `exist?`.
 - **`Graphics`** — `frame_count`, `frame_rate`, `update`. _`freeze`,

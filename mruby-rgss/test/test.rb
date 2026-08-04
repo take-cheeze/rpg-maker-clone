@@ -216,6 +216,26 @@ assert "RGSS::Bitmap gradient_fill_rect" do
   assert_equal 255.0, v.get_pixel(1, 8).blue  # bottom row is color2
 end
 
+assert "RGSS::Bitmap hue_change" do
+  # A 120-degree hue rotation maps the primaries exactly: R -> G -> B -> R,
+  # preserving saturation, value and alpha.
+  b = RGSS::Bitmap.new(2, 2)
+  b.fill_rect(0, 0, 2, 2, RGSS::Color.new(255, 0, 0, 200))
+  b.hue_change(120)  # red -> green
+  px = b.get_pixel(0, 0)
+  assert_equal 0.0, px.red
+  assert_equal 255.0, px.green
+  assert_equal 0.0, px.blue
+  assert_equal 200.0, px.alpha  # alpha untouched
+
+  b.hue_change(120)  # green -> blue
+  assert_equal 255.0, b.get_pixel(1, 1).blue
+  assert_equal 0.0, b.get_pixel(1, 1).green
+
+  b.hue_change(0)  # no-op
+  assert_equal 255.0, b.get_pixel(1, 1).blue
+end
+
 assert "RGSS::Viewport API surface" do
   # Viewport creation needs a live display, which the test binary does not set
   # up, so only assert the method surface here (exercised for real by the game).
