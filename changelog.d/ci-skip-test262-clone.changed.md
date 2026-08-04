@@ -1,6 +1,7 @@
-- CI no longer clones `tc39/test262`. The flake job used to materialize
-  quickjs-ng's nested `test262` submodule (which git itself skips, `update =
-  none`) just so `nix build` with `self.submodules = true` would not trip over
-  the missing directory; it now drops the entry from the quickjs working tree
-  instead. Set the `CLONE_TEST262` repository variable to `1` to fetch the
-  conformance suite anyway.
+- CI no longer clones `tc39/test262`. Every nix job (`build`, `wasm`, `flake`)
+  fetches this flake with `self.submodules = true`, which walks quickjs-ng's
+  nested `test262` entry; the `flake` job used to materialize that submodule
+  (the whole conformance suite, which git itself skips via `update = none`)
+  just to keep the walk happy. `scripts/skip-quickjs-test262.bash` now
+  deregisters the entry from the quickjs checkout instead, and each nix job
+  runs it after checkout. Set `CLONE_TEST262=1` to opt out.
