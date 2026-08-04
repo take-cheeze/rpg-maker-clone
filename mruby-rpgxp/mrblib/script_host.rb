@@ -29,9 +29,13 @@ class RPGXP
     ENABLED_ENV = "RGSS_SCRIPT_HOST".freeze
 
     # Whether the runtime can eval Ruby source at all (mruby-eval present, or
-    # CRuby). Kernel#eval is public in mruby-eval and private in CRuby.
+    # CRuby). Kernel#eval is a public method under mruby-eval and a private one
+    # under CRuby; the private check is itself CRuby-only (mruby's Module has no
+    # private_method_defined?), so guard it with respond_to?.
     def self.available?
-      Kernel.method_defined?(:eval) || Kernel.private_method_defined?(:eval)
+      return true if Kernel.method_defined?(:eval)
+      Kernel.respond_to?(:private_method_defined?) &&
+        Kernel.private_method_defined?(:eval)
     end
 
     # Whether to run the bundled scripts instead of the built-in flow. Requires
@@ -74,20 +78,30 @@ class RPGXP
       true
     end
 
-    # Provide the Kernel methods the scripts assume the player supplies:
-    #   load_data(filename)      -> Marshal.load of a project file
-    #   save_data(obj, filename) -> Marshal.dump of a project file
-    # routed through the database so a loose file and the encrypted archive both
-    # work. Defined on Object so a script can call them bare; guarded so a second
-    # boot does not redefine them.
-    def self.install_kernel(db)
-      return if Object.method_defined?(:load_data) ||
-                Object.private_method_defined?(:load_data)
-      Object.class_eval do
-        define_method(:load_data) { |filename| db.read_object(filename) }
-        define_method(:save_data) { |obj, filename| db.save_object(obj, filename) }
-        private :load_data, :save_data
-      end
+    # The database the Kernel built-ins (Object#load_data / #save_data, defined
+    # below) read and write through. Point it at the running project's database.
+    def self.db
+      @db
     end
+
+    def self.install_kernel(db)
+      @db = db
+    end
+  end
+end
+
+# RGSS scripts call load_data / save_data as global Kernel methods that the
+# player (RGSS104E.dll) supplies. Define them on Object — the way lib.rb already
+# reopens Object for the RGSS value-type names — routed through the script host's
+# current database so a loose file and the encrypted archive both resolve. Plain
+# method bodies (no runtime class_eval / define_method) so the build needs no
+# metaprogramming helpers; they no-op safely until the host sets ScriptHost.db.
+class Object
+  def load_data(filename)
+    RPGXP::ScriptHost.db.read_object(filename)
+  end
+
+  def save_data(obj, filename)
+    RPGXP::ScriptHost.db.save_object(obj, filename)
   end
 end
