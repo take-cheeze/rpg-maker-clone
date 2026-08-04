@@ -127,40 +127,58 @@ JavaScript loads and interprets the JSON.
     sniff. When the binary is pointed at an MZ game it reports the pending
     WebGL backend cleanly instead of the "no project found" error. Covered by
     host specs (`mruby-mvjs/test/mz_test.rb`).
-  - **M6.2 — Host reuse.** Drive the shared quickjs host / host-globals / IO /
-    input / audio bridges (all maker-agnostic) with the `rmmz_*` scripts, so an
-    MZ game reaches `Scene_Boot` in logic (no pixels). Unlike MV, there is **no
-    committable/fetchable MZ test bed**: MV's corescript is an official
-    open-source project ([rpgtkoolmv], MIT, redistributed by KADOKAWA) that
-    `data/mv-sample` fetches, but MZ's engine ships only with the paid editor
-    (© Gotcha Gotcha Games / KADOKAWA) and has no equivalent open-source
-    release — the GitHub mirrors of it (e.g. `stak/rmmz-corescript`) carry no
-    license. So MZ is developed and verified against a **user-supplied** MZ
-    project, not a downloaded engine, the same constraint the RPG2000/XP beds
-    hit for their (also non-redistributable) game assets.
+  - **M6.2 — Host reuse (landed, to the WebGL wall).** Drive the shared quickjs
+    host / host-globals / IO / input / audio bridges (all maker-agnostic) with
+    the `rmmz_*` scripts. `MZ#boot_probe` (`mruby-mvjs/mrblib/mz.rb`) now loads
+    every engine script and calls `SceneManager.run(Scene_Boot)`, which reaches
+    exactly the WebGL guard below and stops there — everything up to the
+    renderer works. Unlike MV, there is **no committable/fetchable MZ test
+    bed**: MV's corescript is an official open-source project ([rpgtkoolmv],
+    MIT, redistributed by KADOKAWA) that `data/mv-sample` fetches, but MZ's
+    engine ships only with the paid editor (© Gotcha Gotcha Games / KADOKAWA)
+    and has no equivalent open-source release — the GitHub mirrors of it (e.g.
+    `stak/rmmz-corescript`) carry no license. So this path is developed and
+    verified against a **user-supplied** MZ project, not a downloaded engine
+    (the same constraint the RPG2000/XP beds hit for their non-redistributable
+    assets), and cannot run in CI; the pure logic it leans on
+    (`MZ.runnable_scripts`, `MZ.host_globals_js`) is covered by host specs
+    instead.
   - **M6.3 — WebGL rendering.** The WebGL-subset backend behind PIXI v5, the
     bulk of the work — MZ dropped the Canvas2D renderer the MV bridge targets.
 
-  **Concrete boot-path gaps (read off the real MZ engine).** MZ's boot differs
-  from MV's in more than the renderer; the host-integration work, in the order
-  the engine hits it, is:
-  1. **Script loading.** MV registers `window.onload` and the host evals
-     `CORE_SCRIPTS` then fires it. MZ's `main.js` is itself the loader: it
-     appends the other scripts as `<script>` elements and waits for their
-     `onload`. The host reuse (M6.2) must drive that sequence directly rather
-     than eval `main.js`, since our shim does not fetch+execute injected
-     `<script>` tags.
-  2. **Effekseer WASM runtime.** Before `Scene_Boot`, `main.js` calls
-     `effekseer.initRuntime("js/libs/effekseer.wasm", …)` and only proceeds on
-     its callback. The quickjs host has no WebAssembly, so this needs either a
-     WASM shim or a stubbed `effekseer` runtime whose `initRuntime` invokes the
-     success callback (Effekseer only drives battle animations, so a no-op
-     stub is enough to boot).
-  3. **The WebGL wall.** `SceneManager.run` starts with
-     `if (!Utils.canUseWebGL()) throw new Error("… does not support WebGL")`
-     (`rmmz_managers.js`), and PIXI v5 has no Canvas2D fallback. This is M6.3:
-     `canvas.getContext("webgl")` must return a real (LVGL-backed) context —
-     the host deliberately keeps it `null` today so MV's PIXI v4 uses Canvas.
+  **Concrete boot map (verified by running the engine on the host).** MZ's boot
+  differs from MV's in more than the renderer. Driving the shared host through a
+  real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into
+  a measured map — in the order the engine hits it:
+  1. **Script loading — solved by driving the order directly.** MV registers
+     `window.onload` and the host evals `CORE_SCRIPTS` then fires it. MZ's
+     `main.js` is itself the loader: it appends the other scripts as `<script>`
+     elements and waits for their `onload`. The host reuse evaluates
+     `MZ.runnable_scripts` (CORE_SCRIPTS minus `main.js`) in order instead of
+     eval'ing the loader, since our shim does not fetch+execute injected
+     `<script>` tags. PIXI v5.2.4 loads and runs fine under quickjs.
+  2. **Extra host globals.** `rmmz_managers.js` references `HTMLVideoElement`
+     and `HTMLImageElement` at module-load time and fails to define the module
+     if they are absent (MV's `rpg_*` never touch them). Empty-constructor
+     stubs (`MZ.host_globals_js`) get past module load — the host draws through
+     RGSS::Bitmap, not the DOM.
+  3. **Effekseer WASM — not on the boot path.** The earlier guess was that
+     `main.js` calls `effekseer.initRuntime(…)` and blocks `Scene_Boot` on it,
+     needing a WASM shim. Measured: because M6.2 bypasses `main.js`, that
+     `initRuntime` call is skipped entirely, and `effekseer.min.js` itself
+     loads without WebAssembly (the WASM is fetched lazily, only when an
+     animation plays). The one script that *does* need `WebAssembly` at load is
+     `js/libs/vorbisdecoder.js`; it is audio-only, so `MZ.runnable_scripts`
+     skips it and audio rides the shared RGSS::Audio bridge. No Effekseer stub
+     is required to reach a scene.
+  4. **The WebGL wall — the sole remaining blocker (M6.3).** With 1–3 handled,
+     `SceneManager.run(Scene_Boot)` reaches exactly
+     `if (!Utils.canUseWebGL()) throw …` at `rmmz_managers.js:1890` and throws
+     (caught by `SceneManager.catchException`); PIXI v5 has no Canvas2D
+     fallback. This is M6.3: `canvas.getContext("webgl")` must return a real
+     (LVGL-backed) context — the host deliberately keeps it `null` today so
+     MV's PIXI v4 uses Canvas. Nothing else stands between the host and a
+     rendered MZ frame.
 
 [rpgtkoolmv]: https://github.com/rpgtkoolmv/corescript
 

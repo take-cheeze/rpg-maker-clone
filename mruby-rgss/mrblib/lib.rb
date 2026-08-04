@@ -90,36 +90,47 @@ module RGSS
   end
 
   # RGSS Plane: a tiling, scrolling full-viewport bitmap (map parallax / fog).
-  # Pure-Ruby property holder for now so the stock RGSS scripts that create and
-  # drive a Plane run; the native tiling render is future work (tracked in
-  # docs/rpgxp-rgss-api-gap.md).
+  # The tiling render is native (src/lib.cxx creates an lv_canvas the size of the
+  # viewport and fills it by tiling the bitmap with the ox/oy scroll — see
+  # plane_init/plane_retile); `initialize`, `bitmap=`, `ox=`, `oy=`, `opacity=`,
+  # `z=`, `visible`/`visible=`, `dispose`/`disposed?` are all native. This
+  # reopening adds the plain readers plus the properties the native renderer does
+  # not yet honour visually (zoom, blend mode, tone, colour) — stored so scripts
+  # that set them run (tracked in docs/rpgxp-rgss-api-gap.md).
   class Plane
-    attr_accessor :bitmap, :visible, :z, :ox, :oy, :opacity, :zoom_x, :zoom_y,
-                  :blend_type, :tone, :color
-    attr_reader :viewport
+    attr_reader :bitmap, :ox, :oy, :z, :viewport
+    attr_writer :zoom_x, :zoom_y, :blend_type
 
-    def initialize(viewport = nil)
-      @viewport = viewport
-      @bitmap = nil
-      @visible = true
-      @z = 0
-      @ox = 0
-      @oy = 0
-      @opacity = 255
-      @zoom_x = 1.0
-      @zoom_y = 1.0
-      @blend_type = 0
-      @tone = Tone.new(0, 0, 0, 0)
-      @color = Color.new(0, 0, 0, 0)
-      @disposed = false
+    def opacity
+      @opacity.nil? ? 255 : @opacity
     end
 
-    def dispose
-      @disposed = true
+    def zoom_x
+      @zoom_x.nil? ? 1.0 : @zoom_x
     end
 
-    def disposed?
-      @disposed
+    def zoom_y
+      @zoom_y.nil? ? 1.0 : @zoom_y
+    end
+
+    def blend_type
+      @blend_type || 0
+    end
+
+    def tone
+      @tone ||= Tone.new(0, 0, 0, 0)
+    end
+
+    def tone=(t)
+      @tone = t
+    end
+
+    def color
+      @color ||= Color.new(0, 0, 0, 0)
+    end
+
+    def color=(c)
+      @color = c
     end
   end
 
@@ -237,48 +248,50 @@ module RGSS
   end
 
   # RGSS Window: the framed, scrollable box every Window_Base subclass (message,
-  # command, menu, shop, battle status) builds on. Pure-Ruby property holder for
-  # now so the stock RGSS scripts that create and drive a Window run — they set a
-  # windowskin and draw into a real `contents` Bitmap, which works; the native
-  # frame/cursor/pause compositing is future work (tracked in
-  # docs/rpgxp-rgss-api-gap.md). `contents` defaults to nil (RGSS starts a Window
-  # with no contents until the game assigns one).
+  # command, menu, shop, battle status) builds on. Now native (src/lib.cxx):
+  # Window.new builds an lv_canvas the size of the window and blits the game's
+  # `contents` Bitmap into the content area (inset 16px, scrolled by ox/oy) at
+  # contents_opacity, and — when a `windowskin` is set — draws the stretched
+  # background at `back_opacity` and the 9-slice frame at `opacity`. `initialize`,
+  # `contents=`, `windowskin=`, `x=`, `y=`, `width=`, `height=`, `ox=`, `oy=`,
+  # `opacity=`, `back_opacity=`, `contents_opacity=`, `z=`, `visible`/`visible=`,
+  # `dispose`/`disposed?` are native. This reopening adds the plain readers plus
+  # the properties the native renderer does not yet honour (the blinking cursor
+  # rect and the pause arrow) — stored so scripts that set them run (tracked in
+  # docs/rpgxp-rgss-api-gap.md).
   class Window
-    attr_accessor :windowskin, :contents, :cursor_rect, :x, :y, :width, :height,
-                  :ox, :oy, :opacity, :back_opacity, :contents_opacity,
-                  :visible, :z, :active, :pause, :stretch
-    attr_reader :viewport
-
-    def initialize(viewport = nil)
-      @viewport = viewport
-      @windowskin = nil
-      @contents = nil
-      @cursor_rect = Rect.new(0, 0, 0, 0)
-      @x = 0
-      @y = 0
-      @width = 0
-      @height = 0
-      @ox = 0
-      @oy = 0
-      @opacity = 255
-      @back_opacity = 255
-      @contents_opacity = 255
-      @visible = true
-      @z = 0
-      @active = true
-      @pause = false
-      @stretch = true
-      @disposed = false
-    end
+    attr_reader :contents, :windowskin, :x, :y, :width, :height, :ox, :oy, :z,
+                :viewport, :contents_opacity
+    attr_writer :active, :pause, :stretch
 
     def update; end
 
-    def dispose
-      @disposed = true
+    def opacity
+      @opacity.nil? ? 255 : @opacity
     end
 
-    def disposed?
-      @disposed
+    def back_opacity
+      @back_opacity.nil? ? 255 : @back_opacity
+    end
+
+    def cursor_rect
+      @cursor_rect ||= Rect.new(0, 0, 0, 0)
+    end
+
+    def cursor_rect=(r)
+      @cursor_rect = r
+    end
+
+    def active
+      @active.nil? ? true : @active
+    end
+
+    def pause
+      @pause || false
+    end
+
+    def stretch
+      @stretch.nil? ? true : @stretch
     end
   end
 

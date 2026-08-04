@@ -61,18 +61,23 @@ through the existing `bmp_blt`/`bmp_stretch_blt` blend loops (extending the same
 scratch-buffer machinery mirror introduced). That is the next slice. `Sprite_Character`, `Sprite_Battler`,
 `Arrow_Base`, weather and the animation player depend on these.
 
-### 2. `Window` ⚠️ (stored; native frame/cursor render pending)
+### 2. `Window` ⚠️ (background + frame + contents rendered; cursor/pause pending)
 
-`Window` is now a pure-Ruby property holder (`mruby-rgss/mrblib/lib.rb`) with
-RGSS defaults: `windowskin`, `contents` (a `Bitmap` the game creates and draws
-into), `cursor_rect` (a `Rect`), `x`/`y`/`width`/`height`, `ox`/`oy`,
-`opacity`/`back_opacity`/`contents_opacity`, `visible`, `z`, `active`, `pause`,
-`stretch`, `viewport`, `update`, `dispose`/`disposed?`. So every `Window_Base`
-subclass (`Window_Message`, `Window_Command`, `Window_Selectable`, the whole
-menu/shop/battle UI) can construct, configure and draw into its `contents`
-without raising. **Remaining:** the native widget compositing — the frame built
-from the windowskin, the blinking cursor rect, the pause arrow, and blitting the
-scrolled `contents` at `contents_opacity` — is future work.
+`Window` is now **native** (`mruby-rgss/src/lib.cxx`): `Window.new` creates an
+`lv_canvas` the size of the window and `window_refresh` composites it — when a
+`windowskin` is set it stretches the 128×128 background tile at `(0,0)` over the
+window at `back_opacity` and draws the 64×64 frame at `(128,0)` as a 9-slice
+(16px corners) at `opacity`, then blits the `contents` `Bitmap` into the content
+area (inset 16px, scrolled by `ox`/`oy`) at `contents_opacity`. The compositing
+reuses the tested `Bitmap#clear`/`#stretch_blt`/`#blt` via `mrb_funcall`; only the
+RMXP windowskin source rects are new. `contents=`, `windowskin=`, `x=`/`y=`,
+`width=`/`height=`, `ox=`/`oy=`, `opacity=`/`back_opacity=`/`contents_opacity=`,
+`z=`, `visible`/`visible=`, `dispose`/`disposed?` are native. So the whole
+menu/message/shop/battle UI shows its framed windows. **Remaining:** the blinking
+cursor rect and the pause arrow (both need per-frame animation via `update`) are
+stored (`cursor_rect`, `active`, `pause`, `stretch`) but not yet drawn; the
+content blit does not yet clip contents taller than the window; and the RMXP
+windowskin source-rect constants are best-effort until a game exercises them.
 
 ### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
 
@@ -85,12 +90,18 @@ data/priorities, scroll it, and dispose it — without raising. **Remaining:** t
 native render — autotile assembly + priority layering (the RPG2000 side already
 implements a portable reference in `Game::ChipsetLayout`).
 
-### 4. `Plane` ⚠️ (stored; render pending)
+### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
 
-`Plane` is now a pure-Ruby property holder (`bitmap`, `ox`/`oy`, `opacity`,
-`visible`, `z`, `zoom_x`/`zoom_y`, `blend_type`, `tone`, `color`, `dispose`) with
-RGSS defaults, so scripts that create and drive a `Plane` run. **Remaining:** the
-native tiling, scrolling full-viewport blit (map parallax and fog).
+`Plane` is now **native** (`mruby-rgss/src/lib.cxx`): `Plane.new` creates an
+`lv_canvas` the size of the viewport (or screen) whose buffer is filled by tiling
+the `bitmap` with the `ox`/`oy` scroll wrapped around it (`plane_retile`), so map
+parallax and fog now actually tile and scroll. `bitmap=`, `ox=`/`oy=`,
+`opacity=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native; the
+canvas is invalidated directly on each re-tile. **Remaining:** `zoom_x`/`zoom_y`,
+`blend_type`, `tone` and `color` are stored but not yet applied to the tiled blit
+(the tile is a straight copy — no scale/blend/tint yet). The per-scroll re-tile is
+a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based scroll is a
+possible optimization.
 
 ### 5. `Kernel#sprintf` / `String#%` ✅ (mruby-sprintf gem)
 

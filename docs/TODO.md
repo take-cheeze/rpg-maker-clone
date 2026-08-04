@@ -263,10 +263,16 @@ The work below is roughly ordered by the critical path to a walkable game
   entry (attacker / target / damage / defeated), so an on-screen battle can
   animate it action-by-action; `#run` steps to completion for the headless
   resolution. It runs on Combatant snapshots, so the party's real HP is untouched
-  for now, and until the battle screen exists `Scene::Map` traces the fight to
-  the console from the log. Still to come: skills / items / criticals /
-  attributes / variance / escape in the sim, and the on-screen turn-based battle
-  (showing and persisting HP, with the command menu) plus game over on defeat.
+  for now, and `Scene::Map` traces the fight to the console from the log.
+  Encounters now open a **battle screen** (driven by `Scene::Map` during the
+  `:battle` wait, like the shop / inn): a status panel of the troop and each
+  party member's HP over a **Fight / Flee** command menu. Fight resolves the
+  battle and shows the result (`Victory!` with EXP / gold, or defeat); Flee
+  escapes when allowed; dismissing the result resumes the event and routes the
+  `[Victory]` / `[Escape]` / `[Defeat]` branch. Still to come: skills / items /
+  criticals / attributes / variance in the sim, the per-actor command menu
+  (Attack / Skill / Item / Defend + targeting) and per-turn animation from the
+  log, enemy / battler sprites, and game over on defeat.
   The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
@@ -461,18 +467,27 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   a variable amount, the Conditional Branch **item / weapon / armor** possession
   tests (types 8/9/10) run, and Control Variables can read an **item count** as
   its operand. *Change Party Member* (129) adds/removes actors from the party,
-  the **actor "is in the party"** conditional (type 4) is evaluated, and Control
-  Variables also reads the **"other" game quantities** — map id, party size and
-  gold (operand type 7). **Battle Processing** (301) navigates its result
+  and Control Variables also reads the **"other" game quantities** — map id,
+  party size and gold (operand type 7). A **per-actor model** (`Game::Actor`)
+  now wraps each `RPG::Actor` record and its class: level-derived stats read
+  straight from the actor's `parameters` table (max HP/SP, str/dex/agi/int), the
+  known skills from the class's learnings up to the current level, and the
+  equipment from the actor's weapon / four armor slots; `State#actor(id)`
+  memoises one live actor per id (like RMXP's `$game_actors`). It powers the full
+  **actor Conditional Branch** (type 4): *is in the party* (0), *name is* (1),
+  *skill learned* (2), *weapon equipped* (3) and *armor equipped* (4), matched to
+  RMXP's `command_111`. **Battle Processing** (301) navigates its result
   branches — If Win (601), If Escape (602), If Lose (603), branch end (604) —
   running only the branch that matches the resolved outcome (a win by default,
   configurable via the interpreter's `battle_outcome`, since there is no battle
   system yet); the real `OpenGame.exe` XP test bed uses this structure. Covered
   by `mruby-rpgxp/test` and driven over the real test bed by
-  `scripts/rpgxp_testbed_check.rb`. Still to come: vehicle move-route targets,
-  the remaining actor / enemy / character conditional sub-conditions, and the
-  many screen-effect / picture commands, plus the battle system itself that
-  Battle Processing would drive (skipped for now).
+  `scripts/rpgxp_testbed_check.rb` (which now builds a `Game::Actor` for every
+  database actor). Still to come: the **Change Actor** commands (Change HP/SP,
+  EXP, Level, Parameters, Skills, Equipment) that mutate the new model, the actor
+  *state* (5) and enemy / character conditional sub-conditions, vehicle
+  move-route targets, and the many screen-effect / picture commands, plus the
+  battle system itself that Battle Processing would drive (skipped for now).
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1
@@ -609,17 +624,23 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `rmmz_*` load order, and is wired into `src/main.cxx`'s maker sniff so an MZ
     game reports the pending WebGL backend cleanly instead of "no project
     found". Covered by `mruby-mvjs/test/mz_test.rb`.
-  - 🚧 M6.2 host reuse: run the `rmmz_*` scripts on the shared quickjs host to
-    reach `Scene_Boot` in logic. Note there is **no fetchable MZ test bed** —
-    MZ's engine ships only with the paid editor (no open-source release like
-    MV's MIT `rpgtkoolmv`), so MZ is verified against a user-supplied project,
-    not a committed/downloaded sample. Reading the real engine, the ordered
-    boot-path gaps before pixels are: (1) MZ's `main.js` is a dynamic
-    `<script>`-injection loader (not MV's `window.onload`), so the host must
-    drive the load sequence itself; (2) it inits the **Effekseer WASM**
-    runtime before `Scene_Boot` (needs a WASM shim or a no-op `effekseer`
-    stub); then M6.3.
+  - ✅ M6.2 host reuse (to the WebGL wall): `MZ#boot_probe`
+    (`mruby-mvjs/mrblib/mz.rb`) runs the `rmmz_*` scripts on the shared quickjs
+    host and calls `SceneManager.run(Scene_Boot)`, which reaches the renderer
+    boundary and stops — everything up to pixels works. There is **no fetchable
+    MZ test bed** (MZ's engine ships only with the paid editor, no open-source
+    release like MV's MIT `rpgtkoolmv`), so this path is verified against a
+    user-supplied project, not CI; the pure logic it leans on
+    (`MZ.runnable_scripts`, `MZ.host_globals_js`) is covered by
+    `mruby-mvjs/test/mz_test.rb`. The measured boot map (correcting the earlier
+    source-read guesses): PIXI v5.2.4 loads under quickjs; `rmmz_managers.js`
+    needs `HTMLVideoElement`/`HTMLImageElement` host globals (empty-constructor
+    stubs suffice); the Effekseer WASM init is **not** on the boot path (it
+    lives in the bypassed `main.js`, and `effekseer.min.js` loads without WASM),
+    so the only WASM-gated script is the audio-only `vorbisdecoder.js`, which is
+    skipped; the sole remaining blocker is WebGL (M6.3).
   - 🚧 M6.3 WebGL rendering: the WebGL-subset backend behind PIXI v5 (the bulk
     of the work — MZ dropped the Canvas2D renderer the MV bridge targets). The
-    exact gate is `SceneManager.run` → `Utils.canUseWebGL()` throwing unless
-    `canvas.getContext("webgl")` returns a real (LVGL-backed) context.
+    exact gate is `SceneManager.run` → `Utils.canUseWebGL()` throwing at
+    `rmmz_managers.js:1890` unless `canvas.getContext("webgl")` returns a real
+    (LVGL-backed) context.

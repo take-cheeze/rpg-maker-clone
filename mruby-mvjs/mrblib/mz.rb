@@ -18,10 +18,13 @@
 #      needs a WebGL-subset backend on LVGL, which is the bulk of milestone M6
 #      and is **not built yet**.
 #
-# So this class is the M6.1 foundation, mirroring MV's original M1: it recognises
-# an MZ project and knows the canonical script load order, and reports the
-# pending WebGL backend cleanly instead of misbehaving when the binary is pointed
-# at an MZ game. The host reuse (M6.2) and the WebGL renderer (M6.3) land later.
+# This class carries the M6.1 foundation (project detection + canonical script
+# load order) and the M6.2 host reuse: when pointed at an MZ game it now drives
+# the shared quickjs host through the real `rmmz_*` engine as far as it goes
+# without a renderer — loading every script, installing the extra host globals
+# MZ needs, and running `SceneManager.run(Scene_Boot)` up to the point PIXI v5
+# demands WebGL — then reports that precise boundary and the pending backend
+# cleanly. Only the WebGL-subset renderer (M6.3) is still missing.
 class MZ
   # RPG Maker MZ renders at 816x624 by default, same nominal canvas as MV.
   WIDTH = 816
@@ -44,7 +47,10 @@ class MZ
   # `main.js` is itself the loader — it injects the other scripts as `<script>`
   # elements and, once they load, initialises the Effekseer WASM runtime and
   # calls `SceneManager.run(Scene_Boot)`. So the host reuse (M6.2) cannot simply
-  # eval `main.js`; it must drive that sequence itself (see ADR 0004 M6).
+  # eval `main.js`; it drives the load sequence itself (see #boot_probe and
+  # `runnable_scripts`) and bypasses the Effekseer WASM init, which `main.js`
+  # would otherwise gate the boot on — Effekseer only draws battle animations,
+  # so skipping it does not block reaching a scene (see ADR 0004 M6.2).
   CORE_SCRIPTS = [
     "js/libs/pixi.js",
     "js/libs/pako.min.js",
@@ -61,10 +67,46 @@ class MZ
     "js/main.js",
   ].freeze
 
+  # The extra host globals MZ needs on top of MV's shims. `rmmz_managers.js`
+  # references `HTMLVideoElement` and `HTMLImageElement` at module-load time
+  # (its Graphics/Video setup) and the whole module fails to define if they are
+  # undefined; MV's `rpg_*` never touch them, so the shared host does not
+  # provide them. Empty constructors are enough to get past module load — the
+  # host draws through RGSS::Bitmap, not the DOM. Idempotent, so re-evaluating
+  # is harmless.
+  HOST_GLOBALS_JS =
+    "(function(g){ " \
+    "if (typeof g.HTMLVideoElement === 'undefined') " \
+    "g.HTMLVideoElement = function(){}; " \
+    "if (typeof g.HTMLImageElement === 'undefined') " \
+    "g.HTMLImageElement = function(){}; })(globalThis);".freeze
+
   class << self
     # The canonical MZ script load order (see CORE_SCRIPTS).
     def core_scripts
       CORE_SCRIPTS
+    end
+
+    # The subset of CORE_SCRIPTS the host reuse (M6.2) actually evaluates to
+    # drive the engine to a scene, in load order. Two entries are dropped from
+    # the browser's full list:
+    #
+    #   * `js/main.js` — MZ's entry point is itself a dynamic
+    #     `<script>`-injection loader; the host drives the load order directly
+    #     (see #boot_probe) rather than eval the loader, just as the MV side
+    #     bypasses the `<script>` tags `window.onload` would inject.
+    #   * `js/libs/vorbisdecoder.js` — gated on `WebAssembly`, which the quickjs
+    #     host does not provide, and used only to decode Ogg audio; evaluating
+    #     it throws `ReferenceError: WebAssembly is not defined`, and audio
+    #     rides the shared RGSS::Audio bridge instead, so skipping it does not
+    #     block reaching a scene.
+    def runnable_scripts
+      CORE_SCRIPTS - ["js/main.js", "js/libs/vorbisdecoder.js"]
+    end
+
+    # The JS that installs MZ's extra host globals (see HOST_GLOBALS_JS).
+    def host_globals_js
+      HOST_GLOBALS_JS
     end
 
     # Pure predicate: given the set of project-relative files that exist, is this
@@ -94,30 +136,99 @@ class MZ
 
   attr_reader :game_dir
 
-  # Native entry point. Until the WebGL backend lands (M6), this reports the
-  # pending state instead of failing hard, so the rest of the binary — and the
-  # other makers — are unaffected.
+  # Native entry point. The WebGL renderer (M6.3) is not built, so a full game
+  # cannot boot; but the M6.2 host reuse can still drive the shared host through
+  # the engine to the exact renderer boundary. Do that once to verify the host
+  # reuse and surface where it stops, then report the pending backend cleanly.
+  # The rest of the binary — and the other makers — are unaffected either way.
   def start
+    boundary = boot_probe
+    if boundary && !boundary.empty?
+      $stderr.puts "[MZ] host reuse reached the renderer boundary: " \
+                   "#{boundary.split("\n").first}"
+    end
+    warn_runtime_pending
+  rescue StandardError => e
+    $stderr.puts "[MZ] boot probe error: #{e.message}"
     warn_runtime_pending
   end
 
   # Per-frame entry point (Emscripten drives this directly, as for the other
-  # makers). A no-op beyond the pending notice until M6 lands.
+  # makers). A no-op beyond the pending notice until the renderer lands: without
+  # WebGL nothing can be presented, so there is no per-frame work to do.
   def main_loop
     warn_runtime_pending
   end
 
   private
 
+  # M6.2 host reuse: drive the shared quickjs host through the real MZ engine as
+  # far as it goes without a renderer, and return the exact boundary it stops
+  # at. This is *not* a playable boot — MZ's PIXI v5 is WebGL-only and the
+  # WebGL-subset backend (M6.3) is not built, so `SceneManager.run` reaches the
+  # `Utils.canUseWebGL()` guard in `rmmz_managers.js` and throws. Running to
+  # that precise wall — rather than guessing at it — is the M6.2 deliverable: it
+  # proves the engine scripts, the extra host globals, the IO bridge and the
+  # load order are all correct right up to the renderer.
+  #
+  # Returns the caught renderer-boundary error (a `Utils.canUseWebGL` throw when
+  # the engine is present), or an empty string when the engine scripts are
+  # absent (nothing to run) or it stops somewhere unexpected.
+  #
+  # There is no committable/fetchable MZ engine (© Gotcha Gotcha Games /
+  # KADOKAWA — see ADR 0004 M6.2), so this path is verified locally against a
+  # user-supplied MZ project rather than in CI; the pure logic it leans on
+  # (`runnable_scripts`, `host_globals_js`) is covered by host specs.
+  def boot_probe
+    return "" unless self.class.project?(@game_dir)
+
+    # MZ's own scripts request data/assets with game-relative paths; root them
+    # at the game dir since the process is not chdir'd into it (as MV does).
+    MV::JS.base_dir = @game_dir
+    MV::JS.eval(self.class.host_globals_js)
+
+    self.class.runnable_scripts.each do |script|
+      path = "#{@game_dir}/#{script}"
+      next unless File.exist?(path)
+      begin
+        MV::JS.eval_file(path)
+      rescue StandardError => e
+        # As in a browser, a script that throws while executing is logged and
+        # the next one still runs — one bad script never aborts the page.
+        $stderr.puts "[MZ] error loading #{script}: #{e.message}"
+      end
+    end
+
+    # SceneManager.run swallows a boot exception through catchException; replace
+    # it so the WebGL wall it hits is captured instead of vanishing, then run.
+    MV::JS.eval(
+      "if (typeof SceneManager !== 'undefined') { SceneManager.__mzErr = null; " \
+      "SceneManager.catchException = function(e){ SceneManager.__mzErr = " \
+      "(e && (e.stack || e.message)) || String(e); }; }"
+    )
+    MV::JS.eval(
+      "(function(){ if (typeof SceneManager === 'undefined' || " \
+      "typeof Scene_Boot === 'undefined') return; try { " \
+      "SceneManager.run(Scene_Boot); } catch(e){ SceneManager.__mzErr = " \
+      "(e && (e.stack || e.message)) || String(e); } })();"
+    )
+    MV::JS.eval(
+      "(function(){ return (typeof SceneManager !== 'undefined' && " \
+      "SceneManager.__mzErr) ? SceneManager.__mzErr : ''; })();"
+    )
+  end
+
   # Report the pending runtime once. Emscripten drives main_loop every frame, so
   # without the guard this would print on each one.
   def warn_runtime_pending
     return if @warned_runtime_pending
     @warned_runtime_pending = true
-    $stderr.puts "[MZ] RPG Maker MZ support is under construction: MZ ships " \
-                 "PIXI v5 (WebGL-only), and the WebGL-subset backend it needs " \
-                 "is not built into this binary yet. The engine/host/IO/input/" \
-                 "audio layers are shared with MV; only the renderer is " \
-                 "missing. See docs/adr/0004-javascript-maker-mv-quickjs.md (M6)."
+    $stderr.puts "[MZ] RPG Maker MZ support is under construction: the engine " \
+                 "now loads on the shared host (M6.2), but MZ ships PIXI v5 " \
+                 "(WebGL-only) and the WebGL-subset backend it needs (M6.3) is " \
+                 "not built into this binary yet, so no frame can render. The " \
+                 "engine/host/IO/input/audio layers are shared with MV; only " \
+                 "the renderer is missing. See " \
+                 "docs/adr/0004-javascript-maker-mv-quickjs.md (M6)."
   end
 end

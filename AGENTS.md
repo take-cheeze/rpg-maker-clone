@@ -67,6 +67,27 @@ Create ADRs in /docs/adr for:
 - Codes are formatted by precommit. Please run it after code edit finishes
 - Most dependencies are managed by nix flake. See flake.nix for detail
 
+### mruby stdlib methods live in core `*-ext` mrbgems — depend on them
+
+mruby's base classes are deliberately minimal; many methods you expect from
+CRuby live in separate **core mrbgems** (`mruby-array-ext` for `Array#-` /
+`#difference` / `#compact` / …, `mruby-numeric-ext` for `Integer#zero?`,
+`mruby-hash-ext`, `mruby-string-ext`, `mruby-enum-ext`, …). If your Ruby uses
+such a method, **do not hand-roll a workaround** (e.g. `reject`/`==` instead of
+`-`/`zero?`) — use the real method and make sure the providing core gem is
+present:
+
+- **Declare it in the gem that uses it.** Add `add_dependency '<gem>'` to that
+  gem's `mrbgem.rake` (see `mruby-mvjs/mrbgem.rake` depending on
+  `mruby-array-ext`). This is what makes the method available in the gem's own
+  **test** build — the per-gem `rake test` binary only pulls the gem plus its
+  declared dependencies, so a method that works in the full game build can still
+  be "undefined method" in CI's `mruby_test` if the dependency is not declared.
+  This exact gap produced `undefined method '-' for Array` for MZ.
+- If the whole game needs it too, it also belongs in the shared list in
+  `build_config.rb` (`rpg_maker_gems`) — but the gem-level `add_dependency` is
+  the part that keeps the tests honest, so prefer to always add it there.
+
 ## Error Handling
 
 - Do not silence errors. Never swallow an exception (or ignore a failing

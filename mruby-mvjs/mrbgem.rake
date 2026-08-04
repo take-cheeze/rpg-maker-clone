@@ -7,6 +7,13 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # layer, and reads its data/asset files through mruby-io.
   add_dependency 'mruby-rgss'
   add_dependency 'mruby-io'
+  # Ruby-side maker logic uses Array#- (MZ.runnable_scripts filters the engine
+  # script list); it lives in the core mruby-array-ext gem, not mruby's base
+  # Array. Declare the dependency so the gem — and its own test build — always
+  # pull it in, rather than relying on the top-level build_config or hand-rolling
+  # the difference. (mruby core omits several stdlib methods into *-ext gems; the
+  # rule is to depend on the providing core gem, see AGENTS.md.)
+  add_dependency 'mruby-array-ext'
 
   # The embedded JavaScript engine (quickjs-ng, vendored at 3rd/quickjs). The
   # header is needed to compile src/mvjs.cxx in every build (native and wasm);

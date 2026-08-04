@@ -2403,6 +2403,342 @@ mrb_value obj_visible(mrb_state* M, mrb_value self) {
   return mrb_nil_p(v) ? mrb_true_value() : v;
 }
 
+// ---- Plane ----------------------------------------------------------------
+
+// Redraw the plane's canvas: fill it by tiling the source bitmap, wrapping the
+// ox/oy scroll around the bitmap's size. The canvas buffer is a scratch Bitmap
+// (@_plane_canvas) sized to the viewport; bmp_read/bmp_put bridge any source /
+// canvas format difference. The canvas is invalidated directly (its backing
+// buffer is not the sprite @bitmap that Graphics.update's dirty sweep watches).
+void plane_retile(mrb_state* M, mrb_value self) {
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!obj)
+    return;
+  const mrb_value canvas_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_plane_canvas"));
+  if (mrb_nil_p(canvas_v))
+    return;
+  Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
+  const mrb_value bmp_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmap"));
+  if (mrb_nil_p(bmp_v)) {
+    std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+    lv_obj_invalidate(obj);
+    return;
+  }
+  Bitmap& src = DataType<Bitmap>::get(M, bmp_v);
+  if (src.width <= 0 || src.height <= 0) {
+    std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+    lv_obj_invalidate(obj);
+    return;
+  }
+  const mrb_int ox =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+  const mrb_int oy =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  for (int y = 0; y < dst.height; ++y) {
+    const int sy =
+        static_cast<int>(((y + oy) % src.height + src.height) % src.height);
+    for (int x = 0; x < dst.width; ++x) {
+      const int sx =
+          static_cast<int>(((x + ox) % src.width + src.width) % src.width);
+      int r, g, b, a;
+      bmp_read(src, sx, sy, r, g, b, a);
+      bmp_put(dst, x, y, r, g, b, a);
+    }
+  }
+  lv_obj_invalidate(obj);
+}
+
+mrb_value plane_init(mrb_state* M, mrb_value self) {
+  mrb_value vp = mrb_nil_value();
+  mrb_get_args(M, "|o", &vp);
+
+  mrb_int w = 0, h = 0;
+  if (mrb_nil_p(vp)) {
+    lv_display_t* d = get_display(M);
+    w = lv_display_get_horizontal_resolution(d);
+    h = lv_display_get_vertical_resolution(d);
+  } else {
+    Rect& r =
+        DataType<Rect>::get(M, mrb_iv_get(M, vp, mrb_intern_lit(M, "@rect")));
+    w = r.width;
+    h = r.height;
+  }
+  if (w <= 0)
+    w = 1;
+  if (h <= 0)
+    h = 1;
+
+  lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
+  wrap_lv_obj(M, self, c);
+  register_zobj(M, self);
+  lv_obj_set_pos(c, 0, 0);
+
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value canvas_v =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& canvas = DataType<Bitmap>::get(M, canvas_v);
+  std::fill(canvas.buffer.begin(), canvas.buffer.end(),
+            static_cast<uint8_t>(0));
+  lv_canvas_set_buffer(c, canvas.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+
+  // Hold the canvas buffer (a Bitmap) and the viewport on the plane so the GC
+  // keeps them alive for its lifetime.
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_plane_canvas"), canvas_v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), mrb_nil_value());
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  return self;
+}
+
+mrb_value plane_set_bmp(mrb_state* M, mrb_value self) {
+  mrb_value bmp;
+  mrb_get_args(M, "o", &bmp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
+  plane_retile(M, self);
+  return bmp;
+}
+
+mrb_value plane_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int ox;
+  mrb_get_args(M, "i", &ox);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(ox));
+  plane_retile(M, self);
+  return self;
+}
+
+mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int oy;
+  mrb_get_args(M, "i", &oy);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
+  plane_retile(M, self);
+  return self;
+}
+
+// ---- Window ---------------------------------------------------------------
+
+mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h);
+
+// RGSS insets a window's contents 16px from its frame on every side, so the
+// drawable content area is (width - 32) x (height - 32).
+static const int WINDOW_PADDING = 16;
+
+// (Re)allocate the window's canvas Bitmap to w x h when the size changes and
+// point the lv_canvas at it. Held in @_win_canvas so the GC keeps it alive.
+Bitmap& window_ensure_canvas(mrb_state* M,
+                             mrb_value self,
+                             mrb_int w,
+                             mrb_int h) {
+  if (w < 1)
+    w = 1;
+  if (h < 1)
+    h = 1;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
+  if (!mrb_nil_p(cur)) {
+    Bitmap& c = DataType<Bitmap>::get(M, cur);
+    if (c.width == w && c.height == h)
+      return c;
+  }
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value cv =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& c = DataType<Bitmap>::get(M, cv);
+  lv_canvas_set_buffer(obj, c.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+  lv_obj_set_size(obj, w, h);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_canvas"), cv);
+  return c;
+}
+
+static mrb_int clamp_opacity(mrb_state* M, mrb_value self, const char* iv) {
+  mrb_int v = mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_cstr(M, iv)));
+  if (v < 0)
+    return 0;
+  if (v > 255)
+    return 255;
+  return v;
+}
+
+// Repaint the window canvas: clear it, draw the windowskin background + 9-slice
+// frame (if a windowskin is set), then blit the contents bitmap into the
+// content area (inset by WINDOW_PADDING, scrolled by ox/oy). The compositing
+// reuses the tested Bitmap#clear/#stretch_blt/#blt methods via mrb_funcall;
+// only the RMXP windowskin source rects are new here (the 128x128 background at
+// (0,0) and the 64x64 frame at (128,0) with 16px corners). The blinking cursor
+// rect and the pause arrow are not drawn yet (tracked in
+// docs/rpgxp-rgss-api-gap.md).
+void window_refresh(mrb_state* M, mrb_value self) {
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!obj)
+    return;
+  const mrb_int w =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@width")));
+  const mrb_int h =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@height")));
+  window_ensure_canvas(M, self, w, h);
+  const mrb_value canvas =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
+  const mrb_sym blt = mrb_intern_lit(M, "blt");
+  const mrb_sym sblt = mrb_intern_lit(M, "stretch_blt");
+  // The compositing allocates transient Rect values; drop them off the GC arena
+  // when done (canvas/skin/contents stay alive via their ivars on self).
+  const int arena = mrb_gc_arena_save(M);
+  mrb_funcall_argv(M, canvas, mrb_intern_lit(M, "clear"), 0, nullptr);
+
+  const mrb_value skin = mrb_iv_get(M, self, mrb_intern_lit(M, "@windowskin"));
+  const mrb_int b = WINDOW_PADDING;
+  if (mrb_test(skin) && DATA_PTR(skin)) {
+    const mrb_int op = clamp_opacity(M, self, "@opacity");
+    const mrb_int back = op * clamp_opacity(M, self, "@back_opacity") / 255;
+    // Background: stretch the 128x128 tile at (0,0) over the whole window.
+    const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
+                            make_rect(M, 0, 0, 128, 128),
+                            mrb_fixnum_value(back)};
+    mrb_funcall_argv(M, canvas, sblt, 4, bg);
+    // Frame: the 64x64 border at (128,0), a 9-slice with 16px corners/margins.
+    const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
+                            make_rect(M, 128, 0, b, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, tl);
+    const mrb_value tr[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(0), skin,
+                            make_rect(M, 176, 0, b, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, tr);
+    const mrb_value bl[] = {mrb_fixnum_value(0), mrb_fixnum_value(h - b), skin,
+                            make_rect(M, 128, 48, b, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, bl);
+    const mrb_value br[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(h - b),
+                            skin, make_rect(M, 176, 48, b, b),
+                            mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, blt, 5, br);
+    const mrb_value top[] = {make_rect(M, b, 0, w - 2 * b, b), skin,
+                             make_rect(M, 144, 0, 32, b), mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, top);
+    const mrb_value bottom[] = {make_rect(M, b, h - b, w - 2 * b, b), skin,
+                                make_rect(M, 144, 48, 32, b),
+                                mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, bottom);
+    const mrb_value left[] = {make_rect(M, 0, b, b, h - 2 * b), skin,
+                              make_rect(M, 128, 16, b, 32),
+                              mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, left);
+    const mrb_value right[] = {make_rect(M, w - b, b, b, h - 2 * b), skin,
+                               make_rect(M, 176, 16, b, 32),
+                               mrb_fixnum_value(op)};
+    mrb_funcall_argv(M, canvas, sblt, 4, right);
+  }
+
+  const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
+  if (mrb_test(cont) && DATA_PTR(cont)) {
+    const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
+    const mrb_int ox =
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+    const mrb_int oy =
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+    // Blit the scrolled contents into the content area, inset by
+    // WINDOW_PADDING.
+    const mrb_value c[] = {mrb_fixnum_value(b), mrb_fixnum_value(b), cont,
+                           make_rect(M, ox, oy, w - 2 * b, h - 2 * b),
+                           mrb_fixnum_value(cop)};
+    mrb_funcall_argv(M, canvas, blt, 5, c);
+  }
+  mrb_gc_arena_restore(M, arena);
+  lv_obj_invalidate(obj);
+}
+
+mrb_value window_init(mrb_state* M, mrb_value self) {
+  mrb_value vp = mrb_nil_value();
+  mrb_get_args(M, "|o", &vp);
+  lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
+  wrap_lv_obj(M, self, c);
+  register_zobj(M, self);
+  lv_obj_set_pos(c, 0, 0);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), mrb_nil_value());
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
+             mrb_fixnum_value(255));
+  window_ensure_canvas(M, self, 1, 1);
+  return self;
+}
+
+mrb_value window_set_contents(mrb_state* M, mrb_value self) {
+  mrb_value bmp;
+  mrb_get_args(M, "o", &bmp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), bmp);
+  window_refresh(M, self);
+  return bmp;
+}
+
+mrb_value window_set_width(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_height(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_contents_opacity(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
+             mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_skin(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@windowskin"), v);
+  window_refresh(M, self);
+  return v;
+}
+
+mrb_value window_set_opacity(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_back_opacity(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@back_opacity"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
 // ---- Viewport -------------------------------------------------------------
 
 // Build an RGSS::Rect value.
@@ -2776,6 +3112,42 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
+
+  RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
+  MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
+  mrb_define_method(M, plane, "initialize", plane_init, MRB_ARGS_OPT(1));
+  mrb_define_method(M, plane, "bitmap=", plane_set_bmp, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "ox=", plane_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "oy=", plane_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "dispose", obj_dispose, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
+
+  RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
+  MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
+  mrb_define_method(M, window, "initialize", window_init, MRB_ARGS_OPT(1));
+  mrb_define_method(M, window, "contents=", window_set_contents,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "x=", obj_set_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "y=", obj_set_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "width=", window_set_width, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "height=", window_set_height, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "ox=", window_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "oy=", window_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "contents_opacity=", window_set_contents_opacity,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "windowskin=", window_set_skin, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "opacity=", window_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "back_opacity=", window_set_back_opacity,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "dispose", obj_dispose, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
