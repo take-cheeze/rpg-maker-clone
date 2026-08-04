@@ -52,6 +52,14 @@ DEFINE_bool(
     "Save<N>.lsd (see scripts/compare-nepheshel-save-wine.bash) instead of "
     "being driven there by counting key presses");
 DEFINE_bool(
+    rpgxp_new_game,
+    false,
+    "For RPG Maker XP: once the title screen appears, auto-select New Game so "
+    "the game advances into its start map without input, and log the map it "
+    "reaches as [RPGXP-MAP]. Used to smoke-test the RGSS path headlessly (in "
+    "CI, in the browser build and beside the genuine RGSS runtime under wine; "
+    "see scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash)");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -144,6 +152,12 @@ DEFINE_string(profile_trace,
 namespace {
 
 namespace fs = std::filesystem;
+
+// RPG Maker XP's native screen size (RPG2000/MV render at 320x240). Mirrors
+// RPGXP::WIDTH / RPGXP::HEIGHT in mruby-rpgxp/mrblib/lib.rb; the display is
+// sized to it whenever an XP project is the one being booted.
+constexpr int RPGXP_WIDTH = 640;
+constexpr int RPGXP_HEIGHT = 480;
 
 #ifndef __EMSCRIPTEN__
 // mruby's heap is routed through lvgl's memory pool so both are accounted under
@@ -300,6 +314,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
+    // RPG Maker XP renders at 640x480. Native main() sizes the display from
+    // --game_dir before creating it, but in the browser no project exists yet
+    // at that point (the page's loader mounts one here, later), so the display
+    // was created at the 320x240 default and doubled. Resize it now, before the
+    // runtime builds any screen-sized object: with a 320x240 canvas the XP
+    // scenes draw off the edge -- the title's command window lands past the
+    // bottom and its centred text past the right (found by
+    // scripts/rpgxp_browser_check.py; see docs/adr/0024).
+    if (em_display) {
+      lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
+      lv_sdl_window_set_zoom(em_display.get(), 1.f);
+      std::fprintf(stderr, "[RPGXP] display sized to %dx%d\n", RPGXP_WIDTH,
+                   RPGXP_HEIGHT);
+    }
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
@@ -375,8 +403,8 @@ int main(int argc, char** argv) {
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);
     if (xp_game && w_info.is_default && h_info.is_default) {
-      FLAGS_width = 640;
-      FLAGS_height = 480;
+      FLAGS_width = RPGXP_WIDTH;
+      FLAGS_height = RPGXP_HEIGHT;
     }
   }
 
@@ -489,6 +517,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_CONTINUE"),
                 mrb_bool_value(FLAGS_rpg2k_continue));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPGXP_NEW_GAME"),
+                mrb_bool_value(FLAGS_rpgxp_new_game));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

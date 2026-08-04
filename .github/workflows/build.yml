@@ -168,7 +168,8 @@ jobs:
       # can grab the same display, killing one Xvfb out from under its client
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
       # `exe_open` test in CMakeLists.txt); MV runs=100..108, the RPG2k
-      # real-game boot smoke=109..110, and the MZ boot smoke=111 below. Every
+      # real-game boot smoke=109..110, the MZ boot smoke=111, and the RPG XP
+      # real-game boot smoke=112 below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -212,6 +213,15 @@ jobs:
           # per game. See ADR 0021.
           - name: RPG2k real-game boot smoke test
             run: nix develop -c ./scripts/rpg2k_boot_check.bash 109
+
+          # The same guard for the RPG Maker XP runtime: the XP checks above run
+          # mruby-rpgxp's sources under CRuby, so only booting the real binary
+          # catches mruby/CRuby divergence. `--rpgxp_new_game` drives the test
+          # bed past its title into the start map and logs `[RPGXP-MAP]`, which
+          # the script asserts on. Display 112 (see the reserved server-num map
+          # above). See docs/adr/0024-rpgxp-cross-runtime-testing.md.
+          - name: RPG XP real-game boot smoke test
+            run: nix develop -c ./scripts/rpgxp_boot_check.bash 112
 
           - name: MV boot smoke test
             continue-on-error: true
@@ -468,6 +478,14 @@ jobs:
         background: true
         run: nix develop -c ./scripts/download-mv-corescript.bash
 
+      # The project the browser smoke test below plays. Network-bound and
+      # unrelated to the compile, so it overlaps the build like the MV fetch
+      # above; the script is idempotent and writes only under data/.
+      - name: Download the RPG XP test bed
+        id: xp-testbed
+        background: true
+        run: nix develop -c ./scripts/download-opengame-xp.bash
+
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
@@ -525,6 +543,33 @@ jobs:
             nix develop -c ccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Play an RPG Maker XP project in the page that was just built: the check
+      # serves it, feeds the shell's loader a zip of the test bed, presses the
+      # decision key and asserts the runtime reaches the map ([RPGXP-MAP]), that
+      # keys move the party and that the canvas is not blank — the browser build
+      # is a runtime of its own (its own loader, input path and frame loop), and
+      # a green compile says nothing about it. It drives headless Chromium over
+      # the DevTools protocol with the Python standard library alone, so the
+      # `chromium` in the dev shell is the whole dependency. Screenshots of every
+      # step are uploaded below. See
+      # docs/adr/0024-rpgxp-cross-runtime-testing.md.
+      - name: Wait for the RPG XP test bed
+        wait: [xp-testbed]
+
+      - name: RPG XP browser smoke test
+        run: nix develop -c python3 scripts/rpgxp_browser_check.py
+
+      - name: Upload RPG XP browser frames
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpgxp-browser-frames
+          path: |
+            ss/rpgxp-browser-*.png
+            ss/rpgxp-browser.log
+          if-no-files-found: warn
 
       - uses: actions/upload-artifact@v7
         with:

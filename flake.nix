@@ -52,6 +52,12 @@
                 automake
                 cabal-install
                 ccache
+                # Headless browser for scripts/rpgxp_browser_check.py, which
+                # drives the emscripten page over the DevTools protocol (see
+                # docs/adr/0024-rpgxp-cross-runtime-testing.md). The script
+                # talks CDP with the Python standard library alone, so this
+                # binary is the whole dependency.
+                chromium
                 clang-tools
                 cmake
                 cmake-format
