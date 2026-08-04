@@ -637,6 +637,62 @@ module Game
     end
   end
 
+  # Geometry of the map's parallax background (the `Panorama/<name>` image drawn
+  # behind the tile layers, `MAP_UNIT` fields 31–38). Given the camera position,
+  # the screen / map / image sizes and the per-axis loop + autoscroll settings,
+  # #axis_offset returns the top-left offset (<= 0) at which to start tiling the
+  # image for that axis. The behaviour follows EasyRPG Player's parallax model:
+  #
+  #   * A **looping** axis tiles the image and scrolls it at half the map's rate
+  #     (the classic parallax factor), plus an optional autoscroll that drifts it
+  #     over time at the speed field's rate.
+  #   * A **non-looping** axis anchors the image: it stays fixed to the screen
+  #     when it is no larger than the screen (the common RPG2000 full-screen
+  #     backdrop), and pans across its excess width/height in step with the map
+  #     when it is larger.
+  #
+  # Pure integer geometry with no rendering dependency, so it is exercised
+  # directly by scripts/rpg2k_render_check.rb. The exact scroll *rate* mirrors
+  # EasyRPG's formulae but has not been visually diffed against RPG_RT under
+  # wine — that native comparison is the remaining validation.
+  module Parallax
+    module_function
+
+    # Per-frame autoscroll offset in pixels for an RPG2000 speed field, ported
+    # from EasyRPG's `scroll_amt` with its pan->pixel (/32) scaling so small
+    # speeds move a fraction of a pixel per frame: the fine delta is
+    # -(1<<speed) for speed>0 and +(1<<-speed) for speed<0, accumulated over
+    # `frame` frames and divided by 32.
+    def autoscroll_px(speed, frame)
+      return 0 if speed.nil? || speed == 0
+      amt = speed > 0 ? -(1 << speed) : (1 << -speed)
+      (frame * amt) / 32
+    end
+
+    # Top-left draw offset (in (-img_px, 0]) for one panorama axis.
+    def axis_offset(loop, autoscroll, speed, frame, cam_px, screen_px, map_px, img_px)
+      return 0 if img_px.nil? || img_px <= 0
+      if loop
+        base = cam_px / 2
+        base += autoscroll_px(speed, frame) if autoscroll
+        -(base % img_px)
+      else
+        anchored_offset(cam_px, screen_px, map_px, img_px)
+      end
+    end
+
+    # A non-looping axis: fixed to the screen while the image is no larger than
+    # it, otherwise panned across the image's excess as the camera sweeps the
+    # map (0 at the west/north edge, -excess at the east/south edge).
+    def anchored_offset(cam_px, screen_px, map_px, img_px)
+      return 0 if img_px <= screen_px
+      cam_max = map_px - screen_px
+      return 0 if cam_max <= 0
+      cam = Game.clamp(cam_px, 0, cam_max)
+      -((img_px - screen_px) * cam / cam_max)
+    end
+  end
+
   # Game switches: a 1-indexed set of booleans, defaulting to false.
   class Switches
     def initialize; @data = {}; end

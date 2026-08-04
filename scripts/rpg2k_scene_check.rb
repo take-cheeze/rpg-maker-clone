@@ -184,14 +184,15 @@ def move_route(cmd_ids, repeat: true, skippable: true)
   OpenStruct.new(commands: cmds, repeat: repeat, skippable: skippable)
 end
 
-# A 6x5 map, all tiles walkable, holding the given events (id => ev).
-def fake_map(id, events)
+# A 6x5 map, all tiles walkable, holding the given events (id => ev). `parallax`
+# is an optional hash of MAP_UNIT parallax fields merged onto the unit.
+def fake_map(id, events, parallax: nil)
   w = 6; h = 5
-  unit = OpenStruct.new(width: w, height: h, chipset_id: 1,
-                        lower_layer: Array.new(w * h, 0),
-                        upper_layer: Array.new(w * h, 0),
-                        events: events)
-  Game::Map.new(id, unit)
+  fields = { width: w, height: h, chipset_id: 1,
+             lower_layer: Array.new(w * h, 0),
+             upper_layer: Array.new(w * h, 0), events: events }
+  fields.merge!(parallax) if parallax
+  Game::Map.new(id, OpenStruct.new(fields))
 end
 
 # A minimal parent (stands in for the RPG2k app) and party leader. load_map is
@@ -222,10 +223,10 @@ def fake_party
   OpenStruct.new(leader: nil, actors: [])
 end
 
-def new_scene(events, player: [0, 0], common: nil)
+def new_scene(events, player: [0, 0], common: nil, parallax: nil)
   db = fake_db(common)
   state = Game::State.new(fake_party, 1, player[0], player[1])
-  state.map = fake_map(1, events)
+  state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
 end
 
@@ -907,6 +908,26 @@ check 'a continuous-animation event advances even while standing still' do
   e = event_hashes(scene)[1]
   eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
   ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+end
+
+check 'a map with a looping, autoscrolling parallax renders without raising' do
+  scene = new_scene({}, parallax: {
+    parallax_flag: true, parallax_name: 'BG',
+    parallax_loop_x: true, parallax_loop_y: true,
+    parallax_autoloop_x: true, parallax_sx: 4,
+    parallax_autoloop_y: false, parallax_sy: 0
+  })
+  ok scene.instance_variable_get(:@parallax_sprite), 'a parallax sprite is built'
+  ok scene.instance_variable_get(:@parallax_sprite).z < 0, 'drawn behind the tiles'
+  20.times { scene.update } # exercises the tiling + autoscroll draw path
+  ok true
+end
+
+check 'a map with no parallax builds no backdrop sprite' do
+  scene = new_scene({})
+  ok scene.instance_variable_get(:@parallax_sprite).nil?, 'no parallax sprite'
+  5.times { scene.update }
+  ok true
 end
 
 check 'rendering a map with charset + tile-substitution events does not raise' do

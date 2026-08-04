@@ -417,10 +417,11 @@ class RPG2k
 
       def dispose
         close_message
-        [@lower_sprite, @upper_sprite, @player_sprite].each do |s|
+        [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite].each do |s|
           s.dispose if s
         end
         @chipset_bmp.dispose if @chipset_bmp
+        @parallax_img.dispose if @parallax_img
       end
 
       def update
@@ -471,6 +472,34 @@ class RPG2k
         # CharSet graphics for events, loaded on demand and cached by name (a
         # cached nil marks a name that failed to load, so we log it once).
         @event_charsets = {}
+
+        setup_parallax
+      end
+
+      # Load the map's parallax background (Panorama/<name>) and its scroll
+      # settings, and create the sprite that carries it behind the tile layers
+      # (z = -1, below the lower tiles at z = 0). Skipped — leaving the map's
+      # backdrop the plain void — when the map has no parallax or the image is
+      # missing.
+      def setup_parallax
+        u = @map.unit
+        return unless (u.parallax_flag rescue false)
+        name = (u.parallax_name rescue '').to_s
+        return if name.empty?
+        @parallax_img = Bitmap.new "Panorama/#{name}"
+        @par_loop_x = (u.parallax_loop_x rescue false) ? true : false
+        @par_loop_y = (u.parallax_loop_y rescue false) ? true : false
+        @par_auto_x = (u.parallax_autoloop_x rescue false) ? true : false
+        @par_auto_y = (u.parallax_autoloop_y rescue false) ? true : false
+        @par_sx = (u.parallax_sx rescue 0) || 0
+        @par_sy = (u.parallax_sy rescue 0) || 0
+        @parallax_sprite = Sprite.new
+        @parallax_sprite.z = -1
+        @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        @parallax_sprite.bitmap = @parallax_bmp
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] parallax load failed, no backdrop drawn: #{e.message}"
+        @parallax_img = nil
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -1622,6 +1651,7 @@ class RPG2k
         # of void during the shake, which is fine.
         cam_x -= @state.screen.shake_offset
 
+        draw_parallax cam_x, cam_y
         draw_layers cam_x, cam_y
 
         @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
@@ -1630,6 +1660,46 @@ class RPG2k
         # every frame so the hero hides/shows as events toggle it.
         @player_sprite.visible = !player_hidden?
         draw_player_frame
+      end
+
+      # Composite the parallax background into its screen-sized buffer, tiling
+      # the image along any looping axis so it fills the view. The per-axis
+      # start offset (and, for a looping axis, the scroll/autoscroll) comes from
+      # Game::Parallax; @anim_frame drives the autoscroll. A non-looping axis
+      # draws a single copy at its anchored offset.
+      def draw_parallax cam_x, cam_y
+        return unless @parallax_img
+        iw = @parallax_img.width
+        ih = @parallax_img.height
+        ox = Game::Parallax.axis_offset(@par_loop_x, @par_auto_x, @par_sx,
+                                        @anim_frame, cam_x, SCREEN_W,
+                                        @map.width * TILE, iw)
+        oy = Game::Parallax.axis_offset(@par_loop_y, @par_auto_y, @par_sy,
+                                        @anim_frame, cam_y, SCREEN_H,
+                                        @map.height * TILE, ih)
+        @parallax_bmp.clear
+        src = Rect.new(0, 0, iw, ih)
+        parallax_tiles(oy, ih, SCREEN_H, @par_loop_y).each do |dy|
+          parallax_tiles(ox, iw, SCREEN_W, @par_loop_x).each do |dx|
+            @parallax_bmp.blt dx, dy, @parallax_img, src
+          end
+        end
+      end
+
+      # Draw positions along one axis so the image (size `size`, starting at
+      # `off` <= 0) covers `screen`: repeated every `size` when the axis loops,
+      # a single copy at `off` otherwise.
+      def parallax_tiles(off, size, screen, loop)
+        return [off] unless loop && size > 0
+        d = off
+        d -= size while d > 0        # begin at or left of the origin
+        d += size while d + size <= 0 # but not entirely off-screen
+        out = []
+        while d < screen
+          out << d
+          d += size
+        end
+        out
       end
 
       def draw_layers cam_x, cam_y

@@ -67,6 +67,16 @@ The work below is roughly ordered by the critical path to a walkable game
   Passability still drives collision. Geometry is pinned by
   `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
   Tiles) substitution and screen-tone tinting of tiles.
+- ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
+  backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
+  EasyRPG's parallax model: a looping axis tiles the image and scrolls it at
+  half the camera rate with optional time-based autoscroll (`parallax_sx/sy`),
+  while a non-looping axis anchors it — fixed to the screen for the common
+  full-screen backdrop, panned across its excess for a larger image. Grounded
+  in the real Nepheshel data (all 45 parallax maps' images resolve and every
+  offset stays in range across a camera sweep) and pinned by
+  `scripts/rpg2k_render_check.rb`. The scroll *rate* mirrors EasyRPG's formulae
+  but still wants a native/wine visual diff to confirm.
 - ✅ Character sprites — the party leader and every map event render from their
   CharSet graphic (`Game::CharSet`, 4-direction, 3 walk frames). Events also
   draw a chipset tile when their graphic is a tile substitution (empty CharSet
