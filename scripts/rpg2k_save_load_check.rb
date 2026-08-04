@@ -115,6 +115,33 @@ def check_game(dir)
                                  .map { |i| i + 1 }
   eq nonzero, state.variables.to_h.reject { |_k, v| v == 0 }.keys.sort, 'variable ids set'
 
+  # Writer round-trip (ADR 0019): serialise the runtime state back to a genuine
+  # .lsd with State#to_lsd, re-read it with State.from_lsd, and confirm every
+  # modelled field survives -- i.e. to_lsd is a faithful inverse of from_lsd.
+  round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd.to_lcf)))
+  eq state.map_id, round.map_id, 'to_lsd: map id'
+  eq state.x, round.x, 'to_lsd: hero x'
+  eq state.y, round.y, 'to_lsd: hero y'
+  eq state.direction, round.direction, 'to_lsd: hero direction'
+  eq state.party.gold, round.party.gold, 'to_lsd: gold'
+  eq state.party.items, round.party.items, 'to_lsd: items'
+  eq state.party.actors.map { |a| a.id }, round.party.actors.map { |a| a.id },
+     'to_lsd: roster'
+  state.party.actors.each do |a|
+    b = round.party.actor_by_id(a.id)
+    next unless b
+    eq a.level, b.level, "to_lsd: actor #{a.id} level"
+    eq a.exp, b.exp, "to_lsd: actor #{a.id} exp"
+    eq a.hp, b.hp, "to_lsd: actor #{a.id} hp"
+    eq a.mp, b.mp, "to_lsd: actor #{a.id} mp"
+    eq a.equipment, b.equipment, "to_lsd: actor #{a.id} equipment"
+    eq a.skills.sort, b.skills.sort, "to_lsd: actor #{a.id} skills"
+  end
+  eq state.switches.to_h.select { |_k, v| v }.keys.sort,
+     round.switches.to_h.select { |_k, v| v }.keys.sort, 'to_lsd: switches on'
+  eq state.variables.to_h.reject { |_k, v| v == 0 },
+     round.variables.to_h.reject { |_k, v| v == 0 }, 'to_lsd: variables set'
+
   puts "  leader=#{state.party.leader.name.inspect} hp=#{state.party.leader.hp} " \
        "mp=#{state.party.leader.mp} map=#{state.map_id} " \
        "pos=(#{state.x},#{state.y}) gold=#{state.party.gold} " \

@@ -286,6 +286,21 @@ module LCF
     out.pack('C*')
   end
 
+  # Encode an array of 16bit integers as packed little-endian bytes -- the
+  # inverse of `unpack('s<*')` (the :int16_array reader). Each value is masked to
+  # its low 16 bits, so the signed reinterpretation the reader applies
+  # round-trips exactly. Built byte-wise rather than via `pack('s<*')` so it does
+  # not depend on mruby-pack's endian-suffix pack support (the readers only rely
+  # on unpack). Used for the save's item-id, equipment and skill tables.
+  def pack_int16 a
+    out = []
+    a.each do |v|
+      v &= 0xffff
+      out.push(v & 0xff, (v >> 8) & 0xff)
+    end
+    out.pack('C*')
+  end
+
   # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
   # inverse of to_rb. Only the scalar and simple-array types a save actually
   # needs to be re-authored are handled; the packed command/double/tree types
@@ -301,6 +316,7 @@ module LCF
     when :uint8 ; [value & 0xff].pack('C')
     when :int8_array ; value.pack('C*')
     when :bool_array ; value.map { |b| b ? 1 : 0 }.pack('C*')
+    when :int16_array ; pack_int16 value
     when :int32_array ; pack_int32 value
     when :string ; utf8_to_cp932 value
     when :Array1D, :Array2D
@@ -313,7 +329,8 @@ module LCF
 
   module_function :read_ber, :write_ber, :to_rb, :read_section,
                   :parse_event_commands, :parse_move_commands,
-                  :unpack_int32, :unpack_double, :pack_int32, :encode, :binstr
+                  :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
+                  :encode, :binstr
 
   MODE = 2000 # 2003
 
@@ -435,12 +452,23 @@ module LCF
       @data = []
       @scheme = schema
 
+      # An empty string builds an empty, writable table from scratch (populate
+      # via #[]= then #to_lcf); a real chunk starts with a BER entry count.
+      return if s.eof?
+
       (0...LCF.read_ber(s)).each do
         @data[LCF.read_ber s] = Array1D.new(s, schema)
       end
     end
 
     def [] idx ; @data[idx] end
+
+    # Store an entry (an Array1D, or its already-serialised bytes) at id +idx+,
+    # so an authored table can be assembled and written back out via #to_lcf.
+    def []= idx, entry
+      @data[idx] = entry
+      entry
+    end
 
     # Iterate over defined (id, Array1D) entries; useful for walking event or
     # actor tables that are sparsely populated.
