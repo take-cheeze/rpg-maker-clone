@@ -87,6 +87,12 @@ Create ADRs in /docs/adr for:
   it lists documented vs. undocumented top-level chunks and reads every
   documented field. Synthetic blobs cannot catch a mistyped field, so validate
   against genuine output.
+- The save layer can also **write** `.lsd` (`mruby-lcf` `to_lcf` / `write_ber` /
+  `encode` / `Array1D#[]=`, ADR 0018). Verify the writer with
+  `ruby scripts/lcf_save_roundtrip.rb <path/to/Save01.lsd>`: it re-serializes a
+  real save byte-for-byte and edits+reloads scalar fields through the schema.
+  Because unedited chunks (including the undocumented 102/112/200) are copied
+  raw, the round-trip is exact without those chunks being documented.
 - Generate a real save headlessly with `./scripts/gen-lcf-save-wine.bash`: it
   boots a game's EasyRPG Player under wine (Xvfb + `matchbox-window-manager` so
   the SDL window gets input focus) with `--test-play` and uses the **debug menu**

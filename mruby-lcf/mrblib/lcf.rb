@@ -27,6 +27,26 @@ module LCF
     [ret].pack('L').unpack1('l')
   end
 
+  # Inverse of read_ber: encode an integer as a base-128 (BER) big-endian byte
+  # string, every byte but the last carrying the 0x80 continuation bit. The
+  # value is first reduced to its 32-bit two's-complement form so that negative
+  # numbers round-trip through read_ber (which reinterprets the low 32 bits as
+  # signed) -- e.g. -1 becomes the five bytes 8f ff ff ff 7f, exactly as RPG_RT
+  # writes it. Non-negative numbers use the shortest encoding (RPG_RT's own),
+  # so a value read from a real file re-encodes to the identical bytes.
+  def write_ber(n)
+    n &= 0xffff_ffff
+    groups = [n & 0x7f]
+    while n > 0x7f
+      n >>= 7
+      groups.unshift(n & 0x7f)
+    end
+    last = groups.size - 1
+    bytes = []
+    groups.each_with_index { |g, i| bytes << (i < last ? (g | 0x80) : g) }
+    bytes.pack('C*')
+  end
+
   class Tree
     def initialize(selected_id, maps)
       @selected_id = selected_id
@@ -239,8 +259,55 @@ module LCF
     sign == 1 ? -val : val
   end
 
-  module_function :read_ber, :to_rb, :read_section, :parse_event_commands,
-                  :parse_move_commands, :unpack_int32, :unpack_double
+  # Coerce a value to a raw byte string safe to concatenate with other byte
+  # strings. Under CRuby (the analysis harnesses) this re-tags it ASCII-8BIT so
+  # appending cp932 bytes to a binary buffer does not raise on encoding
+  # mismatch; under mruby (no Encoding class) strings are already raw bytes and
+  # #force_encoding is absent, so it is a no-op.
+  def binstr s
+    s = s.to_s
+    s.respond_to?(:force_encoding) ? s.dup.force_encoding('BINARY') : s
+  end
+
+  # Encode an array of signed 32bit integers as packed little-endian bytes --
+  # the inverse of unpack_int32 (used for the save file's variable table).
+  def pack_int32 a
+    out = []
+    a.each do |v|
+      v &= 0xffff_ffff
+      out.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff)
+    end
+    out.pack('C*')
+  end
+
+  # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
+  # inverse of to_rb. Only the scalar and simple-array types a save actually
+  # needs to be re-authored are handled; the packed command/double/tree types
+  # are still round-tripped as their original raw bytes (never re-encoded from
+  # decoded values), so they are intentionally left out. A nested :Array1D /
+  # :Array2D value is serialised through its own #to_lcf. Strings go back out
+  # as cp932 via LCF.utf8_to_cp932 (the build's uni-algo encoder; the CRuby
+  # harnesses provide a Windows-31J stand-in), mirroring cp932_to_utf8 on read.
+  def encode value, type
+    case type
+    when :int ; write_ber value
+    when :bool ; [value ? 1 : 0].pack('C')
+    when :uint8 ; [value & 0xff].pack('C')
+    when :int8_array ; value.pack('C*')
+    when :bool_array ; value.map { |b| b ? 1 : 0 }.pack('C*')
+    when :int32_array ; pack_int32 value
+    when :string ; utf8_to_cp932 value
+    when :Array1D, :Array2D
+      return value.dup.force_encoding('BINARY') if value.is_a? String
+      value.to_lcf
+    else
+      raise "cannot encode type: #{type}"
+    end
+  end
+
+  module_function :read_ber, :write_ber, :to_rb, :read_section,
+                  :parse_event_commands, :parse_move_commands,
+                  :unpack_int32, :unpack_double, :pack_int32, :encode, :binstr
 
   MODE = 2000 # 2003
 
@@ -301,6 +368,44 @@ module LCF
       d && d.unpack('s<*')
     end
 
+    # Set the raw bytes of a chunk from a Ruby value, encoding it through the
+    # schema type of that field (LCF.encode) so an authored/edited section can
+    # be written back out. With no schema attached a raw String is stored as-is.
+    def []= idx, value
+      elem = @schema && @schema[:elements] && @schema[:elements][idx]
+      if elem
+        @data[idx] = LCF.encode(value, elem[:type])
+      elsif value.is_a? String
+        @data[idx] = value.dup.force_encoding('BINARY')
+      else
+        raise "cannot encode chunk #{idx} without a schema"
+      end
+      value
+    end
+
+    # Serialise back to the on-disk chunk stream: every present chunk in
+    # ascending id order as write_ber(id) + write_ber(len) + bytes. Chunks are
+    # stored as their original raw bytes, so a file read and re-serialised
+    # without edits reproduces byte-for-byte; an edited chunk (see #[]=) carries
+    # only its own re-encoded bytes. A chunk whose value is a nested
+    # Array1D/Array2D is serialised through that object's own #to_lcf.
+    #
+    # When +terminate+ a write_ber(0) terminator is appended. That terminator is
+    # required for an Array1D embedded in an Array2D, where entries carry no
+    # length prefix and the reader scans until id 0; it is omitted at the top
+    # level of a save file, whose chunk list runs to EOF with no terminator (a
+    # real RPG2000/2003 .lsd ends on the last chunk's bytes).
+    def to_lcf terminate = true
+      out = String.new
+      @data.each_with_index do |v, idx|
+        next if idx.zero? || v.nil?
+        bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
+        out << LCF.write_ber(idx) << LCF.write_ber(bytes.bytesize) << bytes
+      end
+      out << LCF.write_ber(0) if terminate
+      out
+    end
+
     def method_missing sym, *args
       raise args unless args.empty?
       self[@sym2idx[sym]]
@@ -333,5 +438,21 @@ module LCF
       end
     end
     include Enumerable
+
+    # Serialise back to the on-disk layout: write_ber(entry count) followed by,
+    # for each defined entry in ascending id order, write_ber(id) and the
+    # entry's own Array1D#to_lcf (which supplies its trailing terminator). The
+    # inverse of the reader; an unedited table reproduces its original bytes.
+    def to_lcf
+      ids = []
+      @data.each_with_index { |v, i| ids.push(i) unless v.nil? }
+      out = String.new << LCF.write_ber(ids.size)
+      ids.each do |i|
+        entry = @data[i]
+        bytes = LCF.binstr(entry.is_a?(String) ? entry : entry.to_lcf)
+        out << LCF.write_ber(i) << bytes
+      end
+      out
+    end
   end
 end
