@@ -595,11 +595,24 @@ jobs:
           submodules: recursive
 
       # quickjs-ng pins a nested `test262` submodule with `update = none`, so the
-      # recursive checkout above skips it. `nix build '.?submodules=1'` still
-      # recurses into every nested submodule and fails to fetch test262 when it
-      # is absent, so materialise it here (shallow). It is only needed to satisfy
-      # nix's recursive fetch; nothing in the build uses it.
+      # recursive checkout above skips it — it is the tc39 conformance suite
+      # (tens of thousands of files) and nothing in this build uses it.
+      # `nix build '.?submodules=1'` still walks every entry of every nested
+      # `.gitmodules` and fails on test262 because the directory is absent, so
+      # drop the entry from the working tree instead of cloning tc39/test262.
+      # The gitlink goes with it (`update-index --force-remove`): an entry left
+      # in the index with no `.gitmodules` mapping is an orphan that `git
+      # submodule status` itself errors on. Both edits only dirty the quickjs
+      # checkout, which nix copies as-is; nothing in the build reads either.
+      # Set the `CLONE_TEST262` repository variable to `1` to fetch it instead.
+      - name: Drop the quickjs test262 submodule entry (skips the tc39 clone)
+        if: ${{ vars.CLONE_TEST262 != '1' }}
+        run: |
+          git -C 3rd/quickjs config --file .gitmodules --remove-section submodule.test262
+          git -C 3rd/quickjs update-index --force-remove test262
+
       - name: Materialize quickjs test262 submodule for the flake build
+        if: ${{ vars.CLONE_TEST262 == '1' }}
         run: git -C 3rd/quickjs -c submodule.test262.update=checkout submodule update --init --depth 1 test262
 
       - uses: nixbuild/nix-quick-install-action@v35
