@@ -2477,6 +2477,24 @@ mrb_value spr_update(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// RGSS Sprite#blend_type= (0 normal, 1 add, 2 subtract) maps onto the sprite
+// canvas object's LVGL blend mode, which the compositor uses when drawing it
+// over the scene.
+mrb_value spr_set_blend_type(mrb_state* M, mrb_value self) {
+  mrb_int t;
+  mrb_get_args(M, "i", &t);
+  lv_blend_mode_t mode = LV_BLEND_MODE_NORMAL;
+  if (t == 1)
+    mode = LV_BLEND_MODE_ADDITIVE;
+  else if (t == 2)
+    mode = LV_BLEND_MODE_SUBTRACTIVE;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_style_blend_mode(obj, mode, 0);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@blend_type"), mrb_fixnum_value(t));
+  return self;
+}
+
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
@@ -3583,6 +3601,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "color=", spr_set_color, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "src_rect=", spr_set_src_rect, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
+  mrb_define_method(M, spr, "blend_type=", spr_set_blend_type, MRB_ARGS_REQ(1));
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
