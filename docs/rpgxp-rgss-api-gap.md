@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth rendered; flash stored)
+### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -60,16 +60,19 @@ pixel; and `Sprite#src_rect=` crops the display to a sub-rectangle (the scratch
 is that region, reused across frames to avoid GC churn). `Sprite#update` is native
 and re-composites when a `src_rect` is set, so the per-frame `src_rect.set` that
 character sprites do actually changes the shown cell. Crop/mirror/tone/colour
-share one pre-composite (`spr_bind_display`). **Snapshot caveat:** a sprite that
-redraws its bitmap, or mutates tone/colour in place, still needs a re-assign
-(`bitmap=`/`tone=`/`color=`) unless it also has a `src_rect` (which re-composites
-via `update`). `Sprite#blend_type=` maps 0/1/2 to the canvas object's LVGL blend
-mode (normal / additive / subtractive), so additive effects composite;
+share one pre-composite (`spr_bind_display`). `Sprite#blend_type=` maps 0/1/2 to
+the canvas object's LVGL blend mode (normal / additive / subtractive), so
+additive effects composite;
 `Sprite#bush_depth=` fades the bottom N rows to half opacity in the same
-pre-composite, so a character wading through bushes dims below the waist.
-**Remaining:** **flash** (a timed colour pulse — needs `update`-driven timing).
-`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather and the animation
-player depend on it.
+pre-composite, so a character wading through bushes dims below the waist; and
+`Sprite#flash(color, duration)` runs a timed colour pulse — a colour flash
+overlays that colour at a fading alpha, a nil-colour "empty" flash blinks the
+sprite out, and `update` decays it one frame at a time until it clears. So all of
+`Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, the weather sprites and the
+battle animation player now get their full visual treatment. **Snapshot caveat:**
+a sprite that redraws its bitmap, or mutates tone/colour in place, still needs a
+re-assign (`bitmap=`/`tone=`/`color=`) to re-composite unless it also has a
+`src_rect` or an active flash (which re-composite via `update`).
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
 
@@ -93,7 +96,7 @@ clip contents taller than the window; `stretch` (tiled vs stretched background) 
 ignored; and the RMXP windowskin source-rect constants are best-effort until a
 game exercises them.
 
-### 3. `Tilemap` ⚠️ (tiles + autotiles rendered; priority layering pending)
+### 3. `Tilemap` ⚠️ (tiles + animated autotiles rendered; priority layering pending)
 
 `Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
 `lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
@@ -101,25 +104,37 @@ visible part of the map — for each of the three `map_data` layers it blits the
 tiles overlapping the viewport (given `ox`/`oy`). **Regular tiles** (id ≥ 384)
 come straight from the `tileset`; **autotiles** (id 48–383) are assembled from
 their four 16×16 quads using the RMXP 48-shape quad table (`AUTOTILE_QUADS`,
-derived from mkxp), so water/terrain ground now fills in. `tileset=`,
-`map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
-native and re-render on change. **Remaining:** the per-tile **priority layering**
-(`priorities`) — tiles that should draw above characters — is stored-only, so
-everything renders on one flat layer; **autotile animation** uses only the first
-frame; and `flash_data` is ignored.
+derived from mkxp), so water/terrain ground now fills in. **Animated autotiles**
+(a wider autotile bitmap holds several 96px frames side by side) now cycle:
+`Tilemap#update` advances a counter whose frame index is `counter / 16` (mod 4,
+matching RMXP/mkxp's 16-tick-per-frame `atAnimation` table), and the renderer
+shifts the autotile source into that frame's column — so water and waterfalls
+animate. `update` only re-tiles on a frame boundary, and only when the map
+actually has an animated autotile (recorded during the last refresh), so static
+maps do no per-frame work. `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
+`visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
+**Remaining:** the per-tile **priority layering** (`priorities`) — tiles that
+should draw above characters — is stored-only, so everything still renders on one
+flat layer (a correct fix needs the above-priority tiles to become their own
+z-ordered objects that interleave with character sprites per row); and
+`flash_data` is ignored.
 
-### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
+### 4. `Plane` ⚠️ (tiling + scroll + tint/blend rendered; zoom stored)
 
 `Plane` is now **native** (`mruby-rgss/src/lib.cxx`): `Plane.new` creates an
 `lv_canvas` the size of the viewport (or screen) whose buffer is filled by tiling
 the `bitmap` with the `ox`/`oy` scroll wrapped around it (`plane_retile`), so map
 parallax and fog now actually tile and scroll. `bitmap=`, `ox=`/`oy=`,
-`opacity=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native; the
-canvas is invalidated directly on each re-tile. **Remaining:** `zoom_x`/`zoom_y`,
-`blend_type`, `tone` and `color` are stored but not yet applied to the tiled blit
-(the tile is a straight copy — no scale/blend/tint yet). The per-scroll re-tile is
-a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based scroll is a
-possible optimization.
+`opacity=`, `tone=`, `color=`, `blend_type=`, `z=`, `visible`/`visible=`,
+`dispose`/`disposed?` are native. `opacity=` and `blend_type=` map onto the plane
+canvas's LVGL object (so a fog Plane can fade and composite additively), and
+`tone=`/`color=` bake an RGSS tone (grey desaturation + RGB offset) and a colour
+overlay into the tiled buffer per pixel (the same maths Sprite uses) — so a tinted
+fog renders its tint. The canvas is invalidated directly on each re-tile.
+**Remaining:** `zoom_x`/`zoom_y` are stored but not applied (scaled tiling is a
+different mechanism from the current 1:1 wrap and is future work). The per-scroll
+re-tile is a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based
+scroll is a possible optimization.
 
 ### 5. `Kernel#sprintf` / `String#%` ✅ (mruby-sprintf gem)
 

@@ -2258,6 +2258,29 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       mrb_iv_get(M, self, mrb_intern_lit(M, "@bush_depth"));
   const int bush = mrb_test(bush_v) ? mrb_as_int(M, bush_v) : 0;
 
+  // flash: a timed colour pulse (Sprite#flash) that decays over its duration,
+  // advanced one frame per Sprite#update. A colour flash overlays that colour
+  // at a fading alpha; a nil-colour ("empty") flash instead blinks the sprite
+  // out and back in.
+  const mrb_value fcnt_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value fdur_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
+  const mrb_value fcol_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const int flash_count = mrb_test(fcnt_v) ? mrb_as_int(M, fcnt_v) : 0;
+  const int flash_dur = mrb_test(fdur_v) ? mrb_as_int(M, fdur_v) : 0;
+  const bool flash_on = flash_count > 0 && flash_dur > 0;
+  const bool flash_color_on = flash_on && mrb_test(fcol_v) && DATA_PTR(fcol_v);
+  const bool flash_empty = flash_on && !flash_color_on;
+  Color fcl{0, 0, 0, 0};
+  if (flash_color_on)
+    fcl = DataType<Color>::get(M, fcol_v);
+  // Colour flash intensity fades from full (count == duration) to nothing.
+  const int fa = flash_color_on
+                     ? static_cast<int>(fcl.alpha) * flash_count / flash_dur
+                     : 0;
+
   // src_rect: display only a sub-region of the bitmap (character-animation
   // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
   int cx = 0, cy = 0, cw = src.width, ch = src.height;
@@ -2276,7 +2299,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     }
   }
 
-  if (cropped || mirror || has_tone || has_color || bush > 0) {
+  if (cropped || mirror || has_tone || has_color || bush > 0 || flash_on) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
     mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
@@ -2319,6 +2342,13 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
           g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
           b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
         }
+        if (flash_color_on) {
+          r = clamp_byte(r + (static_cast<int>(fcl.red) - r) * fa / 255);
+          g = clamp_byte(g + (static_cast<int>(fcl.green) - g) * fa / 255);
+          b = clamp_byte(b + (static_cast<int>(fcl.blue) - b) * fa / 255);
+        }
+        if (flash_empty)
+          a = a * (flash_dur - flash_count) / flash_dur;
         if (bush > 0 && y >= ch - bush)
           a /= 2;
         bmp_put(fx, x, y, r, g, b, a);
@@ -2471,16 +2501,35 @@ mrb_value spr_set_src_rect(mrb_state* M, mrb_value self) {
 // Per-frame tick: stock scripts (Sprite_Character etc.) mutate src_rect in
 // place via `src_rect.set(...)` each frame, which does not call src_rect=, so a
 // sprite that uses src_rect re-composites here to pick that up (and any
-// tone/color change). Sprites without a src_rect need no per-frame work.
+// tone/color change). An active flash also decays one frame here. Sprites with
+// neither need no per-frame work.
 mrb_value spr_update(mrb_state* M, mrb_value self) {
+  bool recomposite = false;
+
+  // Advance an active flash: it fades one frame per update and clears (dropping
+  // its colour) once the duration runs out.
+  const mrb_value fcnt = mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  int fc = mrb_test(fcnt) ? mrb_as_int(M, fcnt) : 0;
+  if (fc > 0) {
+    --fc;
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+               mrb_fixnum_value(fc));
+    if (fc == 0)
+      mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), mrb_nil_value());
+    recomposite = true;
+  }
+
   const mrb_value sr = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
   if (mrb_test(sr) && DATA_PTR(sr)) {
     Rect& r = DataType<Rect>::get(M, sr);
-    if (r.width > 0 && r.height > 0) {
-      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-      if (obj)
-        spr_bind_display(M, self, obj);
-    }
+    if (r.width > 0 && r.height > 0)
+      recomposite = true;
+  }
+
+  if (recomposite) {
+    lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+    if (obj)
+      spr_bind_display(M, self, obj);
   }
   return self;
 }
@@ -2513,6 +2562,24 @@ mrb_value spr_set_bush_depth(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   spr_bind_display(M, self, obj);
   return self;
+}
+
+// RGSS Sprite#flash(color, duration) starts a timed colour pulse; a nil colour
+// is an "empty" flash that blinks the sprite out. The state is baked into the
+// composite by spr_bind_display and decayed each frame by spr_update.
+mrb_value spr_flash(mrb_state* M, mrb_value self) {
+  mrb_value color;
+  mrb_int duration;
+  mrb_get_args(M, "oi", &color, &duration);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(duration));
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return mrb_nil_value();
 }
 
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
@@ -2595,6 +2662,23 @@ void plane_retile(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
   const mrb_int oy =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+
+  // Tone (grey desaturation + RGB offset) and colour overlay are baked into the
+  // tiled buffer per pixel, the same way Sprite does — so a tinted fog/parallax
+  // Plane renders its tint. (Same maths as spr_bind_display.)
+  const mrb_value tone_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  Tone tn{};
+  Color cl{0, 0, 0, 0};
+  if (mrb_test(tone_v) && DATA_PTR(tone_v))
+    tn = DataType<Tone>::get(M, tone_v);
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    cl = DataType<Color>::get(M, color_v);
+  const bool has_tone =
+      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_color = cl.alpha != 0;
+  const int ca = static_cast<int>(cl.alpha);
+
   for (int y = 0; y < dst.height; ++y) {
     const int sy =
         static_cast<int>(((y + oy) % src.height + src.height) % src.height);
@@ -2603,6 +2687,23 @@ void plane_retile(mrb_state* M, mrb_value self) {
           static_cast<int>(((x + ox) % src.width + src.width) % src.width);
       int r, g, b, a;
       bmp_read(src, sx, sy, r, g, b, a);
+      if (has_tone) {
+        const int gy = static_cast<int>(tn.gray);
+        if (gy != 0) {
+          const int lum = (r * 77 + g * 150 + b * 29) / 256;
+          r += (lum - r) * gy / 255;
+          g += (lum - g) * gy / 255;
+          b += (lum - b) * gy / 255;
+        }
+        r = clamp_byte(r + static_cast<int>(tn.red));
+        g = clamp_byte(g + static_cast<int>(tn.green));
+        b = clamp_byte(b + static_cast<int>(tn.blue));
+      }
+      if (has_color) {
+        r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
+        g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
+        b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
+      }
       bmp_put(dst, x, y, r, g, b, a);
     }
   }
@@ -2675,6 +2776,24 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
   plane_retile(M, self);
   return self;
+}
+
+// Plane#tone= / #color= tint the tiled buffer (baked in by plane_retile), so a
+// fog/parallax Plane re-tiles with its new tint on assign.
+mrb_value plane_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
+  plane_retile(M, self);
+  return v;
+}
+
+mrb_value plane_set_color(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  plane_retile(M, self);
+  return v;
 }
 
 // ---- Tilemap --------------------------------------------------------------
@@ -2777,6 +2896,10 @@ static const int AUTOTILE_QUADS[48][4][2] = {
 // table's TL, TR, BL, BR order.
 static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
 
+// One autotile animation frame is 96px wide (3 tiles); animated autotiles pack
+// several such frames left to right.
+static const int AUTOTILE_FRAME_W = 96;
+
 // Redraw the visible part of the map into the tilemap's canvas. For each of the
 // three map-data layers, the tiles overlapping the viewport (given ox/oy) are
 // blitted from the tileset (regular tiles, id >= 384) or assembled from the
@@ -2816,6 +2939,17 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       mrb_iv_get(M, self, mrb_intern_lit(M, "@autotiles"));
   const bool have_autotiles = mrb_array_p(autotiles_v);
 
+  // Autotile animation: an autotile bitmap wider than one 96px frame holds
+  // several animation frames side by side. RMXP shows each of the four frames
+  // for 16 ticks (mkxp's atAnimation table), so the current frame is the tick
+  // counter / 16, mod 4. `any_anim` records whether this map actually has an
+  // animated autotile, so tilemap_update can skip the periodic re-tile when the
+  // map is static.
+  const mrb_value anim_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+  const int anim = mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0;
+  const int frame_idx = (anim / 16) % 4;
+  bool any_anim = false;
+
   int tx0 = static_cast<int>(ox) / TILE_SIZE;
   int ty0 = static_cast<int>(oy) / TILE_SIZE;
   if (tx0 < 0)
@@ -2850,11 +2984,19 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
             continue;
           Bitmap& ab = DataType<Bitmap>::get(M, at);
           const int shape = id % 48;
+          // Animated autotile: shift the source into the current frame's 96px
+          // column. A single-frame (96px-wide) autotile stays at offset 0.
+          int sx_off = 0;
+          if (ab.width > AUTOTILE_FRAME_W) {
+            any_anim = true;
+            sx_off =
+                (frame_idx % (ab.width / AUTOTILE_FRAME_W)) * AUTOTILE_FRAME_W;
+          }
           for (int q = 0; q < 4; ++q)
             blit_blend(dst, dx0 + AUTOTILE_QUAD_OFF[q][0],
                        dy0 + AUTOTILE_QUAD_OFF[q][1], ab,
-                       AUTOTILE_QUADS[shape][q][0], AUTOTILE_QUADS[shape][q][1],
-                       16, 16);
+                       AUTOTILE_QUADS[shape][q][0] + sx_off,
+                       AUTOTILE_QUADS[shape][q][1], 16, 16);
         } else {
           // Regular tile from the tileset.
           const int ti = id - 384;
@@ -2864,6 +3006,8 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
       }
     }
   }
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
+             mrb_bool_value(any_anim));
   lv_obj_invalidate(obj);
 }
 
@@ -2907,6 +3051,23 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), mrb_nil_value());
   mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(0));
+  return self;
+}
+
+// Per-frame tick: advance the autotile animation. The counter cycles 0..63 and
+// the frame it selects is counter / 16, so only every 16th update crosses a
+// frame boundary and needs a re-tile — and only when the map has an animated
+// autotile at all (recorded by tilemap_refresh). A static map does no work.
+mrb_value tilemap_update(mrb_state* M, mrb_value self) {
+  if (!mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_animated"))))
+    return self;
+  const mrb_value anim_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+  const int anim = mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0;
+  const int next = (anim + 1) % 64;
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(next));
+  if (anim / 16 != next / 16)
+    tilemap_refresh(M, self);
   return self;
 }
 
@@ -3623,6 +3784,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "blend_type=", spr_set_blend_type, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
@@ -3631,6 +3793,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "ox=", plane_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "oy=", plane_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "tone=", plane_set_tone, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "color=", plane_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "blend_type=", spr_set_blend_type,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
@@ -3646,6 +3812,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "visible=", obj_set_visible, MRB_ARGS_REQ(1));

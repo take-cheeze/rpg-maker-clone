@@ -99,7 +99,13 @@ module RGSS
   # that set them run (tracked in docs/rpgxp-rgss-api-gap.md).
   class Plane
     attr_reader :bitmap, :ox, :oy, :z, :viewport
-    attr_writer :zoom_x, :zoom_y, :blend_type
+    # `opacity=`, `tone=`, `color=` and `blend_type=` are native (src/lib.cxx):
+    # opacity/blend map onto the plane canvas's LVGL object, and tone/colour are
+    # baked into the tiled buffer by plane_retile. `zoom_x`/`zoom_y` are still
+    # stored-only (scaled tiling is future work). The readers below return the set
+    # values; native #initialize does not set these ivars, so they fall back to
+    # RGSS defaults here.
+    attr_writer :zoom_x, :zoom_y
 
     def opacity
       @opacity.nil? ? 255 : @opacity
@@ -121,16 +127,8 @@ module RGSS
       @tone ||= Tone.new(0, 0, 0, 0)
     end
 
-    def tone=(t)
-      @tone = t
-    end
-
     def color
       @color ||= Color.new(0, 0, 0, 0)
-    end
-
-    def color=(c)
-      @color = c
     end
   end
 
@@ -139,20 +137,21 @@ module RGSS
     attr_reader :x, :y, :z
 
     # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
-    # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect.
-    # `opacity=`, `zoom_x=`, `zoom_y=`, `angle=`, `mirror=`, `tone=`, `color=`,
-    # `src_rect=`, `blend_type=` and `bush_depth=` are now honoured natively
-    # (src/lib.cxx sets the sprite canvas's LVGL object opacity / image scale /
-    # image rotation / blend mode; mirror, tone, colour, the src_rect crop and the
-    # bush-depth bottom fade are baked into a scratch copy the canvas points at, and
-    # `update` re-composites so per-frame `src_rect.set` shows). They still store
-    # their ivars here so the readers below return the set values. `flash` is stored
-    # only so `sprite.flash(...)` no longer raises, but the native renderer does not
-    # yet honour it visually (tracked in docs/rpgxp-rgss-api-gap.md). Readers fall
-    # back to RGSS's defaults because the native #initialize does not set these
-    # ivars (and cannot be wrapped from here without replacing it). `nil?` checks —
-    # not `||` — where 0/false is a meaningful value (opacity 0 = transparent).
-    attr_writer :ox, :oy, :bush_depth
+    # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect,
+    # flash. `opacity=`, `zoom_x=`, `zoom_y=`, `angle=`, `mirror=`, `tone=`,
+    # `color=`, `src_rect=`, `blend_type=`, `bush_depth=` and `flash` are all now
+    # honoured natively (src/lib.cxx sets the sprite canvas's LVGL object opacity /
+    # image scale / image rotation / blend mode; mirror, tone, colour, the src_rect
+    # crop, the bush-depth bottom fade and the timed flash pulse are baked into a
+    # scratch copy the canvas points at, and `update` re-composites so per-frame
+    # `src_rect.set` shows and an active flash decays). `bush_depth=` and `flash`
+    # are native methods, so they must NOT be redefined by an `attr_writer` here —
+    # that would shadow them. Only `ox`/`oy` (read by the native tone/flash pass
+    # but not otherwise wired) stay Ruby-side. The readers below fall back to
+    # RGSS's defaults because the native #initialize does not set these ivars (and
+    # cannot be wrapped from here without replacing it). `nil?` checks — not `||` —
+    # where 0/false is a meaningful value (opacity 0 = transparent).
+    attr_writer :ox, :oy
 
     def opacity
       @opacity.nil? ? 255 : @opacity
@@ -201,13 +200,6 @@ module RGSS
     def src_rect
       @src_rect ||= Rect.new(0, 0, 0, 0)
     end
-
-    # Flash the sprite (colour + duration in frames). Stored; the visual flash is
-    # future native work.
-    def flash(color, duration)
-      @flash_color = color
-      @flash_duration = duration
-    end
   end
 
   # RGSS Tilemap: the layered, autotiled map ground Spriteset_Map builds from the
@@ -216,16 +208,16 @@ module RGSS
   # tilemap_refresh draws the visible tiles of the three map_data layers scrolled
   # by ox/oy — regular tiles from the tileset and autotiles assembled from their
   # four quads (the seven `autotiles` bitmaps are read by the native renderer).
-  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`,
-  # `dispose`/`disposed?` are native. This reopening keeps the plain readers, the
-  # `autotiles` slot array (which the native renderer reads), and the properties
-  # not yet honoured — `priorities` (priority layering) and `flash_data` — stored
-  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md).
+  # `initialize`, `tileset=`, `map_data=`, `ox=`/`oy=`, `z=`, `update`,
+  # `visible`/`visible=`, `dispose`/`disposed?` are native. `update` advances the
+  # autotile animation (frames cycle through the wider autotile bitmaps). This
+  # reopening keeps the plain readers, the `autotiles` slot array (which the
+  # native renderer reads), and the properties not yet honoured — `priorities`
+  # (priority layering) and `flash_data` — stored so scripts run (tracked in
+  # docs/rpgxp-rgss-api-gap.md).
   class Tilemap
     attr_reader :tileset, :map_data, :ox, :oy, :viewport
     attr_accessor :flash_data, :priorities
-
-    def update; end
 
     # RGSS exposes exactly seven autotile slots (0..6); the game assigns each with
     # `tilemap.autotiles[i] = bitmap` and reads them back to dispose. A fixed-size

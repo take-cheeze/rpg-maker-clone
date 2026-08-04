@@ -1695,6 +1695,89 @@ module Game
       caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
       affected
     end
+
+    # -- Battle-context skill / item use --------------------------------------
+    #
+    # The on-screen battle commands work on Game::Battle::Combatant snapshots but
+    # reuse the field menu's cost / effect formulas (#skill_cost, #skill_effect,
+    # #item_recovery). Scope is single-target for now: an attack skill hits one
+    # enemy, a recovery skill / medicine restores one ally (or the caster). The
+    # all-target scopes (1 all enemies, 4 all allies) and the battle SP / damage
+    # variance are later refinements.
+
+    # Single-target battle skill scopes: 0 single enemy, 2 the caster, 3 a single
+    # ally. (1 all enemies and 4 all allies are deferred.)
+    BATTLE_SKILL_SCOPES = [0, 2, 3].freeze
+
+    # `actor`'s known normal skills usable in battle — flagged `occasion_battle`
+    # with a single-target scope — as `[skill_id, cost]` pairs in ascending id
+    # order. `caster` is the battle snapshot the SP cost is figured from.
+    def battle_skills(actor, caster)
+      return [] unless actor && caster
+      actor.skills.sort.select do |sid|
+        sk = db_skill(sid)
+        sk && sk.type == SKILL_NORMAL && battle_occasion?(sk) &&
+          BATTLE_SKILL_SCOPES.include?(sk.scope)
+      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+    end
+
+    # Whether skill `sk` may be used in battle. Defaults to usable when the row
+    # (a bare fixture) carries no `occasion_battle` flag.
+    def battle_occasion?(sk)
+      sk.respond_to?(:occasion_battle) ? sk.occasion_battle : true
+    end
+
+    # Whom a battle skill targets: :enemy (scope 0), :self (scope 2) or :ally (3).
+    def battle_skill_target(sk)
+      case sk.scope
+      when 0 then :enemy
+      when 2 then :self
+      else :ally
+      end
+    end
+
+    # The command numbers for casting `sk` from `caster` on `target` (both
+    # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
+    # to the target — negative HP for an attack skill (base effect less a quarter
+    # of the target's defence, min 1), positive HP / SP for a recovery skill.
+    def battle_skill_command(sk, caster, target)
+      cost = skill_cost(sk, caster)
+      base = skill_effect(sk, caster)
+      if sk.scope == 0
+        dmg = base - (target ? target.def / 4 : 0)
+        dmg = 1 if dmg < 1
+        { cost: cost, hp: -dmg, mp: 0 }
+      else
+        { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
+      end
+    end
+
+    # Whether item `id` can be used in battle: a medicine flagged occasion_battle
+    # the party actually holds.
+    def battle_usable?(id)
+      it = db_item(id)
+      return false unless it && item_count(id) > 0
+      it.type == ITEM_MEDICINE && battle_item_occasion?(it)
+    end
+
+    # Whether medicine `it` may be used in battle. Defaults to usable when the row
+    # (a bare fixture) carries no `occasion_battle` flag.
+    def battle_item_occasion?(it)
+      it.respond_to?(:occasion_battle) ? it.occasion_battle : true
+    end
+
+    # The bag's battle-usable items as `[id, count]` pairs in ascending id order.
+    def battle_items
+      @items.keys.sort.select { |id| battle_usable?(id) }
+            .map { |id| [id, item_count(id)] }
+    end
+
+    # The HP / SP a medicine restores to a battle `target` (Combatant snapshot),
+    # as `{ hp:, mp: }` — the same recovery the field menu applies.
+    def battle_item_command(it, target)
+      hp, mp = item_recovery(it, target)
+      { hp: hp, mp: mp }
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
@@ -2590,14 +2673,17 @@ module Game
   # Current HP / SP start full. The turn-based battle that would reduce them is
   # not built yet, so for now this backs the Enemy Encounter reward model.
   class Enemy
-    attr_reader :id, :name, :max_hp, :max_sp, :atk, :def, :spi, :agi,
-                :exp, :gold, :x, :y, :hidden
+    attr_reader :id, :name, :battler_name, :max_hp, :max_sp, :atk, :def, :spi,
+                :agi, :exp, :gold, :x, :y, :hidden
     attr_accessor :hp, :sp
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
       row = db.enemy[id]
       @id = id
       @name    = row ? row.name.to_s : ''
+      # The Monster/<name> battle graphic (blank for a fixture that omits it);
+      # the battle screen draws it, falling back to a placeholder block.
+      @battler_name = row && row.respond_to?(:battler_name) ? (row.battler_name || '') : ''
       @max_hp  = row ? row.max_hp : 1
       @max_sp  = row ? row.max_sp : 0
       @atk     = row ? row.attack : 0
@@ -2656,17 +2742,31 @@ module Game
     # A battler reduced to what the fight needs. Snapshotting Game::Actor /
     # Game::Enemy keeps the real party untouched by a resolved battle.
     # `action` is the ally's chosen attack target for the round (nil = none /
-    # auto), `defending` halves damage taken that round; both are cleared each
-    # round. Enemies leave them nil and attack a random party member.
+    # auto), `defending` halves damage taken that round, and `command` is a
+    # queued Skill / Item action (see Battle#apply_command); all three are
+    # cleared each round. Enemies leave them nil and attack a random party
+    # member. `mp` / `max_mp` carry SP (skills spend it) and `spi` is the spirit
+    # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
-                           :action, :defending, :actor) do
+                           :action, :defending, :mp, :max_mp, :spi, :command,
+                           :actor) do
       def dead?; hp <= 0; end
+      # Spirit under the name Game::Party's skill formulas (#skill_effect,
+      # #skill_cost) read on a caster.
+      def int; spi; end
     end
 
     def self.from_actor(a)
-      Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp, nil, nil, a)
+      Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
+                    nil, false, a.mp, a.max_mp, a.int, nil, a)
     end
-    def self.from_enemy(e); Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp); end
+
+    # Enemies have no source actor (the last field stays nil), so the post-battle
+    # HP write-back skips them.
+    def self.from_enemy(e)
+      Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
+                    nil, false, e.sp, e.max_sp, e.spi, nil)
+    end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
     # the defender's defence, floored at 1 so a fight always terminates.
@@ -2693,12 +2793,17 @@ module Game
     def finished?; !alive?(@allies) || !alive?(@enemies); end
 
     # Persist the fight's outcome onto the real party: write each ally combatant's
-    # final HP back to its source actor, so damage taken in battle sticks and a
-    # combatant reduced to 0 comes out knocked out (戦闘不能). Combatants without a
-    # source actor -- enemies, or bare test snapshots -- are skipped. RPG2000
-    # keeps the party's post-battle HP; a downed member stays down until revived.
+    # final HP (and SP, which battle skills spend) back to its source actor, so
+    # damage taken in battle sticks and a combatant reduced to 0 comes out knocked
+    # out (戦闘不能). Combatants without a source actor -- enemies, or bare test
+    # snapshots -- are skipped. RPG2000 keeps the party's post-battle HP/SP; a
+    # downed member stays down until revived.
     def apply_to_party
-      @allies.each { |c| c.actor.set_hp(c.hp) if c.actor }
+      @allies.each do |c|
+        next unless c.actor
+        c.actor.set_hp(c.hp)
+        c.actor.mp = Game.clamp(c.mp, 0, c.actor.max_mp) if c.mp
+      end
     end
 
     # Perform the next single action and return its log entry, or nil when the
@@ -2727,27 +2832,78 @@ module Game
     # Assign an ally's action for the coming round: attack `target`, or defend
     # (take half damage and not attack). Player-driven battles command each ally
     # before running the round; enemies choose their own action.
-    def command_attack(ally, target); ally.action = target; ally.defending = false; end
-    def command_defend(ally); ally.action = nil; ally.defending = true; end
+    def command_attack(ally, target)
+      ally.action = target; ally.defending = false; ally.command = nil
+    end
+
+    def command_defend(ally)
+      ally.action = nil; ally.defending = true; ally.command = nil
+    end
+
+    # Queue a single-target Skill for `ally`: cast on `target` (an enemy for an
+    # attack skill, an ally / the caster for a recovery skill), spending `cost`
+    # SP and applying the signed HP / SP deltas (negative HP = damage, positive =
+    # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
+    # order by #apply_command when the round runs.
+    def command_skill(ally, target, name:, cost:, hp: 0, mp: 0)
+      ally.command = { kind: :skill, target: target, name: name,
+                       cost: cost, hp: hp, mp: mp }
+      ally.action = nil; ally.defending = false
+    end
+
+    # Queue a single-target Item for `ally` on `target`: restore the HP / SP from
+    # Game::Party#battle_item_command. `item_id` rides along on the log entry so
+    # the scene consumes one from the bag when the action lands.
+    def command_item(ally, target, item_id:, name:, hp: 0, mp: 0)
+      ally.command = { kind: :item, target: target, item_id: item_id,
+                       name: name, hp: hp, mp: mp }
+      ally.action = nil; ally.defending = false
+    end
 
     # Execute one full round — living battlers act in agility order, allies using
     # their assigned action, enemies attacking a random party member — and return
     # the round's log entries. Ally commands are cleared afterwards for the next
     # round. `finished?` / `result` report the outcome once a side is wiped.
     def run_round
+      begin_round
       entries = []
+      while (entry = step_action)
+        entries << entry
+      end
+      end_round
+      entries
+    end
+
+    # Prime the agility-ordered queue for a fresh round so #step_action can walk
+    # it one action at a time — the on-screen battle animates a round action by
+    # action rather than applying it all at once (#run_round is just this three-
+    # step sequence run to completion). Counts towards the MAX_ROUNDS cap.
+    def begin_round
       refill_queue
-      until @queue.empty? || finished?
+    end
+
+    # Perform the next single action of the round primed by #begin_round and
+    # return its log entry, skipping battlers that are dead or (allies) defending.
+    # Returns nil once the round's queue is exhausted or the battle is decided —
+    # the caller then clears commands with #end_round and either shows the result
+    # or asks for the next round. Unlike #step it never starts a new round.
+    def step_action
+      loop do
+        return nil if finished? || @queue.empty?
         b = @queue.shift
         next if b.dead?
         entry = strike(b)
         next unless entry
         @log << entry
-        entries << entry
+        return entry
       end
-      @allies.each { |a| a.action = nil; a.defending = false }
+    end
+
+    # Close a round begun with #begin_round: clear each ally's chosen action (so
+    # the next round starts fresh) and settle the result once a side is wiped.
+    def end_round
+      @allies.each { |a| a.action = nil; a.defending = false; a.command = nil }
       @result = alive?(@allies) ? :victory : :defeat if finished?
-      entries
     end
 
     private
@@ -2766,8 +2922,10 @@ module Game
     end
 
     # `b` attacks its target, returning a log entry (or nil when it defends or
-    # has no living target). A defending target takes half damage (min 1).
+    # has no living target). A defending target takes half damage (min 1). An
+    # ally with a queued Skill / Item command resolves that instead.
     def strike(b)
+      return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
       target = attack_target(b)
       return nil unless target
@@ -2790,6 +2948,37 @@ module Game
     end
 
     def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
+
+    # Resolve `b`'s queued Skill / Item command and return its log entry, or nil
+    # when the chosen target has already fallen this round (the action fizzles —
+    # no SP is spent and nothing animates). A skill first spends the caster's SP;
+    # then a negative-HP command (an attack skill) subtracts HP and reads like an
+    # attack (`skill:` names it), while a recovery command (heal skill / medicine)
+    # restores HP / SP clamped to the target's maxima and reads as a `recover`.
+    def apply_command(b)
+      cmd = b.command
+      target = cmd[:target]
+      return nil if target.nil? || target.dead?
+      b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
+      hp = cmd[:hp] || 0
+      mp = cmd[:mp] || 0
+      if hp < 0
+        dmg = -hp
+        target.hp -= dmg
+        { attacker: b.name, target: target.name, damage: dmg,
+          target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
+          skill: cmd[:name] }
+      else
+        before_hp = target.hp
+        before_mp = target.mp || 0
+        target.hp = [target.hp + hp, target.max_hp].min if hp > 0
+        target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
+        { recover: true, actor: b.name, source: cmd[:name],
+          item_id: cmd[:item_id], target: target.name,
+          recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
+          target_hp: target.hp, target_mp: target.mp }
+      end
+    end
   end
 
   # Map weather set by the Weather Effects (11070) event command: a type (0 none,
@@ -2911,6 +3100,20 @@ module Game
     # battle / menu scenes that would play them are not built yet; stored for
     # save fidelity.
     attr_accessor :system_bgm, :system_sfx
+    # Screen-transition styles set by Change Screen Transitions (10690): six
+    # slots, in save order — 0 teleport-erase, 1 teleport-show, 2 battle-start-
+    # erase, 3 battle-start-show, 4 battle-end-erase, 5 battle-end-show — each a
+    # style id. Modelled for save fidelity (they round-trip through the save,
+    # LSD chunks 111–116); the teleport / battle fades that would read them still
+    # use their own transition, so nothing consumes these at runtime yet.
+    attr_accessor :screen_transitions
+    # The system windowskin graphic (System/<name>) and font id set by Change
+    # System Graphics (10680), overriding the database defaults. `system_graphic`
+    # is nil until a command sets it (the database's own graphic then applies)
+    # and `font_id` defaults to 0. Both persist in the save (LSD SAVE_SYSTEM
+    # chunks 15 / 17); Scene::Map reloads the windowskin when the override
+    # changes.
+    attr_accessor :system_graphic, :font_id
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -2936,6 +3139,9 @@ module Game
       @escape_target = nil
       @system_bgm = {}
       @system_sfx = {}
+      @screen_transitions = Array.new(SCREEN_TRANSITION_SLOTS, 0)
+      @system_graphic = nil
+      @font_id = 0
       @weather = Weather.new
       # The three vehicles' saved locations (boat / ship / airship), persisted in
       # `.lsd` chunks 105-107. Unplaced until a save restores them.
@@ -2991,6 +3197,24 @@ module Game
     # Remaining timer seconds (assuming 60 fps).
     def timer_seconds; @timer_frames / 60; end
 
+    # The six Change Screen Transitions (10690) slots (see #screen_transitions).
+    SCREEN_TRANSITION_SLOTS = 6
+
+    # Change Screen Transitions: set slot `which` (0..5) to transition style
+    # `style`. An out-of-range slot is ignored.
+    def set_screen_transition(which, style)
+      return unless which >= 0 && which < SCREEN_TRANSITION_SLOTS
+      @screen_transitions[which] = style
+    end
+
+    # Change System Graphics: override the windowskin graphic (System/<name>) and
+    # font id. Scene::Map reloads the windowskin so windows created afterwards use
+    # the new skin.
+    def set_system_graphic(name, font)
+      @system_graphic = name
+      @font_id = font || 0
+    end
+
     # Serialise to a plain hash of primitives (Marshal-friendly) for saving. The
     # map itself is not stored; it is reloaded from map_id on load.
     def to_h
@@ -3004,7 +3228,8 @@ module Game
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
         escape_target: @escape_target, system_bgm: @system_bgm,
-        system_sfx: @system_sfx,
+        system_sfx: @system_sfx, screen_transitions: @screen_transitions,
+        system_graphic: @system_graphic, font_id: @font_id,
         vehicles: { boat: @vehicles[:boat].to_h, ship: @vehicles[:ship].to_h,
                     airship: @vehicles[:airship].to_h } }
     end
@@ -3124,6 +3349,11 @@ module Game
       sys[122] = @escape_access ? true : false
       sys[123] = @save_access ? true : false
       sys[124] = @menu_access ? true : false
+      # Screen-transition slots 0..5 map to chunks 111..116 in order.
+      @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
+      # System windowskin / font override (Change System Graphics).
+      sys[15] = @system_graphic if @system_graphic
+      sys[17] = @font_id
       sys[131] = save_count
       sys[132] = 1
       save[101] = sys
@@ -3250,6 +3480,17 @@ module Game
       state.escape_access = sys.escape_allowed unless sys.escape_allowed.nil?
       state.save_access = sys.save_allowed unless sys.save_allowed.nil?
       state.menu_access = sys.menu_allowed unless sys.menu_allowed.nil?
+      # Screen-transition slots (chunks 111..116), defaulting to 0 when unset.
+      state.screen_transitions = [
+        sys.teleport_erase_transition, sys.teleport_show_transition,
+        sys.battle_start_erase_transition, sys.battle_start_show_transition,
+        sys.battle_end_erase_transition, sys.battle_end_show_transition
+      ].map { |v| v || 0 }
+      # System windowskin / font override; an empty graphic means "use the
+      # database default" (left unset).
+      sg = sys.system_graphic
+      state.system_graphic = sg unless sg.nil? || sg.empty?
+      state.font_id = sys.font || 0
       # The leader's display name from the file-screen title chunk (a Change
       # Actor Name override survives for the leader).
       title = save[100]
@@ -3347,6 +3588,13 @@ module Game
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}
+      # A save written before screen transitions existed restores all-default.
+      stx = h[:screen_transitions]
+      if stx && stx.length == SCREEN_TRANSITION_SLOTS
+        state.screen_transitions = stx.dup
+      end
+      state.system_graphic = h[:system_graphic]
+      state.font_id = h[:font_id] || 0
       if (v = h[:vehicles])
         state.vehicle(:boat).load_h(v[:boat])
         state.vehicle(:ship).load_h(v[:ship])

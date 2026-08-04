@@ -305,17 +305,30 @@ The work below is roughly ordered by the critical path to a walkable game
   damage, no attack that round), then the round executes in agility order,
   repeating until a side falls. Cancelling on the first actor flees when escape
   is allowed. `Game::Battle` has the round-based API (`command_attack` /
-  `command_defend` / `run_round`) alongside the headless `run`. Dismissing the
-  result resumes the event and routes the `[Victory]` / `[Escape]` / `[Defeat]`
-  branch. Post-battle HP now persists to the party (see above), and a **defeat in
-  "game over" mode with the whole party knocked out returns to the title screen**
-  (`Scene::Map#finish_battle`, gated by `Game::Party#all_dead?`); a defeat routed
-  to a custom `[Defeat]` handler still runs the branch instead. Still to come:
-  Skill / Item commands, criticals / attributes / variance in the sim, in-battle
-  state infliction (rolling `state_chance`), per-turn animation from the log,
-  enemy / battler sprites, and a dedicated Game Over graphic before the title.
-  The remaining commands (EXP gain / level-up
-  messages, ...) are TODO
+  `command_defend` / `command_skill` / `command_item` / `run_round`) alongside
+  the headless `run`. The round now **animates action by action** (agility order,
+  one hit per `BATTLE_ANIM_FRAMES`, HP/SP ticking and each blow bannered); the
+  per-actor menu is **Attack / Skill / Item / Defend** (single-target skills and
+  battle medicines reuse the field formulas); the enemy troop is **drawn as
+  battler sprites** (`Monster/<battler_name>`, placeholder block fallback, hidden
+  on death) over a plain battle field. **Post-battle HP now persists to the
+  party** — `Battle#apply_to_party` writes each survivor's final HP back through
+  `Game::Actor#set_hp`, so damage sticks and a member reduced to 0 comes out
+  戦闘不能 — and a **defeat ends the game** (return to title via
+  `perform_game_over`) when the encounter's defeat mode is "game over" (no
+  `[Defeat]` handler) and the party is wiped (`Game::Party#all_dead?`). Still to
+  come: criticals / attributes / damage variance and in-battle status infliction
+  (rolling `state_chance`), all-target skill/item scopes, the per-terrain
+  backdrop and the RPG2000 Game Over graphic.
+  The remaining event commands (Inflict Damage, Name Input, Show Battle
+  Animation, vehicle boarding, tile substitution, ...) are TODO. **Change System
+  Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the
+  scene reloads the skin), **Change Screen Transitions** (10690) records the six
+  teleport / battle transition styles (save chunks 111–116; modelled for save
+  fidelity) and **Game Over** (12520) returns to the title, all handled.
+  **Vehicle locations** (boat / ship / airship) now persist in the save
+  (`Game::Vehicle`, `.lsd` chunks 105–107 / the Marshal save), though boarding
+  and piloting are still to come.
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a
