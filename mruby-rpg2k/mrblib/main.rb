@@ -374,7 +374,6 @@ class RPG2k
         @chipset_bmp = load_chipset_graphic
         @charset = load_charset
         @windowskin = load_windowskin
-        @msg_palette = build_msg_palette(@windowskin)
         @interpreter = Game::Interpreter.new(@state)
         @started_auto = {}
         @started_common = {}
@@ -1465,10 +1464,27 @@ class RPG2k
           x = @message[:text_x]
           y = i * MSG_LINE_H
           segs.each do |seg|
-            c.font.color = message_color(seg[:color])
-            c.draw_text x, y, right - x, MSG_LINE_H, seg[:text]
+            draw_message_run(c, x, y, right - x, seg)
             x += c.text_size(seg[:text]).width
           end
+        end
+      end
+
+      # Draw one coloured message run. When the System windowskin is present and
+      # the colour index is one of its 20 text swatches, blend the glyphs with
+      # that swatch (`Bitmap#blend_text`), so the text takes the windowskin's own
+      # colour and shading the way RPG2000 draws it. Otherwise fall back to a
+      # flat font colour (the approximation, or an out-of-range `\c[n]`).
+      def draw_message_run(c, x, y, w, seg)
+        idx = seg[:color]
+        if @windowskin && Game::MessagePalette.valid?(idx)
+          sx, sy = Game::MessagePalette.cell_origin(idx)
+          cell = Game::MessagePalette::CELL
+          c.blend_text x, y, w, MSG_LINE_H, seg[:text], @windowskin,
+                       sx, sy, cell, cell
+        else
+          c.font.color = message_color(idx)
+          c.draw_text x, y, w, MSG_LINE_H, seg[:text]
         end
       end
 
@@ -1493,32 +1509,12 @@ class RPG2k
         9 => [160, 160, 255]
       }.freeze
 
-      # The colour for a `\c[n]` text run: the real swatch sampled from the
-      # game's own System windowskin when one loaded, else the built-in
-      # approximation. Always opaque.
+      # The flat fallback colour for a `\c[n]` run — used only when there is no
+      # System windowskin to blend the glyphs with (see draw_message_run), or for
+      # an out-of-range colour index. Always opaque.
       def message_color(idx)
-        if @msg_palette && idx && idx >= 0 && idx < @msg_palette.size
-          r, g, b = @msg_palette[idx]
-          return Color.new(r, g, b, 255)
-        end
         rgb = MSG_COLORS[idx] || MSG_COLORS[0]
         Color.new(rgb[0], rgb[1], rgb[2], 255)
-      end
-
-      # Sample the 20 RPG2000 message text colours from the loaded windowskin
-      # (their swatch grid — see Game::MessagePalette). Returns an array of
-      # [r, g, b] triples, or nil when there is no windowskin or the pixels
-      # cannot be read (so message_color falls back to MSG_COLORS).
-      def build_msg_palette(skin)
-        return nil unless skin && skin.respond_to?(:get_pixel)
-        Array.new(Game::MessagePalette::COUNT) do |i|
-          px, py = Game::MessagePalette.sample_point(i)
-          c = skin.get_pixel(px, py)
-          [c.red.to_i, c.green.to_i, c.blue.to_i]
-        end
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] message palette sample failed, using approximation: #{e.message}"
-        nil
       end
 
       def set_choice_cursor

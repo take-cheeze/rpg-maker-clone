@@ -345,19 +345,16 @@ check 'message palette swatches form a 10x2 grid from y=48' do
   eq [144, 64], MP.cell_origin(19)  # last swatch
 end
 
-check 'every swatch sample point lands inside the 160x80 System image' do
+check 'every swatch cell lands inside the 160x80 System image' do
   seen = {}
   (0...MP::COUNT).each do |i|
-    x, y = MP.sample_point(i)
-    ok x >= 0 && x < 160, "sample x #{x} for #{i}"
-    ok y >= 48 && y < 80, "sample y #{y} for #{i}"
-    ok !seen[[x, y]], "sample point #{[x, y]} reused"
+    x, y = MP.cell_origin(i)
+    ok x >= 0 && x + MP::CELL <= 160, "cell x #{x} for #{i}"
+    ok y >= 48 && y + MP::CELL <= 80, "cell y #{y} for #{i}"
+    ok !seen[[x, y]], "cell origin #{[x, y]} reused"
     seen[[x, y]] = true
-    # The sample sits inside swatch i's cell.
-    ox, oy = MP.cell_origin(i)
-    ok x >= ox && x < ox + MP::CELL && y >= oy && y < oy + MP::CELL, 'inside cell'
   end
-  eq 20, seen.size, 'twenty distinct sample points'
+  eq 20, seen.size, 'twenty distinct swatch cells'
 end
 
 check 'MessagePalette.valid? bounds the colour index' do
