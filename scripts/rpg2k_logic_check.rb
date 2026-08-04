@@ -490,6 +490,39 @@ check 'Screen busy? reflects tint, shake or flash activity' do
   ok !s.busy?
 end
 
+check 'Screen pan scrolls the offset toward its target and lands exactly' do
+  s = Game::Screen.new
+  eq [0, 0], s.pan_offset
+  ok !s.panning?
+  s.pan(1, 2, 3) # pan right 2 tiles (32 px) at speed 3 -> 4 px/frame
+  ok s.panning?
+  ok s.busy?, 'a pan in progress makes the screen busy'
+  s.update; eq [4, 0], s.pan_offset
+  s.update; eq [8, 0], s.pan_offset
+  6.times { s.update } # 32 px total reached (and clamped)
+  eq [32, 0], s.pan_offset
+  ok !s.panning?, 'settles exactly on the target'
+end
+
+check 'Screen pan directions move the offset the right way' do
+  s = Game::Screen.new
+  s.pan(0, 1, 6); 5.times { s.update } # up: negative y
+  eq [0, -16], s.pan_offset
+  s.pan_reset(6); 5.times { s.update }
+  eq [0, 0], s.pan_offset, 'reset scrolls back to the origin'
+  s.pan(3, 1, 6); 5.times { s.update } # left: negative x
+  eq [-16, 0], s.pan_offset
+end
+
+check 'Screen pan lock / unlock toggles the follow flag' do
+  s = Game::Screen.new
+  ok !s.pan_locked?
+  s.pan_lock
+  ok s.pan_locked?
+  s.pan_unlock
+  ok !s.pan_locked?
+end
+
 # -- Message parsing (control codes / colour) --------------------------------
 
 check 'Message.expand fills v/n codes and drops display codes' do
@@ -938,6 +971,39 @@ check 'Flash Screen with a wait pauses until the flash fades out' do
   it.update
   eq true, st.switches[2], 'resumed once the flash faded'
   eq 0, st.screen.flash_color[3]
+end
+
+check 'Pan Screen lock / unlock are instant and never pause' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PAN_SCREEN, [0, 0, 0, 0, 1]),   # lock, wait flag set
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'lock does not pause even with the wait flag'
+  ok st.screen.pan_locked?
+  eq true, st.switches[1]
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::PAN_SCREEN, [1, 0, 0, 0, 0])]) # unlock
+  it2.update
+  ok !st.screen.pan_locked?
+end
+
+check 'Pan Screen (op 2) with a wait pauses until the scroll finishes' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # op 2 pan, direction 1 (right), distance 1 tile, speed 6, wait 1.
+  it.start([FakeCmd.new(IC::PAN_SCREEN, [2, 1, 1, 6, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok it.waiting?, 'a waiting pan pauses the interpreter'
+  eq :screen, it.wait_kind
+  ok !st.switches[2]
+  ok st.screen.panning?
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[2], 'resumed once the pan reached its target'
+  eq [16, 0], st.screen.pan_offset
 end
 
 check 'conditional branch on the timer' do
@@ -1917,6 +1983,151 @@ check 'Teleport / Escape access round-trip through the save' do
   legacy_loaded = Game::State.load(db, legacy)
   eq false, legacy_loaded.teleport_access
   eq false, legacy_loaded.escape_access
+end
+
+# -- EXP / level (Change EXP / Change Level) ---------------------------------
+
+# A database row carrying the EXP-curve fields, a max level and either a level-
+# independent status hash or a full per-level stat curve (int16_values(31)).
+class ExpRow
+  attr_reader :name, :charset_name, :charset_index, :initial_level, :max_level,
+              :status, :exp_basic, :exp_increase, :exp_correction
+  def initialize(initial_level: 1, max_level: 10, exp_basic: 100,
+                 exp_increase: 0, exp_correction: 0, status: nil, curve: nil)
+    @name = 'Hero'
+    @charset_name = ''
+    @charset_index = 0
+    @initial_level = initial_level
+    @max_level = max_level
+    @exp_basic = exp_basic
+    @exp_increase = exp_increase
+    @exp_correction = exp_correction
+    @status = status || { max_hp: 100, max_mp: 20, atk: 10, def: 8, int: 6, agi: 5 }
+    @curve = curve
+  end
+
+  def int16_values(idx); idx == 31 ? @curve : nil; end
+end
+
+def exp_db(**opts)
+  FakeActorDB.new({ 1 => ExpRow.new(**opts) }, [1])
+end
+
+def exp_actor(**opts)
+  Game::Party.new(exp_db(**opts)).actor_by_id(1)
+end
+
+def exp_state(**opts)
+  Game::State.new(Game::Party.new(exp_db(**opts)), 1, 0, 0)
+end
+
+check 'EXP thresholds follow the RPG2000 curve and increase with level' do
+  a = exp_actor(exp_basic: 100, exp_increase: 0, exp_correction: 0)
+  eq 0, a.exp_for_level(1)
+  eq 100, a.exp_for_level(2)  # correction + base per step; base 100
+  eq 250, a.exp_for_level(3)  # + base*inflation (100 * 1.5)
+  prev = -1
+  (1..8).each do |lv|
+    t = a.exp_for_level(lv)
+    ok t > prev, "threshold for level #{lv} (#{t}) must exceed the previous"
+    prev = t
+  end
+end
+
+check 'a fresh actor starts with the EXP for its initial level' do
+  eq 0, exp_actor(initial_level: 1).exp
+  eq 250, exp_actor(initial_level: 3, exp_basic: 100, exp_increase: 0,
+                    exp_correction: 0).exp
+end
+
+check 'gain_exp levels the actor up across thresholds and recomputes stats' do
+  # Per-level curve (level-major, six stats per level): max_hp 100/120/140.
+  curve = [100, 20, 10, 8, 6, 5, 120, 22, 11, 9, 7, 6, 140, 24, 12, 10, 8, 7]
+  a = exp_actor(initial_level: 1, max_level: 3, curve: curve,
+                exp_basic: 100, exp_increase: 0, exp_correction: 0)
+  eq 1, a.level
+  eq 100, a.max_hp
+  a.gain_exp(100)          # reaches the level-2 threshold exactly
+  eq 2, a.level
+  eq 120, a.max_hp, 'base stats recomputed from the curve at the new level'
+  a.gain_exp(1000)         # far past level 3; capped at max_level
+  eq 3, a.level
+  eq 140, a.max_hp
+end
+
+check 'gain_exp with a negative delta levels the actor down' do
+  a = exp_actor(initial_level: 3, max_level: 5, exp_basic: 100,
+                exp_increase: 0, exp_correction: 0)
+  eq 250, a.exp
+  a.gain_exp(-200)         # 50, below the level-2 threshold (100)
+  eq 1, a.level
+end
+
+check 'change_level_by raises the level and bumps EXP to its threshold' do
+  a = exp_actor(initial_level: 1, max_level: 5, exp_basic: 100,
+                exp_increase: 0, exp_correction: 0)
+  a.change_level_by(2)     # 1 -> 3
+  eq 3, a.level
+  eq 250, a.exp, 'EXP raised to the level-3 threshold'
+  a.change_level_by(-1)    # 3 -> 2
+  eq 2, a.level
+  eq 100, a.exp, 'EXP clamped down to the level-2 threshold'
+end
+
+check 'change_level_by clamps at 1 and at max_level' do
+  a = exp_actor(initial_level: 2, max_level: 3, exp_basic: 100)
+  a.change_level_by(-5); eq 1, a.level
+  a.change_level_by(99);  eq 3, a.level
+end
+
+check 'set_exp caps EXP at 999999' do
+  a = exp_actor(initial_level: 1, max_level: 99, exp_basic: 100)
+  a.set_exp(10_000_000)
+  eq 999_999, a.exp
+end
+
+IC2 = Game::Interpreter::Cmd
+
+check 'Change EXP command levels up a fixed actor' do
+  st = exp_state(initial_level: 1, max_level: 5, exp_basic: 100,
+                 exp_increase: 0, exp_correction: 0)
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed id), actor 1, op 0 (add), operand type 0 (const), value 100
+  it.start([FakeCmd.new(IC2::CHANGE_EXP, [1, 1, 0, 0, 100, 0])])
+  it.update
+  eq 2, st.party.actor_by_id(1).level
+  eq 100, st.party.actor_by_id(1).exp
+end
+
+check 'Change Level command raises the whole party by a delta' do
+  st = exp_state(initial_level: 1, max_level: 5, exp_basic: 100,
+                 exp_increase: 0, exp_correction: 0)
+  it = Game::Interpreter.new(st)
+  # scope 0 (party), op 0 (add), operand type 0 (const), value 2 levels
+  it.start([FakeCmd.new(IC2::CHANGE_LEVEL, [0, 0, 0, 0, 2, 0])])
+  it.update
+  eq 3, st.party.actor_by_id(1).level
+end
+
+check 'Control Variables reads actor EXP (operand type 5, attribute 1)' do
+  st = exp_state(initial_level: 3, exp_basic: 100, exp_increase: 0,
+                 exp_correction: 0)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC2::CONTROL_VARS, [0, 1, 1, 0, 5, 1, 1])]) # var1 = actor1 EXP
+  it.update
+  eq 250, st.variables[1]
+end
+
+check 'party save round-trips actor EXP and re-derives the level' do
+  db = exp_db(initial_level: 1, max_level: 5, exp_basic: 100,
+              exp_increase: 0, exp_correction: 0)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.actor_by_id(1).gain_exp(250) # -> level 3
+  eq 3, st.party.actor_by_id(1).level
+  loaded = Game::State.load(db, st.to_h)
+  la = loaded.party.actor_by_id(1)
+  eq 250, la.exp, 'EXP restored from the save'
+  eq 3, la.level, 'level re-derived from the restored EXP'
 end
 
 # -- summary ------------------------------------------------------------------

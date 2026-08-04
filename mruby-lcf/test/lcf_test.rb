@@ -540,6 +540,65 @@ assert 'LCF.pack_int16 / encode :int16_array inverts the reader' do
   assert_equal [10, 20, 0, 0, 5].pack('v*'), LCF.pack_int16([10, 20, 0, 0, 5])
 end
 
+assert 'LCF.pack_double / encode :double inverts unpack_double' do
+  # The little-endian IEEE-754 bytes of 1.5 -- the same reference the reader test
+  # above decodes -- must be exactly what pack_double emits.
+  assert_equal "\x00\x00\x00\x00\x00\x00\xf8\x3f", LCF.pack_double(1.5)
+  assert_equal LCF.pack_double(2.5), LCF.encode(2.5, :double)
+  # The non-negative finite values a save timestamp actually takes round-trip
+  # through unpack_double exactly (the reader's 63bit assembly holds this domain).
+  [0.0, 1.0, 2.5, 0.5, 1234.0, 45000.5, 100.25].each do |v|
+    assert_equal v, LCF.unpack_double(LCF.pack_double(v)), "double #{v}"
+  end
+end
+
+assert 'SaveData title chunk + system message/bgm/access fields round-trip from scratch' do
+  save = LCF::SaveData.new
+  # Title (chunk 100): the :double timestamp exercises the pack_double encoder,
+  # plus the leader name/level/HP and a face slot shown on the file screen.
+  title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+  title[1] = 45000.5
+  title[11] = "Iris"; title[12] = 9; title[13] = 123
+  title[21] = "FaceA"; title[22] = 2
+  save[100] = title
+  # System (chunk 101): message-window config, the player-transparent flag, a
+  # nested current-BGM chunk and the access flags.
+  sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
+  sys[41] = 1; sys[42] = 0; sys[43] = false
+  sys[51] = "MsgFace"; sys[52] = 4; sys[53] = 1; sys[54] = true
+  sys[55] = true
+  cur = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
+  cur[1] = "Field"; cur[3] = 80; cur[4] = 120
+  sys[75] = cur
+  sys[121] = true; sys[122] = false; sys[123] = false; sys[124] = true
+  save[101] = sys
+
+  reread = LCF::SaveData.new(StringIO.new(save.to_lcf))
+  t = reread[100]
+  assert_equal 45000.5, t.timestamp
+  assert_equal "Iris", t.hero_name
+  assert_equal 9, t.hero_level
+  assert_equal 123, t.hero_hp
+  assert_equal "FaceA", t.face1_name
+  assert_equal 2, t.face1_index
+  s = reread[101]
+  assert_equal 1, s.message_transparent
+  assert_equal 0, s.message_position
+  assert_false s.message_prevent_overlap
+  assert_equal "MsgFace", s.face_name
+  assert_equal 4, s.face_index
+  assert_equal 1, s.face_right_position
+  assert_true s.face_flip
+  assert_true s.transparent
+  assert_equal "Field", s.current_bgm.file
+  assert_equal 80, s.current_bgm.volume
+  assert_equal 120, s.current_bgm.pitch
+  assert_true s.teleport_allowed
+  assert_false s.escape_allowed
+  assert_false s.save_allowed
+  assert_true s.menu_allowed
+end
+
 assert 'Array2D built from scratch serialises and reads back' do
   schema = { elements: LCF::Schema::SAVE_PARTY_ACTOR }
   a = LCF::Array2D.new('', schema)         # empty, writable table

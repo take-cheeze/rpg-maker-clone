@@ -145,7 +145,10 @@ jobs:
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
-      # `exe_open` test in CMakeLists.txt); MV runs=100..104 below.
+      # `exe_open` test in CMakeLists.txt); MV runs=100..105 below. Every MV
+      # smoke here must use a distinct --server-num (never `-a`), or its
+      # non-atomic probe can steal exe_open's display and fail that required
+      # check.
       - parallel:
           - name: LCF test-bed smoke check
             run: nix develop -c ruby scripts/lcf_testbed_check.rb
@@ -192,7 +195,7 @@ jobs:
           - name: MV real-game play smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+              nix develop -c xvfb-run --server-num=105 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/Lunatic-Core \
                 --mv_new_game --mv_move_test --mv_screenshot=ss/mv_play.png
 
@@ -203,11 +206,17 @@ jobs:
                 --timeout_ms=5000 --game_dir data/mv-sample \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
+          # Run the battle smoke against the real bed (Lunatic-Core): it ships
+          # battlers and a battleback, so the captured Scene_Battle frame shows
+          # an actual battle (enemy + battle log) rather than the art-less
+          # sample's near-black screen. The step logs `[MV-BTL] reached_battle=
+          # <bool>`; a longer timeout lets New Game -> map -> the battle intro
+          # play out before the assertion.
           - name: MV battle smoke test
             continue-on-error: true
             run: |
               nix develop -c xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=6000 --game_dir data/mv-sample \
+                --timeout_ms=8000 --game_dir data/Lunatic-Core \
                 --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
 
           - name: MV movement smoke test

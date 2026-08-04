@@ -1700,12 +1700,26 @@ class RPG2k
 
       def render
         px, py = player_pixel
-        cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
-        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        screen = @state.screen
+        hero_cx = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
+        hero_cy = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        # Pan Screen: while the camera is locked it holds where locking began
+        # (captured once) instead of following the hero; the pan offset then
+        # scrolls that view. Unlocked, it tracks the hero as usual.
+        if screen.pan_locked?
+          @locked_cam ||= [hero_cx, hero_cy]
+          base_x, base_y = @locked_cam
+        else
+          @locked_cam = nil
+          base_x = hero_cx
+          base_y = hero_cy
+        end
+        ox, oy = screen.pan_offset
         # Screen shake slides the whole view horizontally (the player moves with
         # the map, so the entire screen shakes); the map edge may show a sliver
-        # of void during the shake, which is fine.
-        cam_x -= @state.screen.shake_offset
+        # of void during the shake/pan, which is fine.
+        cam_x = base_x + ox - screen.shake_offset
+        cam_y = base_y + oy
 
         draw_parallax cam_x, cam_y
         draw_layers cam_x, cam_y
@@ -2246,9 +2260,9 @@ class RPG2k
   end
 
   # Persist the running game state to a slot. Our own portable Marshal dump is
-  # the authoritative save (it carries the full state -- timer, message config,
-  # BGM, actor overrides, access flags -- that the .lsd format does not model
-  # here). Alongside it we also export a genuine editor Save<slot>.lsd via
+  # the authoritative save (it still carries the two fields the .lsd export does
+  # not model -- the game timer and per-actor name/title overrides for non-leader
+  # members). Alongside it we also export a near-parity editor Save<slot>.lsd via
   # State#to_lsd, so the slot is readable by real RPG_RT/EasyRPG tooling. The
   # export is best-effort: a failure there is logged but never fails the save.
   def save_game state, slot = 1
@@ -2271,11 +2285,11 @@ class RPG2k
 
   # Continue: resume a saved game and switch to its map. Our own Marshal save is
   # preferred when present -- it is the full-fidelity record we wrote (save_game
-  # also exports a lower-fidelity Save<slot>.lsd beside it, which would drop the
-  # timer, message config, BGM and actor overrides if loaded instead). A genuine
-  # editor Save<N>.lsd is the fallback, so a real save dropped into the game dir
-  # (with no Marshal save) still resumes through the LCF save schema. Warns and
-  # stays on the title when there is nothing to load.
+  # also exports a near-parity Save<slot>.lsd beside it, which would still drop
+  # the timer and non-leader actor name/title overrides if loaded instead). A
+  # genuine editor Save<N>.lsd is the fallback, so a real save dropped into the
+  # game dir (with no Marshal save) still resumes through the LCF save schema.
+  # Warns and stays on the title when there is nothing to load.
   def continue_game
     if File.exist?(save_path)
       data = File.open(save_path, "rb") { |f| f.read }

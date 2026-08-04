@@ -119,15 +119,16 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
+  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Conditional
+  Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access,
-  Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
-  Event, Change / Trade Event Location, Change Map Tileset, Proceed With
-  Movement, Halt All Movement,
+  Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
+  Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
+  With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
   loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
@@ -155,14 +156,18 @@ The work below is roughly ordered by the critical path to a walkable game
   the next map load). **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
-  HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
-  Equipment** apply to a fixed actor, a variable-selected actor or the whole
-  party, clamped to each actor's maxima (Change HP honours the allow-death floor;
-  Change Parameters re-clamps current HP/MP when a maximum is lowered; Change
-  Level rescales base stats through the per-level growth curve; Change Equipment
-  folds an equipped item's bonuses into the effective stats). **Control
+  HP/MP**, **Full Heal**, **Change Parameters**, **Change EXP**, **Change Level**
+  and **Change Equipment** apply to a fixed actor, a variable-selected actor or
+  the whole party, clamped to each actor's maxima (Change HP honours the
+  allow-death floor; Change Parameters re-clamps current HP/MP when a maximum is
+  lowered; **Change EXP** re-derives the level from the RPG2000 standard curve
+  (`Game::Actor#exp_for_level`, ported from EasyRPG's `CalculateExp` off the
+  row's exp_basic/increase/correction) and **Change Level** rescales base stats
+  through the per-level growth curve, both keeping EXP and level consistent
+  without refilling current HP/MP, matching RPG_RT; Change Equipment folds an
+  equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
-  range, an **actor stat** (level / HP / MP / max HP-MP / attack / defence /
+  range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
@@ -222,10 +227,14 @@ The work below is roughly ordered by the critical path to a walkable game
   with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
   a colour + strength that fades to zero over the duration; like the tint it is
   the Ruby half (drawing the full-screen colour overlay at its strength needs
-  the same alpha-blend / viewport support in C++). All three share the `:screen`
-  wait. **Show Picture** now renders (see the interpreter bullet above). Pan,
-  transitions/fade and weather remain, and the tint/flash still need
-  `RGSS::Viewport` tone/alpha support in C++ to show
+  the same alpha-blend / viewport support in C++). **Pan Screen** (11060) drives
+  `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
+  follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
+  adds to the camera (so — like the shake — the pan **is** visible; while locked
+  the view holds where locking began). All four share the `:screen` wait. **Show
+  Picture** now renders (see the interpreter bullet above). Transitions/fade and
+  weather remain, and the tint/flash still need `RGSS::Viewport` tone/alpha
+  support in C++ to show
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
@@ -244,11 +253,18 @@ The work below is roughly ordered by the critical path to a walkable game
   `SaveData#save_to` writes a genuine `Save<slot>.lsd`, exported alongside the
   Marshal save on every save (ADR 0019, on the `mruby-lcf` serializer of ADR
   0018). It round-trips through `from_lsd` field-for-field
-  (`scripts/rpg2k_save_load_check.rb`). Remaining refinements to make the `.lsd`
-  the *primary* save (so Continue prefers it): model the fields the Marshal save
-  still holds but `.lsd` drops here — timer, message config, current/memorized
-  BGM, actor name/title/sprite overrides, access flags — plus the title chunk
-  (100, needs `:double` timestamp encoding) so the save-slot menu shows the party
+  (`scripts/rpg2k_save_load_check.rb`). The export is now **near-parity** with the
+  Marshal save: on top of the four original chunks it also writes the message
+  config, current/memorized BGM, the player-transparent flag, the
+  menu/save/teleport/escape access flags (all SaveSystem chunk 101), the leader's
+  on-map CharSet override (hero chunk 104) and the **title chunk (100)** — the
+  `:double` timestamp (via the new `LCF.pack_double`), the leader's
+  name/level/HP and the party FaceSets — so a real RPG_RT/EasyRPG file-select
+  screen shows the party. Still keeping the Marshal save *primary* (so Continue
+  prefers it) are two fields the `.lsd` cannot yet carry: the **game timer**
+  (liblcf's SaveSystem has no field for it — needs a documented chunk id) and
+  **per-actor name/title overrides for non-leader** members (only the leader's
+  name is in the title chunk)
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
@@ -444,5 +460,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     title into New Game → map and a movement probe (`--mv_new_game
     --mv_move_test`), not just the title boot — so the fuller real game's
     map/movement/render path is exercised, not only the minimal sample's.
+  - ✅ Battle smoke reaches `Scene_Battle`: `--mv_battle_test` now starts the
+    fight via a real "Battle Processing" event command (code 301) through the
+    map interpreter instead of a bare out-of-loop `SceneManager.push`, which
+    deadlocked on the frozen encounter-effect intro. Runs on Lunatic-Core (real
+    battlers/battleback) and logs `[MV-BTL] reached_battle=<bool>`.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).

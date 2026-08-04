@@ -301,19 +301,79 @@ module LCF
     out.pack('C*')
   end
 
+  # Encode a Ruby Float as a little-endian IEEE-754 64bit double -- the inverse
+  # of unpack_double (the save file's timestamp field). Assembled byte-wise from
+  # the sign / biased exponent / 52bit mantissa so it needs neither the 'E' pack
+  # directive nor a full 64bit integer (mruby's Integer is 63bit): the sign and
+  # exponent land in the top two bytes and the mantissa fills the low seven, so
+  # no intermediate value ever exceeds 2**52. Finite values (including 0.0) and
+  # NaN are handled; a timestamp is always finite and non-negative, which is also
+  # the domain unpack_double reproduces exactly (its 63bit assembly cannot hold a
+  # bit pattern with the sign or a very large exponent set).
+  def pack_double v
+    v = v.to_f
+    sign = 0
+    if v != v                       # NaN
+      exp = 0x7ff
+      frac = 1 << 51
+    elsif v == 0.0
+      exp = 0
+      frac = 0
+    else
+      if v < 0.0
+        sign = 1
+        v = -v
+      end
+      e = 0
+      while v >= 2.0 && e < 1024
+        v = v / 2.0
+        e = e + 1
+      end
+      while v < 1.0 && e > -1074
+        v = v * 2.0
+        e = e - 1
+      end
+      exp = e + 1023
+      # 52bit mantissa of the normalised significand (1.xxxx -> xxxx), rounded.
+      frac = ((v - 1.0) * 4503599627370496.0 + 0.5).to_i
+      if frac >= 4503599627370496   # rounding carried into the next binade
+        frac = 0
+        exp = exp + 1
+      end
+      if exp >= 0x7ff               # overflow -> infinity
+        exp = 0x7ff
+        frac = 0
+      elsif exp <= 0                # underflow -> flush to zero
+        exp = 0
+        frac = 0
+      end
+    end
+    b = []
+    b[0] = frac & 0xff
+    b[1] = (frac >> 8) & 0xff
+    b[2] = (frac >> 16) & 0xff
+    b[3] = (frac >> 24) & 0xff
+    b[4] = (frac >> 32) & 0xff
+    b[5] = (frac >> 40) & 0xff
+    b[6] = ((exp & 0xf) << 4) | ((frac >> 48) & 0xf)
+    b[7] = (sign << 7) | ((exp >> 4) & 0x7f)
+    b.pack('C*')
+  end
+
   # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
   # inverse of to_rb. Only the scalar and simple-array types a save actually
-  # needs to be re-authored are handled; the packed command/double/tree types
-  # are still round-tripped as their original raw bytes (never re-encoded from
-  # decoded values), so they are intentionally left out. A nested :Array1D /
-  # :Array2D value is serialised through its own #to_lcf. Strings go back out
-  # as cp932 via LCF.utf8_to_cp932 (the build's uni-algo encoder; the CRuby
-  # harnesses provide a Windows-31J stand-in), mirroring cp932_to_utf8 on read.
+  # needs to be re-authored are handled; the packed command/tree types are still
+  # round-tripped as their original raw bytes (never re-encoded from decoded
+  # values), so they are intentionally left out. A nested :Array1D / :Array2D
+  # value is serialised through its own #to_lcf. Strings go back out as cp932 via
+  # LCF.utf8_to_cp932 (the build's uni-algo encoder; the CRuby harnesses provide
+  # a Windows-31J stand-in), mirroring cp932_to_utf8 on read.
   def encode value, type
     case type
     when :int ; write_ber value
     when :bool ; [value ? 1 : 0].pack('C')
     when :uint8 ; [value & 0xff].pack('C')
+    when :double ; pack_double value
     when :int8_array ; value.pack('C*')
     when :bool_array ; value.map { |b| b ? 1 : 0 }.pack('C*')
     when :int16_array ; pack_int16 value
@@ -330,7 +390,7 @@ module LCF
   module_function :read_ber, :write_ber, :to_rb, :read_section,
                   :parse_event_commands, :parse_move_commands,
                   :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
-                  :encode, :binstr
+                  :pack_double, :encode, :binstr
 
   MODE = 2000 # 2003
 
