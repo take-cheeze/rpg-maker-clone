@@ -1733,6 +1733,39 @@ check 'Change Map Tileset queues a one-shot tileset request, non-blocking' do
   eq nil, it.take_tileset_request, 'and clears after the first read'
 end
 
+# -- Weather Effects ----------------------------------------------------------
+
+check 'Weather Effects sets the weather type and strength, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  ok st.weather.none?, 'no weather to start'
+  it.start([FakeCmd.new(IC::WEATHER_EFFECTS, [1, 2]), # rain, strong
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Weather Effects must not pause the interpreter'
+  eq 1, st.weather.type
+  eq 2, st.weather.strength
+  ok !st.weather.none?, 'weather is now active'
+  eq true, st.switches[1], 'the command after it still ran'
+end
+
+check 'Weather round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.weather.set(2, 1) # snow, medium
+  loaded = Game::State.load(db, st.to_h)
+  eq 2, loaded.weather.type
+  eq 1, loaded.weather.strength
+  # A save written before weather existed defaults to none.
+  legacy = st.to_h
+  legacy.delete(:weather)
+  ok Game::State.load(db, legacy).weather.none?
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

@@ -1715,8 +1715,39 @@ module Game
 
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
+  # Map weather set by the Weather Effects (11070) event command: a type (0 none,
+  # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
+  # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half
+  # model only — drawing the rain/snow particles is native renderer work still to
+  # come — but it round-trips through the save so a reloaded game keeps its
+  # weather.
+  class Weather
+    attr_reader :type, :strength
+
+    def initialize(type = 0, strength = 0)
+      @type = type
+      @strength = strength
+    end
+
+    def set(type, strength)
+      @type = type
+      @strength = strength
+    end
+
+    # Whether no weather is active (type 0).
+    def none?; @type == 0; end
+
+    def to_h; { type: @type, strength: @strength }; end
+
+    def load_h(h)
+      return unless h
+      @type = h[:type] || 0
+      @strength = h[:strength] || 0
+    end
+  end
+
   class State
-    attr_reader :party, :switches, :variables, :message_config, :screen
+    attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
@@ -1748,6 +1779,7 @@ module Game
       @current_bgm = nil
       @memorized_bgm = nil
       @player_transparent = false
+      @weather = Weather.new
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -1774,7 +1806,7 @@ module Game
         timer_running: @timer_running, message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
-        player_transparent: @player_transparent }
+        player_transparent: @player_transparent, weather: @weather.to_h }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -1845,6 +1877,7 @@ module Game
       state.current_bgm = h[:current_bgm]
       state.memorized_bgm = h[:memorized_bgm]
       state.player_transparent = h[:player_transparent] ? true : false
+      state.weather.load_h(h[:weather])
       state
     end
   end

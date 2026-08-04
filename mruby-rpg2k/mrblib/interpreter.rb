@@ -57,6 +57,7 @@ module Game
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
+      WEATHER_EFFECTS  = 11070
       PLAYER_VISIBILITY = 11310
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
@@ -319,6 +320,7 @@ module Game
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
+      when Cmd::WEATHER_EFFECTS  then do_weather cmd
       when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
@@ -1006,6 +1008,16 @@ module Game
       return unless cmd.param(3) != 0 && @state.screen.shaking?
       @wait_kind = :screen
       @waiting = true
+    end
+
+    # Weather Effects: set the map weather type (param0 — 0 none, 1 rain, 2 snow;
+    # the RPG2003 additions come through as higher values) and strength (param1 —
+    # 0 weak .. 2 strong) on the shared game state. Non-blocking; like the picture
+    # / tint overlays this records the Ruby-half model only — compositing the
+    # rain/snow particles is native renderer work still to come — but the setting
+    # is applied and persists through Save / Continue.
+    def do_weather(cmd)
+      @state.weather.set(cmd.param(0), cmd.param(1))
     end
 
     # Memorize BGM: stash a copy of the currently-playing BGM so a later Play
