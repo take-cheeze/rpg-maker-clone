@@ -5,8 +5,10 @@
 
 assert 'MV document.createElement("canvas") yields a 2D context; other tags are inert' do
   assert_equal true, MV::JS.eval("!!document.createElement('canvas').getContext('2d')")
-  # WebGL is intentionally absent so PIXI falls back to its Canvas renderer.
-  assert_nil MV::JS.eval("document.createElement('canvas').getContext('webgl')")
+  # getContext('webgl') is covered in gl_test.rb (it depends on the native
+  # EGL/GLES2 backend being compiled in; see MV::GL.available?). 'webgl2' stays
+  # null regardless — MZ's PIXI v5 is WebGL1.
+  assert_nil MV::JS.eval("document.createElement('canvas').getContext('webgl2')")
   assert_equal true, MV::JS.eval("typeof document.createElement('div').getContext === 'function'")
   assert_nil MV::JS.eval("document.createElement('div').getContext('2d')")
 end

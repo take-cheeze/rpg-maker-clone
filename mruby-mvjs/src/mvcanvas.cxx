@@ -1260,7 +1260,18 @@ const char* kCanvasPreamble = R"MVJS(
       if (!this._ctx) { this._ctx = new Ctx(this.__h); this._ctx.canvas = this; }
       return this._ctx;
     }
-    return null;  // no WebGL -> PIXI uses its Canvas renderer
+    // WebGL1 (MZ / PIXI v5). The wrapper is only installed where the native
+    // EGL/GLES2 backend compiled in (mvwebgl.cxx); without it __mv_glCreate is
+    // absent and we fall through to null, so Utils.canUseWebGL() reports false
+    // and PIXI takes its Canvas path (the MV route) as before. 'webgl2' stays
+    // null: MZ's PIXI v5 uses WebGL1.
+    if (type === 'webgl' || type === 'experimental-webgl') {
+      if (typeof g.WebGLRenderingContext !== 'function' || !g.__mv_glCreate)
+        return null;
+      if (!this._glctx) this._glctx = new g.WebGLRenderingContext(this);
+      return this._glctx.__gl ? this._glctx : null;
+    }
+    return null;
   };
   Canvas.prototype.addEventListener = function () {};
   Canvas.prototype.removeEventListener = function () {};
