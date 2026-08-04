@@ -468,3 +468,65 @@ assert "RGSS::Bitmap loads a PNG whose deflate stream trips \"bad dist\"" do
     File.delete(path) if File.exist?(path)
   end
 end
+
+assert("RGSS::Plane property defaults and accessors") do
+  p = RGSS::Plane.new
+  # RGSS defaults.
+  assert_true p.visible
+  assert_equal 0, p.z
+  assert_equal 0, p.ox
+  assert_equal 0, p.oy
+  assert_equal 255, p.opacity
+  assert_equal 1.0, p.zoom_x
+  assert_equal 1.0, p.zoom_y
+  assert_equal 0, p.blend_type
+  assert_true p.bitmap.nil?
+  assert_true p.tone.is_a?(RGSS::Tone)
+  assert_true p.color.is_a?(RGSS::Color)
+  assert_false p.disposed?
+
+  # Writable.
+  p.ox = 12
+  p.oy = -4
+  p.opacity = 128
+  p.z = 5
+  p.visible = false
+  assert_equal 12, p.ox
+  assert_equal(-4, p.oy)
+  assert_equal 128, p.opacity
+  assert_equal 5, p.z
+  assert_false p.visible
+
+  p.dispose
+  assert_true p.disposed?
+end
+
+assert("RGSS::Sprite extended property defaults and accessors") do
+  s = RGSS::Sprite.new
+  # Defaults per RGSS (0/false-meaningful values use nil? checks, not ||).
+  assert_equal 255, s.opacity
+  assert_equal 0, s.ox
+  assert_equal 0, s.oy
+  assert_equal 1.0, s.zoom_x
+  assert_equal 1.0, s.zoom_y
+  assert_equal 0, s.angle
+  assert_false s.mirror
+  assert_equal 0, s.bush_depth
+  assert_equal 0, s.blend_type
+  assert_true s.tone.is_a?(RGSS::Tone)
+  assert_true s.color.is_a?(RGSS::Color)
+  assert_true s.src_rect.is_a?(RGSS::Rect)
+
+  # Opacity 0 is a real value (transparent), not the default.
+  s.opacity = 0
+  assert_equal 0, s.opacity
+  s.zoom_x = 2.0
+  s.mirror = true
+  s.angle = 90
+  assert_equal 2.0, s.zoom_x
+  assert_true s.mirror
+  assert_equal 90, s.angle
+
+  # flash stores without raising.
+  s.flash(RGSS::Color.new(255, 255, 255, 255), 16)
+end

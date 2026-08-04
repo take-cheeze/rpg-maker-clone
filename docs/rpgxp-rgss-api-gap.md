@@ -37,18 +37,17 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (high frequency, medium effort)
+### 1. `Sprite` extended properties ⚠️ (stored; render pending)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
-`visible`/`visible=`, `dispose`, `update`. The stock scripts additionally set:
-
-- `opacity` (~18), `ox`/`oy` (sprite scroll origin), `zoom_x`/`zoom_y` (~3 each),
-  `angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2),
-  `src_rect`, `flash`.
-
-Most are attribute storage the native renderer already has fields for or can
-composite cheaply (opacity/tone/mirror). `Sprite_Character`, `Sprite_Battler`,
-`Arrow_Base`, weather and the animation player all depend on these.
+`visible`/`visible=`, `dispose`, `update`, and now **stores** the extra
+properties the stock scripts set — `opacity` (~18), `ox`/`oy`, `zoom_x`/`zoom_y`
+(~3 each), `angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2),
+`src_rect` and `flash` — with RGSS defaults (`mruby-rgss/mrblib/lib.rb`), so a
+script's `sprite.opacity = n` no longer raises. **Remaining:** the native
+renderer does not yet honour them visually (opacity/zoom/tone/mirror compositing
+in the draw path). `Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather
+and the animation player depend on these.
 
 ### 2. `Window` ❌ (the big one for menus & messages)
 
@@ -66,11 +65,12 @@ windowskin, cursor blink, pause arrow, contents blit).
 `update`, `dispose`, with the autotile assembly + priority layering the RPG2000
 side already implements in `Game::ChipsetLayout` (portable reference).
 
-### 4. `Plane` ❌ (parallax / weather)
+### 4. `Plane` ⚠️ (stored; render pending)
 
-`class Plane` is empty. Needs `bitmap`, `ox`/`oy`, `opacity`, `visible`, `z`,
-`zoom_x`/`zoom_y`, `blend_type`, `dispose` — a tiling, scrolling full-viewport
-blit. Used for the map parallax and fog.
+`Plane` is now a pure-Ruby property holder (`bitmap`, `ox`/`oy`, `opacity`,
+`visible`, `z`, `zoom_x`/`zoom_y`, `blend_type`, `tone`, `color`, `dispose`) with
+RGSS defaults, so scripts that create and drive a `Plane` run. **Remaining:** the
+native tiling, scrolling full-viewport blit (map parallax and fog).
 
 ### 5. `Kernel#sprintf` / `String#%` ❌ (small but pervasive)
 
