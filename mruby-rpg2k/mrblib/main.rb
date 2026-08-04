@@ -1816,8 +1816,12 @@ class RPG2k
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
+        # The database's state table drives per-turn afflictions (poison slip,
+        # sleep skip) in battle.
+        situations = db.respond_to?(:situation) ? db.situation : nil
         @battle_ui = { phase: :command, req: req, troop: troop,
-                       battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000)),
+                       battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
+                                                situations),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],

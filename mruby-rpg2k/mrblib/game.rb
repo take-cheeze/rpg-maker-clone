@@ -2788,15 +2788,24 @@ module Game
 
     attr_reader :allies, :enemies, :rounds, :result, :log
 
-    def initialize(allies, enemies, rng = nil)
+    # `states` is an optional state-definition lookup (`[id]` -> a row exposing
+    # `restriction` / `hp_change_val` / `hp_change_max` / `sp_change_val` /
+    # `sp_change_max`, e.g. the database's `situation` table). When given, a
+    # battler's afflicted states take effect each turn (slip damage, skip if it
+    # cannot act); omitted, states are inert as before.
+    def initialize(allies, enemies, rng = nil, states = nil)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
+      @states = states
       @rounds = 0
       @result = nil
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
     end
+
+    # State `restriction` value meaning "cannot act" (asleep / paralysed).
+    RESTRICTION_DO_NOTHING = 1
 
     # True once one side has been wiped out (the battle is decided).
     def finished?; !alive?(@allies) || !alive?(@enemies); end
@@ -2826,6 +2835,8 @@ module Game
         return nil if @queue.empty? # hit MAX_ROUNDS
         b = @queue.shift
         next if b.dead?
+        can_act = apply_turn_states(b)
+        next if b.dead? || !can_act
         entry = strike(b)
         next unless entry # attacker had no living target; try the next
         @log << entry
@@ -2903,6 +2914,11 @@ module Game
         return nil if finished? || @queue.empty?
         b = @queue.shift
         next if b.dead?
+        # Afflicted states act at the start of the battler's turn: slip damage
+        # (which may knock it out) and, if it cannot act (asleep / paralysed), its
+        # turn is skipped.
+        can_act = apply_turn_states(b)
+        next if b.dead? || !can_act
         entry = strike(b)
         next unless entry
         @log << entry
@@ -2918,6 +2934,32 @@ module Game
     end
 
     private
+
+    # The state definition for `id` from the lookup, or nil (no lookup / unknown).
+    def state_def(id); @states ? @states[id] : nil; end
+
+    # A field off a state row, tolerating a fixture that omits it.
+    def state_field(d, name); d.respond_to?(name) ? (d.send(name) || 0) : 0; end
+
+    # Apply `b`'s afflicted states at the start of its turn: slip HP/SP damage
+    # (fixed val + a percentage of the max, per EasyRPG's ApplyConditions) from
+    # each state, and report whether the battler may act (a "do nothing"
+    # restriction skips its turn). Returns true if `b` may act.
+    def apply_turn_states(b)
+      can_act = true
+      (b.states || []).each do |id|
+        d = state_def(id)
+        next unless d
+        hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
+        b.hp -= hp if hp > 0
+        if b.max_mp && b.mp
+          sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
+          b.mp = [b.mp - sp, 0].max if sp > 0
+        end
+        can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
+      end
+      can_act
+    end
 
     def alive?(side); side.any? { |b| !b.dead? }; end
 
