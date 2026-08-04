@@ -87,6 +87,7 @@ module Game
       SHOW_PICTURE     = 11110
       MOVE_PICTURE     = 11120
       ERASE_PICTURE    = 11130
+      SHOW_BATTLE_ANIM = 11210
       PLAYER_VISIBILITY = 11310
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
@@ -146,7 +147,8 @@ module Game
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
                 :teleport, :input_digits, :key_input_request, :inn_request,
-                :shop_request, :battle_request, :name_input_request
+                :shop_request, :battle_request, :name_input_request,
+                :battle_animation
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -477,6 +479,7 @@ module Game
       @shop_request = nil
       @battle_request = nil
       @name_input_request = nil
+      @battle_animation = nil
     end
 
     def switches;  @state.switches;  end
@@ -549,6 +552,7 @@ module Game
       when Cmd::SHOW_PICTURE     then do_show_picture cmd
       when Cmd::MOVE_PICTURE     then do_move_picture cmd
       when Cmd::ERASE_PICTURE    then do_erase_picture cmd
+      when Cmd::SHOW_BATTLE_ANIM then do_show_battle_animation cmd
       when Cmd::WEATHER_EFFECTS  then do_weather cmd
       when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
@@ -1576,6 +1580,21 @@ module Game
     # Erase Picture (11130): remove picture param0 from the screen.
     def do_erase_picture(cmd)
       @state.erase_picture(cmd.param(0))
+    end
+
+    # Show Battle Animation (11210): play battle animation param0 over a target
+    # character on the map. param1 is the target id (the player, an event, or
+    # this event — the Move Event target scheme) and param2 the "wait until it
+    # finishes" flag. Records the request (which a future map-animation renderer
+    # will draw) and, when the wait flag is set, suspends on an :animation wait so
+    # the owning scene can hold the event for the animation's duration. Drawing
+    # the animation itself is native renderer work still to come.
+    def do_show_battle_animation(cmd)
+      @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
+                            wait: cmd.param(2) != 0 }
+      return unless cmd.param(2) != 0
+      @wait_kind = :animation
+      @waiting = true
     end
 
     # A picture coordinate: the literal param at `idx`, or the value of the

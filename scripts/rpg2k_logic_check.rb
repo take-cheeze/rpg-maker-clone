@@ -2772,6 +2772,37 @@ check 'the ridden vehicle round-trips through the save' do
   ok !Game::State.load(db, legacy).boarded?
 end
 
+# -- Show Battle Animation ----------------------------------------------------
+
+check 'Show Battle Animation records the request and waits with the flag' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # animation 7 on the player (target 10001), wait flag on.
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM, [7, 10001, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'the wait flag pauses the event'
+  eq :animation, it.wait_kind
+  eq 7, it.battle_animation[:animation]
+  eq 10001, it.battle_animation[:target]
+  eq true, it.battle_animation[:wait]
+  eq false, st.switches[1], 'the next command waits for the animation'
+  it.resume
+  it.update
+  eq true, st.switches[1], 'execution continues after the animation'
+end
+
+check 'Show Battle Animation without the wait flag does not pause' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM, [7, 10001, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  it.update
+  ok !it.waiting?, 'no wait without the flag'
+  eq true, st.switches[2], 'execution runs straight through'
+  eq 7, it.battle_animation[:animation], 'the request is still recorded for the renderer'
+end
+
 # -- Change / Trade Event Location --------------------------------------------
 
 check 'Change Event Location queues a :set request (constant and variable modes)' do

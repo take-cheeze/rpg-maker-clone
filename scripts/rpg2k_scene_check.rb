@@ -1607,6 +1607,21 @@ check 'the airship flies over a tile blocked on foot, and follows the party' do
   eq [st.x, st.y], [air.x, air.y], 'the airship follows the party'
 end
 
+check 'Show Battle Animation with the wait flag holds the event then resumes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0), # animation, player, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  3.times { scene.update }
+  ok !st.switches[5], 'the event is held while the animation plays'
+  60.times { scene.update } # outlast the fallback animation length
+  ok st.switches[5], 'the event resumes once the animation finishes'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

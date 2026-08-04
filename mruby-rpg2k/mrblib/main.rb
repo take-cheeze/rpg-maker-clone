@@ -472,6 +472,7 @@ class RPG2k
         @battle_ui = nil
         @name_ui = nil
         @wait_timer = nil
+        @anim_wait = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
         # a Move Event targeting "this event" can be resolved. nil for common
@@ -1540,6 +1541,7 @@ class RPG2k
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
           when :name_input then drive_name_input
+          when :animation then drive_map_animation
           end
         else
           @interpreter.update
@@ -2666,6 +2668,44 @@ class RPG2k
         return unless @name_ui
         @name_ui[:win].dispose if @name_ui[:win]
         @name_ui = nil
+      end
+
+      # Display frames each animation cell is held, and the fallback length (in
+      # cells) when the database has no data for the requested animation.
+      ANIM_CELL_FRAMES = 3
+      ANIM_FALLBACK_CELLS = 10
+
+      # Drive a Show Battle Animation (11210) wait: hold the event for the
+      # animation's on-screen duration, then resume. The animation itself is not
+      # drawn yet (a native renderer would read @interpreter.battle_animation and
+      # play it); this makes the *timing* correct so a cutscene that waits on an
+      # animation paces the same as RPG_RT.
+      def drive_map_animation
+        @anim_wait = map_animation_frames if @anim_wait.nil?
+        if @anim_wait <= 0
+          @anim_wait = nil
+          @interpreter.resume
+        else
+          @anim_wait -= 1
+        end
+      end
+
+      # The on-screen length of the requested animation, in display frames: its
+      # database cell count (`battle_anime[id].frames`) times ANIM_CELL_FRAMES,
+      # falling back to a nominal length when the animation is unknown.
+      def map_animation_frames
+        req = @interpreter.battle_animation
+        id = req && req[:animation]
+        cells = animation_cell_count(id)
+        (cells > 0 ? cells : ANIM_FALLBACK_CELLS) * ANIM_CELL_FRAMES
+      end
+
+      def animation_cell_count(id)
+        return 0 if id.nil? || !@db.respond_to?(:battle_anime) || @db.battle_anime.nil?
+        anim = @db.battle_anime[id]
+        anim && anim.frames ? anim.frames.size : 0
+      rescue StandardError
+        0
       end
 
       def drive_wait
