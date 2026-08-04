@@ -570,12 +570,14 @@ class RPG2k
         { id: id, char: ch, trigger: page_trigger(page),
           commands: page_commands(page), move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
-          # Rendering state: the page's static graphic fields plus a live walk
-          # animation phase / counter and a "stepping" flag (see step_event).
+          # Rendering state: the page's static graphic fields, a live walk
+          # animation phase / counter, a mid-step "moving" flag, and the pixel
+          # slide (display origin disp_x/disp_y + move_count 0..TILE) that eases
+          # the sprite between tiles. move_count == TILE means "at rest".
           layer: page_layer(page), translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
-          moving: false }
+          moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE }
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
@@ -788,36 +790,36 @@ class RPG2k
         nil
       end
 
-      # Advance each event's walk-animation phase once per frame. An event
-      # "moves" for animation purposes when it has autonomous movement (a
-      # non-stationary move type) or a forced route in progress; such events —
-      # and any continuous/spin animation type — cycle their walk frames on the
-      # ANIM_FRAME_PERIOD cadence, while a stationary, non-continuous event rests
-      # on its page pose. Game::EventGraphic.frame reads @moving / @anim_phase to
-      # pick the drawn column.
+      # Advance each event's pixel slide and walk-animation phase once per frame.
+      # An event "moves" for animation purposes while it is sliding between two
+      # tiles (see reoccupy / event_sliding?); such events — and any
+      # continuous/spin animation type — cycle their walk frames on the
+      # ANIM_FRAME_PERIOD cadence, while an event resting on a tile shows its
+      # page pose. Game::EventGraphic.frame reads @moving / @anim_phase to pick
+      # the drawn column, and event_pixel reads the slide for the draw position.
       def animate_events
         @events.each { |e| animate_event(e) }
       end
 
       def animate_event(e)
+        # Advance the slide first so a fixed-graphic event still glides smoothly.
+        e[:move_count] += SPEED if e[:move_count] < TILE
+        sliding = event_sliding?(e)
+        e[:moving] = sliding
         type = e[:anim_type]
-        walking = event_walking?(e)
-        e[:moving] = walking
         return unless Game::EventGraphic.animated?(type)
-        return unless walking || Game::EventGraphic.continuous?(type)
+        return unless sliding || Game::EventGraphic.continuous?(type)
         e[:anim_count] += 1
         return if e[:anim_count] < ANIM_FRAME_PERIOD
         e[:anim_count] = 0
         e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
 
-      # Whether an event is currently in motion (so it shows its walk cycle
-      # rather than a standing pose): it has a forced route, or its page gives it
-      # an autonomous, non-stationary move type.
-      def event_walking?(e)
-        return true if e[:forced_route]
-        mt = e[:move_type]
-        !mt.nil? && mt != Game::MoveType::STATIONARY
+      # Whether an event is mid-step: its display origin has not yet caught up to
+      # its logical tile (the slide started by reoccupy is still in progress).
+      def event_sliding?(e)
+        e[:move_count] < TILE &&
+          (e[:disp_x] != e[:char].x || e[:disp_y] != e[:char].y)
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
@@ -839,9 +841,42 @@ class RPG2k
       # Update the occupied-tile cache after event `e` moved off (ox, oy). Done
       # eagerly (rather than a single end-of-frame rebuild) so an event that has
       # already moved this frame blocks the next event from stepping onto it.
+      # Also begins the pixel slide from the old tile toward the new one so the
+      # sprite glides instead of teleporting (see event_pixel).
       def reoccupy(e, ox, oy)
         @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
         @event_tiles[[e[:char].x, e[:char].y]] = e
+        start_event_slide(e, ox, oy)
+      end
+
+      # Begin a render slide for event `e` that just stepped off (ox, oy): the
+      # sprite eases from that tile to its new one over TILE/SPEED frames. Only
+      # single-tile cardinal steps slide; a longer hop (a jump, or a diagonal of
+      # more than one tile) snaps so the sprite never streaks across the map.
+      def start_event_slide(e, ox, oy)
+        if (e[:char].x - ox).abs + (e[:char].y - oy).abs == 1
+          e[:disp_x] = ox
+          e[:disp_y] = oy
+          e[:move_count] = 0
+        else
+          e[:disp_x] = e[:char].x
+          e[:disp_y] = e[:char].y
+          e[:move_count] = TILE
+        end
+      end
+
+      # Current position of event `e` in map pixels, interpolated from its
+      # display origin toward its logical tile while a slide is in progress.
+      def event_pixel(e)
+        cx = e[:char].x
+        cy = e[:char].y
+        if event_sliding?(e)
+          t = e[:move_count]
+          [e[:disp_x] * TILE + (cx - e[:disp_x]) * t,
+           e[:disp_y] * TILE + (cy - e[:disp_y]) * t]
+        else
+          [cx * TILE, cy * TILE]
+        end
       end
 
       # -- Erase Event --------------------------------------------------------
@@ -1549,8 +1584,9 @@ class RPG2k
                                             e[:char].direction, e[:anim_phase],
                                             e[:moving])
         sx, sy, sw, sh = Game::CharSet.frame_rect(e[:char].graphic_index, dir, col)
-        dx = e[:char].x * TILE - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-        dy = e[:char].y * TILE - cam_y - (Game::CharSet::HEIGHT - TILE)
+        epx, epy = event_pixel(e)
+        dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+        dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE)
         bmp.blt dx, dy, charset, Rect.new(sx, sy, sw, sh), opacity
       end
 
@@ -1560,8 +1596,9 @@ class RPG2k
       def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         return unless @chipset_bmp
         sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index)
-        dx = e[:char].x * TILE - cam_x
-        dy = e[:char].y * TILE - cam_y
+        epx, epy = event_pixel(e)
+        dx = epx - cam_x
+        dy = epy - cam_y
         bmp.blt dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity
       end
 

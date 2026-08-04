@@ -770,13 +770,45 @@ check 'a wandering event cycles its walk phase; a stationary one rests' do
   mover = event(3, 2, page(charset_name: 'c', x_move_type: Game::MoveType::RANDOM))
   still = event(1, 1, page(charset_name: 'c')) # stationary, non-continuous
   scene = new_scene({ 1 => mover, 2 => still }, player: [5, 4])
-  40.times { scene.update }
   eh = event_hashes(scene)
-  ok eh[1][:moving], 'a random mover is flagged moving'
-  ok eh[1][:anim_phase] != 0 || eh[1][:anim_count] != 0,
-     'the mover advanced its walk animation'
-  ok !eh[2][:moving], 'a stationary event is not flagged moving'
+  slid = false
+  200.times { scene.update; slid ||= eh[1][:moving] }
+  ok slid, 'a random mover slides between tiles at some point'
+  ok [eh[1][:char].x, eh[1][:char].y] != [3, 2], 'the mover changed tiles'
+  ok eh[1][:anim_phase] != 0, 'the mover advanced its walk animation while sliding'
+  ok !eh[2][:moving], 'a stationary event never slides'
+  eq [1, 1], [eh[2][:char].x, eh[2][:char].y], 'the stationary event held its tile'
   eq 0, eh[2][:anim_phase], 'a stationary non-continuous event holds its pose'
+end
+
+check 'an event slides smoothly between tiles instead of teleporting' do
+  # A forced route walks the event one tile east; sample its pixel position
+  # through the step and confirm it eases across rather than jumping a full tile.
+  ev = event(0, 2, page(charset_name: 'c', frequency: 6))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  scene.send(:force_event_route, e,
+             Game::MoveRoute.new(move_route([R::MOVE_RIGHT]).commands,
+                                 repeat: false, skippable: true), nil)
+  xs = []
+  20.times { scene.update; xs << scene.send(:event_pixel, e)[0] }
+  ok xs.include?(16), 'the slide completes on the destination tile (x px 16)'
+  mids = xs.select { |px| px.positive? && px < 16 }
+  ok !mids.empty?, "expected intermediate pixel offsets during the slide, got #{xs.inspect}"
+  ok xs.each_cons(2).all? { |a, b| b >= a }, 'the slide advances monotonically east'
+end
+
+check 'a multi-tile hop snaps rather than streaking across the map' do
+  # Reoccupy with a >1-tile jump should not start a slide (move_count stays at
+  # TILE, so event_pixel is the destination tile immediately).
+  ev = event(1, 1, page(charset_name: 'c'))
+  scene = new_scene({ 1 => ev })
+  e = event_hashes(scene)[1]
+  e[:char].x = 4 # simulate a jump landing (2 tiles east)
+  scene.send(:reoccupy, e, 1, 1)
+  eq RPG2k::Scene::Map::TILE, e[:move_count], 'a long hop does not slide'
+  eq [4 * RPG2k::Scene::Map::TILE, 1 * RPG2k::Scene::Map::TILE],
+     scene.send(:event_pixel, e), 'it snaps to the destination tile'
 end
 
 check 'a continuous-animation event advances even while standing still' do
