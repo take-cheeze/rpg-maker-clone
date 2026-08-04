@@ -12,9 +12,10 @@ committed.
 
 No copyrighted RTP art is referenced, but we author tiny hand-encoded PNGs (no
 Pillow dependency) so the sample is actually visible: a two-tile A5 tileset (a
-grass floor and a stone wall) so the map renders as a tiled room, and a small
-walk sheet for the player so the hero shows on the map. This exercises the
-engine's canvas Tilemap and Sprite_Character paths, not just blank space. Run
+grass floor and a stone wall) so the map renders as a tiled room, a small walk
+sheet for the player so the hero shows on the map, and a plain blue windowskin
+so message/menu boxes render as framed boxes. This exercises the engine's canvas
+Tilemap, Sprite_Character and Window (9-slice) paths, not just blank space. Run
 from the repo root; it writes data/mv-sample/data/*.json and the PNGs under
 data/mv-sample/img/. Deterministic (no timestamps) so re-running is a no-op in
 git.
@@ -168,6 +169,34 @@ def gen_character():
 
 
 gen_character()
+
+
+# --- Windowskin ------------------------------------------------------------
+# img/system/Window.png is the skin every Window_Base draws from. Its 192x192
+# quadrants: top-left = background (stretched to fill the window), bottom-left =
+# a tiling overlay, top-right = the 9-slice frame (24px corners/edges), bottom-
+# right = the selection cursor. We author a plain blue box: a solid background
+# and a lighter solid border, transparent overlay/cursor. This makes the sample's
+# message box render as an actual framed box (exercising Window's 9-slice blt),
+# rather than bare text.
+def gen_windowskin():
+    w = h = 192
+    q = 96                      # quadrant size
+    px = bytearray(w * h * 4)   # transparent
+
+    def fill(x0, y0, rw, rh, c):
+        for yy in range(y0, y0 + rh):
+            for xx in range(x0, x0 + rw):
+                i = (yy * w + xx) * 4
+                px[i], px[i + 1], px[i + 2], px[i + 3] = c[0], c[1], c[2], 255
+
+    fill(0, 0, q, q, (40, 56, 112))     # top-left: window background (blue)
+    fill(q, 0, q, q, (160, 176, 224))   # top-right: 9-slice frame (light blue)
+    # bottom-left overlay and bottom-right cursor stay transparent.
+    write_png("img/system/Window.png", w, h, bytes(px))
+
+
+gen_windowskin()
 
 # --- Actors / Classes ------------------------------------------------------
 write("Actors.json", [None, {
