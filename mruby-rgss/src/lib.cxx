@@ -2253,6 +2253,31 @@ mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// RGSS Sprite#angle= (degrees, counter-clockwise, float). LVGL image rotation
+// is in 0.1-degree units, clockwise, normalised to [0, 3600), so negate and
+// scale. RGSS rotates about the sprite's (ox, oy) origin, which is the LVGL
+// image pivot (default 0,0). The @ox/@oy ivars are read here so a script that
+// sets the origin before rotating gets the right pivot; a later ox=/oy= that
+// must re-pivot simply re-assigns angle. The float is mirrored into @angle for
+// the Ruby reader.
+mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
+  mrb_float deg;
+  mrb_get_args(M, "f", &deg);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  long tenths = std::lround(-deg * 10.0) % 3600;
+  if (tenths < 0)
+    tenths += 3600;
+  const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  const mrb_value oy = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  lv_image_set_pivot(
+      obj, mrb_nil_p(ox) ? 0 : static_cast<int32_t>(mrb_as_int(M, ox)),
+      mrb_nil_p(oy) ? 0 : static_cast<int32_t>(mrb_as_int(M, oy)));
+  lv_image_set_rotation(obj, static_cast<int32_t>(tenths));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@angle"), mrb_float_value(M, deg));
+  return self;
+}
+
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
@@ -2660,6 +2685,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "zoom_x=", spr_set_zoom_x, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
