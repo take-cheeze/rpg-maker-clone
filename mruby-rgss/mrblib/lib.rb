@@ -208,42 +208,28 @@ module RGSS
     end
   end
 
-  # RGSS Tilemap: the layered, autotiled map ground that Spriteset_Map builds from
-  # the tileset, the seven autotiles, and the map's data/priority Tables. Pure-Ruby
-  # property holder for now so the stock scripts that create and drive a Tilemap
-  # run — Spriteset_Map assigns `tileset`, fills `autotiles[0..6]`, sets `map_data`
-  # /`priorities`/`flash_data`, scrolls it via `ox`/`oy`, and disposes it — while
-  # the native autotile assembly + priority layering render is future work (tracked
-  # in docs/rpgxp-rgss-api-gap.md; the RPG2000 side already implements a portable
-  # reference in Game::ChipsetLayout).
+  # RGSS Tilemap: the layered, autotiled map ground Spriteset_Map builds from the
+  # tileset, the seven autotiles, and the map's data/priority Tables. Now native
+  # (src/lib.cxx): Tilemap.new builds an lv_canvas the size of the viewport and
+  # tilemap_refresh draws the visible regular tiles of the three map_data layers
+  # from the tileset, scrolled by ox/oy. `initialize`, `tileset=`, `map_data=`,
+  # `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are native.
+  # This reopening keeps the plain readers plus the properties the native renderer
+  # does not yet honour — the seven `autotiles` (so id 48..383 autotile ground is
+  # missing for now), `priorities` (priority layering) and `flash_data` — stored
+  # so scripts run (tracked in docs/rpgxp-rgss-api-gap.md; the RPG2000 side has a
+  # portable autotile reference in Game::ChipsetLayout).
   class Tilemap
-    attr_accessor :tileset, :map_data, :flash_data, :priorities, :visible, :ox, :oy
-    attr_reader :viewport, :autotiles
-
-    def initialize(viewport = nil)
-      @viewport = viewport
-      @tileset = nil
-      # RGSS exposes exactly seven autotile slots (0..6); the game assigns each
-      # with `tilemap.autotiles[i] = bitmap` and reads them back to dispose. A
-      # fixed-size Array holds the references (there is no `autotiles=` in RGSS).
-      @autotiles = Array.new(7)
-      @map_data = nil
-      @flash_data = nil
-      @priorities = nil
-      @visible = true
-      @ox = 0
-      @oy = 0
-      @disposed = false
-    end
+    attr_reader :tileset, :map_data, :ox, :oy, :viewport
+    attr_accessor :flash_data, :priorities
 
     def update; end
 
-    def dispose
-      @disposed = true
-    end
-
-    def disposed?
-      @disposed
+    # RGSS exposes exactly seven autotile slots (0..6); the game assigns each with
+    # `tilemap.autotiles[i] = bitmap` and reads them back to dispose. A fixed-size
+    # Array holds the references (there is no `autotiles=` in RGSS).
+    def autotiles
+      @autotiles ||= Array.new(7)
     end
   end
 

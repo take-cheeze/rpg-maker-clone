@@ -83,16 +83,19 @@ clip contents taller than the window; `stretch` (tiled vs stretched background) 
 ignored; and the RMXP windowskin source-rect constants are best-effort until a
 game exercises them.
 
-### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
+### 3. `Tilemap` ⚠️ (regular tiles rendered; autotiles + priority pending)
 
-`Tilemap` is now a pure-Ruby property holder (`mruby-rgss/mrblib/lib.rb`) with
-RGSS defaults: `tileset` (a `Bitmap`), `autotiles` (the seven `[0..6]` slots,
-indexable/assignable), `map_data`/`flash_data`/`priorities` (`Table`s), `ox`/`oy`,
-`visible`, `viewport`, `update`, `dispose`/`disposed?`. So `Spriteset_Map` can
-build its ground layer — assign the tileset, fill the autotiles, set the map
-data/priorities, scroll it, and dispose it — without raising. **Remaining:** the
-native render — autotile assembly + priority layering (the RPG2000 side already
-implements a portable reference in `Game::ChipsetLayout`).
+`Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
+`lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
+visible part of the map — for each of the three `map_data` layers it blits the
+tiles overlapping the viewport (given `ox`/`oy`) from the `tileset`. `tileset=`,
+`map_data=`, `ox=`/`oy=`, `z=`, `visible`/`visible=`, `dispose`/`disposed?` are
+native, and re-render on change. **Remaining:** only **regular tiles** (id ≥ 384)
+are drawn — the seven **autotiles** (id 48–383, the 48-shape 2×2 quad assembly)
+and the per-tile **priority layering** are still stored-only (`autotiles`,
+`priorities`, `flash_data`), so autotile-heavy ground (water, terrain) is missing
+and everything renders on one flat layer. The RPG2000 side has a portable
+autotile reference in `Game::ChipsetLayout`.
 
 ### 4. `Plane` ⚠️ (tiling + scroll rendered; zoom/blend/tone/colour stored)
 
