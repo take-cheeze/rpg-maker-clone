@@ -469,7 +469,11 @@ class MV
     return unless current_scene == "Scene_Map"
 
     @move_frame ||= 0
-    if @move_frame.zero?
+    # NB: use `== 0`, not Integer#zero? — this mruby build omits
+    # mruby-numeric-ext (kept lean for the embedded targets), so #zero? is not
+    # defined and calling it raised "undefined method 'zero?' for Integer" every
+    # frame, aborting the probe before it pressed a direction.
+    if @move_frame == 0
       @move_start = player_tile
       $stderr.puts "[MV-MOVE] start #{@move_start}"
     end

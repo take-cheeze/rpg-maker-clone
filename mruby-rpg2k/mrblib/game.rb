@@ -1440,7 +1440,9 @@ module Game
       @b += (@tb - @b) / @frames
       @sat += (@tsat - @sat) / @frames
       @frames -= 1
-      return unless @frames.zero?
+      # `== 0`, not Integer#zero?: this mruby build omits mruby-numeric-ext, so
+      # #zero? is undefined and would raise here mid-tint (see mv.rb's probe).
+      return unless @frames == 0
       @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
     end
 
