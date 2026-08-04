@@ -142,6 +142,29 @@ assert "LCF::Array1D#int16_values reads a raw short array past a named accessor"
   assert_false row.respond_to?(:no_such_field)
 end
 
+assert "LCF absent-field defaults: a lambda default is evaluated, not returned raw" do
+  row = LCF::Array1D.new(
+    lcf_array1d([lcf_int_field(1, 7)]),
+    { elements: { 1 => { name: :present, type: :int, default: 0 },
+                  2 => { name: :lazy,    type: :int, default: -> { 42 } },
+                  3 => { name: :static,  type: :int, default: 5 } } })
+  assert_equal 7, row.present   # a present chunk decodes normally
+  assert_equal 42, row.lazy     # absent + callable default -> its called value
+  assert_equal 5, row.static    # absent + plain default -> the value itself
+end
+
+assert "LCF edition-dependent helpers are callable as module methods (used by lazy defaults)" do
+  # The real schema uses `-> { LCF.level_max }` / `-> { LCF.exp_default }` etc.
+  # as lazy defaults, so these must be reachable as `LCF.<name>` -- otherwise
+  # evaluating an absent field's default raises NoMethodError for module LCF.
+  assert_equal LCF::MODE == 2003 ? 99 : 50, LCF.level_max
+  assert_equal LCF::MODE == 2003 ? 300 : 30, LCF.exp_default
+  assert_equal LCF::MODE == 2003 ? 9_999_999 : 999_999, LCF.var_max
+  assert_equal LCF::MODE == 2003 ? -9_999_999 : -999_999, LCF.var_min
+  assert_equal LCF::MODE == 2003 ? 9999 : 999, LCF.pc_hp_max
+  assert_equal LCF::MODE == 2003 ? 99_999 : 9999, LCF.npc_hp_max
+end
+
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
   actor = lcf_array1d([lcf_str_field(1, "Hero"), lcf_int_field(57, 3)])
   klass = lcf_array1d([lcf_str_field(1, "Soldier")])

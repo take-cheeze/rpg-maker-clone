@@ -169,7 +169,13 @@ module LCF
   end
 
   def to_rb d, s
-    return s[:default] unless d
+    # An absent field yields its schema default. A callable (`-> { ... }`)
+    # default is lazy -- evaluate it -- so edition-dependent defaults such as
+    # max level and the exp curve resolve to their value, not the Proc itself.
+    unless d
+      dv = s[:default]
+      return dv.respond_to?(:call) ? dv.call : dv
+    end
 
     case s[:type]
     when :Array1D ; return Array1D.new d, s
@@ -252,6 +258,12 @@ module LCF
   def npc_hp_max; MODE == 2003 ? 99_999 : 9999 end
 
   def exp_default; MODE == 2003 ? 300 : 30 end
+
+  # Edition-dependent helpers are referenced as `LCF.<name>` from lazy schema
+  # defaults (`-> { LCF.level_max }` etc.), so they must be module functions --
+  # otherwise calling the default raises NoMethodError for module LCF.
+  module_function :var_max, :var_min, :level_max, :pc_hp_max, :npc_hp_max,
+                  :exp_default
 
   class Array1D
     def initialize s, schema

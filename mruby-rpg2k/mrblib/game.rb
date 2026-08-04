@@ -1780,17 +1780,58 @@ module Game
 
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
+  # Map weather set by the Weather Effects (11070) event command: a type (0 none,
+  # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
+  # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half
+  # model only — drawing the rain/snow particles is native renderer work still to
+  # come — but it round-trips through the save so a reloaded game keeps its
+  # weather.
+  class Weather
+    attr_reader :type, :strength
+
+    def initialize(type = 0, strength = 0)
+      @type = type
+      @strength = strength
+    end
+
+    def set(type, strength)
+      @type = type
+      @strength = strength
+    end
+
+    # Whether no weather is active (type 0).
+    def none?; @type == 0; end
+
+    def to_h; { type: @type, strength: @strength }; end
+
+    def load_h(h)
+      return unless h
+      @type = h[:type] || 0
+      @strength = h[:strength] || 0
+    end
+  end
+
   class State
-    attr_reader :party, :switches, :variables, :message_config, :screen
+    attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
     attr_accessor :menu_access, :save_access
+    # Whether the Teleport and Escape skills are usable, toggled by the Change
+    # Teleport Access (11820) and Change Escape Access (11840) event commands.
+    # Default off — RPG2000 games enable these once the skill's targets are set —
+    # and persisted in the save. (The skills themselves are not executed yet, so
+    # these gate nothing at runtime; they are modelled for save fidelity.)
+    attr_accessor :teleport_access, :escape_access
     # The BGM currently playing and the one stashed by Memorize BGM (11530),
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
     attr_accessor :current_bgm, :memorized_bgm
+    # Whether the party leader's map sprite is hidden, toggled by the Set
+    # Transparent Flag / Change Player Visibility (11310) event command. Defaults
+    # off (the hero is shown) and is persisted in the save.
+    attr_accessor :player_transparent
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -1806,8 +1847,12 @@ module Game
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
+      @teleport_access = false
+      @escape_access = false
       @current_bgm = nil
       @memorized_bgm = nil
+      @player_transparent = false
+      @weather = Weather.new
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -1859,7 +1904,9 @@ module Game
         party: @party.to_h, timer_frames: @timer_frames,
         timer_running: @timer_running, message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
-        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm }
+        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
+        player_transparent: @player_transparent, weather: @weather.to_h,
+        teleport_access: @teleport_access, escape_access: @escape_access }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -1929,6 +1976,10 @@ module Game
       state.save_access = h[:save_access] unless h[:save_access].nil?
       state.current_bgm = h[:current_bgm]
       state.memorized_bgm = h[:memorized_bgm]
+      state.player_transparent = h[:player_transparent] ? true : false
+      state.weather.load_h(h[:weather])
+      state.teleport_access = h[:teleport_access] ? true : false
+      state.escape_access = h[:escape_access] ? true : false
       state
     end
   end

@@ -123,10 +123,13 @@ The work below is roughly ordered by the critical path to a walkable game
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
-  Name / Title / Sprite, Change Main Menu / Save Access, Tint
-  Screen, Flash Screen, Shake Screen, Call Event, Move Event, Proceed With
-  Movement, Halt All Movement, Erase Event, End Event) with a per-frame step cap
-  so a bad loop can't hang. **Memorize Location** stores the player's current map id, x and y
+  Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
+  Change Teleport / Escape Access,
+  Tint Screen, Flash Screen, Shake Screen, Weather Effects, Call Event, Move
+  Event, Change / Trade Event Location, Change Map Tileset, Proceed With
+  Movement, Halt All Movement,
+  Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
+  loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
   uses). **Call Event**
@@ -143,7 +146,13 @@ The work below is roughly ordered by the critical path to a walkable game
   digit-entry widget and writes the entered value to a variable. **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
-  these edits survive Save / Continue. **Erase
+  these edits survive Save / Continue. **Set Transparent Flag** hides or shows
+  the party leader's map sprite (persisted in the save), and **Return to Title
+  Screen** stops the event and returns the app to a fresh title. **Change Event
+  Location** snaps a character (player / this event / a map event) to a tile and
+  **Trade Event Locations** swaps two of them, refreshing collision. **Change Map
+  Tileset** swaps the current map's chipset and rebuilds its tile graphic (until
+  the next map load). **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
@@ -166,9 +175,12 @@ The work below is roughly ordered by the critical path to a walkable game
   interpreter (`:picture`) until the move settles; `Scene::Map` composites the
   pictures (id-ordered, zoomed via `stretch_blt`, at their opacity) into a layer
   above the map and below the message window. Picture **tone** is carried but not
-  yet drawn (needs the same native tone support as the screen tint). The
-  remaining commands (weather, battles, shop / inn, EXP gain / level-up
-  messages, ...) are TODO
+  yet drawn (needs the same native tone support as the screen tint). **Weather
+  Effects** (11070) records the map weather type (none / rain / snow) and strength
+  on `Game::State` — the Ruby-half model only, like the tint overlay, so it
+  round-trips through the save but drawing the rain/snow particles is native
+  renderer work still to come. The remaining commands (battles, shop / inn, EXP
+  gain / level-up
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

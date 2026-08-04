@@ -1757,6 +1757,168 @@ check 'Erase Picture removes the picture' do
   ok st.pictures[5].nil?, 'erased'
 end
 
+# -- Player Visibility / Return to Title --------------------------------------
+
+check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq true, st.player_transparent, 'param0 != 0 hides the player'
+  ok !it.waiting?, 'Set Transparent Flag must not pause the interpreter'
+  eq true, st.switches[1], 'the command after it still ran'
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [0])])
+  it2.update
+  eq false, st.player_transparent, 'param0 == 0 shows the player again'
+end
+
+check 'player_transparent round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.player_transparent = true
+  eq true, Game::State.load(db, st.to_h).player_transparent
+  # A save written before the flag existed defaults to visible (off).
+  legacy = st.to_h
+  legacy.delete(:player_transparent)
+  eq false, Game::State.load(db, legacy).player_transparent
+end
+
+check 'Return to Title Screen raises a :return_title request' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::RETURN_TO_TITLE, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Return to Title pauses the interpreter'
+  eq :return_title, it.wait_kind
+  eq false, st.switches[1], 'the command after it does not run (the game is ending)'
+end
+
+# -- Change / Trade Event Location --------------------------------------------
+
+check 'Change Event Location queues a :set request (constant and variable modes)' do
+  st = party_state
+  st.variables[7] = 4
+  st.variables[8] = 9
+  it = Game::Interpreter.new(st)
+  # event 3, mode 0 (constants), to (5, 6); then event 3, mode 1 (variables 7/8),
+  # then a switch to prove it did not pause.
+  it.start([FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 0, 5, 6]),
+            FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 1, 7, 8]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Change Event Location must not pause the interpreter'
+  eq true, st.switches[1]
+  reqs = it.take_location_requests
+  eq 2, reqs.size
+  eq({ op: :set, target: 3, x: 5, y: 6 }, reqs[0])
+  eq({ op: :set, target: 3, x: 4, y: 9 }, reqs[1], 'variable mode resolves x/y')
+  eq [], it.take_location_requests, 'the queue clears after draining'
+end
+
+check 'Trade Event Locations queues a :swap request' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TRADE_EVENT_LOCATIONS, [3, 7])])
+  it.update
+  ok !it.waiting?, 'Trade Event Locations must not pause the interpreter'
+  eq [{ op: :swap, a: 3, b: 7 }], it.take_location_requests
+end
+
+check 'Change Map Tileset queues a one-shot tileset request, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_MAP_TILESET, [7]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Change Map Tileset must not pause the interpreter'
+  eq true, st.switches[1], 'the command after it still ran'
+  eq 7, it.take_tileset_request, 'the requested tileset id is reported once'
+  eq nil, it.take_tileset_request, 'and clears after the first read'
+end
+
+# -- Weather Effects ----------------------------------------------------------
+
+check 'Weather Effects sets the weather type and strength, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  ok st.weather.none?, 'no weather to start'
+  it.start([FakeCmd.new(IC::WEATHER_EFFECTS, [1, 2]), # rain, strong
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Weather Effects must not pause the interpreter'
+  eq 1, st.weather.type
+  eq 2, st.weather.strength
+  ok !st.weather.none?, 'weather is now active'
+  eq true, st.switches[1], 'the command after it still ran'
+end
+
+check 'Weather round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.weather.set(2, 1) # snow, medium
+  loaded = Game::State.load(db, st.to_h)
+  eq 2, loaded.weather.type
+  eq 1, loaded.weather.strength
+  # A save written before weather existed defaults to none.
+  legacy = st.to_h
+  legacy.delete(:weather)
+  ok Game::State.load(db, legacy).weather.none?
+end
+
+# -- Change Teleport / Escape Access ------------------------------------------
+
+check 'Change Teleport / Escape Access toggle their flags, non-blocking' do
+  st = party_state
+  eq false, st.teleport_access, 'teleport access defaults off'
+  eq false, st.escape_access, 'escape access defaults off'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_TELEPORT_ACCESS, [1]),
+            FakeCmd.new(IC::CHANGE_ESCAPE_ACCESS, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'the access commands must not pause the interpreter'
+  eq true, st.teleport_access
+  eq true, st.escape_access
+  eq true, st.switches[1], 'the command after them still ran'
+  # And they can be turned back off.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_TELEPORT_ACCESS, [0])])
+  it2.update
+  eq false, st.teleport_access
+end
+
+check 'Teleport / Escape access round-trip through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.teleport_access = true
+  st.escape_access = true
+  loaded = Game::State.load(db, st.to_h)
+  eq true, loaded.teleport_access
+  eq true, loaded.escape_access
+  # A save written before these existed defaults them off.
+  legacy = st.to_h
+  legacy.delete(:teleport_access)
+  legacy.delete(:escape_access)
+  legacy_loaded = Game::State.load(db, legacy)
+  eq false, legacy_loaded.teleport_access
+  eq false, legacy_loaded.escape_access
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
