@@ -194,6 +194,28 @@ assert "RGSS::Bitmap stretch_blt" do
   assert_equal 0.0, dst.get_pixel(6, 6).alpha
 end
 
+assert "RGSS::Bitmap gradient_fill_rect" do
+  red = RGSS::Color.new(255, 0, 0, 255)
+  blue = RGSS::Color.new(0, 0, 255, 255)
+
+  # Horizontal gradient across the full width (span 9 => denominator 8).
+  b = RGSS::Bitmap.new(9, 2)
+  b.gradient_fill_rect(0, 0, 9, 2, red, blue)
+  assert_equal 255.0, b.get_pixel(0, 0).red  # left end is color1
+  assert_equal 0.0, b.get_pixel(0, 0).blue
+  assert_equal 0.0, b.get_pixel(8, 1).red    # right end is color2
+  assert_equal 255.0, b.get_pixel(8, 1).blue
+  mid = b.get_pixel(4, 0)                     # halfway: t = 4/8 = 0.5
+  assert_equal 127.0, mid.red                 # 255 - 255*0.5 = 127.5 -> 127
+  assert_equal 127.0, mid.blue
+
+  # Vertical gradient via the Rect overload + the vertical flag.
+  v = RGSS::Bitmap.new(2, 9)
+  v.gradient_fill_rect(RGSS::Rect.new(0, 0, 2, 9), red, blue, true)
+  assert_equal 255.0, v.get_pixel(1, 0).red   # top row is color1
+  assert_equal 255.0, v.get_pixel(1, 8).blue  # bottom row is color2
+end
+
 assert "RGSS::Viewport API surface" do
   # Viewport creation needs a live display, which the test binary does not set
   # up, so only assert the method surface here (exercised for real by the game).
