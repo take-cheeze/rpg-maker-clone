@@ -8,9 +8,11 @@
 #
 #   1. Its engine scripts are `js/rmmz_*.js` (not MV's `js/rpg_*.js`), loaded in
 #      a slightly different order (pako/localforage/effekseer instead of MV's
-#      lz-string), and a community MIT reimplementation exists
-#      (github.com/stak/rmmz-corescript), so an MZ test bed is authorable the
-#      same way `data/mv-sample` is for MV.
+#      lz-string). Unlike MV — whose corescript is an official MIT project
+#      (rpgtkoolmv, redistributed by KADOKAWA) that `data/mv-sample` fetches —
+#      MZ's engine ships only with the paid editor and has no equivalent
+#      open-source release, so running MZ needs a user-supplied MZ project
+#      rather than a committed or fetched engine.
 #   2. It ships **PIXI v5, which is WebGL-only** — there is no Canvas2D renderer
 #      to map onto the `Canvas2D -> Bitmap` bridge MV drives. Rendering therefore
 #      needs a WebGL-subset backend on LVGL, which is the bulk of milestone M6

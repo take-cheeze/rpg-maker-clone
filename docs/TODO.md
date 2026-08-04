@@ -558,8 +558,9 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     game reports the pending WebGL backend cleanly instead of "no project
     found". Covered by `mruby-mvjs/test/mz_test.rb`.
   - 🚧 M6.2 host reuse: run the `rmmz_*` scripts on the shared quickjs host to
-    reach `Scene_Boot` in logic; a committed MZ sample is authorable (MZ's
-    corescript has an MIT community reimplementation, `stak/rmmz-corescript`,
-    fetchable like the MV corescript).
+    reach `Scene_Boot` in logic. Note there is **no fetchable MZ test bed** —
+    MZ's engine ships only with the paid editor (no open-source release like
+    MV's MIT `rpgtkoolmv`), so MZ is verified against a user-supplied project,
+    not a committed/downloaded sample.
   - 🚧 M6.3 WebGL rendering: the WebGL-subset backend behind PIXI v5 (the bulk
     of the work — MZ dropped the Canvas2D renderer the MV bridge targets).
