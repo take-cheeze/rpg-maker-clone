@@ -325,9 +325,9 @@ The work below is roughly ordered by the critical path to a walkable game
   horizontal offset (amplitude from power, rate from speed) that `Scene::Map`
   subtracts from the camera, so — unlike the tint — the shake **is** visible
   with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
-  a colour + strength that fades to zero over the duration; like the tint it is
-  the Ruby half (drawing the full-screen colour overlay at its strength needs
-  the same alpha-blend / viewport support in C++). **Pan Screen** (11060) drives
+  a colour + strength that fades to zero over the duration, and it **is** drawn:
+  a screen-sized colour sprite above everything, shown at the flash's strength
+  through `Sprite#opacity`. **Pan Screen** (11060) drives
   `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
@@ -335,11 +335,22 @@ The work below is roughly ordered by the critical path to a walkable game
   (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) that
   eases like the tint over a fixed transition and is held erased until a Show,
   recording the requested transition style (fade / block / stripe / scroll) for
-  fidelity while modelling only the fade. All share the `:screen` wait, so event
-  timing around them is correct. **Show Picture** now renders (see the
-  interpreter bullet above). Weather remains, and the tint / flash / screen-fade
-  overlays still need `RGSS::Viewport` tone/alpha support in C++ to actually
-  darken or colour what is drawn
+  fidelity while modelling only the fade — and the fade **is** drawn, by the
+  same screen-sized sprite mechanism as the flash. All share the `:screen` wait,
+  so event timing around them is correct. **Show Picture** now renders (see the
+  interpreter bullet above).
+
+  The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
+  tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already
+  maps onto LVGL's per-object alpha at blit time, so a screen-sized sprite of
+  solid colour shown at the effect's strength is the entire mechanism, in Ruby.
+  Confirmed in the real binary before the code was written — forcing the fade
+  layer to opacity 128 halves the rendered frame's mean brightness (31.9 → 15.2).
+
+  Still open here: **weather**, and the **tint** (Tint Screen), which really does
+  need native work — a tone is a per-channel multiply against what is already
+  drawn, and no amount of compositing a solid colour on top reproduces that.
+  Tint remains the Ruby half only
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a

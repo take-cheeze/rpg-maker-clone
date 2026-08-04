@@ -21,8 +21,13 @@ require 'ostruct'
 module RGSS
   Rect = Struct.new(:x, :y, :width, :height)
 
+  # Records its components so the screen-overlay checks can assert the colour a
+  # layer was filled with, not just that a fill happened.
   class Color
-    def initialize(*); end
+    attr_reader :red, :green, :blue, :alpha
+    def initialize(r = 0, g = 0, b = 0, a = 255)
+      @red = r; @green = g; @blue = b; @alpha = a
+    end
   end
 
   # A no-op drawing surface. Records nothing; every draw call is ignored. A
@@ -39,7 +44,8 @@ module RGSS
       end
     end
     def clear; end
-    def fill_rect(*); end
+    def fill_rect(*a); (@fill_calls ||= []) << a; end
+    attr_reader :fill_calls
     def blt(*); end
     def stretch_blt(*); end
     # Record draw_text / blend_text calls so message-rendering checks can assert
@@ -58,7 +64,7 @@ module RGSS
   Color2 = Struct.new(:red, :green, :blue, :alpha)
 
   class Sprite
-    attr_accessor :bitmap, :x, :y, :z, :visible
+    attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
     def initialize(*); end
     def dispose; end
   end
@@ -1430,6 +1436,62 @@ check 'neither flag set leaves the title screen waiting for input' do
   scene.instance_variable_set(:@auto_started, false)
   scene.instance_variable_set(:@selected_index, 0)
   ok !scene.send(:auto_select?), 'no auto-select without a flag'
+end
+
+# -- screen fade / flash overlays ---------------------------------------------
+#
+# Erase/Show Screen and Flash Screen are drawn as two full-screen colour sprites
+# above everything (RPG2000 fades and flashes the message window too), shown at
+# the effect's own 0..255 strength through Sprite#opacity. docs/TODO.md had these
+# down as needing native alpha support first; they do not -- Sprite#opacity is
+# already LVGL's per-object alpha -- and a forced mid-fade halves the rendered
+# frame's brightness in the real binary, which is what motivated writing them.
+#
+# What is worth pinning here is the wiring: the levels reach the sprites, and the
+# flash layer is not re-filled on frames where its colour has not changed (it is
+# a screen-sized fill per frame otherwise, to produce an identical image).
+def overlay(scene)
+  [scene.instance_variable_get(:@fade_sprite),
+   scene.instance_variable_get(:@flash_sprite)]
+end
+
+check 'Erase/Show Screen drives the fade layer opacity' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  eq 0, fade.opacity, 'nothing erased yet, so the fade layer is invisible'
+
+  st = scene.instance_variable_get(:@state)
+  st.screen.erase(0, 1) # fade fully out over one frame
+  4.times { scene.update }
+  eq 255, fade.opacity, 'a completed Erase Screen leaves the screen black'
+
+  st.screen.show(0, 1)
+  4.times { scene.update }
+  eq 0, fade.opacity, 'Show Screen brings it back'
+end
+
+check 'Flash Screen drives the flash layer, and refills only on a colour change' do
+  scene = new_scene({}, player: [5, 5])
+  _, flash = overlay(scene)
+  scene.update
+  eq 0, flash.opacity, 'no flash, no overlay'
+
+  st = scene.instance_variable_get(:@state)
+  st.screen.flash(31, 0, 0, 200, 20) # red
+  scene.update
+  fills = flash.bitmap.fill_calls || []
+  eq 1, fills.length, 'the flash layer is filled once when the colour is set'
+  eq [31, 0, 0], fills.last[4].then { |c| [c.red, c.green, c.blue] },
+     'filled with the flash colour'
+  eq true, flash.opacity > 0, 'the flash layer is visible while flashing'
+
+  # Same colour on the next frame: the strength changes, the fill does not.
+  before = flash.opacity
+  scene.update
+  eq 1, (flash.bitmap.fill_calls || []).length,
+     'an unchanged colour does not re-fill the screen-sized layer'
+  eq true, flash.opacity <= before, 'the flash decays'
 end
 
 # -- summary ------------------------------------------------------------------
