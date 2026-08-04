@@ -73,10 +73,12 @@ The work below is roughly ordered by the critical path to a walkable game
   name), composite into the correct layer relative to the hero (below / above /
   same-layer y-sorted), honour the translucent flag, and pick their walk frame
   from the page's animation type (`Game::EventGraphic`: walk-while-moving,
-  continuous, fixed-direction, fixed-graphic, spin). Grounded in the real
-  Nepheshel data and pinned by `scripts/rpg2k_render_check.rb` /
-  `scripts/rpg2k_scene_check.rb`. Remaining polish: per-step pixel interpolation
-  of event movement (events currently hop tile-to-tile) and vehicle sprites
+  continuous, fixed-direction, fixed-graphic, spin). Events also **slide
+  smoothly between tiles** (per-step pixel interpolation, mirroring the player):
+  a single-tile step eases across over `TILE/SPEED` frames while the walk
+  animation cycles, and a longer hop snaps. Grounded in the real Nepheshel data
+  and pinned by `scripts/rpg2k_render_check.rb` /
+  `scripts/rpg2k_scene_check.rb`. Remaining polish: vehicle sprites
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
   animation and edge/tile/event collision. Move-route *data* decodes
   (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and
