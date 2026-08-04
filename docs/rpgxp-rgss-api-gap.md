@@ -119,22 +119,23 @@ flat layer (a correct fix needs the above-priority tiles to become their own
 z-ordered objects that interleave with character sprites per row); and
 `flash_data` is ignored.
 
-### 4. `Plane` ⚠️ (tiling + scroll + tint/blend rendered; zoom stored)
+### 4. `Plane` ✅ (tiling + scroll + tint/blend + zoom all rendered)
 
 `Plane` is now **native** (`mruby-rgss/src/lib.cxx`): `Plane.new` creates an
 `lv_canvas` the size of the viewport (or screen) whose buffer is filled by tiling
 the `bitmap` with the `ox`/`oy` scroll wrapped around it (`plane_retile`), so map
 parallax and fog now actually tile and scroll. `bitmap=`, `ox=`/`oy=`,
-`opacity=`, `tone=`, `color=`, `blend_type=`, `z=`, `visible`/`visible=`,
-`dispose`/`disposed?` are native. `opacity=` and `blend_type=` map onto the plane
-canvas's LVGL object (so a fog Plane can fade and composite additively), and
-`tone=`/`color=` bake an RGSS tone (grey desaturation + RGB offset) and a colour
-overlay into the tiled buffer per pixel (the same maths Sprite uses) — so a tinted
-fog renders its tint. The canvas is invalidated directly on each re-tile.
-**Remaining:** `zoom_x`/`zoom_y` are stored but not applied (scaled tiling is a
-different mechanism from the current 1:1 wrap and is future work). The per-scroll
-re-tile is a full-canvas `bmp_read`/`bmp_put` pass; a dirty-rect or offset-based
-scroll is a possible optimization.
+`opacity=`, `tone=`, `color=`, `blend_type=`, `zoom_x=`/`zoom_y=`, `z=`,
+`visible`/`visible=`, `dispose`/`disposed?` are native. `opacity=` and
+`blend_type=` map onto the plane canvas's LVGL object (so a fog Plane can fade and
+composite additively); `tone=`/`color=` bake an RGSS tone (grey desaturation + RGB
+offset) and a colour overlay into the tiled buffer per pixel (the same maths
+Sprite uses) — so a tinted fog renders its tint; and `zoom_x=`/`zoom_y=` scale the
+tiled pattern (nearest-neighbour: the source is sampled at the reciprocal rate,
+with a zoom of 1.0 staying on the fast integer path). The canvas is invalidated
+directly on each re-tile. **Remaining:** none for correctness — the per-scroll
+re-tile is a full-canvas `bmp_read`/`bmp_put` pass, so a dirty-rect or
+offset-based scroll is a possible optimization.
 
 ### 5. `Kernel#sprintf` / `String#%` ✅ (mruby-sprintf gem)
 

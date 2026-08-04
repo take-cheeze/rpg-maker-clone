@@ -99,13 +99,12 @@ module RGSS
   # that set them run (tracked in docs/rpgxp-rgss-api-gap.md).
   class Plane
     attr_reader :bitmap, :ox, :oy, :z, :viewport
-    # `opacity=`, `tone=`, `color=` and `blend_type=` are native (src/lib.cxx):
-    # opacity/blend map onto the plane canvas's LVGL object, and tone/colour are
-    # baked into the tiled buffer by plane_retile. `zoom_x`/`zoom_y` are still
-    # stored-only (scaled tiling is future work). The readers below return the set
+    # `opacity=`, `tone=`, `color=`, `blend_type=` and `zoom_x=`/`zoom_y=` are all
+    # native (src/lib.cxx): opacity/blend map onto the plane canvas's LVGL object,
+    # and tone/colour/zoom are baked into the tiled buffer by plane_retile (zoom
+    # samples the source at the reciprocal rate). The readers below return the set
     # values; native #initialize does not set these ivars, so they fall back to
     # RGSS defaults here.
-    attr_writer :zoom_x, :zoom_y
 
     def opacity
       @opacity.nil? ? 255 : @opacity

@@ -2663,6 +2663,19 @@ void plane_retile(mrb_state* M, mrb_value self) {
   const mrb_int oy =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
 
+  // zoom_x/zoom_y scale the tiled pattern (nearest-neighbour): a zoom of 2.0
+  // samples the source at half the rate, so the bitmap appears twice as large.
+  // A non-positive or absent zoom is treated as 1.0 (the fast integer path).
+  const mrb_value zx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_x"));
+  const mrb_value zy_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@zoom_y"));
+  double zx = mrb_test(zx_v) ? mrb_as_float(M, zx_v) : 1.0;
+  double zy = mrb_test(zy_v) ? mrb_as_float(M, zy_v) : 1.0;
+  if (zx <= 0.0)
+    zx = 1.0;
+  if (zy <= 0.0)
+    zy = 1.0;
+  const bool scaled = zx != 1.0 || zy != 1.0;
+
   // Tone (grey desaturation + RGB offset) and colour overlay are baked into the
   // tiled buffer per pixel, the same way Sprite does — so a tinted fog/parallax
   // Plane renders its tint. (Same maths as spr_bind_display.)
@@ -2680,11 +2693,13 @@ void plane_retile(mrb_state* M, mrb_value self) {
   const int ca = static_cast<int>(cl.alpha);
 
   for (int y = 0; y < dst.height; ++y) {
-    const int sy =
-        static_cast<int>(((y + oy) % src.height + src.height) % src.height);
+    const int syb = scaled ? static_cast<int>(std::floor((y + oy) / zy))
+                           : static_cast<int>(y + oy);
+    const int sy = (syb % src.height + src.height) % src.height;
     for (int x = 0; x < dst.width; ++x) {
-      const int sx =
-          static_cast<int>(((x + ox) % src.width + src.width) % src.width);
+      const int sxb = scaled ? static_cast<int>(std::floor((x + ox) / zx))
+                             : static_cast<int>(x + ox);
+      const int sx = (sxb % src.width + src.width) % src.width;
       int r, g, b, a;
       bmp_read(src, sx, sy, r, g, b, a);
       if (has_tone) {
@@ -2794,6 +2809,24 @@ mrb_value plane_set_color(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
   plane_retile(M, self);
   return v;
+}
+
+// Plane#zoom_x= / #zoom_y= scale the tiled pattern; plane_retile samples the
+// source at the reciprocal rate, so assigning a zoom re-tiles.
+mrb_value plane_set_zoom_x(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
+  plane_retile(M, self);
+  return self;
+}
+
+mrb_value plane_set_zoom_y(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
+  plane_retile(M, self);
+  return self;
 }
 
 // ---- Tilemap --------------------------------------------------------------
@@ -3795,6 +3828,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "tone=", plane_set_tone, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "color=", plane_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "zoom_x=", plane_set_zoom_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, plane, "zoom_y=", plane_set_zoom_y, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "blend_type=", spr_set_blend_type,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
