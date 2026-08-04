@@ -154,16 +154,26 @@ end
 
 # One event page. Defaults: an action-trigger, stationary event with no route.
 def page(x_move_type: Game::MoveType::STATIONARY, route: nil, trigger: 0,
-         frequency: 6)
+         frequency: 6, direction: 2, charset_name: '', charset_index: 0,
+         layer: 0, pattern: 1, animation_type: 0, translucent: false)
   OpenStruct.new(
-    condition: nil, direction: 2, move_type: x_move_type, move_speed: 3,
-    move_frequency: frequency, charset_name: '', charset_index: 0,
-    trigger: trigger, event_commands: nil, move_route: route
+    condition: nil, direction: direction, move_type: x_move_type, move_speed: 3,
+    move_frequency: frequency, charset_name: charset_name,
+    charset_index: charset_index, trigger: trigger, event_commands: nil,
+    move_route: route, layer: layer, pattern: pattern,
+    animation_type: animation_type, translucent: translucent
   )
 end
 
 def event(x, y, pg)
   OpenStruct.new(x: x, y: y, pages: { 1 => pg })
+end
+
+# The runtime event hash (id => {char:, layer:, anim_type:, ...}) the scene built.
+def event_hashes(scene)
+  h = {}
+  scene.instance_variable_get(:@events).each { |e| h[e[:id]] = e }
+  h
 end
 
 def move_route(cmd_ids, repeat: true, skippable: true)
@@ -712,6 +722,80 @@ check 'Flash Screen with a wait holds the interpreter until the flash fades' do
   40.times { scene.update } # 0.3s -> 18 frames, plenty
   ok !st.screen.flashing?, 'the flash faded out'
   ok st.switches[1], 'the interpreter resumed after the flash'
+end
+
+# -- event graphic rendering --------------------------------------------------
+
+check 'an event page facing is converted from LCF (0..3) to numpad' do
+  # LCF facing 1 = right -> numpad 6; 0 = up -> 8; 3 = left -> 4.
+  { 0 => 8, 1 => 6, 2 => 2, 3 => 4 }.each do |lcf, numpad|
+    ev = event(2, 2, page(direction: lcf))
+    scene = new_scene({ 1 => ev })
+    eq numpad, chars(scene)[1].direction, "LCF dir #{lcf}"
+  end
+end
+
+check 'build_event captures the page graphic + layer fields' do
+  ev = event(2, 2, page(charset_name: 'hero', charset_index: 3, layer: 2,
+                        pattern: 2, animation_type: Game::EventGraphic::SPIN,
+                        translucent: true))
+  e = event_hashes(new_scene({ 1 => ev }))[1]
+  eq 'hero', e[:char].graphic_name
+  eq 3, e[:char].graphic_index
+  eq 2, e[:layer]
+  eq 2, e[:base_pattern]
+  eq Game::EventGraphic::SPIN, e[:anim_type]
+  ok e[:translucent], 'translucent page flagged'
+end
+
+check 'events route into the tile buffer matching their layer / y-order' do
+  below = event(2, 2, page(charset_name: 'c', layer: 0))
+  above = event(3, 2, page(charset_name: 'c', layer: 2))
+  # Same-layer events sort around the player (at y=4 below both): a same-layer
+  # event north of the player (smaller y) draws behind him, south draws in front.
+  same_behind = event(4, 1, page(charset_name: 'c', layer: 1))
+  same_front  = event(5, 4, page(charset_name: 'c', layer: 1))
+  scene = new_scene({ 1 => below, 2 => above, 3 => same_behind, 4 => same_front },
+                    player: [0, 3])
+  eh = event_hashes(scene)
+  lower = scene.instance_variable_get(:@lower_bmp)
+  upper = scene.instance_variable_get(:@upper_bmp)
+  eq lower, scene.send(:event_target_buffer, eh[1]), 'below-hero -> lower'
+  eq upper, scene.send(:event_target_buffer, eh[2]), 'above-hero -> upper'
+  eq lower, scene.send(:event_target_buffer, eh[3]), 'same layer, north -> lower'
+  eq upper, scene.send(:event_target_buffer, eh[4]), 'same layer, south -> upper'
+end
+
+check 'a wandering event cycles its walk phase; a stationary one rests' do
+  mover = event(3, 2, page(charset_name: 'c', x_move_type: Game::MoveType::RANDOM))
+  still = event(1, 1, page(charset_name: 'c')) # stationary, non-continuous
+  scene = new_scene({ 1 => mover, 2 => still }, player: [5, 4])
+  40.times { scene.update }
+  eh = event_hashes(scene)
+  ok eh[1][:moving], 'a random mover is flagged moving'
+  ok eh[1][:anim_phase] != 0 || eh[1][:anim_count] != 0,
+     'the mover advanced its walk animation'
+  ok !eh[2][:moving], 'a stationary event is not flagged moving'
+  eq 0, eh[2][:anim_phase], 'a stationary non-continuous event holds its pose'
+end
+
+check 'a continuous-animation event advances even while standing still' do
+  ev = event(2, 2, page(charset_name: 'c',
+                        animation_type: Game::EventGraphic::CONTINUOUS))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  40.times { scene.update }
+  e = event_hashes(scene)[1]
+  eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
+  ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+end
+
+check 'rendering a map with charset + tile-substitution events does not raise' do
+  charset_ev = event(2, 2, page(charset_name: 'npc', charset_index: 1, layer: 1))
+  tile_ev    = event(3, 3, page(charset_name: '', charset_index: 97, layer: 0))
+  invisible  = event(4, 4, page(charset_name: '', charset_index: 0, trigger: 1))
+  scene = new_scene({ 1 => charset_ev, 2 => tile_ev, 3 => invisible })
+  10.times { scene.update }
+  ok true
 end
 
 # -- summary ------------------------------------------------------------------

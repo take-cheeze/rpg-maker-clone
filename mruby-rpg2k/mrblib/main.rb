@@ -345,6 +345,10 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
+      # Rendered frames between walk-animation phase advances for an animating
+      # event (a moving event or a continuous/spin animation type).
+      ANIM_FRAME_PERIOD = 6
+
       # Event-page start conditions (the page `trigger` field): how the event's
       # command list is set off.
       TRIGGER_ACTION       = 0 # player presses the action button facing it
@@ -438,6 +442,7 @@ class RPG2k
             try_open_menu
           end
         end
+        animate_events
         render
       end
 
@@ -463,6 +468,25 @@ class RPG2k
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
                                 Color.new(240, 240, 80, 255)
         end
+        # CharSet graphics for events, loaded on demand and cached by name (a
+        # cached nil marks a name that failed to load, so we log it once).
+        @event_charsets = {}
+      end
+
+      # The CharSet bitmap for an event graphic `name`, cached (including a
+      # cached nil for a missing file so the event simply draws nothing rather
+      # than a placeholder). Empty names have no graphic.
+      def event_charset(name)
+        return nil if name.nil? || name.empty?
+        return @event_charsets[name] if @event_charsets.key?(name)
+        @event_charsets[name] =
+          begin
+            Bitmap.new "CharSet/#{name}"
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] event charset '#{name}' load failed, " \
+                         "event drawn empty: #{e.message}"
+            nil
+          end
       end
 
       def build_chipset
@@ -535,7 +559,8 @@ class RPG2k
       end
 
       def build_event(id, ev, page)
-        ch = Game::Character.new(ev.x, ev.y, page_direction(page))
+        dir = Game::EventGraphic.numpad_direction(page_direction(page))
+        ch = Game::Character.new(ev.x, ev.y, dir)
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
@@ -544,7 +569,13 @@ class RPG2k
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
         { id: id, char: ch, trigger: page_trigger(page),
           commands: page_commands(page), move_type: move_type, route: route,
-          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40 }
+          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
+          # Rendering state: the page's static graphic fields plus a live walk
+          # animation phase / counter and a "stepping" flag (see step_event).
+          layer: page_layer(page), translucent: page_translucent(page),
+          anim_type: page_anim_type(page), base_dir: dir,
+          base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
+          moving: false }
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
@@ -578,13 +609,19 @@ class RPG2k
 
       def page_trigger(page); page_field(:trigger, 0) { page.trigger }; end
       def page_commands(page); page_field(:commands, nil) { page.event_commands }; end
-      def page_direction(page); page_field(:direction, 2) { d = page.direction; d && d > 0 ? d : 2 }; end
+      # The page's stored facing (0..3: up/right/down/left), default down (2).
+      # Converted to the runtime numpad convention by build_event.
+      def page_direction(page); page_field(:direction, 2) { d = page.direction; (0..3).include?(d) ? d : 2 }; end
       def page_move_type(page); page_field(:move_type, 0) { page.move_type || 0 }; end
       def page_move_speed(page); page_field(:move_speed, 3) { page.move_speed || 3 }; end
       def page_move_frequency(page); page_field(:move_frequency, 3) { page.move_frequency || 3 }; end
       def page_move_route(page); page_field(:move_route, nil) { page.move_route }; end
       def page_charset_name(page); page_field(:charset_name, nil) { page.charset_name }; end
       def page_charset_index(page); page_field(:charset_index, 0) { page.charset_index || 0 }; end
+      def page_layer(page); page_field(:layer, 0) { page.layer || 0 }; end
+      def page_pattern(page); page_field(:pattern, 1) { p = page.pattern; (0..2).include?(p) ? p : 1 }; end
+      def page_anim_type(page); page_field(:anim_type, 0) { page.animation_type || 0 }; end
+      def page_translucent(page); page_field(:translucent, false) { page.translucent ? true : false }; end
 
       # -- event execution ----------------------------------------------------
 
@@ -749,6 +786,38 @@ class RPG2k
       rescue StandardError => ex
         $stderr.puts "[RPG2k] event ##{e[:id]} movement failed: #{ex.message}"
         nil
+      end
+
+      # Advance each event's walk-animation phase once per frame. An event
+      # "moves" for animation purposes when it has autonomous movement (a
+      # non-stationary move type) or a forced route in progress; such events —
+      # and any continuous/spin animation type — cycle their walk frames on the
+      # ANIM_FRAME_PERIOD cadence, while a stationary, non-continuous event rests
+      # on its page pose. Game::EventGraphic.frame reads @moving / @anim_phase to
+      # pick the drawn column.
+      def animate_events
+        @events.each { |e| animate_event(e) }
+      end
+
+      def animate_event(e)
+        type = e[:anim_type]
+        walking = event_walking?(e)
+        e[:moving] = walking
+        return unless Game::EventGraphic.animated?(type)
+        return unless walking || Game::EventGraphic.continuous?(type)
+        e[:anim_count] += 1
+        return if e[:anim_count] < ANIM_FRAME_PERIOD
+        e[:anim_count] = 0
+        e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
+      end
+
+      # Whether an event is currently in motion (so it shows its walk cycle
+      # rather than a standing pose): it has a forced route, or its page gives it
+      # an autonomous, non-stationary move type.
+      def event_walking?(e)
+        return true if e[:forced_route]
+        mt = e[:move_type]
+        !mt.nil? && mt != Game::MoveType::STATIONARY
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
@@ -1425,13 +1494,75 @@ class RPG2k
               @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
               @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
             end
-
-            if @event_tiles[[tx, ty]]
-              @lower_bmp.fill_rect dx + 3, dy + 3, TILE - 6, TILE - 6,
-                                   Color.new(230, 90, 90, 255)
-            end
           end
         end
+
+        draw_events cam_x, cam_y
+      end
+
+      # Draw every event's graphic into the tile buffers, layered so it composits
+      # correctly with the player sprite (z=100, between the lower buffer at z=0
+      # and the upper buffer at z=200):
+      #   * below-hero events (page layer 0) go in the lower buffer, under the
+      #     player;
+      #   * above-hero events (layer 2) go in the upper buffer, over the player;
+      #   * same-layer events (layer 1) go under the player when they stand
+      #     behind him (smaller y) and over him when in front (larger-or-equal
+      #     y), the y-sort RPG2000 applies within the character layer.
+      # A translucent page is blitted at half opacity. Events with no graphic
+      # (empty CharSet name and no tile substitution) draw nothing.
+      def draw_events(cam_x, cam_y)
+        @events.each { |e| draw_event e, cam_x, cam_y }
+      end
+
+      def draw_event(e, cam_x, cam_y)
+        bmp = event_target_buffer(e)
+        return unless bmp
+        opacity = e[:translucent] ? 128 : 255
+        ch = e[:char]
+        name = ch.graphic_name
+        if name && !name.empty?
+          draw_event_charset(e, bmp, cam_x, cam_y, opacity)
+        elsif ch.graphic_index && ch.graphic_index > 0
+          draw_event_tile(e, bmp, cam_x, cam_y, opacity)
+        end
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] event ##{e[:id]} draw failed: #{ex.message}"
+      end
+
+      # Which tile buffer an event composits into, per its page layer and (for
+      # the same-as-hero layer) its y relative to the player.
+      def event_target_buffer(e)
+        case e[:layer]
+        when 2 then @upper_bmp                                   # above hero
+        when 1 then e[:char].y >= @state.y ? @upper_bmp : @lower_bmp
+        else @lower_bmp                                          # below hero
+        end
+      end
+
+      # Blit an event's CharSet frame (24x32), feet-on-tile like the player.
+      def draw_event_charset(e, bmp, cam_x, cam_y, opacity)
+        charset = event_charset(e[:char].graphic_name)
+        return unless charset
+        dir, col = Game::EventGraphic.frame(e[:anim_type], e[:base_dir],
+                                            e[:base_pattern],
+                                            e[:char].direction, e[:anim_phase],
+                                            e[:moving])
+        sx, sy, sw, sh = Game::CharSet.frame_rect(e[:char].graphic_index, dir, col)
+        dx = e[:char].x * TILE - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+        dy = e[:char].y * TILE - cam_y - (Game::CharSet::HEIGHT - TILE)
+        bmp.blt dx, dy, charset, Rect.new(sx, sy, sw, sh), opacity
+      end
+
+      # Blit an event whose graphic is a chipset tile (16x16), aligned to its
+      # tile. Needs the chipset image; with none loaded (colour-block fallback)
+      # the tile event is skipped.
+      def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
+        return unless @chipset_bmp
+        sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index)
+        dx = e[:char].x * TILE - cam_x
+        dy = e[:char].y * TILE - cam_y
+        bmp.blt dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity
       end
 
       # Blit one map tile from the chipset image into `bmp` at (dx, dy). A plain
