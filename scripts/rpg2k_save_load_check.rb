@@ -26,7 +26,14 @@ module LCF
     s.dup.force_encoding('Windows-31J')
      .encode('UTF-8', invalid: :replace, undef: :replace, replace: "\u{FFFD}")
   end
-  module_function :cp932_to_utf8
+  # Inverse of cp932_to_utf8, for the writer path (State#to_lsd now emits string
+  # fields -- charset, face and BGM names, the hero name). Mirrors the build's
+  # native uni-algo encoder with Ruby's Windows-31J transcoder.
+  def utf8_to_cp932(s)
+    s.dup.encode('Windows-31J', invalid: :replace, undef: :replace)
+     .force_encoding('BINARY')
+  end
+  module_function :cp932_to_utf8, :utf8_to_cp932
   def self.max_level; MODE == 2003 ? 99 : 50; end
 end
 
@@ -118,6 +125,32 @@ def check_game(dir)
   # Writer round-trip (ADR 0019): serialise the runtime state back to a genuine
   # .lsd with State#to_lsd, re-read it with State.from_lsd, and confirm every
   # modelled field survives -- i.e. to_lsd is a faithful inverse of from_lsd.
+  #
+  # Exercise the extended fields the export gained after ADR 0019 (message-window
+  # config, current/memorised BGM, the player-transparent flag, the access flags
+  # and the leader's sprite/name overrides) by mutating the state to non-default
+  # values first, so the round-trip proves they are written and read back.
+  mc = state.message_config
+  mc.transparent = true
+  mc.position = Game::MessageConfig::POS_TOP
+  mc.position_fixed = true
+  mc.continue_events = true
+  mc.face_name = 'FaceSet1'
+  mc.face_index = 3
+  mc.face_right = true
+  mc.face_flipped = true
+  state.player_transparent = true
+  state.current_bgm = { name: 'Theme', volume: 80, tempo: 120 }
+  state.memorized_bgm = { name: 'Boss', volume: 90, tempo: 100 }
+  state.menu_access = false
+  state.save_access = false
+  state.teleport_access = true
+  state.escape_access = true
+  if state.party.leader
+    state.party.leader.set_charset('HeroAlt', 5)
+    state.party.leader.name = 'Renamed'
+  end
+
   round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd.to_lcf)))
   eq state.map_id, round.map_id, 'to_lsd: map id'
   eq state.x, round.x, 'to_lsd: hero x'
@@ -141,6 +174,29 @@ def check_game(dir)
      round.switches.to_h.select { |_k, v| v }.keys.sort, 'to_lsd: switches on'
   eq state.variables.to_h.reject { |_k, v| v == 0 },
      round.variables.to_h.reject { |_k, v| v == 0 }, 'to_lsd: variables set'
+
+  # Extended fields: message config, BGM, transparency, access flags, overrides.
+  rmc = round.message_config
+  eq true, rmc.transparent, 'to_lsd: message transparent'
+  eq Game::MessageConfig::POS_TOP, rmc.position, 'to_lsd: message position'
+  eq true, rmc.position_fixed, 'to_lsd: message position_fixed'
+  eq true, rmc.continue_events, 'to_lsd: message continue_events'
+  eq 'FaceSet1', rmc.face_name, 'to_lsd: message face_name'
+  eq 3, rmc.face_index, 'to_lsd: message face_index'
+  eq true, rmc.face_right, 'to_lsd: message face_right'
+  eq true, rmc.face_flipped, 'to_lsd: message face_flipped'
+  eq true, round.player_transparent, 'to_lsd: player_transparent'
+  eq({ name: 'Theme', volume: 80, tempo: 120 }, round.current_bgm, 'to_lsd: current_bgm')
+  eq({ name: 'Boss', volume: 90, tempo: 100 }, round.memorized_bgm, 'to_lsd: memorized_bgm')
+  eq false, round.menu_access, 'to_lsd: menu_access'
+  eq false, round.save_access, 'to_lsd: save_access'
+  eq true, round.teleport_access, 'to_lsd: teleport_access'
+  eq true, round.escape_access, 'to_lsd: escape_access'
+  if round.party.leader
+    eq 'HeroAlt', round.party.leader.charset_name, 'to_lsd: leader sprite override'
+    eq 5, round.party.leader.charset_index, 'to_lsd: leader sprite index'
+    eq 'Renamed', round.party.leader.name, 'to_lsd: leader name override'
+  end
 
   puts "  leader=#{state.party.leader.name.inspect} hp=#{state.party.leader.hp} " \
        "mp=#{state.party.leader.mp} map=#{state.map_id} " \

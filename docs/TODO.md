@@ -250,11 +250,18 @@ The work below is roughly ordered by the critical path to a walkable game
   `SaveData#save_to` writes a genuine `Save<slot>.lsd`, exported alongside the
   Marshal save on every save (ADR 0019, on the `mruby-lcf` serializer of ADR
   0018). It round-trips through `from_lsd` field-for-field
-  (`scripts/rpg2k_save_load_check.rb`). Remaining refinements to make the `.lsd`
-  the *primary* save (so Continue prefers it): model the fields the Marshal save
-  still holds but `.lsd` drops here — timer, message config, current/memorized
-  BGM, actor name/title/sprite overrides, access flags — plus the title chunk
-  (100, needs `:double` timestamp encoding) so the save-slot menu shows the party
+  (`scripts/rpg2k_save_load_check.rb`). The export is now **near-parity** with the
+  Marshal save: on top of the four original chunks it also writes the message
+  config, current/memorized BGM, the player-transparent flag, the
+  menu/save/teleport/escape access flags (all SaveSystem chunk 101), the leader's
+  on-map CharSet override (hero chunk 104) and the **title chunk (100)** — the
+  `:double` timestamp (via the new `LCF.pack_double`), the leader's
+  name/level/HP and the party FaceSets — so a real RPG_RT/EasyRPG file-select
+  screen shows the party. Still keeping the Marshal save *primary* (so Continue
+  prefers it) are two fields the `.lsd` cannot yet carry: the **game timer**
+  (liblcf's SaveSystem has no field for it — needs a documented chunk id) and
+  **per-actor name/title overrides for non-leader** members (only the leader's
+  name is in the title chunk)
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against

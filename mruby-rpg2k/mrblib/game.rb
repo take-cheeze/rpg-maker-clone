@@ -834,6 +834,18 @@ module Game
       @charset_index = index
     end
 
+    # The actor's database FaceSet graphic (顔グラフィック), shown on the
+    # save-select screen (the SAVE_TITLE face slots) -- distinct from the message
+    # face configured per Show Message. Defaults to none when the database row
+    # (or edition) does not carry one.
+    def faceset_name
+      @db_row.respond_to?(:faceset_name) ? (@db_row.faceset_name || '') : ''
+    end
+
+    def faceset_index
+      @db_row.respond_to?(:faceset_index) ? (@db_row.faceset_index || 0) : 0
+    end
+
     # Whether the actor knows `skill_id`.
     def knows_skill?(skill_id)
       return false if skill_id.nil? || skill_id == 0
@@ -2064,25 +2076,61 @@ module Game
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
-    # inverse of .from_lsd. It writes exactly the chunks that path reads back:
-    # the system chunk (101: switches, variables, save_count), the hero
-    # position/facing (104), the per-actor level/exp/equipment/skills/HP/MP table
-    # (108) and the party roster / gold / item bag (109). Fields our Marshal save
-    # also carries but this format does not model here (timer, message config,
-    # BGM, actor name/sprite overrides, access flags) are intentionally dropped,
-    # so this is a lower-fidelity, interoperable *export* rather than a
-    # replacement for #to_h. Switch and variable ids are 1-indexed in-game but
-    # 0-indexed in the save, so they shift down by one; unset entries default to
-    # false / 0. +save_count+ goes in the system chunk (RPG_RT increments it on
-    # every save).
-    def to_lsd(save_count = 1)
+    # inverse of .from_lsd. It writes the chunks that path reads back:
+    #
+    #   * title (100): the save-select metadata -- a timestamp (a :double, hence
+    #     the pack_double encoder) and the leader's name / level / current HP plus
+    #     each party member's FaceSet, so real RPG_RT/EasyRPG tooling shows the
+    #     party on the file screen;
+    #   * system (101): switches, variables, save_count, the message-window
+    #     configuration (position / transparency / face), the current and
+    #     memorised BGM, the player-transparent flag and the
+    #     menu/save/teleport/escape access flags;
+    #   * hero (104): map position, facing and the leader's on-map CharSet (so a
+    #     Change Sprite override survives);
+    #   * actors (108): the per-actor level/exp/equipment/skills/HP/MP table;
+    #   * inventory (109): the party roster / gold / item bag.
+    #
+    # Switch and variable ids are 1-indexed in-game but 0-indexed in the save, so
+    # they shift down by one; unset entries default to false / 0. +save_count+
+    # goes in the system chunk (RPG_RT increments it on every save); +timestamp+
+    # is the OLE-automation date shown on the file screen (a placeholder default,
+    # since this environment has no clock and the save-select scene is not drawn
+    # yet). The only live-state fields still dropped versus #to_h are the game
+    # timer (which liblcf's SaveSystem has no field for) and per-actor name/title
+    # overrides for non-leader members, so this is now a near-parity export.
+    def to_lsd(save_count = 1, timestamp = 0.0)
       save = LCF::SaveData.new
+
+      leader = @party.leader
+      members = @party.actors
+      if leader
+        title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+        title[1] = timestamp.to_f
+        title[11] = leader.name
+        title[12] = leader.level
+        title[13] = leader.hp
+        # Up to four party faces fill the file-screen portrait slots (21/22 ..
+        # 27/28), one FaceSet name+index pair per member.
+        face_fields = [[21, 22], [23, 24], [25, 26], [27, 28]]
+        members.each_index do |i|
+          break if i >= face_fields.size
+          nf, xf = face_fields[i]
+          title[nf] = members[i].faceset_name
+          title[xf] = members[i].faceset_index
+        end
+        save[100] = title
+      end
 
       hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
       hero[11] = @map_id
       hero[12] = @x
       hero[13] = @y
       hero[22] = @direction || 2
+      if leader
+        hero[73] = leader.charset_name || ''
+        hero[75] = leader.charset_index || 0
+      end
       save[104] = hero
 
       sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
@@ -2098,6 +2146,25 @@ module Game
       vr.each { |id, v| variables[id - 1] = v }
       sys[33] = vr_max
       sys[34] = variables
+      # Message-window configuration (field 41 transparency is 0/1, 43 is the
+      # inverse of our "pinned" flag: prevent-overlap true == not position_fixed,
+      # 53 face side is 0 left / 1 right).
+      mc = @message_config
+      sys[41] = mc.transparent ? 1 : 0
+      sys[42] = mc.position
+      sys[43] = mc.position_fixed ? false : true
+      sys[44] = mc.continue_events ? true : false
+      sys[51] = mc.face_name || ''
+      sys[52] = mc.face_index || 0
+      sys[53] = mc.face_right ? 1 : 0
+      sys[54] = mc.face_flipped ? true : false
+      sys[55] = @player_transparent ? true : false
+      sys[75] = bgm_chunk(@current_bgm) if @current_bgm
+      sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
+      sys[121] = @teleport_access ? true : false
+      sys[122] = @escape_access ? true : false
+      sys[123] = @save_access ? true : false
+      sys[124] = @menu_access ? true : false
       sys[131] = save_count
       sys[132] = 1
       save[101] = sys
@@ -2128,14 +2195,30 @@ module Game
       save
     end
 
+    # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
+    # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4). Used
+    # for the system chunk's current-BGM (75) and stored-BGM (78) slots.
+    def bgm_chunk(bgm)
+      b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
+      b[1] = bgm[:name] || ''
+      b[3] = bgm[:volume] || 100
+      b[4] = bgm[:tempo] || 100
+      b
+    end
+
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
-    # by an actual editor, rather than our own Marshal hash. Only the fields we
-    # model are restored: the hero's map, tile position and facing (chunk 104),
-    # the party roster / gold / items (inventory, chunk 109) and the switches and
-    # variables (system, chunk 101). Switches and variables are 0-indexed arrays
-    # in the save but 1-indexed in-game, so they shift by one. `save[101]` is
-    # used instead of `save.system` because the latter collides with Kernel#system
-    # under CRuby (where the loaders are unit-tested).
+    # by an actual editor, rather than our own Marshal hash. The modelled fields
+    # are restored: the hero's map / tile position / facing and the leader's
+    # on-map CharSet (chunk 104), the party roster / gold / items (inventory,
+    # chunk 109), the per-actor level/exp/HP/MP/equipment/skills table (chunk
+    # 108), the switches and variables plus the message-window configuration, the
+    # current / memorised BGM, the player-transparent flag and the access flags
+    # (system, chunk 101), and the leader's display name (title, chunk 100).
+    # Switches and variables are 0-indexed arrays in the save but 1-indexed
+    # in-game, so they shift by one. `save[101]` / `save[100]` are used instead of
+    # `save.system` / `save.title` because the former collides with Kernel#system
+    # under CRuby (where the loaders are unit-tested) and the latter is kept
+    # parallel to it.
     def self.from_lsd(db, save)
       hero = save.hero
       inv = save.inventory
@@ -2166,6 +2249,11 @@ module Game
       party.load_state(items: items, gold: inv.gold, hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
       state.direction = hero.direction || 2
+      # The leader's on-map sprite override (a Change Sprite Association), stored
+      # in the hero chunk's CharSet fields.
+      if party.leader && hero.charset_name && !hero.charset_name.empty?
+        party.leader.set_charset(hero.charset_name, hero.charset_index || 0)
+      end
       sys = save[101]
       switches = {}
       (sys.switches || []).each_with_index { |v, i| switches[i + 1] = v if v }
@@ -2173,7 +2261,44 @@ module Game
       variables = {}
       (sys.variables || []).each_with_index { |v, i| variables[i + 1] = v unless v == 0 }
       state.variables.replace(variables)
+      # Message-window configuration (inverse of the mapping #to_lsd writes).
+      mc = state.message_config
+      mc.transparent = (sys.message_transparent || 0) != 0
+      mc.position = sys.message_position || MessageConfig::POS_BOTTOM
+      mc.position_fixed = sys.message_prevent_overlap ? false : true
+      mc.continue_events = sys.message_continue_events ? true : false
+      mc.face_name = sys.face_name || ''
+      mc.face_index = sys.face_index || 0
+      mc.face_right = (sys.face_right_position || 0) != 0
+      mc.face_flipped = sys.face_flip ? true : false
+      state.player_transparent = sys.transparent ? true : false
+      # Overridden BGM playback state; an empty file name means "none".
+      state.current_bgm = bgm_from_chunk(sys.current_bgm)
+      state.memorized_bgm = bgm_from_chunk(sys.stored_bgm)
+      # Access flags: only an explicitly-stored value overrides the constructor
+      # default (so a foreign save that omits them keeps our defaults).
+      state.teleport_access = sys.teleport_allowed unless sys.teleport_allowed.nil?
+      state.escape_access = sys.escape_allowed unless sys.escape_allowed.nil?
+      state.save_access = sys.save_allowed unless sys.save_allowed.nil?
+      state.menu_access = sys.menu_allowed unless sys.menu_allowed.nil?
+      # The leader's display name from the file-screen title chunk (a Change
+      # Actor Name override survives for the leader).
+      title = save[100]
+      if title && party.leader
+        nm = title.hero_name
+        party.leader.name = nm if nm && !nm.empty?
+      end
       state
+    end
+
+    # Rebuild our `{ name:, volume:, tempo: }` BGM hash from a parsed BGM chunk
+    # (an LCF::Array1D over the BGM schema). Returns nil for an absent chunk or an
+    # empty file name (the "use the database value" sentinel).
+    def self.bgm_from_chunk(chunk)
+      return nil unless chunk
+      name = chunk.file
+      return nil if name.nil? || name.empty?
+      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100 }
     end
 
     # Rebuild a State from a saved hash. Actors are re-created from the database
