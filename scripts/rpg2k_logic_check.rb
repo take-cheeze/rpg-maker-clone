@@ -2130,6 +2130,104 @@ check 'party save round-trips actor EXP and re-derives the level' do
   eq 3, la.level, 'level re-derived from the restored EXP'
 end
 
+# -- Set Teleport / Escape Target, Change Encounter Rate ----------------------
+
+check 'Set Teleport Target registers, updates and removes a destination' do
+  st = party_state
+  eq({}, st.teleport_targets, 'no targets registered by default')
+  it = Game::Interpreter.new(st)
+  # Add map 4 @ (7, 9) with switch 12 gating it, then a plain command after.
+  it.start([FakeCmd.new(IC::SET_TELEPORT_TARGET, [0, 4, 7, 9, 1, 12]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'setting a target must not pause the interpreter'
+  eq({ x: 7, y: 9, switch_id: 12 }, st.teleport_targets[4])
+  eq true, st.switches[1], 'the command after it still ran'
+  # Re-adding the same map overwrites; an absent switch flag stores nil.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SET_TELEPORT_TARGET, [0, 4, 2, 3, 0, 0])])
+  it2.update
+  eq({ x: 2, y: 3, switch_id: nil }, st.teleport_targets[4])
+  # Operation 1 removes it.
+  it3 = Game::Interpreter.new(st)
+  it3.start([FakeCmd.new(IC::SET_TELEPORT_TARGET, [1, 4])])
+  it3.update
+  ok !st.teleport_targets.key?(4), 'the target was removed'
+end
+
+check 'Set Escape Target stores the single escape destination' do
+  st = party_state
+  eq nil, st.escape_target, 'no escape target by default'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_ESCAPE_TARGET, [8, 3, 5, 1, 20])])
+  it.update
+  eq({ map_id: 8, x: 3, y: 5, switch_id: 20 }, st.escape_target)
+  # A second command replaces it; no switch flag stores nil.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SET_ESCAPE_TARGET, [2, 1, 1, 0, 0])])
+  it2.update
+  eq({ map_id: 2, x: 1, y: 1, switch_id: nil }, st.escape_target)
+end
+
+check 'Change Encounter Rate stores the step rate, non-blocking' do
+  st = party_state
+  eq nil, st.encounter_rate, 'encounter rate unset by default'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_ENCOUNTER_RATE, [25]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'changing the rate must not pause the interpreter'
+  eq 25, st.encounter_rate
+  eq true, st.switches[1], 'the command after it still ran'
+end
+
+check 'Change System BGM / SFX stash per-slot audio overrides' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # System BGM slot 0 (battle): [fadein, volume, tempo, balance].
+  it.start([FakeCmd.new(IC::CHANGE_SYSTEM_BGM, [0, 2, 80, 110, 50],
+                        string: 'Battle1'),
+            FakeCmd.new(IC::CHANGE_SYSTEM_SFX, [1, 90, 100, 50],
+                        string: 'Decision2')])
+  it.update
+  eq({ name: 'Battle1', fadein: 2, volume: 80, tempo: 110, balance: 50 },
+     st.system_bgm[0])
+  eq({ name: 'Decision2', volume: 90, tempo: 100, balance: 50 },
+     st.system_sfx[1])
+end
+
+check 'Targets / rate / system audio round-trip through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.encounter_rate = 30
+  st.teleport_targets[4] = { x: 7, y: 9, switch_id: 12 }
+  st.escape_target = { map_id: 8, x: 3, y: 5, switch_id: nil }
+  st.system_bgm[0] = { name: 'Battle1', fadein: 0, volume: 100,
+                       tempo: 100, balance: 50 }
+  st.system_sfx[1] = { name: 'Decision2', volume: 100, tempo: 100,
+                       balance: 50 }
+  loaded = Game::State.load(db, st.to_h)
+  eq 30, loaded.encounter_rate
+  eq({ x: 7, y: 9, switch_id: 12 }, loaded.teleport_targets[4])
+  eq({ map_id: 8, x: 3, y: 5, switch_id: nil }, loaded.escape_target)
+  eq 'Battle1', loaded.system_bgm[0][:name]
+  eq 'Decision2', loaded.system_sfx[1][:name]
+  # A save written before these existed restores empty / unset registries.
+  legacy = st.to_h
+  [:encounter_rate, :teleport_targets, :escape_target,
+   :system_bgm, :system_sfx].each { |k| legacy.delete(k) }
+  legacy_loaded = Game::State.load(db, legacy)
+  eq nil, legacy_loaded.encounter_rate
+  eq({}, legacy_loaded.teleport_targets)
+  eq nil, legacy_loaded.escape_target
+  eq({}, legacy_loaded.system_bgm)
+  eq({}, legacy_loaded.system_sfx)
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

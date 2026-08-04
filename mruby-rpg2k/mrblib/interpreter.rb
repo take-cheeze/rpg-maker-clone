@@ -35,6 +35,8 @@ module Game
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_SYSTEM_BGM   = 10660
+      CHANGE_SYSTEM_SFX   = 10670
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
       CHANGE_EVENT_LOCATION = 10860
@@ -73,7 +75,10 @@ module Game
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
       CHANGE_MAP_TILESET = 11710
+      CHANGE_ENCOUNTER_RATE = 11740
+      SET_TELEPORT_TARGET = 11810
       CHANGE_TELEPORT_ACCESS = 11820
+      SET_ESCAPE_TARGET   = 11830
       CHANGE_ESCAPE_ACCESS   = 11840
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
@@ -343,6 +348,11 @@ module Game
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
+      when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
+      when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
+      when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
+      when Cmd::CHANGE_SYSTEM_BGM    then do_change_system_bgm cmd
+      when Cmd::CHANGE_SYSTEM_SFX    then do_change_system_sfx cmd
       when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
       when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
@@ -1131,6 +1141,60 @@ module Game
     def do_memorize_bgm(_cmd)
       cur = @state.current_bgm
       @state.memorized_bgm = cur ? cur.dup : nil
+    end
+
+    # Set Teleport Target: register (or clear) a destination the party can jump
+    # to with the Teleport skill. param0 is the operation (0 add, 1 remove),
+    # param1 the map id; on add, param2/param3 are the tile x/y and an optional
+    # switch (param4 flags its presence, param5 is the switch id) gates the
+    # target's availability. Stored in a Game::State registry keyed by map id.
+    # Nothing consumes it yet — the Teleport skill is not executed — so this is
+    # modelled purely for save fidelity, mirroring the access flags.
+    def do_set_teleport_target(cmd)
+      map_id = cmd.param(1)
+      if cmd.param(0) != 0
+        @state.teleport_targets.delete(map_id)
+        return
+      end
+      switch_id = cmd.param(4) != 0 ? cmd.param(5) : nil
+      @state.teleport_targets[map_id] =
+        { x: cmd.param(2), y: cmd.param(3), switch_id: switch_id }
+    end
+
+    # Set Escape Target: register the single destination the Escape skill jumps
+    # to. param0 map id, param1/param2 the tile x/y, and an optional switch
+    # (param3 flags its presence, param4 the switch id). Like the teleport
+    # registry this is stored for save fidelity only; the Escape skill is not
+    # executed yet.
+    def do_set_escape_target(cmd)
+      switch_id = cmd.param(3) != 0 ? cmd.param(4) : nil
+      @state.escape_target =
+        { map_id: cmd.param(0), x: cmd.param(1), y: cmd.param(2),
+          switch_id: switch_id }
+    end
+
+    # Change System BGM: override one of the system music slots (battle,
+    # victory, inn, ...) selected by param0. The remaining fields carry a Music
+    # struct: string = file name, param1 fade-in, param2 volume, param3 tempo,
+    # param4 balance. Stashed in a Game::State slot table; the battle / inn / …
+    # scenes that would play these are not built yet, so this only preserves the
+    # configured music across Save / Continue.
+    def do_change_system_bgm(cmd)
+      @state.system_bgm[cmd.param(0)] = {
+        name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
+        tempo: cmd.param(3), balance: cmd.param(4)
+      }
+    end
+
+    # Change System SFX: override one of the system sound slots (cursor,
+    # decision, cancel, ...) selected by param0. string = file name, param1
+    # volume, param2 tempo, param3 balance. Stored for save fidelity like the
+    # system BGM; nothing plays these yet.
+    def do_change_system_sfx(cmd)
+      @state.system_sfx[cmd.param(0)] = {
+        name: cmd.string, volume: cmd.param(1),
+        tempo: cmd.param(2), balance: cmd.param(3)
+      }
     end
 
     # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the

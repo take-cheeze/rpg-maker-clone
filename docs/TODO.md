@@ -125,7 +125,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
-  Change Teleport / Escape Access,
+  Change Teleport / Escape Access, Set Teleport / Escape Target,
+  Change Encounter Rate, Change System BGM / SFX,
   Tint Screen, Flash Screen, Shake Screen, Pan Screen, Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
@@ -184,8 +185,16 @@ The work below is roughly ordered by the critical path to a walkable game
   Effects** (11070) records the map weather type (none / rain / snow) and strength
   on `Game::State` — the Ruby-half model only, like the tint overlay, so it
   round-trips through the save but drawing the rain/snow particles is native
-  renderer work still to come. The remaining commands (battles, shop / inn, EXP
-  gain / level-up
+  renderer work still to come.
+  **Set Teleport / Escape Target** (11810 / 11830), **Change Encounter Rate**
+  (11740) and **Change System BGM / SFX** (10660 / 10670) record their payloads
+  on `Game::State` — a per-map teleport-target registry, a single escape target,
+  the encounter step rate and per-slot system music / sound overrides — and
+  round-trip through the save, but nothing consumes them yet (the Teleport /
+  Escape skills, encounter system and battle / menu scenes are not built), so
+  they are modelled for save fidelity like the access flags.
+  The remaining commands (battles, shop / inn, EXP gain / level-up
+  messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

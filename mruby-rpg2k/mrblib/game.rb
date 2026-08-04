@@ -1998,6 +1998,21 @@ module Game
     # Transparent Flag / Change Player Visibility (11310) event command. Defaults
     # off (the hero is shown) and is persisted in the save.
     attr_accessor :player_transparent
+    # Random-encounter step rate set by Change Encounter Rate (11740); nil until
+    # a command overrides it (the map's own rate then applies). No encounter
+    # subsystem consumes it yet — kept for save fidelity.
+    attr_accessor :encounter_rate
+    # Teleport / Escape skill destinations registered by Set Teleport Target
+    # (11810) and Set Escape Target (11830). `teleport_targets` is a hash keyed
+    # by map id → `{ x:, y:, switch_id: }`; `escape_target` is nil or one such
+    # hash (with `map_id:`). The skills are not executed yet, so these are
+    # modelled for save fidelity only, like the teleport / escape access flags.
+    attr_accessor :teleport_targets, :escape_target
+    # System music / sound overrides from Change System BGM (10660) and Change
+    # System SFX (10670), each a hash keyed by context slot → an audio hash. The
+    # battle / menu scenes that would play them are not built yet; stored for
+    # save fidelity.
+    attr_accessor :system_bgm, :system_sfx
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -2018,6 +2033,11 @@ module Game
       @current_bgm = nil
       @memorized_bgm = nil
       @player_transparent = false
+      @encounter_rate = nil
+      @teleport_targets = {}
+      @escape_target = nil
+      @system_bgm = {}
+      @system_sfx = {}
       @weather = Weather.new
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
@@ -2072,7 +2092,10 @@ module Game
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         player_transparent: @player_transparent, weather: @weather.to_h,
-        teleport_access: @teleport_access, escape_access: @escape_access }
+        teleport_access: @teleport_access, escape_access: @escape_access,
+        encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
+        escape_target: @escape_target, system_bgm: @system_bgm,
+        system_sfx: @system_sfx }
     end
 
     # Serialise to a genuine RPG2000/2003 Save<N>.lsd (an LCF::SaveData) -- the
@@ -2324,6 +2347,13 @@ module Game
       state.weather.load_h(h[:weather])
       state.teleport_access = h[:teleport_access] ? true : false
       state.escape_access = h[:escape_access] ? true : false
+      # Registries default empty / unset; a save written before these existed
+      # simply restores nothing.
+      state.encounter_rate = h[:encounter_rate]
+      state.teleport_targets = h[:teleport_targets] || {}
+      state.escape_target = h[:escape_target]
+      state.system_bgm = h[:system_bgm] || {}
+      state.system_sfx = h[:system_sfx] || {}
       state
     end
   end
