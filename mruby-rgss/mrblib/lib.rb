@@ -252,19 +252,19 @@ module RGSS
   # Window.new builds an lv_canvas the size of the window and blits the game's
   # `contents` Bitmap into the content area (inset 16px, scrolled by ox/oy) at
   # contents_opacity, and — when a `windowskin` is set — draws the stretched
-  # background at `back_opacity` and the 9-slice frame at `opacity`. `initialize`,
-  # `contents=`, `windowskin=`, `x=`, `y=`, `width=`, `height=`, `ox=`, `oy=`,
-  # `opacity=`, `back_opacity=`, `contents_opacity=`, `z=`, `visible`/`visible=`,
-  # `dispose`/`disposed?` are native. This reopening adds the plain readers plus
-  # the properties the native renderer does not yet honour (the blinking cursor
-  # rect and the pause arrow) — stored so scripts that set them run (tracked in
-  # docs/rpgxp-rgss-api-gap.md).
+  # background at `back_opacity`, the 9-slice frame at `opacity`, the blinking
+  # cursor highlight at `cursor_rect` (when `active`) and the pause arrow (when
+  # `pause`). `update` advances the blink/pause animation and redraws. Almost the
+  # whole surface is native — `initialize`, `contents=`, `windowskin=`, `x=`,
+  # `y=`, `width=`, `height=`, `ox=`, `oy=`, `opacity=`, `back_opacity=`,
+  # `contents_opacity=`, `cursor_rect=`, `active=`, `pause=`, `update`, `z=`,
+  # `visible`/`visible=`, `dispose`/`disposed?`. This reopening only adds the
+  # plain readers (and their RGSS defaults) plus `stretch`, which the tiling-vs-
+  # stretch background choice does not yet distinguish.
   class Window
     attr_reader :contents, :windowskin, :x, :y, :width, :height, :ox, :oy, :z,
                 :viewport, :contents_opacity
-    attr_writer :active, :pause, :stretch
-
-    def update; end
+    attr_writer :stretch
 
     def opacity
       @opacity.nil? ? 255 : @opacity
@@ -276,10 +276,6 @@ module RGSS
 
     def cursor_rect
       @cursor_rect ||= Rect.new(0, 0, 0, 0)
-    end
-
-    def cursor_rect=(r)
-      @cursor_rect = r
     end
 
     def active

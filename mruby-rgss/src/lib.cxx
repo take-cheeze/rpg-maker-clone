@@ -2643,6 +2643,41 @@ void window_refresh(mrb_state* M, mrb_value self) {
                            mrb_fixnum_value(cop)};
     mrb_funcall_argv(M, canvas, blt, 5, c);
   }
+
+  const mrb_int anim =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@_anim")));
+  // Cursor: a blinking highlight from the windowskin cursor region (128,64,
+  // 32,32) drawn at cursor_rect (content coords, offset by the padding), when
+  // the window is active. Stretched to the rect for now (a crisp 9-slice border
+  // is a refinement); the blink alpha oscillates with @_anim. Redrawn each
+  // frame by Window#update because scripts mutate cursor_rect in place.
+  const mrb_value cr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@cursor_rect"));
+  const mrb_value active_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@active"));
+  const bool active = mrb_nil_p(active_v) ? true : mrb_test(active_v);
+  if (mrb_test(skin) && DATA_PTR(skin) && active && mrb_test(cr_v) &&
+      DATA_PTR(cr_v)) {
+    Rect& cr = DataType<Rect>::get(M, cr_v);
+    if (cr.width > 0 && cr.height > 0) {
+      const mrb_int phase = ((anim % 32) + 32) % 32;
+      const mrb_int level = phase < 16 ? phase : 32 - phase;  // 0..16
+      const mrb_int calpha = 255 - level * 8;                 // 255..127
+      const mrb_value cur[] = {
+          make_rect(M, b + cr.x, b + cr.y, cr.width, cr.height), skin,
+          make_rect(M, 128, 64, 32, 32), mrb_fixnum_value(calpha)};
+      mrb_funcall_argv(M, canvas, sblt, 4, cur);
+    }
+  }
+  // Pause arrow: one of four 16x16 frames at (160,64) cycled by @_anim, drawn
+  // centred on the bottom edge when the window is paused.
+  if (mrb_test(skin) && DATA_PTR(skin) &&
+      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@pause")))) {
+    const mrb_int f = (anim / 8) % 4;
+    const mrb_value pa[] = {
+        mrb_fixnum_value(w / 2 - 8), mrb_fixnum_value(h - 16), skin,
+        make_rect(M, 160 + (f % 2) * 16, 64 + (f / 2) * 16, 16, 16),
+        mrb_fixnum_value(255)};
+    mrb_funcall_argv(M, canvas, blt, 5, pa);
+  }
   mrb_gc_arena_restore(M, arena);
   lv_obj_invalidate(obj);
 }
@@ -2662,6 +2697,7 @@ mrb_value window_init(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@contents_opacity"),
              mrb_fixnum_value(255));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_anim"), mrb_fixnum_value(0));
   window_ensure_canvas(M, self, 1, 1);
   return self;
 }
@@ -2736,6 +2772,50 @@ mrb_value window_set_back_opacity(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "i", &v);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@back_opacity"), mrb_fixnum_value(v));
   window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_cursor_rect(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@cursor_rect"), v);
+  window_refresh(M, self);
+  return v;
+}
+
+mrb_value window_set_active(mrb_state* M, mrb_value self) {
+  mrb_bool v;
+  mrb_get_args(M, "b", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@active"), mrb_bool_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_pause(mrb_state* M, mrb_value self) {
+  mrb_bool v;
+  mrb_get_args(M, "b", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@pause"), mrb_bool_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+// Per-frame tick: advance the blink/pause animation and, when the window has a
+// visible cursor or is paused, redraw so the animation and any in-place
+// cursor_rect mutation show. Windows without a cursor or pause need no
+// per-frame work.
+mrb_value window_update(mrb_state* M, mrb_value self) {
+  const mrb_int anim =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@_anim")));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_anim"), mrb_fixnum_value(anim + 1));
+  const mrb_value cr = mrb_iv_get(M, self, mrb_intern_lit(M, "@cursor_rect"));
+  const mrb_value active_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@active"));
+  const bool active = mrb_nil_p(active_v) ? true : mrb_test(active_v);
+  const bool has_cursor = active && mrb_test(cr) && DATA_PTR(cr) &&
+                          DataType<Rect>::get(M, cr).width > 0;
+  const bool paused =
+      mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@pause")));
+  if (has_cursor || paused)
+    window_refresh(M, self);
   return self;
 }
 
@@ -3143,6 +3223,11 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "opacity=", window_set_opacity, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "back_opacity=", window_set_back_opacity,
                     MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "cursor_rect=", window_set_cursor_rect,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "active=", window_set_active, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "pause=", window_set_pause, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "update", window_update, MRB_ARGS_NONE());
   mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, window, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
