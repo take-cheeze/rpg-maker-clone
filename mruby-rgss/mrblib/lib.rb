@@ -236,14 +236,13 @@ module RGSS
   # `pause`). `update` advances the blink/pause animation and redraws. Almost the
   # whole surface is native — `initialize`, `contents=`, `windowskin=`, `x=`,
   # `y=`, `width=`, `height=`, `ox=`, `oy=`, `opacity=`, `back_opacity=`,
-  # `contents_opacity=`, `cursor_rect=`, `active=`, `pause=`, `update`, `z=`,
-  # `visible`/`visible=`, `dispose`/`disposed?`. This reopening only adds the
-  # plain readers (and their RGSS defaults) plus `stretch`, which the tiling-vs-
-  # stretch background choice does not yet distinguish.
+  # `contents_opacity=`, `cursor_rect=`, `active=`, `pause=`, `stretch=`,
+  # `update`, `z=`, `visible`/`visible=`, `dispose`/`disposed?`. `stretch=` picks
+  # between the stretched (default) and tiled windowskin background. This reopening
+  # only adds the plain readers and their RGSS defaults.
   class Window
     attr_reader :contents, :windowskin, :x, :y, :width, :height, :ox, :oy, :z,
                 :viewport, :contents_opacity
-    attr_writer :stretch
 
     def opacity
       @opacity.nil? ? 255 : @opacity

@@ -3375,11 +3375,26 @@ void window_refresh(mrb_state* M, mrb_value self) {
   if (mrb_test(skin) && DATA_PTR(skin)) {
     const mrb_int op = clamp_opacity(M, self, "@opacity");
     const mrb_int back = op * clamp_opacity(M, self, "@back_opacity") / 255;
-    // Background: stretch the 128x128 tile at (0,0) over the whole window.
-    const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
-                            make_rect(M, 0, 0, 128, 128),
-                            mrb_fixnum_value(back)};
-    mrb_funcall_argv(M, canvas, sblt, 4, bg);
+    // Background from the 128x128 tile at (0,0). RMXP's `stretch` (default
+    // true) scales that tile over the whole window; when false it is tiled at
+    // 1:1, repeating across the window (edge tiles clip against the canvas).
+    const mrb_value st = mrb_iv_get(M, self, mrb_intern_lit(M, "@stretch"));
+    const bool stretch = mrb_nil_p(st) ? true : mrb_test(st);
+    if (stretch) {
+      const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
+                              make_rect(M, 0, 0, 128, 128),
+                              mrb_fixnum_value(back)};
+      mrb_funcall_argv(M, canvas, sblt, 4, bg);
+    } else {
+      for (mrb_int ty = 0; ty < h; ty += 128) {
+        for (mrb_int tx = 0; tx < w; tx += 128) {
+          const mrb_value bg[] = {mrb_fixnum_value(tx), mrb_fixnum_value(ty),
+                                  skin, make_rect(M, 0, 0, 128, 128),
+                                  mrb_fixnum_value(back)};
+          mrb_funcall_argv(M, canvas, blt, 5, bg);
+        }
+      }
+    }
     // Frame: the 64x64 border at (128,0), a 9-slice with 16px corners/margins.
     const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
                             make_rect(M, 128, 0, b, b), mrb_fixnum_value(op)};
@@ -3616,6 +3631,14 @@ mrb_value window_set_pause(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@pause"), mrb_bool_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_set_stretch(mrb_state* M, mrb_value self) {
+  mrb_bool v;
+  mrb_get_args(M, "b", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@stretch"), mrb_bool_value(v));
   window_refresh(M, self);
   return self;
 }
@@ -4077,6 +4100,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "active=", window_set_active, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "pause=", window_set_pause, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "stretch=", window_set_stretch, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "update", window_update, MRB_ARGS_NONE());
   mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
