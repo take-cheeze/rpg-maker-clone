@@ -444,6 +444,82 @@ assert "Interpreter: show choices runs the chosen branch" do
   assert_true s2.switches[3]
 end
 
+# Battle Processing (301) with all three result branches (601/602/603) at the
+# command's own indent, terminated by 604, then an always-run command after.
+def battle_list
+  [
+    cmd(301, [1, true, true], 0),   # Battle Processing troop 1, can escape/lose
+    cmd(601, [], 0),                # If Win
+    cmd(121, [1, 1, 0], 1),         #   switch 1 ON
+    cmd(602, [], 0),                # If Escape
+    cmd(121, [2, 2, 0], 1),         #   switch 2 ON
+    cmd(603, [], 0),                # If Lose
+    cmd(121, [3, 3, 0], 1),         #   switch 3 ON
+    cmd(604, [], 0),                # Branch End
+    cmd(121, [4, 4, 0], 0)          # after the block (always runs)
+  ]
+end
+
+def run_battle(outcome)
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.battle_outcome = outcome
+  it.start(battle_list, 1, 7)
+  it.update
+  s
+end
+
+assert "Interpreter: battle processing runs only the matching result branch" do
+  # Default outcome is a win: only the win branch runs, then the after command.
+  win = run_battle(:win)
+  assert_true  win.switches[1]
+  assert_false win.switches[2]
+  assert_false win.switches[3]
+  assert_true  win.switches[4]
+
+  esc = run_battle(:escape)
+  assert_false esc.switches[1]
+  assert_true  esc.switches[2]
+  assert_false esc.switches[3]
+  assert_true  esc.switches[4]
+
+  lose = run_battle(:lose)
+  assert_false lose.switches[1]
+  assert_false lose.switches[2]
+  assert_true  lose.switches[3]
+  assert_true  lose.switches[4]
+
+  # A fresh interpreter defaults to :win without setting battle_outcome.
+  s = new_state
+  run_to_end(s, battle_list)
+  assert_true  s.switches[1]
+  assert_false s.switches[2]
+  assert_true  s.switches[4]
+end
+
+assert "Interpreter: battle processing skips a block missing the branch" do
+  # can_lose off -> no 603 branch; resolving as :lose skips the whole block but
+  # still runs the command after 604.
+  list = [
+    cmd(301, [1, true, false], 0),  # can escape, cannot lose
+    cmd(601, [], 0),                # If Win
+    cmd(121, [1, 1, 0], 1),         #   switch 1 ON
+    cmd(602, [], 0),                # If Escape
+    cmd(121, [2, 2, 0], 1),         #   switch 2 ON
+    cmd(604, [], 0),                # Branch End (no If Lose)
+    cmd(121, [4, 4, 0], 0)          # after the block
+  ]
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.battle_outcome = :lose
+  it.start(list, 1, 7)
+  it.update
+  assert_false s.switches[1]
+  assert_false s.switches[2]
+  assert_true  s.switches[4]       # fell through to after the block
+  assert_false it.running?
+end
+
 assert "Interpreter: loop with break counts to a threshold" do
   s = new_state
   run_to_end(s, [
