@@ -300,10 +300,23 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
-- **Run the bundled RGSS scripts** — the largest possible direction: an
-  `eval`-based host that runs `Data/Scripts.rxdata` unmodified against the RGSS
-  class library (the equivalent of the MV "embed the real engine" choice),
-  which would also run community scripts. Out of scope for the current layer.
+- 🚧 **Run the bundled RGSS scripts** — the largest direction: an `eval`-based
+  host that runs `Data/Scripts.rxdata` unmodified against the RGSS class library
+  (the equivalent of the MV "embed the real engine" choice), which would also
+  run community scripts. The **host plumbing now exists** (ADR 0017): a native
+  `RGSS.zlib_inflate` decompresses the script sections, `RPGXP::RGSSData`
+  exposes `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost`
+  installs the Kernel `load_data`/`save_data` built-ins and evaluates every
+  section at the top level (mruby-eval) so "Main" drives the game. Boot runs the
+  host when it is enabled (`RGSS_SCRIPT_HOST`, off by default) and the project
+  ships scripts, falling back to the built-in flow otherwise. Decoding, the
+  built-ins and top-level evaluation of real script source are covered by
+  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. Remaining before
+  it can be the default: complete the `mruby-rgss` class library the stock
+  scripts call (`Graphics.transition/freeze`, `Window`/`Tilemap`/`Sprite`
+  surface, `Font` defaults, `Kernel#exit`, …), reconcile the scripts' blocking
+  main loop with the emscripten frame loop (Asyncify or a per-frame driver), and
+  read graphics/audio out of the encrypted archive.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

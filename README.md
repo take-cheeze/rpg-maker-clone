@@ -63,9 +63,15 @@
   the database loads with no loose files present. Loose files, when present,
   shadow the archive (as in RGSS). VX Ace's `Game.rgss3a` is detected but not yet
   decoded
-- The window is sized to XP's native 640×480 automatically. Running the game's
-  own bundled RGSS scripts (`Data/Scripts.rxdata`) is future work; see
-  [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md)
+- The window is sized to XP's native 640×480 automatically.
+- An experimental **RGSS script host** can run the game's own bundled scripts
+  (`Data/Scripts.rxdata`) unmodified — the way `RGSS104E.dll` does — instead of
+  the reimplemented flow: it decompresses the ~90 Ruby sections, supplies the
+  `load_data`/`save_data` built-ins and evaluates each at the top level (via
+  `mruby-eval`) so the game drives itself. It is opt-in (`RGSS_SCRIPT_HOST`)
+  while the RGSS class library is completed; see
+  [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
+  (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
 
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
