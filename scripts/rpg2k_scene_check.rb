@@ -421,6 +421,9 @@ class BattleStubActor
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
   end
   def gain_exp(n); @exp += n; end
+  # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
+  # HP absolutely; the stub has no state model, so just clamp to [0, max].
+  def set_hp(value); @hp = value < 0 ? 0 : (value > @max_hp ? @max_hp : value); end
 end
 
 class BattleStubParty

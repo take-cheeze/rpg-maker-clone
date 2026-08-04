@@ -1910,6 +1910,9 @@ class RPG2k
       end
 
       def finish_battle(result)
+        # Persist the party's post-battle HP (and any knock-outs) before leaving
+        # the fight, so damage taken sticks and a downed member stays down.
+        @battle_ui[:battle].apply_to_party
         close_battle
         @interpreter.resume_battle(result)
       end

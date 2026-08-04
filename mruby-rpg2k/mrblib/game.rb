@@ -1170,6 +1170,21 @@ module Game
       @hp
     end
 
+    # Set HP to an absolute value, clamped to [0, max_hp], keeping the death
+    # state (戦闘不能) in sync: 0 knocks the actor out, a positive value revives a
+    # downed one. Unlike change_hp this is not blocked while dead -- it is the
+    # write-back used to persist a battle's outcome (a wounded or KO'd survivor)
+    # onto the party. Returns the new HP.
+    def set_hp(value)
+      @hp = Game.clamp(value, 0, @max_hp)
+      if @hp <= 0
+        add_state(DEATH_STATE)
+      else
+        remove_state(DEATH_STATE)
+      end
+      @hp
+    end
+
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
     def change_mp(delta)
       @mp = Game.clamp(@mp + delta, 0, @max_mp)
@@ -2638,11 +2653,13 @@ module Game
     # auto), `defending` halves damage taken that round; both are cleared each
     # round. Enemies leave them nil and attack a random party member.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
-                           :action, :defending) do
+                           :action, :defending, :actor) do
       def dead?; hp <= 0; end
     end
 
-    def self.from_actor(a); Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp); end
+    def self.from_actor(a)
+      Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp, nil, nil, a)
+    end
     def self.from_enemy(e); Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp); end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -2668,6 +2685,15 @@ module Game
 
     # True once one side has been wiped out (the battle is decided).
     def finished?; !alive?(@allies) || !alive?(@enemies); end
+
+    # Persist the fight's outcome onto the real party: write each ally combatant's
+    # final HP back to its source actor, so damage taken in battle sticks and a
+    # combatant reduced to 0 comes out knocked out (戦闘不能). Combatants without a
+    # source actor -- enemies, or bare test snapshots -- are skipped. RPG2000
+    # keeps the party's post-battle HP; a downed member stays down until revived.
+    def apply_to_party
+      @allies.each { |c| c.actor.set_hp(c.hp) if c.actor }
+    end
 
     # Perform the next single action and return its log entry, or nil when the
     # battle is already decided (or has hit the round cap). Living battlers act

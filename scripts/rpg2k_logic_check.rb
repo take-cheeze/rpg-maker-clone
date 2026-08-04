@@ -2210,6 +2210,19 @@ check 'Actor death state: non-lethal damage floors HP at 1, no KO' do
   eq false, a.state?(Game::Actor::DEATH_STATE)
 end
 
+check 'Actor#set_hp sets an absolute HP and syncs the death state' do
+  a = party_state.party.actor_by_id(1)                # max 100
+  a.set_hp(9999); eq 100, a.hp                        # clamped to max
+  a.set_hp(0)
+  eq 0, a.hp
+  eq true, a.dead?                                    # 0 -> knocked out
+  eq true, a.state?(Game::Actor::DEATH_STATE)
+  a.set_hp(25)
+  eq 25, a.hp
+  eq false, a.dead?                                   # positive -> revived
+  eq false, a.state?(Game::Actor::DEATH_STATE)        # death state cleared
+end
+
 check 'State save round-trips per-actor status states' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
@@ -3317,6 +3330,45 @@ check 'Battle: a defending ally takes half damage and does not attack' do
   bat.run_round
   eq 100, foe.hp, 'the defending hero did not strike back'
   eq 90, hero.hp, 'took half of 20 = 10'
+end
+
+check 'Battle#apply_to_party writes post-battle HP back, KOing at 0' do
+  st = party_state
+  hero = st.party.actor_by_id(1)   # hp 100
+  ally = st.party.actor_by_id(2)   # hp 50
+  hc = Game::Battle.from_actor(hero)
+  ac = Game::Battle.from_actor(ally)
+  hc.hp = 30                       # hero ended the fight wounded
+  ac.hp = -5                       # ally was knocked out
+  bat = Game::Battle.new([hc, ac], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 30, hero.hp                   # damage persisted to the real actor
+  eq false, hero.dead?
+  eq 0, ally.hp                    # clamped to 0
+  eq true, ally.dead?
+  eq true, ally.state?(Game::Actor::DEATH_STATE)  # a KO inflicts 戦闘不能
+end
+
+check 'Battle#apply_to_party revives a previously-downed actor that survives' do
+  st = party_state
+  ally = st.party.actor_by_id(2)
+  ally.change_hp(-9999)            # currently KO'd from a prior fight
+  eq true, ally.dead?
+  c = Game::Battle.from_actor(ally)
+  c.hp = 20                        # ...took part in a fight and came out at 20 HP
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 20, ally.hp
+  eq false, ally.dead?
+  eq false, ally.state?(Game::Actor::DEATH_STATE)  # revived, death state cleared
+end
+
+check 'Battle#apply_to_party ignores combatants with no source actor' do
+  # A bare snapshot (from_enemy / test combatant) must not raise on write-back.
+  bat = Game::Battle.new([combatant('Ghost', 10, 0, 5, 0)],
+                         [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party                # no source actor -> silently skipped
+  ok true, 'write-back skipped bare combatants without error'
 end
 
 # -- summary ------------------------------------------------------------------

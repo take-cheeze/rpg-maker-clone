@@ -291,8 +291,12 @@ The work below is roughly ordered by the critical path to a walkable game
   EXP / gold on a win. `#step` performs one action at a time and appends a `#log`
   entry (attacker / target / damage / defeated), so an on-screen battle can
   animate it action-by-action; `#run` steps to completion for the headless
-  resolution. It runs on Combatant snapshots, so the party's real HP is untouched
-  for now, and `Scene::Map` traces the fight to the console from the log.
+  resolution. It runs on Combatant snapshots, and `Battle#apply_to_party` then
+  **writes each survivor's final HP back to its actor** when the fight ends
+  (`Scene::Map#finish_battle`), so damage taken **persists** and a combatant
+  reduced to 0 comes out **knocked out** (戦闘不能, via `Actor#set_hp`) — a level-up
+  on victory does not heal. `Scene::Map` traces the fight to the console from the
+  log.
   Encounters now open a **battle screen** (driven by `Scene::Map` during the
   `:battle` wait, like the shop / inn): a status panel of the troop and each
   party member's HP, and **per-actor commands each round** — for every living
@@ -302,9 +306,10 @@ The work below is roughly ordered by the critical path to a walkable game
   is allowed. `Game::Battle` has the round-based API (`command_attack` /
   `command_defend` / `run_round`) alongside the headless `run`. Dismissing the
   result resumes the event and routes the `[Victory]` / `[Escape]` / `[Defeat]`
-  branch. Still to come: Skill / Item commands, criticals / attributes / variance
-  in the sim, per-turn animation from the log, enemy / battler sprites, and game
-  over on defeat.
+  branch. Post-battle HP now persists to the party (see above). Still to come:
+  Skill / Item commands, criticals / attributes / variance in the sim, in-battle
+  state infliction (rolling `state_chance`), per-turn animation from the log,
+  enemy / battler sprites, and game over on defeat.
   The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
