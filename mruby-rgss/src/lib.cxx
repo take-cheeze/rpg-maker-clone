@@ -2202,6 +2202,26 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   return bmp;
 }
 
+// RGSS Sprite#opacity= (0..255). The Sprite's native handle is an lv_canvas,
+// which LVGL composites; the object-level style opacity multiplies the bitmap's
+// own alpha at blit time, which is exactly RGSS's per-sprite opacity. The value
+// is clamped and mirrored into @opacity so the Ruby reader (defaulting to 255)
+// returns what was set. A fresh sprite needs no explicit call: LVGL's default
+// object opacity is fully opaque, matching RGSS's 255 default.
+mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
+  mrb_int opa;
+  mrb_get_args(M, "i", &opa);
+  if (opa < 0)
+    opa = 0;
+  else if (opa > 255)
+    opa = 255;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_style_opa(obj, static_cast<lv_opa_t>(opa), 0);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(opa));
+  return self;
+}
+
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
@@ -2606,6 +2626,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
