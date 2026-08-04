@@ -901,9 +901,16 @@ class RPG2k
       def refresh_player_graphic
         @charset = load_charset
         @last_frame = nil
-        leader = @state.party.leader
-        @player_sprite.visible = !(leader && leader.transparent)
+        @player_sprite.visible = !player_hidden?
         @player_bmp.clear unless @charset
+      end
+
+      # Whether the party leader's map sprite should be hidden this frame: either
+      # the Set Transparent Flag command hid the player, or the leader's own
+      # actor graphic carries the (rarely used) semi-transparent flag.
+      def player_hidden?
+        leader = @state.party.leader
+        @state.player_transparent || (leader && leader.transparent) ? true : false
       end
 
       # -- Move Event (Set Move Route) ----------------------------------------
@@ -1077,6 +1084,7 @@ class RPG2k
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?
+          when :return_title then perform_return_to_title
           end
         else
           @interpreter.update
@@ -1128,6 +1136,17 @@ class RPG2k
         @interpreter.stop
       rescue StandardError => e
         $stderr.puts "[RPG2k] Teleport failed: #{e.message}"
+        @interpreter.stop
+      end
+
+      # Return to Title Screen: stop the running event and hand control back to
+      # the app, which tears the play scenes down and shows a fresh title. There
+      # is nothing to resume afterwards — this scene is being disposed.
+      def perform_return_to_title
+        @interpreter.stop
+        @parent.return_to_title
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Return to Title failed: #{e.message}"
         @interpreter.stop
       end
 
@@ -1457,6 +1476,9 @@ class RPG2k
 
         @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE)
+        # Reflect the Set Transparent Flag command (and any leader graphic flag)
+        # every frame so the hero hides/shows as events toggle it.
+        @player_sprite.visible = !player_hidden?
         draw_player_frame
       end
 

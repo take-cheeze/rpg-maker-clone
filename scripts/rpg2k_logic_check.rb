@@ -1647,6 +1647,49 @@ check 'Halt All Movement raises a one-shot request without pausing' do
   eq false, it.take_halt_movement_request, 'and it clears after the first read'
 end
 
+# -- Player Visibility / Return to Title --------------------------------------
+
+check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq true, st.player_transparent, 'param0 != 0 hides the player'
+  ok !it.waiting?, 'Set Transparent Flag must not pause the interpreter'
+  eq true, st.switches[1], 'the command after it still ran'
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [0])])
+  it2.update
+  eq false, st.player_transparent, 'param0 == 0 shows the player again'
+end
+
+check 'player_transparent round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.player_transparent = true
+  eq true, Game::State.load(db, st.to_h).player_transparent
+  # A save written before the flag existed defaults to visible (off).
+  legacy = st.to_h
+  legacy.delete(:player_transparent)
+  eq false, Game::State.load(db, legacy).player_transparent
+end
+
+check 'Return to Title Screen raises a :return_title request' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::RETURN_TO_TITLE, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'Return to Title pauses the interpreter'
+  eq :return_title, it.wait_kind
+  eq false, st.switches[1], 'the command after it does not run (the game is ending)'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

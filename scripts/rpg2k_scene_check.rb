@@ -208,6 +208,9 @@ class FakeParent
   def load_map(id); @map_maker.call(id); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
+  # Return to Title Screen (12510) hands control back here; record that it fired.
+  attr_reader :returned_to_title
+  def return_to_title; @returned_to_title = true; end
 end
 
 def fake_parent(db)
@@ -464,6 +467,31 @@ check 'Halt All Movement cancels a forced player route in the scene' do
   ok scene.instance_variable_get(:@player_route).nil?,
      'the forced player route was cancelled'
   eq [0, 0], [st.x, st.y], 'the player never moved (movement was halted)'
+end
+
+check 'Set Transparent Flag hides and shows the player sprite' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [1])] # transparent ON
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  5.times { scene.update }
+  spr = scene.instance_variable_get(:@player_sprite)
+  eq false, spr.visible, 'the player sprite is hidden while transparent'
+  # A second event turns it back off.
+  st = scene.instance_variable_get(:@state)
+  st.player_transparent = false
+  scene.update
+  eq true, spr.visible, 'the player sprite shows again once transparency clears'
+end
+
+check 'Return to Title Screen hands control back to the app' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::RETURN_TO_TITLE, [])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  parent = scene.instance_variable_get(:@parent)
+  5.times { scene.update }
+  ok parent.returned_to_title, 'the app was told to return to the title screen'
 end
 
 check 'Input Number opens a widget; confirming stores the entered value' do

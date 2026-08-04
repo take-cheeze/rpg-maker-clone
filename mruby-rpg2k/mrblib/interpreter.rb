@@ -55,6 +55,7 @@ module Game
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
+      PLAYER_VISIBILITY = 11310
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       HALT_ALL_MOVEMENT = 11350
@@ -65,6 +66,7 @@ module Game
       PLAY_SE          = 11550
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
+      RETURN_TO_TITLE  = 12510
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -287,6 +289,7 @@ module Game
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
+      when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::HALT_ALL_MOVEMENT then @halt_movement_requested = true
@@ -297,6 +300,7 @@ module Game
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
+      when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
@@ -885,6 +889,25 @@ module Game
     # route never finishes, so pairing it with this command waits indefinitely.
     def do_proceed_with_movement(_cmd)
       @wait_kind = :movement
+      @waiting = true
+    end
+
+    # Set Transparent Flag (Change Player Visibility): toggle whether the party
+    # leader's map sprite is hidden. Non-blocking — it only records the flag on
+    # the shared game state; the owning scene reads it each frame. The polarity
+    # (param0 non-zero = transparent / hidden) follows EasyRPG's
+    # `SetSpriteHidden(parameters[0] != 0)`; the flag persists through Save /
+    # Continue.
+    def do_player_visibility(cmd)
+      @state.player_transparent = cmd.param(0) != 0
+    end
+
+    # Return to Title Screen: abandon the running game and go back to the title.
+    # Raised as a :return_title request the owning scene answers by tearing the
+    # play scenes down and showing a fresh title (there is nothing to resume, so
+    # the request behaves like a one-way teleport out of the map).
+    def do_return_to_title(_cmd)
+      @wait_kind = :return_title
       @waiting = true
     end
 
