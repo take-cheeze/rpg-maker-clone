@@ -3096,14 +3096,24 @@ static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
 // several such frames left to right.
 static const int AUTOTILE_FRAME_W = 96;
 
-// Redraw the visible part of the map into the tilemap's canvas. For each of the
-// three map-data layers, the tiles overlapping the viewport (given ox/oy) are
-// blitted from the tileset (regular tiles, id >= 384) or assembled from the
-// four autotile quads (id 48..383). Per-tile priority layering and autotile
-// animation are future work (tracked in docs/rpgxp-rgss-api-gap.md), so
-// everything renders on one flat layer using the first animation frame. The
-// canvas is invalidated directly (its buffer is not a sprite @bitmap that
-// Graphics.update's dirty sweep watches).
+// z of the priority "above" layer (see the split in tilemap_refresh). INTERIM:
+// a single flat layer above the characters is only an approximation of RMXP's
+// per-row priority interleaving — it puts *every* priority tile above *every*
+// character, rather than only the ones on lower rows. The full per-row scheme
+// is designed in docs/adr/0022-rpgxp-tilemap-priority-layering.md. This
+// constant is picked to sit above stock character sprites (z ~ screen_y, up to
+// ~512) but below the fog/weather planes (z ~ 1000/3000); confirm it in-game
+// against the testbed Spriteset_Map before treating it as final.
+static const mrb_int TILEMAP_ABOVE_Z = 900;
+
+// Redraw the visible part of the map. For each of the three map-data layers,
+// the tiles overlapping the viewport (given ox/oy) are blitted from the tileset
+// (regular tiles, id >= 384) or assembled from the four autotile quads (id
+// 48..383), with autotile animation. Priority-0 tiles draw into the ground
+// canvas; priority >= 1 tiles (from the `priorities` table) draw into the
+// separate "above" canvas that sorts over the characters (see TILEMAP_ABOVE_Z).
+// Both canvases are invalidated directly (their buffers are not sprite @bitmaps
+// that Graphics.update's dirty sweep watches).
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -3115,11 +3125,37 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
   std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
 
+  // The priority "above" canvas (companion object created in tilemap_init) and
+  // its LVGL object, so priority tiles can be routed to it and it can be
+  // invalidated alongside the ground canvas.
+  const mrb_value above_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_canvas"));
+  Bitmap* above = (mrb_test(above_v) && DATA_PTR(above_v))
+                      ? &DataType<Bitmap>::get(M, above_v)
+                      : nullptr;
+  if (above)
+    std::fill(above->buffer.begin(), above->buffer.end(),
+              static_cast<uint8_t>(0));
+  const mrb_value above_obj_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  lv_obj_t* above_lv = (mrb_test(above_obj_v) && DATA_PTR(above_obj_v))
+                           ? reinterpret_cast<lv_obj_t*>(DATA_PTR(above_obj_v))
+                           : nullptr;
+
+  // Per-tile priority table (0..5 per tile id); tiles with priority >= 1 draw
+  // into the above layer. A nil or short table leaves everything at priority 0.
+  const mrb_value pr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@priorities"));
+  Table* pr = (mrb_test(pr_v) && DATA_PTR(pr_v))
+                  ? &DataType<Table>::get(M, pr_v)
+                  : nullptr;
+
   const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
   const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
   if (!mrb_test(ts_v) || !DATA_PTR(ts_v) || !mrb_test(md_v) ||
       !DATA_PTR(md_v)) {
     lv_obj_invalidate(obj);
+    if (above_lv)
+      lv_obj_invalidate(above_lv);
     return;
   }
   Bitmap& ts = DataType<Bitmap>::get(M, ts_v);
@@ -3170,6 +3206,13 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
           continue;
         const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
         const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        // Priority 0 -> ground canvas; priority >= 1 -> above canvas (when one
+        // exists). An out-of-range id or nil table means priority 0.
+        const int prio =
+            (pr && id >= 0 && id < static_cast<int>(pr->data.size()))
+                ? pr->data[id]
+                : 0;
+        Bitmap& target = (prio > 0 && above) ? *above : dst;
         if (id < 384) {
           // Autotile: id/48 selects autotiles[0..6], id%48 the 48-shape quad
           // assembly. Uses the first animation frame (x offset 0).
@@ -3189,14 +3232,14 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
                 (frame_idx % (ab.width / AUTOTILE_FRAME_W)) * AUTOTILE_FRAME_W;
           }
           for (int q = 0; q < 4; ++q)
-            blit_blend(dst, dx0 + AUTOTILE_QUAD_OFF[q][0],
+            blit_blend(target, dx0 + AUTOTILE_QUAD_OFF[q][0],
                        dy0 + AUTOTILE_QUAD_OFF[q][1], ab,
                        AUTOTILE_QUADS[shape][q][0] + sx_off,
                        AUTOTILE_QUADS[shape][q][1], 16, 16);
         } else {
           // Regular tile from the tileset.
           const int ti = id - 384;
-          blit_blend(dst, dx0, dy0, ts, (ti % cols) * TILE_SIZE,
+          blit_blend(target, dx0, dy0, ts, (ti % cols) * TILE_SIZE,
                      (ti / cols) * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -3204,7 +3247,11 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   }
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
              mrb_bool_value(any_anim));
+  if (above)
+    above->dirty = true;
   lv_obj_invalidate(obj);
+  if (above_lv)
+    lv_obj_invalidate(above_lv);
 }
 
 mrb_value tilemap_init(mrb_state* M, mrb_value self) {
@@ -3248,7 +3295,43 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(0));
+
+  // Priority "above" layer: a second canvas in the same parent, wrapped as an
+  // internal companion display object so the shared z-order (gfx_update) sorts
+  // it against the character sprites. It is held on the tilemap so the GC keeps
+  // it alive, and torn down in tilemap_dispose. Follows the same
+  // wrap_lv_obj/on_lv_delete/register_zobj pattern as a Sprite.
+  lv_obj_t* ac = lv_canvas_create(parent_object(M, vp));
+  lv_obj_set_pos(ac, 0, 0);
+  const mrb_value above_obj = mrb_obj_value(
+      mrb_data_object_alloc(M, mrb_obj_class(M, self), ac, &obj_type));
+  lv_obj_set_user_data(ac, mrb_ptr(above_obj));
+  lv_obj_add_event_cb(ac, on_lv_delete, LV_EVENT_DELETE, nullptr);
+  register_zobj(M, above_obj);
+  mrb_iv_set(M, above_obj, mrb_intern_lit(M, "@z"),
+             mrb_fixnum_value(TILEMAP_ABOVE_Z));
+  update_z(M);
+  const mrb_value above_canvas_v =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& above_canvas = DataType<Bitmap>::get(M, above_canvas_v);
+  std::fill(above_canvas.buffer.begin(), above_canvas.buffer.end(),
+            static_cast<uint8_t>(0));
+  lv_canvas_set_buffer(ac, above_canvas.buffer.data(), w, h,
+                       LV_COLOR_FORMAT_ARGB8888);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_obj"), above_obj);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_canvas"), above_canvas_v);
   return self;
+}
+
+// Tearing down the tilemap also tears down its companion "above" canvas (a
+// separate LVGL object that obj_dispose on the tilemap would otherwise leave
+// on screen and in the z-order set).
+mrb_value tilemap_dispose(mrb_state* M, mrb_value self) {
+  const mrb_value above =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  if (mrb_test(above) && DATA_PTR(above))
+    obj_dispose(M, above);
+  return obj_dispose(M, self);
 }
 
 // Per-frame tick: advance the autotile animation. The counter cycles 0..63 and
@@ -3281,6 +3364,42 @@ mrb_value tilemap_set_map_data(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), v);
   tilemap_refresh(M, self);
   return v;
+}
+
+// Native so assigning the priority table (usually right after map_data=)
+// re-renders the ground/above split. A plain attr_writer would not.
+mrb_value tilemap_set_priorities(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@priorities"), v);
+  tilemap_refresh(M, self);
+  return v;
+}
+
+// Show/hide the tilemap, propagating to the priority "above" layer so a hidden
+// tilemap hides its roofs too (the above canvas is a separate LVGL object that
+// obj_set_visible on the tilemap alone would leave showing).
+mrb_value tilemap_set_visible(mrb_state* M, mrb_value self) {
+  mrb_bool v;
+  mrb_get_args(M, "b", &v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  const mrb_value above =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  lv_obj_t* al = (mrb_test(above) && DATA_PTR(above))
+                     ? reinterpret_cast<lv_obj_t*>(DATA_PTR(above))
+                     : nullptr;
+  if (v) {
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    if (al)
+      lv_obj_remove_flag(al, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    if (al)
+      lv_obj_add_flag(al, LV_OBJ_FLAG_HIDDEN);
+  }
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+  return self;
 }
 
 mrb_value tilemap_set_ox(mrb_state* M, mrb_value self) {
@@ -4070,13 +4189,16 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "map_data=", tilemap_set_map_data,
                     MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "priorities=", tilemap_set_priorities,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "visible", obj_visible, MRB_ARGS_NONE());
-  mrb_define_method(M, tilemap, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "dispose", obj_dispose, MRB_ARGS_NONE());
+  mrb_define_method(M, tilemap, "visible=", tilemap_set_visible,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "dispose", tilemap_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
