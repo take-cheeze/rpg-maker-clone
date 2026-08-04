@@ -139,8 +139,13 @@ jobs:
       # group (implicit wait at the end). The MV smoke tests stay non-blocking
       # (continue-on-error) while the MV runtime is brought up; the required
       # checks (LCF / RPG XP / RPG2k / ctest) fail the group — and the job — if
-      # they fail. Each MV run uses `xvfb-run -a` (auto-picked display) and a
-      # distinct screenshot path, so the concurrent runs never collide.
+      # they fail. Each xvfb-run instance gets a fixed, distinct display number
+      # (--server-num) and a distinct screenshot path, so the concurrent runs
+      # never collide. `xvfb-run -a` (auto-picked display) is deliberately
+      # avoided: its server-number probe is not atomic, so concurrent -a runs
+      # can grab the same display, killing one Xvfb out from under its client
+      # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
+      # `exe_open` test in CMakeLists.txt); MV runs=100..104 below.
       - parallel:
           - name: LCF test-bed smoke check
             run: nix develop -c ruby scripts/lcf_testbed_check.rb
@@ -170,7 +175,7 @@ jobs:
           - name: MV boot smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+              nix develop -c xvfb-run --server-num=100 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=5000 --game_dir data/Lunatic-Core \
                 --mv_screenshot=ss/mv_title.png
 
@@ -191,28 +196,28 @@ jobs:
           - name: MV sample smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+              nix develop -c xvfb-run --server-num=101 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=5000 --game_dir data/mv-sample \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
           - name: MV battle smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+              nix develop -c xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
 
           - name: MV movement smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+              nix develop -c xvfb-run --server-num=103 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_move_test
 
           - name: MV message smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run -a timeout 120 ./build/rpg_maker_clone \
+              nix develop -c xvfb-run --server-num=104 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
 
