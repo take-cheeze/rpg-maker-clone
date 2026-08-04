@@ -1690,6 +1690,37 @@ check 'Return to Title Screen raises a :return_title request' do
   eq false, st.switches[1], 'the command after it does not run (the game is ending)'
 end
 
+# -- Change / Trade Event Location --------------------------------------------
+
+check 'Change Event Location queues a :set request (constant and variable modes)' do
+  st = party_state
+  st.variables[7] = 4
+  st.variables[8] = 9
+  it = Game::Interpreter.new(st)
+  # event 3, mode 0 (constants), to (5, 6); then event 3, mode 1 (variables 7/8),
+  # then a switch to prove it did not pause.
+  it.start([FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 0, 5, 6]),
+            FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 1, 7, 8]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Change Event Location must not pause the interpreter'
+  eq true, st.switches[1]
+  reqs = it.take_location_requests
+  eq 2, reqs.size
+  eq({ op: :set, target: 3, x: 5, y: 6 }, reqs[0])
+  eq({ op: :set, target: 3, x: 4, y: 9 }, reqs[1], 'variable mode resolves x/y')
+  eq [], it.take_location_requests, 'the queue clears after draining'
+end
+
+check 'Trade Event Locations queues a :swap request' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TRADE_EVENT_LOCATIONS, [3, 7])])
+  it.update
+  ok !it.waiting?, 'Trade Event Locations must not pause the interpreter'
+  eq [{ op: :swap, a: 3, b: 7 }], it.take_location_requests
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

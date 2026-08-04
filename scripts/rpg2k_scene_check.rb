@@ -494,6 +494,53 @@ check 'Return to Title Screen hands control back to the app' do
   ok parent.returned_to_title, 'the app was told to return to the title screen'
 end
 
+check 'Change Event Location snaps another event to a tile' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: place event 2 at (5, 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [2, 0, 5, 3])]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(1, 1, page) },
+                    player: [5, 5])
+  5.times { scene.update }
+  c = chars(scene)[2]
+  eq [5, 3], [c.x, c.y], 'the event was moved to the target tile'
+  tiles = scene.instance_variable_get(:@event_tiles)
+  ok tiles[[5, 3]] && tiles[[5, 3]][:id] == 2, 'the occupied-tile cache followed'
+  ok !tiles[[1, 1]], 'its old tile was released'
+end
+
+check 'Change Event Location with "this event" moves the runner itself' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [10005, 0, 4, 4])]
+  scene = new_scene({ 1 => event(2, 0, auto) }, player: [5, 5])
+  5.times { scene.update }
+  c = chars(scene)[1]
+  eq [4, 4], [c.x, c.y], 'the running event moved itself'
+end
+
+check 'Change Event Location targeting the player snaps the hero' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [10001, 0, 3, 2])]
+  scene = new_scene({ 1 => event(0, 0, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update }
+  eq [3, 2], [st.x, st.y], 'the player was moved to the target tile'
+end
+
+check 'Trade Event Locations swaps two events' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: swap this event (1) with event 2
+  auto.event_commands = [ECmd.new(ic::TRADE_EVENT_LOCATIONS, [10005, 2])]
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(4, 1, page) },
+                    player: [5, 5])
+  5.times { scene.update }
+  a = chars(scene)[1]
+  b = chars(scene)[2]
+  eq [4, 1], [a.x, a.y], 'event 1 took event 2 old tile'
+  eq [2, 2], [b.x, b.y], 'event 2 took event 1 old tile'
+end
+
 check 'Input Number opens a widget; confirming stores the entered value' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

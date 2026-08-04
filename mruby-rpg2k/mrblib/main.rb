@@ -714,6 +714,7 @@ class RPG2k
           it.update
         end
         apply_move_requests(it, p[:event])
+        apply_location_requests(it, p[:event])
         apply_erase_request(it, p[:event])
       rescue StandardError
         nil
@@ -944,6 +945,91 @@ class RPG2k
         end
       end
 
+      # -- Change / Trade Event Location --------------------------------------
+
+      # Apply the instant-reposition requests an interpreter queued this step
+      # (Change Event Location / Trade Event Locations). `this_event` is the map
+      # event running the process (or nil), so a request targeting "this event"
+      # reaches the right character.
+      def apply_location_requests(interp, this_event)
+        reqs = interp.take_location_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_location_request(r, this_event) }
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Event location change failed: #{e.message}"
+        nil
+      end
+
+      def apply_location_request(r, this_event)
+        if r[:op] == :swap
+          a = char_location(r[:a], this_event)
+          b = char_location(r[:b], this_event)
+          return unless a && b
+          set_char_location(r[:a], this_event, b[0], b[1])
+          set_char_location(r[:b], this_event, a[0], a[1])
+        else
+          set_char_location(r[:target], this_event, r[:x], r[:y])
+        end
+      end
+
+      # The current tile of a target character (the same target ids as Move
+      # Event), or nil for the player-less vehicle slots / a missing event.
+      def char_location(target, this_event)
+        case target
+        when MOVE_TARGET_PLAYER
+          [@state.x, @state.y]
+        when 0, MOVE_TARGET_THIS
+          this_event ? [this_event[:char].x, this_event[:char].y] : nil
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          nil # vehicles are not modelled yet
+        else
+          ev = @events.find { |e| e[:id] == target }
+          ev ? [ev[:char].x, ev[:char].y] : nil
+        end
+      end
+
+      # Instantly move a target character to a tile.
+      def set_char_location(target, this_event, x, y)
+        case target
+        when MOVE_TARGET_PLAYER
+          move_player_to(x, y)
+        when 0, MOVE_TARGET_THIS
+          move_event_to(this_event, x, y) if this_event
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          nil # vehicles are not modelled yet
+        else
+          ev = @events.find { |e| e[:id] == target }
+          move_event_to(ev, x, y) if ev
+        end
+      end
+
+      # Snap the player to a tile: cancel any in-progress step and keep a forced
+      # route's mirror character (if one is running) in sync so it steps on from
+      # the new tile.
+      def move_player_to(x, y)
+        @state.x = x
+        @state.y = y
+        @dest_x = x
+        @dest_y = y
+        @moving = false
+        @move_count = 0
+        if @player_char
+          @player_char.x = x
+          @player_char.y = y
+        end
+      end
+
+      # Snap an event to a tile and refresh the occupied-tile cache so collision
+      # and the marker follow it.
+      def move_event_to(ev, x, y)
+        return unless ev
+        ox = ev[:char].x
+        oy = ev[:char].y
+        ev[:char].x = x
+        ev[:char].y = y
+        reoccupy(ev, ox, oy)
+      end
+
       # Give a map event a forced route, overriding its page movement until the
       # route finishes (a repeating route runs until replaced). It steps on the
       # next frame, paced by the requested frequency when one was given.
@@ -1089,6 +1175,7 @@ class RPG2k
         else
           @interpreter.update
           apply_move_requests(@interpreter, @active_event)
+          apply_location_requests(@interpreter, @active_event)
           apply_erase_request(@interpreter, @active_event)
           apply_halt_request(@interpreter)
           apply_graphic_change(@interpreter)

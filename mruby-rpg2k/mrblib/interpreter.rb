@@ -36,6 +36,8 @@ module Game
       CHANGE_ACTOR_SPRITE = 10630
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      CHANGE_EVENT_LOCATION = 10860
+      TRADE_EVENT_LOCATIONS = 10870
       STORE_TERRAIN_ID  = 10910
       STORE_EVENT_ID    = 10920
       CONDITIONAL      = 12010
@@ -90,6 +92,7 @@ module Game
       @call_stack = []
       @resolver = nil
       @move_route_requests = []
+      @location_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
@@ -119,6 +122,7 @@ module Game
       @running = true
       @call_stack = []
       @move_route_requests = []
+      @location_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
@@ -134,6 +138,17 @@ module Game
     def take_move_route_requests
       reqs = @move_route_requests
       @move_route_requests = []
+      reqs
+    end
+
+    # Drain the instant event-repositioning requests (Change Event Location /
+    # Trade Event Locations) queued since the last call, returning them and
+    # clearing the queue. Each is a hash — `{ op: :set, target:, x:, y: }` or
+    # `{ op: :swap, a:, b: }`. Like Move Event these do not pause the interpreter;
+    # the owning scene polls this after #update and moves the characters.
+    def take_location_requests
+      reqs = @location_requests
+      @location_requests = []
       reqs
     end
 
@@ -284,6 +299,8 @@ module Game
       when Cmd::TELEPORT         then do_teleport cmd
       when Cmd::MEMORIZE_LOCATION then do_memorize_location cmd
       when Cmd::RECALL_LOCATION   then do_recall_location cmd
+      when Cmd::CHANGE_EVENT_LOCATION then do_change_event_location cmd
+      when Cmd::TRADE_EVENT_LOCATIONS then do_trade_event_locations cmd
       when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
       when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
@@ -794,6 +811,29 @@ module Game
                    variables[cmd.param(2)], 0]
       @wait_kind = :teleport
       @waiting = true
+    end
+
+    # Change Event Location (Set Event Location): instantly place a character on
+    # the current map at a tile. param0 selects the target (10001 player, 0 /
+    # 10005 this event, else a map event id); param1 the appointment mode (0 the
+    # constants param2/param3, 1 the values of those two variables); param2/param3
+    # the x and y. Queued as a `:set` request the scene applies — non-blocking,
+    # so the rest of the command list runs on.
+    def do_change_event_location(cmd)
+      x = cmd.param(2)
+      y = cmd.param(3)
+      if cmd.param(1) == 1
+        x = variables[x]
+        y = variables[y]
+      end
+      @location_requests.push(op: :set, target: cmd.param(0), x: x, y: y)
+    end
+
+    # Trade Event Locations (Swap Event Locations): exchange the tiles of the two
+    # characters named by param0 and param1 (same target ids as Change Event
+    # Location). Queued as a `:swap` request the scene applies; non-blocking.
+    def do_trade_event_locations(cmd)
+      @location_requests.push(op: :swap, a: cmd.param(0), b: cmd.param(1))
     end
 
     # Store Terrain ID: write the terrain id of the tile at (x, y) into the

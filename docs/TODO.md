@@ -112,9 +112,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
-  Tint Screen, Flash Screen, Shake Screen, Call Event, Move Event, Proceed With
-  Movement, Halt All Movement, Erase Event, Return to Title, End Event) with a
-  per-frame step cap so a bad loop can't hang. **Memorize Location** stores the player's current map id, x and y
+  Tint Screen, Flash Screen, Shake Screen, Call Event, Move Event, Change / Trade
+  Event Location, Proceed With Movement, Halt All Movement, Erase Event, Return
+  to Title, End Event) with a per-frame step cap so a bad loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
   uses). **Call Event**
@@ -133,7 +133,9 @@ The work below is roughly ordered by the critical path to a walkable game
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
   these edits survive Save / Continue. **Set Transparent Flag** hides or shows
   the party leader's map sprite (persisted in the save), and **Return to Title
-  Screen** stops the event and returns the app to a fresh title. **Erase
+  Screen** stops the event and returns the app to a fresh title. **Change Event
+  Location** snaps a character (player / this event / a map event) to a tile and
+  **Trade Event Locations** swaps two of them, refreshing collision. **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
