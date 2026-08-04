@@ -406,9 +406,13 @@ end
 # A party the placeholder battle grants rewards to: gold plus actors that bank
 # EXP, with the leader Scene::Map reads while rendering.
 class BattleStubActor
-  attr_accessor :exp
-  attr_reader :id
-  def initialize; @exp = 0; @id = 1; end
+  attr_accessor :exp, :hp
+  attr_reader :id, :name, :atk, :def, :agi, :max_hp
+  def initialize
+    @exp = 0; @id = 1; @name = 'Hero'
+    # Strong enough to beat the two-Slime troop the scene db defines.
+    @atk = 40; @def = 20; @agi = 20; @hp = 200; @max_hp = 200
+  end
   def gain_exp(n); @exp += n; end
 end
 
@@ -1261,7 +1265,7 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
   ok st.switches[2], 'the No Transaction branch ran'
 end
 
-check 'Enemy Encounter scene: a placeholder victory grants rewards, runs Victory' do
+check 'Enemy Encounter scene: winning the battle grants rewards, runs Victory' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = [
@@ -1275,7 +1279,7 @@ check 'Enemy Encounter scene: a placeholder victory grants rewards, runs Victory
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  5.times { scene.update } # the encounter auto-resolves to victory
+  5.times { scene.update } # the headless battle runs; the strong party wins
   eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
   eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
   ok st.switches[1], 'the Victory handler ran'

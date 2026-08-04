@@ -2314,6 +2314,78 @@ module Game
     end
   end
 
+  # A headless auto-battle that decides an Enemy Encounter by the combatants'
+  # stats. Battlers act in agility order (highest first); each attacks a random
+  # living opponent for `attack_damage` and the fight runs to a result: :victory
+  # when every enemy is down, :defeat when the whole party is. It works on
+  # Combatant snapshots, so the caller can resolve a battle without mutating the
+  # real party. This is a deliberately simple first cut — no skills, items,
+  # criticals, attributes, damage variance or escape yet — the turn-based battle
+  # screen and those refinements are still to come.
+  class Battle
+    # A battler reduced to what the fight needs. Snapshotting Game::Actor /
+    # Game::Enemy keeps the real party untouched by a resolved battle.
+    Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp) do
+      def dead?; hp <= 0; end
+    end
+
+    def self.from_actor(a); Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp); end
+    def self.from_enemy(e); Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp); end
+
+    # RPG2000-style physical damage: half the attacker's attack less a quarter of
+    # the defender's defence, floored at 1 so a fight always terminates.
+    def self.attack_damage(atk, dfn)
+      d = atk / 2 - dfn / 4
+      d < 1 ? 1 : d
+    end
+
+    MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
+
+    attr_reader :allies, :enemies, :rounds, :result
+
+    def initialize(allies, enemies, rng = nil)
+      @allies = allies
+      @enemies = enemies
+      @rng = rng || Rng.new(0x2000)
+      @rounds = 0
+      @result = nil
+    end
+
+    # Run the fight to completion and return :victory or :defeat.
+    def run
+      while alive?(@allies) && alive?(@enemies)
+        @rounds += 1
+        break if @rounds > MAX_ROUNDS
+        turn_order.each do |b|
+          next if b.dead?
+          strike(b)
+          break unless alive?(@allies) && alive?(@enemies)
+        end
+      end
+      @result = alive?(@allies) ? :victory : :defeat
+    end
+
+    private
+
+    def alive?(side); side.any? { |b| !b.dead? }; end
+
+    # Battlers ordered by agility (highest first); ties keep their listed order.
+    def turn_order
+      (@allies + @enemies).each_with_index
+                          .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
+    end
+
+    # `b` attacks a random living member of the opposing side.
+    def strike(b)
+      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:dead?)
+      return if foes.empty?
+      target = foes[@rng.random(foes.size)]
+      target.hp -= Battle.attack_damage(b.atk, target.def)
+    end
+
+    def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
+  end
+
   # Map weather set by the Weather Effects (11070) event command: a type (0 none,
   # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
   # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half

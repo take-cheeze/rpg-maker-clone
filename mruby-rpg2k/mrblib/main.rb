@@ -1623,23 +1623,30 @@ class RPG2k
         @shop = nil
       end
 
-      # -- Enemy Encounter (placeholder battle) -------------------------------
+      # -- Enemy Encounter (headless battle) ----------------------------------
 
-      # Resolve an Enemy Encounter. The turn-based battle screen is not built
-      # yet, so an encounter is treated as an immediate victory: the troop is
-      # instantiated from the database, its EXP is granted to every party member
-      # and its gold to the party, then the [Victory] handler runs. Escape /
-      # defeat outcomes, rewards drops and the battle UI are still to come.
+      # Resolve an Enemy Encounter by running a headless auto-battle (Game::Battle)
+      # of the party against the troop. On victory the troop's EXP is granted to
+      # every party member and its gold to the party, then the [Victory] handler
+      # runs; a defeat routes the [Defeat] handler. The battle works on snapshots,
+      # so the party's real HP is left untouched for now — the on-screen
+      # turn-based battle (that would show and persist HP) and game over on defeat
+      # are still to come.
       def drive_battle
         req = @interpreter.battle_request
         return @interpreter.resume_battle(:victory) unless req
         troop = Game::Troop.new(db, req[:troop_id])
-        exp = troop.total_exp
-        @state.party.actors.each { |a| a.gain_exp(exp) }
-        @state.party.gain_gold(troop.total_gold)
-        @interpreter.resume_battle(:victory)
+        allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
+        foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
+        result = Game::Battle.new(allies, foes, Game::Rng.new(0x2000)).run
+        if result == :victory
+          exp = troop.total_exp
+          @state.party.actors.each { |a| a.gain_exp(exp) }
+          @state.party.gain_gold(troop.total_gold)
+        end
+        @interpreter.resume_battle(result)
       rescue StandardError => e
-        $stderr.puts "[RPG2k] battle placeholder failed: #{e.message}"
+        $stderr.puts "[RPG2k] battle resolution failed: #{e.message}"
         @interpreter.resume_battle(:victory)
       end
 
