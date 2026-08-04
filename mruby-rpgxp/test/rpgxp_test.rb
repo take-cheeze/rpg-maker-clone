@@ -418,6 +418,90 @@ assert "Interpreter: actor skill / weapon / armor / name conditionals" do
   assert_false s.switches[6]   # armor 99 not equipped
 end
 
+# Like xp_actor_db but with a full parameters table (levels 0..7, max HP =
+# 50 + 20/level) and a class that teaches skill 50 at level 2 and 60 at level 5,
+# for exercising the Change Actor commands (level-ups, stat regrowth).
+def xp_change_db
+  a = RPG::Actor.new
+  a.id = 1; a.name = "Aluxes"; a.class_id = 1
+  a.initial_level = 3; a.final_level = 6
+  a.weapon_id = 7; a.armor1_id = 11
+  a.armor2_id = 0; a.armor3_id = 0; a.armor4_id = 0
+  prm = Table.new(6, 8)
+  lv = 0
+  while lv < 8
+    prm[0, lv] = 50 + lv * 20; prm[1, lv] = 10 + lv * 5; prm[2, lv] = 5 + lv
+    prm[3, lv] = 4; prm[4, lv] = 3; prm[5, lv] = 2
+    lv += 1
+  end
+  a.parameters = prm
+  cls = RPG::Class.new; cls.id = 1
+  l1 = RPG::Class::Learning.new; l1.level = 2; l1.skill_id = 50
+  l2 = RPG::Class::Learning.new; l2.level = 5; l2.skill_id = 60
+  cls.learnings = [l1, l2]
+  FakeDB.new(actors: [nil, a], classes: [nil, cls])
+end
+
+assert "Interpreter: Change HP / SP / Recover All" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  a = s.actor(1)                                   # level 3: max HP 110, max SP 25
+  run_to_end(s, [cmd(311, [0, 1, 1, 0, 40, false], 0)])  # HP -40
+  assert_equal 70, a.hp
+  run_to_end(s, [cmd(311, [0, 1, 1, 0, 999, false], 0)]) # can't knock out -> floor 1
+  assert_equal 1, a.hp
+  run_to_end(s, [cmd(311, [0, 1, 1, 0, 999, true], 0)])  # knockout allowed -> 0
+  assert_equal 0, a.hp
+  run_to_end(s, [cmd(312, [0, 1, 1, 0, 20], 0)])         # SP -20 (25 -> 5)
+  assert_equal 5, a.sp
+  run_to_end(s, [cmd(314, [0, 1], 0)])                   # Recover All
+  assert_equal 110, a.hp
+  assert_equal 25, a.sp
+end
+
+assert "Interpreter: Change Level learns skills and regrows stats" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  a = s.actor(1)
+  assert_false a.knows_skill?(60)
+  run_to_end(s, [cmd(316, [0, 1, 0, 0, 2], 0)])          # level +2 -> 5
+  assert_equal 5, a.level
+  assert_true a.knows_skill?(50)                          # kept
+  assert_true a.knows_skill?(60)                          # learned at level 5
+  assert_equal 150, a.max_hp                              # 50 + 5*20
+end
+
+assert "Interpreter: Change Skills / Change Equipment (via a variable-held id)" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  a = s.actor(1)
+  s.variables[9] = 1                                      # actor id in variable 9
+  run_to_end(s, [cmd(318, [1, 9, 0, 99], 0)])            # learn skill 99 (variable target)
+  assert_true a.knows_skill?(99)
+  run_to_end(s, [cmd(318, [0, 1, 1, 50], 0)])            # forget skill 50
+  assert_false a.knows_skill?(50)
+  run_to_end(s, [cmd(319, [0, 1, 0, 8], 0)])             # weapon slot 0 -> 8
+  assert_equal 8, a.weapon_id
+  run_to_end(s, [cmd(319, [0, 1, 3, 33], 0)])            # armor slot 3 -> 33
+  assert_equal 33, a.armor3_id
+  run_to_end(s, [cmd(319, [0, 1, 0, 0], 0)])             # remove the weapon
+  assert_equal 0, a.weapon_id
+end
+
+assert "Game::State save round-trip preserves mutated actor state" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  a = s.actor(1)
+  run_to_end(s, [cmd(316, [0, 1, 0, 0, 2], 0)])          # level 5
+  run_to_end(s, [cmd(311, [0, 1, 1, 0, 30, true], 0)])   # HP -30
+  run_to_end(s, [cmd(318, [0, 1, 0, 77], 0)])            # learn skill 77
+  run_to_end(s, [cmd(319, [0, 1, 1, 44], 0)])            # armor1 -> 44
+  loaded = RPGXP::Game::State.load(xp_change_db, Marshal.load(Marshal.dump(s.to_h)))
+  b = loaded.actor(1)
+  assert_equal a.level, b.level
+  assert_equal a.hp, b.hp
+  assert_equal a.sp, b.sp
+  assert_equal a.skills.sort, b.skills.sort
+  assert_equal a.weapon_id, b.weapon_id
+  assert_equal a.armor1_id, b.armor1_id
+end
+
 assert "Interpreter: control variables from game quantities" do
   s = new_state # map_id 1, party [1]
   s.gold = 250

@@ -88,6 +88,12 @@ class RPGXP
       CHANGE_WEAPONS  = 127
       CHANGE_ARMOR    = 128
       CHANGE_PARTY    = 129
+      CHANGE_HP       = 311
+      CHANGE_SP       = 312
+      RECOVER_ALL     = 314
+      CHANGE_LEVEL    = 316
+      CHANGE_SKILLS   = 318
+      CHANGE_EQUIP    = 319
       TRANSFER_PLAYER = 201
       MOVE_ROUTE      = 209
       PLAY_BGM        = 241
@@ -278,6 +284,12 @@ class RPGXP
         when CHANGE_WEAPONS  then do_change_weapons(cmd)
         when CHANGE_ARMOR    then do_change_armor(cmd)
         when CHANGE_PARTY    then do_change_party(cmd)
+        when CHANGE_HP       then do_change_hp(cmd)
+        when CHANGE_SP       then do_change_sp(cmd)
+        when RECOVER_ALL     then do_recover_all(cmd)
+        when CHANGE_LEVEL    then do_change_level(cmd)
+        when CHANGE_SKILLS   then do_change_skills(cmd)
+        when CHANGE_EQUIP    then do_change_equipment(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
         when BATTLE_PROCESS  then do_battle_process(cmd)
@@ -681,6 +693,68 @@ class RPGXP
         else
           @state.party.delete(actor_id)
         end
+        @index += 1
+      end
+
+      # -- Change Actor commands ----------------------------------------------
+      # Each targets one actor via iterate_actor(param0 type, param1 id): a fixed
+      # id (type 0) or one read from a variable (type 1). The value commands take
+      # the operate_value triple (operation, operand type, operand) at 2/3/4.
+
+      # The live Game::Actor a Change Actor command targets, or nil for an unknown
+      # id. param0 selects fixed (0) vs variable-held (1) actor id in param1.
+      def change_actor_target(cmd)
+        id = param(cmd, 0) == 0 ? param(cmd, 1) : variables[param(cmd, 1)]
+        @state.actor(id)
+      end
+
+      # The signed operand of an operate command at parameter indices op/type/val:
+      # +value on increase (operation 0), -value on decrease (1); the value is a
+      # constant (type 0) or read from a variable (type 1).
+      def operate_value(cmd, op_i, type_i, val_i)
+        v = param(cmd, type_i) == 0 ? param(cmd, val_i, 0) : variables[param(cmd, val_i)]
+        param(cmd, op_i) == 0 ? v : -v
+      end
+
+      def do_change_hp(cmd)
+        a = change_actor_target(cmd)
+        a.change_hp(operate_value(cmd, 2, 3, 4), param(cmd, 5)) if a
+        @index += 1
+      end
+
+      def do_change_sp(cmd)
+        a = change_actor_target(cmd)
+        a.change_sp(operate_value(cmd, 2, 3, 4)) if a
+        @index += 1
+      end
+
+      def do_recover_all(cmd)
+        a = change_actor_target(cmd)
+        a.recover_all if a
+        @index += 1
+      end
+
+      def do_change_level(cmd)
+        a = change_actor_target(cmd)
+        a.change_level(operate_value(cmd, 2, 3, 4)) if a
+        @index += 1
+      end
+
+      # Change Skills (318): [actor_type, actor_id, operation(0 learn / 1 forget),
+      # skill_id].
+      def do_change_skills(cmd)
+        a = change_actor_target(cmd)
+        if a
+          param(cmd, 2) == 0 ? a.learn_skill(param(cmd, 3)) : a.forget_skill(param(cmd, 3))
+        end
+        @index += 1
+      end
+
+      # Change Equipment (319): [actor_type, actor_id, slot(0 weapon, 1..4 armor),
+      # item_id (0 removes)].
+      def do_change_equipment(cmd)
+        a = change_actor_target(cmd)
+        a.equip(param(cmd, 2), param(cmd, 3)) if a
         @index += 1
       end
 
