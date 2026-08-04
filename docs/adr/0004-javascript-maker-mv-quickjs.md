@@ -120,7 +120,28 @@ JavaScript loads and interprets the JSON.
 - **M5 — Play.** Input + save/load (`require('fs')` shim) + audio wiring; a
   walkable MV game in the SDL window and the sixel/iTerm2 terminals.
 - **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs on
-  the same foundation.
+  the same foundation. Broken into sub-milestones:
+  - **M6.1 — Foundation (landed).** An `MZ` class (`mruby-mvjs/mrblib/mz.rb`)
+    that detects an MZ project (`js/rmmz_core.js` + `data/System.json`) and
+    knows the canonical `rmmz_*` load order, wired into `src/main.cxx`'s maker
+    sniff. When the binary is pointed at an MZ game it reports the pending
+    WebGL backend cleanly instead of the "no project found" error. Covered by
+    host specs (`mruby-mvjs/test/mz_test.rb`).
+  - **M6.2 — Host reuse.** Drive the shared quickjs host / host-globals / IO /
+    input / audio bridges (all maker-agnostic) with the `rmmz_*` scripts, so an
+    MZ game reaches `Scene_Boot` in logic (no pixels). Unlike MV, there is **no
+    committable/fetchable MZ test bed**: MV's corescript is an official
+    open-source project ([rpgtkoolmv], MIT, redistributed by KADOKAWA) that
+    `data/mv-sample` fetches, but MZ's engine ships only with the paid editor
+    (© Gotcha Gotcha Games / KADOKAWA) and has no equivalent open-source
+    release — the GitHub mirrors of it (e.g. `stak/rmmz-corescript`) carry no
+    license. So MZ is developed and verified against a **user-supplied** MZ
+    project, not a downloaded engine, the same constraint the RPG2000/XP beds
+    hit for their (also non-redistributable) game assets.
+  - **M6.3 — WebGL rendering.** The WebGL-subset backend behind PIXI v5, the
+    bulk of the work — MZ dropped the Canvas2D renderer the MV bridge targets.
+
+[rpgtkoolmv]: https://github.com/rpgtkoolmv/corescript
 
 ## Consequences
 

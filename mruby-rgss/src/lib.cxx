@@ -2229,6 +2229,82 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   return bmp;
 }
 
+// RGSS Sprite#opacity= (0..255). The Sprite's native handle is an lv_canvas,
+// which LVGL composites; the object-level style opacity multiplies the bitmap's
+// own alpha at blit time, which is exactly RGSS's per-sprite opacity. The value
+// is clamped and mirrored into @opacity so the Ruby reader (defaulting to 255)
+// returns what was set. A fresh sprite needs no explicit call: LVGL's default
+// object opacity is fully opaque, matching RGSS's 255 default.
+mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
+  mrb_int opa;
+  mrb_get_args(M, "i", &opa);
+  if (opa < 0)
+    opa = 0;
+  else if (opa > 255)
+    opa = 255;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_style_opa(obj, static_cast<lv_opa_t>(opa), 0);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(opa));
+  return self;
+}
+
+// RGSS Sprite#zoom_x= / #zoom_y= (a float multiplier, 1.0 = normal size). A
+// Sprite's native handle is an lv_canvas, an LVGL image that scales its content
+// by an integer factor where LV_SCALE_NONE (256) == 1.0. Convert the RGSS float
+// to that fixed point and apply it to the canvas; the float is mirrored into
+// @zoom_x/@zoom_y so the Ruby reader (defaulting to 1.0) returns it. A fresh
+// sprite is already LV_SCALE_NONE, matching RGSS's 1.0 default. mruby's "f"
+// coerces an Integer argument (e.g. `zoom_x = 1`) to Float.
+mrb_value spr_set_zoom_x(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  if (z < 0.0)
+    z = 0.0;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_image_set_scale_x(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
+  return self;
+}
+
+mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  if (z < 0.0)
+    z = 0.0;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_image_set_scale_y(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
+  return self;
+}
+
+// RGSS Sprite#angle= (degrees, counter-clockwise, float). LVGL image rotation
+// is in 0.1-degree units, clockwise, normalised to [0, 3600), so negate and
+// scale. RGSS rotates about the sprite's (ox, oy) origin, which is the LVGL
+// image pivot (default 0,0). The @ox/@oy ivars are read here so a script that
+// sets the origin before rotating gets the right pivot; a later ox=/oy= that
+// must re-pivot simply re-assigns angle. The float is mirrored into @angle for
+// the Ruby reader.
+mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
+  mrb_float deg;
+  mrb_get_args(M, "f", &deg);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  long tenths = std::lround(-deg * 10.0) % 3600;
+  if (tenths < 0)
+    tenths += 3600;
+  const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  const mrb_value oy = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  lv_image_set_pivot(
+      obj, mrb_nil_p(ox) ? 0 : static_cast<int32_t>(mrb_as_int(M, ox)),
+      mrb_nil_p(oy) ? 0 : static_cast<int32_t>(mrb_as_int(M, oy)));
+  lv_image_set_rotation(obj, static_cast<int32_t>(tenths));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@angle"), mrb_float_value(M, deg));
+  return self;
+}
+
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
@@ -2645,6 +2721,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "zoom_x=", spr_set_zoom_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);

@@ -129,13 +129,16 @@ module RGSS
 
     # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
     # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect.
-    # mruby-rgss stores them so `sprite.opacity = n` / `sprite.zoom_x` no longer
-    # raise; the native renderer does not yet honour them visually (tracked in
-    # docs/rpgxp-rgss-api-gap.md). Readers fall back to RGSS's defaults because
-    # the native #initialize does not set these ivars (and cannot be wrapped from
-    # here without replacing it). `nil?` checks — not `||` — where 0/false is a
-    # meaningful value (opacity 0 = transparent).
-    attr_writer :opacity, :ox, :oy, :zoom_x, :zoom_y, :angle, :mirror,
+    # `opacity=`, `zoom_x=`, `zoom_y=` and `angle=` are now honoured natively
+    # (src/lib.cxx sets the sprite canvas's LVGL object opacity / image scale /
+    # image rotation); they still store their ivars here so the readers below
+    # return the set values. The rest are stored so `sprite.mirror = true` no
+    # longer raises, but the native renderer does not yet honour them visually
+    # (tracked in docs/rpgxp-rgss-api-gap.md). Readers fall back to RGSS's
+    # defaults because the native #initialize does not set these ivars (and cannot
+    # be wrapped from here without replacing it). `nil?` checks — not `||` — where
+    # 0/false is a meaningful value (opacity 0 = transparent).
+    attr_writer :ox, :oy, :mirror,
                 :bush_depth, :blend_type, :tone, :color, :src_rect
 
     def opacity
@@ -194,7 +197,43 @@ module RGSS
     end
   end
 
+  # RGSS Tilemap: the layered, autotiled map ground that Spriteset_Map builds from
+  # the tileset, the seven autotiles, and the map's data/priority Tables. Pure-Ruby
+  # property holder for now so the stock scripts that create and drive a Tilemap
+  # run — Spriteset_Map assigns `tileset`, fills `autotiles[0..6]`, sets `map_data`
+  # /`priorities`/`flash_data`, scrolls it via `ox`/`oy`, and disposes it — while
+  # the native autotile assembly + priority layering render is future work (tracked
+  # in docs/rpgxp-rgss-api-gap.md; the RPG2000 side already implements a portable
+  # reference in Game::ChipsetLayout).
   class Tilemap
+    attr_accessor :tileset, :map_data, :flash_data, :priorities, :visible, :ox, :oy
+    attr_reader :viewport, :autotiles
+
+    def initialize(viewport = nil)
+      @viewport = viewport
+      @tileset = nil
+      # RGSS exposes exactly seven autotile slots (0..6); the game assigns each
+      # with `tilemap.autotiles[i] = bitmap` and reads them back to dispose. A
+      # fixed-size Array holds the references (there is no `autotiles=` in RGSS).
+      @autotiles = Array.new(7)
+      @map_data = nil
+      @flash_data = nil
+      @priorities = nil
+      @visible = true
+      @ox = 0
+      @oy = 0
+      @disposed = false
+    end
+
+    def update; end
+
+    def dispose
+      @disposed = true
+    end
+
+    def disposed?
+      @disposed
+    end
   end
 
   # RGSS Window: the framed, scrollable box every Window_Base subclass (message,

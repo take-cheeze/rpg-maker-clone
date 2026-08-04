@@ -38,6 +38,15 @@ module Game
       CHANGE_ACTOR_SPRITE = 10630
       CHANGE_SYSTEM_BGM   = 10660
       CHANGE_SYSTEM_SFX   = 10670
+      ENEMY_ENCOUNTER  = 10710
+      VICTORY_HANDLER  = 20710
+      ESCAPE_HANDLER   = 20711
+      DEFEAT_HANDLER   = 20712
+      END_BATTLE       = 20713
+      OPEN_SHOP           = 10720
+      SHOP_TRANSACTION    = 20720
+      SHOP_NO_TRANSACTION = 20721
+      SHOP_END            = 20722
       SHOW_INN         = 10730
       INN_STAY         = 20730
       INN_NO_STAY      = 20731
@@ -129,7 +138,8 @@ module Game
     def running?; @running; end
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
-                :teleport, :input_digits, :key_input_request, :inn_request
+                :teleport, :input_digits, :key_input_request, :inn_request,
+                :shop_request, :battle_request
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -327,6 +337,75 @@ module Game
       nil
     end
 
+    # Resume an Open Shop request once the player leaves the shop. `transacted`
+    # is whether anything was actually bought or sold — the buying and selling
+    # (gold and inventory changes) happen in the shop scene, mirroring RPG_RT.
+    # When the event carries [Transaction] / [No Transaction] handler branches,
+    # jump into the matching one; otherwise execution simply continues.
+    def resume_shop(transacted)
+      if @shop_has_handlers
+        target = find_shop_option(transacted)
+        @index = target if target
+      end
+      reset_waits
+    end
+
+    # Locate the [Transaction] (SHOP_TRANSACTION) or [No Transaction]
+    # (SHOP_NO_TRANSACTION) handler branch for the pending shop, returning the
+    # index just after its marker. Falls back to SHOP_END and to nil once the
+    # shop's own indent level is left — the same structure as the inn branches.
+    def find_shop_option(transacted)
+      want = transacted ? Cmd::SHOP_TRANSACTION : Cmd::SHOP_NO_TRANSACTION
+      i = @index
+      while i < @list.size
+        c = @list[i]
+        return i + 1 if c.indent == @shop_indent && c.code == want
+        return i if c.indent == @shop_indent && c.code == Cmd::SHOP_END
+        return nil if c.indent < @shop_indent
+        i += 1
+      end
+      nil
+    end
+
+    # Resume an Enemy Encounter with the battle's outcome (:victory, :escape or
+    # :defeat). Rewards (EXP / gold on victory) are granted by the scene, which
+    # owns the battle; this only steers event flow. Escape with the "end event
+    # processing" mode abandons the rest of the event; otherwise, when the
+    # command carries [Victory] / [Escape] / [Defeat] handler branches, jump into
+    # the matching one. A game-over on defeat is the scene's concern.
+    def resume_battle(result)
+      if result == :escape && @battle_escape_aborts
+        @index = @list.size
+        @call_stack = []
+        reset_waits
+        return
+      end
+      if @battle_has_handlers
+        target = find_battle_option(result)
+        @index = target if target
+      end
+      reset_waits
+    end
+
+    BATTLE_HANDLERS = { victory: Cmd::VICTORY_HANDLER, escape: Cmd::ESCAPE_HANDLER,
+                        defeat: Cmd::DEFEAT_HANDLER }.freeze
+
+    # Locate the handler branch for a battle outcome, like the inn / shop
+    # branches: the index just after its marker, falling back to END_BATTLE and
+    # to nil once the encounter's indent level is left.
+    def find_battle_option(result)
+      want = BATTLE_HANDLERS[result]
+      i = @index
+      while i < @list.size
+        c = @list[i]
+        return i + 1 if c.indent == @battle_indent && c.code == want
+        return i if c.indent == @battle_indent && c.code == Cmd::END_BATTLE
+        return nil if c.indent < @battle_indent
+        i += 1
+      end
+      nil
+    end
+
     # RPG2000 key-input result codes in priority order (highest first). When more
     # than one accepted button is active RPG_RT returns the largest code:
     # Shift > Cancel > Decision > Up > Right > Left > Down.
@@ -359,6 +438,8 @@ module Game
       @teleport = nil
       @key_input_request = nil
       @inn_request = nil
+      @shop_request = nil
+      @battle_request = nil
     end
 
     def switches;  @state.switches;  end
@@ -375,6 +456,15 @@ module Game
       when Cmd::CHOICE_END       then nil
       when Cmd::INPUT_NUMBER     then do_input_number cmd
       when Cmd::KEY_INPUT_PROC   then do_key_input cmd
+      when Cmd::ENEMY_ENCOUNTER  then do_enemy_encounter cmd
+      when Cmd::VICTORY_HANDLER  then skip_to([Cmd::END_BATTLE], cmd.indent); consume
+      when Cmd::ESCAPE_HANDLER   then skip_to([Cmd::END_BATTLE], cmd.indent); consume
+      when Cmd::DEFEAT_HANDLER   then skip_to([Cmd::END_BATTLE], cmd.indent); consume
+      when Cmd::END_BATTLE       then nil
+      when Cmd::OPEN_SHOP        then do_open_shop cmd
+      when Cmd::SHOP_TRANSACTION    then skip_to([Cmd::SHOP_END], cmd.indent); consume
+      when Cmd::SHOP_NO_TRANSACTION then skip_to([Cmd::SHOP_END], cmd.indent); consume
+      when Cmd::SHOP_END         then nil
       when Cmd::SHOW_INN         then do_show_inn cmd
       when Cmd::INN_STAY         then skip_to([Cmd::INN_END], cmd.indent); consume
       when Cmd::INN_NO_STAY      then skip_to([Cmd::INN_END], cmd.indent); consume
@@ -672,6 +762,55 @@ module Game
       @inn_request = { type: cmd.param(0), price: price,
                        can_afford: party.gold >= price, prompt: price > 0 }
       @wait_kind = :inn
+      @waiting = true
+    end
+
+    # Open Shop (10720): enter a shop selling the goods listed from param4 on.
+    # param0 is the mode (0 buy + sell, 1 buy only, 2 sell only); param1 the
+    # shop-screen style (recorded for fidelity). Like the inn, the command may be
+    # followed by [Transaction] / [No Transaction] handler branches (markers
+    # SHOP_TRANSACTION / SHOP_NO_TRANSACTION, closed by SHOP_END) that run on
+    # whether the player bought or sold anything. The interpreter records the
+    # request and suspends on a :shop wait; the scene runs the buy / sell UI
+    # (where the gold and inventory changes happen) and resumes via resume_shop.
+    def do_open_shop(cmd)
+      mode = cmd.param(0)
+      @shop_indent = cmd.indent
+      nxt = @list[@index]
+      @shop_has_handlers =
+        !nxt.nil? && nxt.code == Cmd::SHOP_TRANSACTION && nxt.indent == cmd.indent
+      @shop_request = {
+        mode: mode, allow_buy: mode == 0 || mode == 1,
+        allow_sell: mode == 0 || mode == 2, type: cmd.param(1),
+        goods: cmd.parameters[4..-1] || []
+      }
+      @wait_kind = :shop
+      @waiting = true
+    end
+
+    # Enemy Encounter (10710): start a battle against a troop. param0 is the
+    # troop-id source (0 constant, 1 variable) and param1 the id / variable;
+    # param3 the escape mode (0 disallow, 1 end event processing on escape,
+    # 2 custom [Escape] handler), param4 the defeat mode (0 game over, 1 custom
+    # [Defeat] handler), param5 the first-strike flag. The command may be
+    # followed by [Victory] / [Escape] / [Defeat] handler branches (markers
+    # VICTORY/ESCAPE/DEFEAT_HANDLER, closed by END_BATTLE), like a Show Choices
+    # block. The interpreter records the request and suspends on a :battle wait;
+    # the scene runs the battle (rewards, game over) and resumes via
+    # resume_battle. The turn-based battle itself is not built yet.
+    def do_enemy_encounter(cmd)
+      escape_mode = cmd.param(3)
+      @battle_indent = cmd.indent
+      @battle_escape_aborts = escape_mode == 1
+      nxt = @list[@index]
+      @battle_has_handlers =
+        !nxt.nil? && nxt.code == Cmd::VICTORY_HANDLER && nxt.indent == cmd.indent
+      @battle_request = {
+        troop_id: cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)],
+        allow_escape: escape_mode != 0, first_strike: cmd.param(5) != 0,
+        defeat_game_over: cmd.param(4) == 0
+      }
+      @wait_kind = :battle
       @waiting = true
     end
 

@@ -262,6 +262,7 @@ class MV
     maybe_message_test # CI: show a text message on the map and log the window opened
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_save_test # CI: save+load round-trip on the map and log the result
+    maybe_audio_test # CI: play an SE through the bridge and log it dispatched
     present # M4: copy the MV canvas onto the on-screen sprite's bitmap
     maybe_screenshot # capture the rendered frame once, if requested (CI)
     RGSS::Input.update
@@ -397,7 +398,7 @@ class MV
     end
     return unless new_game || battle_test_troop > 0 || move_test_requested? ||
                   message_test_requested? || menu_test_requested? ||
-                  save_test_requested?
+                  save_test_requested? || audio_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -668,6 +669,47 @@ class MV
     $stderr.puts "[MV-SAVE] #{res}"
   rescue StandardError => e
     $stderr.puts "[MV] save test error: #{e.message}"
+  end
+
+  # Whether --mv_audio_test was requested (a launcher constant set by main.cxx).
+  def audio_test_requested?
+    (begin
+      MV_AUDIO_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mv_audio_test is set (CI), once on the map play a sound effect
+  # through MV's AudioManager and drive it the whole way to RGSS::Audio, then
+  # log the result. Our bridge (AUDIO_BRIDGE_JS) overrides AudioManager to
+  # enqueue a plain-text op instead of decoding Web Audio; here we play the
+  # sample's authored "Beep" SE, drain the op the live engine queued (proving
+  # AudioManager -> __mv_audioQueue works with a real game), parse it and
+  # dispatch through the same #apply_audio the per-frame #pump_audio uses, and
+  # confirm the asset resolves on disk. So a headless run exercises the full
+  # audio path (engine -> queue -> drain -> RGSS::Audio) end to end, which the
+  # empty-audio test beds never did. One-shot; a no-op during normal play.
+  def maybe_audio_test
+    return if @audio_test_done
+    return unless audio_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @audio_test_done = true
+    op = MV::JS.eval(
+      "(function(){ if (typeof AudioManager === 'undefined') return ''; " \
+      "AudioManager.playSe({ name: 'Beep', volume: 90, pitch: 100, pan: 0 }); " \
+      "return (typeof __mv_drainAudio === 'function') ? __mv_drainAudio() : " \
+      "''; })()"
+    )
+    line = op.is_a?(String) ? op.split("\n").first.to_s : ""
+    call = self.class.parse_audio_op(line)
+    apply_audio(call) if call
+    asset = File.exist?("#{@game_dir}/audio/se/Beep.wav")
+    $stderr.puts "[MV-AUDIO] op=#{line.inspect} dispatched=#{!call.nil?} " \
+                 "asset=#{asset}"
+  rescue StandardError => e
+    $stderr.puts "[MV] audio test error: #{e.message}"
   end
 
   # Log the running scene's class name whenever it changes, so the boot's

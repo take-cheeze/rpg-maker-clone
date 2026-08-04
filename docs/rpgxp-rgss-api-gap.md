@@ -37,17 +37,27 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (stored; render pending)
+### 1. `Sprite` extended properties ⚠️ (opacity + zoom + angle rendered; rest stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
-`visible`/`visible=`, `dispose`, `update`, and now **stores** the extra
-properties the stock scripts set — `opacity` (~18), `ox`/`oy`, `zoom_x`/`zoom_y`
-(~3 each), `angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2),
-`src_rect` and `flash` — with RGSS defaults (`mruby-rgss/mrblib/lib.rb`), so a
-script's `sprite.opacity = n` no longer raises. **Remaining:** the native
-renderer does not yet honour them visually (opacity/zoom/tone/mirror compositing
-in the draw path). `Sprite_Character`, `Sprite_Battler`, `Arrow_Base`, weather
-and the animation player depend on these.
+`visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
+stock scripts set — `opacity` (~18), `ox`/`oy`, `zoom_x`/`zoom_y` (~3 each),
+`angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2), `src_rect`
+and `flash` — with RGSS defaults (`mruby-rgss/mrblib/lib.rb`).
+
+**`opacity`, `zoom_x`/`zoom_y` and `angle` are now rendered natively.** A Sprite's
+native handle is an `lv_canvas` (an LVGL image subclass), so: `Sprite#opacity=`
+sets the canvas's LVGL object opacity (the compositor multiplies the bitmap's
+alpha by it, so fades actually fade); `Sprite#zoom_x=`/`zoom_y=` set the image's
+scale (`lv_image_set_scale_x/y`, where 256 = 1.0), so the sprite scales;
+`Sprite#angle=` sets the image's rotation (`lv_image_set_rotation`, converting
+RGSS's counter-clockwise degrees to LVGL's clockwise 0.1° units, pivoting on the
+sprite's `ox`/`oy` origin). **Remaining:** **mirror** — LVGL's `lv_image` has no
+flip, so it needs a software horizontal-flip pass; and
+**tone/color/src_rect/bush_depth** → a software pre-composite through the existing
+`bmp_blt`/`bmp_stretch_blt` blend loops. Both share the same scratch-buffer
+machinery and are the next slices. `Sprite_Character`, `Sprite_Battler`,
+`Arrow_Base`, weather and the animation player depend on these.
 
 ### 2. `Window` ⚠️ (stored; native frame/cursor render pending)
 
@@ -62,12 +72,16 @@ without raising. **Remaining:** the native widget compositing — the frame buil
 from the windowskin, the blinking cursor rect, the pause arrow, and blitting the
 scrolled `contents` at `contents_opacity` — is future work.
 
-### 3. `Tilemap` ❌ (the big one for maps)
+### 3. `Tilemap` ⚠️ (stored; native autotile/priority render pending)
 
-`class Tilemap` is empty. `Spriteset_Map` needs: `tileset`, `autotiles` (array),
-`map_data` (a `Table`), `flash_data`, `priorities`, `ox`/`oy`, `viewport`,
-`update`, `dispose`, with the autotile assembly + priority layering the RPG2000
-side already implements in `Game::ChipsetLayout` (portable reference).
+`Tilemap` is now a pure-Ruby property holder (`mruby-rgss/mrblib/lib.rb`) with
+RGSS defaults: `tileset` (a `Bitmap`), `autotiles` (the seven `[0..6]` slots,
+indexable/assignable), `map_data`/`flash_data`/`priorities` (`Table`s), `ox`/`oy`,
+`visible`, `viewport`, `update`, `dispose`/`disposed?`. So `Spriteset_Map` can
+build its ground layer — assign the tileset, fill the autotiles, set the map
+data/priorities, scroll it, and dispose it — without raising. **Remaining:** the
+native render — autotile assembly + priority layering (the RPG2000 side already
+implements a portable reference in `Game::ChipsetLayout`).
 
 ### 4. `Plane` ⚠️ (stored; render pending)
 

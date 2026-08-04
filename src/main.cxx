@@ -80,6 +80,13 @@ DEFINE_bool(
     "(implies --mv_new_game to reach the map) and log whether the save/load "
     "round-trip succeeded, so a headless run confirms the save path works. "
     "Used in CI");
+DEFINE_bool(
+    mv_audio_test,
+    false,
+    "For RPG Maker MV: once on the map, play a sound effect through the audio "
+    "bridge (implies --mv_new_game to reach the map) and log whether the op "
+    "reached RGSS::Audio and the asset resolves, so a headless run confirms "
+    "the audio path works. Used in CI");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -285,6 +292,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
+  } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
+             fs::exists(game_dir_path / "data" / "System.json")) {
+    // RPG Maker MZ: a JavaScript project (js/rmmz_core.js + data/System.json).
+    // Mirrors MZ::REQUIRED_MARKERS. MZ shares MV's embedded JS host but ships
+    // PIXI v5 (WebGL-only); the WebGL backend it needs is not built yet, so
+    // this reports the pending state instead of the "no project found" error
+    // below (see mruby-mvjs/mrblib/mz.rb, docs/adr/0004 M6).
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
     // RPG Maker MV: a JavaScript project (js/rpg_core.js + data/System.json).
@@ -293,8 +308,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
   } else {
     std::fprintf(stderr,
-                 "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini) or RPG Maker MV "
-                 "(js/rpg_core.js + data/System.json) project found under "
+                 "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker MV "
+                 "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
+                 "(js/rmmz_core.js + data/System.json) project found under "
                  "/game\n");
     return 1;
   }
@@ -482,6 +498,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SAVE_TEST"),
                 mrb_bool_value(FLAGS_mv_save_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MV_AUDIO_TEST"),
+                mrb_bool_value(FLAGS_mv_audio_test));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
@@ -506,6 +525,8 @@ int main(int argc, char** argv) {
   if (fs::exists(game_dir_path / "RPG_RT.ldb") ||
       fs::exists(game_dir_path / "Game.ini") ||
       (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
+       fs::exists(game_dir_path / "data" / "System.json")) ||
+      (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
        fs::exists(game_dir_path / "data" / "System.json"))) {
     rpg_start_game();
   } else {
@@ -518,6 +539,12 @@ int main(int argc, char** argv) {
   mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+  } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
+             fs::exists(game_dir_path / "data" / "System.json")) {
+    // RPG Maker MZ: a JavaScript game (js/rmmz_core.js) with a JSON database.
+    // Shares MV's JS host but needs a WebGL backend (not built yet), so it
+    // reports the pending state. See mruby-mvjs/mrblib/mz.rb, docs/adr/0004 M6.
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &args);
   } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
     // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.

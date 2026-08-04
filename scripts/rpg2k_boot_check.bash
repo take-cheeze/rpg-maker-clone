@@ -22,7 +22,7 @@
 # because then it proved nothing.
 #
 # Usage: ./scripts/rpg2k_boot_check.bash [server_num] [game_dir...]
-#   server_num  xvfb-run --server-num to use (default 108; see the reserved
+#   server_num  xvfb-run --server-num to use (default 109; see the reserved
 #               display numbers in .github/workflows/build.yml)
 #   game_dir    defaults to the repo's RPG2000/2003 test-beds
 
@@ -30,7 +30,7 @@ set -eu -o pipefail
 
 cd "$(dirname "$0")/.."
 
-SERVER_NUM="${1:-108}"
+SERVER_NUM="${1:-109}"
 shift || true
 
 ENGINE="${ENGINE:-./build/rpg_maker_clone}"

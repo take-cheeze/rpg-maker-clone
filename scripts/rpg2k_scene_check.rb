@@ -149,6 +149,16 @@ def fake_db(common = nil)
     # Terms the Show Inn window reads; blank greeting fields exercise the
     # scene's English fallbacks.
     term: OpenStruct.new(gold: 'G'),
+    # A tiny item table the Open Shop window prices its goods from.
+    item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
+            5 => OpenStruct.new(name: 'Herb', price: 40) },
+    # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
+    enemy: { 2 => OpenStruct.new(name: 'Slime', max_hp: 30, max_sp: 0, attack: 8,
+                                 defense: 4, spirit: 3, agility: 5, exp: 5,
+                                 gold: 10) },
+    enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
+      1 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false),
+      2 => OpenStruct.new(enemy_id: 2, x: 0, y: 0, invisible: false) }) },
     common_event: common,
     player: {}
   )
@@ -391,6 +401,42 @@ class InnStubParty
   attr_accessor :leader
   def initialize(gold); @gold = gold; @actors = [InnStubActor.new('Hero')]; @leader = nil; end
   def gain_gold(n); @gold += n; end
+end
+
+# A party the placeholder battle grants rewards to: gold plus actors that bank
+# EXP, with the leader Scene::Map reads while rendering.
+class BattleStubActor
+  attr_accessor :exp, :hp
+  attr_reader :id, :name, :atk, :def, :agi, :max_hp
+  def initialize
+    @exp = 0; @id = 1; @name = 'Hero'
+    # Strong enough to beat the two-Slime troop the scene db defines.
+    @atk = 40; @def = 20; @agi = 20; @hp = 200; @max_hp = 200
+  end
+  def gain_exp(n); @exp += n; end
+end
+
+class BattleStubParty
+  attr_reader :actors, :gold
+  attr_accessor :leader
+  def initialize; @actors = [BattleStubActor.new]; @gold = 0; @leader = nil; end
+  def gain_gold(n); @gold += n; end
+end
+
+# A party the shop can charge and stock: gold plus an item-count bag, with the
+# leader Scene::Map reads while rendering.
+class ShopStubParty
+  attr_reader :actors, :gold, :items
+  attr_accessor :leader
+  def initialize(gold); @gold = gold; @items = {}; @actors = []; @leader = nil; end
+  def gain_gold(n); @gold += n; @gold = 0 if @gold < 0; end
+  def item_count(id); @items[id] || 0; end
+  def gain_item(id, n = 1)
+    c = item_count(id) + n
+    c = 0 if c < 0
+    c = 99 if c > 99
+    @items[id] = c
+  end
 end
 
 # Build an auto-start event running `commands`, with a stub party holding `gold`.
@@ -1191,6 +1237,79 @@ check 'Erase Screen pauses the event until the fade settles, then continues' do
   eq 255, st.screen.fade_level, 'the screen is fully erased'
   ok st.screen.erased?, 'held erased'
   ok st.switches[5], 'the event resumed after the fade settled'
+end
+
+check 'Open Shop scene: buying then leaving runs the Transaction branch' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only, goods 3/5
+    ECmd.new(ic::SHOP_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::SHOP_NO_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+  ok !st.switches[1] && !st.switches[2], 'still shopping'
+  RGSS::Input.triggered = [RGSS::Input::C] # buy the first good (id 3 @ 100)
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 400, st.party.gold, 'one Potion bought'
+  eq 1, st.party.item_count(3)
+  RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
+  scene.update
+  scene.update # the Transaction branch runs
+  ok st.switches[1], 'the Transaction branch ran (a purchase happened)'
+  ok !st.switches[2], 'the No Transaction branch was skipped'
+end
+
+check 'Open Shop scene: leaving without buying runs the No Transaction branch' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3], indent: 0),
+    ECmd.new(ic::SHOP_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::SHOP_NO_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update }
+  RGSS::Input.triggered = [RGSS::Input::B] # leave immediately
+  scene.update
+  scene.update
+  eq 500, st.party.gold, 'no gold spent'
+  ok !st.switches[1], 'the Transaction branch was skipped'
+  ok st.switches[2], 'the No Transaction branch ran'
+end
+
+check 'Enemy Encounter scene: winning the battle grants rewards, runs Victory' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 1, 0], indent: 0), # troop 1
+    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::ESCAPE_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::END_BATTLE, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  5.times { scene.update } # the headless battle runs; the strong party wins
+  eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
+  eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
+  ok st.switches[1], 'the Victory handler ran'
+  ok !st.switches[2], 'the Escape handler was skipped'
 end
 
 # -- summary ------------------------------------------------------------------

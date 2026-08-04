@@ -1066,6 +1066,23 @@ module Game
       set_exp(@exp + delta)
     end
 
+    # Total EXP needed to *be at* the next level, or nil at the maximum level
+    # (where there is no next level).
+    def next_level_exp
+      return nil if @level >= max_level
+      exp_for_level(@level + 1)
+    end
+
+    # EXP still required to reach the next level (0 once the threshold is met, so
+    # a just-levelled actor reads 0 briefly), or nil at the maximum level. Drives
+    # the status screen's "to next level" figure.
+    def exp_to_next
+      nxt = next_level_exp
+      return nil unless nxt
+      rem = nxt - @exp
+      rem < 0 ? 0 : rem
+    end
+
     # Change the level by `delta` (the Change Level command). Recomputes the base
     # stats via #set_level and re-aligns EXP to the new level, mirroring EasyRPG's
     # ChangeLevel: on a level up EXP rises to at least the new level's threshold;
@@ -1250,11 +1267,13 @@ module Game
       @gold = 999_999 if @gold > 999_999
     end
 
-    # RPG2000 database item type for a consumable medicine (薬). Types 1..5 are
-    # the equipment slots (see Actor::EQUIP_ORDER); 6 is the healing item the
-    # field menu can use. Book (7) / seed (8) / switch (9) menu use is a later
-    # refinement.
+    # RPG2000 database item types. Types 1..5 are the equipment slots (see
+    # Actor::EQUIP_ORDER); 6 is a healing medicine (薬); 7 is a skill book (本)
+    # that teaches a skill; 8 is a seed (種) that permanently raises a stat.
+    # Switch (9) menu use is a later refinement.
     ITEM_MEDICINE = 6
+    ITEM_SKILL_BOOK = 7
+    ITEM_SEED = 8
 
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
@@ -1263,11 +1282,12 @@ module Game
       @db.item[id]
     end
 
-    # Whether item `id` can be used from the field (main-menu) item screen.
-    # Currently: a medicine the party actually holds.
+    # Whether item `id` can be used from the field (main-menu) item screen: a
+    # medicine, a skill book or a seed the party actually holds.
     def field_usable?(id)
       it = db_item(id)
-      !it.nil? && it.type == ITEM_MEDICINE && item_count(id) > 0
+      return false unless it && item_count(id) > 0
+      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK || it.type == ITEM_SEED
     end
 
     # The bag's field-usable items as `[id, count]` pairs in ascending id order,
@@ -1285,26 +1305,48 @@ module Game
       [hp, mp]
     end
 
-    # Whether using medicine `id` on `actor` would change anything -- RPG_RT
-    # forbids using a pure-recovery item on a target already at full HP/SP, so the
-    # menu greys those out. A restore of 0 (an item with no recovery) is never
-    # effective.
+    # Whether using item `id` on `actor` would change anything, so the menu can
+    # grey out a no-op. A medicine is effective when the target is below full
+    # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
+    # full target); a skill book is effective when the target does not already
+    # know its skill.
     def item_effective?(id, actor)
       it = db_item(id)
-      return false unless it && it.type == ITEM_MEDICINE && actor
-      hp, mp = item_recovery(it, actor)
-      (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+      return false unless it && actor
+      case it.type
+      when ITEM_MEDICINE
+        hp, mp = item_recovery(it, actor)
+        (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp)
+      when ITEM_SKILL_BOOK
+        s = it.skill_id
+        !s.nil? && s != 0 && !actor.knows_skill?(s)
+      when ITEM_SEED
+        seed_boosts(it).any? { |b| b != 0 }
+      else
+        false
+      end
     end
 
-    # Use medicine `id`. A single-target item (scope 0) heals `actor`; an all-ally
-    # item (scope 1) heals the whole party regardless of `actor`. Applies the
-    # recovery (clamped to each target's maxima), consumes one from the bag only
-    # when it actually healed someone, and returns the actors it affected (empty
-    # when nothing changed, e.g. everyone was already full -- then nothing is
-    # consumed).
+    # Use item `id` from the field menu, dispatching on its database type, and
+    # return the actors it affected (empty when it did nothing -- then nothing is
+    # consumed). A medicine heals; a skill book teaches its skill; a seed raises a
+    # stat.
     def use_item(id, actor = nil)
       it = db_item(id)
-      return [] unless it && it.type == ITEM_MEDICINE && item_count(id) > 0
+      return [] unless it && item_count(id) > 0
+      case it.type
+      when ITEM_MEDICINE then use_medicine(it, id, actor)
+      when ITEM_SKILL_BOOK then use_skill_book(it, id, actor)
+      when ITEM_SEED then use_seed(it, id, actor)
+      else []
+      end
+    end
+
+    # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
+    # (scope 1) heals the whole party regardless of `actor`. Applies the recovery
+    # (clamped to each target's maxima) and consumes one from the bag only when it
+    # actually healed someone (so using it on a full party wastes nothing).
+    def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
       affected = []
       targets.each do |t|
@@ -1317,6 +1359,40 @@ module Game
       end
       lose_item(id, 1) unless affected.empty?
       affected
+    end
+
+    # A skill book teaches its skill (item field 53) to `actor` if the actor does
+    # not already know it, consuming one book. A book with no skill, or used on an
+    # actor who already knows the skill, does nothing and is not consumed.
+    def use_skill_book(it, id, actor)
+      skill = it.skill_id
+      return [] unless actor && skill && skill != 0 && !actor.knows_skill?(skill)
+      actor.learn_skill(skill)
+      lose_item(id, 1)
+      [actor]
+    end
+
+    # The six permanent stat boosts a seed grants, in Actor::STAT_NAMES order
+    # (max HP, max SP, attack, defence, spirit, agility). RPG2000 seeds use the
+    # item's max_hp_points / max_sp_points and the *_points2 stat set -- distinct
+    # from the *_points1 fields that carry equipment bonuses -- confirmed against
+    # EasyRPG's Game_Actor seed handling.
+    def seed_boosts(it)
+      [it.max_hp_points || 0, it.max_sp_points || 0,
+       it.atk_points2 || 0, it.def_points2 || 0,
+       it.spi_points2 || 0, it.agi_points2 || 0]
+    end
+
+    # A seed permanently raises `actor`'s base stats by seed_boosts (each applied
+    # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
+    # it carries any boost; a seed with no boost does nothing and is not consumed.
+    def use_seed(it, id, actor)
+      return [] unless actor
+      boosts = seed_boosts(it)
+      return [] unless boosts.any? { |b| b != 0 }
+      boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
+      lose_item(id, 1)
+      [actor]
     end
 
     # The equipment slot index (0..4) a held item occupies by its database type
@@ -1362,6 +1438,102 @@ module Game
       actor.unequip(slot)
       gain_item(removed, 1) if removed && removed != 0
       removed || 0
+    end
+
+    # RPG2000 skill type (field 8): 0 normal (an HP/SP/stat effect), 1 teleport,
+    # 2 escape, 3 switch. The field skill menu casts normal skills; the
+    # teleport/escape/switch types are later refinements. Skill scope (field 12):
+    # 0 single enemy, 1 all enemies, 2 the caster, 3 a single ally, 4 all allies.
+    SKILL_NORMAL = 0
+
+    # The database row for a skill id, or nil when the database has no skill table
+    # (a bare fixture) or no such row.
+    def db_skill(id)
+      return nil unless @db.respond_to?(:skill)
+      @db.skill[id]
+    end
+
+    # The SP `caster` pays to cast skill `sk`: a fixed cost (sp_type 0) or a
+    # percentage of the caster's max SP (sp_type 1). Mirrors EasyRPG's
+    # CalculateSkillCost (the half-SP-cost modifier is a later refinement).
+    def skill_cost(sk, caster)
+      if sk.sp_type == 1
+        caster.max_mp * (sk.sp_percent || 0) / 100
+      else
+        sk.sp_cost || 0
+      end
+    end
+
+    # `caster`'s known skills usable from the field menu -- normal skills flagged
+    # `occasion_field` that target the caster or an ally (scope >= 2) -- as
+    # `[skill_id, cost]` pairs in ascending id order.
+    def field_skills(caster)
+      return [] unless caster
+      caster.skills.sort.select do |sid|
+        sk = db_skill(sid)
+        sk && sk.type == SKILL_NORMAL && sk.occasion_field && sk.scope >= 2
+      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+    end
+
+    # Whether `caster` can cast skill `sid` right now: it knows the skill and can
+    # pay its SP cost.
+    def can_cast?(caster, sid)
+      sk = db_skill(sid)
+      !sk.nil? && caster && caster.knows_skill?(sid) && caster.mp >= skill_cost(sk, caster)
+    end
+
+    # The base HP/SP amount a recovery skill restores, per RPG2000's formula
+    # `power + physical_rate*attack/20 + magical_rate*spirit/40` (spirit is the
+    # `int` stat), computed from the caster deterministically -- battle applies a
+    # +/- variance, but field/menu use does not. Confirmed against EasyRPG's
+    # Algo::CalcSkillEffect (the ally-heal path has no target-defence term).
+    def skill_effect(sk, caster)
+      (sk.power || 0) +
+        (sk.physical_rate || 0) * caster.atk / 20 +
+        (sk.magical_rate || 0) * caster.int / 40
+    end
+
+    # The actors a field skill affects: the caster (scope 2), a chosen single ally
+    # (scope 3), or the whole party (scope 4).
+    def skill_targets(sk, caster, target)
+      case sk.scope
+      when 4 then @actors
+      when 2 then [caster]
+      else [target].compact
+      end
+    end
+
+    # Whether casting skill `sid` on `target` would change anything -- used to grey
+    # out a no-op (e.g. a heal on an already-full ally). Requires the caster to be
+    # able to cast it at all.
+    def skill_effective?(caster, sid, target)
+      sk = db_skill(sid)
+      return false unless sk && can_cast?(caster, sid)
+      amount = skill_effect(sk, caster)
+      return false unless amount > 0
+      skill_targets(sk, caster, target).any? do |t|
+        (sk.affect_hp && t.hp < t.max_hp) || (sk.affect_sp && t.mp < t.max_mp)
+      end
+    end
+
+    # Cast field skill `sid` from `caster` on `target` (scope-dependent). Restores
+    # HP and/or SP by the skill effect to each target (clamped), then spends the
+    # caster's SP -- but only when it actually helped someone, so a wasted cast
+    # (everyone full) costs nothing. Returns the affected actors.
+    def cast_skill(caster, sid, target = nil)
+      sk = db_skill(sid)
+      return [] unless sk && can_cast?(caster, sid)
+      amount = skill_effect(sk, caster)
+      affected = []
+      skill_targets(sk, caster, target).each do |t|
+        before_hp = t.hp
+        before_mp = t.mp
+        t.change_hp(amount) if sk.affect_hp && amount > 0
+        t.change_mp(amount) if sk.affect_sp && amount > 0
+        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+      end
+      caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
+      affected
     end
   end
 
@@ -2184,6 +2356,204 @@ module Game
 
   # The overall running-game state: who is in the party and where they are,
   # plus the global switches and variables.
+  # An open shop (Open Shop, 10720). Holds the goods on offer and the buy / sell
+  # rules, and performs the transactions against the party's gold and inventory.
+  # RPG2000 buys at the item's database price and sells at half of it; the party
+  # caps items at 99 and gold at 999999 (Party enforces both). `did_transaction`
+  # records whether anything was actually bought or sold, which decides the
+  # event's [Transaction] / [No Transaction] branch. The scene drives the UI and
+  # calls #buy / #sell one unit at a time.
+  class Shop
+    attr_reader :goods, :did_transaction
+
+    def initialize(db, party, goods, allow_buy, allow_sell)
+      @db = db
+      @party = party
+      @goods = (goods || []).select { |id| id && id > 0 }
+      @allow_buy = allow_buy
+      @allow_sell = allow_sell
+      @did_transaction = false
+    end
+
+    def allow_buy?;  @allow_buy;  end
+    def allow_sell?; @allow_sell; end
+
+    # Database price of item `id` (0 when the item is missing or free).
+    def price(id)
+      it = @db.item[id]
+      it ? (it.price || 0) : 0
+    end
+
+    # Display name of item `id` ('' when missing).
+    def name(id)
+      it = @db.item[id]
+      it ? it.name.to_s : ''
+    end
+
+    # Half the database price — what a sale returns (RPG2000 rounds down).
+    def sell_price(id); price(id) / 2; end
+
+    # Whether item `id` can be sold: the party owns at least one and it has a
+    # non-zero price (RPG2000 marks price-0 / key items as unsellable).
+    def sellable?(id); price(id) > 0 && @party.item_count(id) > 0; end
+
+    # The party's sellable items, id-ordered, for the sell list.
+    def sellable_items
+      @party.items.keys.select { |id| sellable?(id) }.sort
+    end
+
+    # Buy one unit of `id`: must be stocked, buying allowed, affordable and not
+    # already capped at 99. Returns whether the purchase happened.
+    def buy(id)
+      return false unless @allow_buy && @goods.include?(id)
+      cost = price(id)
+      return false if @party.gold < cost || @party.item_count(id) >= 99
+      @party.gain_gold(-cost)
+      @party.gain_item(id, 1)
+      @did_transaction = true
+      true
+    end
+
+    # Sell one unit of `id` at half price: must be allowed and sellable. Returns
+    # whether the sale happened.
+    def sell(id)
+      return false unless @allow_sell && sellable?(id)
+      @party.gain_gold(sell_price(id))
+      @party.gain_item(id, -1)
+      @did_transaction = true
+      true
+    end
+  end
+
+  # A single enemy instantiated from the database (chunk 14) for a battle: its
+  # combat stats plus the EXP / gold it is worth and its battle-screen position.
+  # Current HP / SP start full. The turn-based battle that would reduce them is
+  # not built yet, so for now this backs the Enemy Encounter reward model.
+  class Enemy
+    attr_reader :id, :name, :max_hp, :max_sp, :atk, :def, :spi, :agi,
+                :exp, :gold, :x, :y, :hidden
+    attr_accessor :hp, :sp
+
+    def initialize(db, id, x = 0, y = 0, hidden = false)
+      row = db.enemy[id]
+      @id = id
+      @name    = row ? row.name.to_s : ''
+      @max_hp  = row ? row.max_hp : 1
+      @max_sp  = row ? row.max_sp : 0
+      @atk     = row ? row.attack : 0
+      @def     = row ? row.defense : 0
+      @spi     = row ? row.spirit : 0
+      @agi     = row ? row.agility : 0
+      @exp     = row ? row.exp : 0
+      @gold    = row ? row.gold : 0
+      @x = x
+      @y = y
+      @hidden = hidden ? true : false
+      @hp = @max_hp
+      @sp = @max_sp
+    end
+
+    def dead?; @hp <= 0; end
+  end
+
+  # An enemy troop (敵グループ, chunk 15) instantiated for a battle: the live
+  # Enemy members at their positions. Also totals the EXP / gold the troop is
+  # worth, which the Enemy Encounter command grants on victory. The battle
+  # simulation itself is still to come.
+  class Troop
+    attr_reader :id, :name, :members
+
+    def initialize(db, id)
+      row = db.enemy_group[id]
+      @id = id
+      @name = row ? row.name.to_s : ''
+      @members = []
+      # Array2D#each yields (id, entry); a plain Hash test double does the same.
+      row.members.each { |_, m| @members << member(db, m) } if row && row.members
+    end
+
+    def total_exp;  @members.reduce(0) { |s, e| s + e.exp } end
+    def total_gold; @members.reduce(0) { |s, e| s + e.gold } end
+
+    private
+
+    def member(db, m)
+      Enemy.new(db, m.enemy_id, m.x, m.y, m.invisible)
+    end
+  end
+
+  # A headless auto-battle that decides an Enemy Encounter by the combatants'
+  # stats. Battlers act in agility order (highest first); each attacks a random
+  # living opponent for `attack_damage` and the fight runs to a result: :victory
+  # when every enemy is down, :defeat when the whole party is. It works on
+  # Combatant snapshots, so the caller can resolve a battle without mutating the
+  # real party. This is a deliberately simple first cut — no skills, items,
+  # criticals, attributes, damage variance or escape yet — the turn-based battle
+  # screen and those refinements are still to come.
+  class Battle
+    # A battler reduced to what the fight needs. Snapshotting Game::Actor /
+    # Game::Enemy keeps the real party untouched by a resolved battle.
+    Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp) do
+      def dead?; hp <= 0; end
+    end
+
+    def self.from_actor(a); Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp); end
+    def self.from_enemy(e); Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp); end
+
+    # RPG2000-style physical damage: half the attacker's attack less a quarter of
+    # the defender's defence, floored at 1 so a fight always terminates.
+    def self.attack_damage(atk, dfn)
+      d = atk / 2 - dfn / 4
+      d < 1 ? 1 : d
+    end
+
+    MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
+
+    attr_reader :allies, :enemies, :rounds, :result
+
+    def initialize(allies, enemies, rng = nil)
+      @allies = allies
+      @enemies = enemies
+      @rng = rng || Rng.new(0x2000)
+      @rounds = 0
+      @result = nil
+    end
+
+    # Run the fight to completion and return :victory or :defeat.
+    def run
+      while alive?(@allies) && alive?(@enemies)
+        @rounds += 1
+        break if @rounds > MAX_ROUNDS
+        turn_order.each do |b|
+          next if b.dead?
+          strike(b)
+          break unless alive?(@allies) && alive?(@enemies)
+        end
+      end
+      @result = alive?(@allies) ? :victory : :defeat
+    end
+
+    private
+
+    def alive?(side); side.any? { |b| !b.dead? }; end
+
+    # Battlers ordered by agility (highest first); ties keep their listed order.
+    def turn_order
+      (@allies + @enemies).each_with_index
+                          .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
+    end
+
+    # `b` attacks a random living member of the opposing side.
+    def strike(b)
+      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:dead?)
+      return if foes.empty?
+      target = foes[@rng.random(foes.size)]
+      target.hp -= Battle.attack_damage(b.atk, target.def)
+    end
+
+    def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
+  end
+
   # Map weather set by the Weather Effects (11070) event command: a type (0 none,
   # 1 rain, 2 snow; the RPG2003 additions store as higher values) and a strength
   # (0 weak .. 2 strong). Like the picture / tint overlays this is the Ruby-half

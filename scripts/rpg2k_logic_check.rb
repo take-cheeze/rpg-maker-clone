@@ -1249,18 +1249,32 @@ FakeActorSystem = Struct.new(:party)
 # the medicine recovery/scope fields Game::Party#use_item reads.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
-                      :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate)
+                      :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
+                      :price, :skill_id,
+                      :atk_points2, :def_points2, :spi_points2, :agi_points2)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
-              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0)
+              scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
+              skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
-               rhp, rhp_rate, rsp, rsp_rate)
+               rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
+               atk2, dfn2, spi2, agi2)
+end
+# A database skill row exposing the fields Game::Party's field-skill logic reads.
+FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
+                       :sp_percent, :power, :physical_rate, :magical_rate,
+                       :affect_hp, :affect_sp)
+def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
+               sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false)
+  FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
+                prate, mrate, hp, sp)
 end
 class FakeActorDB
-  attr_reader :player, :system, :item
-  def initialize(players, party_ids, items = {})
+  attr_reader :player, :system, :item, :skill
+  def initialize(players, party_ids, items = {}, skills = {})
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
+    @skill = skills
   end
 end
 
@@ -1644,6 +1658,141 @@ check 'use_item restores MP and item_effective? tracks the SP deficit' do
   eq 0, st.party.item_count(6)
 end
 
+check 'field_items includes skill books alongside medicines' do
+  items = { 5 => fake_item(type: 6, rhp: 10),       # medicine
+            8 => fake_item(type: 7, skill_id: 42),  # skill book
+            3 => fake_item(type: 1, atk: 5) }       # weapon (not usable)
+  st = item_party(items)
+  [5, 8, 3].each { |id| st.party.gain_item(id, 1) }
+  eq [[5, 1], [8, 1]], st.party.field_items
+end
+
+check 'a skill book teaches its skill to the target and is consumed' do
+  st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
+  st.party.gain_item(8, 2)
+  hero = st.party.leader
+  eq false, hero.knows_skill?(42)
+  eq true, st.party.item_effective?(8, hero)
+  eq [hero], st.party.use_item(8, hero)
+  eq true, hero.knows_skill?(42)
+  eq 1, st.party.item_count(8)                 # one book consumed
+end
+
+check 'a skill book on an actor who already knows the skill does nothing' do
+  st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
+  st.party.gain_item(8, 1)
+  hero = st.party.leader
+  hero.learn_skill(42)
+  eq false, st.party.item_effective?(8, hero)
+  eq [], st.party.use_item(8, hero)
+  eq 1, st.party.item_count(8)                 # not consumed
+end
+
+check 'a seed permanently raises the target stats (points2 set) and is consumed' do
+  st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
+  st.party.gain_item(9, 2)
+  hero = st.party.leader                        # max_hp 100, atk 10
+  eq true, st.party.item_effective?(9, hero)
+  eq [hero], st.party.use_item(9, hero)
+  eq 150, hero.max_hp                           # +50 base max HP
+  eq 15, hero.atk                               # +5 base attack (atk_points2)
+  eq 1, st.party.item_count(9)                  # one seed consumed
+end
+
+check 'field_items includes seeds; a seed with no boost is ineffective' do
+  items = { 9 => fake_item(type: 8, mhp: 20),   # seed with a boost
+            4 => fake_item(type: 8) }           # seed with no boost
+  st = item_party(items)
+  st.party.gain_item(9, 1)
+  st.party.gain_item(4, 1)
+  eq [[4, 1], [9, 1]], st.party.field_items     # both held seeds are listed
+  hero = st.party.leader
+  eq false, st.party.item_effective?(4, hero)   # no boost -> ineffective
+  eq [], st.party.use_item(4, hero)             # nothing happens
+  eq 1, st.party.item_count(4)                  # not consumed
+end
+
+# -- Field skill menu (Game::Party skill casting) ----------------------------
+
+# A two-actor party (Hero atk 10 / spirit 12 / max SP 30, Ally max HP 50) plus
+# the given skill table, for the field-skill checks.
+def skill_party(skills)
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
+    2 => FakePlayerRow.new('Ally', '', 0, 3,
+                           max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
+  }
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills)), 1, 0, 0)
+end
+
+check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
+  # effect = power 20 + physical_rate 0 * atk/20 + magical_rate 40 * spirit 12 /40
+  #        = 20 + 0 + 12 = 32
+  skills = { 7 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5,
+                             power: 20, mrate: 40, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(7)
+  ally.change_hp(-40)                          # 50 -> 10
+  eq [[7, 5]], st.party.field_skills(hero)
+  eq true, st.party.skill_effective?(hero, 7, ally)
+  eq [ally], st.party.cast_skill(hero, 7, ally)
+  eq 42, ally.hp                               # 10 + 32
+  eq 25, hero.mp                               # 30 - 5
+end
+
+check 'field_skills lists only known field-usable ally skills; can_cast? checks SP' do
+  skills = {
+    7  => fake_skill(scope: 3, sp_cost: 5, power: 10, hp: true),        # usable
+    8  => fake_skill(scope: 0, sp_cost: 1, power: 10, hp: true),        # enemy scope
+    9  => fake_skill(scope: 3, occ: false, sp_cost: 1, power: 10, hp: true), # not field
+    10 => fake_skill(scope: 4, sp_cost: 99, power: 10, hp: true),       # too costly
+  }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)               # max SP 30
+  [7, 8, 9, 10].each { |s| hero.learn_skill(s) }
+  eq [[7, 5], [10, 99]], st.party.field_skills(hero)  # ally-scope, field-usable
+  eq true, st.party.can_cast?(hero, 7)
+  eq false, st.party.can_cast?(hero, 10)       # 99 SP > 30
+  eq false, st.party.can_cast?(hero, 99)       # unknown skill
+end
+
+check 'an all-ally heal skill heals the whole party (caster included) and spends SP' do
+  skills = { 5 => fake_skill(scope: 4, sp_cost: 8, power: 30, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(5)
+  hero.change_hp(-20)                          # 100 -> 80
+  ally.change_hp(-15)                          # 50 -> 35
+  aff = st.party.cast_skill(hero, 5, nil)
+  eq [1, 2], aff.map { |a| a.id }.sort
+  eq 100, hero.hp                              # 80 + 30, clamped to max
+  eq 50, ally.hp                               # 35 + 30, clamped to max
+  eq 22, hero.mp                               # 30 - 8
+end
+
+check 'skill_cost supports a percentage of max SP (sp_type 1)' do
+  skills = { 5 => fake_skill(scope: 2, sp_type: 1, sp_percent: 10, power: 5, sp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)               # max SP 30
+  hero.learn_skill(5)
+  eq [[5, 3]], st.party.field_skills(hero)      # 30 * 10 / 100 = 3
+end
+
+check 'casting a heal with the target already full spends no SP' do
+  skills = { 5 => fake_skill(scope: 3, sp_cost: 8, power: 30, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)               # full HP
+  hero.learn_skill(5)
+  eq false, st.party.skill_effective?(hero, 5, ally)
+  eq [], st.party.cast_skill(hero, 5, ally)
+  eq 30, hero.mp                               # unchanged
+end
+
 # -- Field equip menu (Game::Party bag-aware equip) --------------------------
 
 # A single-hero party (base stats maxHP10/maxSP5/atk3/def2/int1/agi4) plus the
@@ -1707,6 +1856,30 @@ check 'equip_from_bag rejects a non-equippable or unheld item' do
   eq false, st.party.equip_from_bag(a, 7)   # not held
   eq 1, st.party.item_count(5)              # untouched
   eq 0, a.equipment[0]
+end
+
+# -- Status screen (Game::Actor EXP-to-next) ---------------------------------
+
+check 'next_level_exp / exp_to_next track the curve across a level up' do
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 3, [10, 5, 3, 2, 1, 4]) },
+                       [1])
+  a = Game::Party.new(db).leader                 # starts at level 3
+  eq a.exp_for_level(4), a.next_level_exp
+  eq a.next_level_exp - a.exp, a.exp_to_next
+  need = a.exp_to_next
+  ok need > 0, "expected a positive EXP-to-next, got #{need}"
+  a.gain_exp(need)                               # exactly reaches level 4
+  eq 4, a.level
+  eq a.exp_for_level(5) - a.exp, a.exp_to_next   # now measured against level 5
+end
+
+check 'next_level_exp / exp_to_next are nil at the maximum level' do
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
+                       [1])
+  a = Game::Party.new(db).leader
+  a.set_level(a.max_level)
+  eq nil, a.next_level_exp
+  eq nil, a.exp_to_next
 end
 
 # -- Control Variables operands ----------------------------------------------
@@ -2584,6 +2757,279 @@ check 'Show Inn: Stay / No Stay handler branches route on the outcome' do
   ok !st2.switches[1], 'the Stay branch was skipped'
   eq true, st2.switches[2], 'the No Stay branch ran'
   eq true, st2.switches[3], 'execution continued past the inn'
+end
+
+# -- Open Shop ----------------------------------------------------------------
+
+# A shop over a party with `gold` gold and the given goods (id => price). Item
+# names are irrelevant to the logic, so they are left blank.
+def shop_setup(gold, goods, allow_buy: true, allow_sell: true)
+  items = {}
+  goods.each { |id, price| items[id] = fake_item(name: "i#{id}", price: price) }
+  db = FakeActorDB.new(
+    { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                             atk: 10, def: 8) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.gain_gold(gold)
+  shop = Game::Shop.new(db, st.party, goods.keys, allow_buy, allow_sell)
+  [st, shop]
+end
+
+check 'Shop buy deducts gold, adds the item, and records a transaction' do
+  st, shop = shop_setup(500, { 3 => 100 })
+  ok shop.buy(3), 'the purchase succeeds'
+  eq 400, st.party.gold, 'price deducted'
+  eq 1, st.party.item_count(3), 'item added'
+  ok shop.did_transaction
+end
+
+check 'Shop buy refuses when unaffordable, unstocked, capped, or sell-only' do
+  st, shop = shop_setup(50, { 3 => 100 })
+  ok !shop.buy(3), 'cannot afford 100 with 50'
+  eq 50, st.party.gold
+  ok !shop.buy(7), 'item 7 is not stocked'
+  ok !shop.did_transaction, 'no failed purchase counts as a transaction'
+  # capped at 99
+  st2, shop2 = shop_setup(999_999, { 3 => 1 })
+  st2.party.gain_item(3, 99)
+  ok !shop2.buy(3), 'cannot exceed 99 of an item'
+  # sell-only shop refuses buys
+  _st3, shop3 = shop_setup(500, { 3 => 100 }, allow_buy: false, allow_sell: true)
+  ok !shop3.buy(3)
+end
+
+check 'Shop sell adds half price, removes the item, records a transaction' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  st.party.gain_item(3, 2)
+  ok shop.sell(3), 'the sale succeeds'
+  eq 50, st.party.gold, 'half of 100'
+  eq 1, st.party.item_count(3), 'one removed'
+  ok shop.did_transaction
+end
+
+check 'Shop sell refuses unowned, price-0 (key), or in a buy-only shop' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  ok !shop.sell(3), 'nothing owned to sell'
+  # a price-0 item is unsellable even when held
+  st2, shop2 = shop_setup(0, { 4 => 0 })
+  st2.party.gain_item(4, 1)
+  ok !shop2.sell(4), 'key / price-0 items cannot be sold'
+  # buy-only shop refuses sells
+  st3, shop3 = shop_setup(0, { 3 => 100 }, allow_buy: true, allow_sell: false)
+  st3.party.gain_item(3, 1)
+  ok !shop3.sell(3)
+end
+
+check 'Shop sellable_items lists only held, priced goods in id order' do
+  st, shop = shop_setup(0, { 3 => 100, 5 => 40, 8 => 0 })
+  st.party.gain_item(8, 1) # price 0 -> not sellable
+  st.party.gain_item(5, 2)
+  st.party.gain_item(3, 1)
+  eq [3, 5], shop.sellable_items
+end
+
+check 'Open Shop parses the mode and goods and suspends on :shop' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # mode 1 (buy only), type 0, param2 handlers flag, param3 unused, goods 3/5/7.
+  it.start([FakeCmd.new(IC::OPEN_SHOP, [1, 0, 0, 0, 3, 5, 7])])
+  it.update
+  ok it.waiting?, 'Open Shop suspends the interpreter'
+  eq :shop, it.wait_kind
+  req = it.shop_request
+  eq true, req[:allow_buy]
+  eq false, req[:allow_sell], 'mode 1 is buy-only'
+  eq [3, 5, 7], req[:goods]
+end
+
+check 'Open Shop routes Transaction / No Transaction handler branches' do
+  list = [
+    FakeCmd.new(IC::OPEN_SHOP, [0, 0, 0, 0, 3], indent: 0),
+    FakeCmd.new(IC::SHOP_TRANSACTION, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::SHOP_NO_TRANSACTION, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::SHOP_END, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 0)
+  ]
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start(list)
+  it.update
+  it.resume_shop(true) # bought something
+  it.update
+  eq true, st.switches[1], 'the Transaction branch ran'
+  ok !st.switches[2], 'the No Transaction branch was skipped'
+  eq true, st.switches[3], 'execution continued past the shop'
+  # And the no-transaction path on a fresh run.
+  st2 = party_state
+  it2 = Game::Interpreter.new(st2)
+  it2.start(list)
+  it2.update
+  it2.resume_shop(false)
+  it2.update
+  ok !st2.switches[1]
+  eq true, st2.switches[2], 'the No Transaction branch ran'
+  eq true, st2.switches[3]
+end
+
+# -- Enemy Encounter (troop model + command) ----------------------------------
+
+EnemyRow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                      :agility, :exp, :gold)
+GroupMember = Struct.new(:enemy_id, :x, :y, :invisible)
+GroupRow = Struct.new(:name, :members)
+BattleDB = Struct.new(:enemy, :enemy_group)
+
+# A database with two enemies and one troop of three (two Slimes + a hidden Bat).
+def battle_db
+  enemies = {
+    2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10),
+    3 => EnemyRow.new('Bat',   12, 0, 6, 2, 2, 9, 3, 4)
+  }
+  groups = {
+    1 => GroupRow.new('Slimes', { 1 => GroupMember.new(2, 10, 20, false),
+                                  2 => GroupMember.new(2, 40, 20, false),
+                                  3 => GroupMember.new(3, 70, 20, true) })
+  }
+  BattleDB.new(enemies, groups)
+end
+
+check 'Game::Troop instantiates its members and totals EXP / gold' do
+  troop = Game::Troop.new(battle_db, 1)
+  eq 'Slimes', troop.name
+  eq [2, 2, 3], troop.members.map(&:id)
+  eq 13, troop.total_exp, '5 + 5 + 3'
+  eq 24, troop.total_gold, '10 + 10 + 4'
+  first = troop.members.first
+  eq 30, first.max_hp
+  eq 30, first.hp, 'starts at full HP'
+  eq [10, 20], [first.x, first.y]
+  ok !first.hidden
+  ok troop.members.last.hidden, 'the Bat is invisible'
+end
+
+check 'Game::Enemy reads its combat stats from the database' do
+  e = Game::Enemy.new(battle_db, 3)
+  eq 'Bat', e.name
+  eq 12, e.max_hp
+  eq 9, e.agi
+  eq 3, e.exp
+  ok !e.dead?
+  e.hp = 0
+  ok e.dead?
+end
+
+check 'a missing troop / enemy degrades to an empty, harmless model' do
+  troop = Game::Troop.new(battle_db, 99)
+  eq [], troop.members
+  eq 0, troop.total_exp
+  eq 1, Game::Enemy.new(battle_db, 99).max_hp, 'defaults for a missing enemy'
+end
+
+check 'Enemy Encounter parses the troop and modes and suspends on :battle' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # const troop 4, setup 0, escape mode 2 (custom), defeat mode 1 (custom),
+  # first-strike on.
+  it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 4, 0, 2, 1, 1])])
+  it.update
+  ok it.waiting?
+  eq :battle, it.wait_kind
+  req = it.battle_request
+  eq 4, req[:troop_id]
+  eq true, req[:allow_escape]
+  eq true, req[:first_strike]
+  eq false, req[:defeat_game_over], 'defeat mode 1 uses a handler'
+end
+
+check 'Enemy Encounter reads a variable troop id and escape-disallow' do
+  st = party_state
+  st.variables[7] = 12
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [1, 7, 0, 0, 0, 0])])
+  it.update
+  eq 12, it.battle_request[:troop_id]
+  eq false, it.battle_request[:allow_escape], 'escape mode 0 disallows escape'
+  eq true, it.battle_request[:defeat_game_over], 'defeat mode 0 is game over'
+end
+
+check 'Enemy Encounter routes Victory / Escape / Defeat handler branches' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 2, 1, 0], indent: 0),
+    FakeCmd.new(IC::VICTORY_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::ESCAPE_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::DEFEAT_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 1),
+    FakeCmd.new(IC::END_BATTLE, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 4, 4, 0], indent: 0)
+  ]
+  { victory: 1, escape: 2, defeat: 3 }.each do |result, branch_switch|
+    st = party_state
+    it = Game::Interpreter.new(st)
+    it.start(list)
+    it.update
+    it.resume_battle(result)
+    it.update
+    [1, 2, 3].each do |s|
+      eq(s == branch_switch, st.switches[s] || false, "#{result} -> switch #{s}")
+    end
+    eq true, st.switches[4], 'execution continues past the encounter'
+  end
+end
+
+check 'Enemy Encounter escape-abort mode ends the event' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 1, 0, 0], indent: 0), # escape=abort
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start(list)
+  it.update
+  it.resume_battle(:escape)
+  it.update
+  ok !st.switches[5], 'the rest of the event is abandoned on an aborting escape'
+end
+
+# -- Battle (headless auto-battle) --------------------------------------------
+
+def combatant(name, atk, dfn, agi, hp)
+  Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
+end
+
+check 'Battle.attack_damage is half attack less a quarter defence, min 1' do
+  eq 18, Game::Battle.attack_damage(40, 8),  '20 - 2'
+  eq 1,  Game::Battle.attack_damage(2, 40),  'floored at 1'
+  eq 1,  Game::Battle.attack_damage(0, 0)
+end
+
+check 'Battle: a stronger party wins, a weaker one is defeated' do
+  hero = combatant('Hero', 40, 20, 20, 200)
+  slime = combatant('Slime', 8, 4, 5, 30)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  eq :victory, b.run
+  ok slime.dead?, 'the enemy was defeated'
+  ok !hero.dead?
+  ok hero.hp < 200, 'the hero took some damage on the way'
+
+  weak = combatant('Weak', 6, 2, 3, 10)
+  boss = combatant('Boss', 60, 30, 40, 500)
+  b2 = Game::Battle.new([weak], [boss], Game::Rng.new(1))
+  eq :defeat, b2.run
+  ok weak.dead?
+  ok !boss.dead?
+end
+
+check 'Battle: the fastest battler strikes first' do
+  # A fast glass cannon one-shots a slow foe before it ever acts.
+  fast = combatant('Fast', 100, 0, 99, 20)
+  slow = combatant('Slow', 100, 0, 1, 40) # 50 damage kills it in one hit
+  b = Game::Battle.new([fast], [slow], Game::Rng.new(1))
+  eq :victory, b.run
+  eq 20, fast.hp, 'the slow enemy never landed a hit'
 end
 
 # -- summary ------------------------------------------------------------------

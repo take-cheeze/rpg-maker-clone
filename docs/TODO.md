@@ -131,16 +131,18 @@ The work below is roughly ordered by the critical path to a walkable game
   modelled yet
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
-  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Conditional
-  Branch/Else/End,
+  Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Change
+  Equipment, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
   Message Options, Change Face Graphic, Input Number, Key Input Processing,
   Change Actor
   Name / Title / Sprite, Set Transparent Flag, Change Main Menu / Save Access,
   Change Teleport / Escape Access, Set Teleport / Escape Target,
-  Change Encounter Rate, Change System BGM / SFX, Show Inn,
+  Change Encounter Rate, Change System BGM / SFX, Show Inn, Open Shop,
+  Enemy Encounter,
   Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
+  Show/Move/Erase Picture,
   Weather Effects, Call
   Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
   With Movement, Halt All Movement,
@@ -218,7 +220,27 @@ The work below is roughly ordered by the critical path to a walkable game
   `[No Stay]` handler branches (structured and skipped like Show Choices).
   `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
   `Scene::Map` drives; the inn fade and jingle are presentation still to come.
-  The remaining commands (battles, shop, EXP gain / level-up
+  **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
+  goods and buy / sell rules and performs the transactions (buy at the database
+  price, sell at half, party 99-item / gold caps enforced), tracking whether
+  anything was traded to pick the command's `[Transaction]` / `[No Transaction]`
+  branches. The interpreter suspends on a `:shop` wait; `Scene::Map` drives the
+  buy / sell menus (one unit per confirm — the quantity selector is a later
+  refinement).
+  **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
+  instantiate a database enemy group into live members and total its EXP / gold,
+  and the command decodes its troop id, escape / defeat modes and first-strike
+  and routes the `[Victory]` / `[Escape]` / `[Defeat]` handler branches on the
+  outcome (the "end event processing" escape mode abandons the event). The
+  interpreter suspends on a `:battle` wait, and `Scene::Map` resolves it by
+  running a **headless auto-battle** (`Game::Battle`): battlers act in agility
+  order, each striking a random living opponent for `max(1, atk/2 − def/4)`
+  damage until one side is wiped (`:victory` / `:defeat`), granting the troop's
+  EXP / gold on a win. It runs on Combatant snapshots, so the party's real HP is
+  untouched for now. Still to come: skills / items / criticals / attributes /
+  variance / escape in the sim, and the on-screen turn-based battle (showing and
+  persisting HP) with game over on defeat.
+  The remaining commands (EXP gain / level-up
   messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
@@ -280,23 +302,39 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
-  command list. Save, End Game, **Item** and **Equip** work; skill / status are
-  placeholders still to be built from the parsed `term`/skill/actor data. The
-  **Item** command opens `Scene::ItemMenu`: it lists the party's usable medicines
-  (database item type 6) with their held counts, applies a single-target item to
-  a chosen ally or an all-ally item (scope 1) to the whole party, restores HP/SP
-  (flat + percentage of max, clamped), consumes one on a use that had any effect,
-  and greys out / reports a use with no effect (a target already full). The
-  **Equip** command opens `Scene::EquipMenu`: it shows a party member's five
-  equipment slots and stats (LEFT/RIGHT cycle members), and for a chosen slot
-  lists the bag's fitting items (plus Remove); equipping swaps the previously-worn
-  item back into the bag and recomputes stats. The decision logic is on
-  `Game::Party` (`field_items` / `item_recovery` / `item_effective?` / `use_item`
-  for items; `equip_candidates` / `equip_from_bag` / `unequip_to_bag` for equip),
-  covered by `scripts/rpg2k_logic_check.rb`; the RGSS windows are the
-  untestable-here UI. Book (7) / seed (8) / switch (9) item use, the item
-  usable-occasion gate, and two-handed / dual-wield equipping are later
-  refinements.
+  command list. Save, End Game, **Item**, **Skill**, **Equip** and **Status** all
+  work — the full main-menu set. The **Item** command opens
+  `Scene::ItemMenu`: it lists the party's usable **medicines** (database item type
+  6), **skill books** (type 7) and **seeds** (type 8) with their held counts. A
+  medicine heals its target — a single-target item a chosen ally, an all-ally item
+  (scope 1) the whole party — restoring HP/SP (flat + percentage of max, clamped);
+  a skill book teaches its skill (item field 53) to a chosen ally who does not
+  already know it; a seed permanently raises a chosen ally's base stats (the
+  item's `max_hp_points` / `max_sp_points` and the `*_points2` stat set, applied
+  through `Actor#change_param` so the stat caps hold). Each consumes one on a use
+  that had any effect, and greys out / reports a use with no effect (a full
+  target, an actor who already knows the skill, or a seed with no boost). The
+  **Equip** command
+  opens `Scene::EquipMenu`: it shows a party member's five equipment slots and
+  stats (LEFT/RIGHT cycle members), and for a chosen slot lists the bag's fitting
+  items (plus Remove); equipping swaps the previously-worn item back into the bag
+  and recomputes stats. The **Status** command opens `Scene::StatusMenu`: a
+  read-only per-member detail (name/title, level, EXP and EXP-to-next, HP/MP, the
+  six stats and the equipped items; LEFT/RIGHT cycle members). The **Skill**
+  command opens `Scene::SkillMenu`: it lists a caster's known field-usable normal
+  skills (LEFT/RIGHT cycle casters) with their SP cost; casting a self / all-ally
+  skill applies at once and a single-ally skill asks who to target, spending SP
+  and restoring HP/SP by the RPG2000 effect formula (`power +
+  physical_rate*atk/20 + magical_rate*spirit/40`, deterministic in the field —
+  battle adds variance). The decision logic is on `Game::Party` (`field_items` /
+  `item_recovery` / `item_effective?` / `use_item` for items; `equip_candidates` /
+  `equip_from_bag` / `unequip_to_bag` for equip; `field_skills` / `skill_cost` /
+  `can_cast?` / `skill_effect` / `cast_skill` for skills) and `Game::Actor`
+  (`next_level_exp` / `exp_to_next` for status), covered by
+  `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
+  Switch (type 9) item use, teleport/escape/switch skill types, the battle-time
+  skill variance, the item usable-occasion gate, and two-handed / dual-wield
+  equipping are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -325,9 +363,10 @@ The work below is roughly ordered by the critical path to a walkable game
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations, game-over scene (large; Nepheshel uses the default RPG2000
   battle). Needs real assets + the native build to develop against
-- Skill / Status menu screens — the menu framework and party data are in place,
-  and the Item and Equip screens now exist (see Menu scene above); Skill and
-  Status still need building
+- ✅ Menu screens — the Item, Skill, Equip and Status screens all exist now (see
+  Menu scene above). The Skill screen's recovery formula (`power +
+  physical_rate*atk/20 + magical_rate*spirit/40`) is the same one the battle
+  system will reuse for skills; battle adds the +/- variance the field path omits
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
@@ -530,5 +569,23 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `DataManager` (save → `StorageManager.exists` → load) and logs
     `[MV-SAVE] saved=.. exists=.. loaded=..`, confirming the localStorage-backed
     save path writes and reloads.
+  - ✅ Audio smoke: the sample ships an authored `audio/se/Beep.wav` (wired to
+    its UI sounds), and `--mv_audio_test` plays it through the
+    `AudioManager` → `__mv_audioQueue` → `RGSS::Audio` bridge, logging
+    `[MV-AUDIO] op=.. dispatched=.. asset=..` — so the audio path is finally
+    exercised end to end (the downloaded beds ship no audio). Audible output
+    still wants a device / a native listen; CI only checks dispatch + resolve.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
+  - ✅ M6.1 foundation: an `MZ` class (`mruby-mvjs/mrblib/mz.rb`) detects an MZ
+    project (`js/rmmz_core.js` + `data/System.json`), knows the canonical
+    `rmmz_*` load order, and is wired into `src/main.cxx`'s maker sniff so an MZ
+    game reports the pending WebGL backend cleanly instead of "no project
+    found". Covered by `mruby-mvjs/test/mz_test.rb`.
+  - 🚧 M6.2 host reuse: run the `rmmz_*` scripts on the shared quickjs host to
+    reach `Scene_Boot` in logic. Note there is **no fetchable MZ test bed** —
+    MZ's engine ships only with the paid editor (no open-source release like
+    MV's MIT `rpgtkoolmv`), so MZ is verified against a user-supplied project,
+    not a committed/downloaded sample.
+  - 🚧 M6.3 WebGL rendering: the WebGL-subset backend behind PIXI v5 (the bulk
+    of the work — MZ dropped the Canvas2D renderer the MV bridge targets).

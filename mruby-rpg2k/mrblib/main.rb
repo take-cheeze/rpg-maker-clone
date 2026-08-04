@@ -468,6 +468,7 @@ class RPG2k
         build_parallels
         @message = nil
         @inn_window = nil
+        @shop = nil
         @wait_timer = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -499,6 +500,7 @@ class RPG2k
       def dispose
         close_message
         close_inn_window
+        close_shop
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
          @picture_sprite].each do |s|
           s.dispose if s
@@ -1377,6 +1379,8 @@ class RPG2k
           when :number then open_number_input(@interpreter.input_digits)
           when :key_input then drive_key_input
           when :inn then drive_inn
+          when :shop then drive_shop
+          when :battle then drive_battle
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -1545,6 +1549,188 @@ class RPG2k
         @inn_window[:window].dispose
         @inn_window[:gold].dispose if @inn_window[:gold]
         @inn_window = nil
+      end
+
+      # -- Open Shop (buy / sell) ---------------------------------------------
+
+      SHOP_LINE_H = 14
+
+      # Drive an Open Shop wait. On the first frame the shop opens (a command
+      # menu for a buy+sell shop, or straight to the buy / sell list for a
+      # single-mode shop). Buying and selling happen one unit per confirm on
+      # Game::Shop; leaving resumes the interpreter with whether anything was
+      # traded (which picks the [Transaction] / [No Transaction] branch).
+      def drive_shop
+        req = @interpreter.shop_request
+        return @interpreter.resume_shop(false) unless req
+        if @shop.nil?
+          open_shop(req) # opened this frame; take input from the next one
+          return
+        end
+        @shop[:screen] == :command ? drive_shop_command : drive_shop_list
+      end
+
+      def open_shop(req)
+        model = Game::Shop.new(db, @state.party, req[:goods],
+                               req[:allow_buy], req[:allow_sell])
+        has_menu = req[:allow_buy] && req[:allow_sell]
+        screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
+        @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
+                  window: nil, gold: build_shop_gold_window }
+        draw_shop
+      end
+
+      def shop_gold_term; nonblank(db.term.gold, 'G'); end
+
+      def build_shop_gold_window
+        gw = 88
+        win = Window.new(SCREEN_W - gw - 6, 6, gw, SHOP_LINE_H + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+        win
+      end
+
+      # The [label, target] rows for the current shop screen: the command menu's
+      # actions, the goods on the buy list, or the party's sellable items.
+      def shop_lines
+        m = @shop[:model]
+        case @shop[:screen]
+        when :command
+          rows = []
+          rows << ['Buy', :buy] if m.allow_buy?
+          rows << ['Sell', :sell] if m.allow_sell?
+          rows << ['Leave', :leave]
+          rows
+        when :buy
+          m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
+        else # :sell
+          m.sellable_items.map do |id|
+            ["#{m.name(id)} x#{@state.party.item_count(id)}  " \
+             "#{m.sell_price(id)}#{shop_gold_term}", id]
+          end
+        end
+      end
+
+      def draw_shop
+        lines = shop_lines
+        @shop[:index] = Game.clamp(@shop[:index], 0, [lines.length - 1, 0].max)
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = [lines.length, 1].max * SHOP_LINE_H
+        @shop[:window].dispose if @shop[:window]
+        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = 300
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |(label, _), i|
+          c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
+        end
+        win.contents = c
+        unless lines.empty?
+          win.cursor_rect =
+            Rect.new(0, @shop[:index] * SHOP_LINE_H, inner_w, SHOP_LINE_H)
+        end
+        @shop[:window] = win
+        draw_shop_gold
+      end
+
+      def draw_shop_gold
+        gw = 88
+        c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, SHOP_LINE_H,
+                    "#{@state.party.gold}#{shop_gold_term}"
+        @shop[:gold].contents = c
+      end
+
+      def drive_shop_command
+        lines = shop_lines
+        if shop_move_cursor(lines)
+          # cursor moved
+        elsif Input.trigger?(Input::C)
+          case lines[@shop[:index]][1]
+          when :buy  then shop_switch(:buy)
+          when :sell then shop_switch(:sell)
+          when :leave then leave_shop
+          end
+        elsif Input.trigger?(Input::B)
+          leave_shop
+        end
+      end
+
+      def drive_shop_list
+        lines = shop_lines
+        if shop_move_cursor(lines)
+          # cursor moved
+        elsif Input.trigger?(Input::C) && !lines.empty?
+          id = lines[@shop[:index]][1]
+          @shop[:screen] == :buy ? @shop[:model].buy(id) : @shop[:model].sell(id)
+          draw_shop # refresh gold and, after a sale, the (shrunk) list
+        elsif Input.trigger?(Input::B)
+          @shop[:has_menu] ? shop_switch(:command) : leave_shop
+        end
+      end
+
+      # Move the shop cursor with Up / Down; returns true if it moved.
+      def shop_move_cursor(lines)
+        if Input.trigger?(Input::DOWN) && @shop[:index] < lines.length - 1
+          @shop[:index] += 1
+          draw_shop
+          true
+        elsif Input.trigger?(Input::UP) && @shop[:index] > 0
+          @shop[:index] -= 1
+          draw_shop
+          true
+        else
+          false
+        end
+      end
+
+      def shop_switch(screen)
+        @shop[:screen] = screen
+        @shop[:index] = 0
+        draw_shop
+      end
+
+      def leave_shop
+        transacted = @shop[:model].did_transaction
+        close_shop
+        @interpreter.resume_shop(transacted)
+      end
+
+      def close_shop
+        return unless @shop
+        @shop[:window].dispose if @shop[:window]
+        @shop[:gold].dispose if @shop[:gold]
+        @shop = nil
+      end
+
+      # -- Enemy Encounter (headless battle) ----------------------------------
+
+      # Resolve an Enemy Encounter by running a headless auto-battle (Game::Battle)
+      # of the party against the troop. On victory the troop's EXP is granted to
+      # every party member and its gold to the party, then the [Victory] handler
+      # runs; a defeat routes the [Defeat] handler. The battle works on snapshots,
+      # so the party's real HP is left untouched for now — the on-screen
+      # turn-based battle (that would show and persist HP) and game over on defeat
+      # are still to come.
+      def drive_battle
+        req = @interpreter.battle_request
+        return @interpreter.resume_battle(:victory) unless req
+        troop = Game::Troop.new(db, req[:troop_id])
+        allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
+        foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
+        result = Game::Battle.new(allies, foes, Game::Rng.new(0x2000)).run
+        if result == :victory
+          exp = troop.total_exp
+          @state.party.actors.each { |a| a.gain_exp(exp) }
+          @state.party.gain_gold(troop.total_gold)
+        end
+        @interpreter.resume_battle(result)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle resolution failed: #{e.message}"
+        @interpreter.resume_battle(:victory)
       end
 
       def drive_wait
@@ -2281,8 +2467,12 @@ class RPG2k
         case COMMANDS[@index]
         when "Item"
           @parent.push Scene::ItemMenu.new(@parent, @state)
+        when "Skill"
+          @parent.push Scene::SkillMenu.new(@parent, @state)
         when "Equip"
           @parent.push Scene::EquipMenu.new(@parent, @state)
+        when "Status"
+          @parent.push Scene::StatusMenu.new(@parent, @state)
         when "Save"
           if @state.save_access
             show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
@@ -2388,8 +2578,10 @@ class RPG2k
         return if items.empty?
         id, = items[@item_index]
         it = @state.party.db_item(id)
-        if it && it.scope == 1
-          apply_item(id, nil)          # all-ally: no target prompt
+        # Only an all-ally medicine skips the target prompt; single-target
+        # medicines and skill books (always one actor) ask who to use it on.
+        if it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
+          apply_item(id, nil)
         else
           @pending_item = id
           @mode = :target
@@ -2719,6 +2911,304 @@ class RPG2k
         return unless @cand_window
         @cand_window.cursor_rect =
           Rect.new(0, @cand_index * LINE_H, @cand_window.contents.width, LINE_H)
+      end
+    end
+
+    # The field status screen (main menu -> Status). Shows one party member's full
+    # detail -- name/title, level, EXP and EXP-to-next, HP/MP, the six stats and
+    # the five equipment slots; LEFT/RIGHT cycle the member. Read-only, so there
+    # is no sub-mode. The EXP-to-next figure is Game::Actor#exp_to_next
+    # (host-tested); the rest reads existing accessors.
+    class StatusMenu < Base
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      LINE_H = 16
+      SLOTS = ["Weapon", "Shield", "Armor", "Helmet", "Accessory"].freeze
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @skin = make_windowskin
+        @actor_index = 0
+        build_window
+      end
+
+      def dispose
+        @window.dispose if @window
+      end
+
+      def update
+        party = @state.party.actors
+        if Input.trigger?(Input::B)
+          @parent.pop
+        elsif Input.trigger?(Input::RIGHT) && @actor_index < party.size - 1
+          @actor_index += 1
+          build_window
+        elsif Input.trigger?(Input::LEFT) && @actor_index > 0
+          @actor_index -= 1
+          build_window
+        end
+      end
+
+      private
+
+      def item_name(id)
+        return "-" if id.nil? || id == 0
+        it = @state.party.db_item(id)
+        n = it && it.name.to_s
+        n.nil? || n.empty? ? "Item #{id}" : n
+      end
+
+      def build_window
+        @window.dispose if @window
+        inner_w = SCREEN_W - Window::BORDER * 2
+        @window = Window.new(0, 0, SCREEN_W, SCREEN_H)
+        @window.z = 400
+        @window.windowskin = @skin
+        c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
+        c.font.color = Color.new(255, 255, 255, 255)
+        a = @state.party.actors[@actor_index]
+        title = a.title.to_s
+        header = title.empty? ? a.name.to_s : "#{a.name}  #{title}"
+        nxt = a.exp_to_next
+        lines = [
+          header,
+          "Lv #{a.level}    EXP #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
+          "HP #{a.hp}/#{a.max_hp}    MP #{a.mp}/#{a.max_mp}",
+          "Atk #{a.atk}   Def #{a.def}   Int #{a.int}   Agi #{a.agi}",
+          "",
+        ]
+        eqp = a.equipment
+        SLOTS.each_with_index { |label, i| lines.push("#{label}: #{item_name(eqp[i])}") }
+        lines.each_with_index do |line, i|
+          c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
+        end
+        @window.contents = c
+      end
+    end
+
+    # The field skill screen (main menu -> Skill). Lists one party member's known
+    # field-usable skills with their SP cost; LEFT/RIGHT cycle the caster. Casting
+    # a single-ally skill (scope 3) asks who to use it on, while a self (2) or
+    # all-ally (4) skill applies at once, spending SP and restoring HP/SP. All the
+    # decision logic is on Game::Party (field_skills / skill_cost / can_cast? /
+    # skill_effect / cast_skill), host-tested; this is the RGSS UI over it.
+    class SkillMenu < Base
+      SCREEN_W = RPG2k::WIDTH
+      SCREEN_H = RPG2k::HEIGHT
+      LINE_H = 16
+
+      def initialize parent, state
+        super parent
+        @state = state
+        @skin = make_windowskin
+        @caster_index = 0
+        @skill_index = 0
+        @target_index = 0
+        @pending_skill = nil
+        @mode = :skills          # :skills list, or :target selection
+        @message = nil
+        build_skill_window
+      end
+
+      def dispose
+        close_message
+        @skill_window.dispose if @skill_window
+        @target_window.dispose if @target_window
+      end
+
+      def update
+        return drive_message if @message
+        @mode == :target ? update_target : update_skills
+      end
+
+      private
+
+      def caster
+        @state.party.actors[@caster_index]
+      end
+
+      def skills
+        @skills ||= @state.party.field_skills(caster)
+      end
+
+      def skill_name(sid)
+        sk = @state.party.db_skill(sid)
+        n = sk && sk.name.to_s
+        n.nil? || n.empty? ? "Skill #{sid}" : n
+      end
+
+      def update_skills
+        party = @state.party.actors
+        if Input.trigger?(Input::B)
+          @parent.pop
+        elsif Input.trigger?(Input::DOWN) && @skill_index < skills.size - 1
+          @skill_index += 1
+          refresh_skill_cursor
+        elsif Input.trigger?(Input::UP) && @skill_index > 0
+          @skill_index -= 1
+          refresh_skill_cursor
+        elsif Input.trigger?(Input::RIGHT) && @caster_index < party.size - 1
+          @caster_index += 1
+          switch_caster
+        elsif Input.trigger?(Input::LEFT) && @caster_index > 0
+          @caster_index -= 1
+          switch_caster
+        elsif Input.trigger?(Input::C)
+          choose_skill
+        end
+      end
+
+      def switch_caster
+        @skills = nil
+        @skill_index = 0
+        build_skill_window
+      end
+
+      def choose_skill
+        return if skills.empty?
+        sid, = skills[@skill_index]
+        sk = @state.party.db_skill(sid)
+        # A self (2) or all-ally (4) skill needs no target prompt; a single-ally
+        # skill (3) asks which ally.
+        if sk && (sk.scope == 2 || sk.scope == 4)
+          apply_skill(sid, nil)
+        else
+          @pending_skill = sid
+          @mode = :target
+          @target_index = 0
+          build_target_window
+        end
+      end
+
+      def update_target
+        party = @state.party.actors
+        if Input.trigger?(Input::B)
+          leave_target
+        elsif Input.trigger?(Input::DOWN) && @target_index < party.size - 1
+          @target_index += 1
+          refresh_target_cursor
+        elsif Input.trigger?(Input::UP) && @target_index > 0
+          @target_index -= 1
+          refresh_target_cursor
+        elsif Input.trigger?(Input::C)
+          apply_skill(@pending_skill, party[@target_index])
+        end
+      end
+
+      def apply_skill(sid, target)
+        affected = @state.party.cast_skill(caster, sid, target)
+        if affected.empty?
+          show_message("It had no effect.")
+        else
+          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+        end
+      end
+
+      def leave_target
+        @pending_skill = nil
+        @mode = :skills
+        if @target_window
+          @target_window.dispose
+          @target_window = nil
+        end
+      end
+
+      # After a successful cast, drop back to the skill list and rebuild it (SP
+      # fell; a now-unaffordable skill drops out).
+      def refresh_after_cast
+        leave_target
+        @skills = nil
+        @skill_index = skills.size - 1 if @skill_index >= skills.size
+        @skill_index = 0 if @skill_index < 0
+        build_skill_window
+      end
+
+      def build_skill_window
+        @skill_window.dispose if @skill_window
+        rows = skills
+        inner_w = SCREEN_W - Window::BORDER * 2
+        head_h = LINE_H
+        h = head_h + [rows.size, 1].max * LINE_H
+        @skill_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
+        @skill_window.z = 400
+        @skill_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        a = caster
+        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   SP #{a.mp}/#{a.max_mp}"
+        if rows.empty?
+          c.draw_text 0, head_h, inner_w, LINE_H, "No skills"
+        else
+          rows.each_with_index do |(sid, cost), i|
+            y = head_h + i * LINE_H
+            c.draw_text 0, y, inner_w - 40, LINE_H, skill_name(sid)
+            c.draw_text inner_w - 40, y, 40, LINE_H, "#{cost} SP"
+          end
+        end
+        @skill_window.contents = c
+        refresh_skill_cursor
+      end
+
+      def refresh_skill_cursor
+        return unless @skill_window
+        h = skills.empty? ? 0 : LINE_H
+        @skill_window.cursor_rect =
+          Rect.new(0, LINE_H + @skill_index * LINE_H, @skill_window.contents.width, h)
+      end
+
+      def build_target_window
+        @target_window.dispose if @target_window
+        party = @state.party.actors
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = party.size * (LINE_H * 2)
+        @target_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
+                                    SCREEN_W, h + Window::BORDER * 2)
+        @target_window.z = 450
+        @target_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        party.each_with_index do |a, i|
+          y = i * LINE_H * 2
+          c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          c.draw_text 0, y + LINE_H, inner_w, LINE_H,
+                      "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+        end
+        @target_window.contents = c
+        refresh_target_cursor
+      end
+
+      def refresh_target_cursor
+        return unless @target_window
+        @target_window.cursor_rect =
+          Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
+                   LINE_H * 2)
+      end
+
+      def drive_message
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        done = @message[:done]
+        close_message
+        refresh_after_cast if done == :cast
+      end
+
+      def show_message(text, done = nil)
+        return if @message
+        w = SCREEN_W - 40
+        win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
+        win.z = 500
+        win.windowskin = @skin
+        c = Bitmap.new(w - Window::BORDER * 2, 14)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, 14, text
+        win.contents = c
+        @message = { window: win, done: done }
+      end
+
+      def close_message
+        return unless @message
+        @message[:window].dispose
+        @message = nil
       end
     end
 

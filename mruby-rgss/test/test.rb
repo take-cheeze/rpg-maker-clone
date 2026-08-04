@@ -161,7 +161,11 @@ assert "RGSS::Viewport API surface" do
 end
 
 assert "RGSS::Sprite API surface" do
-  %i[bitmap= x= y= z= visible visible= dispose disposed?].each do |m|
+  # opacity=/zoom_x=/zoom_y=/angle= are native (honoured by the LVGL compositor,
+  # src/lib.cxx); the rest are native too. Sprite.new needs a live display, so
+  # this only asserts the method surface — the compositing itself is exercised by
+  # the game runs.
+  %i[bitmap= x= y= z= visible visible= opacity= zoom_x= zoom_y= angle= dispose disposed?].each do |m|
     assert_true RGSS::Sprite.method_defined?(m), "Sprite##{m} missing"
   end
 end
@@ -555,6 +559,52 @@ assert("RGSS::Window property defaults and accessors") do
   w.update
   w.dispose
   assert_true w.disposed?
+end
+
+assert("RGSS::Tilemap property defaults and accessors") do
+  t = RGSS::Tilemap.new
+  # RGSS defaults.
+  assert_true t.tileset.nil?
+  assert_true t.map_data.nil?
+  assert_true t.flash_data.nil?
+  assert_true t.priorities.nil?
+  assert_true t.visible
+  assert_equal 0, t.ox
+  assert_equal 0, t.oy
+  assert_true t.viewport.nil?
+  assert_false t.disposed?
+  # Seven autotile slots, all empty, indexable and assignable.
+  assert_equal 7, t.autotiles.size
+  assert_true t.autotiles[0].nil?
+  auto = RGSS::Bitmap.new(96, 128)
+  t.autotiles[3] = auto
+  assert_equal auto, t.autotiles[3]
+
+  # Writable — Spriteset_Map sets these from $game_map.
+  ts = RGSS::Bitmap.new(256, 256)
+  data = RGSS::Table.new(20, 15, 3)
+  prio = RGSS::Table.new(384)
+  t.tileset = ts
+  t.map_data = data
+  t.priorities = prio
+  t.ox = 32
+  t.oy = 16
+  t.visible = false
+  assert_equal ts, t.tileset
+  assert_equal data, t.map_data
+  assert_equal prio, t.priorities
+  assert_equal 32, t.ox
+  assert_equal 16, t.oy
+  assert_false t.visible
+
+  # A viewport-bound tilemap remembers whatever viewport it was constructed with
+  # (a real RGSS::Viewport needs a live display the headless test binary lacks).
+  marker = Object.new
+  assert_equal marker, RGSS::Tilemap.new(marker).viewport
+
+  t.update
+  t.dispose
+  assert_true t.disposed?
 end
 
 # RGSS::Sprite.new needs an initialized display (it references RGSS::_display),
