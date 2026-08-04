@@ -1670,6 +1670,10 @@ module Game
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
     attr_accessor :current_bgm, :memorized_bgm
+    # Whether the party leader's map sprite is hidden, toggled by the Set
+    # Transparent Flag / Change Player Visibility (11310) event command. Defaults
+    # off (the hero is shown) and is persisted in the save.
+    attr_accessor :player_transparent
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -1687,6 +1691,7 @@ module Game
       @save_access = true
       @current_bgm = nil
       @memorized_bgm = nil
+      @player_transparent = false
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -1712,7 +1717,8 @@ module Game
         party: @party.to_h, timer_frames: @timer_frames,
         timer_running: @timer_running, message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
-        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm }
+        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
+        player_transparent: @player_transparent }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -1782,6 +1788,7 @@ module Game
       state.save_access = h[:save_access] unless h[:save_access].nil?
       state.current_bgm = h[:current_bgm]
       state.memorized_bgm = h[:memorized_bgm]
+      state.player_transparent = h[:player_transparent] ? true : false
       state
     end
   end
