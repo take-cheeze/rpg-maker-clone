@@ -103,10 +103,11 @@ The work below is roughly ordered by the critical path to a walkable game
   Change HP/MP, Full Heal, Change Parameters, Conditional Branch/Else/End,
   Loop/Break/End, Label/Jump, Timer, Teleport, Memorize/Recall Location,
   Store Terrain/Event ID, Wait, Play BGM/SE, Memorize / Play Memorized BGM,
-  Message Options, Change Face Graphic, Change Main Menu / Save Access, Tint
+  Message Options, Change Face Graphic, Input Number, Change Actor
+  Name / Title / Sprite, Change Main Menu / Save Access, Tint
   Screen, Flash Screen, Shake Screen, Call Event, Move Event, Proceed With
-  Movement, Erase Event, End Event) with a per-frame step cap so a bad loop
-  can't hang. **Memorize Location** stores the player's current map id, x and y
+  Movement, Halt All Movement, Erase Event, End Event) with a per-frame step cap
+  so a bad loop can't hang. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
   uses). **Call Event**
@@ -118,7 +119,12 @@ The work below is roughly ordered by the critical path to a walkable game
   map event, "this event" or the player) along it in the background. **Proceed
   With Movement** then pauses the interpreter until every forced route in
   progress has finished — the scene advances those routes while it waits and
-  resumes it once none remain. **Erase
+  resumes it once none remain. **Halt All Movement** cancels every forced route
+  at once (the player's and each event's). **Input Number** suspends on a
+  digit-entry widget and writes the entered value to a variable. **Change Actor
+  Name / Title / Sprite** rename a party actor, set its status-screen title or
+  swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
+  these edits survive Save / Continue. **Erase
   Event** removes the running event from the map for the rest of the visit (its
   marker, movement, collision and any parallel process). **Change
   HP/MP**, **Full Heal**, **Change Parameters**, **Change Level** and **Change
@@ -133,7 +139,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
   item equipped, skill known; state is not modelled). The remaining commands
-  (pictures, screen effects, battles, EXP gain / level-up messages, ...) are TODO
+  (pictures, weather, battles, shop / inn, EXP gain / level-up messages, ...) are
+  TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;
   speed/wait codes are consumed). Text now **reveals gradually** (a

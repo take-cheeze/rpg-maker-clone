@@ -589,7 +589,7 @@ class RPG2k
       # -- event execution ----------------------------------------------------
 
       def event_busy?
-        @message || @interpreter.running? || @interpreter.waiting?
+        @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
       # Start the first not-yet-run auto-start process in the foreground: map
@@ -798,6 +798,45 @@ class RPG2k
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
       end
 
+      # -- Halt All Movement --------------------------------------------------
+
+      # If the interpreter ran a Halt All Movement this step, cancel every forced
+      # move route in progress — the player's and each event's — so a route set by
+      # an earlier Move Event stops where it is. Events fall back to their page's
+      # autonomous movement; the player returns to input control.
+      def apply_halt_request(interp)
+        return unless interp.take_halt_movement_request
+        @player_route = nil
+        @player_char = nil
+        @events.each { |e| e[:forced_route] = nil } if @events
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Halt All Movement failed: #{e.message}"
+        nil
+      end
+
+      # -- Change Sprite Association (Change Actor Graphic) --------------------
+
+      # If the interpreter changed an actor's sprite this step, reload the party
+      # leader's on-screen graphic so the change shows immediately (a change to a
+      # non-leader actor is held in the model until that actor leads the party).
+      def apply_graphic_change(interp)
+        refresh_player_graphic if interp.take_actor_graphic_changed
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Change Actor Graphic failed: #{e.message}"
+        nil
+      end
+
+      # Reload the party leader's CharSet graphic and apply its transparency to
+      # the player sprite, forcing a redraw on the next frame. The transparency
+      # flag hides the sprite outright (the renderer has no partial-opacity path).
+      def refresh_player_graphic
+        @charset = load_charset
+        @last_frame = nil
+        leader = @state.party.leader
+        @player_sprite.visible = !(leader && leader.transparent)
+        @player_bmp.clear unless @charset
+      end
+
       # -- Move Event (Set Move Route) ----------------------------------------
 
       # Apply the Move Event requests an interpreter queued this step. `this_event`
@@ -955,10 +994,16 @@ class RPG2k
           return
         end
 
+        if @number_input
+          drive_number_input
+          return
+        end
+
         if @interpreter.waiting?
           case @interpreter.wait_kind
           when :message then open_message(@interpreter.message_lines, false)
           when :choice then open_message(@interpreter.choice_labels, true)
+          when :number then open_number_input(@interpreter.input_digits)
           when :wait then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
@@ -968,6 +1013,8 @@ class RPG2k
           @interpreter.update
           apply_move_requests(@interpreter, @active_event)
           apply_erase_request(@interpreter, @active_event)
+          apply_halt_request(@interpreter)
+          apply_graphic_change(@interpreter)
         end
       end
 
@@ -1196,6 +1243,74 @@ class RPG2k
         return unless @message
         @message[:window].dispose
         @message = nil
+      end
+
+      # -- number input (Input Number command) --------------------------------
+
+      # Pixels per digit cell in the Input Number widget.
+      NUM_CELL = 16
+
+      # Open a digit-entry window for the Input Number command. A compact panel
+      # near the bottom of the screen shows `digits` cells with an editable
+      # cursor; the interpreter is resumed with the entered value on confirm.
+      def open_number_input(digits)
+        return if @number_input
+        model = Game::NumberInput.new(digits || 1)
+        inner_w = model.digits * NUM_CELL
+        inner_h = MSG_LINE_H
+        win_w = inner_w + Window::BORDER * 2
+        win_h = inner_h + Window::BORDER * 2
+        win = Window.new((SCREEN_W - win_w) / 2, SCREEN_H - win_h - 6, win_w, win_h)
+        win.z = 320
+        win.windowskin = @windowskin
+        contents = Bitmap.new(inner_w, inner_h)
+        @number_input = { window: win, contents: contents, model: model }
+        draw_number_input
+        win.contents = contents
+      end
+
+      def draw_number_input
+        ni = @number_input
+        return unless ni
+        model = ni[:model]
+        c = ni[:contents]
+        c.clear
+        (0...model.digits).each do |i|
+          x = i * NUM_CELL
+          if i == model.cursor
+            c.fill_rect x, 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
+          end
+          c.font.color = Color.new(255, 255, 255, 255)
+          c.draw_text x, 0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
+        end
+      end
+
+      def drive_number_input
+        ni = @number_input
+        model = ni[:model]
+        if Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          model.inc
+          draw_number_input
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          model.dec
+          draw_number_input
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          model.left
+          draw_number_input
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          model.right
+          draw_number_input
+        elsif Input.trigger?(Input::C)
+          value = model.value
+          close_number_input
+          @interpreter.resume_number(value)
+        end
+      end
+
+      def close_number_input
+        return unless @number_input
+        @number_input[:window].dispose
+        @number_input = nil
       end
 
       def step_movement

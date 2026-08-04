@@ -18,6 +18,7 @@ module Game
       SHOW_CHOICES     = 10140
       CHOICE_OPTION    = 20140
       CHOICE_END       = 20141
+      INPUT_NUMBER     = 10150
       CONTROL_SWITCHES = 10210
       CONTROL_VARS     = 10220
       TIMER_OPERATION  = 10230
@@ -30,6 +31,9 @@ module Game
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
       FULL_HEAL        = 10490
+      CHANGE_ACTOR_NAME   = 10610
+      CHANGE_ACTOR_TITLE  = 10620
+      CHANGE_ACTOR_SPRITE = 10630
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
       STORE_TERRAIN_ID  = 10910
@@ -53,6 +57,7 @@ module Game
       SHAKE_SCREEN     = 11050
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
+      HALT_ALL_MOVEMENT = 11350
       WAIT             = 11410
       PLAY_BGM         = 11510
       MEMORIZE_BGM     = 11530
@@ -84,6 +89,10 @@ module Game
       @resolver = nil
       @move_route_requests = []
       @erase_requested = false
+      @halt_movement_requested = false
+      @actor_graphic_changed = false
+      @input_variable = nil
+      @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
       # no Kernel#rand here); seeded like the map scene's own RNG.
       @rng = Game::Rng.new(0x2000)
@@ -93,7 +102,7 @@ module Game
     def running?; @running; end
     def waiting?; @waiting; end
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
-                :teleport
+                :teleport, :input_digits
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -109,6 +118,8 @@ module Game
       @call_stack = []
       @move_route_requests = []
       @erase_requested = false
+      @halt_movement_requested = false
+      @actor_graphic_changed = false
       reset_waits
     end
 
@@ -131,6 +142,26 @@ module Game
     def take_erase_request
       v = @erase_requested
       @erase_requested = false
+      v
+    end
+
+    # True (once) if a Halt All Movement command ran since the last call, clearing
+    # the flag. The owning scene polls this after #update and cancels every forced
+    # move route in progress (the player's and each event's). Non-blocking, like
+    # Erase Event: the rest of the command list keeps running.
+    def take_halt_movement_request
+      v = @halt_movement_requested
+      @halt_movement_requested = false
+      v
+    end
+
+    # True (once) if a Change Sprite Association (Change Actor Graphic) command
+    # ran since the last call, clearing the flag. The owning scene polls this
+    # after #update and reloads the party leader's on-screen sprite so a mid-event
+    # graphic change is reflected. Non-blocking.
+    def take_actor_graphic_changed
+      v = @actor_graphic_changed
+      @actor_graphic_changed = false
       v
     end
 
@@ -193,6 +224,15 @@ module Game
       reset_waits
     end
 
+    # Resume an Input Number request: store the entered `value` into the target
+    # variable and continue. The owning scene drives a digit-entry widget while
+    # the interpreter is paused on the :number wait, then calls this with the
+    # number the player entered.
+    def resume_number(value)
+      variables[@input_variable] = value.to_i if @input_variable
+      reset_waits
+    end
+
     private
 
     def reset_waits
@@ -216,6 +256,7 @@ module Game
       when Cmd::SHOW_CHOICES     then do_show_choices cmd
       when Cmd::CHOICE_OPTION    then skip_to([Cmd::CHOICE_END], cmd.indent); consume
       when Cmd::CHOICE_END       then nil
+      when Cmd::INPUT_NUMBER     then do_input_number cmd
       when Cmd::CONTROL_SWITCHES then do_control_switches cmd
       when Cmd::CONTROL_VARS     then do_control_vars cmd
       when Cmd::TIMER_OPERATION  then do_timer cmd
@@ -228,6 +269,9 @@ module Game
       when Cmd::CHANGE_HP        then do_change_hp cmd
       when Cmd::CHANGE_MP        then do_change_mp cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
+      when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
+      when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
+      when Cmd::CHANGE_ACTOR_SPRITE then do_change_actor_sprite cmd
       when Cmd::CONDITIONAL      then do_conditional cmd
       when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
       when Cmd::END_BRANCH       then nil
@@ -245,6 +289,7 @@ module Game
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
+      when Cmd::HALT_ALL_MOVEMENT then @halt_movement_requested = true
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
       when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
@@ -411,6 +456,19 @@ module Game
       nil
     end
 
+    # Input Number: RPG2000 lays the parameters out as [digits, variable_id]
+    # (note the order is the reverse of RPG Maker XP's). Suspends with a :number
+    # request the owning scene answers by driving a digit-entry widget and calling
+    # `resume_number` with the value, which stores it into the variable. A digit
+    # count below 1 is clamped so the widget always has at least one cell.
+    def do_input_number(cmd)
+      digits = cmd.param(0)
+      @input_digits = digits < 1 ? 1 : digits
+      @input_variable = cmd.param(1)
+      @wait_kind = :number
+      @waiting = true
+    end
+
     # -- state commands -------------------------------------------------------
 
     def range(cmd)
@@ -573,6 +631,40 @@ module Game
     # Full recovery: restore HP and MP to their maxima for the target actors.
     def do_full_heal(cmd)
       stat_targets(cmd).each { |a| a.full_heal }
+    end
+
+    # -- actor identity / graphic ---------------------------------------------
+
+    # Change Actor Name: rename the actor whose id is param0 to the command
+    # string. A blank name is ignored (RPG_RT keeps the previous name), and an
+    # actor not in the party is a no-op — this build only instantiates party
+    # actors.
+    def do_change_actor_name(cmd)
+      name = cmd.string
+      return if name.nil? || name.empty?
+      actor = party.actor_by_id(cmd.param(0))
+      actor.name = name if actor
+    end
+
+    # Change Actor Title: set the title (class/subtitle shown on the status
+    # screen) of the actor whose id is param0 to the command string. An empty
+    # string clears the title. A no-op for an actor not in the party.
+    def do_change_actor_title(cmd)
+      actor = party.actor_by_id(cmd.param(0))
+      actor.title = cmd.string || '' if actor
+    end
+
+    # Change Sprite Association (Change Actor Graphic): give the actor whose id is
+    # param0 a new CharSet graphic — the command string names the file, param1 is
+    # the cell index and param2 the transparency flag (non-zero hides the sprite).
+    # Records a one-shot request so the owning scene can reload the party leader's
+    # on-screen sprite; a no-op for an actor not in the party.
+    def do_change_actor_sprite(cmd)
+      actor = party.actor_by_id(cmd.param(0))
+      return unless actor
+      actor.set_charset(cmd.string || '', cmd.param(1))
+      actor.transparent = cmd.param(2) != 0
+      @actor_graphic_changed = true
     end
 
     # Change Parameters: adjust a base stat. param3 selects the stat (0 max HP,
