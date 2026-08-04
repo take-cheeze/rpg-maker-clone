@@ -331,9 +331,12 @@ The work below is roughly ordered by the critical path to a walkable game
   afflicts the foe, which then slips or skips via the per-turn processing above.
   A state also **auto-recovers**: a per-battler turn counter lets `apply_turn_
   states` roll `auto_release_prob` once the state has held past its `hold_turn`,
-  so a temporary ailment wears off. Still to come: forced-attack restrictions,
-  enemy-cast infliction, criticals / attributes / damage variance, all-target
-  skill/item scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
+  so a temporary ailment wears off. **Forced-action restrictions** work too: a
+  `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
+  the battler was told to defend, and 3 (confused) sends the attack at a random
+  member of its own side. Still to come: enemy-cast infliction, criticals /
+  attributes / damage variance, all-target skill/item scopes, the per-terrain
+  backdrop and the RPG2000 Game Over graphic.
   The remaining event commands (Inflict Damage, Name Input, Show Battle
   Animation, vehicle boarding, tile substitution, ...) are TODO. **Change System
   Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the

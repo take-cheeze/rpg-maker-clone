@@ -3829,6 +3829,29 @@ check 'battle state at 0% auto_release_prob never wears off on its own' do
   eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
+check 'battle: a confused battler (restriction 3) attacks its own side' do
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
+  hero = combatant('Hero', 40, 0, 1, 100)                 # slow: the foe acts first
+  hero.states = [6]
+  slime = combatant('Slime', 0, 0, 5, 100)                # harmless enemy (atk 0)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.command_attack(hero, slime)                         # commanded at the enemy...
+  bat.run_round
+  eq 100, slime.hp                                        # ...confusion spared the enemy
+  eq 79, hero.hp                                          # slime's 1 + the hero's own 20
+end
+
+check 'battle: a berserk battler (restriction 2) attacks despite defending' do
+  states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
+  hero = combatant('Hero', 40, 0, 20, 100)                # fast: acts first
+  hero.states = [7]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.command_defend(hero)                                # tries to defend...
+  bat.run_round
+  eq 80, slime.hp                                         # ...but berserk forced a 20 hit
+end
+
 check 'Battle end_round clears a queued Skill / Item command' do
   mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
   foe  = combatant('Foe', 0, 0, 5, 100)
