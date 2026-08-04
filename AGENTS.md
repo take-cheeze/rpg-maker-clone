@@ -109,8 +109,8 @@ Create ADRs in /docs/adr for:
   the data (or the rpg2kpsp analysis wiki) spells out, per ADR 0002.
 - The runtime can resume from a real save: `Game::State.from_lsd(db, save)`
   rebuilds a `State` from a parsed `LcfSaveData` (leader position, party roster,
-  gold, items, switches, variables, and each roster actor's saved level/exp and
-  current HP/MP from chunk 108), and `continue_game` loads an editor
+  gold, items, switches, variables, and each roster actor's saved level/exp,
+  current HP/MP, equipment and skills from chunk 108), and `continue_game` loads an editor
   `Save<N>.lsd` when present. Actor base stats scale with level from the database
   growth curve (chunk 31, six shorts per level, via `LCF::Array1D#int16_values`),
   so a restored level rescales the maxima — see ADR 0015. `Game::Actor` also

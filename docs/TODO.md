@@ -132,7 +132,7 @@ The work below is roughly ordered by the critical path to a walkable game
   spirit / agility) and **game quantities** (party gold, timer seconds).
   Conditional Branch covers switch / variable / **timer** / gold / item
   conditions and the **actor** sub-conditions (in party, name, level ≥, HP ≥,
-  item equipped; skill / state are not modelled). The remaining commands
+  item equipped, skill known; state is not modelled). The remaining commands
   (pictures, screen effects, battles, EXP gain / level-up messages, ...) are TODO
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`;

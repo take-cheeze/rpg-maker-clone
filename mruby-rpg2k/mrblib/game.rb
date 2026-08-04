@@ -570,8 +570,9 @@ module Game
     # accessory.
     EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
 
-    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot).
-    attr_reader :equipment
+    # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), and
+    # the ids of the skills the actor knows.
+    attr_reader :equipment, :skills
 
     def initialize(db, id)
       @db = db
@@ -585,8 +586,10 @@ module Game
       @db_row = a
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
+      @skills = []
       # Base stats scale with level from the growth curve and equipment adds on
-      # top, so seed them at the actor's initial level, then start at full health.
+      # top, and levelling learns skills, so seed them all at the actor's initial
+      # level, then start at full health.
       set_level(a.initial_level || 1)
       @hp = @max_hp
       @mp = @max_mp
@@ -601,7 +604,47 @@ module Game
     def set_level(level)
       @level = level && level >= 1 ? level : 1
       @base = base_stats(@level)
+      learn_level_skills
       recompute_stats
+    end
+
+    # Learn every skill the database growth table grants at or below the current
+    # level (RPG2000 never un-learns on the way down), on top of whatever the
+    # actor already knows. Confirmed against a real save: the skills learnt up to
+    # an actor's level match the saved skill list exactly.
+    def learn_level_skills
+      learn_table.each { |skill_id, at| learn_skill(skill_id) if at <= @level }
+    end
+
+    # The database learn table as [skill_id, level] pairs (empty for a row that
+    # exposes no learn table, e.g. the test fixtures).
+    def learn_table
+      a = @db_row
+      return [] unless a.respond_to?(:skills) && a.skills
+      out = []
+      a.skills.each { |_i, l| out.push([l.skill_id, l.level]) }
+      out
+    end
+
+    # Whether the actor knows `skill_id`.
+    def knows_skill?(skill_id)
+      return false if skill_id.nil? || skill_id == 0
+      @skills.include?(skill_id)
+    end
+
+    # Learn / forget a skill (the Change Skill operations and levelling).
+    def learn_skill(skill_id)
+      return if skill_id.nil? || skill_id == 0 || @skills.include?(skill_id)
+      @skills.push(skill_id)
+    end
+
+    def forget_skill(skill_id)
+      @skills.delete(skill_id)
+    end
+
+    # Replace the known-skill set (Continue restoring the saved skills).
+    def skills=(ids)
+      @skills = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
     end
 
     # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
@@ -1525,6 +1568,7 @@ module Game
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp
           actor.equip(sa.equipment) if sa.equipment
+          actor.skills = sa.skills if sa.skills
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
