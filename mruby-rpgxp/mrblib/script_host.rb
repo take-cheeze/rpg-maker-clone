@@ -19,9 +19,10 @@
 # opt-in path for now (RPGXP::ScriptHost.enabled?), with the built-in flow as the
 # default and the fallback. Requires mruby-eval for Kernel#eval.
 class RPGXP
+  # Defined with explicit `def self.` singleton methods (not a bare
+  # `module_function`, which this mruby build does not apply to later defs) so
+  # the host is callable as RPGXP::ScriptHost.<method>.
   module ScriptHost
-    module_function
-
     # Environment variable / constant that turns the script host on. Off by
     # default: the built-in flow is the verified path, and running the bundled
     # scripts needs both eval and a complete-enough RGSS class library.
@@ -29,14 +30,14 @@ class RPGXP
 
     # Whether the runtime can eval Ruby source at all (mruby-eval present, or
     # CRuby). Kernel#eval is public in mruby-eval and private in CRuby.
-    def available?
+    def self.available?
       Kernel.method_defined?(:eval) || Kernel.private_method_defined?(:eval)
     end
 
     # Whether to run the bundled scripts instead of the built-in flow. Requires
     # eval support and an explicit opt-in: the env var when the runtime exposes
     # ENV, otherwise the ENABLED constant (default false).
-    def enabled?
+    def self.enabled?
       return false unless available?
       if defined?(ENV) && ENV.respond_to?(:[]) && !ENV[ENABLED_ENV].nil?
         flag = ENV[ENABLED_ENV]
@@ -51,7 +52,7 @@ class RPGXP
     # there was nothing to run (no scripts, or no eval) so the caller can fall
     # back to the built-in flow. Evaluating "Main" blocks here until the game's
     # own loop exits, exactly as RGSS does.
-    def run(db)
+    def self.run(db)
       return false unless available?
       sections = db.scripts
       if sections.empty?
@@ -79,7 +80,7 @@ class RPGXP
     # routed through the database so a loose file and the encrypted archive both
     # work. Defined on Object so a script can call them bare; guarded so a second
     # boot does not redefine them.
-    def install_kernel(db)
+    def self.install_kernel(db)
       return if Object.method_defined?(:load_data) ||
                 Object.private_method_defined?(:load_data)
       Object.class_eval do
