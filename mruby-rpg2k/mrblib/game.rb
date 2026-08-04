@@ -456,9 +456,16 @@ module Game
     end
 
     # The coarse block a tile id belongs to: :water, :animated, :terrain, :lower,
-    # :upper, or nil for the empty tile (0) and ids outside every block.
+    # :upper, or nil for an absent tile and ids outside every block.
+    #
+    # Id **0 is not empty**: it is water set 0's plain chip (set 0, no border and
+    # no corner), and the genuine RPG_RT draws it as deep water. Only the *upper*
+    # layer uses 0 to mean "no tile" -- its own ids start at BLOCK_F -- so that
+    # layer's callers skip 0 before asking (see Scene::Map#draw_layers). Treating
+    # 0 as empty here left holes: on Nepheshel's map 204 the sea rendered as
+    # black where RPG_RT drew water, 90 of the 320 on-screen tiles.
     def self.block(id)
-      return nil if id.nil? || id <= 0
+      return nil if id.nil? || id < 0
       if id >= BLOCK_F
         id < BLOCK_F + BLOCK_F_TILES ? :upper : nil
       elsif id >= BLOCK_E
@@ -476,8 +483,9 @@ module Game
     # [dx, dy, sx, sy, w, h]: dx/dy are pixel offsets within the destination
     # 16x16 tile, and sx/sy/w/h the source rect in the chipset image. Non-
     # autotile blocks return a single 16x16 rect; autotiles return four 8x8
-    # quarters. The empty tile (0) and out-of-range ids return []. `abf` / `cf`
-    # are the current animation columns/frames from #anim_ab / #anim_c.
+    # quarters. An absent tile and out-of-range ids return []; id 0 is water, not
+    # empty (see .block). `abf` / `cf` are the current animation columns/frames
+    # from #anim_ab / #anim_c.
     def self.quads(id, abf = 0, cf = 0)
       case block(id)
       when :water    then water_quads(id, abf)

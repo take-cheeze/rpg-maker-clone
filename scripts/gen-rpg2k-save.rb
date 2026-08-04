@@ -39,9 +39,31 @@
 #     --at X,Y         tile to stand on (default: the map's centre when --map
 #                      moves to another map, else unchanged)
 #     --facing DIR     down|left|right|up (default: unchanged)
+#     --clear-scene    drop the running-event continuation (chunk 113) and the
+#                      shown pictures (chunk 103), so the save resumes standing
+#                      on a plain map with nothing running over it
 #     --slot N         save slot to edit -> Save0<N>.lsd (default: 1)
 #     --out PATH       write here instead of over the input
 # GAME_DIR defaults to the RPG2000 test-bed (Nepheshel).
+#
+# WHY --clear-scene EXISTS: gen-lcf-save-wine.bash saves through EasyRPG's F9
+# debug menu from wherever the game happens to be, and for Nepheshel that is
+# mid-opening -- the save carries the opening demo's choice in chunk 113 and its
+# backdrop picture in chunk 103. Resuming it puts both runtimes back into that
+# cutscene, where the frames drift again for the same reason the key-driven
+# harness does: the cutscene is timed. Dropping those two chunks resumes on the
+# map itself, which is static until a key is pressed and so can be diffed
+# pixel-for-pixel -- and walked, a step at a time, with both runtimes staying in
+# lock-step. Everything else in the save (map event positions, the party,
+# switches and variables) is preserved byte-for-byte.
+#
+# One thing --clear-scene cannot restore is the hero *sprite*: the debug save is
+# taken in Nepheshel's demo mode, where Set Transparent Flag is on (chunk 101
+# field 55). Clearing that flag and giving the hero the party leader's CharSet
+# makes our engine draw him, but the genuine RPG_RT resumed from the same file
+# still does not, so it only manufactures a difference. Character-sprite
+# rendering is therefore compared through the map's *events*, which both
+# runtimes do draw -- and that is what caught the CharSet colour-key bug.
 
 require 'stringio'
 require 'optparse'
@@ -70,6 +92,33 @@ HERO_X = 12
 HERO_Y = 13
 HERO_DIRECTION = 22
 
+# Top-level save chunks --clear-scene removes, per LCF::Schema::SAVE_DATA.
+PICTURES = 103
+FOREGROUND_EVENT = 113
+
+# The saved map state (chunk 111) and its camera scroll fields, per
+# LCF::Schema::SAVE_MAP_EVENT.
+MAP_EVENTS = 111
+SCROLL_X = 1
+SCROLL_Y = 2
+
+# RPG2000 screen geometry, mirroring Game::TILE / RPG2k::WIDTH / RPG2k::HEIGHT
+# in the engine (which is mruby-only, so it cannot be loaded here).
+TILE = 16
+SCREEN_W = 320
+SCREEN_H = 240
+
+# The engine's Game.camera_offset: the view's top-left pixel so the hero is
+# centred, clamped to the map. Kept in step with mruby-rpg2k/mrblib/game.rb.
+def camera_offset(player_px, screen_px, map_px)
+  max = map_px - screen_px
+  max = 0 if max < 0
+  v = player_px - screen_px / 2
+  return 0 if v < 0
+  return max if v > max
+  v
+end
+
 DIRECTIONS = { 'up' => 8, 'right' => 6, 'left' => 4, 'down' => 2 }.freeze
 
 options = { slot: 1 }
@@ -78,6 +127,9 @@ parser = OptionParser.new do |o|
   o.on('--map ID', Integer, 'map id to place the party on') { |v| options[:map] = v }
   o.on('--at X,Y', 'tile to stand on') { |v| options[:at] = v }
   o.on('--facing DIR', DIRECTIONS.keys, 'down|left|right|up') { |v| options[:facing] = v }
+  o.on('--clear-scene', 'drop the running event (113) and pictures (103)') do
+    options[:clear_scene] = true
+  end
   o.on('--slot N', Integer, 'save slot to edit (default 1)') { |v| options[:slot] = v }
   o.on('--out PATH', 'write here instead of over the input') { |v| options[:out] = v }
 end
@@ -101,6 +153,13 @@ end
 from = [hero[HERO_MAP], hero[HERO_X], hero[HERO_Y]]
 map_id = options[:map] || from[0]
 
+map_path = File.join(game_dir, format('Map%04d.lmu', map_id))
+unless File.exist?(map_path)
+  warn "map #{map_id} has no #{File.basename(map_path)} in #{game_dir}"
+  exit 1
+end
+map = LCF::MapUnit.new(File.open(map_path, 'rb'))
+
 if options[:at]
   x, y = options[:at].split(',').map { |n| Integer(n) }
 elsif map_id == from[0]
@@ -110,12 +169,6 @@ else
   # Landing on another map with no tile given: stand in the middle. It is always
   # in bounds, though possibly unwalkable -- which is fine, since the comparison
   # only needs both runtimes on the same tile, and both will draw the hero there.
-  map_path = File.join(game_dir, format('Map%04d.lmu', map_id))
-  unless File.exist?(map_path)
-    warn "map #{map_id} has no #{File.basename(map_path)} in #{game_dir}"
-    exit 1
-  end
-  map = LCF::MapUnit.new(File.open(map_path, 'rb'))
   x = map.width / 2
   y = map.height / 2
 end
@@ -124,11 +177,37 @@ hero[HERO_MAP] = map_id
 hero[HERO_X] = x
 hero[HERO_Y] = y
 hero[HERO_DIRECTION] = DIRECTIONS.fetch(options[:facing]) if options[:facing]
+
 # Reading a chunk decodes a detached copy, so the edited chunk has to go back in
 # before serialising (same as scripts/lcf_save_roundtrip.rb).
 save[104] = hero
 
 moved_maps = map_id != from[0]
+
+# Re-centre the saved camera on the new tile. RPG_RT does NOT derive the view
+# from the hero when it resumes -- it restores the scroll recorded in chunk 111
+# (fields 1/2, in 1/16 pixel; see LCF::Schema::SAVE_MAP_EVENT for how the unit
+# was measured). Moving the party without this leaves the old scroll behind, and
+# the genuine runtime then draws a completely different part of the map from the
+# one our engine draws, which reads as a total rendering mismatch when it is
+# only a stale camera.
+map_ev = save[MAP_EVENTS] || LCF::Array1D.new('', LCF::Schema::SAVE_DATA[:elements][MAP_EVENTS])
+scroll_px = [camera_offset(x * TILE + TILE / 2, SCREEN_W, map.width * TILE),
+             camera_offset(y * TILE + TILE / 2, SCREEN_H, map.height * TILE)]
+map_ev[SCROLL_X] = scroll_px[0] * LCF::Schema::SCROLL_UNITS_PER_PIXEL
+map_ev[SCROLL_Y] = scroll_px[1] * LCF::Schema::SCROLL_UNITS_PER_PIXEL
+save[MAP_EVENTS] = map_ev
+
+# Drop the chunks that would replay the scene the save was taken in, leaving the
+# party standing on the map with nothing running (see the --clear-scene note in
+# the header). Both are optional sections a real save omits when there is no
+# event running and no picture shown, so removing them is a state RPG_RT itself
+# writes -- unlike an emptied chunk, which is a zero-length event/picture table.
+cleared = []
+if options[:clear_scene]
+  cleared << 'running event (113)' if save.delete(FOREGROUND_EVENT)
+  cleared << 'pictures (103)' if save.delete(PICTURES)
+end
 
 out = options[:out] || src
 save.save_to(out)
@@ -142,7 +221,19 @@ unless got == [map_id, x, y]
        "map=#{got[0]} (#{got[1]},#{got[2]})"
   exit 1
 end
+if options[:clear_scene] && (back.key?(FOREGROUND_EVENT) || back.key?(PICTURES))
+  warn 'FAILED: --clear-scene left chunk 113/103 in the written save'
+  exit 1
+end
+got_scroll = [back[MAP_EVENTS][SCROLL_X], back[MAP_EVENTS][SCROLL_Y]]
+want_scroll = scroll_px.map { |v| v * LCF::Schema::SCROLL_UNITS_PER_PIXEL }
+unless got_scroll == want_scroll
+  warn "FAILED: wrote scroll #{want_scroll.inspect} but read back #{got_scroll.inspect}"
+  exit 1
+end
 
 puts "#{out}: map #{from[0]} (#{from[1]},#{from[2]}) -> #{map_id} (#{x},#{y})" \
      "#{options[:facing] ? " facing #{options[:facing]}" : ''}" \
-     "#{moved_maps ? ' [map changed: the save keeps the old map event states]' : ''}"
+     "#{moved_maps ? ' [map changed: the save keeps the old map event states]' : ''}" \
+     " [camera #{scroll_px[0]},#{scroll_px[1]}px]" \
+     "#{cleared.empty? ? '' : " [cleared: #{cleared.join(', ')}]"}"

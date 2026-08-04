@@ -27,6 +27,12 @@
   the message panel now land on RPG_RT's pixels; the residual difference is the
   font (RPG_RT uses Windows' MS Gothic, we use Shinonome, with matching
   metrics). See `docs/adr/0021-nepheshel-render-parity-under-wine.md`
+- An **in-game map** is diffed the same way, by resuming both runtimes from one
+  save (`scripts/compare-nepheshel-save-wine.bash`, with
+  `scripts/gen-rpg2k-save.rb --clear-scene --map <id>` placing the party and the
+  camera). Nepheshel's town, an interior and an open-water map now render
+  **pixel-identical** to RPG_RT — tile layers, autotiles, upper/lower layering
+  and event sprites all on its exact pixels
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,

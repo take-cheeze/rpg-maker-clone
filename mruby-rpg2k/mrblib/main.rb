@@ -307,11 +307,14 @@ class RPG2k
       attr_reader :parent, :db, :map_tree
 
       # Load the System/ windowskin declared in the database (nil when missing,
-      # so Window falls back to a plain panel).
+      # so Window falls back to a plain panel). Colour-keyed, matching the map
+      # and title scenes' own loads of the same file: the skin's palette entry 0
+      # is transparent, and every menu built on this would otherwise draw the
+      # cursor and frame corners on opaque blocks.
       def make_windowskin
         name = @db.system.system_graphic
         return nil if name.nil? || name.empty?
-        Bitmap.new "System/#{name}"
+        Bitmap.new "System/#{name}", true
       rescue StandardError => e
         $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
@@ -713,12 +716,19 @@ class RPG2k
       # The CharSet bitmap for an event graphic `name`, cached (including a
       # cached nil for a missing file so the event simply draws nothing rather
       # than a placeholder). Empty names have no graphic.
+      #
+      # Loaded colour-keyed, like the chipset: a CharSet is an indexed PNG whose
+      # palette entry 0 is the background, and without the key that background is
+      # blitted opaque -- a solid rectangle over the map instead of a sprite.
+      # Caught by the wine comparison, where Nepheshel's `door` event drew as a
+      # solid pink block (door.png's palette entry 0 is #FF678B) on a wall the
+      # genuine RPG_RT left alone.
       def event_charset(name)
         return nil if name.nil? || name.empty?
         return @event_charsets[name] if @event_charsets.key?(name)
         @event_charsets[name] =
           begin
-            Bitmap.new "CharSet/#{name}"
+            Bitmap.new "CharSet/#{name}", true
           rescue StandardError => e
             $stderr.puts "[RPG2k] event charset '#{name}' load failed, " \
                          "event drawn empty: #{e.message}"
@@ -758,14 +768,15 @@ class RPG2k
       end
 
       # Load the leader's CharSet graphic. Returns nil (falling back to a marker)
-      # when there is no party or the file is missing.
+      # when there is no party or the file is missing. Colour-keyed for the same
+      # reason event graphics are (see event_charset).
       def load_charset
         leader = @state.party.leader
         return nil if leader.nil?
         name = leader.charset_name
         @charset_index = leader.charset_index || 0
         return nil if name.nil? || name.empty?
-        Bitmap.new "CharSet/#{name}"
+        Bitmap.new "CharSet/#{name}", true
       rescue StandardError => e
         $stderr.puts "[RPG2k] party charset load failed, using marker: #{e.message}"
         nil
@@ -3078,9 +3089,11 @@ class RPG2k
 
       # Load the FaceSet graphic named by the message config, or nil when no face
       # is selected or the file is missing (the message then shows text only).
+      # Colour-keyed like the other character art: a FaceSet's palette entry 0 is
+      # its background, and drawing it opaque boxes the portrait in.
       def load_face(cfg)
         return nil unless cfg.face?
-        Bitmap.new "FaceSet/#{cfg.face_name}"
+        Bitmap.new "FaceSet/#{cfg.face_name}", true
       rescue StandardError => e
         $stderr.puts "[RPG2k] face graphic '#{cfg.face_name}' load failed: #{e.message}"
         nil
@@ -3531,7 +3544,10 @@ class RPG2k
 
             if @chipset_bmp
               draw_tile @lower_bmp, lower, dx, dy, abf, cf
-              draw_tile @upper_bmp, upper, dx, dy, abf, cf
+              # 0 means "no upper tile" (the upper layer's own ids start at
+              # BLOCK_F); on the lower layer the same value is water set 0, so
+              # only this call may skip it. See Game::ChipsetLayout.block.
+              draw_tile @upper_bmp, upper, dx, dy, abf, cf if upper && upper != 0
             else
               # Fallback: solid colour blocks keyed by tile id (no chipset image).
               @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)

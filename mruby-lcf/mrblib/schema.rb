@@ -1034,14 +1034,36 @@ module LCF
     # event's live position (a SAVE_MOVABLE) -- confirmed against a real save:
     # all 21 saved entries matched map 12's 21 defined events, id for id and at
     # in-bounds tiles (scripts/lcf_save_check.rb re-checks this). Fields 21/22 are
-    # the chipset replacement tables. A real save also carries two leading int
-    # fields (1, 2) -- the map scroll/pan position -- left undecoded until
-    # differential saves pin the units down.
+    # the chipset replacement tables.
+    #
+    # Fields 1/2 are the **camera scroll**, in 1/16 pixel: the top-left corner of
+    # the view, not a tile and not a plain pixel count. They were identified by
+    # experiment against the genuine RPG_RT under wine (ADR 0021): resuming a
+    # save whose hero was moved to map 1 tile (30,22) drew the map's *top-left*
+    # corner whichever tile the hero was put on -- because the runtime restores
+    # the view from here rather than deriving it from the hero -- and writing
+    # these two fields moved it:
+    #
+    #   | chunk 111 fields 1/2 | RPG_RT's view                     |
+    #   | -------------------- | --------------------------------- |
+    #   | absent               | (0, 0), the map's top-left corner  |
+    #   | 320 / 240            | scrolled ~20px, not to (320, 240)  |
+    #   | 5120 / 3840          | (320, 240) exactly -- 16x the pixels |
+    #
+    # At 5120/3840 the frame matched our own renderer (which centres the view on
+    # the hero, and puts it at (320,240) for that tile) over all but 260 of
+    # 307200 pixels, the residual being one animated coastline autotile. That is
+    # what pins the unit: 5120/16 = 320.
     SAVE_MAP_EVENT = {
+      1 => { name: :scroll_x, type: :int, default: 0 }, # 1/16 px
+      2 => { name: :scroll_y, type: :int, default: 0 }, # 1/16 px
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
     }
+
+    # Camera scroll fields of SAVE_MAP_EVENT are stored in 1/16 pixel.
+    SCROLL_UNITS_PER_PIXEL = 16
 
     # Party inventory (chunk 109 of the save file). Confirmed against a real
     # save: gold (21) matched the on-screen 100G, and the parallel item id/count
