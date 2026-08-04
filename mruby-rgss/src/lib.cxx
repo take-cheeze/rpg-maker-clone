@@ -2517,6 +2517,191 @@ mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// ---- Tilemap --------------------------------------------------------------
+
+// One RGSS map tile is 32x32 px; a tileset is 8 tiles (256 px) wide.
+static const int TILE_SIZE = 32;
+static const int TILESET_COLS = 8;
+
+// Alpha-blended copy of a src region into dst (used to stack the map's tile
+// layers, where upper-layer tiles are partly transparent).
+static void blit_blend(Bitmap& dst,
+                       int dx,
+                       int dy,
+                       const Bitmap& src,
+                       int sx,
+                       int sy,
+                       int sw,
+                       int sh) {
+  for (int j = 0; j < sh; ++j) {
+    const int ry = dy + j, syy = sy + j;
+    if (ry < 0 || ry >= dst.height || syy < 0 || syy >= src.height)
+      continue;
+    for (int i = 0; i < sw; ++i) {
+      const int rx = dx + i, sxx = sx + i;
+      if (rx < 0 || rx >= dst.width || sxx < 0 || sxx >= src.width)
+        continue;
+      int r, g, b, a;
+      bmp_read(src, sxx, syy, r, g, b, a);
+      if (a <= 0)
+        continue;
+      if (a >= 255) {
+        bmp_put(dst, rx, ry, r, g, b, 255);
+        continue;
+      }
+      int dr, dg, db, da;
+      bmp_read(dst, rx, ry, dr, dg, db, da);
+      const int inv = 255 - a;
+      bmp_put(dst, rx, ry, (r * a + dr * inv) / 255, (g * a + dg * inv) / 255,
+              (b * a + db * inv) / 255, std::max(da, a));
+    }
+  }
+}
+
+// Redraw the visible part of the map into the tilemap's canvas. For each of the
+// three map-data layers, the tiles overlapping the viewport (given ox/oy) are
+// blitted from the tileset. Only regular tiles (id >= 384) are drawn; the seven
+// autotiles (id 48..383) and the per-tile priority layering are future work
+// (tracked in docs/rpgxp-rgss-api-gap.md), so autotile-heavy ground is missing
+// for now. The canvas is invalidated directly (its buffer is not a sprite
+// @bitmap that Graphics.update's dirty sweep watches).
+void tilemap_refresh(mrb_state* M, mrb_value self) {
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!obj)
+    return;
+  const mrb_value canvas_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_canvas"));
+  if (mrb_nil_p(canvas_v))
+    return;
+  Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
+  std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
+
+  const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
+  const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
+  if (!mrb_test(ts_v) || !DATA_PTR(ts_v) || !mrb_test(md_v) ||
+      !DATA_PTR(md_v)) {
+    lv_obj_invalidate(obj);
+    return;
+  }
+  Bitmap& ts = DataType<Bitmap>::get(M, ts_v);
+  Table& md = DataType<Table>::get(M, md_v);
+  const int cols = ts.width >= TILE_SIZE ? ts.width / TILE_SIZE : TILESET_COLS;
+  const int mapw = md.xsize, maph = md.ysize;
+  const int layers = md.zsize < 3 ? md.zsize : 3;
+  const mrb_int ox =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+  const mrb_int oy =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+
+  int tx0 = static_cast<int>(ox) / TILE_SIZE;
+  int ty0 = static_cast<int>(oy) / TILE_SIZE;
+  if (tx0 < 0)
+    tx0 = 0;
+  if (ty0 < 0)
+    ty0 = 0;
+  int tx1 = static_cast<int>(ox + dst.width) / TILE_SIZE + 1;
+  int ty1 = static_cast<int>(oy + dst.height) / TILE_SIZE + 1;
+  if (tx1 > mapw)
+    tx1 = mapw;
+  if (ty1 > maph)
+    ty1 = maph;
+
+  for (int layer = 0; layer < layers; ++layer) {
+    for (int ty = ty0; ty < ty1; ++ty) {
+      for (int tx = tx0; tx < tx1; ++tx) {
+        const int idx = tx + ty * mapw + layer * mapw * maph;
+        if (idx < 0 || idx >= static_cast<int>(md.data.size()))
+          continue;
+        const int id = md.data[idx];
+        if (id < 384)  // empty / autotile — deferred
+          continue;
+        const int ti = id - 384;
+        const int sx = (ti % cols) * TILE_SIZE;
+        const int sy = (ti / cols) * TILE_SIZE;
+        blit_blend(dst, tx * TILE_SIZE - static_cast<int>(ox),
+                   ty * TILE_SIZE - static_cast<int>(oy), ts, sx, sy, TILE_SIZE,
+                   TILE_SIZE);
+      }
+    }
+  }
+  lv_obj_invalidate(obj);
+}
+
+mrb_value tilemap_init(mrb_state* M, mrb_value self) {
+  mrb_value vp = mrb_nil_value();
+  mrb_get_args(M, "|o", &vp);
+
+  mrb_int w = 0, h = 0;
+  if (mrb_nil_p(vp)) {
+    lv_display_t* d = get_display(M);
+    w = lv_display_get_horizontal_resolution(d);
+    h = lv_display_get_vertical_resolution(d);
+  } else {
+    Rect& r =
+        DataType<Rect>::get(M, mrb_iv_get(M, vp, mrb_intern_lit(M, "@rect")));
+    w = r.width;
+    h = r.height;
+  }
+  if (w <= 0)
+    w = 1;
+  if (h <= 0)
+    h = 1;
+
+  lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
+  wrap_lv_obj(M, self, c);
+  register_zobj(M, self);
+  lv_obj_set_pos(c, 0, 0);
+
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value canvas_v =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& canvas = DataType<Bitmap>::get(M, canvas_v);
+  std::fill(canvas.buffer.begin(), canvas.buffer.end(),
+            static_cast<uint8_t>(0));
+  lv_canvas_set_buffer(c, canvas.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_canvas"), canvas_v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tileset"), mrb_nil_value());
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), mrb_nil_value());
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
+  return self;
+}
+
+mrb_value tilemap_set_tileset(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tileset"), v);
+  tilemap_refresh(M, self);
+  return v;
+}
+
+mrb_value tilemap_set_map_data(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@map_data"), v);
+  tilemap_refresh(M, self);
+  return v;
+}
+
+mrb_value tilemap_set_ox(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
+  tilemap_refresh(M, self);
+  return self;
+}
+
+mrb_value tilemap_set_oy(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
+  tilemap_refresh(M, self);
+  return self;
+}
+
 // ---- Window ---------------------------------------------------------------
 
 mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h);
@@ -3205,6 +3390,21 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
+
+  RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
+  MRB_SET_INSTANCE_TT(tilemap, MRB_TT_DATA);
+  mrb_define_method(M, tilemap, "initialize", tilemap_init, MRB_ARGS_OPT(1));
+  mrb_define_method(M, tilemap, "tileset=", tilemap_set_tileset,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "map_data=", tilemap_set_map_data,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "visible", obj_visible, MRB_ARGS_NONE());
+  mrb_define_method(M, tilemap, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "dispose", obj_dispose, MRB_ARGS_NONE());
+  mrb_define_method(M, tilemap, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
   RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
   MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
