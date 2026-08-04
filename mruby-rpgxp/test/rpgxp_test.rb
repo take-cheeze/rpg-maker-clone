@@ -11,11 +11,12 @@ RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
 
 # Minimal database stand-in exposing just the accessors the runtime reads.
 class FakeDB
-  def initialize(actors: [], tilesets: [])
+  def initialize(actors: [], tilesets: [], classes: [])
     @actors = actors
     @tilesets = tilesets
+    @classes = classes
   end
-  attr_reader :actors, :tilesets
+  attr_reader :actors, :tilesets, :classes
 end
 
 assert "RPG schema Marshal round-trip" do
@@ -356,6 +357,65 @@ assert "Interpreter: change party member and actor-in-party condition" do
   ])
   assert_true s2.switches[1]   # actor 1 is in party
   assert_false s2.switches[2]  # actor 9 is not
+end
+
+# A FakeDB whose actor 1 (Aluxes) is level 3 of class 1, wearing weapon 7 and
+# armor 11, with the class teaching skill 50 at level 2 and skill 60 at level 4.
+def xp_actor_db
+  a = RPG::Actor.new
+  a.id = 1; a.name = "Aluxes"; a.class_id = 1
+  a.initial_level = 3; a.final_level = 5
+  a.weapon_id = 7; a.armor1_id = 11
+  a.armor2_id = 0; a.armor3_id = 0; a.armor4_id = 0
+  prm = Table.new(6, 6)                 # 6 params x levels 0..5
+  prm[0, 3] = 100; prm[1, 3] = 30; prm[2, 3] = 12
+  prm[3, 3] = 10;  prm[4, 3] = 8;  prm[5, 3] = 6
+  a.parameters = prm
+  cls = RPG::Class.new; cls.id = 1
+  l1 = RPG::Class::Learning.new; l1.level = 2; l1.skill_id = 50
+  l2 = RPG::Class::Learning.new; l2.level = 4; l2.skill_id = 60
+  cls.learnings = [l1, l2]
+  FakeDB.new(actors: [nil, a], classes: [nil, cls])
+end
+
+assert "Game::Actor derives stats, skills and equipment from the database" do
+  a = RPGXP::Game::Actor.new(xp_actor_db, 1)
+  assert_equal 3, a.level
+  assert_equal 100, a.max_hp
+  assert_equal 30, a.max_sp
+  assert_equal 12, a.str
+  assert_equal 6, a.int
+  assert_equal "Aluxes", a.name
+  assert_equal 100, a.hp                 # HP/SP start full
+  assert_equal 30, a.sp
+  assert_equal [50], a.skills            # only the learning at level <= 3
+  assert_true  a.knows_skill?(50)
+  assert_false a.knows_skill?(60)
+  assert_true  a.weapon_equipped?(7)
+  assert_false a.weapon_equipped?(8)
+  assert_true  a.armor_equipped?(11)
+  assert_false a.armor_equipped?(12)
+end
+
+assert "Interpreter: actor skill / weapon / armor / name conditionals" do
+  s = RPGXP::Game::State.new(xp_actor_db, [1], 1, 0, 0)
+  # State#actor memoises one live actor per id.
+  assert_true s.actor(1).equal?(s.actor(1))
+  assert_nil s.actor(99)
+  run_to_end(s, [
+    cmd(111, [4, 1, 2, 50], 0), cmd(121, [1, 1, 0], 1), cmd(412, [], 0), # knows skill 50
+    cmd(111, [4, 1, 2, 60], 0), cmd(121, [2, 2, 0], 1), cmd(412, [], 0), # not skill 60
+    cmd(111, [4, 1, 3, 7], 0),  cmd(121, [3, 3, 0], 1), cmd(412, [], 0), # weapon 7
+    cmd(111, [4, 1, 4, 11], 0), cmd(121, [4, 4, 0], 1), cmd(412, [], 0), # armor 11
+    cmd(111, [4, 1, 1, "Aluxes"], 0), cmd(121, [5, 5, 0], 1), cmd(412, [], 0), # name is
+    cmd(111, [4, 1, 4, 99], 0), cmd(121, [6, 6, 0], 1), cmd(412, [], 0)  # not armor 99
+  ])
+  assert_true  s.switches[1]   # skill 50 learned
+  assert_false s.switches[2]   # skill 60 not learned (class teaches it at level 4)
+  assert_true  s.switches[3]   # weapon 7 equipped
+  assert_true  s.switches[4]   # armor 11 equipped
+  assert_true  s.switches[5]   # name matches
+  assert_false s.switches[6]   # armor 99 not equipped
 end
 
 assert "Interpreter: control variables from game quantities" do

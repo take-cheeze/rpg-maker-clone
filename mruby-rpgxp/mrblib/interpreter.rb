@@ -480,11 +480,15 @@ class RPGXP
           compare(lhs, rhs, param(cmd, 4, 0))
         when 2 # self switch: [2, ch, value(0 on / 1 off)]
           self_switch_on?(param(cmd, 1)) == (param(cmd, 2) == 0)
-        when 4 # actor: [4, actor_id, sub_type, ...]; sub 0 = "is in the party"
-          if param(cmd, 2) == 0
-            @state.party.include?(param(cmd, 1))
-          else
-            true # name / skill / equipment / state sub-conditions not modelled
+        when 4 # actor: [4, actor_id, sub_type, value]
+          actor = @state.actor(param(cmd, 1))
+          case param(cmd, 2)
+          when 0 then @state.party.include?(param(cmd, 1))              # in the party
+          when 1 then !actor.nil? && actor.name == param(cmd, 3)        # name is
+          when 2 then !actor.nil? && actor.knows_skill?(param(cmd, 3))  # skill learned
+          when 3 then !actor.nil? && actor.weapon_equipped?(param(cmd, 3)) # weapon
+          when 4 then !actor.nil? && actor.armor_equipped?(param(cmd, 3))  # armor
+          else true # state (5) sub-condition not modelled
           end
         when 7 # gold: [7, amount, cmp(0 >= / 1 <=)]
           param(cmd, 2) == 0 ? @state.gold >= param(cmd, 1) : @state.gold <= param(cmd, 1)
