@@ -490,10 +490,20 @@ class RPG2k
       end
 
       def build_chipset
-        Game::ChipSet.new(@db, @map.chipset_id)
+        Game::ChipSet.new(@db, @tileset_id || @map.chipset_id)
       rescue StandardError => e
         $stderr.puts "[RPG2k] chipset load failed, tiles treated as passable: #{e.message}"
         nil
+      end
+
+      # Rebuild the chipset model and its tile graphic (after a Change Map Tileset
+      # swaps the tileset id), disposing the old graphic bitmap. Passability,
+      # terrain and rendering all read the refreshed chipset from here on.
+      def rebuild_chipset
+        @chipset = build_chipset
+        old = @chipset_bmp
+        @chipset_bmp = load_chipset_graphic
+        old.dispose if old && !old.equal?(@chipset_bmp)
       end
 
       # Load the chipset tile graphic (ChipSet/<name>). Chipsets are indexed
@@ -716,6 +726,7 @@ class RPG2k
         apply_move_requests(it, p[:event])
         apply_location_requests(it, p[:event])
         apply_erase_request(it, p[:event])
+        apply_tileset_request(it)
       rescue StandardError
         nil
       end
@@ -912,6 +923,21 @@ class RPG2k
       def player_hidden?
         leader = @state.party.leader
         @state.player_transparent || (leader && leader.transparent) ? true : false
+      end
+
+      # -- Change Map Tileset -------------------------------------------------
+
+      # If the interpreter ran a Change Map Tileset this step, swap the map's
+      # chipset to the requested id and rebuild its tile graphic. The override
+      # lasts until the next map load (see perform_teleport).
+      def apply_tileset_request(interp)
+        id = interp.take_tileset_request
+        return if id.nil?
+        @tileset_id = id
+        rebuild_chipset
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Change Map Tileset failed: #{e.message}"
+        nil
       end
 
       # -- Move Event (Set Move Route) ----------------------------------------
@@ -1179,6 +1205,7 @@ class RPG2k
           apply_erase_request(@interpreter, @active_event)
           apply_halt_request(@interpreter)
           apply_graphic_change(@interpreter)
+          apply_tileset_request(@interpreter)
         end
       end
 
@@ -1208,6 +1235,7 @@ class RPG2k
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
+        @tileset_id = nil # a Change Map Tileset override does not survive a teleport
         @chipset = build_chipset
         @started_auto = {}
         @started_common = {}

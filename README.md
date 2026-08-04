@@ -29,7 +29,8 @@
   branches, teleport, waits, numeric input (Input Number), BGM/SE playback,
   Call Event (run a common event / another event's page), Move Event (force a
   move route onto an event or the player), Halt All Movement (cancel every forced
-  route), Change / Trade Event Location (snap or swap event/player tiles), Set
+  route), Change / Trade Event Location (snap or swap event/player tiles), Change
+  Map Tileset (swap the map's chipset), Set
   Transparent Flag (hide/show the hero), Return to Title and Erase
   Event (remove an event from
   the map). Events start on the action button, on

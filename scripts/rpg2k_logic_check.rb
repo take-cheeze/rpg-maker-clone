@@ -1721,6 +1721,18 @@ check 'Trade Event Locations queues a :swap request' do
   eq [{ op: :swap, a: 3, b: 7 }], it.take_location_requests
 end
 
+check 'Change Map Tileset queues a one-shot tileset request, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_MAP_TILESET, [7]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Change Map Tileset must not pause the interpreter'
+  eq true, st.switches[1], 'the command after it still ran'
+  eq 7, it.take_tileset_request, 'the requested tileset id is reported once'
+  eq nil, it.take_tileset_request, 'and clears after the first read'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

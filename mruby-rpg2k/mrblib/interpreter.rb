@@ -66,6 +66,7 @@ module Game
       MEMORIZE_BGM     = 11530
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
+      CHANGE_MAP_TILESET = 11710
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
       RETURN_TO_TITLE  = 12510
@@ -96,6 +97,7 @@ module Game
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @tileset_request = nil
       @input_variable = nil
       @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
@@ -126,6 +128,7 @@ module Game
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @tileset_request = nil
       reset_waits
     end
 
@@ -160,6 +163,16 @@ module Game
       v = @erase_requested
       @erase_requested = false
       v
+    end
+
+    # The new tileset (chipset) id requested by a Change Map Tileset command since
+    # the last call, or nil if none. Reading it clears the request. The owning
+    # scene polls this after #update and rebuilds the map's chipset; non-blocking,
+    # so the rest of the command list runs on.
+    def take_tileset_request
+      id = @tileset_request
+      @tileset_request = nil
+      id
     end
 
     # True (once) if a Halt All Movement command ran since the last call, clearing
@@ -315,6 +328,7 @@ module Game
       when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd

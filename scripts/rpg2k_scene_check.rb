@@ -122,19 +122,20 @@ R = Game::MoveRoute
 
 # A chipset with no passability table -> every tile is walkable, so movement is
 # bounded only by the map edges, the player and other events.
-def fake_chipset
+def fake_chipset(name = 'cs')
   # All tiles passable (no lower table); terrain tag 42 on chip index 0 (the id
   # every tile of the synthetic all-zero map maps to).
   td = Array.new(162, 0)
   td[0] = 42
-  OpenStruct.new(name: 'cs', chipset_name: 'cs', passable_data_lower: nil,
+  OpenStruct.new(name: name, chipset_name: name, passable_data_lower: nil,
                  terrain_data: td)
 end
 
 def fake_db(common = nil)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: ''),
-    chipset: { 1 => fake_chipset },
+    # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
+    chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
     common_event: common,
     player: {}
   )
@@ -539,6 +540,18 @@ check 'Trade Event Locations swaps two events' do
   b = chars(scene)[2]
   eq [4, 1], [a.x, a.y], 'event 1 took event 2 old tile'
   eq [2, 2], [b.x, b.y], 'event 2 took event 1 old tile'
+end
+
+check 'Change Map Tileset rebuilds the map chipset from the new id' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_MAP_TILESET, [2])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  eq 'cs', scene.instance_variable_get(:@chipset).name, 'starts on chipset 1'
+  5.times { scene.update }
+  eq 'cs2', scene.instance_variable_get(:@chipset).name,
+     'the chipset was rebuilt from the requested tileset id'
+  eq 2, scene.instance_variable_get(:@tileset_id), 'the override id is recorded'
 end
 
 check 'Input Number opens a widget; confirming stores the entered value' do
