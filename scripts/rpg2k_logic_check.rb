@@ -1264,11 +1264,12 @@ end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
-                       :affect_hp, :affect_sp)
+                       :affect_hp, :affect_sp, :state_effects, :reverse_state_effect)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
-               sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false)
+               sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
+               state_effects: nil, reverse_state: false)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
-                prate, mrate, hp, sp)
+                prate, mrate, hp, sp, state_effects, reverse_state)
 end
 class FakeActorDB
   attr_reader :player, :system, :item, :skill
@@ -1839,6 +1840,79 @@ check 'casting a heal with the target already full spends no SP' do
   eq false, st.party.skill_effective?(hero, 5, ally)
   eq [], st.party.cast_skill(hero, 5, ally)
   eq 30, hero.mp                               # unchanged
+end
+
+# -- Field skill status effects (cure / inflict, deterministic) --------------
+
+check 'a cure skill removes only its state_effects states (usable at full HP)' do
+  # state_effects index i -> state id i+1; [0,0,1,0,0,0,1] flags states 3 and 7.
+  skills = { 5 => fake_skill(name: 'Refresh', scope: 3, sp_cost: 4,
+                             state_effects: [0, 0, 1, 0, 0, 0, 1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)               # full HP
+  hero.learn_skill(5)
+  ally.add_state(3); ally.add_state(7); ally.add_state(9)
+  eq true, st.party.skill_effective?(hero, 5, ally)   # afflicted -> usable at full HP
+  eq [ally], st.party.cast_skill(hero, 5, ally)
+  eq false, ally.state?(3)                     # cured
+  eq false, ally.state?(7)                     # cured
+  eq true, ally.state?(9)                      # not listed -> stays
+  eq 26, hero.mp                               # 30 - 4, consumed
+end
+
+check 'a revive skill cures the death state, then its HP recovery lands' do
+  # Cures state 1 (戦闘不能) and heals. States apply first: the cure revives the
+  # ally to 1 HP, then the recovery lands. effect = power 20 + mrate 40*int12/40 = 32.
+  skills = { 6 => fake_skill(name: 'Life', scope: 3, sp_cost: 6,
+                             power: 20, mrate: 40, hp: true, state_effects: [1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(6)
+  ally.change_hp(-9999)                        # KO: HP 0 + state 1
+  eq true, ally.dead?
+  eq [ally], st.party.cast_skill(hero, 6, ally)
+  eq false, ally.dead?
+  eq 33, ally.hp                               # revived to 1, then +32
+end
+
+check 'a plain heal skill cannot revive a downed ally' do
+  skills = { 7 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5,
+                             power: 20, mrate: 40, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(7)
+  ally.change_hp(-9999)                        # KO
+  eq [], st.party.cast_skill(hero, 7, ally)    # a plain heal can't touch a KO'd actor
+  eq true, ally.dead?
+  eq 30, hero.mp                               # nothing spent
+end
+
+check 'a reverse skill inflicts its state_effects states' do
+  skills = { 8 => fake_skill(name: 'Curse', scope: 3, sp_cost: 3,
+                             state_effects: [0, 0, 1], reverse_state: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(8)
+  eq true, st.party.skill_effective?(hero, 8, ally)   # can inflict -> usable
+  eq [ally], st.party.cast_skill(hero, 8, ally)
+  eq true, ally.state?(3)                      # inflicted
+  eq 27, hero.mp                               # 30 - 3
+end
+
+check 'a pure cure skill on an unafflicted ally does nothing and spends no SP' do
+  skills = { 5 => fake_skill(name: 'Refresh', scope: 3, sp_cost: 4,
+                             state_effects: [0, 0, 1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(5)
+  eq false, st.party.skill_effective?(hero, 5, ally)
+  eq [], st.party.cast_skill(hero, 5, ally)
+  eq 30, hero.mp
 end
 
 # -- Field equip menu (Game::Party bag-aware equip) --------------------------

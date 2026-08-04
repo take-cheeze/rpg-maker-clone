@@ -235,9 +235,15 @@ The work below is roughly ordered by the critical path to a walkable game
   death state (or Full Recovery) revives at 1 HP — `Game::Actor#dead?`/`alive?`
   report it, and the KO'd HP-0 + state-1 pair round-trips through the `.lsd`. The
   **Change Condition** event command (10480) inflicts / cures a state on the
-  target actors, so events can poison, cure, KO, or revive. Still remaining:
-  *inflicting* states from combat (the non-reverse item case rolled against
-  `state_chance`, and skill / battle infliction), and party-wipe game over.
+  target actors, so events can poison, cure, KO, or revive. **Field skills change
+  status too**: `cast_skill` applies a skill's `state_effects` deterministically
+  (EasyRPG's field `Game_Battler::UseSkill` — no accuracy roll), curing them by
+  default and inflicting them when `reverse_state_effect` is set (the opposite
+  polarity to items); states apply before HP so a revive skill (curing 戦闘不能)
+  stands the ally up and its recovery then lands, and a cure skill is usable even
+  at full HP. Still remaining: inflicting states from **battle** (rolling
+  `state_chance` / to-hit, the non-reverse item case, enemy attacks) and
+  party-wipe game over.
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on

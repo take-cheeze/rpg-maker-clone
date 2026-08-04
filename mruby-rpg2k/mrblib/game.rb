@@ -1592,34 +1592,84 @@ module Game
       end
     end
 
+    # The states a field skill changes, from its `state_effects` (a 0/1 byte per
+    # state, index i -> state id i+1). Per EasyRPG's Game_Battler::UseSkill, the
+    # field path is deterministic (no accuracy roll): with `reverse_state_effect`
+    # cleared (the default) the skill *cures* those states, with it set it
+    # *inflicts* them -- the opposite polarity to items, where the reverse flag
+    # marks the cure.
+    def skill_state_ids(sk)
+      set = sk.respond_to?(:state_effects) ? sk.state_effects : nil
+      return [] unless set
+      out = []
+      set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
+      out
+    end
+
+    # The states a field skill cures (the default, non-reverse case).
+    def skill_cured_states(sk)
+      return [] if sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      skill_state_ids(sk)
+    end
+
+    # The states a field skill inflicts (the reverse case).
+    def skill_inflicted_states(sk)
+      return [] unless sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      skill_state_ids(sk)
+    end
+
     # Whether casting skill `sid` on `target` would change anything -- used to grey
     # out a no-op (e.g. a heal on an already-full ally). Requires the caster to be
-    # able to cast it at all.
+    # able to cast it at all. A skill that cures a condition the target actually
+    # has (or inflicts one it lacks) is usable even when HP/SP are full.
     def skill_effective?(caster, sid, target)
       sk = db_skill(sid)
       return false unless sk && can_cast?(caster, sid)
       amount = skill_effect(sk, caster)
-      return false unless amount > 0
+      cured = skill_cured_states(sk)
+      inflicted = skill_inflicted_states(sk)
       skill_targets(sk, caster, target).any? do |t|
-        (sk.affect_hp && t.hp < t.max_hp) || (sk.affect_sp && t.mp < t.max_mp)
+        (amount > 0 && sk.affect_hp && t.hp < t.max_hp) ||
+          (amount > 0 && sk.affect_sp && t.mp < t.max_mp) ||
+          cured.any? { |s| t.state?(s) } ||
+          inflicted.any? { |s| !t.state?(s) }
       end
     end
 
-    # Cast field skill `sid` from `caster` on `target` (scope-dependent). Restores
-    # HP and/or SP by the skill effect to each target (clamped), then spends the
-    # caster's SP -- but only when it actually helped someone, so a wasted cast
-    # (everyone full) costs nothing. Returns the affected actors.
+    # Cast field skill `sid` from `caster` on `target` (scope-dependent). Applies
+    # the skill's status changes then restores HP and/or SP by the skill effect to
+    # each target (clamped), then spends the caster's SP -- but only when it
+    # actually helped someone, so a wasted cast (everyone full and unafflicted)
+    # costs nothing. States are applied before HP so a cure that clears the death
+    # state revives the target and the recovery then lands. Returns the affected
+    # actors.
     def cast_skill(caster, sid, target = nil)
       sk = db_skill(sid)
       return [] unless sk && can_cast?(caster, sid)
       amount = skill_effect(sk, caster)
+      cured = skill_cured_states(sk)
+      inflicted = skill_inflicted_states(sk)
       affected = []
       skill_targets(sk, caster, target).each do |t|
+        changed = false
+        cured.each do |s|
+          if t.state?(s)
+            t.remove_state(s)
+            changed = true
+          end
+        end
+        inflicted.each do |s|
+          unless t.state?(s)
+            t.add_state(s)
+            changed = true
+          end
+        end
         before_hp = t.hp
         before_mp = t.mp
         t.change_hp(amount) if sk.affect_hp && amount > 0
         t.change_mp(amount) if sk.affect_sp && amount > 0
-        affected.push(t) if t.hp != before_hp || t.mp != before_mp
+        changed ||= t.hp != before_hp || t.mp != before_mp
+        affected.push(t) if changed
       end
       caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
       affected
