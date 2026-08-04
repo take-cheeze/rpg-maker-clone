@@ -2222,6 +2222,37 @@ mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// RGSS Sprite#zoom_x= / #zoom_y= (a float multiplier, 1.0 = normal size). A
+// Sprite's native handle is an lv_canvas, an LVGL image that scales its content
+// by an integer factor where LV_SCALE_NONE (256) == 1.0. Convert the RGSS float
+// to that fixed point and apply it to the canvas; the float is mirrored into
+// @zoom_x/@zoom_y so the Ruby reader (defaulting to 1.0) returns it. A fresh
+// sprite is already LV_SCALE_NONE, matching RGSS's 1.0 default. mruby's "f"
+// coerces an Integer argument (e.g. `zoom_x = 1`) to Float.
+mrb_value spr_set_zoom_x(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  if (z < 0.0)
+    z = 0.0;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_image_set_scale_x(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
+  return self;
+}
+
+mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
+  mrb_float z;
+  mrb_get_args(M, "f", &z);
+  if (z < 0.0)
+    z = 0.0;
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_image_set_scale_y(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
+  return self;
+}
+
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
@@ -2627,6 +2658,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, spr, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "zoom_x=", spr_set_zoom_x, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
