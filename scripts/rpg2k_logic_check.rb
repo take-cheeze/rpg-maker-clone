@@ -3082,6 +3082,58 @@ check 'Battle: a defending ally takes half damage and does not attack' do
   eq 90, hero.hp, 'took half of 20 = 10'
 end
 
+check 'Battle#step_action walks a round one attack at a time for animation' do
+  # Two fast heroes vs two slow slimes: agility order is Ace, Bee, then the
+  # slimes. #step_action surfaces the round one entry at a time (as the on-screen
+  # battle animates), mutating a single battler's HP per call, then signals the
+  # round boundary with nil without starting a new round.
+  ace = combatant('Ace', 40, 0, 20, 100)
+  bee = combatant('Bee', 40, 0, 15, 100)
+  s1 = combatant('S1', 4, 0, 5, 100)
+  s2 = combatant('S2', 4, 0, 5, 100)
+  bat = Game::Battle.new([ace, bee], [s1, s2], Game::Rng.new(1))
+  bat.command_attack(ace, s1)
+  bat.command_attack(bee, s2)
+  bat.begin_round
+
+  e1 = bat.step_action
+  eq 'Ace', e1[:attacker], 'the faster hero acts first'
+  eq 'S1', e1[:target]
+  eq 80, s1.hp, 'only S1 has been hit so far'
+  eq 100, s2.hp, 'the second attack has not landed yet'
+
+  e2 = bat.step_action
+  eq 'Bee', e2[:attacker]
+  eq 'S2', e2[:target]
+  eq 80, s2.hp, 'now the second attack has landed'
+
+  # The two slimes retaliate (they act after the faster heroes), one per step.
+  e3 = bat.step_action
+  eq 'S1', e3[:attacker], 'the slimes act after the heroes, in agility order'
+  e4 = bat.step_action
+  eq 'S2', e4[:attacker]
+
+  eq nil, bat.step_action, 'the round is exhausted without starting a new one'
+  eq 1, bat.rounds, 'and no fresh round was primed (still round 1)'
+
+  bat.end_round
+  eq nil, ace.action, 'end_round clears the commands for the next round'
+  eq nil, bee.action
+end
+
+check 'Battle#step_action skips a defending ally (no attack, no log entry)' do
+  # A defending ally produces no action entry, so the animation simply does not
+  # step for them — only the foe's retaliation shows.
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 20, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.command_defend(hero)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Foe', entry[:attacker], 'the defending hero is skipped; only the foe acts'
+  eq nil, bat.step_action, 'nothing else to animate this round'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

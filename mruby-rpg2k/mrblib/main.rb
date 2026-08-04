@@ -1760,28 +1760,21 @@ class RPG2k
         @shop = nil
       end
 
-      # -- Enemy Encounter (headless battle) ----------------------------------
+      # -- Enemy Encounter (turn-based battle) --------------------------------
 
-      # Resolve an Enemy Encounter by running a headless auto-battle (Game::Battle)
-      # of the party against the troop. On victory the troop's EXP is granted to
-      # every party member and its gold to the party, then the [Victory] handler
-      # runs; a defeat routes the [Defeat] handler. The battle works on snapshots,
-      # so the party's real HP is left untouched for now — the on-screen
-      # turn-based battle (that would show and persist HP) and game over on defeat
-      # are still to come.
-      # Drive the battle screen the map shows during a :battle wait. It opens on
-      # a Fight / Flee command menu over a party / enemy status display; choosing
-      # Fight resolves the (headless) battle and shows the result, Flee escapes
-      # when allowed. Dismissing the result resumes the interpreter with the
-      # outcome. The per-turn animation (stepping Game::Battle#log on screen) is a
-      # later stage; for now Fight resolves the fight at once.
+      # The battle runs on Combatant snapshots of the party (Game::Battle), so a
+      # resolved fight leaves the real party HP untouched for now — persisting HP
+      # and a game over on defeat are still to come. On victory the troop's EXP /
+      # gold are granted and the [Victory] handler runs; escape and defeat route
+      # their handlers.
+      #
       # Drive the turn-based battle screen the map shows during a :battle wait.
       # Each round the player commands every living party member (Attack a chosen
-      # enemy, or Defend), then the round executes (party actions + enemy attacks,
-      # in agility order); this repeats until a side falls. B on the first actor
-      # flees when the encounter allows it. The per-turn animation of the round is
-      # still to come — for now the round applies at once and the status HP
-      # updates. Dismissing the result resumes the event with the outcome.
+      # enemy, or Defend), then the round plays out action by action in agility
+      # order — one attack landing per BATTLE_ANIM_FRAMES, each bannered with its
+      # HP tick — until a side falls. B on the first actor flees when the
+      # encounter allows it. Dismissing the result resumes the event with the
+      # outcome.
       def drive_battle
         req = @interpreter.battle_request
         return @interpreter.resume_battle(:victory) unless req
@@ -1792,6 +1785,7 @@ class RPG2k
         case @battle_ui[:phase]
         when :command then drive_battle_command
         when :target  then drive_battle_target
+        when :animate then drive_battle_animate
         when :result  then drive_battle_result
         end
       rescue StandardError => e
@@ -1808,6 +1802,7 @@ class RPG2k
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000)),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        status_win: nil, cmd_win: nil, target_win: nil,
+                       action_win: nil, anim_timer: 0,
                        result_win: nil, result: nil }
         refresh_battle_status
         draw_battle_command
@@ -1866,24 +1861,61 @@ class RPG2k
         end
       end
 
-      # Move to the next living party member, or execute the round once every
-      # member has a command.
+      # Move to the next living party member, or start playing out the round once
+      # every member has a command.
       def advance_actor
         @battle_ui[:actor_i] += 1
         @battle_ui[:cmd] = 0
         if @battle_ui[:actor_i] >= living_allies.length
-          execute_round
+          start_round_animation
         else
           draw_battle_command
         end
       end
 
-      # Run one round, refresh the HP display, and either show the result or open
-      # the next command phase.
-      def execute_round
+      # Frames each attack of the round lingers on screen before the next lands —
+      # a beat long enough to read the hit and see the HP tick, at ~1/3s / 60fps.
+      BATTLE_ANIM_FRAMES = 20
+
+      # Begin animating the commanded round: dismiss the command menu and prime
+      # the battle's per-action queue. From here #drive_battle_animate lands one
+      # attack per BATTLE_ANIM_FRAMES until the round's queue empties.
+      def start_round_animation
+        if @battle_ui[:cmd_win]
+          @battle_ui[:cmd_win].dispose
+          @battle_ui[:cmd_win] = nil
+        end
+        @battle_ui[:battle].begin_round
+        @battle_ui[:phase] = :animate
+        @battle_ui[:anim_timer] = 0 # land the first attack next frame
+      end
+
+      # One attack per BATTLE_ANIM_FRAMES: land the next action (mutating a single
+      # battler's HP), tick the HP display, and banner the hit. When the round's
+      # queue empties, settle it and either show the result or re-open commands —
+      # so the round plays out action by action rather than all at once.
+      def drive_battle_animate
+        if @battle_ui[:anim_timer] > 0
+          @battle_ui[:anim_timer] -= 1
+          return
+        end
+        entry = @battle_ui[:battle].step_action
+        if entry
+          log_round([entry])
+          refresh_battle_status
+          show_battle_action(entry)
+          @battle_ui[:anim_timer] = BATTLE_ANIM_FRAMES
+        else
+          finish_round_animation
+        end
+      end
+
+      # Close out an animated round: clear the commands, drop the action banner,
+      # and branch to the result window or the next command phase.
+      def finish_round_animation
         battle = @battle_ui[:battle]
-        log_round(battle.run_round)
-        refresh_battle_status
+        battle.end_round
+        close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)
         else
@@ -2004,6 +2036,24 @@ class RPG2k
         @battle_ui[:target_win] = nil
       end
 
+      # Banner the attack that just landed ("Hero hits Slime for 12", "…
+      # defeated!") low on the screen while the round animates, so each action
+      # reads on screen as well as its HP tick. Replaced by the next action's
+      # banner and dropped when the round settles.
+      def show_battle_action(entry)
+        line = "#{entry[:attacker]} hits #{entry[:target]} for #{entry[:damage]}"
+        line += ' — defeated!' if entry[:defeated]
+        @battle_ui[:action_win].dispose if @battle_ui[:action_win]
+        y = SCREEN_H - BATTLE_LINE_H - Window::BORDER * 2 - 6
+        @battle_ui[:action_win] = battle_text_window([line], y, 340)
+      end
+
+      def close_battle_action
+        return unless @battle_ui[:action_win]
+        @battle_ui[:action_win].dispose
+        @battle_ui[:action_win] = nil
+      end
+
       def open_battle_result(lines)
         @battle_ui[:result_win] =
           battle_text_window(lines, SCREEN_H - lines.length * BATTLE_LINE_H -
@@ -2029,7 +2079,8 @@ class RPG2k
       def close_battle
         return unless @battle_ui
         [@battle_ui[:status_win], @battle_ui[:cmd_win],
-         @battle_ui[:target_win], @battle_ui[:result_win]].each { |w| w.dispose if w }
+         @battle_ui[:target_win], @battle_ui[:action_win],
+         @battle_ui[:result_win]].each { |w| w.dispose if w }
         @battle_ui = nil
       end
 

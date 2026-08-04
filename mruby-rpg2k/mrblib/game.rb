@@ -2564,19 +2564,45 @@ module Game
     # the round's log entries. Ally commands are cleared afterwards for the next
     # round. `finished?` / `result` report the outcome once a side is wiped.
     def run_round
+      begin_round
       entries = []
+      while (entry = step_action)
+        entries << entry
+      end
+      end_round
+      entries
+    end
+
+    # Prime the agility-ordered queue for a fresh round so #step_action can walk
+    # it one action at a time — the on-screen battle animates a round action by
+    # action rather than applying it all at once (#run_round is just this three-
+    # step sequence run to completion). Counts towards the MAX_ROUNDS cap.
+    def begin_round
       refill_queue
-      until @queue.empty? || finished?
+    end
+
+    # Perform the next single action of the round primed by #begin_round and
+    # return its log entry, skipping battlers that are dead or (allies) defending.
+    # Returns nil once the round's queue is exhausted or the battle is decided —
+    # the caller then clears commands with #end_round and either shows the result
+    # or asks for the next round. Unlike #step it never starts a new round.
+    def step_action
+      loop do
+        return nil if finished? || @queue.empty?
         b = @queue.shift
         next if b.dead?
         entry = strike(b)
         next unless entry
         @log << entry
-        entries << entry
+        return entry
       end
+    end
+
+    # Close a round begun with #begin_round: clear each ally's chosen action (so
+    # the next round starts fresh) and settle the result once a side is wiped.
+    def end_round
       @allies.each { |a| a.action = nil; a.defending = false }
       @result = alive?(@allies) ? :victory : :defeat if finished?
-      entries
     end
 
     private

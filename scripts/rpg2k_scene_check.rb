@@ -1314,8 +1314,10 @@ end
 
 # Drive a battle by having each living actor Attack the first enemy every round
 # until the result window appears (command / target cursors start on Attack /
-# the first target).
-def battle_attack_to_end(scene, max = 100)
+# the first target). The budget is generous: between command phases each round
+# now animates action by action (BATTLE_ANIM_FRAMES per hit), so a multi-round
+# fight spans a few hundred frames.
+def battle_attack_to_end(scene, max = 600)
   max.times do
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :result
@@ -1383,6 +1385,38 @@ check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
   eq 0, st.party.gold, 'fleeing grants nothing'
   ok !st.switches[1], 'the Victory handler was skipped'
   ok st.switches[2], 'the Escape handler ran'
+end
+
+check 'Enemy Encounter scene: the round animates action by action, not at once' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  # Let the encounter open the per-actor command menu (it takes a frame or two).
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  # Command the sole hero to Attack the first enemy: C picks Attack, C confirms
+  # the target; with one ally that starts the round animation.
+  2.times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  eq :animate, ui[:phase], 'the commanded round now plays out as an animation'
+  eq 0, ui[:battle].log.length, 'no hit has landed the instant the round starts'
+
+  scene.update # lands exactly the first action of the round
+  eq 1, ui[:battle].log.length, 'one attack landed on the first animation step'
+  ok ui[:action_win], 'and it is bannered on screen'
+  # The timer holds the next action back, so a mid-timer frame lands nothing more.
+  scene.update
+  eq 1, ui[:battle].log.length, 'the next action waits out BATTLE_ANIM_FRAMES'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
