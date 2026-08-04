@@ -305,8 +305,16 @@ if(NOT EMSCRIPTEN)
   # so run under a virtual X server (xvfb-run is provided by the dev shell).
   # Older LVGL silently tolerated a failed SDL_CreateWindow; v9.5.0 correctly
   # errors out when no window can be created, which would abort this smoke test.
+  #
+  # Use a fixed display number rather than `xvfb-run -a`: CI runs this test
+  # concurrently with the MV smoke tests, which are also xvfb-run instances, and
+  # `-a`'s auto server-number probe is not atomic — concurrent probes can pick
+  # the same display, so one Xvfb loses its server and the client dies with an
+  # "XIO: fatal IO error". Each concurrent run gets its own reserved number
+  # (exe_open=99, MV runs=100..104 in .github/workflows/build.yml) so they can
+  # never collide.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(exe_open_cmd xvfb-run -a "--server-args=-screen 0 640x480x24"
+    set(exe_open_cmd xvfb-run --server-num=99 "--server-args=-screen 0 640x480x24"
                      ${exe_open_cmd})
   endif()
   add_test(
