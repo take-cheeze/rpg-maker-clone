@@ -30,4 +30,14 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   cxx.include_paths << "#{dir}/../include"
   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/quickjs"
   linker.libraries << "qjs" << "m" << "pthread"
+
+  # OSMesa (off-screen software Mesa) + GLES2 back the MZ WebGL renderer
+  # (src/mvgl.cxx, milestone M6.3). OSMesa renders into a CPU RGBA buffer with no
+  # GPU/display — matching the software LVGL pipeline and working headless in CI.
+  # Provided by libosmesa6-dev / libgles2-mesa-dev (apt) and the `osmesa`/
+  # `libGLES` nix inputs in flake.nix. Not linked into the Emscripten build,
+  # which has its own WebGL via the browser.
+  unless ENV["MRUBY_TARGET"] == "emscripten"
+    linker.libraries << "OSMesa" << "GLESv2"
+  end
 end

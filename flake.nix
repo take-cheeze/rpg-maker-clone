@@ -92,6 +92,13 @@
             buildInputs = with pkgs; [
               SDL2
               SDL2_mixer
+              # OSMesa (off-screen software Mesa) + the GLES2 dispatch back the
+              # RPG Maker MZ WebGL renderer (mruby-mvjs/src/mvgl.cxx, ADR 0004
+              # M6.3). osmesa provides libOSMesa + GL/osmesa.h; libGL (libglvnd)
+              # provides libGLESv2 + the GLES2/*.h headers. Both are software and
+              # headless, matching the LVGL/CPU pipeline.
+              osmesa
+              libGL
             ];
             # The package build only builds; tests are run separately via CTest.
             # Prevents nixpkgs' pytest check hook from hijacking the check phase

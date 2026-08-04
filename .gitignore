@@ -7,3 +7,6 @@
 /data/*
 !/data/mv-sample
 /ss
+
+# Runtime save artifacts written by the MV/websave (localStorage) shim.
+/save

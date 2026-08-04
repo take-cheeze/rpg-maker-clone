@@ -27,6 +27,7 @@
 #include <vector>
 
 #include <mruby.h>
+#include <mruby/array.h>
 #include <mruby/string.h>
 
 #include <quickjs.h>
@@ -37,6 +38,7 @@
 // encode via stbi_write_png_to_func, writing the bytes to the file ourselves.
 #include <stb_image_write.h>
 
+#include "mvgl.hxx"
 #include "mvhost.hxx"
 #include "rgss_bitmap.hxx"
 
@@ -862,6 +864,20 @@ std::string mv_resolve_path(const std::string& raw) {
   return g_base_dir + "/" + p;
 }
 
+// MV::GL.smoke_test -> [r, g, b, a] (the rendered centre pixel) on success, or
+// nil on failure. Drives the OSMesa GLES2 pipeline end to end (create context,
+// compile PIXI-style ES 1.00 shaders, draw, read back) without any game engine,
+// so CI can prove the WebGL backend (M6.3a) works on its runners.
+mrb_value gl_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
+  uint8_t px[4] = {0, 0, 0, 0};
+  if (!mvgl::smoke_test(px))
+    return mrb_nil_value();
+  mrb_value ary = mrb_ary_new_capa(mrb, 4);
+  for (int i = 0; i < 4; ++i)
+    mrb_ary_push(mrb, ary, mrb_fixnum_value(px[i]));
+  return ary;
+}
+
 extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
@@ -873,6 +889,11 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, js, "present", js_present, MRB_ARGS_ARG(1, 1));
   mrb_define_class_method(mrb, js, "screenshot", js_screenshot,
                           MRB_ARGS_REQ(1));
+
+  // MV::GL — the off-screen GLES2 backend for the MZ WebGL path (M6.3a).
+  RClass* gl = mrb_define_class_under(mrb, mv, "GL", mrb->object_class);
+  mrb_define_class_method(mrb, gl, "smoke_test", gl_smoke_test,
+                          MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}
