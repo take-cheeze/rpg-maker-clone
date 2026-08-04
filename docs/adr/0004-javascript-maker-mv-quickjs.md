@@ -141,6 +141,27 @@ JavaScript loads and interprets the JSON.
   - **M6.3 — WebGL rendering.** The WebGL-subset backend behind PIXI v5, the
     bulk of the work — MZ dropped the Canvas2D renderer the MV bridge targets.
 
+  **Concrete boot-path gaps (read off the real MZ engine).** MZ's boot differs
+  from MV's in more than the renderer; the host-integration work, in the order
+  the engine hits it, is:
+  1. **Script loading.** MV registers `window.onload` and the host evals
+     `CORE_SCRIPTS` then fires it. MZ's `main.js` is itself the loader: it
+     appends the other scripts as `<script>` elements and waits for their
+     `onload`. The host reuse (M6.2) must drive that sequence directly rather
+     than eval `main.js`, since our shim does not fetch+execute injected
+     `<script>` tags.
+  2. **Effekseer WASM runtime.** Before `Scene_Boot`, `main.js` calls
+     `effekseer.initRuntime("js/libs/effekseer.wasm", …)` and only proceeds on
+     its callback. The quickjs host has no WebAssembly, so this needs either a
+     WASM shim or a stubbed `effekseer` runtime whose `initRuntime` invokes the
+     success callback (Effekseer only drives battle animations, so a no-op
+     stub is enough to boot).
+  3. **The WebGL wall.** `SceneManager.run` starts with
+     `if (!Utils.canUseWebGL()) throw new Error("… does not support WebGL")`
+     (`rmmz_managers.js`), and PIXI v5 has no Canvas2D fallback. This is M6.3:
+     `canvas.getContext("webgl")` must return a real (LVGL-backed) context —
+     the host deliberately keeps it `null` today so MV's PIXI v4 uses Canvas.
+
 [rpgtkoolmv]: https://github.com/rpgtkoolmv/corescript
 
 ## Consequences
