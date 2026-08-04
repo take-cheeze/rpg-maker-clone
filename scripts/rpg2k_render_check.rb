@@ -285,6 +285,54 @@ check 'animation-type predicates classify the six types' do
   ok !EG.animated?(EG::FIXED_GRAPHIC)
 end
 
+# -- parallax background geometry (Game::Parallax) ----------------------------
+
+PX = Game::Parallax
+
+check 'a non-looping panorama no larger than the screen stays fixed' do
+  # The common Nepheshel full-screen backdrop: 640x480 image, any camera -> 0.
+  eq 0, PX.axis_offset(false, false, 0, 0, 0,   640, 1280, 640)
+  eq 0, PX.axis_offset(false, false, 0, 0, 320, 640,  1280, 640)
+  eq 0, PX.axis_offset(false, false, 0, 0, 999, 480,  2000, 480) # y axis
+end
+
+check 'a non-looping panorama wider than the screen pans across its excess' do
+  # img 1280, screen 640, map 1280 -> camera 0..640 reveals the 640px excess.
+  eq 0,    PX.axis_offset(false, false, 0, 0, 0,   640, 1280, 1280)
+  eq(-320, PX.axis_offset(false, false, 0, 0, 320, 640, 1280, 1280))
+  eq(-640, PX.axis_offset(false, false, 0, 0, 640, 640, 1280, 1280))
+  # Camera clamps, so past the edge it holds at the far offset.
+  eq(-640, PX.axis_offset(false, false, 0, 0, 9999, 640, 1280, 1280))
+end
+
+check 'a looping panorama scrolls at half the camera rate and wraps' do
+  eq 0,   PX.axis_offset(true, false, 0, 0, 0,   640, 4096, 256)
+  eq(-50, PX.axis_offset(true, false, 0, 0, 100, 640, 4096, 256)) # half of 100
+  eq 0,   PX.axis_offset(true, false, 0, 0, 512, 640, 4096, 256)  # 256 -> wraps to 0
+  eq(-44, PX.axis_offset(true, false, 0, 0, 600, 640, 4096, 256)) # 300 % 256 = 44
+end
+
+check 'autoscroll pixel delta follows the speed field (EasyRPG scroll_amt/32)' do
+  eq 0, PX.autoscroll_px(0, 1000)
+  eq 0, PX.autoscroll_px(nil, 1000)
+  eq(-16,  PX.autoscroll_px(4, 32))   # -(1<<4)=-16 per 32 frames
+  eq(-256, PX.autoscroll_px(8, 32))   # -(1<<8)=-256
+  eq 4,    PX.autoscroll_px(-2, 32)   # +(1<<2)=4
+end
+
+check 'a looping panorama with autoscroll drifts over time and stays in range' do
+  img = 256
+  (0..600).step(30).each do |frame|
+    off = PX.axis_offset(true, true, 4, frame, 0, 640, 4096, img)
+    ok off <= 0 && off > -img, "offset #{off} out of (-#{img}, 0]"
+  end
+end
+
+check 'a zero-size or absent panorama axis offsets to 0' do
+  eq 0, PX.axis_offset(true, false, 0, 0, 100, 640, 4096, 0)
+  eq 0, PX.axis_offset(false, false, 0, 0, 100, 640, 4096, nil)
+end
+
 if $failures.zero?
   puts "rpg2k render check: #{$checks} checks passed"
   exit 0
