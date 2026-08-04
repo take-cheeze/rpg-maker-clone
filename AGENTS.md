@@ -40,6 +40,17 @@ directly. Before opening one:
   includes code that needs review. Each PR gets a **Cloudflare Pages** preview
   and must keep CI green before it is merged; pushes to `master` deploy the page
   to **GitHub Pages**.
+- **Auto-merge counts as approval — keep moving.** When a PR has auto-merge
+  enabled, treat it as already review-approved: do not block waiting for the
+  merge to land. Move straight on to the next task if there is work left to do;
+  the PR merges itself once CI passes.
+- **Resolve conflicts when you find them.** When a branch or PR has merge
+  conflicts against `master` (a push to `master` made the PR un-mergeable, or a
+  merge/rebase stops on a conflict), resolve them yourself rather than leaving
+  them: merge the latest `master` into the branch (or rebase onto it, per the
+  branch's convention), fix the conflicted files, re-run the checks you can, and
+  push. Only ask when a conflict is genuinely ambiguous — both sides changed the
+  same logic and picking one silently drops behavior.
 
 ## Architecture Decision Records
 
