@@ -329,10 +329,11 @@ The work below is roughly ordered by the critical path to a walkable game
   scope-enemy skill's `state_effects`, and `apply_command` rolls each against the
   skill's `hit` accuracy on a surviving target — so a Poison Sting / Sleep spell
   afflicts the foe, which then slips or skips via the per-turn processing above.
-  Still to come: state **auto-recovery** (`hold_turn` / `auto_release_prob`) and
-  forced-attack restrictions, enemy-cast infliction, criticals / attributes /
-  damage variance, all-target skill/item scopes, the per-terrain backdrop and the
-  RPG2000 Game Over graphic.
+  A state also **auto-recovers**: a per-battler turn counter lets `apply_turn_
+  states` roll `auto_release_prob` once the state has held past its `hold_turn`,
+  so a temporary ailment wears off. Still to come: forced-attack restrictions,
+  enemy-cast infliction, criticals / attributes / damage variance, all-target
+  skill/item scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
   The remaining event commands (Inflict Damage, Name Input, Show Battle
   Animation, vehicle boarding, tile substitution, ...) are TODO. **Change System
   Graphics** (10680) overrides the windowskin / font (save chunks 15 / 17; the

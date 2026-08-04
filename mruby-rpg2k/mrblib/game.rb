@@ -2758,7 +2758,7 @@ module Game
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor, :states) do
+                           :actor, :states, :state_turns) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -2950,15 +2950,24 @@ module Game
     # A field off a state row, tolerating a fixture that omits it.
     def state_field(d, name); d.respond_to?(name) ? (d.send(name) || 0) : 0; end
 
-    # Apply `b`'s afflicted states at the start of its turn: slip HP/SP damage
-    # (fixed val + a percentage of the max, per EasyRPG's ApplyConditions) from
-    # each state, and report whether the battler may act (a "do nothing"
+    # Apply `b`'s afflicted states at the start of its turn: first roll each state
+    # for auto-recovery (once it has held longer than its `hold_turn`, an
+    # `auto_release_prob`% roll cures it), then, for the states that remain, slip
+    # HP/SP damage (fixed val + a percentage of the max, per EasyRPG's
+    # ApplyConditions) and report whether the battler may act (a "do nothing"
     # restriction skips its turn). Returns true if `b` may act.
     def apply_turn_states(b)
       can_act = true
-      (b.states || []).each do |id|
+      b.state_turns ||= {}
+      (b.states || []).dup.each do |id|
         d = state_def(id)
         next unless d
+        b.state_turns[id] = (b.state_turns[id] || 0) + 1
+        if recovers_from_state?(b, id, d)
+          b.states = b.states - [id]
+          b.state_turns.delete(id)
+          next
+        end
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
         b.hp -= hp if hp > 0
         if b.max_mp && b.mp
@@ -2968,6 +2977,16 @@ module Game
         can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
       end
       can_act
+    end
+
+    # Whether `b` shakes off state `id` this turn: only once it has held for more
+    # than the state's `hold_turn`, then an `auto_release_prob`% roll (0 = never
+    # auto-releases). Grounded on EasyRPG's BattleStateHeal.
+    def recovers_from_state?(b, id, d)
+      prob = state_field(d, :auto_release_prob)
+      return false if prob <= 0
+      return false unless b.state_turns[id] > state_field(d, :hold_turn)
+      @rng.random(100) < prob
     end
 
     def alive?(side); side.any? { |b| !b.dead? }; end

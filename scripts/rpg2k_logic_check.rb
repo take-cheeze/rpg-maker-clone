@@ -1273,9 +1273,10 @@ def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
-# per-turn slip damage (hp/sp change) and action restriction.
+# per-turn slip damage (hp/sp change), action restriction and auto-recovery.
 FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
-                          :sp_change_val, :sp_change_max)
+                          :sp_change_val, :sp_change_max,
+                          :hold_turn, :auto_release_prob)
 class FakeActorDB
   attr_reader :player, :system, :item, :skill
   def initialize(players, party_ids, items = {}, skills = {})
@@ -3803,6 +3804,29 @@ check 'battle states stay inert without a state-definition lookup' do
   bat.begin_round
   bat.step_action
   eq 100, hero.hp                                    # nothing slipped
+end
+
+check 'battle state auto-recovers once it has held past hold_turn' do
+  # hold_turn 1, 100% release: eligible only once the counter exceeds 1.
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 1, 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.run_round
+  eq true, hero.state?(5)                            # turn 1: counter 1, not > 1
+  bat.run_round
+  eq false, hero.state?(5)                           # turn 2: counter 2 > 1 -> cured
+end
+
+check 'battle state at 0% auto_release_prob never wears off on its own' do
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 0, 0) } # hold 0, prob 0
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  3.times { bat.run_round }
+  eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do
