@@ -3430,9 +3430,11 @@ void window_refresh(mrb_state* M, mrb_value self) {
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@_anim")));
   // Cursor: a blinking highlight from the windowskin cursor region (128,64,
   // 32,32) drawn at cursor_rect (content coords, offset by the padding), when
-  // the window is active. Stretched to the rect for now (a crisp 9-slice border
-  // is a refinement); the blink alpha oscillates with @_anim. Redrawn each
-  // frame by Window#update because scripts mutate cursor_rect in place.
+  // the window is active. It is a 9-slice with 2px corners (matching
+  // RMXP/mkxp's buildFrame): the four 2x2 corners are copied 1:1, the four
+  // edges are stretched along one axis and the centre fills the rest. The blink
+  // alpha oscillates with @_anim. Redrawn each frame by Window#update because
+  // scripts mutate cursor_rect in place.
   const mrb_value cr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@cursor_rect"));
   const mrb_value active_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@active"));
   const bool active = mrb_nil_p(active_v) ? true : mrb_test(active_v);
@@ -3443,10 +3445,47 @@ void window_refresh(mrb_state* M, mrb_value self) {
       const mrb_int phase = ((anim % 32) + 32) % 32;
       const mrb_int level = phase < 16 ? phase : 32 - phase;  // 0..16
       const mrb_int calpha = 255 - level * 8;                 // 255..127
-      const mrb_value cur[] = {
-          make_rect(M, b + cr.x, b + cr.y, cr.width, cr.height), skin,
-          make_rect(M, 128, 64, 32, 32), mrb_fixnum_value(calpha)};
-      mrb_funcall_argv(M, canvas, sblt, 4, cur);
+      const mrb_value op = mrb_fixnum_value(calpha);
+      const mrb_int dx = b + cr.x, dy = b + cr.y, dw = cr.width, dh = cr.height;
+      // The cursor skin region and its 2px 9-slice corner size.
+      const int sx = 128, sy = 64, ss = 32, k = 2;
+      if (dw >= 2 * k && dh >= 2 * k) {
+        // Corners (blt, 1:1). {tl, tr, bl, br} as {dstx, dsty, srcx, srcy}.
+        const mrb_int corners[4][4] = {
+            {dx, dy, sx, sy},
+            {dx + dw - k, dy, sx + ss - k, sy},
+            {dx, dy + dh - k, sx, sy + ss - k},
+            {dx + dw - k, dy + dh - k, sx + ss - k, sy + ss - k}};
+        for (const auto& c : corners) {
+          const mrb_value a[] = {mrb_fixnum_value(c[0]), mrb_fixnum_value(c[1]),
+                                 skin, make_rect(M, c[2], c[3], k, k), op};
+          mrb_funcall_argv(M, canvas, blt, 5, a);
+        }
+        // Edges (stretch_blt) as {dstRect..., srcRect...}: top, bottom, left,
+        // right. Top/bottom stretch horizontally, left/right vertically.
+        const mrb_int edges[4][8] = {
+            {dx + k, dy, dw - 2 * k, k, sx + k, sy, ss - 2 * k, k},
+            {dx + k, dy + dh - k, dw - 2 * k, k, sx + k, sy + ss - k,
+             ss - 2 * k, k},
+            {dx, dy + k, k, dh - 2 * k, sx, sy + k, k, ss - 2 * k},
+            {dx + dw - k, dy + k, k, dh - 2 * k, sx + ss - k, sy + k, k,
+             ss - 2 * k}};
+        for (const auto& e : edges) {
+          const mrb_value a[] = {make_rect(M, e[0], e[1], e[2], e[3]), skin,
+                                 make_rect(M, e[4], e[5], e[6], e[7]), op};
+          mrb_funcall_argv(M, canvas, sblt, 4, a);
+        }
+        // Centre (stretch_blt).
+        const mrb_value ctr[] = {
+            make_rect(M, dx + k, dy + k, dw - 2 * k, dh - 2 * k), skin,
+            make_rect(M, sx + k, sy + k, ss - 2 * k, ss - 2 * k), op};
+        mrb_funcall_argv(M, canvas, sblt, 4, ctr);
+      } else {
+        // Rect too small for the 9-slice: fall back to a plain stretch.
+        const mrb_value cur[] = {make_rect(M, dx, dy, dw, dh), skin,
+                                 make_rect(M, sx, sy, ss, ss), op};
+        mrb_funcall_argv(M, canvas, sblt, 4, cur);
+      }
     }
   }
   // Pause arrow: one of four 16x16 frames at (160,64) cycled by @_anim, drawn
