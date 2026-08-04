@@ -357,12 +357,44 @@ check 'every swatch cell lands inside the 160x80 System image' do
   eq 20, seen.size, 'twenty distinct swatch cells'
 end
 
+check 'the shadow block sits beside the system-background block' do
+  eq [16, 32], MP.shadow_origin
+  eq 1, MP::SHADOW_OFFSET
+  # It must not overlap the colour swatches (which start at y = 48).
+  ok MP.shadow_origin[1] + MP::CELL <= MP::Y_OFFSET
+end
+
 check 'MessagePalette.valid? bounds the colour index' do
   ok MP.valid?(0)
   ok MP.valid?(19)
   ok !MP.valid?(20)
   ok !MP.valid?(-1)
   ok !MP.valid?(nil)
+end
+
+# -- selection cursor geometry (Game::WindowCursor) ---------------------------
+
+WC = Game::WindowCursor
+
+check 'the cursor overhangs the content area horizontally but not vertically' do
+  # Nepheshel's title window: contents 48x48 at border 8, three 16px rows.
+  # Measured off a genuine RPG_RT frame: the cursor is 56x16 at (4, 8) within
+  # the window, i.e. four pixels wider on each side and exactly one row tall.
+  eq [4, 8, 56, 16], WC.dest_rect(0, 0, 48, 16, 8)
+  # Row 1 and row 2 simply step down by the row height.
+  eq [4, 24, 56, 16], WC.dest_rect(0, 16, 48, 16, 8)
+  eq [4, 40, 56, 16], WC.dest_rect(0, 32, 48, 16, 8)
+end
+
+check 'the cursor block is the 32x32 patch at (64, 0) of the System image' do
+  eq 32, WC::SIZE
+  eq 8, WC::CORNER
+  eq 64, WC::FRAME1_X
+  eq 96, WC::FRAME2_X
+  eq 0, WC::FRAME_Y
+  # Both frames stay inside the 160x80 System image and clear the swatch rows.
+  ok WC::FRAME2_X + WC::SIZE <= 160
+  ok WC::FRAME_Y + WC::SIZE <= MP::Y_OFFSET
 end
 
 if $failures.zero?

@@ -36,6 +36,13 @@ DEFINE_string(
     "For RPG Maker MV: write a PNG of the rendered frame to this path "
     "after boot, then keep running (used to capture output in CI)");
 DEFINE_bool(
+    rpg2k_new_game,
+    false,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
+    "Game so the game advances into its first map without input, and log the "
+    "scene it reaches as [RPG2k-MAP]. Used to smoke-test the LCF path in CI "
+    "(the title screen alone never exercises the map renderer)");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -451,6 +458,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_NEW_GAME"),
+                mrb_bool_value(FLAGS_rpg2k_new_game));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

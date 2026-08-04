@@ -206,26 +206,86 @@ module RGSS
       @skin_bmp.fill_rect @width - 1, 0, 1, @height, edge
     end
 
-    # Highlight box behind the selected item, on its own layer. cursor_rect is
+    # Highlight behind the selected item, on its own layer. cursor_rect is
     # expressed in contents coordinates, so it is offset by the border
     # thickness (the contents layer carries the same offset).
+    #
+    # RPG2000 draws the highlight from the windowskin's own 32x32 cursor block
+    # rather than as a flat bar; Game::WindowCursor holds the geometry measured
+    # off a genuine RPG_RT frame. Without a windowskin there is nothing to blit,
+    # so the old solid bar stays as the fallback.
     def draw_cursor
       @cursor_bmp.clear
       return unless @active
       r = @cursor_rect
       return if r.width <= 0 || r.height <= 0
 
-      # fill_rect overwrites (it does not alpha-blend onto the window
-      # background), so use an opaque highlight: a solid blue bar with a
-      # brighter border, matching the reference title screen's selection box.
-      x = BORDER + r.x
-      y = BORDER + r.y
-      @cursor_bmp.fill_rect x, y, r.width, r.height, Color.new(24, 40, 176, 255)
+      x, y, w, h =
+        Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height, BORDER)
+      if @windowskin
+        draw_cursor_skin x, y, w, h
+      else
+        draw_cursor_fallback x, y, w, h
+      end
+    end
+
+    # Blit the windowskin's cursor block as a 9-patch over [x, y, w, h]: 8x8
+    # corners 1:1, the four edges stretched along their free axis, and the
+    # centre stretched over what is left. A cursor shorter than two corners (the
+    # common 16px menu row) simply has no vertical middle, so the corner strips
+    # are clipped to half the height each.
+    def draw_cursor_skin(x, y, w, h)
+      c = Game::WindowCursor::CORNER
+      sx = Game::WindowCursor::FRAME1_X
+      sy = Game::WindowCursor::FRAME_Y
+      sz = Game::WindowCursor::SIZE
+      sk = @windowskin
+
+      # Corner heights/widths, clipped when the destination is smaller than the
+      # two corners together (then the stretched middles are empty).
+      ch_top = [c, h / 2].min
+      ch_bot = [c, h - ch_top].min
+      cw_l = [c, w / 2].min
+      cw_r = [c, w - cw_l].min
+      mid_w = w - cw_l - cw_r
+      mid_h = h - ch_top - ch_bot
+
+      @cursor_bmp.blt x, y, sk, Rect.new(sx, sy, cw_l, ch_top)
+      @cursor_bmp.blt x + w - cw_r, y, sk,
+                      Rect.new(sx + sz - cw_r, sy, cw_r, ch_top)
+      @cursor_bmp.blt x, y + h - ch_bot, sk,
+                      Rect.new(sx, sy + sz - ch_bot, cw_l, ch_bot)
+      @cursor_bmp.blt x + w - cw_r, y + h - ch_bot, sk,
+                      Rect.new(sx + sz - cw_r, sy + sz - ch_bot, cw_r, ch_bot)
+
+      if mid_w > 0
+        @cursor_bmp.stretch_blt Rect.new(x + cw_l, y, mid_w, ch_top), sk,
+                                Rect.new(sx + c, sy, sz - 2 * c, ch_top)
+        @cursor_bmp.stretch_blt Rect.new(x + cw_l, y + h - ch_bot, mid_w, ch_bot),
+                                sk,
+                                Rect.new(sx + c, sy + sz - ch_bot, sz - 2 * c,
+                                         ch_bot)
+      end
+      return unless mid_h > 0
+      @cursor_bmp.stretch_blt Rect.new(x, y + ch_top, cw_l, mid_h), sk,
+                              Rect.new(sx, sy + c, cw_l, sz - 2 * c)
+      @cursor_bmp.stretch_blt Rect.new(x + w - cw_r, y + ch_top, cw_r, mid_h),
+                              sk,
+                              Rect.new(sx + sz - cw_r, sy + c, cw_r, sz - 2 * c)
+      return unless mid_w > 0
+      @cursor_bmp.stretch_blt Rect.new(x + cw_l, y + ch_top, mid_w, mid_h), sk,
+                              Rect.new(sx + c, sy + c, sz - 2 * c, sz - 2 * c)
+    end
+
+    # No windowskin to take the cursor art from: a solid blue bar with a
+    # brighter border, so the selection is still visible.
+    def draw_cursor_fallback(x, y, w, h)
+      @cursor_bmp.fill_rect x, y, w, h, Color.new(24, 40, 176, 255)
       border = Color.new(180, 200, 255, 255)
-      @cursor_bmp.fill_rect x, y, r.width, 1, border
-      @cursor_bmp.fill_rect x, y + r.height - 1, r.width, 1, border
-      @cursor_bmp.fill_rect x, y, 1, r.height, border
-      @cursor_bmp.fill_rect x + r.width - 1, y, 1, r.height, border
+      @cursor_bmp.fill_rect x, y, w, 1, border
+      @cursor_bmp.fill_rect x, y + h - 1, w, 1, border
+      @cursor_bmp.fill_rect x, y, 1, h, border
+      @cursor_bmp.fill_rect x + w - 1, y, 1, h, border
     end
   end
 end
@@ -255,6 +315,26 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RGSS] windowskin load failed, using plain panel: #{e.message}"
         nil
+      end
+
+      # Draw `text` the way RPG_RT draws every piece of window text: a shadow
+      # glyph one pixel down and right filled from the System image's shadow
+      # block, then the glyph itself filled from colour `idx`'s 16x16 swatch, so
+      # the text carries the windowskin's own gradient. Falls back to the flat
+      # font colour when there is no windowskin (or the colour index is out of
+      # range), which is all `draw_text` can do.
+      def draw_system_text(bmp, x, y, w, h, text, skin, idx = 0, align = 0)
+        unless skin && Game::MessagePalette.valid?(idx)
+          bmp.draw_text x, y, w, h, text, align
+          return
+        end
+        cell = Game::MessagePalette::CELL
+        off = Game::MessagePalette::SHADOW_OFFSET
+        shx, shy = Game::MessagePalette.shadow_origin
+        bmp.blend_text x + off, y + off, w, h, text, skin, shx, shy, cell, cell,
+                       align
+        sx, sy = Game::MessagePalette.cell_origin(idx)
+        bmp.blend_text x, y, w, h, text, skin, sx, sy, cell, cell, align
       end
     end
 
@@ -1222,9 +1302,12 @@ class RPG2k
       end
 
       # Whether no forced move route is still running (player or any event).
+      # Spelled as !any? rather than none?: Enumerable#none? lives in mruby's
+      # optional mruby-enum-ext gem, which this build does not pull in, so it
+      # exists under the CRuby host checks but not in the shipped engine.
       def forced_movement_done?
         return false if @player_route
-        @events.none? { |e| e[:forced_route] }
+        !@events.any? { |e| e[:forced_route] }
       end
 
       # A move frequency the request may override the target's pace with (1..8),
@@ -1490,8 +1573,25 @@ class RPG2k
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
+        # RPG2000 clears every shown picture when the map changes (RPG2003 is
+        # the edition that added a per-picture "keep across map change" flag).
+        # Without this, Nepheshel's opening leaves its full-screen credit
+        # pictures on top of the first room and the map is never visible —
+        # exactly what the wine comparison showed (ADR 0021).
+        @state.erase_all_pictures
+        # ... nor does a Pan Screen offset / camera lock: the camera re-centres
+        # on the hero on the new map. Nepheshel's opening pans a long way before
+        # teleporting into the first room, and keeping that offset drew the room
+        # from (304, 352) -- entirely outside a 320x240 map, i.e. a blank screen.
+        @state.screen.pan_clear
+        @locked_cam = nil
         @tileset_id = nil # a Change Map Tileset override does not survive a teleport
         @chipset = build_chipset
+        # The new map may use a different chipset graphic, so reload it too;
+        # otherwise the destination is drawn with the previous map's tiles.
+        old_bmp = @chipset_bmp
+        @chipset_bmp = load_chipset_graphic
+        old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
         @started_auto = {}
         @started_common = {}
         @active_event = nil
@@ -1522,7 +1622,14 @@ class RPG2k
 
       # -- message / choice window --------------------------------------------
 
-      MSG_LINE_H = 14
+      # RPG2000's message window is a fixed 320x80 panel pinned to the left edge
+      # — it does not shrink to the message, and it does not inset from the
+      # screen. Measured off a genuine RPG_RT frame under wine (ADR 0021): the
+      # bottom-positioned window occupies exactly (0, 160)-(319, 239).
+      MSG_WIN_W = 320
+      MSG_WIN_H = 80
+      # One text row. Four rows fit in the 64px interior.
+      MSG_LINE_H = 16
       # Characters revealed per frame for the message typewriter effect.
       MSG_REVEAL_SPEED = 2
       # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells, drawn beside
@@ -1559,12 +1666,11 @@ class RPG2k
         face_right = face && cfg.face_right
         text_x = face_left ? FACE_SIZE + FACE_MARGIN : 0
 
-        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_w = MSG_WIN_W - Window::BORDER * 2
         text_w = inner_w - text_x - (face_right ? FACE_SIZE + FACE_MARGIN : 0)
-        inner_h = plain.length * MSG_LINE_H
-        inner_h = FACE_SIZE if face && inner_h < FACE_SIZE # keep room for the face
-        win_h = inner_h + Window::BORDER * 2
-        win = Window.new(10, message_window_y(win_h, cfg), SCREEN_W - 20, win_h)
+        inner_h = MSG_WIN_H - Window::BORDER * 2
+        win_h = MSG_WIN_H
+        win = Window.new(0, message_window_y(win_h, cfg), MSG_WIN_W, win_h)
         win.z = 300
         win.windowskin = @windowskin
         win.transparent = cfg.transparent
@@ -1592,9 +1698,9 @@ class RPG2k
       # placed at the requested position for now.
       def message_window_y(win_h, cfg)
         case cfg.position
-        when Game::MessageConfig::POS_TOP    then 6
+        when Game::MessageConfig::POS_TOP    then 0
         when Game::MessageConfig::POS_MIDDLE then (SCREEN_H - win_h) / 2
-        else SCREEN_H - win_h - 6
+        else SCREEN_H - win_h
         end
       end
 
@@ -1637,10 +1743,7 @@ class RPG2k
       def draw_message_run(c, x, y, w, seg)
         idx = seg[:color]
         if @windowskin && Game::MessagePalette.valid?(idx)
-          sx, sy = Game::MessagePalette.cell_origin(idx)
-          cell = Game::MessagePalette::CELL
-          c.blend_text x, y, w, MSG_LINE_H, seg[:text], @windowskin,
-                       sx, sy, cell, cell
+          draw_system_text c, x, y, w, MSG_LINE_H, seg[:text], @windowskin, idx
         else
           c.font.color = message_color(idx)
           c.draw_text x, y, w, MSG_LINE_H, seg[:text]
@@ -2626,6 +2729,12 @@ class RPG2k
       # draw_text is top-aligned, so nudge the 12px glyphs down to sit centred
       # within the line (and the selection cursor).
       TEXT_PAD_Y = (LINE_HEIGHT - 12) / 2
+      # Where RPG_RT parks the title command window: horizontally centred, with
+      # its *bottom* edge at 53/60 of the screen height. Measured off a genuine
+      # RPG_RT frame (see scripts/compare-nepheshel-wine.bash): for Nepheshel's
+      # three 48px-wide labels the window lands at (128, 148) 64x64.
+      BOTTOM_NUM = 53
+      BOTTOM_DEN = 60
 
       def initialize parent
         super parent
@@ -2637,30 +2746,29 @@ class RPG2k
           [db.term.new_game, db.term.continue, db.term.shutdown].map(&:to_s)
         @selected_index = 0
 
-        # Size the contents to the widest menu label (plus a small right pad).
+        # RPG_RT sizes the window to the widest label plus one border on each
+        # side — no extra padding — and one 16px row per entry.
         measure = Bitmap.new 1, 1
-        text_w = @menu_items.map { |t| measure.text_size(t).width }.max
-        content_w = text_w + 8
+        content_w = @menu_items.map { |t| measure.text_size(t).width }.max
         content_h = @menu_items.length * LINE_HEIGHT
 
         window_width = content_w + Window::BORDER * 2
         window_height = content_h + Window::BORDER * 2
 
-        # Centre the window horizontally, sitting in the lower third of the
-        # screen like the reference title layout.
         window_x = (WIDTH - window_width) / 2
-        window_y = 160
+        window_y = HEIGHT * BOTTOM_NUM / BOTTOM_DEN - window_height
 
         @window = Window.new window_x, window_y, window_width, window_height
-        @window.windowskin = load_windowskin
+        skin = load_windowskin
+        @window.windowskin = skin
 
-        # Render the (unchanging) menu labels once. White text reads clearly on
-        # the dark window background.
+        # Render the (unchanging) menu labels once, in the windowskin's own
+        # default text colour with RPG_RT's one-pixel shadow.
         contents = Bitmap.new content_w, content_h
         contents.font.color = Color.new(255, 255, 255, 255)
         @menu_items.each_with_index do |item, index|
-          contents.draw_text 0, index * LINE_HEIGHT + TEXT_PAD_Y, content_w,
-                             LINE_HEIGHT, item
+          draw_system_text contents, 0, index * LINE_HEIGHT + TEXT_PAD_Y,
+                           content_w, LINE_HEIGHT, item, skin
         end
         @window.contents = contents
 
@@ -2678,7 +2786,7 @@ class RPG2k
           refresh_cursor
         end
 
-        if Input.trigger?(Input::C)  # C is usually the confirm button (Enter/Z)
+        if Input.trigger?(Input::C) || auto_new_game?
           case @selected_index
           when 0  # New Game
             parent.start_new_game
@@ -2698,6 +2806,22 @@ class RPG2k
       end
 
       private
+
+      # `--rpg2k_new_game`: pick the highlighted entry (New Game, the default)
+      # once, without input, so a headless run reaches the map renderer instead
+      # of sitting on the title screen. One-shot; a no-op during normal play.
+      def auto_new_game?
+        return false if @auto_started
+        want = begin
+                 RPG2K_NEW_GAME
+               rescue StandardError
+                 false
+               end
+        return false unless want
+        @auto_started = true
+        $stderr.puts '[RPG2k] --rpg2k_new_game: selecting New Game'
+        true
+      end
 
       # Load the System/ windowskin declared in the database. Returns nil when
       # it is missing so the Window falls back to a plain panel instead of
@@ -2781,6 +2905,10 @@ class RPG2k
     scene = Scene::Map.new(self, state)
     @scenes.last.dispose
     @scenes = [scene]
+    # A machine-readable marker so a headless run (see --rpg2k_new_game and
+    # scripts/compare-nepheshel-wine.bash) can assert the map scene was really
+    # reached, not just the title.
+    $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"

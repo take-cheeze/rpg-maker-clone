@@ -20,6 +20,13 @@
 - Tiles are blitted from the map's real ChipSet graphic — lower/upper chips,
   water and terrain autotiles assembled from quarter-tiles, and animated tiles —
   falling back to colour blocks only when the chipset image is missing
+- Rendering is checked against the **genuine RPG Maker 2000 runtime**:
+  `scripts/compare-nepheshel-wine.bash` boots the real `RPG_RT.exe` under wine
+  and this engine on the same game, drives both headlessly with the same key
+  script and diffs the frames. Windows, the selection cursor, window text and
+  the message panel now land on RPG_RT's pixels; the residual difference is the
+  font (RPG_RT uses Windows' MS Gothic, we use Shinonome, with matching
+  metrics). See `docs/adr/0021-nepheshel-render-parity-under-wine.md`
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
