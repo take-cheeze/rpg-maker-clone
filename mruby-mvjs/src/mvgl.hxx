@@ -49,6 +49,14 @@ bool make_current(Context* ctx);
 // the context and valid until the next draw or `destroy`.
 const std::uint8_t* pixels(Context* ctx, int* out_w, int* out_h);
 
+// The GL name of the context's own framebuffer object (the off-screen render
+// target). WebGL's "default framebuffer" — what `bindFramebuffer(target, null)`
+// selects — is this FBO, not GL framebuffer 0 (a surfaceless EGL context has no
+// window-system default framebuffer). The WebGL wrapper (mvwebgl.cxx) binds
+// this when the game unbinds its own framebuffers. Returns 0 for a stub
+// context.
+unsigned default_framebuffer(Context* ctx);
+
 // Whether the EGL/GLES2 backend was compiled into this build. False on
 // Emscripten (browser WebGL) and where the EGL headers are absent (e.g.
 // darwin); in that case the other entry points are inert stubs. True on the apt

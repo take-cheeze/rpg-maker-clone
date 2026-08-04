@@ -456,6 +456,9 @@ void install_host_globals(JSContext* ctx) {
 
   // The Canvas2D bridge (document/canvas/context), defined in mvcanvas.cxx.
   mv_install_canvas(ctx);
+  // The WebGL bridge (getContext('webgl') -> native GLES2), defined in
+  // mvwebgl.cxx. After the canvas bridge, since it extends getContext.
+  mv_install_webgl(ctx);
 }
 
 // -- the persistent host -----------------------------------------------------

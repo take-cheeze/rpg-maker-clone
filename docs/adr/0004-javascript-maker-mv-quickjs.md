@@ -173,9 +173,19 @@ JavaScript loads and interprets the JSON.
       headless software-GL runtime), so `MV::GL.smoke_test` runs as a CI check.
       The Emscripten build stubs it (it renders MZ through the browser's own
       WebGL).
-    - **M6.3b — WebGL wrapper.** Map the `WebGLRenderingContext` surface PIXI
-      uses onto the GLES2 natives, have `getContext("webgl")` return it (instead
-      of `null`, see below) and `Utils.canUseWebGL()` become true.
+    - **M6.3b — WebGL wrapper (landed).** `mruby-mvjs/src/mvwebgl.cxx` maps the
+      `WebGLRenderingContext` surface onto the native GLES2 backend (the
+      `__mv_gl*` natives + the `WebGLRenderingContext` prototype), so
+      `canvas.getContext("webgl")`/`"experimental-webgl"` returns a real,
+      native-backed context instead of `null` and `Utils.canUseWebGL()` becomes
+      true. WebGL objects are their GL integer names; `bindFramebuffer(_, null)`
+      targets the context's own FBO (a surfaceless context has no default
+      framebuffer). `gl_test.rb` drives a green triangle end to end through the
+      wrapper (compile ES 1.00 shaders → buffer → draw → `readPixels`), the
+      JS-layer proof of the same pipeline `MV::GL.smoke_test` exercises natively.
+      Where the EGL backend is absent (Emscripten/darwin) the natives are not
+      installed and `getContext("webgl")` stays `null`, so PIXI keeps its Canvas
+      path there.
     - **M6.3c — PIXI v5 boots to a frame.** Fill the gaps PIXI exercises (VAO
       emulation, texture params, FBOs, uniform introspection) until `MZ#boot_probe`
       renders `Scene_Boot`, verified against a user-supplied MZ project.

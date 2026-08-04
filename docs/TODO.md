@@ -698,8 +698,14 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
       and read back a green triangle — runs as a check in CI, not just the apt
       dev build. (Started on OSMesa; Mesa removed that frontend, so this moved
       to surfaceless EGL, its supported replacement.)
-    - 🚧 M6.3b WebGL method wrapper: map the `WebGLRenderingContext` surface
-      PIXI uses onto the GLES2 natives and make `getContext("webgl")` return it.
-    - 🚧 M6.3c PIXI v5 boots to a frame: fill the remaining gaps until
+    - ✅ M6.3b WebGL method wrapper: `mruby-mvjs/src/mvwebgl.cxx` maps the
+      `WebGLRenderingContext` surface (the `__mv_gl*` natives + JS prototype)
+      onto the native GLES2 backend, so `getContext("webgl")` returns a real
+      context and `Utils.canUseWebGL()` is true. `gl_test.rb` renders a green
+      triangle end to end through the wrapper. Stubs cleanly (getContext →
+      `null`) where the EGL backend is absent.
+    - 🚧 M6.3c PIXI v5 boots to a frame: fill the remaining gaps PIXI exercises
+      (getExtension/VAO emulation, texture Y-flip + image uploads, uniform
+      introspection wiring, presenting the GL frame on-screen) until
       `MZ#boot_probe` renders `Scene_Boot`, verified against a user-supplied MZ
       project.
