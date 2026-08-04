@@ -2252,18 +2252,50 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
   const bool has_color = cl.alpha != 0;
 
-  if (mirror || has_tone || has_color) {
-    RClass* bmp_class =
-        mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
-    const mrb_value fx_v =
-        DataType<Bitmap>::make(M, bmp_class, src.width, src.height, src.format);
-    Bitmap& fx = DataType<Bitmap>::get(M, fx_v);
+  // src_rect: display only a sub-region of the bitmap (character-animation
+  // cells set this every frame). A non-default rect crops to (cx, cy, cw, ch).
+  int cx = 0, cy = 0, cw = src.width, ch = src.height;
+  bool cropped = false;
+  const mrb_value sr_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
+  if (mrb_test(sr_v) && DATA_PTR(sr_v)) {
+    Rect& sr = DataType<Rect>::get(M, sr_v);
+    if (sr.width > 0 && sr.height > 0 &&
+        (sr.x != 0 || sr.y != 0 || sr.width != src.width ||
+         sr.height != src.height)) {
+      cx = sr.x;
+      cy = sr.y;
+      cw = sr.width;
+      ch = sr.height;
+      cropped = true;
+    }
+  }
+
+  if (cropped || mirror || has_tone || has_color) {
+    // Reuse the scratch bitmap when its size still matches (src_rect changes
+    // every frame, so re-allocating here would churn the GC).
+    mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
+    Bitmap* fxp = nullptr;
+    if (mrb_test(fx_v) && DATA_PTR(fx_v)) {
+      Bitmap& e = DataType<Bitmap>::get(M, fx_v);
+      if (e.width == cw && e.height == ch && e.format == src.format)
+        fxp = &e;
+    }
+    if (!fxp) {
+      RClass* bmp_class =
+          mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+      fx_v = DataType<Bitmap>::make(M, bmp_class, cw, ch, src.format);
+      mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), fx_v);
+      fxp = &DataType<Bitmap>::get(M, fx_v);
+    }
+    Bitmap& fx = *fxp;
     const int ca = static_cast<int>(cl.alpha);
-    for (int y = 0; y < src.height; ++y) {
-      for (int x = 0; x < src.width; ++x) {
-        const int sx = mirror ? src.width - 1 - x : x;
-        int r, g, b, a;
-        bmp_read(src, sx, y, r, g, b, a);
+    for (int y = 0; y < ch; ++y) {
+      for (int x = 0; x < cw; ++x) {
+        const int srcx = cx + (mirror ? cw - 1 - x : x);
+        const int srcy = cy + y;
+        int r = 0, g = 0, b = 0, a = 0;
+        if (srcx >= 0 && srcy >= 0 && srcx < src.width && srcy < src.height)
+          bmp_read(src, srcx, srcy, r, g, b, a);
         if (has_tone) {
           const int gy = static_cast<int>(tn.gray);
           if (gy != 0) {
@@ -2285,10 +2317,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
       }
     }
     fx.dirty = true;
-    // Hold the scratch bitmap on the sprite so the GC keeps it alive.
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), fx_v);
-    lv_canvas_set_buffer(obj, fx.buffer.data(), src.width, src.height,
-                         src.format);
+    lv_canvas_set_buffer(obj, fx.buffer.data(), cw, ch, src.format);
   } else {
     mrb_iv_set(M, self, mrb_intern_lit(M, "@_fx_bitmap"), mrb_nil_value());
     lv_canvas_set_buffer(obj, src.buffer.data(), src.width, src.height,
@@ -2418,6 +2447,34 @@ mrb_value spr_set_color(mrb_state* M, mrb_value self) {
   mrb_assert(obj);
   spr_bind_display(M, self, obj);
   return v;
+}
+
+// RGSS Sprite#src_rect= displays only a sub-rectangle of the bitmap.
+mrb_value spr_set_src_rect(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@src_rect"), v);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  spr_bind_display(M, self, obj);
+  return v;
+}
+
+// Per-frame tick: stock scripts (Sprite_Character etc.) mutate src_rect in
+// place via `src_rect.set(...)` each frame, which does not call src_rect=, so a
+// sprite that uses src_rect re-composites here to pick that up (and any
+// tone/color change). Sprites without a src_rect need no per-frame work.
+mrb_value spr_update(mrb_state* M, mrb_value self) {
+  const mrb_value sr = mrb_iv_get(M, self, mrb_intern_lit(M, "@src_rect"));
+  if (mrb_test(sr) && DATA_PTR(sr)) {
+    Rect& r = DataType<Rect>::get(M, sr);
+    if (r.width > 0 && r.height > 0) {
+      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+      if (obj)
+        spr_bind_display(M, self, obj);
+    }
+  }
+  return self;
 }
 
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
@@ -3524,6 +3581,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "tone=", spr_set_tone, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "color=", spr_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "src_rect=", spr_set_src_rect, MRB_ARGS_REQ(1));
+  mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
 
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);

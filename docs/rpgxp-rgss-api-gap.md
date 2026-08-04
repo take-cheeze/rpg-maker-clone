@@ -37,7 +37,7 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color rendered; src_rect etc. stored)
+### 1. `Sprite` extended properties ⚠️ (opacity/zoom/angle/mirror/tone/color/src_rect rendered; bush_depth/blend_type/flash stored)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
 `visible`/`visible=`, `dispose`, `update`, and stores the extra properties the
@@ -54,13 +54,17 @@ scale (`lv_image_set_scale_x/y`, where 256 = 1.0), so the sprite scales;
 RGSS's counter-clockwise degrees to LVGL's clockwise 0.1° units, pivoting on the
 sprite's `ox`/`oy` origin); `Sprite#mirror=` re-binds the canvas to a
 horizontally-flipped scratch copy of the bitmap (LVGL's `lv_image` has no flip,
-so mirroring is a software pass); and `Sprite#tone=`/`color=` bake an RGSS tone
-(grey desaturation + RGB offset) and a colour overlay into that same scratch copy
-per pixel. Mirror/tone/colour share one pre-composite (`spr_bind_display`), and
-are a **snapshot** — a sprite that redraws its bitmap, or mutates its tone/colour
-in place (`sprite.tone.set`), must re-assign `bitmap=`/`tone=`/`color=` to
-refresh. **Remaining:** **src_rect** (sub-rect display — every character-animation
-frame) and **bush_depth**/**blend_type**/**flash**. `Sprite_Character`,
+so mirroring is a software pass); `Sprite#tone=`/`color=` bake an RGSS tone (grey
+desaturation + RGB offset) and a colour overlay into that same scratch copy per
+pixel; and `Sprite#src_rect=` crops the display to a sub-rectangle (the scratch
+is that region, reused across frames to avoid GC churn). `Sprite#update` is native
+and re-composites when a `src_rect` is set, so the per-frame `src_rect.set` that
+character sprites do actually changes the shown cell. Crop/mirror/tone/colour
+share one pre-composite (`spr_bind_display`). **Snapshot caveat:** a sprite that
+redraws its bitmap, or mutates tone/colour in place, still needs a re-assign
+(`bitmap=`/`tone=`/`color=`) unless it also has a `src_rect` (which re-composites
+via `update`). **Remaining:** **bush_depth**, **blend_type** and **flash**.
+`Sprite_Character`,
 `Sprite_Battler`, `Arrow_Base`, weather and the animation player depend on these.
 
 ### 2. `Window` ⚠️ (background + frame + contents + cursor + pause rendered)
