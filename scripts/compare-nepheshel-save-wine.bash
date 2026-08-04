@@ -17,10 +17,10 @@
 # map this comparison wants.
 #
 # It has to be a *genuine* save. Game::State#to_lsd can emit one from nothing,
-# and it round-trips through our own parser, but RPG_RT will not load it --
-# "Continue" simply stays dead on the title screen (a real save has sixteen
-# chunks and ~11-18 KB; to_lsd emits five and ~180 bytes). See gen-rpg2k-save.rb
-# and docs/TODO.md.
+# and RPG_RT does load those now, but such a save holds only the five chunks
+# that model our runtime state -- no pictures, no map events, no vehicles -- so
+# it resumes into a valid but bare scene, which cannot be compared against the
+# real thing. See gen-rpg2k-save.rb and ADR 0021.
 #
 # Each runtime is then brought to the map without input:
 #   * ours with --rpg2k_continue (auto-selects Continue on the title screen);

@@ -2754,12 +2754,21 @@ module Game
     # Switch and variable ids are 1-indexed in-game but 0-indexed in the save, so
     # they shift down by one; unset entries default to false / 0. +save_count+
     # goes in the system chunk (RPG_RT increments it on every save); +timestamp+
-    # is the OLE-automation date shown on the file screen (a placeholder default,
-    # since this environment has no clock and the save-select scene is not drawn
-    # yet). The only live-state fields still dropped versus #to_h are the game
-    # timer (which liblcf's SaveSystem has no field for) and per-actor name/title
+    # is the OLE-automation date shown on the file screen, defaulting to now.
+    #
+    # That default used to be 0.0, and it is why the genuine RPG_RT refused to
+    # load anything this wrote: a zero date is 1899-12-30, which RPG_RT reads as
+    # an empty slot, so "Continue" stayed dead with no error at all. It was
+    # found by stripping a real save down to exactly the chunks written here
+    # (it still loaded, so nothing was missing), then swapping in one of ours at
+    # a time until only the title chunk failed, then one field at a time within
+    # it. See ADR 0021.
+    #
+    # The only live-state fields still dropped versus #to_h are the game timer
+    # (which liblcf's SaveSystem has no field for) and per-actor name/title
     # overrides for non-leader members, so this is now a near-parity export.
-    def to_lsd(save_count = 1, timestamp = 0.0)
+    def to_lsd(save_count = 1, timestamp = nil)
+      timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
 
       leader = @party.leader
@@ -2976,6 +2985,26 @@ module Game
                                x: (pic.current_x || 0).to_i,
                                y: (pic.current_y || 0).to_i)
       end
+    end
+
+    # Days from the OLE-automation epoch (1899-12-30) to the Unix epoch. RPG_RT
+    # stores a save's date as days-since-1899-12-30 in a double, the fraction
+    # being the time of day.
+    OLE_EPOCH_OFFSET = 25569
+
+    # A save date RPG_RT will accept, as of now. It must be non-zero: RPG_RT
+    # treats a zero date as an empty file slot and will not offer the save (see
+    # #to_lsd). Falls back to a fixed, plainly-synthetic date if this build has
+    # no clock, since any valid date beats the one value that breaks loading.
+    #
+    # 2000-01-01, the sentinel: recognisable in a file screen as "not a real
+    # play session" without being a value RPG_RT rejects.
+    NO_CLOCK_TIMESTAMP = 36526.0
+
+    def self.ole_now
+      Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET
+    rescue StandardError
+      NO_CLOCK_TIMESTAMP
     end
 
     # Rebuild our `{ name:, volume:, tempo: }` BGM hash from a parsed BGM chunk
