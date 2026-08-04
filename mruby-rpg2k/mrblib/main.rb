@@ -509,6 +509,7 @@ class RPG2k
          @picture_sprite, @fade_sprite, @flash_sprite].each do |s|
           s.dispose if s
         end
+        (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -556,6 +557,20 @@ class RPG2k
         @player_sprite.z = 100
         @player_bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
         @player_sprite.bitmap = @player_bmp
+
+        # One sprite per vehicle (drawn just under the hero, so a boarded party
+        # sits on top). Hidden unless the vehicle is placed on the current map.
+        @vehicle_sprites = {}
+        @vehicle_bmps = {}
+        Game::Vehicle::TYPES.each do |type|
+          spr = Sprite.new
+          spr.z = 99
+          spr.visible = false
+          bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+          spr.bitmap = bmp
+          @vehicle_sprites[type] = spr
+          @vehicle_bmps[type] = bmp
+        end
         # Fallback marker when the CharSet graphic is unavailable.
         unless @charset
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
@@ -3155,9 +3170,54 @@ class RPG2k
         # every frame so the hero hides/shows as events toggle it.
         @player_sprite.visible = !player_hidden?
         draw_player_frame
+        draw_vehicles cam_x, cam_y, px, py
 
         draw_pictures cam_x, cam_y
         update_screen_overlay
+      end
+
+      # Position and draw each vehicle placed on the current map. A parked vehicle
+      # sits on its own tile; the ridden one follows the party's pixel position
+      # (so it slides smoothly), drawn just under the hero. A vehicle on another
+      # map, or one with no CharSet graphic, is hidden.
+      def draw_vehicles(cam_x, cam_y, px, py)
+        return unless @vehicle_sprites
+        Game::Vehicle::TYPES.each do |type|
+          spr = @vehicle_sprites[type]
+          v = @state.vehicle(type)
+          charset = (v.placed? && v.map_id == @state.map_id) ? vehicle_charset(v) : nil
+          unless charset
+            spr.visible = false
+            next
+          end
+          ridden = @state.boarded == type
+          vpx = ridden ? px : v.x * TILE
+          vpy = ridden ? py : v.y * TILE
+          spr.x = vpx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+          spr.y = vpy - cam_y - (Game::CharSet::HEIGHT - TILE)
+          spr.visible = true
+          draw_vehicle_frame(type, v, charset)
+        end
+      end
+
+      # Blit the vehicle's CharSet cell into its sprite buffer (standing pattern).
+      def draw_vehicle_frame(type, v, charset)
+        rx, ry, rw, rh = Game::CharSet.frame_rect(v.charset_index, v.direction, 1)
+        bmp = @vehicle_bmps[type]
+        bmp.clear
+        bmp.blt 0, 0, charset, Rect.new(rx, ry, rw, rh)
+      end
+
+      # The CharSet graphic for a vehicle: its own (set by Change Vehicle Graphic /
+      # the initial placement) or the database default (System boat/ship/airship
+      # name), loaded through the shared event-charset cache. nil when it has none.
+      def vehicle_charset(v)
+        name = v.charset_name
+        if (name.nil? || name.empty?)
+          field = "#{v.type}_name"
+          name = @db.system.send(field) if @db.system.respond_to?(field)
+        end
+        event_charset(name)
       end
 
       # Composite the Show Picture layer into its buffer, drawing lowest-id first

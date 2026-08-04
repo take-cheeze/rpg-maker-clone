@@ -1622,6 +1622,50 @@ check 'Show Battle Animation with the wait flag holds the event then resumes' do
   ok st.switches[5], 'the event resumes once the animation finishes'
 end
 
+check 'a vehicle placed on the current map is drawn; one off-map or absent is not' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 2
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  scene.update
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  ok sprites[:boat].visible, 'the placed boat is drawn as a sprite'
+  ok !sprites[:ship].visible, 'an unplaced vehicle is not drawn'
+  # A vehicle on a different map stays hidden.
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id + 1
+  ship.x = 0
+  ship.y = 0
+  ship.charset_name = 'Ship'
+  scene.update
+  ok !sprites[:ship].visible, 'a vehicle on another map is not drawn'
+end
+
+check 'the ridden vehicle sprite follows the party, under the hero' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded
+  scene.update
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  player = scene.instance_variable_get(:@player_sprite)
+  ok sprites[:boat].visible, 'the ridden boat is drawn'
+  eq [player.x, player.y], [sprites[:boat].x, sprites[:boat].y],
+     'the boat tracks the party position'
+  ok sprites[:boat].z < player.z, 'the vehicle sits under the hero'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
