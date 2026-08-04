@@ -1,0 +1,89 @@
+# RGSS API gap for the script host
+
+The [RGSS script host](adr/0017-rpgxp-rgss-script-host.md) runs an RPG Maker XP
+project's own `Data/Scripts.rxdata` unmodified. The scripts assume the engine
+(normally `RGSS104E.dll`) supplies the RGSS class library; this project supplies
+it as `mruby-rgss`. This document tracks **what the stock scripts call** versus
+**what `mruby-rgss` provides**, so the host can be turned on by default once the
+gaps close.
+
+The "needed" column is derived from the real `data/OpenGame.exe/Testbed/XP`
+scripts (all 90 sections), by counting method/`.new`/constant usage — see the
+analysis approach in `scripts/rpgxp_script_host_check.rb`. Frequencies are
+approximate call counts across the bundle.
+
+## Already provided ✅
+
+These are complete enough for the stock scripts:
+
+- **Value types** — `Table`, `Color`, `Tone`, `Rect` (native, with RGSS Marshal).
+- **`Bitmap`** — `new`, `draw_text` (~96), `fill_rect`, `blt`, `stretch_blt`,
+  `clear` (~33), `text_size`, `get_pixel`/`set_pixel`, `rect`, `width`/`height`,
+  `font`, `dispose`. _Missing: `gradient_fill_rect`, `hue_change`._
+- **`Font`** — instance `name`/`size`/`bold`/`italic`/`shadow`/`outline`/`color`/
+  `out_color`, class defaults (`default_name`/`default_size`/…), `exist?`.
+- **`Graphics`** — `frame_count`, `frame_rate`, `update`. _`freeze`,
+  `transition`, `frame_reset` exist but are `warn_stub` no-ops: the game runs but
+  the fade/transition is not drawn._
+- **`Input`** — all key constants (`A`/`B`/`C`/`X`/`Y`/`Z`/`L`/`R`/`UP`…`F9`),
+  `update`, `press?`, `trigger?` (~68), `repeat?` (~34), `press`/`release`,
+  `dir4`/`dir8`.
+- **`Audio`** — `bgm/bgs/me/se` `play`/`stop`/`fade` (+ `bgm_pos`/`bgs_pos`), all
+  used and resolved through `GAME_DIR`/`RTP_DIR`.
+- **`Viewport`** — `new` (~7), `ox`/`oy`, `rect`, `z`, `visible`, `update`,
+  `dispose`.
+- **Kernel** — `load_data` (~27) and `save_data` are supplied by the script host
+  (`Object#load_data`/`#save_data` → the project database); `rand` (~36) is core.
+
+## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
+
+### 1. `Sprite` extended properties ⚠️ (high frequency, medium effort)
+
+`mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
+`visible`/`visible=`, `dispose`, `update`. The stock scripts additionally set:
+
+- `opacity` (~18), `ox`/`oy` (sprite scroll origin), `zoom_x`/`zoom_y` (~3 each),
+  `angle`, `mirror`, `tone`, `color`, `blend_type`, `bush_depth` (~2),
+  `src_rect`, `flash`.
+
+Most are attribute storage the native renderer already has fields for or can
+composite cheaply (opacity/tone/mirror). `Sprite_Character`, `Sprite_Battler`,
+`Arrow_Base`, weather and the animation player all depend on these.
+
+### 2. `Window` ❌ (the big one for menus & messages)
+
+`class Window` is empty. Every `Window_Base` subclass (`Window_Message`,
+`Window_Command`, `Window_Selectable`, the whole menu/shop/battle UI) needs:
+`windowskin`, `contents` (a `Bitmap`), `cursor_rect`, `x`/`y`/`width`/`height`,
+`ox`/`oy`, `opacity`/`back_opacity`/`contents_opacity`, `visible`, `z`, `active`,
+`pause`, `update`, `dispose`. This is a real native widget (frame from the
+windowskin, cursor blink, pause arrow, contents blit).
+
+### 3. `Tilemap` ❌ (the big one for maps)
+
+`class Tilemap` is empty. `Spriteset_Map` needs: `tileset`, `autotiles` (array),
+`map_data` (a `Table`), `flash_data`, `priorities`, `ox`/`oy`, `viewport`,
+`update`, `dispose`, with the autotile assembly + priority layering the RPG2000
+side already implements in `Game::ChipsetLayout` (portable reference).
+
+### 4. `Plane` ❌ (parallax / weather)
+
+`class Plane` is empty. Needs `bitmap`, `ox`/`oy`, `opacity`, `visible`, `z`,
+`zoom_x`/`zoom_y`, `blend_type`, `dispose` — a tiling, scrolling full-viewport
+blit. Used for the map parallax and fog.
+
+### 5. `Kernel#sprintf` / `String#%` ❌ (small but pervasive)
+
+Scripts use `sprintf` (~9, e.g. `sprintf("%02d", n)` for clock/number display).
+This mruby build does not bundle `sprintf`/`format` (see the note in
+`mruby-rpgxp/mrblib/rgss_data.rb`). Either add the `mruby-sprintf` gem or provide
+a minimal formatter. `exit` (1 use, from `Interpreter`) is also assumed.
+
+## Notes
+
+- Turning the host on by default also requires reconciling the scripts' blocking
+  `$scene.main while $scene` loop with the emscripten frame loop (Asyncify or a
+  per-frame `Scene#main` driver) — see ADR 0017.
+- None of the above can be built or run in the current CI sandbox; each item is
+  verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
+  `scripts/rpgxp_script_host_check.rb`.

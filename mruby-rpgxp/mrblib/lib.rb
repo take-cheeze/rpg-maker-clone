@@ -37,7 +37,11 @@ class RPGXP
     @title = read_ini_title
     @db = RGSSData.new(GAME_DIR)
     @scenes = []
-    push Scene::Title.new(self)
+    # When the script host is enabled and the project ships its scripts, the
+    # game's own Ruby drives everything (see script_host.rb); skip building the
+    # built-in title scene, which #start would otherwise run instead.
+    @use_script_host = ScriptHost.enabled? && @db.scripts?
+    push Scene::Title.new(self) unless @use_script_host
   end
 
   attr_reader :db, :title
@@ -118,11 +122,30 @@ class RPGXP
   end
 
   def start
+    return if run_script_host
+    # The built-in flow needs a scene. When the script host was enabled the
+    # title was not built up front, so a fallback here (host returned false or
+    # failed) guarantees one before the loop reads @scenes.last.
+    push Scene::Title.new(self) if @scenes.empty?
     loop { main_loop }
   rescue RGSS::Timeout
   end
 
   private
+
+  # Run the project's bundled RGSS scripts, which own their whole main loop, and
+  # report whether they ran. Any failure to boot the scripts is logged and falls
+  # back to the built-in flow rather than crashing to a blank screen.
+  def run_script_host
+    return false unless @use_script_host
+    ScriptHost.run(@db)
+  rescue RGSS::Timeout
+    true
+  rescue StandardError => e
+    $stderr.puts "[RGSS] script host failed (#{e.class}: #{e.message}); " \
+                 "falling back to the built-in flow"
+    false
+  end
 
   # The window title from Game.ini's [Game] Title=, falling back to the folder
   # name. Parsed with core string operations only (no regexp/String ext), since

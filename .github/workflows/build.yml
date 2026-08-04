@@ -153,6 +153,9 @@ jobs:
           - name: RPG XP test-bed smoke check
             run: nix develop -c ruby scripts/rpgxp_testbed_check.rb
 
+          - name: RPG XP script-host smoke check
+            run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
+
           # Validate the committed MV test-bed database (data/mv-sample) before
           # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
           # a blocking guard against a sample-data regression that would

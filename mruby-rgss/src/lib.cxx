@@ -87,6 +87,30 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   return mrb_str_new(M, nfd.data(), nfd.size());
 }
 
+// Inflate a zlib stream and return the decompressed bytes as a String. RGSS
+// stores each Data/Scripts.rxdata section (and .xyz graphics) as a standard
+// zlib stream (header byte 0x78); the RGSS script host (mruby-rpgxp) needs to
+// decompress those sections before it can eval them. Reuses stb_image's zlib
+// decoder -- already linked for PNG/XYZ loading -- so no extra dependency is
+// pulled in. Falls back to a raw (headerless) DEFLATE decode the way load_xyz
+// does, and raises RGSS::RGSSError when the stream cannot be inflated.
+mrb_value zlib_inflate(mrb_state* M, mrb_value self) {
+  const char* ptr;
+  mrb_int len;
+  mrb_get_args(M, "s", &ptr, &len);
+  int outlen = 0;
+  char* raw = stbi_zlib_decode_malloc(ptr, (int)len, &outlen);
+  if (!raw)
+    raw = stbi_zlib_decode_noheader_malloc(ptr, (int)len, &outlen);
+  if (!raw)
+    mrb_raisef(M,
+               mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
+               "zlib inflate failed: %s", stbi_failure_reason());
+  mrb_value out = mrb_str_new(M, raw, outlen < 0 ? 0 : outlen);
+  stbi_image_free(raw);
+  return out;
+}
+
 using V = ::mrb_value;
 
 double clamp255(double v) {
@@ -2329,6 +2353,8 @@ static mrb_value mouse_pressed_m(mrb_state* M, mrb_value) {
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, m, "zlib_inflate", zlib_inflate,
+                             MRB_ARGS_REQ(1));
   mrb_define_module_function(M, m, "mouse_x", mouse_x_m, MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "mouse_y", mouse_y_m, MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "mouse_pressed?", mouse_pressed_m,
