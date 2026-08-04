@@ -129,14 +129,19 @@ JavaScript loads and interprets the JSON.
     host specs (`mruby-mvjs/test/mz_test.rb`).
   - **M6.2 — Host reuse.** Drive the shared quickjs host / host-globals / IO /
     input / audio bridges (all maker-agnostic) with the `rmmz_*` scripts, so an
-    MZ game reaches `Scene_Boot` in logic (no pixels). A committed MZ sample is
-    authorable the same way `data/mv-sample` is: MZ's corescript has an MIT
-    community reimplementation ([stak/rmmz-corescript]), fetched (never
-    vendored) like the MV corescript, so no proprietary engine is redistributed.
+    MZ game reaches `Scene_Boot` in logic (no pixels). Unlike MV, there is **no
+    committable/fetchable MZ test bed**: MV's corescript is an official
+    open-source project ([rpgtkoolmv], MIT, redistributed by KADOKAWA) that
+    `data/mv-sample` fetches, but MZ's engine ships only with the paid editor
+    (© Gotcha Gotcha Games / KADOKAWA) and has no equivalent open-source
+    release — the GitHub mirrors of it (e.g. `stak/rmmz-corescript`) carry no
+    license. So MZ is developed and verified against a **user-supplied** MZ
+    project, not a downloaded engine, the same constraint the RPG2000/XP beds
+    hit for their (also non-redistributable) game assets.
   - **M6.3 — WebGL rendering.** The WebGL-subset backend behind PIXI v5, the
     bulk of the work — MZ dropped the Canvas2D renderer the MV bridge targets.
 
-[stak/rmmz-corescript]: https://github.com/stak/rmmz-corescript
+[rpgtkoolmv]: https://github.com/rpgtkoolmv/corescript
 
 ## Consequences
 
