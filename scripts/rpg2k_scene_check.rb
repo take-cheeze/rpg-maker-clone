@@ -1306,11 +1306,16 @@ check 'Enemy Encounter scene: winning the battle grants rewards, runs Victory' d
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  5.times { scene.update } # battle runs (strong party wins); result window opens
+  3.times { scene.update } # the battle UI opens on the Fight command menu
+  eq 0, st.party.gold, 'no rewards until the fight is resolved'
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Fight
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update # battle resolves (strong party wins); rewards + result window
   eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
   eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
-  ok !st.switches[1], 'still showing the Victory result window'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result window
+  ok !st.switches[1], 'showing the Victory result'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result
   scene.update
   RGSS::Input.triggered = []
   3.times { scene.update } # interpreter resumes -> runs the Victory handler
@@ -1334,9 +1339,13 @@ check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   # A frail hero the two Slimes overwhelm.
   st.instance_variable_set(:@party,
                            BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
-  5.times { scene.update } # battle runs; the party loses; result window opens
+  3.times { scene.update } # command menu opens
+  RGSS::Input.triggered = [RGSS::Input::C] # Fight
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update # the party loses; defeat result window opens
   ok !st.switches[1] && !st.switches[3], 'result window is up'
-  RGSS::Input.triggered = [RGSS::Input::C]
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss
   scene.update
   RGSS::Input.triggered = []
   3.times { scene.update }
@@ -1344,6 +1353,34 @@ check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   eq 0, st.party.actors.first.exp, 'no EXP on a loss'
   ok !st.switches[1], 'the Victory handler was skipped'
   ok st.switches[3], 'the Defeat handler ran'
+end
+
+check 'Enemy Encounter scene: Flee escapes when allowed, runs Escape' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 2, 1, 0], indent: 0), # escape mode 2 (custom)
+    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::ESCAPE_HANDLER, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::END_BATTLE, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  3.times { scene.update } # command menu offers Fight / Flee
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # cursor to Flee
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # Flee -> escape
+  scene.update
+  RGSS::Input.triggered = []
+  3.times { scene.update } # interpreter resumes -> Escape handler
+  eq 0, st.party.gold, 'fleeing grants nothing'
+  ok !st.switches[1], 'the Victory handler was skipped'
+  ok st.switches[2], 'the Escape handler ran'
 end
 
 # -- summary ------------------------------------------------------------------

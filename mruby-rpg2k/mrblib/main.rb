@@ -469,7 +469,7 @@ class RPG2k
         @message = nil
         @inn_window = nil
         @shop = nil
-        @battle_seq = nil
+        @battle_ui = nil
         @wait_timer = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -1717,40 +1717,76 @@ class RPG2k
       # so the party's real HP is left untouched for now — the on-screen
       # turn-based battle (that would show and persist HP) and game over on defeat
       # are still to come.
+      # Drive the battle screen the map shows during a :battle wait. It opens on
+      # a Fight / Flee command menu over a party / enemy status display; choosing
+      # Fight resolves the (headless) battle and shows the result, Flee escapes
+      # when allowed. Dismissing the result resumes the interpreter with the
+      # outcome. The per-turn animation (stepping Game::Battle#log on screen) is a
+      # later stage; for now Fight resolves the fight at once.
       def drive_battle
         req = @interpreter.battle_request
         return @interpreter.resume_battle(:victory) unless req
-        @battle_seq = resolve_battle(req) if @battle_seq.nil?
-        if @battle_seq[:window].nil?
-          if @battle_seq[:shown]
-            result = @battle_seq[:result]
-            @battle_seq = nil
-            @interpreter.resume_battle(result)
-          else
-            open_battle_window(@battle_seq[:lines])
-            @battle_seq[:shown] = true
-          end
+        if @battle_ui.nil?
+          open_battle(req) # opened this frame; take input from the next one
           return
         end
-        # The result window is up; any confirm / cancel dismisses it.
-        close_battle_window if Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        @battle_ui[:phase] == :command ? drive_battle_command : drive_battle_result
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle failed: #{e.message}"
+        close_battle
+        @interpreter.resume_battle(:victory)
       end
 
-      # Run the headless battle, grant rewards on a win and build the result
-      # window's lines. Rewards are applied now (so the amounts can be shown); the
-      # interpreter is resumed later, once the player dismisses the window.
-      def resolve_battle(req)
+      def open_battle(req)
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
-        battle = Game::Battle.new(allies, foes, Game::Rng.new(0x2000))
+        commands = ['Fight']
+        commands << 'Flee' if req[:allow_escape]
+        @battle_ui = { phase: :command, req: req, troop: troop,
+                       battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000)),
+                       allies: allies, foes: foes, commands: commands, cmd: 0,
+                       status_win: build_battle_status(allies, foes),
+                       cmd_win: nil, result_win: nil, result: nil }
+        draw_battle_command
+      end
+
+      def drive_battle_command
+        cmds = @battle_ui[:commands]
+        if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < cmds.length - 1
+          @battle_ui[:cmd] += 1
+          draw_battle_command
+        elsif Input.trigger?(Input::UP) && @battle_ui[:cmd] > 0
+          @battle_ui[:cmd] -= 1
+          draw_battle_command
+        elsif Input.trigger?(Input::C)
+          cmds[@battle_ui[:cmd]] == 'Flee' ? finish_battle(:escape) : battle_fight
+        end
+      end
+
+      # Resolve the fight, grant rewards on a win, and switch to the result
+      # window (the status / command windows come down).
+      def battle_fight
+        battle = @battle_ui[:battle]
         result = battle.run
-        log_battle(battle, result) # blow-by-blow trace to the console
-        lines = battle_result_lines(result, troop)
-        { lines: lines, result: result, window: nil, shown: false }
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] battle resolution failed: #{e.message}"
-        { lines: ['Victory!'], result: :victory, window: nil, shown: false }
+        log_battle(battle, result)
+        lines = battle_result_lines(result, @battle_ui[:troop])
+        @battle_ui[:result] = result
+        [@battle_ui[:status_win], @battle_ui[:cmd_win]].each { |w| w.dispose if w }
+        @battle_ui[:status_win] = nil
+        @battle_ui[:cmd_win] = nil
+        open_battle_result(lines)
+        @battle_ui[:phase] = :result
+      end
+
+      def drive_battle_result
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        finish_battle(@battle_ui[:result])
+      end
+
+      def finish_battle(result)
+        close_battle
+        @interpreter.resume_battle(result)
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained
@@ -1770,12 +1806,47 @@ class RPG2k
 
       BATTLE_LINE_H = 14
 
-      def open_battle_window(lines)
-        inner_w = SCREEN_W - 20 - Window::BORDER * 2
-        inner_h = lines.length * BATTLE_LINE_H
+      # A full-width panel near the top listing the enemy troop, then each party
+      # member with their HP — the battle's status display.
+      def build_battle_status(allies, foes)
+        lines = foes.map(&:name)
+        lines += allies.map { |a| "#{a.name}  HP #{a.hp}/#{a.max_hp}" }
+        battle_text_window(lines, 6, 300)
+      end
+
+      # The Fight / Flee command menu, a small panel at the bottom with a cursor.
+      def draw_battle_command
+        cmds = @battle_ui[:commands]
+        @battle_ui[:cmd_win].dispose if @battle_ui[:cmd_win]
+        w = 88
+        inner_h = cmds.length * BATTLE_LINE_H
         win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
-        win.z = 300
+                         w, inner_h + Window::BORDER * 2)
+        win.z = 320
+        win.windowskin = @windowskin
+        c = Bitmap.new(w - Window::BORDER * 2, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        cmds.each_with_index do |label, i|
+          c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, label
+        end
+        win.contents = c
+        win.cursor_rect =
+          Rect.new(0, @battle_ui[:cmd] * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
+        @battle_ui[:cmd_win] = win
+      end
+
+      def open_battle_result(lines)
+        @battle_ui[:result_win] =
+          battle_text_window(lines, SCREEN_H - lines.length * BATTLE_LINE_H -
+                                    Window::BORDER * 2 - 6, 320)
+      end
+
+      # A full-width text panel of `lines` at vertical position `y` and depth `z`.
+      def battle_text_window(lines, y, z)
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = [lines.length, 1].max * BATTLE_LINE_H
+        win = Window.new(10, y, SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = z
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
@@ -1783,18 +1854,14 @@ class RPG2k
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
         end
         win.contents = c
-        @battle_seq[:window] = win
-      end
-
-      def close_battle_window
-        return unless @battle_seq && @battle_seq[:window]
-        @battle_seq[:window].dispose
-        @battle_seq[:window] = nil
+        win
       end
 
       def close_battle
-        close_battle_window
-        @battle_seq = nil
+        return unless @battle_ui
+        [@battle_ui[:status_win], @battle_ui[:cmd_win],
+         @battle_ui[:result_win]].each { |w| w.dispose if w }
+        @battle_ui = nil
       end
 
       # Trace a resolved battle blow-by-blow to the console — a stand-in for the
