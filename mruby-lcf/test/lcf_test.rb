@@ -142,6 +142,17 @@ assert "LCF::Array1D#int16_values reads a raw short array past a named accessor"
   assert_false row.respond_to?(:no_such_field)
 end
 
+assert "LCF absent-field defaults: a lambda default is evaluated, not returned raw" do
+  row = LCF::Array1D.new(
+    lcf_array1d([lcf_int_field(1, 7)]),
+    { elements: { 1 => { name: :present, type: :int, default: 0 },
+                  2 => { name: :lazy,    type: :int, default: -> { 42 } },
+                  3 => { name: :static,  type: :int, default: 5 } } })
+  assert_equal 7, row.present   # a present chunk decodes normally
+  assert_equal 42, row.lazy     # absent + callable default -> its called value
+  assert_equal 5, row.static    # absent + plain default -> the value itself
+end
+
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do
   actor = lcf_array1d([lcf_str_field(1, "Hero"), lcf_int_field(57, 3)])
   klass = lcf_array1d([lcf_str_field(1, "Soldier")])

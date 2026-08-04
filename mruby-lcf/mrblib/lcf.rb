@@ -169,7 +169,13 @@ module LCF
   end
 
   def to_rb d, s
-    return s[:default] unless d
+    # An absent field yields its schema default. A callable (`-> { ... }`)
+    # default is lazy -- evaluate it -- so edition-dependent defaults such as
+    # max level and the exp curve resolve to their value, not the Proc itself.
+    unless d
+      dv = s[:default]
+      return dv.respond_to?(:call) ? dv.call : dv
+    end
 
     case s[:type]
     when :Array1D ; return Array1D.new d, s
