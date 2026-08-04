@@ -86,7 +86,7 @@ module LCF
             4 => { name: :charset_index, type: :int, default: 0 },
             5 => { name: :semi_transparent, type: :bool, default: false },
             7 => { name: :initial_level, type: :int, default: 1 },
-            8 => { name: :max_level, type: :int, default: -> { LCF.max_level } },
+            8 => { name: :max_level, type: :int, default: -> { LCF.level_max } },
             9 => { name: :has_critical_rate, type: :bool, default: true },
             10 => { name: :critical_rate, type: :int, default: 30 },
 

@@ -637,6 +637,62 @@ module Game
     end
   end
 
+  # Geometry of the map's parallax background (the `Panorama/<name>` image drawn
+  # behind the tile layers, `MAP_UNIT` fields 31–38). Given the camera position,
+  # the screen / map / image sizes and the per-axis loop + autoscroll settings,
+  # #axis_offset returns the top-left offset (<= 0) at which to start tiling the
+  # image for that axis. The behaviour follows EasyRPG Player's parallax model:
+  #
+  #   * A **looping** axis tiles the image and scrolls it at half the map's rate
+  #     (the classic parallax factor), plus an optional autoscroll that drifts it
+  #     over time at the speed field's rate.
+  #   * A **non-looping** axis anchors the image: it stays fixed to the screen
+  #     when it is no larger than the screen (the common RPG2000 full-screen
+  #     backdrop), and pans across its excess width/height in step with the map
+  #     when it is larger.
+  #
+  # Pure integer geometry with no rendering dependency, so it is exercised
+  # directly by scripts/rpg2k_render_check.rb. The exact scroll *rate* mirrors
+  # EasyRPG's formulae but has not been visually diffed against RPG_RT under
+  # wine — that native comparison is the remaining validation.
+  module Parallax
+    module_function
+
+    # Per-frame autoscroll offset in pixels for an RPG2000 speed field, ported
+    # from EasyRPG's `scroll_amt` with its pan->pixel (/32) scaling so small
+    # speeds move a fraction of a pixel per frame: the fine delta is
+    # -(1<<speed) for speed>0 and +(1<<-speed) for speed<0, accumulated over
+    # `frame` frames and divided by 32.
+    def autoscroll_px(speed, frame)
+      return 0 if speed.nil? || speed == 0
+      amt = speed > 0 ? -(1 << speed) : (1 << -speed)
+      (frame * amt) / 32
+    end
+
+    # Top-left draw offset (in (-img_px, 0]) for one panorama axis.
+    def axis_offset(loop, autoscroll, speed, frame, cam_px, screen_px, map_px, img_px)
+      return 0 if img_px.nil? || img_px <= 0
+      if loop
+        base = cam_px / 2
+        base += autoscroll_px(speed, frame) if autoscroll
+        -(base % img_px)
+      else
+        anchored_offset(cam_px, screen_px, map_px, img_px)
+      end
+    end
+
+    # A non-looping axis: fixed to the screen while the image is no larger than
+    # it, otherwise panned across the image's excess as the camera sweeps the
+    # map (0 at the west/north edge, -excess at the east/south edge).
+    def anchored_offset(cam_px, screen_px, map_px, img_px)
+      return 0 if img_px <= screen_px
+      cam_max = map_px - screen_px
+      return 0 if cam_max <= 0
+      cam = Game.clamp(cam_px, 0, cam_max)
+      -((img_px - screen_px) * cam / cam_max)
+    end
+  end
+
   # Game switches: a 1-indexed set of booleans, defaulting to false.
   class Switches
     def initialize; @data = {}; end
@@ -1670,6 +1726,10 @@ module Game
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
     attr_accessor :current_bgm, :memorized_bgm
+    # Whether the party leader's map sprite is hidden, toggled by the Set
+    # Transparent Flag / Change Player Visibility (11310) event command. Defaults
+    # off (the hero is shown) and is persisted in the save.
+    attr_accessor :player_transparent
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -1687,6 +1747,7 @@ module Game
       @save_access = true
       @current_bgm = nil
       @memorized_bgm = nil
+      @player_transparent = false
       # Transient screen-effect state (tint transition); not serialised, so a
       # reloaded game starts with a neutral screen.
       @screen = Screen.new
@@ -1712,7 +1773,8 @@ module Game
         party: @party.to_h, timer_frames: @timer_frames,
         timer_running: @timer_running, message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
-        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm }
+        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
+        player_transparent: @player_transparent }
     end
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
@@ -1782,6 +1844,7 @@ module Game
       state.save_access = h[:save_access] unless h[:save_access].nil?
       state.current_bgm = h[:current_bgm]
       state.memorized_bgm = h[:memorized_bgm]
+      state.player_transparent = h[:player_transparent] ? true : false
       state
     end
   end

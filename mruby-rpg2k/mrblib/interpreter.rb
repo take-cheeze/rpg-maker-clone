@@ -36,6 +36,8 @@ module Game
       CHANGE_ACTOR_SPRITE = 10630
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      CHANGE_EVENT_LOCATION = 10860
+      TRADE_EVENT_LOCATIONS = 10870
       STORE_TERRAIN_ID  = 10910
       STORE_EVENT_ID    = 10920
       CONDITIONAL      = 12010
@@ -55,6 +57,7 @@ module Game
       TINT_SCREEN      = 11030
       FLASH_SCREEN     = 11040
       SHAKE_SCREEN     = 11050
+      PLAYER_VISIBILITY = 11310
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       HALT_ALL_MOVEMENT = 11350
@@ -63,8 +66,10 @@ module Game
       MEMORIZE_BGM     = 11530
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
+      CHANGE_MAP_TILESET = 11710
       CHANGE_SAVE_ACCESS = 11930
       CHANGE_MENU_ACCESS = 11960
+      RETURN_TO_TITLE  = 12510
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -88,9 +93,11 @@ module Game
       @call_stack = []
       @resolver = nil
       @move_route_requests = []
+      @location_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @tileset_request = nil
       @input_variable = nil
       @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
@@ -117,9 +124,11 @@ module Game
       @running = true
       @call_stack = []
       @move_route_requests = []
+      @location_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
+      @tileset_request = nil
       reset_waits
     end
 
@@ -135,6 +144,17 @@ module Game
       reqs
     end
 
+    # Drain the instant event-repositioning requests (Change Event Location /
+    # Trade Event Locations) queued since the last call, returning them and
+    # clearing the queue. Each is a hash — `{ op: :set, target:, x:, y: }` or
+    # `{ op: :swap, a:, b: }`. Like Move Event these do not pause the interpreter;
+    # the owning scene polls this after #update and moves the characters.
+    def take_location_requests
+      reqs = @location_requests
+      @location_requests = []
+      reqs
+    end
+
     # True (once) if an Erase Event command ran since the last call, clearing the
     # flag. The owning scene polls this after #update and removes the event that
     # was running this interpreter from the map. Like Move Event, Erase Event does
@@ -143,6 +163,16 @@ module Game
       v = @erase_requested
       @erase_requested = false
       v
+    end
+
+    # The new tileset (chipset) id requested by a Change Map Tileset command since
+    # the last call, or nil if none. Reading it clears the request. The owning
+    # scene polls this after #update and rebuilds the map's chipset; non-blocking,
+    # so the rest of the command list runs on.
+    def take_tileset_request
+      id = @tileset_request
+      @tileset_request = nil
+      id
     end
 
     # True (once) if a Halt All Movement command ran since the last call, clearing
@@ -282,11 +312,14 @@ module Game
       when Cmd::TELEPORT         then do_teleport cmd
       when Cmd::MEMORIZE_LOCATION then do_memorize_location cmd
       when Cmd::RECALL_LOCATION   then do_recall_location cmd
+      when Cmd::CHANGE_EVENT_LOCATION then do_change_event_location cmd
+      when Cmd::TRADE_EVENT_LOCATIONS then do_trade_event_locations cmd
       when Cmd::STORE_TERRAIN_ID  then do_store_terrain_id cmd
       when Cmd::STORE_EVENT_ID    then do_store_event_id cmd
       when Cmd::TINT_SCREEN      then do_tint_screen cmd
       when Cmd::FLASH_SCREEN     then do_flash_screen cmd
       when Cmd::SHAKE_SCREEN     then do_shake_screen cmd
+      when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::HALT_ALL_MOVEMENT then @halt_movement_requested = true
@@ -295,8 +328,10 @@ module Game
       when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
+      when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
@@ -792,6 +827,29 @@ module Game
       @waiting = true
     end
 
+    # Change Event Location (Set Event Location): instantly place a character on
+    # the current map at a tile. param0 selects the target (10001 player, 0 /
+    # 10005 this event, else a map event id); param1 the appointment mode (0 the
+    # constants param2/param3, 1 the values of those two variables); param2/param3
+    # the x and y. Queued as a `:set` request the scene applies — non-blocking,
+    # so the rest of the command list runs on.
+    def do_change_event_location(cmd)
+      x = cmd.param(2)
+      y = cmd.param(3)
+      if cmd.param(1) == 1
+        x = variables[x]
+        y = variables[y]
+      end
+      @location_requests.push(op: :set, target: cmd.param(0), x: x, y: y)
+    end
+
+    # Trade Event Locations (Swap Event Locations): exchange the tiles of the two
+    # characters named by param0 and param1 (same target ids as Change Event
+    # Location). Queued as a `:swap` request the scene applies; non-blocking.
+    def do_trade_event_locations(cmd)
+      @location_requests.push(op: :swap, a: cmd.param(0), b: cmd.param(1))
+    end
+
     # Store Terrain ID: write the terrain id of the tile at (x, y) into the
     # variable named by param3. Non-blocking; without a map_info hook (or on any
     # error) it stores 0.
@@ -885,6 +943,25 @@ module Game
     # route never finishes, so pairing it with this command waits indefinitely.
     def do_proceed_with_movement(_cmd)
       @wait_kind = :movement
+      @waiting = true
+    end
+
+    # Set Transparent Flag (Change Player Visibility): toggle whether the party
+    # leader's map sprite is hidden. Non-blocking — it only records the flag on
+    # the shared game state; the owning scene reads it each frame. The polarity
+    # (param0 non-zero = transparent / hidden) follows EasyRPG's
+    # `SetSpriteHidden(parameters[0] != 0)`; the flag persists through Save /
+    # Continue.
+    def do_player_visibility(cmd)
+      @state.player_transparent = cmd.param(0) != 0
+    end
+
+    # Return to Title Screen: abandon the running game and go back to the title.
+    # Raised as a :return_title request the owning scene answers by tearing the
+    # play scenes down and showing a fresh title (there is nothing to resume, so
+    # the request behaves like a one-way teleport out of the map).
+    def do_return_to_title(_cmd)
+      @wait_kind = :return_title
       @waiting = true
     end
 
