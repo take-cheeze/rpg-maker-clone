@@ -46,6 +46,14 @@
 #     wined3d -> OpenGL. Under Xvfb there is no GPU, so Mesa's software
 #     rasteriser has to serve (LIBGL_ALWAYS_SOFTWARE=1) and the 32-bit libGL
 #     must be installed, or every frame stays black.
+#   * Audio must initialise, even though nobody is listening. RGSS opens
+#     DirectSound at boot and, when that fails, stops on a modal "Failed to
+#     initialize DirectX Audio." message box -- which is all the reference draws,
+#     forever. A container with no sound card needs ALSA pointed at a null
+#     device, e.g.
+#         printf 'pcm.!default { type null }\nctl.!default { type null }\n' \
+#             > /etc/asound.conf
+#     (the MIDI warning wine then logs is harmless).
 #   * A window manager must be running or wine never focuses the window and all
 #     synthesised keys are dropped.
 #   * Keys must be *held* (keydown, pause, keyup): a tap is often missed between

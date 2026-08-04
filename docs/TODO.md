@@ -691,7 +691,12 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   tileset/autotile blitting lands. See
   [`docs/adr/0024-rpgxp-cross-runtime-testing.md`](adr/0024-rpgxp-cross-runtime-testing.md);
   the browser pass already found (and this fixed) an XP project rendering on a
-  320x240 screen in the page and the loader panel covering the running game.
+  320x240 screen in the page and the loader panel covering the running game, and
+  the wine pass found four more (the XP RTP key was never read, `.jpg` was
+  missing from the asset search, truecolour images were red/blue-swapped, and an
+  RGBA image loaded opaque drew garbage) — the XP title screen now differs from
+  the genuine runtime in 15% of its pixels, down from 74%, the rest being the
+  windowskin's opacity and the reference's font-less text.
   Still open there: running the **script host** in the browser (the ADR 0023
   frame driver has never been verified in a real browser), and a way to pass
   engine flags to the page so the browser check can use `--rpgxp_new_game`

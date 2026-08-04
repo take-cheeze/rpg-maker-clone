@@ -103,7 +103,12 @@
   `scripts/rtp_xp_install.bash` and both runtimes read the same assets). The
   browser pass immediately found two page-only bugs — an XP project rendering on
   a 320x240 screen with its title window off-canvas, and the loader panel staying
-  on top of the running game — both fixed; see
+  on top of the running game — and the wine pass found four more that had kept an
+  XP project from drawing its RTP art at all: the XP RTP registry key was never
+  read, `.jpg` was missing from the asset search, truecolour images came out with
+  red and blue exchanged, and an RGBA image loaded opaque drew garbage. With those
+  fixed (RPG2000 rendering byte-identical) the title screen went from 74% of its
+  pixels differing from the genuine runtime to 15%; see
   [`docs/adr/0024-rpgxp-cross-runtime-testing.md`](docs/adr/0024-rpgxp-cross-runtime-testing.md)
 
 ### Terminal gaming

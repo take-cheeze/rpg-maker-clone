@@ -105,6 +105,41 @@ browser build has, both now fixed here:
   by setting `hidden`, which the page's own `.panel { display: flex }` rule
   overrode. The check now asserts the *computed* style, not the property.
 
+**Found by the wine comparison, on its first real run** — four bugs that kept an
+XP project from drawing what the genuine runtime draws, all fixed here:
+
+- **The XP RTP was never looked up.** `xp_rtp_path()` (the
+  `Software\Enterbrain\RGSS\RTP\Standard` key) existed but nothing called it:
+  `RTP_DIR` was always the RPG2000 `Software\ASCII\RPG2000` path, so an XP
+  project could not find a single RTP asset and every graphic fell back to a
+  placeholder. The RTP is now picked by project type.
+- **`.jpg` was not in the asset search.** The XP RTP genuinely mixes formats —
+  windowskins and charsets are PNG, title backgrounds are JPEG — and the Bitmap
+  loader only tried `.png`/`.xyz`/`.bmp`, so every XP title screen stayed on the
+  fallback background. stb already decodes JPEG.
+- **Truecolour images were drawn with red and blue exchanged.** Every loader in
+  `mruby-rgss` hands back LVGL's B, G, R(, A) order, but stb decodes to
+  R, G, B(, A); the vendored stb carries a BGR hack that covers *indexed* PNGs
+  only — which is all an RPG2000 project has. XP's truecolour PNGs and JPEGs
+  came out channel-swapped. stb's output is now swapped explicitly, and the
+  RPG2000 title screen renders byte-identically before and after.
+- **An RGBA image loaded opaque drew garbage.** The bitmap's pixel format was
+  chosen from the *file's* channel count while the data was decoded with the
+  *requested* one, so an RGBA source loaded without the transparent flag filled
+  a 4-byte-per-pixel bitmap from 3-channel data — reading past the buffer. XP's
+  truecolour windowskin hit exactly that. The format now follows the request.
+
+- **The title's command window was the wrong size.** RMXP's `Scene_Title` builds
+  `Window_Command.new(192, ...)`; ours was 240 wide, so it sat 48 too wide and 24
+  too far left. Its height and y were already right.
+
+Measured on the title screen, that took the frame from **227,389 differing
+pixels (74%)** to **47,377 (15%)**, and the window frames now land on the
+reference's pixels. What is left inside the window is the reference drawing *no*
+text at all — RGSS finds no font in the wine prefix — our solid selection bar
+against its translucent one, and a level or two per channel from a different
+JPEG decoder.
+
 **Follow-ups this opens:**
 
 - The XP tile layers still render as placeholder colour blocks, so the wine

@@ -216,6 +216,18 @@ fs::path xp_rtp_path() {
   return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
 }
 
+// An RPG Maker XP project: Game.ini plus either a loose Data/System.rxdata or
+// an encrypted archive (a packed release ships no loose Data/ folder). Mirrors
+// the game-class dispatch in main(), and decides both the screen size and which
+// RTP registry key the assets are looked up under.
+bool is_xp_game(const fs::path& game_dir) {
+  const bool xp_data = fs::exists(game_dir / "Data" / "System.rxdata") ||
+                       fs::exists(game_dir / "Game.rgssad") ||
+                       fs::exists(game_dir / "Game.rgss2a") ||
+                       fs::exists(game_dir / "Game.rgss3a");
+  return fs::exists(game_dir / "Game.ini") && xp_data;
+}
+
 // Read the [RPG_RT] FullPackageFlag from RPG_RT.ini in the game directory. When
 // set to 1 the game bundles every asset it needs ("full package") and must not
 // fall back to the RTP, so the runtime disables RTP lookups entirely.
@@ -393,12 +405,7 @@ int main(int argc, char** argv) {
   // Data/System.rxdata or an encrypted archive (Game.rgssad / .rgss2a /
   // .rgss3a), since a packed release ships no loose Data/ folder.
   {
-    const fs::path gd = FLAGS_game_dir;
-    const bool xp_data = fs::exists(gd / "Data" / "System.rxdata") ||
-                         fs::exists(gd / "Game.rgssad") ||
-                         fs::exists(gd / "Game.rgss2a") ||
-                         fs::exists(gd / "Game.rgss3a");
-    const bool xp_game = fs::exists(gd / "Game.ini") && xp_data;
+    const bool xp_game = is_xp_game(FLAGS_game_dir);
     gflags::CommandLineFlagInfo w_info, h_info;
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);
@@ -503,8 +510,20 @@ int main(int argc, char** argv) {
 #else
   // RPG_RT.ini's FullPackageFlag=1 marks a self-contained game; honour it by
   // clearing RTP_DIR so bitmap lookups never reach into the installed RTP.
+  //
+  // The two makers register their RTP under different keys and lay it out
+  // differently, so pick by project type: RPG Maker XP resolves
+  // Software\Enterbrain\RGSS\RTP\Standard (whose tree is rooted at Graphics/
+  // and Audio/, matching the "Graphics/Titles/..." paths XP data stores),
+  // RPG2000 resolves Software\ASCII\RPG2000\RuntimePackagePath. Only the
+  // RPG2000 key was wired up before, so an XP project could never find its RTP
+  // art and every asset fell back to a placeholder (found while bringing up
+  // scripts/compare-rpgxp-wine.bash, which needs both runtimes to draw the same
+  // pictures to be worth anything).
   const std::string rtp_dir =
-      full_package_flag(FLAGS_game_dir) ? std::string() : rtp_path().string();
+      full_package_flag(FLAGS_game_dir)
+          ? std::string()
+          : (is_xp_game(FLAGS_game_dir) ? xp_rtp_path() : rtp_path()).string();
   mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
                 mrb_str_new_cstr(M, rtp_dir.c_str()));
 #endif

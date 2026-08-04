@@ -201,12 +201,12 @@ mrb_data_type DataType<T>::data_type{
 };
 
 // Generic floating point component getter/setter usable by Color and Tone.
-template <class T, double T::* Field>
+template <class T, double T::*Field>
 mrb_value component_get(mrb_state* M, V self) {
   return mrb_float_value(M, DataType<T>::get(M, self).*Field);
 }
 
-template <class T, double T::* Field, int Lo, int Hi>
+template <class T, double T::*Field, int Lo, int Hi>
 mrb_value component_set(mrb_state* M, V self) {
   mrb_float v;
   mrb_get_args(M, "f", &v);
@@ -1052,12 +1052,33 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "z|b", &f, &trans);
   int w, h, c;
   stbi__png_transparent_palette = trans;
-  stbi__png_to_bgr_palette = true;
-  std::shared_ptr<uint8_t> img(
-      stbi_load(f, &w, &h, &c, stbi__png_transparent_palette ? 4 : 3),
-      stbi_image_free);
-  if (!img)
+  // Every loader here hands back LVGL's B, G, R(, A) byte order (see load_xyz
+  // and load_png_tolerant, which build it themselves). stb decodes to
+  // R, G, B(, A), so its output is swapped below instead of relying on the
+  // vendored palette-only BGR hack: that covered indexed PNGs (all an RPG2000
+  // project has) and left every truecolour PNG and every JPEG with red and
+  // blue exchanged -- which is what an RPG Maker XP RTP is full of. Caught by
+  // diffing against the genuine RGSS runtime, see
+  // docs/adr/0024-rpgxp-cross-runtime-testing.md.
+  stbi__png_to_bgr_palette = false;
+  // The channel count has to be decided before decoding, because the bitmap's
+  // pixel format must follow what we *ask* stb for. It used to follow the
+  // file's own channel count instead, so an RGBA image loaded without `trans`
+  // allocated a 4-byte-per-pixel bitmap and filled it from 3-channel data --
+  // reading past the decoded buffer and drawing garbage. An XP windowskin
+  // (truecolour + alpha, loaded opaque) hit exactly that.
+  int probe_w = 0, probe_h = 0, probe_c = 0;
+  const bool has_alpha =
+      stbi_info(f, &probe_w, &probe_h, &probe_c) && probe_c == 4;
+  const int req = (trans || has_alpha) ? 4 : 3;
+  // Whether the pixels came from stb (R, G, B order, so they need the swap) or
+  // from one of the fallbacks above, which already emit LVGL's order.
+  bool from_stb = true;
+  std::shared_ptr<uint8_t> img(stbi_load(f, &w, &h, &c, req), stbi_image_free);
+  if (!img) {
+    from_stb = false;
     img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
+  }
   // stb_image rejects some valid-enough PNGs (e.g. RPG Maker windowskins whose
   // deflate stream references a zero pre-history, giving "bad dist"); retry
   // with the tolerant PNG decoder before giving up.
@@ -1068,21 +1089,30 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
     // them in NFC (or vice versa); retry with the decomposed form before giving
     // up so accented paths still resolve.
     const std::string nfd_f = una::norm::to_nfd_utf8(f);
-    img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c,
-                        stbi__png_transparent_palette ? 4 : 3),
-              stbi_image_free);
-    if (!img)
+    from_stb = true;
+    img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c, req), stbi_image_free);
+    if (!img) {
+      from_stb = false;
       img.reset(load_xyz(nfd_f.c_str(), &w, &h, &c, trans), stbi_image_free);
+    }
     if (!img)
       img.reset(load_png_tolerant(nfd_f.c_str(), &w, &h, &c, trans),
                 stbi_image_free);
     if (!img)
       return mrb_nil_value();
   }
+  // The fallbacks always produce 4 channels; stb produced exactly what was
+  // requested.
+  const int channels = from_stb ? req : 4;
   Bitmap& bmp = DataType<Bitmap>::alloc_obj(
       M, self, w, h,
-      c == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
+      channels == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
   std::memcpy(bmp.buffer.data(), img.get(), bmp.buffer.size());
+  if (from_stb) {
+    uint8_t* p = bmp.buffer.data();
+    for (size_t i = 0; i + 3 <= bmp.buffer.size(); i += (size_t)channels)
+      std::swap(p[i], p[i + 2]);
+  }
   return self;
 }
 

@@ -257,7 +257,13 @@ class RPGXP
       end
 
       def build_command_window
-        w = 240
+        # RMXP's Scene_Title builds `Window_Command.new(192, commands)` and
+        # places it centred at y = 288; the height falls out of the same
+        # 32-pixel rows plus the skin's 16-pixel border. Matching its width is
+        # what puts our window on the genuine runtime's pixels -- 240 left it
+        # 48 too wide and 24 too far left (measured with
+        # scripts/compare-rpgxp-wine.bash).
+        w = 192
         h = COMMANDS.size * LINE_H + Panel::BORDER * 2
         @command = Panel.new((WIDTH - w) / 2, HEIGHT - h - 64, w, h, @skin)
         @command.z = 200

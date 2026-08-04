@@ -20,7 +20,13 @@ module RGSS
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
           i = self._init_file("#{d}/#{f}", s) unless i
-          [:png, :xyz, :bmp].each do |ext|
+          # RGSS resolves a bare asset name against several image formats, and
+          # the RPG Maker XP RTP genuinely mixes them: its windowskins and
+          # charsets are .png while its title backgrounds are .jpg, so a
+          # png-only search left every XP title screen on the fallback
+          # background (found by scripts/compare-rpgxp-wine.bash). stb decodes
+          # JPEG, so both spellings of the extension are just more candidates.
+          [:png, :jpg, :jpeg, :xyz, :bmp].each do |ext|
             i = self._init_file("#{d}/#{f}.#{ext}", s) unless i
           end
         end
