@@ -41,6 +41,20 @@ assert 'MZ.core_scripts evaluates main.js last' do
   assert_equal "js/main.js", MZ.core_scripts.last
 end
 
+assert 'MZ.core_scripts uses the real MZ library filenames' do
+  scripts = MZ.core_scripts
+  # These are the exact names from the engine's main.js scriptUrls / libs dir —
+  # note vorbisdecoder.js (not vorbis.js), and MZ's pako/localforage/effekseer
+  # rather than MV's lz-string.
+  %w[
+    js/libs/pixi.js js/libs/pako.min.js js/libs/localforage.min.js
+    js/libs/effekseer.min.js js/libs/vorbisdecoder.js
+  ].each { |lib| assert_true scripts.include?(lib) }
+  # MV-only libraries must not leak into the MZ list.
+  assert_false scripts.include?("js/libs/lz-string.js")
+  assert_false scripts.include?("js/libs/vorbis.js")
+end
+
 assert 'MZ.core_scripts keeps the MZ engine module order' do
   scripts = MZ.core_scripts
   order = %w[

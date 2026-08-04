@@ -32,18 +32,25 @@ class MZ
   # instead, so the two never collide.
   REQUIRED_MARKERS = ["js/rmmz_core.js", "data/System.json"].freeze
 
-  # The MZ engine scripts, in the order the stock `index.html` loads them: the
-  # vendored libraries first (PIXI v5, then pako for save compression,
-  # localforage for storage, and Effekseer for animations), then the engine
-  # modules, then the game's plugin list and entry point. As on the MV side the
-  # runtime prefers the game's own `index.html` when present and only falls back
-  # to this list, so it need only be the canonical default.
+  # The MZ engine scripts, in the order they load: the vendored libraries first
+  # (PIXI v5, then pako for save compression, localforage for storage, Effekseer
+  # for animations, and the Vorbis decoder), then the engine modules, then the
+  # game's plugin list and entry point. Verified against the real engine's
+  # `main.js` `scriptUrls` (the exact filenames — e.g. `vorbisdecoder.js`, not
+  # `vorbis.js`). As on the MV side the runtime prefers the game's own
+  # `index.html` when present and only falls back to this list.
+  #
+  # NB: MZ's boot entry differs from MV's. MV registers `window.onload`; MZ's
+  # `main.js` is itself the loader — it injects the other scripts as `<script>`
+  # elements and, once they load, initialises the Effekseer WASM runtime and
+  # calls `SceneManager.run(Scene_Boot)`. So the host reuse (M6.2) cannot simply
+  # eval `main.js`; it must drive that sequence itself (see ADR 0004 M6).
   CORE_SCRIPTS = [
     "js/libs/pixi.js",
     "js/libs/pako.min.js",
     "js/libs/localforage.min.js",
     "js/libs/effekseer.min.js",
-    "js/libs/vorbis.js",
+    "js/libs/vorbisdecoder.js",
     "js/rmmz_core.js",
     "js/rmmz_managers.js",
     "js/rmmz_objects.js",
