@@ -407,9 +407,13 @@ The work below is roughly ordered by the critical path to a walkable game
   the swatch's shading reads as a top-to-bottom gradient on the text the way
   RPG2000 draws it (`Game::MessagePalette` locates each swatch — a 10×2 grid of
   16×16 cells from y = 48, per EasyRPG's layout), falling back to a flat colour
-  only when no windowskin loaded or for an out-of-range index. Auto-positioning
-  the window away from the hero (when not pinned) and the mirrored-face flag are
-  later refinements
+  only when no windowskin loaded or for an out-of-range index. When the message
+  is **not pinned** (`position_fixed` off, the RPG2000 default) the window now
+  relocates to keep clear of the hero — top when the hero sits in the lower half
+  of the screen, bottom otherwise — so talking to something at a map's bottom
+  edge shows the text up top; the exact zone boundary is approximate pending a
+  wine diff, but the direction matches RPG_RT. The mirrored-face flag is a
+  later refinement
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
