@@ -108,6 +108,16 @@
   yet, and a boot without the host says so rather than opening a blank window.
   See
   [`docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md`](docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md)
+- The **RGSS2/RGSS3 built-ins** those scripts call on their way to a first frame
+  are in place: keys named as symbols (`Input.trigger?(:C)`, which VX and VX Ace
+  use exclusively), `Graphics.width`/`height`/`wait`/`fadeout`, the `Window`
+  open/close and padding surface with VX's `Window.new(x, y, w, h)` shape, the
+  `RPG::BGM`/`BGS`/`ME`/`SE` records **playing themselves**
+  (`$game_system.battle_bgm.play`), and RGSS3's `rgss_main` wrapper. What is
+  still missing before a VX game *draws* — the nine-sheet VX tilemap, viewport
+  tone/flash and scene transitions — is measured against the stock VX Ace script
+  set in
+  [`docs/rpgvx-rgss-api-gap.md`](docs/rpgvx-rgss-api-gap.md)
 - Have a VX / VX Ace project? `ruby scripts/rpgvx_testbed_check.rb path/to/Game`
   loads its whole database and reports any field the schema is missing — the
   editors are commercial and no open-source test bed exists, so that check is

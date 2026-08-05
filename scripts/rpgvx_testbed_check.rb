@@ -120,12 +120,47 @@ module RGSS
 
   class Timeout < StandardError; end
 
+  # Graphics is native. These stand-ins mirror the parts of mruby-rgss's module
+  # the VX path touches (the real ones are unit-tested in mruby-rgss/test):
+  # counting frames so the per-frame driver can be asserted, RGSS2's frame wait,
+  # and the screen size the boot shell declares.
   module Graphics
     @frames = 0
+    @width = 640
+    @height = 480
     class << self
-      attr_reader :frames
+      attr_reader :frames, :width, :height
       def update = @frames += 1
       def reset_frames = @frames = 0
+      def wait(duration) = duration.to_i.times { update }
+      def resize_screen(width, height)
+        @width = width
+        @height = height
+      end
+    end
+  end
+
+  # The audio backend is native (SDL_mixer); record what the RPG::BGM/SE/ME
+  # records route to it so the boot check can assert the game's own scripts
+  # actually reached it.
+  module Audio
+    @played = []
+    class << self
+      attr_reader :played
+      def reset = @played = []
+      def bgm_play(name, volume = 100, pitch = 100) = @played << [:bgm_play, name, volume, pitch]
+      def bgm_stop = @played << [:bgm_stop]
+      def bgm_fade(time) = @played << [:bgm_fade, time]
+      def bgm_pos = 0
+      def bgs_play(name, volume = 100, pitch = 100) = @played << [:bgs_play, name, volume, pitch]
+      def bgs_stop = @played << [:bgs_stop]
+      def bgs_fade(time) = @played << [:bgs_fade, time]
+      def bgs_pos = 0
+      def me_play(name, volume = 100, pitch = 100) = @played << [:me_play, name, volume, pitch]
+      def me_stop = @played << [:me_stop]
+      def me_fade(time) = @played << [:me_fade, time]
+      def se_play(name, volume = 100, pitch = 100) = @played << [:se_play, name, volume, pitch]
+      def se_stop = @played << [:se_stop]
     end
   end
 end
@@ -146,6 +181,7 @@ load File.join(ROOT, "mruby-rpgxp", "mrblib", "rgssad.rb")
 load File.join(ROOT, "mruby-rpgxp", "mrblib", "script_host.rb")
 load File.join(ROOT, "mruby-rpgvx", "mrblib", "lib.rb")
 load File.join(ROOT, "mruby-rpgvx", "mrblib", "rgss2_data.rb")
+load File.join(ROOT, "mruby-rpgvx", "mrblib", "rgss2_runtime.rb")
 load File.join(ROOT, "mruby-rpgvx", "mrblib", "rgss_data.rb")
 
 # --- A generated project, one per edition ----------------------------------
@@ -881,14 +917,19 @@ module Sample
   end
 
   # The script bundle: [id, name, zlib-deflated source] sections, exactly as XP
-  # stores them. A real game's Main boots its engine (`rgss_main { SceneManager
-  # .run }` in VX Ace); this one stands in for that — it reads the database back
-  # through the Kernel#load_data built-in the host installs and drives a few
-  # frames, so running it exercises the whole boot path (see Checker#check_boot).
+  # stores them. A real VX Ace game's Main is `rgss_main { SceneManager.run }`;
+  # this one has the same shape and calls the RGSS2/RGSS3 built-ins a real boot
+  # reaches in its first frames — the Kernel#load_data the host installs, the
+  # title BGM playing itself, and a frame wait — so running it exercises the
+  # whole boot path (see Checker#check_boot).
   def scripts(ext)
-    main = "$rgss_sample_title = load_data(\"Data/System#{ext}\").game_title\n" \
-           "3.times { Graphics.update }\n" \
-           "$rgss_sample_booted = true\n"
+    main = "rgss_main do\n" \
+           "  system = load_data(\"Data/System#{ext}\")\n" \
+           "  $rgss_sample_title = system.game_title\n" \
+           "  system.title_bgm.play\n" \
+           "  Graphics.wait(3)\n" \
+           "  $rgss_sample_booted = true\n" \
+           "end\n"
     [[1, "Main", Zlib::Deflate.deflate(main)],
      [2, "", Zlib::Deflate.deflate("# empty section\n")]]
   end
@@ -1102,6 +1143,7 @@ class Checker
     $rgss_sample_booted = nil
     $rgss_sample_title = nil
     RGSS::Graphics.reset_frames
+    RGSS::Audio.reset
     previous = ENV["RGSS_SCRIPT_HOST"]
 
     # Host off (the default): the shell must load the database, report the
@@ -1130,7 +1172,19 @@ class Checker
            "from inside the scripts")
     expect(RGSS::Graphics.frames == 3,
            "boot: #{RGSS::Graphics.frames} frames driven, expected 3")
-    puts "  boot: script host ran the bundled scripts over #{RGSS::Graphics.frames} frames"
+    # The RGSS2/RGSS3 built-ins the scripts called on the way: the title BGM
+    # played itself through RPG::BGM#play (rgss2_runtime.rb) and is remembered
+    # as the channel's last record.
+    expect(RGSS::Audio.played == [[:bgm_play, "Theme1", 100, 100]],
+           "boot: title BGM did not reach Audio (got #{RGSS::Audio.played.inspect})")
+    expect(RPG::BGM.last.name == "Theme1",
+           "boot: RPG::BGM.last is #{RPG::BGM.last.name.inspect}, expected \"Theme1\"")
+    expect(RGSS::Graphics.width == RPGVX::WIDTH &&
+           RGSS::Graphics.height == RPGVX::HEIGHT,
+           "boot: the shell did not declare VX's screen size to Graphics")
+    puts "  boot: script host ran the bundled scripts over " \
+         "#{RGSS::Graphics.frames} frames (rgss_main, load_data, " \
+         "RPG::BGM#play, Graphics.wait)"
   rescue StandardError => ex
     fail "#{dir}: boot raised: #{ex.class}: #{ex.message}"
   ensure

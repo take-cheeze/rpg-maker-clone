@@ -437,6 +437,127 @@ assert "VX Ace enemies carry the params array and drop table" do
   assert_equal 5, loaded.actions[0].rating
 end
 
+# ---- RGSS2 / RGSS3 built-ins ----------------------------------------------
+
+# The audio records play themselves in RGSS2/RGSS3 ($game_system.battle_bgm.play).
+# Capture what reaches RGSS::Audio; the native backend is absent here anyway, and
+# what is under test is the routing, the volume/pitch defaults and the
+# "last played" bookkeeping.
+#
+# The overrides only capture while a capture list is installed (inside
+# vx_capture_audio) and otherwise call straight through, so this file can never
+# disturb another gem's audio test whatever order the suites run in.
+class << RGSS::Audio
+  alias _vx_bgm_play_orig bgm_play
+  alias _vx_bgm_stop_orig bgm_stop
+  alias _vx_bgm_fade_orig bgm_fade
+  alias _vx_se_play_orig se_play
+  alias _vx_me_play_orig me_play
+
+  def bgm_play(name, volume = 100, pitch = 100)
+    return _vx_bgm_play_orig(name, volume, pitch) unless $vx_audio.is_a?(Array)
+    $vx_audio << [:bgm_play, name, volume, pitch]
+    nil
+  end
+
+  def bgm_stop
+    return _vx_bgm_stop_orig unless $vx_audio.is_a?(Array)
+    $vx_audio << [:bgm_stop]
+    nil
+  end
+
+  def bgm_fade(time)
+    return _vx_bgm_fade_orig(time) unless $vx_audio.is_a?(Array)
+    $vx_audio << [:bgm_fade, time]
+    nil
+  end
+
+  def se_play(name, volume = 100, pitch = 100)
+    return _vx_se_play_orig(name, volume, pitch) unless $vx_audio.is_a?(Array)
+    $vx_audio << [:se_play, name, volume, pitch]
+    nil
+  end
+
+  def me_play(name, volume = 100, pitch = 100)
+    return _vx_me_play_orig(name, volume, pitch) unless $vx_audio.is_a?(Array)
+    $vx_audio << [:me_play, name, volume, pitch]
+    nil
+  end
+end
+
+# Run a block with the audio capture installed; answers what was played.
+def vx_capture_audio
+  $vx_audio = []
+  yield
+  $vx_audio
+ensure
+  $vx_audio = nil
+end
+
+def vx_bgm(name, volume = nil, pitch = nil)
+  bgm = RPG::BGM.new
+  bgm.name = name
+  bgm.volume = volume
+  bgm.pitch = pitch
+  bgm
+end
+
+assert "RPG::BGM plays itself through RGSS::Audio" do
+  played = vx_capture_audio { vx_bgm("Theme1", 80, 110).play }
+  assert_equal [[:bgm_play, "Theme1", 80, 110]], played
+  # The record's own volume/pitch are the defaults, and a record with neither
+  # falls back to RGSS's 100/100.
+  played = vx_capture_audio { vx_bgm("Theme2").play }
+  assert_equal [[:bgm_play, "Theme2", 100, 100]], played
+end
+
+assert "RPG::BGM tracks the last played record" do
+  vx_capture_audio { vx_bgm("Field1", 90, 100).play }
+  assert_equal "Field1", RPG::BGM.last.name
+  assert_equal 90, RPG::BGM.last.volume
+
+  # #replay plays the same record again (RGSS3 resumes the map BGM this way).
+  played = vx_capture_audio { RPG::BGM.last.replay }
+  assert_equal [[:bgm_play, "Field1", 90, 100]], played
+
+  # Fading or stopping the channel clears it, so `last.name` is readable and
+  # empty rather than stale.
+  played = vx_capture_audio { RPG::BGM.fade(1000) }
+  assert_equal [[:bgm_fade, 1000]], played
+  assert_equal "", RPG::BGM.last.name
+end
+
+assert "a nameless RPG::BGM stops the channel instead of playing silence" do
+  assert_equal [[:bgm_stop]], vx_capture_audio { vx_bgm("").play }
+  assert_equal [[:bgm_stop]], vx_capture_audio { vx_bgm(nil).play }
+end
+
+assert "RPG::SE and RPG::ME play through their own channels" do
+  se = RPG::SE.new
+  se.name = "Cursor1"
+  se.volume = 60
+  assert_equal [[:se_play, "Cursor1", 60, 100]], vx_capture_audio { se.play }
+  # An SE is fire-and-forget: RGSS reports no "last SE".
+  assert_equal "", RPG::SE.last.name
+
+  me = RPG::ME.new
+  me.name = "Victory1"
+  assert_equal [[:me_play, "Victory1", 100, 100]], vx_capture_audio { me.play }
+  assert_equal "Victory1", RPG::ME.last.name
+end
+
+assert "RGSS3 Kernel built-ins" do
+  # `rgss_main { SceneManager.run }` is the whole Main section of a VX Ace
+  # project, so the host must supply it.
+  assert_equal 7, rgss_main { 7 }
+  # rgss_stop ends the game loop (the driver treats RGSS::Timeout as a clean
+  # end) rather than blocking the per-frame Fiber forever.
+  assert_raise(RGSS::Timeout) { rgss_stop }
+  # The RGSS2+ debug boxes have no dialog here; they log and return nil.
+  assert_nil msgbox("hello ", 1)
+  assert_nil msgbox_p([1, 2])
+end
+
 # ---- Encrypted archives ---------------------------------------------------
 
 assert "a VX database survives its .rgss2a (v1) archive" do
