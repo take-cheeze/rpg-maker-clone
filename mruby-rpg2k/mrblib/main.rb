@@ -822,6 +822,9 @@ class RPG2k
         @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
         @picture_sprite.bitmap = @picture_bmp
         @picture_srcs = {}
+        # Toned copies of those sources, keyed by image + tone (see
+        # #toned_picture_src).
+        @picture_tone_cache = {}
       end
 
       # Load (and cache) a picture's source image (Picture/<name>). `transparent`
@@ -4566,9 +4569,65 @@ class RPG2k
         pics.keys.sort.each { |id| draw_picture pics[id], cam_x, cam_y }
       end
 
+      # A picture's RPG2000 tone channel (0..200, 100 neutral) as an RGSS Tone
+      # component (-255..255), the same conversion the screen tint uses.
+      #
+      # The division truncates **toward zero**, not toward negative infinity as
+      # Ruby's `/` would: the reference does this in C++ integer arithmetic, so a
+      # channel of 30 is -178 rather than the -179 flooring gives. One unit of
+      # 255 is invisible, but a rounding rule is worth getting on purpose.
+      def self.tone_channel(v)
+        n = ((v || 100) - 100) * 255
+        n < 0 ? -(-n / 100) : n / 100
+      end
+
+      # Whether a picture asks for any tint at all.
+      def toned?(pic)
+        pic.red != 100 || pic.green != 100 || pic.blue != 100 ||
+          pic.saturation != 100
+      end
+
+      # The picture's source with its tone baked in, cached per (image, tone) so
+      # the software tone pass runs when the tint changes rather than every
+      # frame. `Bitmap#tone_blt` writes to a *separate* destination on purpose —
+      # toning in place would re-tone the same pixels each frame and walk the
+      # image to black — so the scratch is a same-size bitmap per cache entry.
+      #
+      # This rides the path pictures already draw through: the result is blitted
+      # into the shared picture bitmap, which is mutated in place. It is not the
+      # per-frame `Sprite#bitmap=` swap that the map-layer tint attempt found
+      # does not reach the display (see the screen-effects note in docs/TODO.md).
+      def toned_picture_src(pic, src)
+        key = [pic.name, pic.use_transparent_color,
+               pic.red, pic.green, pic.blue, pic.saturation]
+        cached = @picture_tone_cache[key]
+        return cached if cached
+        scratch = Bitmap.new(src.width, src.height)
+        tone = Tone.new(Scene::Map.tone_channel(pic.red),
+                        Scene::Map.tone_channel(pic.green),
+                        Scene::Map.tone_channel(pic.blue),
+                        # RPG2000's saturation runs the other way from RGSS's
+                        # grey: below 100 is *less* saturated, so a value under
+                        # neutral becomes positive desaturation.
+                        Scene::Map.tone_channel(pic.saturation) * -1)
+        scratch.tone_blt src, tone
+        # Bounded so a picture cycling through tones cannot grow it without end;
+        # the oldest entry goes first.
+        @picture_tone_cache.delete(@picture_tone_cache.keys.first) if
+          @picture_tone_cache.size >= PICTURE_TONE_CACHE_MAX
+        @picture_tone_cache[key] = scratch
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] picture ##{pic.id} tone failed, drawn untinted: #{e.message}"
+        nil
+      end
+
+      # How many toned picture variants to keep before evicting the oldest.
+      PICTURE_TONE_CACHE_MAX = 16
+
       def draw_picture(pic, cam_x, cam_y)
         src = picture_src(pic.name, pic.use_transparent_color)
         return unless src
+        src = (toned_picture_src(pic, src) || src) if toned?(pic)
         zw = src.width * pic.zoom / 100
         zh = src.height * pic.zoom / 100
         return if zw <= 0 || zh <= 0

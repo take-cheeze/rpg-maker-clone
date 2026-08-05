@@ -336,8 +336,19 @@ The work below is roughly ordered by the critical path to a walkable game
   parameter to its target over the duration and its wait flag suspends the
   interpreter (`:picture`) until the move settles; `Scene::Map` composites the
   pictures (id-ordered, zoomed via `stretch_blt`, at their opacity) into a layer
-  above the map and below the message window. Picture **tone** is carried but not
-  yet drawn (needs the same native tone support as the screen tint). **Weather
+  above the map and below the message window. Picture **tone** is **drawn** now:
+  the source is toned through the native `Bitmap#tone_blt` before compositing,
+  cached per image + tone so the software pass runs on a tint change rather than
+  every frame, and skipped entirely for a neutral picture. The channel conversion
+  truncates toward zero to match the reference's C++ integer arithmetic (Ruby's
+  `/` would floor, putting a channel one unit out), and RPG2000's saturation —
+  which counts *down* from 100 to mean less saturated — inverts into RGSS's grey,
+  which counts up. Unlike the map-layer tint this rides the path pictures already
+  draw through (a blit into the shared picture bitmap), not the per-frame
+  `Sprite#bitmap=` swap that attempt found does not reach the display. The
+  RPG2003 test-bed is what justifies it: 128 of its 315 Show Pictures and 17 of
+  its 117 Move Pictures carry a non-default tone, against 1 in all of Nepheshel.
+  **Weather
   Effects** (11070) records the map weather type (none / rain / snow) and strength
   on `Game::State`, and `Scene::Map` now draws it: a screen-sized overlay sprite
   (z 430, above the weather-less tint layer and below the animation layer) onto
