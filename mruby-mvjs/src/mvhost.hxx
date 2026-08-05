@@ -27,6 +27,14 @@ void mv_install_webgl(JSContext* ctx);
 // each frame. Defined in mvcanvas.cxx.
 const uint8_t* mv_canvas_pixels(int handle, int* w, int* h);
 
+// Return the RGBA8 pixel buffer of the WebGL context registered under `handle`
+// (as created by getContext('webgl') -> __mv_glCreate), setting *w/*h to its
+// dimensions. Reads back the context's FBO, top-down (ready to present,
+// matching mv_canvas_pixels' orientation). Returns nullptr for an unknown
+// handle or a build without the GL backend. Used to present the MZ WebGL frame
+// on-screen. Defined in mvwebgl.cxx.
+const uint8_t* mv_webgl_pixels(int handle, int* w, int* h);
+
 // Resolve a game-relative asset path against the configured game base dir (set
 // from Ruby via `MV::JS.base_dir=`). MV's own JavaScript requests data/assets
 // with paths relative to the game root (e.g. `data/System.json`, `img/...`),
