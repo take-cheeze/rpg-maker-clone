@@ -2329,7 +2329,8 @@ class RPG2k
                                           name: sk.name, cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
-                                          variance: c[:variance] || 0)
+                                          variance: c[:variance] || 0,
+                                          attributes: c[:attributes])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor

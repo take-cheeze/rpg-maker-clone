@@ -1165,6 +1165,36 @@ module Game
       end
     end
 
+    # The actor's per-attribute defence ranks as `{ attribute_id => rank }`, read
+    # from the database row's `attribute_ranks` byte array (rank 0 = A, most
+    # vulnerable .. 4 = E, immune). An attribute the row omits defaults to C
+    # (100%) at the battle layer. A fixture row without the field yields {}.
+    def attribute_ranks
+      ranks = {}
+      arr = @db_row.respond_to?(:attribute_ranks) ? @db_row.attribute_ranks : nil
+      return ranks unless arr
+      arr.each_with_index { |v, i| ranks[i + 1] = v }
+      ranks
+    end
+
+    # The elemental attribute ids carried by the equipped weapon(s) — the item's
+    # `attribute_set` bool array (field 66), a flag per attribute — used to scale
+    # a basic attack's damage by the target's resistance. No item table (a
+    # fixture) or an unarmed actor carries none.
+    def weapon_attributes
+      return [] unless @db.respond_to?(:item)
+      ids = []
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) && it.type == 1 # weapon slot only
+        set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+        next unless set
+        set.each_with_index { |on, i| ids << (i + 1) if on }
+      end
+      ids.uniq
+    end
+
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
     def normalize_equipment(spec)
@@ -1857,6 +1887,17 @@ module Game
       sk.respond_to?(:variance) ? (sk.variance || 4) : 4
     end
 
+    # The elemental attribute ids a skill applies — its `attribute_effects` bool
+    # array (field 44), a flag per attribute — used to scale the skill's battle
+    # damage by the target's resistance. A fixture without the field applies none.
+    def skill_attributes(sk)
+      set = sk.respond_to?(:attribute_effects) ? sk.attribute_effects : nil
+      return [] unless set
+      ids = []
+      set.each_with_index { |on, i| ids << (i + 1) if on }
+      ids
+    end
+
     # The command numbers for casting `sk` from `caster` on `target` (both
     # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
     # to the target — negative HP for an attack skill (base effect less a quarter
@@ -1870,7 +1911,7 @@ module Game
         dmg = 1 if dmg < 1
         { cost: cost, hp: -dmg, mp: 0,
           inflict: skill_state_ids(sk), chance: skill_hit(sk),
-          variance: skill_variance(sk) }
+          variance: skill_variance(sk), attributes: skill_attributes(sk) }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
       end
@@ -2830,9 +2871,15 @@ module Game
                     else
                       0
                     end
+      # Per-attribute defence ranks ({ attribute_id => rank 0..4 }) from the
+      # enemy's attribute_ranks byte array, so an elemental attack scales its
+      # damage by this monster's resistance. Captured now since `row` isn't kept.
+      @attribute_ranks = {}
+      arr = row && row.respond_to?(:attribute_ranks) ? row.attribute_ranks : nil
+      arr.each_with_index { |v, i| @attribute_ranks[i + 1] = v } if arr
     end
 
-    attr_reader :crit_denom
+    attr_reader :crit_denom, :attribute_ranks
     def crit_denominator; @crit_denom; end
 
     def dead?; @hp <= 0; end
@@ -2872,8 +2919,9 @@ module Game
   # animate it action-by-action; `#run` steps to completion for a headless
   # resolution. It works on Combatant snapshots, so the caller can resolve a
   # battle without mutating the real party. This is a deliberately simple first
-  # cut — no skills, items, criticals, attributes, damage variance or escape yet
-  # — the turn-based battle *screen* and those refinements are still to come.
+  # cut — escape and enemy-cast state infliction are still to come, and the
+  # turn-based battle *screen* wires the refinements (skills, items, criticals,
+  # elemental attributes, damage variance) into a live fight.
   class Battle
     # A battler reduced to what the fight needs. Snapshotting Game::Actor /
     # Game::Enemy keeps the real party untouched by a resolved battle.
@@ -2886,7 +2934,7 @@ module Game
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
                            :actor, :states, :state_turns, :crit_denom,
-                           :prevents_crit) do
+                           :prevents_crit, :attr_ranks, :atk_attrs) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -2908,10 +2956,19 @@ module Game
     # Whether a battler's gear guards against critical hits.
     def self.prevents_crit_of(b); b.respond_to?(:prevents_critical?) && b.prevents_critical?; end
 
+    # A battler's per-attribute defence ranks ({ attribute_id => rank 0..4 }), or
+    # {} when the source (a bare fixture) doesn't model them.
+    def self.attr_ranks_of(b); b.respond_to?(:attribute_ranks) ? b.attribute_ranks : {}; end
+
+    # The elemental attribute ids a battler's basic attack carries (its equipped
+    # weapon's attribute_set); [] for an enemy or an unarmed / fixture attacker.
+    def self.atk_attrs_of(b); b.respond_to?(:weapon_attributes) ? b.weapon_attributes : []; end
+
     def self.from_actor(a)
       Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
-                    nil, crit_denom_of(a), prevents_crit_of(a))
+                    nil, crit_denom_of(a), prevents_crit_of(a),
+                    attr_ranks_of(a), atk_attrs_of(a))
     end
 
     # Enemies have no source actor (that field stays nil), so the post-battle
@@ -2919,7 +2976,8 @@ module Game
     def self.from_enemy(e)
       Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
                     nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
-                    crit_denom_of(e), prevents_crit_of(e))
+                    crit_denom_of(e), prevents_crit_of(e),
+                    attr_ranks_of(e), atk_attrs_of(e))
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -3027,10 +3085,11 @@ module Game
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
     # order by #apply_command when the round runs.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
-                      chance: 100, variance: 0)
+                      chance: 100, variance: 0, attributes: nil)
       ally.command = { kind: :skill, target: target, name: name,
                        cost: cost, hp: hp, mp: mp,
-                       inflict: inflict || [], chance: chance, variance: variance }
+                       inflict: inflict || [], chance: chance, variance: variance,
+                       attributes: attributes || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -3173,17 +3232,22 @@ module Game
       deal_attack(b, target)
     end
 
-    # `b` lands a basic attack on `target`: the base damage (optionally spread by
-    # variance), tripled on a critical hit, then halved (min 1) if the target
-    # defends. The crit note rides on the log entry.
+    # `b` lands a basic attack on `target`: the base damage (scaled by the
+    # target's elemental resistance, optionally spread by variance), tripled on a
+    # critical hit, then halved (min 1) if the target defends. A target immune to
+    # the weapon's element (0% rate) takes no damage. The crit note rides on the
+    # log entry.
     def deal_attack(b, target)
       dmg = Battle.attack_damage(b.atk, target.def)
-      dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance
+      # An elemental weapon scales its damage by the target's resistance before
+      # variance / criticals (EasyRPG's ApplyAttributeNormalAttackMultiplier).
+      dmg = dmg * attr_multiplier(b.atk_attrs, target) / 100
+      dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # No critical on a same-side hit (e.g. a confused ally striking an ally) or
       # against a target whose gear prevents criticals, matching EasyRPG.
       crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
       dmg *= 3 if crit
-      dmg = [dmg / 2, 1].max if target.defending
+      dmg = [dmg / 2, 1].max if target.defending && dmg > 0
       target.hp -= dmg
       { attacker: b.name, target: target.name, damage: dmg, critical: crit,
         target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
@@ -3206,6 +3270,31 @@ module Game
       adj = 1 if adj < 1
       d = base + @rng.random(adj + 1) - adj / 2
       d < 1 ? 1 : d
+    end
+
+    # RPG2000's default attribute rate table: a defence rank of A..E (index 0..4)
+    # scales damage to 200 / 150 / 100 / 50 / 0 percent. (Per-attribute overrides
+    # from the database's Attribute table aren't modelled yet — every element uses
+    # these defaults.)
+    ATTR_RATE_PCT = [200, 150, 100, 50, 0].freeze
+
+    # The percentage `attr_ids` scale damage against `target`: the strongest
+    # (largest) rate among the attack's elements, per EasyRPG's
+    # Attribute::ApplyAttributeMultiplier (the physical / magical split isn't
+    # modelled). 100 (unchanged) for an attribute-less attack; a rank the target
+    # doesn't list defaults to C (100%).
+    def attr_multiplier(attr_ids, target)
+      return 100 if attr_ids.nil? || attr_ids.empty?
+      ranks = target.attr_ranks || {}
+      best = nil
+      attr_ids.each do |aid|
+        rank = ranks[aid] || 2
+        rank = 0 if rank < 0
+        rank = 4 if rank > 4
+        pct = ATTR_RATE_PCT[rank]
+        best = pct if best.nil? || pct > best
+      end
+      best || 100
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act
@@ -3258,8 +3347,11 @@ module Game
       mp = cmd[:mp] || 0
       if hp < 0
         dmg = -hp
+        # An elemental skill scales its damage by the target's resistance first
+        # (EasyRPG's ApplyAttributeSkillMultiplier), then spreads by variance.
+        dmg = dmg * attr_multiplier(cmd[:attributes], target) / 100
         # Spread the skill's damage by its own variance when the fight rolls it.
-        dmg = varied(dmg, cmd[:variance]) if @variance && cmd[:variance] && cmd[:variance] > 0
+        dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
         target.hp -= dmg
         # An attack skill may inflict its states on a surviving target, each
         # rolled against the skill's accuracy.

@@ -368,9 +368,14 @@ The work below is roughly ordered by the critical path to a walkable game
   off for seeded / headless fights. A basic attack can land a **3x critical hit**
   at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
   `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
-  the **`prevent_critical`** flag can never be crit. Still to come: enemy-cast
-  infliction, elemental attributes, all-target skill/item
-  scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
+  the **`prevent_critical`** flag can never be crit. **Elemental attributes**
+  scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
+  are matched against the target's per-attribute defence ranks (A..E → 200 / 150
+  / 100 / 50 / 0 percent, strongest element winning), so a foe is hurt more by a
+  weakness and can fully nullify an element it is immune to. Still to come:
+  enemy-cast infliction, all-target skill/item scopes, per-attribute rate
+  overrides from the Attribute table, the per-terrain backdrop and the RPG2000
+  Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the

@@ -1358,28 +1358,30 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
-                      :prevent_critical)
+                      :prevent_critical, :attribute_set)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
-              state_set: nil, reverse_state: false, prevent_crit: false)
+              state_set: nil, reverse_state: false, prevent_crit: false,
+              attribute_set: nil)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit)
+               prevent_crit, attribute_set)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
                        :affect_hp, :affect_sp, :occasion_battle,
-                       :state_effects, :reverse_state_effect, :hit, :variance)
+                       :state_effects, :reverse_state_effect, :hit, :variance,
+                       :attribute_effects)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
-               variance: 4)
+               variance: 4, attribute_effects: nil)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
-                variance)
+                variance, attribute_effects)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -3866,6 +3868,103 @@ check 'Actor#prevents_critical? reads equipped prevent-critical gear' do
   eq true, Game::Battle.from_actor(a).prevents_crit  # carried onto the combatant
 end
 
+# -- Battle elemental attributes ----------------------------------------------
+# A weapon / skill carries a set of elements; the target's per-element rank
+# (0=A weakest .. 4=E immune) scales the damage 200/150/100/50/0 percent.
+
+check 'battle: an element the target is weak to amplifies the damage (rank A = 200%)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]                               # weapon carries element 1
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0 }                      # rank A -> 200%
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # variance off
+  bat.begin_round
+  eq 40, bat.step_action[:damage]                    # base 20 * 200%
+end
+
+check 'battle: an element the target resists halves the damage (rank D = 50%)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 3 }                      # rank D -> 50%
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  eq 10, bat.step_action[:damage]
+end
+
+check 'battle: an element the target is immune to deals no damage (rank E = 0%)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  slime.attr_ranks = { 1 => 4 }                      # rank E -> 0%
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  e = bat.step_action
+  eq 0, e[:damage]
+  eq 100, slime.hp, 'no HP lost'
+  ok !e[:defeated]
+end
+
+check 'battle: the attribute multiplier takes the strongest matching element' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]                             # two elements
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 3, 2 => 0 }              # resists 1 (50%), weak to 2 (200%)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  eq 40, bat.step_action[:damage]                    # max(50%, 200%) -> 40
+end
+
+check 'battle: an unlisted element deals full (C = 100%) damage' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [5]                               # slime lists no rank for 5
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0 }
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  eq 20, bat.step_action[:damage]                    # unchanged base
+end
+
+check 'battle: an elemental skill scales its damage by the target resistance' do
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 3 => 0 }                      # weak to element 3 (200%)
+  bat = Game::Battle.new([mage], [slime], Game::Rng.new(1)) # variance off
+  bat.command_skill(mage, slime, name: 'Flame', cost: 0, hp: -30, attributes: [3])
+  bat.begin_round
+  eq 60, bat.step_action[:damage]                    # 30 * 200%
+end
+
+check 'Party#battle_skill_command carries the skill elemental attributes' do
+  skills = { 7 => fake_skill(name: 'Ice', scope: 0, power: 20, mrate: 40,
+                             attribute_effects: [false, false, true]) } # element 3
+  st = skill_party(skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  slime = combatant('Slime', 0, 0, 5, 100)
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, slime)
+  eq [3], c[:attributes]
+end
+
+check 'Actor weapon/attribute readers feed the combatant snapshot' do
+  items = { 7 => fake_item(type: 1, atk: 10, attribute_set: [true, false, true]) }
+  st = item_party(items)                             # elements 1 & 3 on the weapon
+  a = st.party.actor_by_id(1)
+  eq [], a.weapon_attributes, 'nothing equipped yet'
+  a.equip([7, 0, 0, 0, 0])
+  eq [1, 3], a.weapon_attributes
+  eq [1, 3], Game::Battle.from_actor(a).atk_attrs, 'carried onto the combatant'
+end
+
+check 'Game::Enemy reads its per-attribute defence ranks' do
+  ranks_row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                         :agility, :exp, :gold, :attribute_ranks)
+  db = BattleDB.new({ 5 => ranks_row.new('Golem', 100, 0, 10, 10, 5, 3, 20, 50,
+                                          [2, 4, 0]) }, {})
+  e = Game::Enemy.new(db, 5)
+  eq({ 1 => 2, 2 => 4, 3 => 0 }, e.attribute_ranks)
+  eq({ 1 => 2, 2 => 4, 3 => 0 }, Game::Battle.from_enemy(e).attr_ranks)
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }
@@ -4089,7 +4188,8 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12, maxSP 30
   foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
   # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
-  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4 },
+  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4,
+       attributes: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
