@@ -729,7 +729,17 @@
  *==================*/
 
 /*1: Enable API to take snapshot for object*/
+/* RGSS's Graphics.snap_to_bitmap (and the freeze/transition built on it) needs
+ * to read back the rendered screen, which lv_snapshot_take does by re-rendering
+ * the object tree into a fresh buffer — the only way that works on every
+ * backend, since the SDL/terminal/wasm displays buffer differently. The module
+ * costs code space, so the two bare-metal targets (whose games never call it,
+ * and whose flash is the binding constraint) keep it out. */
+#if defined(WIO_TERMINAL) || defined(PSP_BUILD)
 #define LV_USE_SNAPSHOT 0
+#else
+#define LV_USE_SNAPSHOT 1
+#endif
 
 /*1: Enable system monitor component*/
 #define LV_USE_SYSMON   0

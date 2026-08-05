@@ -177,8 +177,9 @@ jobs:
       # never collide. `xvfb-run -a` (auto-picked display) is deliberately
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
-      # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
-      # `exe_open` test in CMakeLists.txt); MV runs=100..108, the RPG2k
+      # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 and
+      # render_probe=98 (see those ctest tests in CMakeLists.txt, both run by
+      # the `test` step below); MV runs=100..108, the RPG2k
       # real-game boot smoke=109..110, the MZ boot smoke=111, and the RPG XP
       # real-game boot smoke=112 below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its

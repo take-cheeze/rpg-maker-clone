@@ -344,8 +344,8 @@ if(NOT EMSCRIPTEN)
   # `-a`'s auto server-number probe is not atomic — concurrent probes can pick
   # the same display, so one Xvfb loses its server and the client dies with an
   # "XIO: fatal IO error". Each concurrent run gets its own reserved number
-  # (exe_open=99, MV runs=100..104 in .github/workflows/build.yml) so they can
-  # never collide.
+  # (exe_open=99, render_probe=98, MV runs=100..104 in
+  # .github/workflows/build.yml) so they can never collide.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(exe_open_cmd xvfb-run --server-num=99
                      "--server-args=-screen 0 640x480x24" ${exe_open_cmd})
@@ -353,5 +353,24 @@ if(NOT EMSCRIPTEN)
   add_test(
     NAME exe_open
     COMMAND ${exe_open_cmd}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # The RGSS screen effects (Viewport#color, Viewport#tone) are native rendering
+  # that mruby_test cannot reach: that binary has no display, so a Viewport
+  # cannot even be constructed. This runs the real renderer and *measures* the
+  # frame through Graphics.snap_to_bitmap, so the failure mode where the effect
+  # code runs and the screen never changes fails a test instead of shipping. It
+  # needs no game directory — the probe builds its own sprite (RGSS.effect_probe
+  # in mruby-rgss/mrblib/lib.rb).
+  set(render_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
+                       --rgss_effect_probe --width=544 --height=416)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(render_probe_cmd
+        xvfb-run --server-num=98 "--server-args=-screen 0 640x480x24"
+        ${render_probe_cmd})
+  endif()
+  add_test(
+    NAME render_probe
+    COMMAND ${render_probe_cmd}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
