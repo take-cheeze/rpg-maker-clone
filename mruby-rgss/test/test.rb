@@ -695,6 +695,25 @@ assert "RGSS::Viewport RGSS2/RGSS3 screen-effect surface" do
   end
 end
 
+assert "RGSS::Graphics scene-transition surface" do
+  # snap_to_bitmap grabs the rendered screen, so it needs a live display the
+  # headless test binary lacks — as do freeze/transition, which are built on it.
+  # What *can* be checked here is that they exist and that the natives are not
+  # shadowed: mrblib loads after the C init, so a stray Ruby-side definition of
+  # snap_to_bitmap would silently replace the real one (the mistake that had to
+  # be undone for Viewport#tone). Actually drawing them is measured on a real
+  # display by the `render_probe` ctest — see RGSS.effect_probe.
+  %i[snap_to_bitmap freeze transition wait fadeout fadein update].each do |m|
+    assert_true RGSS::Graphics.respond_to?(m), "Graphics.#{m} missing"
+  end
+  %i[frame_mean effect_probe].each do |m|
+    assert_true RGSS.respond_to?(m), "RGSS.#{m} missing"
+  end
+  # The frozen still has to sit above anything a game sets, and RGSS z values
+  # are plain integers.
+  assert_true RGSS::Graphics::TRANSITION_Z > 0xffffff
+end
+
 # The VX / VX Ace tile geometry is pure arithmetic, so it is pinned here even
 # though drawing needs a display. Every expectation below was taken from a
 # differential run against the MIT RPG Maker MV corescript

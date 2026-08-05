@@ -155,13 +155,38 @@ puts windows in their own viewport, so a map tint does not tint the message
 window anyway) and `Graphics.brightness`, which stays tracked-not-drawn — VX
 fades through `@viewport3.color`, which does draw.
 
-### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — no scene transitions
+### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — scene transitions dissolve ✅
 
 `Scene_Base#perform_transition` freezes the frame and transitions into the next
 scene (~5 uses each), and `Scene_Title` snapshots the screen with
-`Graphics.snap_to_bitmap`. `freeze`/`transition` are stubs that now consume the
-right number of frames (so timing is right) but draw nothing; `snap_to_bitmap`
-and `play_movie` do not exist. Needs a native frame grab.
+`Graphics.snap_to_bitmap`.
+
+**`snap_to_bitmap` is native now**: `lv_snapshot_take` re-renders the active
+screen's object tree into an ARGB8888 buffer, which is the only capture that
+works on every backend here — the SDL window, the terminal framebuffer and the
+wasm canvas all buffer differently, and two of them render partially. The rows
+come back in the byte order `Bitmap` already uses, so they copy straight across.
+
+`freeze`/`transition` are built on it and are real: `freeze` keeps the snapshot,
+and `transition` puts it on a full-screen sprite above everything (`z` at
+`Graphics::TRANSITION_Z`) whose opacity is stepped to zero over `duration`
+frames, so the next scene builds itself behind a fading still of the last one —
+RGSS's default dissolve. The `filename`/`vague` form (dissolving *through* a
+transition image) still runs as a plain fade of the same length and says so once.
+
+Not covered: `play_movie` (there is no video decoder in the build).
+
+This is also what made the effects testable. `mruby-rgss/test` has no display —
+a `Viewport` cannot even be constructed there — so `Viewport#color`, `#tone` and
+the transitions all landed without a test that could see a pixel. `RGSS.frame_mean`
+(the mean R/G/B of the frame, sampled on an 8px grid) and `RGSS.effect_probe`
+close that: `rpg_maker_clone --rgss_effect_probe` drives a grey screen, a red
+`Viewport#color`, an additive-blue `Viewport#tone` and a freeze/transition round
+trip on a real display and measures each one. It runs as the `render_probe`
+ctest under xvfb, and it is the check that catches *the effect code runs and the
+screen does not change* — the failure mode that hid the RPG2000 screen tint
+(`docs/TODO.md`). Measured: `base=[128,128,128] color=[191,63,63]
+tone=[128,128,255] cleared=[0,0,0] mid=[94,94,94] after=[0,0,0]`.
 
 ### 4. Window open/close is not animated, and `Window#tone` is not applied
 
@@ -186,5 +211,6 @@ packed VX Ace game needs next after the tilemap.
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
 the only route to a real game. A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
-and tints, flashes and fades the screen. The largest remaining gaps are **scene
-transitions** (item 3) and reading assets out of an encrypted archive (item 6).
+tints, flashes and fades the screen, and dissolves between scenes. The largest
+remaining gap is **reading assets out of an encrypted archive** (item 6), which
+is what a packed release needs; items 4 and 5 are cosmetic.

@@ -104,6 +104,15 @@ DEFINE_bool(
     "bridge (implies --mv_new_game to reach the map) and log whether the op "
     "reached RGSS::Audio and the asset resolves, so a headless run confirms "
     "the audio path works. Used in CI");
+DEFINE_bool(
+    rgss_effect_probe,
+    false,
+    "Drive the RGSS screen effects on a real display and measure the rendered "
+    "frame (RGSS.effect_probe): a grey screen, then a viewport colour overlay, "
+    "then a viewport tone, each compared against the last. Exits 0 only if the "
+    "pixels actually moved. Needs no game; run under xvfb in CI as the "
+    "render_probe ctest — the one check that can catch \"the effect code runs "
+    "and the screen does not change\"");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -628,6 +637,18 @@ int main(int argc, char** argv) {
   }
   return EXIT_SUCCESS;
 #else
+  // The render probe needs the display and mruby, but no game: it builds its
+  // own viewport/sprite and measures the frame. Run it here, before the
+  // game-class dispatch, and report through the exit code.
+  if (FLAGS_rgss_effect_probe) {
+    const mrb_value ok = mrb_funcall(
+        M, mrb_obj_value(mrb_module_get(M, "RGSS")), "effect_probe", 0);
+    CHECK_NO_EXC(M);
+    rgss_audio_shutdown();
+    gflags::ShutDownCommandLineFlags();
+    return mrb_test(ok) ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
+
   mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);

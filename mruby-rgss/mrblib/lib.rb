@@ -13,6 +13,150 @@ module RGSS
 
   # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
 
+  # The mean R/G/B of the rendered frame, sampled on an 8px grid (a full
+  # per-pixel walk through get_pixel would take seconds). nil when the backend
+  # cannot snapshot. This is the measurement ADR 0021 used to prove the RPG2000
+  # fade reached the display, available to any caller now that
+  # Graphics.snap_to_bitmap exists.
+  def self.frame_mean
+    bmp = Graphics.snap_to_bitmap
+    return nil if bmp.nil?
+    r = 0
+    g = 0
+    b = 0
+    n = 0
+    y = 0
+    while y < bmp.height
+      x = 0
+      while x < bmp.width
+        c = bmp.get_pixel(x, y)
+        r += c.red.to_i
+        g += c.green.to_i
+        b += c.blue.to_i
+        n += 1
+        x += 8
+      end
+      y += 8
+    end
+    bmp.dispose
+    return nil if n.zero?
+    [r / n, g / n, b / n]
+  end
+
+  # Prove the viewport screen effects actually reach the display.
+  #
+  # Every effect below is native rendering that no unit test can see: the test
+  # binary has no display, so a Viewport cannot even be constructed there. The
+  # failure mode that leaves is the dangerous one — the code runs, the values are
+  # stored, and the screen never changes (exactly what happened to an earlier
+  # RPG2000 screen-tint attempt, see docs/TODO.md). So this drives the real
+  # renderer on a real display and *measures* the frame: grey screen, then a red
+  # colour overlay, then an additive-blue tone, each against the last, and
+  # finally a freeze/transition round trip.
+  #
+  # Run by `rpg_maker_clone --rgss_effect_probe` (under xvfb in CI). Returns true
+  # when every effect moved the pixels it should.
+  def self.effect_probe
+    # Take the screen size from a snapshot rather than Graphics.width/height:
+    # those are the values a game's resize_screen set, and there is no game here
+    # — the sprite has to cover what is actually on the display. Doubles as the
+    # check that this backend can snapshot at all.
+    shape = Graphics.snap_to_bitmap
+    if shape.nil?
+      $stderr.puts "[RGSS-PROBE] snap_to_bitmap unavailable on this backend"
+      return false
+    end
+    w = shape.width
+    h = shape.height
+    shape.dispose
+
+    viewport = Viewport.new(0, 0, w, h)
+    bitmap = Bitmap.new(w, h)
+    bitmap.fill_rect(0, 0, w, h, Color.new(128, 128, 128, 255))
+    sprite = Sprite.new(viewport)
+    sprite.bitmap = bitmap
+    Graphics.update
+    base = frame_mean
+
+    viewport.color = Color.new(255, 0, 0, 128)
+    viewport.update
+    Graphics.update
+    colored = frame_mean
+
+    viewport.color = Color.new(0, 0, 0, 0)
+    viewport.tone = Tone.new(0, 0, 255, 0)
+    viewport.update
+    Graphics.update
+    toned = frame_mean
+
+    viewport.tone = Tone.new(0, 0, 0, 0)
+    viewport.update
+
+    # The scene change: freeze the grey screen, then take the scene away — as a
+    # game does when it swaps scenes — and dissolve. `cleared` is the empty
+    # screen the dissolve runs over, `mid` is a frame from inside it (sampled by
+    # the hook below, since transition blocks until it is done) and `after` is
+    # where it ended. Between them they pin down both halves: the frozen still
+    # really goes up over the new scene, and it really comes down again.
+    Graphics.freeze
+    sprite.visible = false
+    Graphics.update
+    cleared = frame_mean
+
+    $rgss_probe_mid = nil
+    class << Graphics
+      alias_method :_probe_update, :update
+      def update
+        _probe_update
+        $rgss_probe_mid = RGSS.frame_mean if $rgss_probe_mid.nil?
+      end
+    end
+    Graphics.transition(4)
+    class << Graphics
+      alias_method :update, :_probe_update
+    end
+    mid = $rgss_probe_mid
+    after = frame_mean
+
+    $stderr.puts "[RGSS-PROBE] base=#{base.inspect} color=#{colored.inspect} " \
+                 "tone=#{toned.inspect} cleared=#{cleared.inspect} " \
+                 "mid=#{mid.inspect} after=#{after.inspect}"
+
+    ok = true
+    # A half-opaque red overlay pushes red up and the other channels down.
+    unless colored[0] > base[0] + 20 && colored[2] < base[2] - 20
+      $stderr.puts "[RGSS-PROBE] FAIL Viewport#color did not tint the frame"
+      ok = false
+    end
+    # An additive blue tone pushes blue up and leaves red alone.
+    unless toned[2] > base[2] + 20
+      $stderr.puts "[RGSS-PROBE] FAIL Viewport#tone did not tint the frame"
+      ok = false
+    end
+    if (cleared[0] - base[0]).abs < 20
+      $stderr.puts "[RGSS-PROBE] FAIL hiding the sprite did not change the frame"
+      ok = false
+    else
+      # Mid-dissolve the still is partly transparent, so the frame sits between
+      # the frozen screen and the scene behind it.
+      unless mid && (mid[0] - cleared[0]).abs > 20 && (mid[0] - base[0]).abs > 8
+        $stderr.puts "[RGSS-PROBE] FAIL Graphics.transition did not show the " \
+                     "frozen screen"
+        ok = false
+      end
+      if (after[0] - cleared[0]).abs > 8
+        $stderr.puts "[RGSS-PROBE] FAIL Graphics.transition left the frozen " \
+                     "screen up"
+        ok = false
+      end
+    end
+    sprite.dispose
+    bitmap.dispose
+    viewport.dispose
+    $stderr.puts "[RGSS-PROBE] #{ok ? "ok" : "failed"}"
+    ok
+  end
+
   class Bitmap
     def initialize f, s = nil
       if f.kind_of? String
@@ -510,6 +654,10 @@ module RGSS
     @width = 640
     @height = 480
     @brightness = 255
+    # The frozen screen a transition dissolves away sits above every game
+    # object; RGSS z values are ordinary integers, so pick one past anything a
+    # game would set.
+    TRANSITION_Z = 0x40000000
 
     class << self
       attr_accessor :frame_count, :frame_rate
@@ -550,14 +698,40 @@ module RGSS
         self.brightness = 255
       end
 
+      # RGSS's scene change: `freeze` grabs the current screen and `transition`
+      # dissolves it away over `duration` frames, so the next scene builds itself
+      # behind a still of the last one. Both are real now, on the native
+      # snap_to_bitmap: freeze keeps the snapshot, and transition shows it on a
+      # full-screen sprite above everything (z at the maximum) whose opacity is
+      # stepped to zero — which is exactly RGSS's default fade.
+      #
+      # The `filename`/`vague` form (dissolve through a transition *image*) is
+      # not modelled; such a transition still runs, as a plain fade over the same
+      # number of frames, and says so once.
       def freeze
-        RGSS.warn_stub("Graphics.freeze")
+        # nil when the backend cannot snapshot (it says so itself, once);
+        # transition copes by falling back to a plain wait.
+        @frozen = snap_to_bitmap
+        nil
       end
 
       def transition(duration = 8, filename = nil, vague = 40)
-        RGSS.warn_stub("Graphics.transition")
-        wait(duration)
+        RGSS.warn_stub("Graphics.transition with a transition image") if filename
+        frozen = @frozen
+        @frozen = nil
         @brightness = 255
+        return wait(duration) if frozen.nil? || duration <= 0
+
+        sprite = Sprite.new
+        sprite.bitmap = frozen
+        sprite.z = TRANSITION_Z
+        duration.times do |i|
+          sprite.opacity = 255 - (255 * (i + 1) / duration)
+          update
+        end
+        sprite.dispose
+        frozen.dispose
+        nil
       end
 
       def frame_reset

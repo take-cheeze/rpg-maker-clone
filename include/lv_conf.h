@@ -729,7 +729,15 @@
  *==================*/
 
 /*1: Enable API to take snapshot for object*/
-#define LV_USE_SNAPSHOT 0
+/* RGSS's Graphics.snap_to_bitmap (and the freeze/transition built on it) needs
+ * to read back the rendered screen, which lv_snapshot_take does by re-rendering
+ * the object tree into a fresh buffer — the only way that works on every
+ * backend, since the SDL/terminal/wasm displays buffer differently. The module
+ * costs code space, but this file is only the desktop/wasm config: the two
+ * bare-metal targets carry their own minimal lv_conf.h (app/wio, app/psp) and
+ * leave this unset, so lv_conf_internal.h's default of 0 keeps it out of their
+ * flash — and mruby-rgss's `#if LV_USE_SNAPSHOT` fallback answers nil there. */
+#define LV_USE_SNAPSHOT 1
 
 /*1: Enable system monitor component*/
 #define LV_USE_SYSMON   0

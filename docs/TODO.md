@@ -716,7 +716,8 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
   `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
   `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
-  widgets, plus `Kernel#sprintf` and drawing `Graphics.transition/freeze`.
+  widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
+  the native `Graphics.snap_to_bitmap` — see the VX section below.)
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
   (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
   archive.
@@ -821,9 +822,28 @@ screen (544×416). Full rationale:
     the RPG2000 screen tint has been waiting on** (see the Screen effects section
     above): `apply_tone_px` is shared by all three composites, so the RPG2000
     side can adopt it instead of growing its own.
+  - ✅ **`Graphics.snap_to_bitmap` / `freeze` / `transition`** — scene
+    transitions. `snap_to_bitmap` is `lv_snapshot_take` into a `Bitmap`, the one
+    capture that works on every backend (the SDL window, the terminal
+    framebuffer and the wasm canvas all buffer differently, and two of them
+    render partially). `freeze` keeps the snapshot; `transition` shows it on a
+    full-screen sprite above everything and steps its opacity to zero, so the
+    next scene builds behind a fading still of the last — RGSS's default
+    dissolve. The `filename`/`vague` form runs as a plain fade and says so once.
+  - ✅ **A render probe that can see the screen.** The three items above are
+    native rendering that no unit test could reach: `mruby-rgss/test` has no
+    display, so a `Viewport` cannot even be constructed there, and the failure
+    mode that leaves is the one that hid the RPG2000 screen tint — the code
+    runs, the values are stored, and nothing changes. `RGSS.frame_mean` (the
+    frame's mean R/G/B, sampled on an 8px grid via `snap_to_bitmap`) and
+    `RGSS.effect_probe` close it: `rpg_maker_clone --rgss_effect_probe` drives a
+    grey screen, a red `Viewport#color`, an additive-blue `Viewport#tone` and a
+    freeze/transition round trip on a real display and measures each. It runs as
+    the `render_probe` ctest under xvfb (display 98) and needs no game. Verified
+    to have teeth by neutering `vp_refresh_overlay` and the transition in turn —
+    each broke exactly the assertion it should.
   - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene
-    transitions), `Viewport#tone` on `Window` contents (a different composite
+    playable game: `Viewport#tone` on `Window` contents (a different composite
     path; RGSS keeps windows in their own viewport, so a map tint does not tint
     the message window anyway), the window open/close animation, and
     `Bitmap#blur`/`#radial_blur`.
