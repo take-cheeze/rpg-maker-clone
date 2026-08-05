@@ -226,7 +226,7 @@ class RPGVX
                  "loose or inside an encrypted archive) loads, but the built-in " \
                  "title/map flow is not written yet. A project that ships its " \
                  "scripts can be driven by the RGSS script host instead " \
-                 "(RGSS_SCRIPT_HOST=1). See " \
+                 "(--rgss_script_host). See " \
                  "docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md."
   end
 end

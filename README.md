@@ -118,8 +118,8 @@
   (`Data/Scripts.rxdata`) unmodified — the way `RGSS104E.dll` does — instead of
   the reimplemented flow: it decompresses the ~90 Ruby sections, supplies the
   `load_data`/`save_data` built-ins and evaluates each at the top level (via
-  `mruby-eval`) so the game drives itself. It is opt-in (`RGSS_SCRIPT_HOST`)
-  while the RGSS class library is completed; see
+  `mruby-eval`) so the game drives itself. It is opt-in
+  (`--rgss_script_host`) while the RGSS class library is completed; see
   [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
   (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
 - An XP project is exercised **against the genuine runtime as well as our own**,
@@ -201,7 +201,7 @@
 - The window is sized to VX's native 544×416 automatically
 - A VX/VX Ace game's engine *is* its script bundle, so a project that ships
   `Data/Scripts.rvdata[2]` can be driven by the same experimental **RGSS script
-  host** as XP (`RGSS_SCRIPT_HOST`); the built-in title/map flow is not written
+  host** as XP (`--rgss_script_host`); the built-in title/map flow is not written
   yet, and a boot without the host says so rather than opening a blank window.
   See
   [`docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md`](docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md)
