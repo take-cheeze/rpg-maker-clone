@@ -495,22 +495,48 @@ class RPGXP
 
     # A movable grid entity (a map event, or the player). Directions are the
     # numpad convention shared with RPG2000: 2 down, 4 left, 6 right, 8 up.
+    #
+    # A character's *tile* is where it is going: taking a step moves (x, y) at
+    # once and leaves the drawn position, (real_x, real_y), to catch up a little
+    # every frame -- which is how RGSS models it, and why an event occupies its
+    # destination for collision the instant it sets off.
     class Character
       DIR_DELTA = { 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1] }.freeze
+      # Sub-tile units RGSS counts a position in: real_x == x * UNIT means the
+      # character has arrived. A step covers UNIT units at 2**move_speed a
+      # frame, so speed 4 (the editor's default) crosses a tile in 8 frames.
+      UNIT = 128
       # 90-degree clockwise / counter-clockwise turns and the 180-degree flip.
       TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8 }.freeze
       TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8 }.freeze
       TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4 }.freeze
       CARDINALS = [2, 4, 6, 8].freeze
 
-      attr_accessor :x, :y, :direction, :move_speed, :move_frequency,
+      attr_accessor :direction, :move_speed, :move_frequency,
                     :through, :direction_fix, :walk_anime, :step_anime,
                     :always_on_top, :opacity, :blend_type
-      attr_reader :graphic_name, :graphic_hue, :pattern
+      attr_reader :x, :y, :graphic_name, :graphic_hue, :pattern,
+                  :real_x, :real_y, :stop_count
+
+      # Assigning a tile directly is a placement (a spawn or a teleport), not a
+      # step: the drawn position goes with it instead of gliding across the map.
+      def x=(v)
+        @x = v
+        @real_x = v * UNIT
+      end
+
+      def y=(v)
+        @y = v
+        @real_y = v * UNIT
+      end
 
       def initialize(x = 0, y = 0, direction = 2)
         @x = x
         @y = y
+        @real_x = x * UNIT
+        @real_y = y * UNIT
+        @anime_count = 0
+        @stop_count = 0
         @direction = direction
         @move_speed = 3
         @move_frequency = 3
@@ -524,6 +550,7 @@ class RPGXP
         @graphic_name = nil
         @graphic_hue = 0
         @pattern = 0
+        @original_pattern = 0
       end
 
       def set_graphic(name, hue = 0, direction = nil, pattern = nil)
@@ -531,6 +558,64 @@ class RPGXP
         @graphic_hue = hue || 0
         face(direction) if direction && direction > 0
         @pattern = pattern if pattern
+        @original_pattern = @pattern
+      end
+
+      # Still short of the tile it is walking to.
+      def moving?
+        @real_x != @x * UNIT || @real_y != @y * UNIT
+      end
+
+      # The drawn position, in pixels, for a `tile`-pixel grid.
+      def pixel_x(tile)
+        @real_x * tile / UNIT
+      end
+
+      def pixel_y(tile)
+        @real_y * tile / UNIT
+      end
+
+      # One frame of this character: close the gap to the tile it stepped onto,
+      # and run the walk cycle. RMXP's Game_Character#update -- the walk row
+      # advances every `18 - move_speed * 2` animation ticks, counted at 1.5 a
+      # frame while walking and 1 a frame for a page that animates on the spot,
+      # and a character that has come to rest falls back to its page's own
+      # frame.
+      def update
+        moving? ? update_move : update_stop
+        return if @anime_count <= 18 - @move_speed * 2
+        @pattern = if !@step_anime && @stop_count > 0
+                     @original_pattern || 0
+                   else
+                     (@pattern + 1) % 4
+                   end
+        @anime_count = 0
+      end
+
+      def update_move
+        d = 2**@move_speed
+        @real_x = approach(@real_x, @x * UNIT, d)
+        @real_y = approach(@real_y, @y * UNIT, d)
+        if @walk_anime
+          @anime_count += 1.5
+        elsif @step_anime
+          @anime_count += 1
+        end
+      end
+
+      def update_stop
+        if @step_anime
+          @anime_count += 1
+        elsif @pattern != (@original_pattern || 0)
+          @anime_count += 1.5
+        end
+        @stop_count += 1
+      end
+
+      # Start the wait before this character's next autonomous step over again,
+      # as taking a step does.
+      def hold_still
+        @stop_count = 0
       end
 
       def self.step_tile(px, py, dir)
@@ -552,6 +637,7 @@ class RPGXP
         dx, dy = DIR_DELTA[dir] || [0, 0]
         @x += dx
         @y += dy
+        @stop_count = 0
       end
 
       # Move one tile diagonally; RMXP keeps a cardinal facing, favouring the
@@ -562,6 +648,7 @@ class RPGXP
         _, vy = DIR_DELTA[vertical] || [0, 0]
         @x += hx
         @y += vy
+        @stop_count = 0
       end
 
       def turn_right;  @direction = TURN_RIGHT[@direction] || @direction; end
@@ -584,6 +671,15 @@ class RPGXP
 
       def direction_away(tx, ty)
         TURN_180[direction_toward(tx, ty)] || @direction
+      end
+
+      private
+
+      # Step `pos` toward `goal` by at most `d`, never overshooting it.
+      def approach(pos, goal, d)
+        return [pos + d, goal].min if pos < goal
+        return [pos - d, goal].max if pos > goal
+        pos
       end
     end
 

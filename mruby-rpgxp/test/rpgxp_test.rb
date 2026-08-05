@@ -970,6 +970,50 @@ assert "a packed graphic loads into a Bitmap through RGSS.asset_archive" do
   end
 end
 
+# The same for audio, which a release packs alongside its graphics. Whether the
+# bytes then reach the mixer is native and needs a real audio device — that is
+# the `audio_probe` ctest. What this pins is that a game's bare track name finds
+# the entry and arrives *decrypted*, through a real archive of both versions.
+assert "a packed track plays through RGSS.asset_archive" do
+  wav = "RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00" \
+        "\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+  [:pack_v1, :pack_v3].each do |packer|
+    files = [
+      ["Data\\System.rxdata", Marshal.dump([1, 2, 3])],
+      ["Audio\\BGM\\Theme1.wav", wav]
+    ]
+    a = RPGXP::RGSSAD.new(RPGXP::RGSSAD.send(packer, files))
+    class << RGSS::Audio
+      alias _bgm_play_mem_orig3 _bgm_play_mem
+      alias _can_play_mem_orig3 _can_play_mem?
+      def _bgm_play_mem(name, bytes, volume, pitch)
+        $audio_arch_capture = [name, bytes, volume, pitch]
+        nil
+      end
+      # The test binary installs no audio backend; pretend one is there so the
+      # lookup is what is being measured.
+      def _can_play_mem? = true
+    end
+    RGSS.asset_archive = a
+    begin
+      $audio_arch_capture = nil
+      # No folder, no extension — how the database names a track.
+      RGSS::Audio.bgm_play("Theme1", 70, 100)
+      assert_false $audio_arch_capture.nil?, "#{packer}: packed BGM did not play"
+      assert_equal "Audio/BGM/Theme1.wav", $audio_arch_capture[0]
+      # Byte-for-byte through the encryption, or no decoder would take it.
+      assert_equal wav.bytes, $audio_arch_capture[1].bytes
+      assert_equal 70, $audio_arch_capture[2]
+    ensure
+      RGSS.asset_archive = nil
+      class << RGSS::Audio
+        alias _bgm_play_mem _bgm_play_mem_orig3
+        alias _can_play_mem? _can_play_mem_orig3
+      end
+    end
+  end
+end
+
 # ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
 
 # World stand-in for the movement engine.
@@ -1007,6 +1051,44 @@ assert "Game::Character move / face / turns / toward" do
   d = RPGXP::Game::Character.new(4, 4).direction_toward(10, 4)
   assert_equal 6, d
   assert_equal 4, RPGXP::Game::Character.new(4, 4).direction_away(10, 4)
+end
+
+assert "Game::Character glides to the tile it stepped onto" do
+  c = RPGXP::Game::Character.new(1, 1)
+  c.move_speed = 4 # 2**4 of 128 units a frame: eight frames a tile
+  c.move(6)
+  # The tile is taken at once (that is what collision sees) but the character
+  # is still drawn on the one it left.
+  assert_equal 2, c.x
+  assert_equal 32, c.pixel_x(32)
+  assert_true c.moving?
+  7.times { c.update }
+  assert_true c.moving?
+  c.update
+  assert_false c.moving?
+  assert_equal 64, c.pixel_x(32)
+  # Placing a character (a spawn or a teleport) is not a step: it does not glide.
+  c.x = 9
+  assert_false c.moving?
+  assert_equal 288, c.pixel_x(32)
+end
+
+assert "Game::Character cycles its walk pattern and rests on the page's frame" do
+  c = RPGXP::Game::Character.new(0, 0)
+  # A page that stands on frame 1 (RMXP's Graphic#pattern).
+  c.set_graphic("hero", 0, 2, 1)
+  c.move_speed = 4 # animation ticks 1.5 a frame, cycling every 18 - 4 * 2
+  assert_equal 1, c.pattern
+  c.move(2)
+  6.times { c.update } # 9.0 ticks: not there yet
+  assert_equal 1, c.pattern
+  c.update # 10.5 ticks
+  assert_equal 2, c.pattern
+  # Once it has arrived and stood still a moment it falls back to the page's
+  # own frame, not to frame 0.
+  20.times { c.update }
+  assert_false c.moving?
+  assert_equal 1, c.pattern
 end
 
 assert "Game::MoveRoute moves forward and repeats" do
