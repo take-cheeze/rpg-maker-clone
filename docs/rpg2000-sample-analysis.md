@@ -43,6 +43,50 @@ single largest category in real data and must not be counted as "missing":
 | **no-op by design** (`·`) | `Comment` (12410/22410) and blank/block-structure lines (codes 0 and 10 — empty, param-less). RPG_RT skips these and so does the interpreter; correctly handled, **not** a feature gap. |
 | **feature gap** (`✗`) | Unimplemented and would change behaviour if run. |
 
+## Full-game coverage (2026-08, supersedes the partial figures below)
+
+The figures further down were gathered from **databases and common events only**
+— the method note above records why per-map tallies could not be captured
+reliably in that pass. A later run against a complete game locally settles the
+coverage question outright.
+
+**Nepheshel** (`scripts/download-nepheshel.bash`), analysed whole:
+
+| | |
+| --- | --- |
+| maps | 543 |
+| map events | 11 362 |
+| event pages | 20 925 |
+| common events | 505 |
+| **event commands** | **184 166** |
+| implemented | 139 555 (75.8 %) |
+| no-op by design | 44 611 (24.2 %) |
+| **correctly handled** | **100.0 %** |
+| **genuine feature gaps** | **0, across 0 distinct opcodes** |
+
+Every event-command opcode a large, finished RPG2000 game uses now has a
+handler. Its troop battle-event pages are covered too — `--troops` reports 3265
+pages, 2819 of them conditional, and every battle-only command they run
+(Change Monster MP / Condition, Show Hidden Monster, Change Battle Background,
+the battle Show Battle Animation and 6577 battle Conditional Branches) resolves
+to a handler.
+
+Reproduce with:
+
+```bash
+./scripts/download-nepheshel.bash          # needs `unar`; outside the nix
+                                           # shell, extract with python zipfile
+ruby scripts/analyze_game.rb <game-dir>            # map + common events
+ruby scripts/analyze_game.rb --troops <game-dir>   # battle-event pages
+```
+
+Two caveats on what this does *not* prove. Coverage is measured per **opcode**,
+not per parameter combination: a command can be dispatched and still mishandle
+an operand mode the game happens not to use. And one game, however large, only
+exercises the commands its author reached for — `ChangeMonsterHP` (13110) and
+`TerminateBattle` (13410) never appear in Nepheshel, so they remain
+fixture-tested only.
+
 ## The collection
 
 39 game projects plus two index files:
@@ -189,6 +233,10 @@ runtime can execute virtually all of it.
    | **System overrides** ✅ | ChangeSystemBGM (10660), ChangeScreenTransitions (10690) — now implemented; they showed up as "unidentified" only because `analyze_game.rb`'s 106xx label table was shifted by one slot | Sample2, Sample3 |
 
 ## Recommended priorities for the interpreter
+
+**All of these have since been implemented** — the full-game figures at the top
+of this document record the result (0 feature gaps across 184 166 commands). The
+list is kept for the reasoning that drove the ordering, not as outstanding work.
 
 Ordered by real-world frequency across the analysed games:
 
