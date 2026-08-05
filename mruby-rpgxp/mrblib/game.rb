@@ -524,6 +524,7 @@ class RPGXP
         @graphic_name = nil
         @graphic_hue = 0
         @pattern = 0
+        @original_pattern = 0
       end
 
       def set_graphic(name, hue = 0, direction = nil, pattern = nil)
@@ -531,6 +532,20 @@ class RPGXP
         @graphic_hue = hue || 0
         face(direction) if direction && direction > 0
         @pattern = pattern if pattern
+        @original_pattern = @pattern
+      end
+
+      # Cycle the four-frame walk row, as RMXP's Game_Character#update does
+      # (`@pattern = (@pattern + 1) % 4`). Nothing else ever moved `@pattern`,
+      # so every event stood frozen on one frame while it walked around.
+      def advance_pattern
+        @pattern = (@pattern + 1) % 4
+      end
+
+      # The frame a character rests on when it stops: RMXP returns to the page's
+      # own pattern unless the page asked for a standing animation.
+      def rest_pattern
+        @pattern = @original_pattern || 0
       end
 
       def self.step_tile(px, py, dir)

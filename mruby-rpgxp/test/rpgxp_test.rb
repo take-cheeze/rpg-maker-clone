@@ -973,6 +973,22 @@ assert "Game::Character move / face / turns / toward" do
   assert_equal 4, RPGXP::Game::Character.new(4, 4).direction_away(10, 4)
 end
 
+assert "Game::Character cycles its walk pattern and rests on the page's frame" do
+  c = RPGXP::Game::Character.new(0, 0)
+  # A page that stands on frame 1 (RMXP's Graphic#pattern).
+  c.set_graphic("hero", 0, 2, 1)
+  assert_equal 1, c.pattern
+  c.advance_pattern
+  assert_equal 2, c.pattern
+  3.times { c.advance_pattern } # 3, 0, 1 -- wraps at four frames
+  assert_equal 1, c.pattern
+  c.advance_pattern
+  assert_equal 2, c.pattern
+  # Standing still returns to the page's own frame, not to 0.
+  c.rest_pattern
+  assert_equal 1, c.pattern
+end
+
 assert "Game::MoveRoute moves forward and repeats" do
   route = RPGXP::Game::MoveRoute.new([mv(12)], true, false) # Move Forward, repeat
   c = RPGXP::Game::Character.new(0, 0, 6) # facing right

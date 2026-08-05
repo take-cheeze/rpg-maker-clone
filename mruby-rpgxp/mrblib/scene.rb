@@ -565,6 +565,10 @@ class RPGXP
           ch.through = page.through ? true : false
           ch.direction_fix = page.direction_fix ? true : false
           ch.always_on_top = page.always_on_top ? true : false
+          # RMXP's page defaults are walk_anime on, step_anime off; an absent
+          # field means the page never said, not "off".
+          ch.walk_anime = page.walk_anime.nil? ? true : (page.walk_anime ? true : false)
+          ch.step_anime = page.step_anime ? true : false
           g = page.graphic
           ch.set_graphic(g.character_name, g.character_hue, g.direction, g.pattern) if g
           move_type = page.move_type || 0
@@ -641,7 +645,10 @@ class RPGXP
       # by move frequency. Skipped once any event process is running this frame,
       # so the map holds still during messages.
       def step_events
-        @events.each { |_id, e| step_event(e) }
+        @events.each do |_id, e|
+          step_event(e)
+          step_idle_animation(e)
+        end
       end
 
       def step_event(e)
@@ -663,9 +670,43 @@ class RPGXP
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir) if dir
         end
-        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+        if ch.x != ox || ch.y != oy
+          reoccupy(e, ox, oy)
+          animate_step e, ch
+        end
       rescue StandardError => ex
         $stderr.puts "[RGSS] event ##{e[:id]} movement failed: #{ex.message}"
+      end
+
+      # One frame of a character's walk cycle. RMXP animates a character that
+      # moved unless its page turned `walk_anime` off; a page with `step_anime`
+      # keeps animating while it stands still (handled in step_idle_animation).
+      def animate_step(e, ch)
+        e[:idle_anime] = 0
+        ch.advance_pattern if ch.walk_anime || ch.step_anime
+      end
+
+      # Pages with `step_anime` animate on the spot. Paced off the same frame
+      # counter as the walk cycle so a standing animation runs at a steady rate
+      # rather than at the event's move frequency.
+      IDLE_ANIME_FRAMES = 8
+
+      # RMXP's Game_Character#update_stop: a standing character with
+      # `step_anime` keeps cycling, and one without it falls back to the pose
+      # its page asked for once it has stopped walking. We step tile-to-tile
+      # rather than pixel-by-pixel, so "stopped" is a frame count instead of
+      # the end of an interpolation.
+      def step_idle_animation(e)
+        ch = e[:char]
+        return unless ch
+        e[:idle_anime] = (e[:idle_anime] || 0) + 1
+        if ch.step_anime
+          return if e[:idle_anime] < IDLE_ANIME_FRAMES
+          e[:idle_anime] = 0
+          ch.advance_pattern
+        elsif e[:idle_anime] >= (EVENT_MOVE_DELAY[ch.move_frequency] || 30)
+          ch.rest_pattern
+        end
       end
 
       # Advance an event's forced route one paced step, updating its occupied
@@ -677,7 +718,10 @@ class RPGXP
         ox = ch.x
         oy = ch.y
         forced[:route].step(ch, @world) unless forced[:route].done?
-        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+        if ch.x != ox || ch.y != oy
+          reoccupy(e, ox, oy)
+          animate_step e, ch
+        end
         @forced_routes.delete(e[:id]) if forced[:route].done?
       rescue StandardError => ex
         $stderr.puts "[RGSS] event ##{e[:id]} forced move failed: #{ex.message}"
