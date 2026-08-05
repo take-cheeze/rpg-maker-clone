@@ -76,6 +76,9 @@ class FakeWorld
     !@blocked.include?([x, y])
   end
 
+  # A jump only tests where it lands, never the tiles it crosses.
+  def can_land?(_character, x, y); !@blocked.include?([x, y]); end
+
   def hero_position; @hero; end
   def set_switch(id, on); @switches[id] = on; end
   def play_sound(*a); @sounds << a; end
@@ -193,6 +196,99 @@ check 'a blocked skippable move advances past the obstruction' do
   eq [0, 0], [c.x, c.y]
   eq :moved, route.step(c, w) # moved on to MOVE_DOWN
   eq [0, 1], [c.x, c.y]
+end
+
+# -- Begin Jump / End Jump ----------------------------------------------------
+
+check 'a jump block hops to its accumulated destination in one step' do
+  # Two rights and a down inside the block: one hop to (2, 1), not three steps.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                 mc(R::MOVE_DOWN), mc(R::END_JUMP), mc(R::MOVE_DOWN)],
+                repeat: false)
+  c = Game::Character.new(0, 0)
+  w = FakeWorld.new
+  eq :moved, route.step(c, w)
+  eq [2, 1], [c.x, c.y], 'landed on the summed offset'
+  eq :moved, route.step(c, w) # the command after End Jump runs next
+  eq [2, 2], [c.x, c.y]
+end
+
+check 'a jump faces its dominant axis, not its last move' do
+  # Two right, two down: a tie on distance, which RPG_RT settles vertically.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                 mc(R::MOVE_DOWN), mc(R::MOVE_DOWN), mc(R::END_JUMP)])
+  c = Game::Character.new(0, 0, 8)
+  route.step(c, FakeWorld.new)
+  eq [2, 2], [c.x, c.y]
+  eq 2, c.direction, 'a tie faces vertically'
+
+  # Three right, one down: horizontal now dominates.
+  route2 = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                  mc(R::MOVE_RIGHT), mc(R::MOVE_DOWN), mc(R::END_JUMP)])
+  c2 = Game::Character.new(0, 0, 8)
+  route2.step(c2, FakeWorld.new)
+  eq 6, c2.direction
+end
+
+check 'faces inside a jump steer the next move without moving anything' do
+  # Face left, then Move Forward: one tile left, even though the character
+  # started facing down.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::FACE_LEFT), mc(R::MOVE_FORWARD),
+                 mc(R::END_JUMP)])
+  c = Game::Character.new(5, 5, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 5], [c.x, c.y]
+end
+
+check 'a jump only tests where it lands, not what it clears' do
+  # (1, 0) is a wall; the jump passes straight over it onto (2, 0).
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                 mc(R::END_JUMP)])
+  c = Game::Character.new(0, 0)
+  eq :moved, route.step(c, FakeWorld.new(blocked: [[1, 0]]))
+  eq [2, 0], [c.x, c.y], 'cleared the tile in between'
+end
+
+check 'a jump onto a blocked tile is retried, or skipped when skippable' do
+  cmds = [mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::END_JUMP),
+          mc(R::MOVE_DOWN)]
+  w = FakeWorld.new(blocked: [[1, 0]])
+
+  route = R.new(cmds, repeat: false, skippable: false)
+  c = Game::Character.new(0, 0)
+  eq :blocked, route.step(c, w)
+  eq [0, 0], [c.x, c.y]
+  eq 0, route.index, 'stays on the Begin Jump so the hop is retried'
+
+  skip = R.new(cmds, repeat: false, skippable: true)
+  c2 = Game::Character.new(0, 0)
+  eq :blocked, skip.step(c2, w)
+  eq [0, 0], [c2.x, c2.y]
+  eq :moved, skip.step(c2, w), 'stepped past the whole block'
+  eq [0, 1], [c2.x, c2.y]
+end
+
+check 'a jump toward the hero hops the way the hero lies' do
+  # Nepheshel's roaming monsters: every one of its 625 jump blocks encloses a
+  # runtime-directed move like this one rather than a literal direction.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_TOWARD_HERO), mc(R::END_JUMP)])
+  c = Game::Character.new(0, 0)
+  eq :moved, route.step(c, FakeWorld.new(hero: [5, 0]))
+  eq [1, 0], [c.x, c.y]
+
+  away = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_AWAY_HERO), mc(R::END_JUMP)])
+  c2 = Game::Character.new(5, 5)
+  eq :moved, away.step(c2, FakeWorld.new(hero: [9, 5]))
+  eq [4, 5], [c2.x, c2.y]
+end
+
+check 'a Begin Jump with no End Jump abandons the rest of the route' do
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_DOWN)],
+                repeat: false)
+  c = Game::Character.new(0, 0)
+  route.step(c, FakeWorld.new)
+  eq [0, 0], [c.x, c.y], 'nothing moved'
+  ok route.done?, 'and the route unwound rather than stepping the moves'
 end
 
 check 'a "through" character ignores collision' do

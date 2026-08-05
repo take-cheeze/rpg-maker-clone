@@ -14,6 +14,9 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # the difference. (mruby core omits several stdlib methods into *-ext gems; the
   # rule is to depend on the providing core gem, see AGENTS.md.)
   add_dependency 'mruby-array-ext'
+  # Integer#zero? (the probe frame counters in mv.rb / mz.rb) is another of
+  # those: it lives in mruby-numeric-ext, not mruby's base Integer.
+  add_dependency 'mruby-numeric-ext'
 
   # The embedded JavaScript engine (quickjs-ng, vendored at 3rd/quickjs). The
   # header is needed to compile src/mvjs.cxx in every build (native and wasm);

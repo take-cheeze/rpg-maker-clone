@@ -46,6 +46,33 @@ class MZ
   # out and the map's own fade in all have to play out first.
   MAP_PROBE_FRAMES = 300
 
+  # Frames the message probe lets run after queueing its text, so
+  # `Window_Message` can open and draw before the state is read back.
+  MSG_PROBE_FRAMES = 45
+
+  # The line the message probe shows. ASCII, so it renders through whatever font
+  # the project ships (the test bed's authored one covers ASCII only).
+  MESSAGE_PROBE_TEXT = "MZ message smoke test".freeze
+
+  # Frames the menu probe keeps re-asserting `Scene_Map#menuCalling` before it
+  # gives up (see #maybe_menu_test).
+  MENU_PROBE_FRAMES = 60
+
+  # Frames the save probe waits for its promise chain to settle. MZ's save path
+  # is asynchronous end to end (`DataManager.saveGame` -> `StorageManager`'s
+  # JSON/deflate/localforage promises), so the result only lands some frames
+  # after the probe starts — see #maybe_save_test.
+  SAVE_PROBE_FRAMES = 300
+
+  # The save slot the save probe round-trips through.
+  SAVE_PROBE_SLOT = 1
+
+  # Frames to watch for `Scene_Battle` after the battle probe runs its Battle
+  # Processing command: New Game's fade, the map settle, the encounter effect
+  # (~60 frames) and Scene_Battle's own fade-in all have to play out first, and
+  # a headless software-GL frame is slower than 60Hz.
+  BATTLE_PROBE_FRAMES = 240
+
   # The files that unambiguously mark a directory as an RPG Maker MZ project:
   # the core engine script and the system database. MV uses `js/rpg_core.js`
   # instead, so the two never collide.
@@ -200,6 +227,127 @@ class MZ
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }
     end
 
+    # JS that queues one line of message text through rmmz's `$gameMessage`,
+    # the way an event's Show Text command does. `Scene_Map` (a `Scene_Message`)
+    # notices the pending text on its next update and opens `Window_Message`
+    # over it. Skipped while a message is already busy, so the probe never
+    # stacks onto a game's own dialogue. Split out so the injection is
+    # unit-testable without a booted engine.
+    def message_probe_js(text)
+      "(function(){ if (typeof $gameMessage === 'undefined' || !$gameMessage " \
+      "|| $gameMessage.isBusy()) return; " \
+      "$gameMessage.add(#{js_string(text)}); })();"
+    end
+
+    # JS that reads the message state back as "busy=<bool> window_open=<bool>":
+    # whether `$gameMessage` still holds text and whether the running scene's
+    # `Window_Message` has opened (`openness > 0`). One eval rather than two, so
+    # both halves describe the same frame.
+    def message_state_js
+      "(function(){ var busy = (typeof $gameMessage !== 'undefined' && " \
+      "$gameMessage && $gameMessage.isBusy()) ? true : false; " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; var open = (s && s._messageWindow && s._messageWindow.openness > " \
+      "0) ? true : false; return 'busy=' + busy + ' window_open=' + open; })();"
+    end
+
+    # JS that asks `Scene_Map` to open the party menu, by setting the very flag
+    # its own `updateCallMenu` acts on. rmmz's keyboard `Input.keyMapper` has no
+    # "menu" binding (only the gamepad's Y), so pressing a key cannot reach
+    # `isMenuCalled`; `menuCalling` is exactly what that predicate sets, so this
+    # takes the real `callMenu` path (SoundManager.playOk + push Scene_Menu)
+    # from inside the scene loop. Shared shape with MV#maybe_menu_test.
+    def menu_probe_js
+      "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
+      "SceneManager._scene : null; if (s && s.constructor && " \
+      "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that starts a save + load round-trip through the real `DataManager` and
+    # parks the outcome on `__mzSaveResult` for #maybe_save_test to read back.
+    #
+    # Unlike MV's — which is synchronous — **MZ's save path is a promise
+    # chain**: `DataManager.saveGame` returns `StorageManager.saveObject(...)`,
+    # itself `objectToJson` -> `jsonToZip` (pako) -> `saveZip` -> localforage,
+    # and `loadGame` mirrors it. So the probe cannot read a return value; it
+    # kicks the chain off and the result appears frames later, once the host has
+    # pumped enough microtasks. `savefileExists` is read *after* the save
+    # resolves, because `saveToForage` only refreshes `StorageManager`'s key
+    # cache at the end of its own chain.
+    #
+    # The load re-creates the `$game*` objects from the file, so the probe
+    # finishes the way a real load does — `SceneManager.goto(Scene_Map)` — and
+    # the running scene is rebuilt against the restored objects instead of
+    # holding references to the ones the load threw away.
+    def save_probe_js(slot)
+      slot = slot.to_i
+      <<~JS
+        (function () {
+          globalThis.__mzSaveResult = "";
+          if (typeof DataManager === "undefined") {
+            globalThis.__mzSaveResult = "error: no DataManager"; return;
+          }
+          var fail = function (e) {
+            globalThis.__mzSaveResult =
+              "error: " + String((e && e.message) || e);
+          };
+          try {
+            var exists = false;
+            DataManager.saveGame(#{slot}).then(function () {
+              exists = !!DataManager.savefileExists(#{slot});
+              return DataManager.loadGame(#{slot});
+            }).then(function () {
+              globalThis.__mzSaveResult =
+                "saved=true exists=" + exists + " loaded=true";
+              try {
+                if (typeof SceneManager !== "undefined" &&
+                    typeof Scene_Map !== "undefined") {
+                  SceneManager.goto(Scene_Map);
+                }
+              } catch (e) {
+                // The round-trip itself succeeded, so its verdict is kept; the
+                // re-entry failure is appended rather than swallowed.
+                globalThis.__mzSaveResult +=
+                  " goto_error=" + String((e && e.message) || e);
+              }
+            })["catch"](fail);
+          } catch (e) { fail(e); }
+        })();
+      JS
+    end
+
+    # JS that reads back what #save_probe_js parked, or "" while the promise
+    # chain is still in flight.
+    def save_result_js
+      "(function(){ return (typeof __mzSaveResult === 'string') ? " \
+      "__mzSaveResult : ''; })();"
+    end
+
+    # JS that starts a battle against `troop_id` the way a game does: a **Battle
+    # Processing** event command (code 301) run through the *map interpreter*,
+    # not a bare `SceneManager.push(Scene_Battle)` from outside the scene loop.
+    # The bare push deadlocks — `Scene_Map.stop` starts the encounter effect,
+    # which only advances while the scene is inactive, so an out-of-loop push
+    # leaves the map active with the effect frozen and the pending battle never
+    # applies. rmmz's `command301` takes the same `[type, troopId, canEscape,
+    # canLose]` parameters as rmmv's, so the injected list is shared in shape
+    # with MV#maybe_battle_test.
+    def battle_probe_js(troop_id)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:301,indent:0,parameters:[0,#{troop_id.to_i},true,false]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # Quote a Ruby string as a single-quoted JavaScript string literal, escaping
+    # what would otherwise end or reopen it (backslash, quote, newline). The
+    # probe text is ASCII at every call site, so nothing else needs encoding.
+    def js_string(text)
+      escaped = text.to_s.gsub("\\", "\\\\\\\\").gsub("'", "\\\\'")
+                    .gsub("\n", "\\n")
+      "'#{escaped}'"
+    end
+
     # True where the WebGL-subset backend PIXI v5 needs (milestone M6.3) is
     # compiled in — the surfaceless-EGL GLES2 context (MV::GL). There MZ boots to
     # the title, plays and presents frames on-screen (see #start / #main_loop);
@@ -273,7 +421,11 @@ class MZ
     @scene = scene_name # read once a frame; the probes below all consult it
     log_scene_transition # trace progress (Scene_Boot -> Scene_Title -> Map)
     maybe_new_game # CI: auto-advance past the title to the first map
+    maybe_battle_test # CI: start a battle from the map and log Scene_Battle
     maybe_move_test # CI: hold a direction on the map and log that the player moved
+    maybe_message_test # CI: show a message on the map and log the window opened
+    maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
+    maybe_save_test # CI: save+load round-trip on the map and log the result
     maybe_audio_test # CI: play an SE through the bridge and log it dispatched
     present
     maybe_screenshot # capture the presented frame once, if requested (CI)
@@ -438,15 +590,17 @@ class MZ
     end) == true
   end
 
-  # When --mz_new_game is set (CI) — or the movement probe is requested, which
-  # needs the map first — pick "New Game" once the title is up, so the game
-  # advances to its start map without any input and a headless run exercises the
-  # in-game render path instead of only the title. One-shot; a no-op during
-  # normal play (flags unset). Mirrors MV#maybe_new_game.
+  # When --mz_new_game is set (CI) — or any probe that needs the map first is
+  # requested — pick "New Game" once the title is up, so the game advances to
+  # its start map without any input and a headless run exercises the in-game
+  # render path instead of only the title. One-shot; a no-op during normal play
+  # (flags unset). Mirrors MV#maybe_new_game.
   def maybe_new_game
     return if @new_game_done
     return unless new_game_requested? || move_test_requested? ||
-                  audio_test_requested?
+                  audio_test_requested? || message_test_requested? ||
+                  menu_test_requested? || save_test_requested? ||
+                  battle_test_troop > 0
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -516,6 +670,189 @@ class MZ
     $stderr.puts "[MZ-MOVE] end #{player_tile} moved=#{@move_seen ? true : false}"
   rescue StandardError => e
     $stderr.puts "[MZ] move test error: #{e.message}"
+  end
+
+  # Whether --mz_message_test was requested (a launcher constant set by
+  # main.cxx). Implies New Game, since the probe needs the map.
+  def message_test_requested?
+    (begin
+      MZ_MESSAGE_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_message_test is set (CI), once on the map queue a "Show Text"
+  # message through `$gameMessage`, let `Scene_Map`'s `Window_Message` open and
+  # draw it over a few frames, then log whether the window opened and is still
+  # showing the text. This drives the dialogue path every RPG uses (event ->
+  # $gameMessage -> Window_Message -> the native text render), so a headless run
+  # proves message boxes actually display rather than only that the map renders.
+  # One-shot; a no-op during normal play. Mirrors MV#maybe_message_test.
+  def maybe_message_test
+    return if @msg_test_done
+    return unless message_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @msg_frame ||= 0
+    if @msg_frame.zero?
+      MV::JS.eval(self.class.message_probe_js(MESSAGE_PROBE_TEXT))
+      $stderr.puts "[MZ] auto message test: queued a message"
+    end
+    @msg_frame += 1
+    return if @msg_frame < MSG_PROBE_FRAMES
+
+    @msg_test_done = true
+    state = MV::JS.eval(self.class.message_state_js)
+    $stderr.puts "[MZ-MSG] #{state.is_a?(String) ? state : ""}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] message test error: #{e.message}"
+  end
+
+  # Whether --mz_menu_test was requested (a launcher constant set by main.cxx).
+  # Implies New Game, since the probe opens the menu from the map.
+  def menu_test_requested?
+    (begin
+      MZ_MENU_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_menu_test is set (CI), once on the map open the party menu through
+  # `Scene_Map`'s own `callMenu` (see MZ.menu_probe_js) and log whether
+  # `Scene_Menu` actually opened. This drives the menu path every RPG uses (map
+  # -> Scene_Menu -> its command / status / gold windows, each of them a
+  # `Window_Selectable` whose rows stroke a background rect), so a headless run
+  # proves the menu opens and draws.
+  #
+  # The flag is re-asserted every frame rather than set once: `updateCallMenu`
+  # clears `menuCalling` on any frame the menu is momentarily disabled (an
+  # autorun event, or the New Game transfer still settling right after the map
+  # arrives), so a single set can be dropped before it ever fires. One-shot
+  # report. Mirrors MV#maybe_menu_test.
+  def maybe_menu_test
+    return if @menu_test_done
+    return unless menu_test_requested?
+    return unless @menu_requested || current_scene == "Scene_Map"
+
+    if current_scene == "Scene_Menu"
+      @menu_test_done = true
+      $stderr.puts "[MZ-MENU] reached_menu=true"
+      return
+    end
+
+    @menu_frame ||= 0
+    $stderr.puts "[MZ] auto menu test" if @menu_frame.zero?
+    @menu_frame += 1
+    @menu_requested = true
+    MV::JS.eval(self.class.menu_probe_js)
+    return if @menu_frame < MENU_PROBE_FRAMES
+
+    @menu_test_done = true
+    $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_save_test was requested (a launcher constant set by main.cxx).
+  # Implies New Game, since the probe saves the state the map set up.
+  def save_test_requested?
+    (begin
+      MZ_SAVE_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_save_test is set (CI), once on the map run a save + load
+  # round-trip through the real `DataManager` and log the result. This drives
+  # the save path every game relies on: `makeSaveContents` serialises the
+  # `$game*` objects, `StorageManager` deflates them through pako and writes the
+  # slot, `savefileExists` confirms it, and `loadGame` reads it back and rebuilds
+  # the game objects.
+  #
+  # MZ's chain is asynchronous (unlike MV's), so the probe starts it once and
+  # then polls `__mzSaveResult` on later frames — each pumped frame drains the
+  # promise microtasks the chain waits on. A chain that never settles is
+  # reported as a timeout rather than silently ending the run with no line.
+  # One-shot; a no-op during normal play.
+  def maybe_save_test
+    return if @save_test_done
+    return unless save_test_requested?
+    return unless @save_started || current_scene == "Scene_Map"
+
+    unless @save_started
+      @save_started = true
+      @save_frame = 0
+      MV::JS.eval(self.class.save_probe_js(SAVE_PROBE_SLOT))
+      $stderr.puts "[MZ] auto save test: slot #{SAVE_PROBE_SLOT}"
+      return
+    end
+
+    res = MV::JS.eval(self.class.save_result_js)
+    res = "" unless res.is_a?(String)
+    @save_frame += 1
+    if !res.empty?
+      @save_test_done = true
+      $stderr.puts "[MZ-SAVE] #{res}"
+    elsif @save_frame >= SAVE_PROBE_FRAMES
+      @save_test_done = true
+      $stderr.puts "[MZ-SAVE] the save round-trip never settled " \
+                   "(#{SAVE_PROBE_FRAMES} frames)"
+    end
+  rescue StandardError => e
+    $stderr.puts "[MZ] save test error: #{e.message}"
+  end
+
+  # The troop id requested by --mz_battle_test (a launcher constant set by
+  # main.cxx), or 0 when unset/disabled (e.g. under the test harness). Implies
+  # New Game, since the battle is started from the map.
+  def battle_test_troop
+    v = begin
+      MZ_BATTLE_TEST
+    rescue StandardError
+      0
+    end
+    v.is_a?(Integer) ? v : 0
+  end
+
+  # When --mz_battle_test=<troopId> is set (CI), start a battle against that
+  # troop once the map is up (see MZ.battle_probe_js) and log whether
+  # `Scene_Battle` was actually reached. This drives the whole combat entry path
+  # — the map interpreter's Battle Processing command, `BattleManager.setup`,
+  # the encounter effect (which snapshots the map through the WebGL frame
+  # extractor for the battle background) and Scene_Battle's own spriteset and
+  # windows — so a headless run proves a game can actually get into a fight.
+  # One-shot; a no-op otherwise. Mirrors MV#maybe_battle_test.
+  def maybe_battle_test
+    return if @battle_test_done
+
+    troop = battle_test_troop
+    return unless troop > 0
+
+    if @battle_requested
+      if current_scene == "Scene_Battle"
+        @battle_test_done = true
+        $stderr.puts "[MZ-BTL] reached_battle=true"
+        return
+      end
+      @battle_frame += 1
+      return if @battle_frame < BATTLE_PROBE_FRAMES
+
+      @battle_test_done = true
+      $stderr.puts "[MZ-BTL] reached_battle=false scene=#{current_scene}"
+      return
+    end
+
+    return unless current_scene == "Scene_Map"
+
+    @battle_requested = true
+    @battle_frame = 0
+    MV::JS.eval(self.class.battle_probe_js(troop))
+    $stderr.puts "[MZ] auto battle test: troop #{troop}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] battle test error: #{e.message}"
   end
 
   # Whether --mz_audio_test was requested (a launcher constant set by main.cxx).

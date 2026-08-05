@@ -54,3 +54,11 @@ through `Scene_Boot` to the **title screen** and presents frames on-screen; add
 `--mz_new_game --mz_move_test` to advance into the start map and walk the
 player without any input, which is what `scripts/mz_boot_check.bash` asserts in
 CI (`--mz_screenshot=<path>` captures the frame).
+
+The other in-game paths have probes of their own — `--mz_message_test`,
+`--mz_menu_test`, `--mz_save_test` and `--mz_battle_test=1` (the bed's only
+troop) — each reached through the boot check's `MZ_MODE`:
+
+```
+MZ_MODE=battle scripts/mz_boot_check.bash
+```
