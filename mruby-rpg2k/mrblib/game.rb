@@ -3235,24 +3235,49 @@ module Game
       @party.items.keys.select { |id| sellable?(id) }.sort
     end
 
-    # Buy one unit of `id`: must be stocked, buying allowed, affordable and not
-    # already capped at 99. Returns whether the purchase happened.
-    def buy(id)
-      return false unless @allow_buy && @goods.include?(id)
+    # The RPG2000 per-item stack cap: a party holds at most 99 of anything.
+    ITEM_CAP = 99
+
+    # How many of `id` the party could buy right now — what the quantity
+    # selector's cursor is bounded by. The binding constraint is whichever of
+    # affordability and the 99-item cap runs out first; a free item (price 0,
+    # which RPG2000 does allow a shop to stock) is limited only by the cap.
+    # 0 when the shop will not sell it at all.
+    def max_buy(id)
+      return 0 unless @allow_buy && @goods.include?(id)
+      room = ITEM_CAP - @party.item_count(id)
+      return 0 if room <= 0
       cost = price(id)
-      return false if @party.gold < cost || @party.item_count(id) >= 99
-      @party.gain_gold(-cost)
-      @party.gain_item(id, 1)
+      return room if cost <= 0
+      affordable = @party.gold / cost
+      affordable < room ? affordable : room
+    end
+
+    # How many of `id` the party could sell — everything it holds, or 0 when the
+    # item cannot be sold here at all.
+    def max_sell(id)
+      @allow_sell && sellable?(id) ? @party.item_count(id) : 0
+    end
+
+    # Buy `n` units of `id` in one transaction: must be stocked, buying allowed,
+    # affordable and within the 99 cap. All-or-nothing — a count beyond what
+    # #max_buy allows buys nothing rather than silently buying fewer, so the
+    # caller cannot overspend by asking for too many. Returns whether it happened.
+    def buy(id, n = 1)
+      n = n.to_i
+      return false if n < 1 || n > max_buy(id)
+      @party.gain_gold(-price(id) * n)
+      @party.gain_item(id, n)
       @did_transaction = true
       true
     end
 
-    # Sell one unit of `id` at half price: must be allowed and sellable. Returns
-    # whether the sale happened.
-    def sell(id)
-      return false unless @allow_sell && sellable?(id)
-      @party.gain_gold(sell_price(id))
-      @party.gain_item(id, -1)
+    # Sell `n` units of `id` at half price each, all-or-nothing like #buy.
+    def sell(id, n = 1)
+      n = n.to_i
+      return false if n < 1 || n > max_sell(id)
+      @party.gain_gold(sell_price(id) * n)
+      @party.gain_item(id, -n)
       @did_transaction = true
       true
     end

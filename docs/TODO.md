@@ -339,8 +339,19 @@ The work below is roughly ordered by the critical path to a walkable game
   price, sell at half, party 99-item / gold caps enforced), tracking whether
   anything was traded to pick the command's `[Transaction]` / `[No Transaction]`
   branches. The interpreter suspends on a `:shop` wait; `Scene::Map` drives the
-  buy / sell menus (one unit per confirm — the quantity selector is a later
-  refinement).
+  buy / sell menus. Picking an item opens a **quantity counter** rather than
+  trading a single unit: UP / DOWN step by one and RIGHT / LEFT by ten (RPG_RT's
+  horizontal axis, so a stack of 99 is a few presses rather than ninety-nine),
+  the count is clamped to `Game::Shop#max_buy` / `#max_sell` — whichever of
+  affordability, the 99-item cap and what the party holds binds first, with a
+  price-0 good limited only by the cap rather than dividing by zero — and one
+  confirm commits the whole stack through `buy(id, n)` / `sell(id, n)`. Those are
+  **all-or-nothing**: a count beyond what is allowed trades nothing rather than
+  quietly trading fewer, so no path can overspend, and a zero or negative count
+  is not a transaction (it cannot mint gold). An item with no room at all —
+  unaffordable, or already capped — does not open the counter, and cancelling it
+  returns to the list having traded nothing. Nepheshel opens 10 shops, so this is
+  exercised content rather than a hypothetical.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

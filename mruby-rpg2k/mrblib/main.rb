@@ -2202,7 +2202,11 @@ class RPG2k
           open_shop(req) # opened this frame; take input from the next one
           return
         end
-        @shop[:screen] == :command ? drive_shop_command : drive_shop_list
+        case @shop[:screen]
+        when :command  then drive_shop_command
+        when :quantity then drive_shop_quantity
+        else drive_shop_list
+        end
       end
 
       def open_shop(req)
@@ -2236,6 +2240,13 @@ class RPG2k
           rows << ['Sell', :sell] if m.allow_sell?
           rows << ['Leave', :leave]
           rows
+        when :quantity
+          # The counter is one row: how many, and what the stack comes to.
+          q = @shop[:quantity]
+          unit = q[:mode] == :buy ? m.price(q[:id]) : m.sell_price(q[:id])
+          verb = q[:mode] == :buy ? 'Buy' : 'Sell'
+          [["#{verb} #{m.name(q[:id])} x#{q[:count]}  " \
+            "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
         when :buy
           m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
         else # :sell
@@ -2299,12 +2310,70 @@ class RPG2k
         if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C) && !lines.empty?
-          id = lines[@shop[:index]][1]
-          @shop[:screen] == :buy ? @shop[:model].buy(id) : @shop[:model].sell(id)
-          draw_shop # refresh gold and, after a sale, the (shrunk) list
+          open_shop_quantity(lines[@shop[:index]][1])
         elsif Input.trigger?(Input::B)
           @shop[:has_menu] ? shop_switch(:command) : leave_shop
         end
+      end
+
+      # How far LEFT / RIGHT jump the quantity cursor — RPG_RT's shop counter
+      # moves in tens on the horizontal axis so a stack of 99 is a few presses
+      # away rather than ninety-nine.
+      SHOP_QUANTITY_STEP = 10
+
+      # Picking an item opens the quantity counter rather than transacting one
+      # unit: RPG2000 asks how many, bounded by what the party can afford, the
+      # 99-item cap, or (selling) what it holds. An item with no room at all —
+      # unaffordable, already capped — never opens the counter.
+      def open_shop_quantity(id)
+        model = @shop[:model]
+        max = @shop[:screen] == :buy ? model.max_buy(id) : model.max_sell(id)
+        return if max < 1
+        @shop[:quantity] = { id: id, count: 1, max: max, mode: @shop[:screen] }
+        @shop[:screen] = :quantity
+        draw_shop
+      end
+
+      # Drive the quantity counter: UP / DOWN by one, RIGHT / LEFT by ten (both
+      # clamped to 1..max), C commits the whole stack in one transaction and B
+      # goes back to the list having bought nothing.
+      def drive_shop_quantity
+        q = @shop[:quantity]
+        if shop_quantity_move(q)
+          draw_shop
+        elsif Input.trigger?(Input::C)
+          model = @shop[:model]
+          q[:mode] == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
+          close_shop_quantity
+        elsif Input.trigger?(Input::B)
+          close_shop_quantity
+        end
+      end
+
+      # Apply one frame of quantity input; returns whether the count changed.
+      def shop_quantity_move(q)
+        before = q[:count]
+        if Input.trigger?(Input::UP)
+          q[:count] += 1
+        elsif Input.trigger?(Input::DOWN)
+          q[:count] -= 1
+        elsif Input.trigger?(Input::RIGHT)
+          q[:count] += SHOP_QUANTITY_STEP
+        elsif Input.trigger?(Input::LEFT)
+          q[:count] -= SHOP_QUANTITY_STEP
+        else
+          return false
+        end
+        q[:count] = Game.clamp(q[:count], 1, q[:max])
+        q[:count] != before
+      end
+
+      # Leave the counter for the list it was opened from, refreshing the gold
+      # and (after a sale) the shrunk list.
+      def close_shop_quantity
+        @shop[:screen] = @shop[:quantity][:mode]
+        @shop[:quantity] = nil
+        draw_shop
       end
 
       # Move the shop cursor with Up / Down; returns true if it moved.

@@ -4245,6 +4245,85 @@ check 'Shop sell refuses unowned, price-0 (key), or in a buy-only shop' do
   ok !shop3.sell(3)
 end
 
+check 'Shop max_buy is bounded by what the party can afford' do
+  st, shop = shop_setup(450, { 3 => 100 })
+  eq 4, shop.max_buy(3), '450 gold buys four at 100'
+  st.party.gain_gold(-450)
+  eq 0, shop.max_buy(3), 'and none when broke'
+end
+
+check 'Shop max_buy is bounded by the 99-item cap, not just gold' do
+  st, shop = shop_setup(999_999, { 3 => 1 })
+  eq 99, shop.max_buy(3), 'rich enough for more, but 99 is the cap'
+  st.party.gain_item(3, 90)
+  eq 9, shop.max_buy(3), 'only the remaining room'
+  st.party.gain_item(3, 9)
+  eq 0, shop.max_buy(3), 'full'
+end
+
+check 'Shop max_buy of a free item is limited only by the cap' do
+  _st, shop = shop_setup(0, { 4 => 0 })
+  eq 99, shop.max_buy(4), 'a price-0 good does not divide by zero'
+end
+
+check 'Shop max_buy is 0 for unstocked goods and in a sell-only shop' do
+  _st, shop = shop_setup(500, { 3 => 100 })
+  eq 0, shop.max_buy(7), 'not stocked'
+  _st2, shop2 = shop_setup(500, { 3 => 100 }, allow_buy: false, allow_sell: true)
+  eq 0, shop2.max_buy(3), 'this shop does not sell'
+end
+
+check 'Shop max_sell is what the party holds, and 0 when it cannot be sold' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  st.party.gain_item(3, 7)
+  eq 7, shop.max_sell(3)
+  st2, shop2 = shop_setup(0, { 4 => 0 })
+  st2.party.gain_item(4, 3)
+  eq 0, shop2.max_sell(4), 'a price-0 key item cannot be sold'
+  st3, shop3 = shop_setup(0, { 3 => 100 }, allow_buy: true, allow_sell: false)
+  st3.party.gain_item(3, 3)
+  eq 0, shop3.max_sell(3), 'this shop does not buy'
+end
+
+check 'Shop buys a whole stack in one transaction' do
+  st, shop = shop_setup(500, { 3 => 100 })
+  ok shop.buy(3, 4), 'four at once'
+  eq 100, st.party.gold, '500 - 4*100'
+  eq 4, st.party.item_count(3)
+end
+
+check 'Shop sells a whole stack in one transaction' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  st.party.gain_item(3, 5)
+  ok shop.sell(3, 3), 'three at once'
+  eq 150, st.party.gold, '3 * 50'
+  eq 2, st.party.item_count(3)
+end
+
+check 'a stack beyond what the party can afford buys nothing at all' do
+  st, shop = shop_setup(500, { 3 => 100 })
+  ok !shop.buy(3, 6), 'six would cost 600'
+  eq 500, st.party.gold, 'no gold spent'
+  eq 0, st.party.item_count(3), 'and no partial purchase'
+  ok !shop.did_transaction
+end
+
+check 'a stack beyond what the party holds sells nothing at all' do
+  st, shop = shop_setup(0, { 3 => 100 })
+  st.party.gain_item(3, 2)
+  ok !shop.sell(3, 3)
+  eq 0, st.party.gold
+  eq 2, st.party.item_count(3), 'the items are untouched'
+end
+
+check 'a zero or negative quantity is not a transaction' do
+  st, shop = shop_setup(500, { 3 => 100 })
+  ok !shop.buy(3, 0)
+  ok !shop.buy(3, -2), 'a negative count cannot mint gold'
+  eq 500, st.party.gold
+  ok !shop.did_transaction
+end
+
 check 'Shop sellable_items lists only held, priced goods in id order' do
   st, shop = shop_setup(0, { 3 => 100, 5 => 40, 8 => 0 })
   st.party.gain_item(8, 1) # price 0 -> not sellable
