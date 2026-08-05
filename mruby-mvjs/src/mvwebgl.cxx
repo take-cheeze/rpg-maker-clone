@@ -229,6 +229,50 @@ JSValue js_gl_blend_func_separate(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// Stencil state. MZ's WindowLayer masks each window to its own shape with it:
+// draw the window with the test set to "pass where the buffer is 0", then draw
+// the window's shape with REPLACE to mark those texels as 1, so the *next*
+// window in the layer cannot paint over the one in front of it.
+JSValue js_gl_stencil_func(JSContext* ctx,
+                           JSValueConst,
+                           int argc,
+                           JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)))
+    glStencilFunc(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                  static_cast<GLint>(gi(ctx, argc, argv, 2)),
+                  static_cast<GLuint>(gi(ctx, argc, argv, 3)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_gl_stencil_op(JSContext* ctx,
+                         JSValueConst,
+                         int argc,
+                         JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)))
+    glStencilOp(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                static_cast<GLenum>(gi(ctx, argc, argv, 2)),
+                static_cast<GLenum>(gi(ctx, argc, argv, 3)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_gl_stencil_mask(JSContext* ctx,
+                           JSValueConst,
+                           int argc,
+                           JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)))
+    glStencilMask(static_cast<GLuint>(gi(ctx, argc, argv, 1)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_gl_clear_stencil(JSContext* ctx,
+                            JSValueConst,
+                            int argc,
+                            JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)))
+    glClearStencil(static_cast<GLint>(gi(ctx, argc, argv, 1)));
+  return JS_UNDEFINED;
+}
+
 JSValue js_gl_blend_equation(JSContext* ctx,
                              JSValueConst,
                              int argc,
@@ -1231,23 +1275,23 @@ const char* kWebGLPreamble = R"MVJS(
   P.hint = function () {};
   P.lineWidth = function () {};
   P.depthRange = function () {};
-  // Stencil state is accepted and ignored *for now*. Note this is a wrapper
-  // gap, not a backend one: the off-screen FBO does carry a packed
-  // DEPTH24_STENCIL8 renderbuffer (mvgl::create/resize), so the buffer is there
-  // and only these entry points have to be mapped onto glStencilFunc/Op/Mask to
-  // make the masking MZ uses work — WindowLayer clips each window to its own
-  // shape this way, and today that clip is simply a no-op.
+  // Stencil state, mapped onto GL. The off-screen FBO carries a packed
+  // DEPTH24_STENCIL8 renderbuffer (mvgl::create/resize), so the buffer was
+  // always there — these four were the stubs keeping it unprogrammed. MZ's
+  // `WindowLayer.render` masks with it: each window is drawn with the test set
+  // to "pass where the buffer is 0", then its shape is stamped with REPLACE, so
+  // a window behind cannot paint over the one in front. With the stubs, every
+  // window overpainted its neighbours.
   //
-  // `clearStencil` must *exist* regardless: `WindowLayer.render` calls it on
-  // every frame that draws a window, and a missing method throws a TypeError
-  // inside PIXI's ticker, which is fatal rather than transient — PIXI v5
-  // re-arms its requestAnimationFrame only after `update()` returns, so one
-  // throw stops the game loop for good. That is what pinned MZ at Scene_Title
-  // with a bare "TypeError: not a function".
-  P.stencilFunc = function () {};
-  P.stencilOp = function () {};
-  P.stencilMask = function () {};
-  P.clearStencil = function () {};
+  // `clearStencil` also has to *exist* whatever it does: `WindowLayer.render`
+  // calls it on every frame that draws a window, and a missing method throws a
+  // TypeError inside PIXI's ticker, which is fatal rather than transient — PIXI
+  // v5 re-arms its requestAnimationFrame only after `update()` returns, so one
+  // throw stops the game loop for good.
+  P.stencilFunc = function (f, ref, mask) { g.__mv_glStencilFunc(this.__gl, f, ref, mask); };
+  P.stencilOp = function (sf, zf, zp) { g.__mv_glStencilOp(this.__gl, sf, zf, zp); };
+  P.stencilMask = function (m) { g.__mv_glStencilMask(this.__gl, m); };
+  P.clearStencil = function (s) { g.__mv_glClearStencil(this.__gl, s | 0); };
   // Depth-offset state PIXI's State manager applies; no effect on a 2D scene
   // drawn without a depth buffer.
   P.polygonOffset = function () {};
@@ -1414,6 +1458,10 @@ void mv_install_webgl(JSContext* ctx) {
   reg(ctx, g, "__mv_glDisable", js_gl_disable, 2);
   reg(ctx, g, "__mv_glBlendFunc", js_gl_blend_func, 3);
   reg(ctx, g, "__mv_glBlendFuncSeparate", js_gl_blend_func_separate, 5);
+  reg(ctx, g, "__mv_glStencilFunc", js_gl_stencil_func, 4);
+  reg(ctx, g, "__mv_glStencilOp", js_gl_stencil_op, 4);
+  reg(ctx, g, "__mv_glStencilMask", js_gl_stencil_mask, 2);
+  reg(ctx, g, "__mv_glClearStencil", js_gl_clear_stencil, 2);
   reg(ctx, g, "__mv_glBlendEquation", js_gl_blend_equation, 2);
   reg(ctx, g, "__mv_glBlendEquationSeparate", js_gl_blend_equation_separate, 3);
   reg(ctx, g, "__mv_glDepthFunc", js_gl_depth_func, 2);
