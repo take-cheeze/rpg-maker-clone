@@ -2354,6 +2354,24 @@ module Game
       @y += dy
     end
 
+    # Land on (x, y) in one hop — the move-route Begin Jump / End Jump pair,
+    # whose enclosed moves name a destination rather than a path.
+    #
+    # RPG_RT faces the jump's **dominant axis**, vertical winning a tie, which is
+    # not the direction of the last enclosed move: a jump two right and two down
+    # lands facing down. A jump that ends where it started leaves the facing
+    # alone — the genuine runtime sets its movement direction there but never
+    # touches the sprite's, and this model has the one field for both.
+    def jump(x, y)
+      dx = x - @x
+      dy = y - @y
+      unless dx == 0 && dy == 0
+        face(dy.abs >= dx.abs ? (dy >= 0 ? 2 : 8) : (dx >= 0 ? 6 : 4))
+      end
+      @x = x
+      @y = y
+    end
+
     # Move one tile diagonally, combining a horizontal and a vertical direction.
     # RPG2000 keeps a cardinal facing on diagonals, so we face the vertical part.
     def move_diagonal(horizontal, vertical)
@@ -2525,7 +2543,9 @@ module Game
         character.face(Character::CARDINALS[world.random(4)]); [:turned, true]
       when FACE_HERO      then character.face(toward_hero(character, world)); [:turned, true]
       when FACE_AWAY_HERO then character.face(away_hero(character, world));  [:turned, true]
-      when WAIT, BEGIN_JUMP, END_JUMP then [:waited, true]
+      when WAIT       then [:waited, true]
+      when BEGIN_JUMP then do_jump(character, world)
+      when END_JUMP   then [:effect, true] # an End Jump with no Begin: skipped
       when LOCK_FACING   then character.facing_locked = true;  [:effect, true]
       when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
       when SPEED_UP   then character.move_speed = [character.move_speed + 1, 6].min; [:effect, true]
@@ -2560,6 +2580,105 @@ module Game
       else
         character.face(dir) # an obstructed move still turns to face it
         @skippable ? [:blocked, true] : [:blocked, false]
+      end
+    end
+
+    # Begin Jump: the commands up to the matching End Jump do **not** step. They
+    # name the jump's *destination* — each move command contributes its direction
+    # as one tile of offset, each face / turn command only steers what the next
+    # move contributes — and the character then hops there in a single move,
+    # clearing whatever lies between. A port of EasyRPG's
+    # `Game_Character::BeginMoveRouteJump`.
+    #
+    # Only the landing tile is tested (`world.can_land?`), because the genuine
+    # runtime skips the "may I leave this tile" half of its passability check
+    # while jumping — that is what lets a jump cross a wall or a chasm at all.
+    # A blocked landing behaves like a blocked move: retried on a non-skippable
+    # route, stepped past on a skippable one.
+    def do_jump(character, world)
+      dx = 0
+      dy = 0
+      dir = character.direction
+      i = @index + 1
+      while i < @commands.size
+        id = @commands[i].command_id
+        if id >= MOVE_UP && id <= MOVE_FORWARD
+          dir = jump_move_direction(id, dir, character, world)
+          ddx, ddy = jump_delta(id, dir)
+          dx += ddx
+          dy += ddy
+        elsif id >= FACE_UP && id <= FACE_AWAY_HERO
+          dir = jump_face_direction(id, dir, character, world)
+        elsif id == END_JUMP
+          return land_jump(character, world, dx, dy, i)
+        end
+        # Any other command inside the block (a switch, a graphic change) is
+        # skipped, as RPG_RT skips it.
+        i += 1
+      end
+      # No End Jump before the route ran out: the jump is abandoned and the rest
+      # of the route goes with it, which is how RPG_RT unwinds the scan.
+      @index = @commands.size - 1
+      [:effect, true]
+    end
+
+    # Finish a jump scanned out to the End Jump at `end_index`.
+    def land_jump(character, world, dx, dy, end_index)
+      tx = character.x + dx
+      ty = character.y + dy
+      if character.through || world.can_land?(character, tx, ty)
+        character.jump(tx, ty)
+        @index = end_index
+        [:moved, true]
+      elsif @skippable
+        @index = end_index
+        [:blocked, true]
+      else
+        [:blocked, false] # retried from the Begin Jump next step
+      end
+    end
+
+    # The direction a move command inside a jump block contributes. The moves
+    # that would pick a direction at run time (random, toward / away from the
+    # hero) still pick one; Move Forward keeps the direction in hand.
+    def jump_move_direction(id, dir, character, world)
+      case id
+      when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT then MOVE_DIR[id]
+      when MOVE_RANDOM then Character::CARDINALS[world.random(4)]
+      when MOVE_TOWARD_HERO then toward_hero(character, world)
+      when MOVE_AWAY_HERO then away_hero(character, world)
+      else dir # Move Forward, and the diagonals (which carry their own delta)
+      end
+    end
+
+    # The tile offset a move command inside a jump block adds. A diagonal moves
+    # on both axes at once; everything else moves one tile along `dir`.
+    def jump_delta(id, dir)
+      if (pair = DIAGONAL[id])
+        horizontal, vertical = pair
+        hx, = Character::DIR_DELTA[horizontal] || [0, 0]
+        _, vy = Character::DIR_DELTA[vertical] || [0, 0]
+        [hx, vy]
+      else
+        Character::DIR_DELTA[dir] || [0, 0]
+      end
+    end
+
+    # The direction a face / turn command inside a jump block leaves in hand. It
+    # contributes no offset of its own — it only steers the next move command.
+    def jump_face_direction(id, dir, character, world)
+      case id
+      when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT then FACE_DIR[id]
+      when TURN_RIGHT then Character::TURN_RIGHT[dir] || dir
+      when TURN_LEFT  then Character::TURN_LEFT[dir]  || dir
+      when TURN_180   then Character::TURN_180[dir]   || dir
+      when TURN_RANDOM
+        world.random(2).zero? ? (Character::TURN_LEFT[dir] || dir)
+                             : (Character::TURN_RIGHT[dir] || dir)
+      when FACE_RANDOM then Character::CARDINALS[world.random(4)]
+      when FACE_HERO then toward_hero(character, world)
+      when FACE_AWAY_HERO then away_hero(character, world)
+      else dir
       end
     end
 

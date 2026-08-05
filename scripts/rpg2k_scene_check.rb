@@ -336,6 +336,21 @@ check 'a custom-route event walks right and is blocked by the map edge' do
   eq 1, c.y
 end
 
+check 'a custom-route jump clears a tile and stops at the map edge' do
+  # Begin Jump / two rights / End Jump: a two-tile hop per route lap, which
+  # lands on tiles a walking route would have had to step through.
+  ev = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::BEGIN_JUMP, R::MOVE_RIGHT,
+                                           R::MOVE_RIGHT, R::END_JUMP])))
+  scene = new_scene({ 1 => ev }, player: [0, 0])
+  200.times { scene.update }
+  c = chars(scene)[1]
+  # The map is 6 wide, so hops from x = 0 land on 2 and 4; 6 is off the map, so
+  # the event holds at 4 rather than clipping to the edge the way a step does.
+  eq 4, c.x, 'hopped two tiles at a time and stopped when the landing left the map'
+  eq 1, c.y
+end
+
 check 'a random-mover roams but stays in bounds and off the player tile' do
   ev = event(3, 2, page(x_move_type: Game::MoveType::RANDOM))
   scene = new_scene({ 1 => ev }, player: [0, 0])

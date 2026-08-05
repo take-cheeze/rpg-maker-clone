@@ -360,6 +360,12 @@ class RPG2k
         @scene.char_passable?(character, dir)
       end
 
+      # Whether a jump may land on (x, y) — only the destination is tested, the
+      # tiles crossed on the way are not (see Game::MoveRoute#do_jump).
+      def can_land?(character, x, y)
+        @scene.char_can_land?(character, x, y)
+      end
+
       def hero_position
         s = @scene.state
         [s.x, s.y]
@@ -1979,6 +1985,35 @@ class RPG2k
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
+
+      # Collision test for a jump landing on (x, y): the same rules as a step —
+      # in bounds, not onto the player or another event, passable per the chipset
+      # — but applied to an arbitrary tile rather than the one ahead, and entered
+      # from the jump's dominant direction. The tiles the jump passes over are
+      # deliberately not tested: RPG_RT skips the "may I leave" half of its check
+      # while jumping, which is what lets a jump clear a wall.
+      def char_can_land?(character, x, y)
+        return true if character.through
+        return false unless @map.in_bounds?(x, y)
+        return false if x == @state.x && y == @state.y
+        return false if @event_tiles[[x, y]]
+        return true if @chipset.nil?
+        @chipset.passable?(@map.lower(x, y), jump_entry_direction(character, x, y))
+      end
+      public :char_can_land?
+
+      # The direction a jump from the character's tile enters (x, y) by: its
+      # dominant axis, vertical winning a tie, matching the facing Character#jump
+      # lands on.
+      def jump_entry_direction(character, x, y)
+        dx = x - character.x
+        dy = y - character.y
+        if dy.abs >= dx.abs
+          dy >= 0 ? 2 : 8
+        else
+          dx >= 0 ? 6 : 4
+        end
+      end
 
       # Terrain id of the lower-layer tile at (x, y), for the Store Terrain ID
       # command (0 when out of bounds or no chipset). Queried by the interpreter
