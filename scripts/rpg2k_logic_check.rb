@@ -2311,6 +2311,81 @@ check 'Change HP allow-death flag chooses the floor (0 vs 1)' do
   eq 0, a.hp
 end
 
+# -- party wipe -> Game Over --------------------------------------------------
+
+check 'a Change HP that wipes the party goes to Game Over' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # Scope 0 (the whole party), lethal, more damage than anyone has.
+  it.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 9999, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok st.party.all_dead?, 'the party is down'
+  ok it.waiting?, 'the event stops on the wipe'
+  eq :game_over, it.wait_kind
+  eq false, st.switches[1], 'the command after it never ran'
+end
+
+check 'a Simulated Attack that wipes the party goes to Game Over' do
+  # Nepheshel's damage floors are Simulated Attacks (850 of them); one strong
+  # enough to kill the party ends the game rather than leaving it walking.
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [0, 0, 9999, 0, 0, 0, 0, 0])])
+  it.update
+  ok st.party.all_dead?
+  eq :game_over, it.wait_kind
+end
+
+check 'a survivable hit leaves the event running' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 10, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !st.party.all_dead?
+  ok !it.waiting?, 'nothing to stop for'
+  eq true, st.switches[1]
+end
+
+check 'curing the death state clears the Game Over condition' do
+  st = party_state
+  st.party.actors.each { |a| a.set_hp(0) }
+  ok st.party.all_dead?, 'everyone is down to start with'
+  it = Game::Interpreter.new(st)
+  # Change Condition removing state 1 revives; the wipe check then passes.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [0, 0, 1, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !st.party.all_dead?, 'the party is back up'
+  ok !it.waiting?
+  eq true, st.switches[1]
+end
+
+check 'an empty party is not a Game Over, and a battle page never triggers one' do
+  # RPG_RT allows a party with no members at all — a game between members is not
+  # a game that has ended.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq 0, st.party.actors.size
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 9999, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'no members, no wipe'
+  eq true, st.switches[1]
+
+  # A battle page leaves defeat to the battle's own [Defeat] handler.
+  st2 = party_state
+  it2 = Game::Interpreter.new(st2)
+  # Any battle context will do: the check only asks whether one is present.
+  it2.battle = Object.new
+  it2.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 9999, 1])])
+  it2.update
+  ok st2.party.all_dead?
+  ok !it2.waiting?, 'the battle resolves its own defeat'
+end
+
 check 'Change HP heals with a variable operand' do
   st = party_state
   st.variables[3] = 25
