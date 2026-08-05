@@ -35,6 +35,11 @@
   `NameError: uninitialized constant Errno`. `RGSSData#read_object` now raises
   `Errno::ENOENT` with RGSS's message shape ("No such file or directory - <path>",
   which that handler strips to name the file) on both the XP and VX sides.
+- **`Bitmap#draw_text` takes a `Rect`** as well as x/y/width/height, the way RGSS
+  overloads it (and the way `fill_rect` here already did). `Window_Command` — the
+  menu every title screen is built from — calls the Rect form, so without it a
+  game's own engine died at its first window with "wrong number of arguments
+  (given 2, expected 5..6)".
 - `scripts/rpgxp_script_host_check.rb` **stops stubbing our own Ruby**: it loads
   the real `rgss_library.rb`, evaluates *every* section of a real bundle except
   `Main` (it used to evaluate a hand-picked subset), and drives the sprite

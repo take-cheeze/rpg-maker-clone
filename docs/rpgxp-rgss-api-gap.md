@@ -115,6 +115,29 @@ loaded under CRuby too, where the real ones exist. `RGSSData#read_object` now
 raises `Errno::ENOENT` with RGSS's own message shape, so the handler above
 prints the filename it was written to print.
 
+### 0c. `Bitmap#draw_text`'s Rect form ✅ (the first window a game opens)
+
+RGSS overloads `draw_text` the way it overloads `fill_rect`:
+
+```ruby
+draw_text(x, y, width, height, str[, align])
+draw_text(rect, str[, align])
+```
+
+Only the first was implemented, and `Window_Command#draw_item` — the menu every
+title screen is built from — calls the second, so a game died at its first window
+with `ArgumentError: wrong number of arguments (given 2, expected 5..6)`. The
+native method now takes both, on the same `mrb_get_argc` branch `fill_rect`
+already used.
+
+Worth noting how this was found and bounded: `MRB_ARGS_*` does not enforce
+anything — the `mrb_get_args` format string does — so the arities a game can
+actually call are the union of the format strings in each native function. A
+sweep comparing every call site in both beds' bundles (193 sections) against
+those formats reports no other mismatch, and the calls it does resolve include
+the other overloaded ones (`fill_rect`, `gradient_fill_rect`, `blt`,
+`stretch_blt`), which were already right.
+
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at
 the end of this document), and `scripts/rpgxp_script_host_check.rb` *stubbed*

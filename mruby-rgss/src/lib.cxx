@@ -2209,13 +2209,33 @@ void measure_text(std::string_view s, int& width, unsigned& height) {
   }
 }
 
+// RGSS Bitmap#draw_text, in both the forms RGSS documents:
+//
+//   draw_text(x, y, width, height, str[, align])
+//   draw_text(rect, str[, align])
+//
+// The Rect form is not a nicety -- `Window_Command#draw_item`, the menu every
+// game's title screen is built from, calls it -- so a bitmap that only took the
+// four-number form stopped a game's own engine at its first window with
+// "wrong number of arguments (given 2, expected 5..6)". Same argc branch as
+// #fill_rect, which RGSS overloads the same way.
 mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   auto& bmp = bmp_self(M, self);
 
   mrb_int x, y, w, h, len;
   mrb_int align = 0;
   const char* s;
-  mrb_get_args(M, "iiiis|i", &x, &y, &w, &h, &s, &len, &align);
+  if (mrb_get_argc(M) <= 3) {
+    V r;
+    mrb_get_args(M, "os|i", &r, &s, &len, &align);
+    Rect& rc = DataType<Rect>::get(M, r);
+    x = rc.x;
+    y = rc.y;
+    w = rc.width;
+    h = rc.height;
+  } else {
+    mrb_get_args(M, "iiiis|i", &x, &y, &w, &h, &s, &len, &align);
+  }
   const std::string_view sv(s, len);
 
   // Prefer the game's TrueType font (RPG Maker XP/VX ship one under Fonts/),
@@ -5474,8 +5494,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  // Both RGSS forms: (x, y, width, height, str[, align]) and (rect, str[,
+  // align]).
   mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
-                    MRB_ARGS_REQ(5) | MRB_ARGS_OPT(1));
+                    MRB_ARGS_REQ(2) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "blend_text", bmp_blend_text,
                     MRB_ARGS_REQ(10) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "text_size", bmp_text_size, MRB_ARGS_REQ(1));
