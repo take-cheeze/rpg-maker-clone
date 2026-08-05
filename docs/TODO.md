@@ -794,13 +794,22 @@ screen (544×416). Full rationale:
     without a display, as sample cases plus a checksum over the whole sweep.
     Left as polish: the flat "above the characters" layer (the same
     approximation ADR 0022 describes for XP) and the A2 table-edge tile.
+  - ✅ **`Viewport#tone`** — the screen tint. Unlike `color` a tone rescales
+    what is already drawn, so it cannot be a layer: every display object in the
+    viewport folds the viewport's tone into its own composite as its last step
+    (`Sprite`/`Plane` already baked their own; the `Tilemap` gets a pass over its
+    composed canvases), and the viewport re-composites its children when the
+    value changes — checked from `#update` too, since the scripts mutate the Tone
+    in place, and skipped when it did not move. **This is the per-pixel tone pass
+    the RPG2000 screen tint has been waiting on** (see the Screen effects section
+    above): `apply_tone_px` is shared by all three composites, so the RPG2000
+    side can adopt it instead of growing its own.
   - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: **`Viewport#tone`** (unlike `color` a tone rescales
-    what is already drawn, so it needs a per-pixel pass over the viewport's
-    contents — the same native work the RPG2000 screen tint is waiting on, and
-    doing it once here would serve both),
-    **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene transitions),
-    the window open/close animation, and `Bitmap#blur`/`#radial_blur`.
+    playable game: **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene
+    transitions), `Viewport#tone` on `Window` contents (a different composite
+    path; RGSS keeps windows in their own viewport, so a map tint does not tint
+    the message window anyway), the window open/close animation, and
+    `Bitmap#blur`/`#radial_blur`.
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
   without the script host reports that instead of showing a blank window.
