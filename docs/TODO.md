@@ -506,7 +506,25 @@ The work below is roughly ordered by the critical path to a walkable game
   afflicts the foe, which then slips or skips via the per-turn processing above.
   A state also **auto-recovers**: a per-battler turn counter lets `apply_turn_
   states` roll `auto_release_prob` once the state has held past its `hold_turn`,
-  so a temporary ailment wears off. **Forced-action restrictions** work too: a
+  so a temporary ailment wears off. Three more of the 状態 row's fields are read
+  now, and they are the ones that give the genre's most familiar statuses their
+  meaning (ADR 0032): **`reduce_hit_ratio`** scales the afflicted attacker's
+  accuracy, the lowest ratio winning when several apply, so **Blind blinds** —
+  mtf-meido-action's cuts a 90% base to 19.6%, and since Blind is that field and
+  nothing else it used to be purely cosmetic; **`release_by_attack`** rolls after
+  a normal attack the target survives, so **a blow wakes a sleeper** (Nepheshel's
+  睡眠 on 80% of hits) — normal attacks only, as RPG_RT does it, so a skill never
+  shakes a status loose; and **`restrict_skill` / `restrict_magic`** seal a skill
+  whose physical / magical rate reaches the state's threshold, so **封印 /
+  Silence silence** — a sealed actor's skills leave the battle menu and a sealed
+  enemy's action entry stops firing. Nine of Nepheshel's 25 states and two of
+  mtf's ten carry a reduced hit ratio, four and three a release chance, two and
+  one a seal. Still unread: **map-step slip damage**
+  (`hp_change_map_steps`, a status that drains HP as the party walks — only
+  mtf's Poison uses it, and it wants a step counter on `Game::State` nothing else
+  needs yet), and `affect_type` stat halving / doubling plus the RPG2003-only
+  `avoid_attacks` / `reflect_magic`, which no state in either test bed sets.
+  **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random
   member of its own side. Basic attacks **and attack skills** apply RPG2000's

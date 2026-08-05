@@ -1885,7 +1885,25 @@ end
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
 FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           :sp_change_val, :sp_change_max,
-                          :hold_turn, :auto_release_prob)
+                          :hold_turn, :auto_release_prob,
+                          # A blow can shake a state off (release_by_attack), a
+                          # state can spoil its victim's aim (reduce_hit_ratio,
+                          # 100 = unhindered) and it can seal skills above a
+                          # physical / magical threshold.
+                          :release_by_attack, :reduce_hit_ratio,
+                          :restrict_skill, :restrict_skill_level,
+                          :restrict_magic, :restrict_magic_level)
+# A state row carrying only the fields a check names, with the rest at the
+# database defaults — notably reduce_hit_ratio 100, which is "does not blind".
+def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
+               hold_turn: 0, auto_release: 0, release_by_attack: 0,
+               reduce_hit_ratio: 100, restrict_skill: false, restrict_skill_level: 0,
+               restrict_magic: false, restrict_magic_level: 0)
+  FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
+                   auto_release, release_by_attack, reduce_hit_ratio,
+                   restrict_skill, restrict_skill_level,
+                   restrict_magic, restrict_magic_level)
+end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
 class JobRow
@@ -6048,6 +6066,72 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   bat.command_defend(hero)                                # tries to defend...
   bat.run_round
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
+end
+
+check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio' do
+  # A state's reduce_hit_ratio scales the attacker's to-hit chance. Blind is the
+  # status whose whole purpose is this; nothing read the field before, so it did
+  # nothing at all.
+  states = { 8 => fake_state(reduce_hit_ratio: 50),
+             9 => fake_state(reduce_hit_ratio: 20) }
+  clear = combatant('Clear', 10, 0, 10, 100)
+  blind = combatant('Blind', 10, 0, 10, 100)
+  blind.states = [8]
+  foe = combatant('Foe', 0, 0, 10, 100)
+  bat = Game::Battle.new([clear, blind], [foe], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 90, bat.send(:to_hit, clear, foe), 'unhindered: the plain 90% base'
+  eq 45, bat.send(:to_hit, blind, foe), 'halved by the state'
+
+  # Several states take the *lowest* ratio, not the product of them.
+  blind.states = [8, 9]
+  eq 18, bat.send(:to_hit, blind, foe), 'the worst state wins (20%, not 50%*20%)'
+end
+
+check 'battle: a normal attack can shake a state off its target' do
+  states = { 10 => fake_state(release_by_attack: 100),  # always
+             11 => fake_state(release_by_attack: 0) }   # never
+  hero = combatant('Hero', 20, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [10, 11]
+  foe.state_turns = {}
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [10], entry[:woke], 'the 100% state was shaken off and reported'
+  eq false, foe.state?(10)
+  eq true, foe.state?(11), 'the 0% state held'
+
+  # A blow that kills leaves the states alone — there is no one left to wake.
+  dying = combatant('Dying', 0, 0, 5, 1)
+  dying.states = [10]
+  dying.state_turns = {}
+  bat2 = Game::Battle.new([hero], [dying], Game::Rng.new(1), states)
+  e2 = bat2.send(:deal_attack, hero, dying)
+  ok e2[:defeated]
+  ok e2[:woke].nil?, 'nothing is shaken off a defeated target'
+end
+
+check 'battle: a sealing state blocks skills above its threshold' do
+  # restrict_magic bars any skill whose magical_rate reaches the level; a purely
+  # physical skill (magical_rate 0) is left alone. Both test beds use level 1.
+  states = { 12 => fake_state(restrict_magic: true, restrict_magic_level: 1),
+             13 => fake_state(restrict_skill: true, restrict_skill_level: 2) }
+  magic = fake_skill(name: 'Fire', mrate: 3, prate: 0)
+  physical = fake_skill(name: 'Slash', mrate: 0, prate: 4)
+  weak_phys = fake_skill(name: 'Tap', mrate: 0, prate: 1)
+  hero = combatant('Hero', 10, 0, 10, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+
+  hero.states = []
+  eq false, bat.skill_sealed?(hero, magic), 'unafflicted: nothing is sealed'
+  hero.states = [12]
+  eq true, bat.skill_sealed?(hero, magic), 'silence seals the magic skill'
+  eq false, bat.skill_sealed?(hero, physical), 'but not the physical one'
+  hero.states = [13]
+  eq true, bat.skill_sealed?(hero, physical), 'rate 4 reaches the level-2 seal'
+  eq false, bat.skill_sealed?(hero, weak_phys), 'rate 1 stays under it'
+  eq false, bat.skill_sealed?(hero, nil), 'a missing skill row is not sealed'
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do

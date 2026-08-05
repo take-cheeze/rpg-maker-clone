@@ -2970,7 +2970,17 @@ class RPG2k
       # no battle-usable skill).
       def open_battle_skill
         actor = current_actor_row
-        @battle_ui[:skills] = actor ? @state.party.battle_skills(actor, current_actor) : []
+        list = actor ? @state.party.battle_skills(actor, current_actor) : []
+        # A status that seals skills (封印 / Silence) takes them off the menu
+        # rather than letting the actor pick one that would be refused.
+        battle = @battle_ui[:battle]
+        battler = current_actor
+        if battle && battler
+          list = list.reject do |sid, _cost|
+            battle.skill_sealed?(battler, @state.party.db_skill(sid))
+          end
+        end
+        @battle_ui[:skills] = list
         return if @battle_ui[:skills].empty?
         @battle_ui[:skill_i] = 0
         @battle_ui[:phase] = :skill
