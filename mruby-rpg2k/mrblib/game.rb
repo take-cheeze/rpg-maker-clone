@@ -3299,6 +3299,10 @@ module Game
   class State
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
+    # Whether the timer is shown on the map, set by the Timer Operation's start
+    # (the RPG2000 "show timer" flag). Counting (timer_running) and being drawn
+    # (timer_visible) are independent: a stopped timer stays on screen, frozen.
+    attr_accessor :timer_visible
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
@@ -3358,6 +3362,7 @@ module Game
       @variables = Variables.new
       @timer_frames = 0
       @timer_running = false
+      @timer_visible = false
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
@@ -3436,6 +3441,15 @@ module Game
     # Remaining timer seconds (assuming 60 fps).
     def timer_seconds; @timer_frames / 60; end
 
+    # The timer as RPG2000 draws it: whole minutes, a colon, then zero-padded
+    # seconds (e.g. 90 s -> "1:30"). Minutes are not capped at two digits. The
+    # seconds are padded by hand: this mruby build bundles no sprintf.
+    def timer_display_text
+      s = timer_seconds
+      secs = s % 60
+      "#{s / 60}:#{secs < 10 ? "0#{secs}" : secs}"
+    end
+
     # The six Change Screen Transitions (10690) slots (see #screen_transitions).
     SCREEN_TRANSITION_SLOTS = 6
 
@@ -3460,7 +3474,8 @@ module Game
       { map_id: @map_id, x: @x, y: @y, direction: @direction,
         switches: @switches.to_h, variables: @variables.to_h,
         party: @party.to_h, timer_frames: @timer_frames,
-        timer_running: @timer_running, message_config: @message_config.to_h,
+        timer_running: @timer_running, timer_visible: @timer_visible,
+        message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         player_transparent: @player_transparent, weather: @weather.to_h,
@@ -3809,6 +3824,7 @@ module Game
       state.variables.replace(h[:variables] || {})
       state.timer_frames = h[:timer_frames] || 0
       state.timer_running = h[:timer_running] || false
+      state.timer_visible = h[:timer_visible] || false
       state.message_config.load_h(h[:message_config])
       # Access flags default on; only an explicit stored value overrides them
       # (so a save written before these existed keeps the menu/save enabled).

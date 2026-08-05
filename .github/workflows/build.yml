@@ -182,6 +182,16 @@ jobs:
           - name: RPG XP script-host smoke check
             run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
 
+          # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
+          # open-source test bed (the editors and their RTPs are commercial), so
+          # this check builds a full project per edition and drives the loader
+          # over it — loose on disk and repacked into the edition's encrypted
+          # archive — plus an audit that every field in the data has an accessor
+          # in the schema. It also picks up any real VX/VX Ace project that a
+          # future download step unpacks under data/.
+          - name: RPG VX / VX Ace data check
+            run: nix develop -c ruby scripts/rpgvx_testbed_check.rb
+
           # Validate the committed MV test-bed database (data/mv-sample) before
           # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
           # a blocking guard against a sample-data regression that would

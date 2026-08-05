@@ -1021,13 +1021,17 @@ module Game
       end
     end
 
-    # Timer: op 0 set (seconds), 1 start, 2 stop.
+    # Timer: op 0 set (seconds), 1 start, 2 stop. Start carries the RPG2000
+    # "show timer" flag in param 3 (param 4 is the run-in-battle flag, unused
+    # here); stopping freezes the display but leaves it shown.
     def do_timer(cmd)
       case cmd.param(0)
       when 0
         sec = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
         @state.timer_frames = sec * 60
-      when 1 then @state.timer_running = true
+      when 1
+        @state.timer_running = true
+        @state.timer_visible = cmd.param(3) != 0
       when 2 then @state.timer_running = false
       end
     end

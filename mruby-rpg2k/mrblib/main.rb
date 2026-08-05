@@ -477,6 +477,8 @@ class RPG2k
         @wait_timer = nil
         @anim_wait = nil
         @map_animation = nil
+        @timer_window = nil
+        @timer_text = nil
         @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -516,6 +518,7 @@ class RPG2k
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
+        @timer_window.dispose if @timer_window
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
         @chipset_bmp.dispose if @chipset_bmp
@@ -3183,15 +3186,39 @@ class RPG2k
       end
 
       # Vertical position of a `win_h`-tall message window for the configured
-      # display position (top / middle / bottom). Auto-positioning away from the
-      # hero (when `position_fixed` is off) is a later refinement; the window is
-      # placed at the requested position for now.
+      # display position (top / middle / bottom). When the message is not pinned
+      # (`position_fixed` off, RPG2000's default), the window relocates so it does
+      # not cover the hero: if the hero is standing in the lower half of the
+      # screen the window jumps to the top, and vice-versa (so talking to
+      # something at the bottom edge of a map shows the text up top). The exact
+      # zone boundary is approximate pending a wine diff; the direction matches
+      # RPG_RT.
       def message_window_y(win_h, cfg)
-        case cfg.position
+        pos = cfg.position
+        pos = auto_message_position(win_h) unless cfg.position_fixed
+        case pos
         when Game::MessageConfig::POS_TOP    then 0
         when Game::MessageConfig::POS_MIDDLE then (SCREEN_H - win_h) / 2
         else SCREEN_H - win_h
         end
+      end
+
+      # Pick the message position that keeps clear of the hero: top when the hero
+      # is in the lower half of the screen, bottom otherwise.
+      def auto_message_position(_win_h)
+        if hero_screen_y >= SCREEN_H / 2
+          Game::MessageConfig::POS_TOP
+        else
+          Game::MessageConfig::POS_BOTTOM
+        end
+      end
+
+      # The hero tile's centre in screen pixels, from the edge-clamped follow
+      # camera (ignoring transient pan / shake offsets).
+      def hero_screen_y
+        _px, py = player_pixel
+        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        (py + TILE / 2) - cam_y
       end
 
       # Load the FaceSet graphic named by the message config, or nil when no face
@@ -3519,6 +3546,44 @@ class RPG2k
 
         draw_pictures cam_x, cam_y
         update_screen_overlay
+        draw_timer
+      end
+
+      # RPG2000 timer: a small window in the top centre showing the remaining
+      # time as M:SS while the timer is visible. Visibility (the Start command's
+      # "show timer" flag) is independent of whether it is still counting, so a
+      # stopped timer stays on screen frozen; it hides only when never shown.
+      # The window and its contents are built once, and the text is redrawn only
+      # when the displayed second changes (not every frame).
+      TIMER_INNER_W = 40
+      TIMER_INNER_H = 16
+
+      def draw_timer
+        unless @state.timer_visible
+          @timer_window.visible = false if @timer_window
+          return
+        end
+        build_timer_window unless @timer_window
+        @timer_window.visible = true
+        text = @state.timer_display_text
+        return if text == @timer_text
+
+        @timer_text = text
+        c = @timer_window.contents
+        c.clear
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, c.width, c.height, text, 1 # centre-aligned
+      end
+
+      def build_timer_window
+        ow = TIMER_INNER_W + Window::BORDER * 2
+        oh = TIMER_INNER_H + Window::BORDER * 2
+        win = Window.new((SCREEN_W - ow) / 2, 4, ow, oh)
+        win.z = 250 # above the map, below the message / menu windows (z 300+)
+        win.windowskin = @windowskin
+        win.contents = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H)
+        @timer_window = win
+        @timer_text = nil
       end
 
       # Position and draw each vehicle placed on the current map. A parked vehicle
