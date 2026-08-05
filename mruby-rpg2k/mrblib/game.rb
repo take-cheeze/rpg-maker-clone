@@ -2874,7 +2874,7 @@ module Game
   # not built yet, so for now this backs the Enemy Encounter reward model.
   class Enemy
     attr_reader :id, :name, :battler_name, :max_hp, :max_sp, :atk, :def, :spi,
-                :agi, :exp, :gold, :x, :y, :hidden
+                :agi, :exp, :gold, :x, :y, :hidden, :drop_id, :drop_prob
     attr_accessor :hp, :sp
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
@@ -2892,6 +2892,10 @@ module Game
       @agi     = row ? row.agility : 0
       @exp     = row ? row.exp : 0
       @gold    = row ? row.gold : 0
+      # The item this enemy may drop on defeat (field 13, 0 = none) and its drop
+      # probability as a percentage (field 14; 0 for a fixture lacking it).
+      @drop_id   = row && row.respond_to?(:drop_id) ? (row.drop_id || 0) : 0
+      @drop_prob = row && row.respond_to?(:drop_prob) ? (row.drop_prob || 0) : 0
       @x = x
       @y = y
       @hidden = hidden ? true : false
@@ -2937,6 +2941,17 @@ module Game
 
     def total_exp;  @members.reduce(0) { |s, e| s + e.exp } end
     def total_gold; @members.reduce(0) { |s, e| s + e.gold } end
+
+    # The item ids the troop yields on victory: each member carrying a drop item
+    # rolls its `drop_prob` percentage against `rng` (0..99 < prob, EasyRPG's
+    # Rand::PercentChance), so a 100% drop is certain, a 0% never lands, and the
+    # same item can drop from several members. Returns the ids in member order.
+    def drops(rng)
+      @members.each_with_object([]) do |e, out|
+        next unless e.drop_id && e.drop_id > 0
+        out << e.drop_id if rng.random(100) < e.drop_prob
+      end
+    end
 
     private
 
@@ -3024,7 +3039,7 @@ module Game
 
     MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
 
-    attr_reader :allies, :enemies, :rounds, :result, :log
+    attr_reader :allies, :enemies, :rounds, :result, :log, :rng
 
     # `states` is an optional state-definition lookup (`[id]` -> a row exposing
     # `restriction` / `hp_change_val` / `hp_change_max` / `sp_change_val` /

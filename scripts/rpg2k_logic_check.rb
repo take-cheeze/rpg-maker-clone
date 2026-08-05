@@ -3769,7 +3769,7 @@ end
 # -- Enemy Encounter (troop model + command) ----------------------------------
 
 EnemyRow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
-                      :agility, :exp, :gold)
+                      :agility, :exp, :gold, :drop_id, :drop_prob)
 GroupMember = Struct.new(:enemy_id, :x, :y, :invisible)
 GroupRow = Struct.new(:name, :members)
 BattleDB = Struct.new(:enemy, :enemy_group)
@@ -3811,6 +3811,37 @@ check 'Game::Enemy reads its combat stats from the database' do
   ok !e.dead?
   e.hp = 0
   ok e.dead?
+end
+
+check 'Game::Enemy reads its treasure drop id and probability' do
+  db = BattleDB.new({ 5 => EnemyRow.new('Golem', 100, 0, 10, 10, 5, 3, 20, 50, 7, 25) }, {})
+  e = Game::Enemy.new(db, 5)
+  eq 7, e.drop_id
+  eq 25, e.drop_prob
+  eq 0, Game::Enemy.new(battle_db, 2).drop_id, 'no drop when the row omits it'
+end
+
+check 'Troop#drops yields certain drops, skipping zero-chance / no-item foes' do
+  db = BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, 7, 100),  # always drops 7
+      3 => EnemyRow.new('Bat',   12, 0, 6, 2, 2, 9, 3,  4, 9, 0),    # 0% -> never
+      4 => EnemyRow.new('Imp',   12, 0, 6, 2, 2, 9, 3,  4, 0, 100) },# no drop item
+    { 1 => GroupRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, false),
+                                 2 => GroupMember.new(3, 0, 0, false),
+                                 3 => GroupMember.new(4, 0, 0, false) }) })
+  troop = Game::Troop.new(db, 1)
+  eq [7], troop.drops(Game::Rng.new(1)), 'only the 100% drop lands'
+end
+
+check 'Troop#drops rolls the drop probability on the given RNG' do
+  db = BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, 7, 50) }, # 50% drop
+    { 1 => GroupRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, false) }) })
+  troop = Game::Troop.new(db, 1)
+  rng = Game::Rng.new(1)                              # one RNG, many independent rolls
+  results = Array.new(40) { troop.drops(rng) }
+  ok results.any? { |r| r == [7] }, 'the 50% drop sometimes lands'
+  ok results.any?(&:empty?), 'and sometimes misses'
 end
 
 check 'a missing troop / enemy degrades to an empty, harmless model' do
