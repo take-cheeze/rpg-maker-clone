@@ -22,6 +22,7 @@ module RGSS
     class << self
       attr_accessor :log
       def bgm_play(*a); (@log ||= []) << [:bgm, *a]; end
+      def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
     end
   end
@@ -102,6 +103,12 @@ class FakeCmd
 end
 
 R = Game::MoveRoute
+
+# A 2x2 Game::Map over literal tile arrays, for the Tile Substitution checks.
+FakeMapUnit = Struct.new(:width, :height, :chipset_id, :lower_layer, :upper_layer)
+def fake_map_2x2(lower, upper)
+  Game::Map.new(1, FakeMapUnit.new(2, 2, 1, lower, upper))
+end
 
 # -- Character ----------------------------------------------------------------
 
@@ -4581,6 +4588,251 @@ check 'Battle end_round clears a queued Skill / Item command' do
   b.command_skill(mage, foe, name: 'Fire', cost: 6, hp: -30)
   b.run_round
   eq nil, mage.command, 'the command is cleared for the next round'
+end
+
+# -- newly-implemented event commands -----------------------------------------
+
+# The opcodes are the numbers real .ldb/.lmu data carries, so a typo here is a
+# command the runtime silently ignores. These pin the four that were wrong or
+# missing against liblcf's Code enum.
+check 'event-command opcodes match the LCF Code enum' do
+  eq 10440, IC::CHANGE_SKILLS
+  eq 10450, IC::CHANGE_EQUIP
+  eq 10500, IC::SIMULATED_ATTACK
+  eq 10640, IC::CHANGE_ACTOR_FACE
+  eq 10840, IC::ENTER_EXIT_VEHICLE
+  eq 11320, IC::FLASH_SPRITE
+  eq 11520, IC::FADEOUT_BGM
+  eq 11560, IC::PLAY_MOVIE
+  eq 11750, IC::TILE_SUBSTITUTION
+  eq 11910, IC::OPEN_SAVE_MENU
+  eq 11950, IC::OPEN_MAIN_MENU
+  eq 12420, IC::GAME_OVER
+  eq 12510, IC::RETURN_TO_TITLE
+end
+
+check 'Change Skills teaches and removes a skill' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed id), actor 1, op 0 (learn), operand const, skill 12
+  it.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 12])])
+  it.update
+  ok hero.knows_skill?(12), 'the skill was learnt'
+
+  it.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 1, 0, 12])]) # op 1 = forget
+  it.update
+  ok !hero.knows_skill?(12), 'the skill was forgotten'
+end
+
+check 'Change Skills reads the skill id from a variable and skips id 0' do
+  st = party_state
+  st.variables[4] = 21
+  hero = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 1, 4]),  # operand type 1 -> var 4
+    FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 0]),  # skill 0 = "none"
+  ])
+  it.update
+  ok hero.knows_skill?(21), 'the variable named the skill'
+  ok !hero.knows_skill?(0), 'skill id 0 is ignored'
+end
+
+check 'Change Skills applies to the whole party with scope 0' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_SKILLS, [0, 0, 0, 0, 9])])
+  it.update
+  ok st.party.actors.all? { |a| a.knows_skill?(9) }, 'everyone learnt it'
+end
+
+check 'Simulated Attack damages the target by atk less its defence share' do
+  st = party_state
+  hero = st.party.actor_by_id(1) # def 8, hp 100
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, atk 50, def-weight 400, spi-weight 0, variance 0,
+  # store-damage flag 0.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 50, 400, 0, 0, 0, 0])])
+  it.update
+  eq 58, hero.hp # 100 HP less (50 - 8 * 400 / 400) = 42 damage
+end
+
+check 'Simulated Attack stores the damage it dealt in a variable' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 30, 0, 0, 0, 1, 6])])
+  it.update
+  eq 30, st.variables[6]
+  eq 70, st.party.actor_by_id(1).hp
+end
+
+check 'Simulated Attack floors the damage at zero' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # An attack far weaker than the target's defence must heal nobody.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 1, 4000, 0, 0, 1, 2])])
+  it.update
+  eq 0, st.variables[2]
+  eq 100, st.party.actor_by_id(1).hp
+end
+
+check 'Change Actor Face overrides the actor FaceSet' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_ACTOR_FACE, [1, 3], string: 'Faces1')])
+  it.update
+  hero = st.party.actor_by_id(1)
+  eq 'Faces1', hero.faceset_name
+  eq 3, hero.faceset_index
+  ok !it.waiting?, 'Change Actor Face must not pause the interpreter'
+end
+
+check 'Enter/Exit Vehicle raises a one-shot toggle request' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ENTER_EXIT_VEHICLE, [])])
+  it.update
+  ok !it.waiting?, 'Enter/Exit Vehicle must not pause the interpreter'
+  eq true, it.take_vehicle_toggle_request
+  eq false, it.take_vehicle_toggle_request, 'the request is one-shot'
+end
+
+check 'Flash Sprite queues a scaled flash and waits when asked' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # target the hero, colour 31/0/16, power 31, 5 tenths, wait flag set
+  it.start([FakeCmd.new(IC::FLASH_SPRITE, [10001, 31, 0, 16, 31, 5, 1])])
+  it.update
+  reqs = it.take_sprite_flash_requests
+  eq 1, reqs.size
+  eq 10001, reqs[0][:target]
+  eq [248, 0, 128, 248], [reqs[0][:red], reqs[0][:green], reqs[0][:blue],
+                          reqs[0][:power]]
+  eq 30, reqs[0][:frames] # 5 tenths at 6 frames each
+  eq :sprite_flash, it.wait_kind
+  eq [], it.take_sprite_flash_requests, 'the queue drains'
+end
+
+check 'Flash Sprite without its wait flag does not pause the interpreter' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FLASH_SPRITE, [10001, 31, 31, 31, 31, 3, 0])])
+  it.update
+  ok !it.waiting?, 'no wait flag, no pause'
+  eq 1, it.take_sprite_flash_requests.size
+end
+
+check 'Fade Out BGM fades the music and forgets the current track' do
+  st = new_state
+  RGSS::Audio.log = []
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'Town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [20]), # 2 seconds
+  ])
+  it.update
+  eq nil, st.current_bgm, 'nothing is playing after a fade-out'
+  eq [:bgm_fade, 2000], RGSS::Audio.log.last, 'faded over 2000 ms'
+end
+
+check 'Play Movie records the request instead of dropping it' do
+  st = new_state
+  st.variables[8] = 40
+  st.variables[9] = 24
+  it = Game::Interpreter.new(st)
+  # position mode 1 = read x/y from variables 8 and 9
+  it.start([FakeCmd.new(IC::PLAY_MOVIE, [1, 8, 9, 160, 120], string: 'Opening')])
+  it.update
+  req = it.take_movie_request
+  eq({ name: 'Opening', x: 40, y: 24, width: 160, height: 120 }, req)
+  eq nil, it.take_movie_request, 'the request is one-shot'
+end
+
+check 'Tile Substitution rewrites a tile on the map and flags a redraw' do
+  st = new_state
+  st.map = fake_map_2x2([5, 5, 7, 5], [0, 0, 0, 0])
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TILE_SUBSTITUTION, [0, 5, 9])]) # lower: 5 -> 9
+  it.update
+  eq 9, st.map.lower(0, 0)
+  eq 7, st.map.lower(0, 1), 'other tiles are untouched'
+  ok !it.waiting?, 'Tile Substitution must not pause the interpreter'
+  eq true, it.take_tiles_changed
+  eq false, it.take_tiles_changed, 'the flag is one-shot'
+end
+
+check 'Game::Map substitutions are per layer and undone by an identity swap' do
+  m = fake_map_2x2([1, 1, 1, 1], [1, 1, 1, 1])
+  m.substitute_tile(1, 1, 4) # upper only
+  eq 1, m.lower(0, 0)
+  eq 4, m.upper(0, 0)
+  ok m.substituted?
+  m.substitute_tile(1, 1, 1) # back to itself: drop the rewrite
+  eq 1, m.upper(0, 0)
+  ok !m.substituted?
+end
+
+check 'Open Save Menu and Open Main Menu pause on their own wait kinds' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::OPEN_SAVE_MENU, [])])
+  it.update
+  eq :save_menu, it.wait_kind
+  it.resume
+
+  it.start([FakeCmd.new(IC::OPEN_MAIN_MENU, [])])
+  it.update
+  eq :menu, it.wait_kind
+end
+
+check 'a conditional branch tests whether the decision key started the event' do
+  st = new_state
+  cmds = [
+    FakeCmd.new(IC::CONDITIONAL, [8], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+    FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+    FakeCmd.new(IC::END_BRANCH, [], indent: 0),
+  ]
+  it = Game::Interpreter.new(st)
+  it.start(cmds)
+  it.update
+  eq 2, st.variables[1], 'not action-triggered: the else branch runs'
+
+  it.start(cmds)
+  it.triggered_by_decision_key = true
+  it.update
+  eq 1, st.variables[1], 'action-triggered: the true branch runs'
+end
+
+check 'a conditional branch tests whether the BGM has played through once' do
+  st = new_state
+  cond = [
+    FakeCmd.new(IC::CONDITIONAL, [9], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+    FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+    FakeCmd.new(IC::END_BRANCH, [], indent: 0),
+  ]
+  it = Game::Interpreter.new(st)
+  it.start(cond)
+  it.update
+  eq 2, st.variables[1], 'a fresh track has not looped'
+
+  st.bgm_looped = true
+  it.start(cond)
+  it.update
+  eq 1, st.variables[1]
+end
+
+check 'starting a new BGM clears the "played once" flag' do
+  st = new_state
+  st.bgm_looped = true
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'Field')])
+  it.update
+  eq false, st.bgm_looped
 end
 
 # -- summary ------------------------------------------------------------------

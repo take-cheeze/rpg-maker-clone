@@ -521,6 +521,8 @@ class RPG2k
         @timer_window.dispose if @timer_window
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
+        @flash_buffer.dispose if @flash_buffer
+        @flash_out_buffer.dispose if @flash_out_buffer
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -529,6 +531,8 @@ class RPG2k
         @state.tick_timer # the timer keeps counting during events too
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
+        update_sprite_flashes # Flash Sprite decays during events too
+        watch_bgm_loop # so the "BGM played once" branch can be answered
         @anim_frame += 1 # water / animated tiles cycle even during events
         if event_busy?
           drive_event
@@ -1079,11 +1083,7 @@ class RPG2k
           it.start(p[:commands]) # loop the process
           it.update
         end
-        apply_move_requests(it, p[:event])
-        apply_location_requests(it, p[:event])
-        apply_erase_request(it, p[:event])
-        apply_tileset_request(it)
-        apply_parallax_request(it)
+        apply_interpreter_requests(it, p[:event])
       rescue StandardError
         nil
       end
@@ -1110,11 +1110,14 @@ class RPG2k
         @event_tiles[[x, y]]
       end
 
-      # Turn `ev` to face the player and run its command list.
-      def start_event(ev)
+      # Turn `ev` to face the player and run its command list. `by_decision_key`
+      # records that the action button (not a touch or auto-start) launched it,
+      # which the "the decision key started this event" conditional branch reads.
+      def start_event(ev, by_decision_key = false)
         ev[:char].face(ev[:char].direction_toward(@state.x, @state.y))
         @active_event = ev
         @interpreter.start(ev[:commands])
+        @interpreter.triggered_by_decision_key = by_decision_key
       end
 
       # On the action button, run the trigger-0 event the player is facing. The
@@ -1124,7 +1127,7 @@ class RPG2k
         return unless Input.trigger?(Input::C)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        start_event(ev) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
+        start_event(ev, true) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
       end
 
       # On the action button, board a placed vehicle the party is standing on
@@ -1500,6 +1503,193 @@ class RPG2k
         @parallax_img = nil
       end
 
+      # -- "BGM played once" ---------------------------------------------------
+
+      # Watch the music's playback position so the conditional branch that asks
+      # whether the BGM has played through at least once (12010 type 9) can be
+      # answered. SDL_mixer loops a track by seeking back to its start, so a
+      # position that jumped backwards is a loop; the flag is cleared whenever a
+      # new BGM starts (see Game::Interpreter#play_audio). A backend that cannot
+      # report a position always returns 0, which never counts as a loop.
+      def watch_bgm_loop
+        return if @bgm_pos_unavailable
+        return unless RGSS::Audio.respond_to?(:bgm_pos)
+        pos = RGSS::Audio.bgm_pos.to_i
+        prev = @bgm_pos || 0
+        @bgm_pos = pos
+        @state.bgm_looped = true if pos < prev && @state.current_bgm
+      rescue StandardError => e
+        # Report once and stop polling, rather than repeating the same failure
+        # sixty times a second; the branch then never reports a loop.
+        @bgm_pos_unavailable = true
+        $stderr.puts "[RPG2k] BGM position unavailable, 'BGM played once' " \
+                     "branches will not fire: #{e.message}"
+      end
+
+      # -- Tile Substitution ---------------------------------------------------
+
+      # A Tile Substitution rewrote a tile id on the current map (11750). The map
+      # itself already answers every lookup with the substituted tile
+      # (Game::Map#substitute_tile), and draw_layers rebuilds both tile buffers
+      # from those lookups every frame, so the swap is on screen on the next
+      # render with nothing to invalidate here. Draining the flag is what keeps
+      # the request from being reported again next step.
+      def apply_tile_substitution(interp)
+        interp.take_tiles_changed
+        nil
+      end
+
+      # -- Enter/Exit Vehicle --------------------------------------------------
+
+      # Board or leave a vehicle on the event's behalf (10840) — the same toggle
+      # the action button performs, so an event can put the party on the ship it
+      # just placed, or set them ashore.
+      def apply_vehicle_toggle(interp)
+        return unless interp.take_vehicle_toggle_request
+        if @state.boarded?
+          disembark_vehicle
+        else
+          board_vehicle
+        end
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Enter/Exit Vehicle failed: #{e.message}"
+        nil
+      end
+
+      # -- Play Movie ----------------------------------------------------------
+
+      # Report a Play Movie request (11560). No video decoder is linked in, so
+      # the movie cannot be shown; the request is logged rather than dropped in
+      # silence, so a game that plays a cut-scene here is visible in the trace.
+      def apply_movie_request(interp)
+        req = interp.take_movie_request
+        return if req.nil?
+        $stderr.puts "[RPG2k] Play Movie '#{req[:name]}' at (#{req[:x]}, #{req[:y]}) " \
+                     "#{req[:width]}x#{req[:height]}: video playback is not supported"
+      end
+
+      # -- Flash Sprite --------------------------------------------------------
+
+      # Start the character flashes an interpreter queued this step (11320). The
+      # hero and map events both keep their flash as a decaying colour the
+      # renderer tones their CharSet frame with; a target that cannot be resolved
+      # (a vehicle, or an unknown event id) simply flashes nothing.
+      def apply_sprite_flash_requests(interp, this_event)
+        reqs = interp.take_sprite_flash_requests
+        return if reqs.nil? || reqs.empty?
+        started = nil
+        reqs.each { |r| started = apply_sprite_flash(r, this_event) || started }
+        # A Flash Sprite that carried its wait flag paused the interpreter on a
+        # :sprite_flash wait; remember the flash it started so the wait releases
+        # on *that* character, not on some other one still flashing.
+        @flash_wait = started if interp.wait_kind == :sprite_flash
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Flash Sprite failed: #{e.message}"
+        nil
+      end
+
+      # Start one queued flash, returning the flash it attached to a character
+      # (nil when the target could not be resolved, so nothing flashes).
+      def apply_sprite_flash(r, this_event)
+        flash = { red: r[:red], green: r[:green], blue: r[:blue],
+                  power: r[:power], frames: r[:frames], total: r[:frames] }
+        return nil if flash[:frames] <= 0
+        case r[:target]
+        when MOVE_TARGET_PLAYER
+          @player_flash = flash
+          @last_frame = nil # force the hero's cached frame to be re-toned
+          flash
+        when 0, MOVE_TARGET_THIS
+          this_event ? (this_event[:flash] = flash) : nil
+        else
+          ev = @events.find { |e| e[:id] == r[:target] }
+          ev ? (ev[:flash] = flash) : nil
+        end
+      end
+
+      # Whether the flash a waiting Flash Sprite started is still running. The
+      # flash hash is decayed in place by update_sprite_flashes, so holding the
+      # reference is enough to see it run out even after the character has
+      # dropped it.
+      def sprite_flashing?
+        @flash_wait && @flash_wait[:frames] > 0 ? true : false
+      end
+
+      # Advance every running character flash one frame, dropping the ones that
+      # have decayed away. Called once per frame from #update, so a flash fades
+      # during messages and forced movement too, as RPG_RT's does.
+      def update_sprite_flashes
+        # Invalidate the hero's cached frame whenever a flash was running this
+        # tick — including the tick it ends on, so the last toned frame is
+        # replaced by the plain one instead of staying baked in.
+        @last_frame = nil if @player_flash
+        @player_flash = tick_flash(@player_flash)
+        @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
+      end
+
+      def tick_flash(flash)
+        return nil if flash.nil?
+        flash[:frames] -= 1
+        flash[:frames] > 0 ? flash : nil
+      end
+
+      # The RGSS tone that paints `flash` over a CharSet frame: the flash colour
+      # scaled by how much of the flash is left, added to every pixel (alpha is
+      # untouched, so the sprite keeps its shape).
+      def flash_tone(flash)
+        strength = flash[:power] * flash[:frames] / flash[:total]
+        Tone.new(flash[:red] * strength / 255, flash[:green] * strength / 255,
+                 flash[:blue] * strength / 255, 0)
+      end
+
+      # Scratch CharSet-sized buffers the flash pass uses: the frame is blitted
+      # into the first and toned into the second (tone_blt needs a same-size
+      # source and writes to a separate destination).
+      def flash_buffer
+        @flash_buffer ||= Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+      end
+
+      def flash_out_buffer
+        @flash_out_buffer ||= Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+      end
+
+      # -- Open Save Menu / Open Main Menu -------------------------------------
+
+      # Open Save Menu (11910): save the game on the event's behalf and report
+      # the outcome, then let the event continue. The clone has a single save
+      # slot (Scene::Menu's Save entry writes it), so there is no slot picker to
+      # show; a Change Save Access that forbade saving is honoured, as in RPG_RT.
+      def perform_event_save
+        if @state.save_access
+          saved = @parent.save_game(@state)
+          $stderr.puts "[RPG2k] Open Save Menu: #{saved ? 'saved' : 'save failed'}"
+        else
+          $stderr.puts '[RPG2k] Open Save Menu: saving is disabled'
+        end
+        @interpreter.resume
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Open Save Menu failed: #{e.message}"
+        @interpreter.resume
+      end
+
+      # Open Main Menu (11950): push the field menu over the map, then resume the
+      # event once the player closes it again. `@event_menu` marks that this
+      # scene is waiting on its own menu, so the event stays paused for exactly
+      # one visit instead of re-opening it every frame.
+      def perform_event_menu
+        if @event_menu
+          @event_menu = false
+          @interpreter.resume
+        else
+          @event_menu = true
+          @parent.push Scene::Menu.new(@parent, @state)
+        end
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Open Main Menu failed: #{e.message}"
+        @event_menu = false
+        @interpreter.resume
+      end
+
       # -- Move Event (Set Move Route) ----------------------------------------
 
       # Apply the Move Event requests an interpreter queued this step. `this_event`
@@ -1779,17 +1969,31 @@ class RPG2k
           when :game_over then perform_game_over
           when :name_input then drive_name_input
           when :animation then drive_map_animation
+          when :sprite_flash then @interpreter.resume unless sprite_flashing?
+          when :save_menu then perform_event_save
+          when :menu then perform_event_menu
           end
         else
           @interpreter.update
-          apply_move_requests(@interpreter, @active_event)
-          apply_location_requests(@interpreter, @active_event)
-          apply_erase_request(@interpreter, @active_event)
-          apply_halt_request(@interpreter)
-          apply_graphic_change(@interpreter)
-          apply_tileset_request(@interpreter)
-          apply_parallax_request(@interpreter)
+          apply_interpreter_requests(@interpreter, @active_event)
         end
+      end
+
+      # Drain every non-blocking request the interpreter queued this step and
+      # apply it to the map / scene. Shared by the foreground event and each
+      # parallel process, so both surfaces honour the same commands.
+      def apply_interpreter_requests(interp, this_event)
+        apply_move_requests(interp, this_event)
+        apply_location_requests(interp, this_event)
+        apply_erase_request(interp, this_event)
+        apply_halt_request(interp)
+        apply_graphic_change(interp)
+        apply_tileset_request(interp)
+        apply_parallax_request(interp)
+        apply_tile_substitution(interp)
+        apply_sprite_flash_requests(interp, this_event)
+        apply_vehicle_toggle(interp)
+        apply_movie_request(interp)
       end
 
       # Maps the interpreter's accepted-key symbols onto RGSS input buttons.
@@ -3911,7 +4115,32 @@ class RPG2k
         epx, epy = event_pixel(e)
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE)
-        bmp.blt dx, dy, charset, Rect.new(sx, sy, sw, sh), opacity
+        src = Rect.new(sx, sy, sw, sh)
+        toned = e[:flash] && flashed_charset(charset, src, e[:flash])
+        if toned
+          bmp.blt dx, dy, toned,
+                  Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT), opacity
+        else
+          bmp.blt dx, dy, charset, src, opacity
+        end
+      end
+
+      # A Flash-Sprite-tinted copy of one CharSet frame, or nil when the tone
+      # pass is unavailable. The frame is lifted into a scratch buffer (tone_blt
+      # works on same-size bitmaps) and toned with the flash's current colour,
+      # which brightens the sprite toward that colour without touching its alpha
+      # — so the flash keeps the character's outline instead of painting a
+      # rectangle over it.
+      def flashed_charset(charset, src, flash)
+        buf = flash_buffer
+        buf.clear
+        buf.blt 0, 0, charset, src
+        out = flash_out_buffer
+        out.tone_blt buf, flash_tone(flash)
+        out
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] sprite flash tone failed: #{e.message}"
+        nil
       end
 
       # Blit an event whose graphic is a chipset tile (16x16), aligned to its
@@ -3943,8 +4172,18 @@ class RPG2k
         @last_frame = frame
 
         rx, ry, rw, rh = Game::CharSet.frame_rect(@charset_index, @state.direction, pat)
+        src = Rect.new(rx, ry, rw, rh)
+        # A Flash Sprite aimed at the hero tones the frame as it is laid down
+        # (update_sprite_flashes invalidates @last_frame each frame it runs, so
+        # the fading colour is re-applied rather than baked in once).
+        toned = @player_flash && flashed_charset(@charset, src, @player_flash)
         @player_bmp.clear
-        @player_bmp.blt 0, 0, @charset, Rect.new(rx, ry, rw, rh)
+        if toned
+          @player_bmp.blt 0, 0, toned,
+                          Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+        else
+          @player_bmp.blt 0, 0, @charset, src
+        end
       end
 
       # Deterministic, memoised colour for a tile id so distinct tiles read as

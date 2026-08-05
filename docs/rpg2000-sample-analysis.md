@@ -132,7 +132,7 @@ Common-event commands (161 total):
 | **ChangeFaceGraphic** | 4 | ✗ message face |
 | MemorizeBGM / PlayMemorizedBGM | 2 | ✓ BGM stack |
 | **EnemyEncounter** | 1 | ✗ battle |
-| unknown(10660) | 2 | ✗ unidentified 106xx opcode |
+| ChangeSystemBGM (10660) | 2 | ✓ (reported as `unknown(10660)` when this analysis ran — the tool's 106xx label table was shifted by one slot; fixed since) |
 
 Sample2's gaps are **presentational**: pictures, screen flash/tint, message
 face graphics, and battle entry — i.e. the cutscene and combat surface.
@@ -158,7 +158,7 @@ Common-event commands (1919 total):
 | JumpToLabel / Label | 114 | ✓ |
 | CallEvent | 30 | ✓ |
 | MoveEvent / Teleport / ShowMessage | 4 | ✓ |
-| MessageOptions, ProceedWithMovement, PanScreen, PlayerVisibility, MemorizeLocation, ChangeMainMenuAccess, unknown(10690) | 10 | ✗ |
+| MessageOptions, ProceedWithMovement, PanScreen, PlayerVisibility, MemorizeLocation, ChangeMainMenuAccess, ChangeScreenTransitions (10690, reported as `unknown` by the then-shifted label table) | 10 | ✓ all implemented since |
 
 Sample3's common events are effectively a **switch/variable state machine**
 (`ControlVars` alone is 22 % of all commands) — precisely the subset the
@@ -186,7 +186,7 @@ runtime can execute virtually all of it.
    | **BGM stack** ✅ | MemorizeBGM (11530), PlayMemorizedBGM (11540) — now implemented | Sample2 |
    | **Movement sync** ✅ | ProceedWithMovement (11340) — now implemented | Sample3 |
    | **Menu/telep. access, misc** ✅ | ChangeMainMenuAccess (11960), MemorizeLocation (10820) and PlayerVisibility (11310) — now implemented | Sample3 |
-   | **Unidentified** | code 10660, 10690 (106xx range) | Sample2, Sample3 |
+   | **System overrides** ✅ | ChangeSystemBGM (10660), ChangeScreenTransitions (10690) — now implemented; they showed up as "unidentified" only because `analyze_game.rb`'s 106xx label table was shifted by one slot | Sample2, Sample3 |
 
 ## Recommended priorities for the interpreter
 
@@ -224,8 +224,13 @@ Ordered by real-world frequency across the analysed games:
    `ChangeSaveAccess` (11930) (*implemented* — gate opening the menu and saving;
    covered by the same two harnesses), the teleport/escape access toggles,
    `PlayerVisibility`.
-7. **Identify opcodes 10660 and 10690** — unnamed in the current opcode table;
-   worth confirming against liblcf before implementing.
+7. ✅ **Opcodes 10660 and 10690** — confirmed against liblcf's `Code` enum as
+   `ChangeSystemBGM` and `ChangeScreenTransitions`; both are implemented. They
+   read as "unknown" here because `analyze_game.rb`'s label table for the 105xx /
+   106xx range was shifted by one slot (it named 10610 "ChangeVehicleGraphic"),
+   which has since been corrected. That tool now derives its coverage set from
+   `Game::Interpreter::Cmd`, so re-running it reports the current state rather
+   than a hand-kept snapshot.
 
 ## Recommended test-beds
 

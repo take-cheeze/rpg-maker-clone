@@ -30,14 +30,17 @@ module Game
       CHANGE_EXP       = 10410
       CHANGE_LEVEL     = 10420
       CHANGE_PARAM     = 10430
-      CHANGE_EQUIP     = 10440
+      CHANGE_SKILLS    = 10440
+      CHANGE_EQUIP     = 10450
       CHANGE_HP        = 10460
       CHANGE_MP        = 10470
       CHANGE_CONDITION = 10480
       FULL_HEAL        = 10490
+      SIMULATED_ATTACK = 10500
       CHANGE_ACTOR_NAME   = 10610
       CHANGE_ACTOR_TITLE  = 10620
       CHANGE_ACTOR_SPRITE = 10630
+      CHANGE_ACTOR_FACE   = 10640
       CHANGE_VEHICLE_GRAPHIC = 10650
       CHANGE_SYSTEM_GFX   = 10680
       CHANGE_SYSTEM_BGM   = 10660
@@ -58,6 +61,7 @@ module Game
       INN_END          = 20732
       MEMORIZE_LOCATION = 10820
       RECALL_LOCATION   = 10830
+      ENTER_EXIT_VEHICLE = 10840
       SET_VEHICLE_LOCATION = 10850
       CHANGE_EVENT_LOCATION = 10860
       TRADE_EVENT_LOCATIONS = 10870
@@ -89,25 +93,31 @@ module Game
       ERASE_PICTURE    = 11130
       SHOW_BATTLE_ANIM = 11210
       PLAYER_VISIBILITY = 11310
+      FLASH_SPRITE     = 11320
       MOVE_EVENT       = 11330
       PROCEED_WITH_MOVEMENT = 11340
       HALT_ALL_MOVEMENT = 11350
       WAIT             = 11410
       PLAY_BGM         = 11510
+      FADEOUT_BGM      = 11520
       MEMORIZE_BGM     = 11530
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
+      PLAY_MOVIE       = 11560
       CHANGE_MAP_TILESET = 11710
       CHANGE_PARALLAX  = 11720
       CHANGE_ENCOUNTER_RATE = 11740
+      TILE_SUBSTITUTION = 11750
       SET_TELEPORT_TARGET = 11810
       CHANGE_TELEPORT_ACCESS = 11820
       SET_ESCAPE_TARGET   = 11830
       CHANGE_ESCAPE_ACCESS   = 11840
+      OPEN_SAVE_MENU   = 11910
       CHANGE_SAVE_ACCESS = 11930
+      OPEN_MAIN_MENU   = 11950
       CHANGE_MENU_ACCESS = 11960
+      GAME_OVER        = 12420
       RETURN_TO_TITLE  = 12510
-      GAME_OVER        = 12520
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -132,11 +142,16 @@ module Game
       @resolver = nil
       @move_route_requests = []
       @location_requests = []
+      @sprite_flash_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
       @tileset_request = nil
       @parallax_changed = false
+      @tiles_changed = false
+      @vehicle_toggle_requested = false
+      @movie_request = nil
+      @triggered_by_decision_key = false
       @input_variable = nil
       @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
@@ -154,6 +169,11 @@ module Game
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
+    # Whether the action (decision) key started the event this interpreter is
+    # running — the "the decision key started this event" conditional-branch test
+    # (12010 type 8). Set by the owning scene when it launches a trigger-0 event;
+    # false for auto-start, touch and parallel processes, and for common events.
+    attr_accessor :triggered_by_decision_key
     # Answers tile queries for Store Terrain / Event ID: responds to
     # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
     # makes those commands store 0 (the map is not queryable without it).
@@ -166,12 +186,20 @@ module Game
       @call_stack = []
       @move_route_requests = []
       @location_requests = []
+      @sprite_flash_requests = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false
       @system_graphic_changed = false
       @tileset_request = nil
       @parallax_changed = false
+      @tiles_changed = false
+      @vehicle_toggle_requested = false
+      @movie_request = nil
+      # Cleared per run so a reused interpreter (the shared foreground one, or a
+      # looping parallel process) never inherits the previous event's trigger;
+      # the scene sets it again right after #start for an action-key event.
+      @triggered_by_decision_key = false
       # Messages queued by a stat command (a Change Level / Change EXP with its
       # "show message" flag set) and shown one after another before the event
       # continues. Drained by #resume, so it survives the reset_waits between
@@ -259,6 +287,47 @@ module Game
       v = @system_graphic_changed
       @system_graphic_changed = false
       v
+    end
+
+    # True (once) if a Tile Substitution (11750) rewrote a map tile since the
+    # last call, clearing the flag. The substitution itself is already recorded
+    # on Game::Map; the scene polls this only to know it must redraw the tile
+    # layers (its chipset buffers are cached between frames). Non-blocking.
+    def take_tiles_changed
+      v = @tiles_changed
+      @tiles_changed = false
+      v
+    end
+
+    # True (once) if an Enter/Exit Vehicle (10840) command ran since the last
+    # call, clearing the flag. The owning scene polls this after #update and
+    # boards the vehicle the party is standing on / facing, or disembarks the one
+    # it rides — the same toggle the action button performs. Non-blocking, as the
+    # command carries no wait flag.
+    def take_vehicle_toggle_request
+      v = @vehicle_toggle_requested
+      @vehicle_toggle_requested = false
+      v
+    end
+
+    # Drain the Play Movie (11560) request queued since the last call (a hash:
+    # name, x, y, width, height), or nil. Non-blocking.
+    def take_movie_request
+      req = @movie_request
+      @movie_request = nil
+      req
+    end
+
+    # Drain the Flash Sprite (11320) requests queued since the last call, each a
+    # hash `{ target:, red:, green:, blue:, power:, frames: }` with the Move Event
+    # target ids. The owning scene polls this after #update and starts the flash
+    # on the matching character; when the command carried its wait flag the
+    # interpreter is additionally paused on a :sprite_flash wait until the scene
+    # reports the flash done.
+    def take_sprite_flash_requests
+      reqs = @sprite_flash_requests
+      @sprite_flash_requests = []
+      reqs
     end
 
     # Upper bound on commands run in a single update, so a malformed loop cannot
@@ -538,16 +607,20 @@ module Game
       when Cmd::CHANGE_EXP       then do_change_exp cmd
       when Cmd::CHANGE_LEVEL     then do_change_level cmd
       when Cmd::CHANGE_PARAM     then do_change_params cmd
+      when Cmd::CHANGE_SKILLS    then do_change_skills cmd
       when Cmd::CHANGE_EQUIP     then do_change_equipment cmd
       when Cmd::CHANGE_HP        then do_change_hp cmd
       when Cmd::CHANGE_MP        then do_change_mp cmd
       when Cmd::CHANGE_CONDITION then do_change_condition cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
+      when Cmd::SIMULATED_ATTACK then do_simulated_attack cmd
       when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
       when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
       when Cmd::CHANGE_ACTOR_SPRITE then do_change_actor_sprite cmd
+      when Cmd::CHANGE_ACTOR_FACE   then do_change_actor_face cmd
       when Cmd::CHANGE_VEHICLE_GRAPHIC then do_change_vehicle_graphic cmd
       when Cmd::SET_VEHICLE_LOCATION then do_set_vehicle_location cmd
+      when Cmd::ENTER_EXIT_VEHICLE then @vehicle_toggle_requested = true
       when Cmd::CONDITIONAL      then do_conditional cmd
       when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
       when Cmd::END_BRANCH       then nil
@@ -574,17 +647,21 @@ module Game
       when Cmd::SHOW_BATTLE_ANIM then do_show_battle_animation cmd
       when Cmd::WEATHER_EFFECTS  then do_weather cmd
       when Cmd::PLAYER_VISIBILITY then do_player_visibility cmd
+      when Cmd::FLASH_SPRITE     then do_flash_sprite cmd
       when Cmd::MOVE_EVENT       then do_move_event cmd
       when Cmd::PROCEED_WITH_MOVEMENT then do_proceed_with_movement cmd
       when Cmd::HALT_ALL_MOVEMENT then @halt_movement_requested = true
       when Cmd::WAIT             then do_wait cmd
       when Cmd::PLAY_BGM         then play_audio(:bgm, cmd)
+      when Cmd::FADEOUT_BGM      then do_fadeout_bgm cmd
       when Cmd::MEMORIZE_BGM     then do_memorize_bgm cmd
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
+      when Cmd::PLAY_MOVIE       then do_play_movie cmd
       when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
       when Cmd::CHANGE_PARALLAX   then do_change_parallax cmd
       when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
+      when Cmd::TILE_SUBSTITUTION then do_tile_substitution cmd
       when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
       when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
       when Cmd::CHANGE_SYSTEM_GFX     then do_change_system_graphic cmd
@@ -593,14 +670,18 @@ module Game
       when Cmd::CHANGE_TRANSITION    then @state.set_screen_transition(cmd.param(0), cmd.param(1))
       when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
       when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
+      when Cmd::OPEN_SAVE_MENU   then do_open_save_menu cmd
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
+      when Cmd::OPEN_MAIN_MENU   then do_open_main_menu cmd
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
       when Cmd::GAME_OVER        then do_game_over cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
-      else nil # unimplemented / no-op (labels, comments, ...)
+      when Cmd::LABEL            then nil # jump target only; Jump to Label finds it
+      when Cmd::COMMENT, Cmd::COMMENT_2 then nil # developer annotation
+      else nil # blank editor lines (codes 0 / 10) and RPG2003-only commands
       end
     end
 
@@ -1179,6 +1260,35 @@ module Game
       stat_targets(cmd).each { |a| a.full_heal }
     end
 
+    # Simulated Attack (10500): hurt the target actors with an attack that has no
+    # attacker — the event supplies the attack power itself. param0/param1 pick
+    # the targets (the shared scope layout); param2 is the attack strength,
+    # param3 how much the target's defence counts and param4 how much its spirit
+    # counts, each as a permille-style divisor, and param5 the damage spread.
+    # When param6 is set the damage dealt is also written into variable param7.
+    # The formula is EasyRPG Player's CommandSimulatedAttack, which mirrors
+    # RPG_RT: `atk - def * p_def / 400 - spi * p_spi / 800`, then spread by
+    # +/- (param5 * 5) percent and floored at 0. The hit can be lethal.
+    def do_simulated_attack(cmd)
+      atk = cmd.param(2)
+      damage = 0
+      stat_targets(cmd).each do |a|
+        damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
+        damage += damage * simulated_attack_spread(cmd.param(5)) / 100
+        damage = 0 if damage < 0
+        a.change_hp(-damage, true)
+      end
+      variables[cmd.param(7)] = damage if cmd.param(6) != 0
+    end
+
+    # A Simulated Attack's random damage spread, as a percentage in
+    # -(variance * 5) .. +(variance * 5). A variance of 0 never spreads.
+    def simulated_attack_spread(variance)
+      return 0 if variance.nil? || variance <= 0
+      span = variance * 5
+      @rng.random(span * 2 + 1) - span
+    end
+
     # Change Condition: inflict or cure a status condition on the target actors.
     # param0/param1 pick the targets (same scope layout as Change HP); param2 is
     # the operation (0 add / inflict, non-zero remove / cure) and param3 the state
@@ -1224,6 +1334,17 @@ module Game
       actor.set_charset(cmd.string || '', cmd.param(1))
       actor.transparent = cmd.param(2) != 0
       @actor_graphic_changed = true
+    end
+
+    # Change Actor Face (10640): give the actor whose id is param0 a new FaceSet
+    # graphic — the command string names the file and param1 the cell index. This
+    # is the actor's own portrait (menus, the save-select screen), not the message
+    # face a Change Face Graphic (10130) selects, so nothing on the map reloads.
+    # A no-op for an actor not in the party.
+    def do_change_actor_face(cmd)
+      actor = party.actor_by_id(cmd.param(0))
+      return unless actor
+      actor.set_faceset(cmd.string || '', cmd.param(1))
     end
 
     # The vehicle a vehicle command targets: param0 is 0 boat / 1 ship /
@@ -1274,11 +1395,25 @@ module Game
       stat_targets(cmd).each { |a| a.change_param(type, amount) }
     end
 
-    # Change Equipment. param2 selects the operation: 0 equips an item (param3 0
-    # = the item id in param4, 1 = the id held in variable param4) into the slot
-    # matching its type; 1 removes equipment, param4 selecting the slot (0..4, or
-    # 5 for every slot). Confirmed against real events, e.g. `[1, 3, 0, 0, 127]`
-    # equips armour 127 onto actor 3.
+    # Change Skills (10440): teach or remove a skill. param0/param1 pick the
+    # targets (the shared scope layout), param2 is the operation (0 learn, 1
+    # forget) and param3/param4 the skill operand (0 = the id in param4, 1 = the
+    # id held in variable param4). Skill id 0 is the editor's "none" and is
+    # ignored.
+    def do_change_skills(cmd)
+      skill_id = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
+      return if skill_id.nil? || skill_id <= 0
+      forget = cmd.param(2) != 0
+      stat_targets(cmd).each do |a|
+        forget ? a.forget_skill(skill_id) : a.learn_skill(skill_id)
+      end
+    end
+
+    # Change Equipment (10450). param2 selects the operation: 0 equips an item
+    # (param3 0 = the item id in param4, 1 = the id held in variable param4) into
+    # the slot matching its type; 1 removes equipment, param4 selecting the slot
+    # (0..4, or 5 for every slot). Confirmed against real events, e.g.
+    # `[1, 3, 0, 0, 127]` equips armour 127 onto actor 3.
     def do_change_equipment(cmd)
       targets = stat_targets(cmd)
       if cmd.param(2) == 0
@@ -1323,6 +1458,10 @@ module Game
              # 1 ship / 2 airship)
         v = cmd.param(1)
         v >= 0 && v < Vehicle::TYPES.size && @state.boarded == Vehicle::TYPES[v]
+      when 8 # the decision (action) key started this event
+        @triggered_by_decision_key ? true : false
+      when 9 # the BGM has played through at least once
+        @state.bgm_looped ? true : false
       else true
       end
     end
@@ -1534,6 +1673,62 @@ module Game
       @state.player_transparent = cmd.param(0) != 0
     end
 
+    # Flash Sprite (11320): pulse a character's sprite with a colour that decays
+    # to nothing. param0 is the target (the Move Event target scheme: 10001 the
+    # hero, 0 / 10005 this event, else a map event id), param1..3 the colour and
+    # param4 its strength — all four stored 0..31, so they are scaled by 8 to the
+    # 0..248 the renderer works in, as EasyRPG's CommandFlashSprite does — param5
+    # the duration in tenths of a second and param6 the wait flag. Queued for the
+    # owning scene (which owns the sprites); with the wait flag set the event also
+    # pauses on a :sprite_flash wait until the scene reports the flash finished.
+    FLASH_CHANNEL_SCALE = 8
+
+    def do_flash_sprite(cmd)
+      frames = cmd.param(5) * FRAMES_PER_TENTH
+      @sprite_flash_requests.push(
+        target: cmd.param(0),
+        red: cmd.param(1) * FLASH_CHANNEL_SCALE,
+        green: cmd.param(2) * FLASH_CHANNEL_SCALE,
+        blue: cmd.param(3) * FLASH_CHANNEL_SCALE,
+        power: cmd.param(4) * FLASH_CHANNEL_SCALE,
+        frames: frames
+      )
+      return unless cmd.param(6) != 0 && frames > 0
+      @wait_kind = :sprite_flash
+      @waiting = true
+    end
+
+    # Open Save Menu (11910): hand control to the save screen. Raised as a
+    # :save_menu request the owning scene answers by saving (and reporting the
+    # outcome), then resuming the event where it left off. A Change Save Access
+    # command that forbade saving also forbids this, matching RPG_RT.
+    def do_open_save_menu(_cmd)
+      @wait_kind = :save_menu
+      @waiting = true
+    end
+
+    # Open Main Menu (11950): open the field menu as though the player had
+    # pressed cancel. Raised as a :menu request the owning scene answers by
+    # pushing Scene::Menu; the event resumes once the player closes it. Unlike
+    # the cancel button this ignores the Change Main Menu Access flag — RPG_RT
+    # lets an event open the menu it has otherwise locked out.
+    def do_open_main_menu(_cmd)
+      @wait_kind = :menu
+      @waiting = true
+    end
+
+    # Tile Substitution (11750): from here on, draw and treat every occurrence of
+    # tile param1 on layer param0 (0 lower, 1 upper) as tile param2. Recorded on
+    # the current Game::Map (so passability follows the swap) and flagged so the
+    # scene redraws its cached tile layers. Non-blocking; the rewrite lasts until
+    # the map is left, as in RPG_RT.
+    def do_tile_substitution(cmd)
+      map = @state.map
+      return unless map.respond_to?(:substitute_tile)
+      map.substitute_tile(cmd.param(0), cmd.param(1), cmd.param(2))
+      @tiles_changed = true
+    end
+
     # Return to Title Screen: abandon the running game and go back to the title.
     # Raised as a :return_title request the owning scene answers by tearing the
     # play scenes down and showing a fresh title (there is nothing to resume, so
@@ -1543,7 +1738,7 @@ module Game
       @waiting = true
     end
 
-    # Game Over (12520): raised as a :game_over request the owning scene answers
+    # Game Over (12420): raised as a :game_over request the owning scene answers
     # by ending the game (RPG2000 shows the Game Over screen, then the title).
     # Like Return to Title there is nothing to resume — the event stops here.
     def do_game_over(_cmd)
@@ -1724,6 +1919,38 @@ module Game
       @state.weather.set(cmd.param(0), cmd.param(1))
     end
 
+    # Fade Out BGM (11520): fade the music to silence over param0 tenths of a
+    # second, then leave nothing playing. Clears the current-BGM record so a
+    # Memorize BGM taken afterwards memorises silence, as RPG_RT does.
+    # Non-blocking — the event runs on while the music fades.
+    MS_PER_TENTH = 100
+
+    def do_fadeout_bgm(cmd)
+      @state.current_bgm = nil
+      @state.bgm_looped = false
+      RGSS::Audio.bgm_fade(cmd.param(0) * MS_PER_TENTH)
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] BGM fade-out failed: #{e.message}"
+      nil
+    end
+
+    # Play Movie (11560): show a video file over the map. The command string
+    # names the Movie/<name> file, param0 selects literal (0) or variable (1)
+    # placement, param1/param2 the top-left position and param3/param4 the size.
+    # No backend here decodes video, so the request is recorded for the scene
+    # (which logs it) rather than silently dropped; playback itself is the one
+    # part of the command that is not modelled.
+    def do_play_movie(cmd)
+      x = cmd.param(1)
+      y = cmd.param(2)
+      if cmd.param(0) != 0
+        x = variables[x]
+        y = variables[y]
+      end
+      @movie_request = { name: (cmd.string || '').to_s, x: x, y: y,
+                         width: cmd.param(3), height: cmd.param(4) }
+    end
+
     # Memorize BGM: stash a copy of the currently-playing BGM so a later Play
     # Memorized BGM can restore it (e.g. duck to a fanfare, then return). Nothing
     # playing memorises nothing. Non-blocking.
@@ -1820,6 +2047,7 @@ module Game
       return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
       RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
       @state.current_bgm = bgm.dup
+      @state.bgm_looped = false
     rescue StandardError => e
       $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
       nil
@@ -1836,6 +2064,7 @@ module Game
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
         # as the "current system BGM" regardless of whether playback succeeds).
         @state.current_bgm = { name: name, volume: volume, tempo: pitch }
+        @state.bgm_looped = false # a fresh track has not looped yet
         RGSS::Audio.bgm_play(name, volume, pitch)
       else
         # PlaySE parameters: [volume, tempo, balance].
