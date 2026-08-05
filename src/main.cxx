@@ -412,8 +412,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     // was created at the 320x240 default and doubled. Resize it now, before the
     // runtime builds any screen-sized object: with a 320x240 canvas the XP
     // scenes draw off the edge -- the title's command window lands past the
-    // bottom and its centred text past the right (found by
-    // scripts/rpgxp_browser_check.py; see docs/adr/0025).
+    // bottom and its centred text past the right (found by the browser check
+    // that ADR 0025 has since dropped; see docs/adr/0025).
     if (em_display) {
       lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
       lv_sdl_window_set_zoom(em_display.get(), 1.f);
