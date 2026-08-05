@@ -2,7 +2,7 @@ class Object
   include RGSS
 end
 
-module RGSS
+class RPG2k
   # RPG Maker 2000 style window. The visual is assembled from a "windowskin"
   # System graphic laid out in the classic 160x80 arrangement:
   #
@@ -15,6 +15,13 @@ module RGSS
   # frame), the selection cursor, and the contents (text and other graphics
   # drawn by callers). Keeping them apart means updating the cursor or the text
   # no longer forces the skin to be re-blitted.
+  #
+  # RPG2k::Window, not RGSS::Window: this is the RPG Maker 2000 window, and the
+  # RGSS one is a different widget with a different windowskin layout that a
+  # real XP/VX game's own scripts subclass (`Window_Base < Window`). Defining
+  # this one under RGSS used to replace that native class for the whole process,
+  # since mruby-rpg2k loads after mruby-rgss -- see the note in build_config.rb.
+  # Every use is inside `class RPG2k`, so the bare name still resolves here.
   class Window
     # Windows are drawn above ordinary background sprites (which default to
     # z == 0), so give the backing viewport a high z by default.
@@ -288,9 +295,7 @@ module RGSS
       @cursor_bmp.fill_rect x + w - 1, y, 1, h, border
     end
   end
-end
 
-class RPG2k
   WIDTH = 320
   HEIGHT = 240
 

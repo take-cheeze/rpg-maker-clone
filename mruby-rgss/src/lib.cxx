@@ -4056,8 +4056,17 @@ Bitmap& window_ensure_canvas(mrb_state* M,
   return c;
 }
 
+// An opacity ivar clamped to 0..255, defaulting to RGSS's 255 when the script
+// never assigned one. It used to read the ivar unconditionally, so setting a
+// windowskin on a window whose opacity had not been set was a TypeError on nil
+// -- window_init sets @contents_opacity but not @opacity or @back_opacity.
+// Nothing hit it while RGSS::Window was unreachable (see the note on
+// RPG2k::Window); it raises on the first real use once it is not.
 static mrb_int clamp_opacity(mrb_state* M, mrb_value self, const char* iv) {
-  mrb_int v = mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_cstr(M, iv)));
+  const mrb_value raw = mrb_iv_get(M, self, mrb_intern_cstr(M, iv));
+  if (mrb_nil_p(raw))
+    return 255;
+  const mrb_int v = mrb_as_int(M, raw);
   if (v < 0)
     return 0;
   if (v > 255)

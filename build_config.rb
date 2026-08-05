@@ -39,6 +39,12 @@ def rpg_maker_gems(conf)
   end
 
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf"
+  # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
+  # ...). Every maker gem below loads after it and *reopens* that namespace, so a
+  # class one of them defines under RGSS replaces mruby-rgss's for the whole
+  # process -- which is what RPG2k's window did to the native RGSS::Window until
+  # it became RPG2k::Window. Keep maker-specific classes under the maker's own
+  # namespace.
   conf.gem "#{MRUBY_ROOT}/../../mruby-rgss"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
