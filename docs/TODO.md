@@ -380,10 +380,14 @@ The work below is roughly ordered by the critical path to a walkable game
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
   are matched against the target's per-attribute defence ranks (A..E → 200 / 150
   / 100 / 50 / 0 percent, strongest element winning), so a foe is hurt more by a
-  weakness and can fully nullify an element it is immune to. Still to come:
-  enemy-cast infliction, all-target skill/item scopes, per-attribute rate
-  overrides from the Attribute table, the per-terrain backdrop and the RPG2000
-  Game Over graphic.
+  weakness and can fully nullify an element it is immune to. The party can also
+  **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
+  (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
+  gets away, and a failed attempt forfeits the party's round (every member
+  skips, the enemies still act) while raising the next try by 10 points. Still
+  to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
+  rate overrides from the Attribute table, the per-terrain backdrop and the
+  RPG2000 Game Over graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
@@ -557,10 +561,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
   A **switch item** (type 9) is field-usable too: `Game::Party#use_switch_item`
   consumes one and returns the game switch it turns on, which the item menu then
-  sets (matching EasyRPG, where the scene owns the switch table).
-  Teleport/escape/switch skill types, the battle-time skill variance, the item
-  usable-occasion gate, and two-handed / dual-wield equipping are later
-  refinements.
+  sets (matching EasyRPG, where the scene owns the switch table). The **usable
+  occasion** is honoured on both sides: a medicine / switch item flagged
+  battle-only (`occasion_field` off) is hidden from the field menu, and one
+  flagged field-only is hidden from the battle item list (books / seeds stay
+  field-only). Teleport/escape/switch skill types, the battle-time skill
+  variance, and two-handed / dual-wield equipping are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -721,7 +727,8 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
   `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
   `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
-  widgets, plus `Kernel#sprintf` and drawing `Graphics.transition/freeze`.
+  widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
+  the native `Graphics.snap_to_bitmap` — see the VX section below.)
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
   (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
   archive.
@@ -826,9 +833,28 @@ screen (544×416). Full rationale:
     the RPG2000 screen tint has been waiting on** (see the Screen effects section
     above): `apply_tone_px` is shared by all three composites, so the RPG2000
     side can adopt it instead of growing its own.
+  - ✅ **`Graphics.snap_to_bitmap` / `freeze` / `transition`** — scene
+    transitions. `snap_to_bitmap` is `lv_snapshot_take` into a `Bitmap`, the one
+    capture that works on every backend (the SDL window, the terminal
+    framebuffer and the wasm canvas all buffer differently, and two of them
+    render partially). `freeze` keeps the snapshot; `transition` shows it on a
+    full-screen sprite above everything and steps its opacity to zero, so the
+    next scene builds behind a fading still of the last — RGSS's default
+    dissolve. The `filename`/`vague` form runs as a plain fade and says so once.
+  - ✅ **A render probe that can see the screen.** The three items above are
+    native rendering that no unit test could reach: `mruby-rgss/test` has no
+    display, so a `Viewport` cannot even be constructed there, and the failure
+    mode that leaves is the one that hid the RPG2000 screen tint — the code
+    runs, the values are stored, and nothing changes. `RGSS.frame_mean` (the
+    frame's mean R/G/B, sampled on an 8px grid via `snap_to_bitmap`) and
+    `RGSS.effect_probe` close it: `rpg_maker_clone --rgss_effect_probe` drives a
+    grey screen, a red `Viewport#color`, an additive-blue `Viewport#tone` and a
+    freeze/transition round trip on a real display and measures each. It runs as
+    the `render_probe` ctest under xvfb (display 98) and needs no game. Verified
+    to have teeth by neutering `vp_refresh_overlay` and the transition in turn —
+    each broke exactly the assertion it should.
   - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene
-    transitions), `Viewport#tone` on `Window` contents (a different composite
+    playable game: `Viewport#tone` on `Window` contents (a different composite
     path; RGSS keeps windows in their own viewport, so a map tint does not tint
     the message window anyway), the window open/close animation, and
     `Bitmap#blur`/`#radial_blur`.

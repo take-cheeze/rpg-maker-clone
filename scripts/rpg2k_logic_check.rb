@@ -1376,16 +1376,16 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
-                      :prevent_critical, :attribute_set, :switch_id)
+                      :prevent_critical, :attribute_set, :switch_id, :occasion_field)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
-              attribute_set: nil, switch_id: 0)
+              attribute_set: nil, switch_id: 0, occ_field: true)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit, attribute_set, switch_id)
+               prevent_crit, attribute_set, switch_id, occ_field)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -1834,6 +1834,23 @@ check 'field_items lists only held medicines, in id order with counts' do
   st.party.gain_item(5, 1)
   st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
   eq [[5, 1], [9, 2]], st.party.field_items
+end
+
+check 'a battle-only medicine is hidden from the field menu but shown in battle' do
+  items = {
+    5 => fake_item(type: 6, rhp: 50, occ_field: true,  occ_battle: false), # field only
+    6 => fake_item(type: 6, rhp: 50, occ_field: false, occ_battle: true),  # battle only
+  }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(6, 1)
+  ok st.party.field_usable?(5), 'the field medicine is usable in the field'
+  ok !st.party.field_usable?(6), 'the battle-only medicine is hidden from the field'
+  eq [[5, 1]], st.party.field_items
+  # ... and the reverse holds for the battle item list.
+  ok st.party.battle_usable?(6), 'the battle-only medicine is usable in battle'
+  ok !st.party.battle_usable?(5), 'the field-only medicine is not usable in battle'
+  eq [[6, 1]], st.party.battle_items
 end
 
 check 'a switch item is field-usable, effective, and flips its switch on use' do
@@ -4083,6 +4100,61 @@ check 'Game::Enemy reads its per-attribute defence ranks' do
   e = Game::Enemy.new(db, 5)
   eq({ 1 => 2, 2 => 4, 3 => 0 }, e.attribute_ranks)
   eq({ 1 => 2, 2 => 4, 3 => 0 }, Game::Battle.from_enemy(e).attr_ranks)
+end
+
+# -- Battle escape ------------------------------------------------------------
+
+def escape_battle(party_agi, enemy_agi, seed = 1)
+  Game::Battle.new([combatant('Hero', 0, 0, party_agi, 10)],
+                   [combatant('Slime', 8, 0, enemy_agi, 10)], Game::Rng.new(seed))
+end
+
+check 'Battle#escape_chance scales with the agility ratio, clamped 0..100' do
+  eq 50,  escape_battle(10, 10).escape_chance, 'equal agility -> 150 - 100 = 50'
+  eq 100, escape_battle(20, 5).escape_chance,  'a much faster party clamps at 100'
+  eq 0,   escape_battle(5, 20).escape_chance,  'a much slower party clamps at 0'
+end
+
+check 'Battle#attempt_escape flees the fight when the roll succeeds' do
+  b = escape_battle(20, 5)                            # 100% chance
+  ok b.attempt_escape, 'a 100% chance always flees'
+  ok b.finished?, 'the fight is over'
+  ok b.escaped?, 'flagged as escaped'
+  eq :escaped, b.run, 'and the result stays :escaped'
+end
+
+check 'a failed escape raises the next attempt chance by 10, fight continues' do
+  b = escape_battle(5, 20)                            # 0% chance -> always fails
+  eq 0, b.escape_chance, 'a much slower party starts at 0%'
+  ok !b.attempt_escape, 'and cannot flee'
+  eq 10, b.escape_chance, 'but the next attempt is 10 points likelier'
+  ok !b.finished?, 'the fight is still on'
+  ok !b.escaped?
+end
+
+check 'a preemptive escape always succeeds regardless of the roll' do
+  b = escape_battle(5, 20)                            # 0% by agility...
+  ok b.attempt_escape(true), '...but a first strike guarantees the getaway'
+  eq :escaped, b.result
+end
+
+check 'attempt_escape is a no-op once the battle is already decided' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  downed = combatant('Slime', 0, 0, 5, 0)            # already wiped -> victory
+  b = Game::Battle.new([hero], [downed], Game::Rng.new(1))
+  ok b.finished?, 'enemies already down'
+  ok !b.attempt_escape, 'no escape from a decided fight'
+  ok !b.escaped?
+end
+
+check 'command_skip forfeits an ally turn while the enemies still act' do
+  hero = combatant('Hero', 40, 0, 20, 100)           # faster, acts first
+  slime = combatant('Slime', 20, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  b.command_skip(hero)
+  b.run_round
+  eq 100, slime.hp, 'the hero forfeited its attack'
+  ok hero.hp < 100, 'but the slime still struck back'
 end
 
 check 'battle skill damage varies by the skill variance when the fight rolls it' do

@@ -23,9 +23,12 @@ These are complete enough for the stock scripts:
   stock scripts._
 - **`Font`** — instance `name`/`size`/`bold`/`italic`/`shadow`/`outline`/`color`/
   `out_color`, class defaults (`default_name`/`default_size`/…), `exist?`.
-- **`Graphics`** — `frame_count`, `frame_rate`, `update`. _`freeze`,
-  `transition`, `frame_reset` exist but are `warn_stub` no-ops: the game runs but
-  the fade/transition is not drawn._
+- **`Graphics`** — `frame_count`, `frame_rate`, `update`, and `snap_to_bitmap` /
+  `freeze` / `transition`: the scene transition draws, as RGSS's default
+  dissolve of the frozen still over the incoming scene (see item 3 of the
+  [VX gap](rpgvx-rgss-api-gap.md), where it landed — the code is shared).
+  _`transition`'s `filename` form (dissolving through a transition image) runs as
+  a plain fade of the same length; `frame_reset` is still a `warn_stub` no-op._
 - **`Input`** — all key constants (`A`/`B`/`C`/`X`/`Y`/`Z`/`L`/`R`/`UP`…`F9`),
   `update`, `press?`, `trigger?` (~68), `repeat?` (~34), `press`/`release`,
   `dir4`/`dir8`.

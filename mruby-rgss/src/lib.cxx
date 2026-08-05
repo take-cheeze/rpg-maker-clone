@@ -2349,6 +2349,55 @@ lv_display_t* get_display(mrb_state* M) {
   return reinterpret_cast<lv_display_t*>(mrb_cptr(v));
 }
 
+// Report an unimplemented path through RGSS.warn_stub, which dedupes by name.
+void RGSS_warn_stub(mrb_state* M, const char* name) {
+  mrb_funcall(M, mrb_obj_value(mrb_module_get(M, "RGSS")), "warn_stub", 1,
+              mrb_str_new_cstr(M, name));
+}
+
+// RGSS Graphics.snap_to_bitmap: the rendered screen as a Bitmap.
+//
+// lv_snapshot_take re-renders the active screen's object tree into a fresh
+// buffer, which is the only capture that works on every backend here -- the SDL
+// window, the terminal framebuffer and the wasm canvas all buffer differently,
+// and two of them render partially. The buffer comes back in LVGL's ARGB8888
+// byte order (B, G, R, A), the same layout Bitmap uses, so the rows copy
+// straight across (honouring the snapshot's stride, which is padded).
+//
+// Answers nil where the module is compiled out (the Wio/PSP builds) rather than
+// pretending, and says so once.
+mrb_value gfx_snap_to_bitmap(mrb_state* M, mrb_value self) {
+#if LV_USE_SNAPSHOT
+  lv_obj_t* screen = lv_display_get_screen_active(get_display(M));
+  if (!screen)
+    return mrb_nil_value();
+  lv_draw_buf_t* snap = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
+  if (!snap) {
+    RGSS_warn_stub(M, "Graphics.snap_to_bitmap (snapshot failed)");
+    return mrb_nil_value();
+  }
+  const mrb_int w = snap->header.w;
+  const mrb_int h = snap->header.h;
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value out =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& b = DataType<Bitmap>::get(M, out);
+  const uint32_t stride = snap->header.stride;
+  for (mrb_int y = 0; y < h; ++y) {
+    const uint8_t* src = snap->data + static_cast<size_t>(y) * stride;
+    uint8_t* dst = b.buffer.data() + static_cast<size_t>(y) * w * 4;
+    std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+  }
+  b.dirty = true;
+  lv_draw_buf_destroy(snap);
+  return out;
+#else
+  RGSS_warn_stub(M, "Graphics.snap_to_bitmap");
+  return mrb_nil_value();
+#endif
+}
+
 const mrb_data_type obj_type = {"lv_obj_t", free_obj};
 
 // LVGL fires LV_EVENT_DELETE when an object is destroyed, including when its
@@ -5124,6 +5173,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
+  // RGSS2+: the rendered screen as a Bitmap. Graphics.freeze/transition are
+  // built on it (mrblib/lib.rb), and RGSS.effect_probe measures with it.
+  mrb_define_module_function(M, gfx, "snap_to_bitmap", gfx_snap_to_bitmap,
+                             MRB_ARGS_NONE());
 
   profiler_init(M);
 
