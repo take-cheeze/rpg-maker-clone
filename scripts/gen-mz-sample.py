@@ -31,6 +31,7 @@ is a no-op in git.
 """
 
 import json
+import math
 import os
 import struct
 import zlib
@@ -105,6 +106,31 @@ class Canvas:
         return bytes(self.px)
 
 
+def write_wav(rel_path, freq=440, ms=120, rate=8000, vol=0.4):
+    """Write a tiny 16-bit mono PCM WAV (hand-encoded, no audio library).
+
+    A short sine beep with a 64-sample linear fade in/out to avoid clicks. MZ's
+    AudioManager is routed to RGSS::Audio (MV::AUDIO_BRIDGE_JS), whose SDL_mixer
+    backend resolves a name to a file by trying its extensions, so a committed
+    `.wav` is playable without shipping any copyrighted RTP sound.
+    Deterministic (math.sin is IEEE) so re-running is a no-op in git.
+    """
+    n = int(rate * ms / 1000)
+    frames = bytearray()
+    for i in range(n):
+        env = min(1.0, i / 64.0, (n - i) / 64.0)
+        frames += struct.pack("<h", int(vol * env * 32767 *
+                                        math.sin(2 * math.pi * freq * i / rate)))
+    data = bytes(frames)
+    fmt = struct.pack("<HHIIHH", 1, 1, rate, rate * 2, 2, 16)  # PCM mono 16-bit
+    body = (b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt +
+            b"data" + struct.pack("<I", len(data)) + data)
+    path = os.path.join(ROOT, rel_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
 def sound(name=""):
     return {"name": name, "volume": 90, "pitch": 100, "pan": 0}
 
@@ -160,9 +186,10 @@ system = {
     "victoryMe": sound(),
     "defeatMe": sound(),
     "gameoverMe": sound(),
-    # The 24 system SEs. Left silent: the MZ path has no audio bridge yet, so a
-    # named sound would be resolved by the engine's own WebAudio loader.
-    "sounds": [sound() for _ in range(24)],
+    # The 24 system SEs. The common UI sounds (0 Cursor, 1 OK, 2 Cancel,
+    # 3 Buzzer) point at the authored Beep.wav so menu interaction actually
+    # plays through the audio bridge; the rest stay silent.
+    "sounds": [sound("Beep") if i < 4 else sound() for i in range(24)],
     "airship": vehicle(),
     "boat": vehicle(),
     "ship": vehicle(),
@@ -221,6 +248,13 @@ system = {
     },
 }
 write("System.json", system)
+
+# --- Audio -----------------------------------------------------------------
+# A tiny authored sound effect so the bed has real, loadable audio (see
+# System.sounds above and --mz_audio_test). RGSS::Audio resolves the bridge's
+# "audio/se/Beep" to this file.
+write_wav("audio/se/Beep.wav")
+
 
 # --- Windowskin ------------------------------------------------------------
 # img/system/Window.png is the skin every Window_Base draws from, and the image

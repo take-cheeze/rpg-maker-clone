@@ -192,6 +192,31 @@ class MV
       end
     end
 
+    # Dispatch a parsed audio call (see .parse_audio_op) to RGSS::Audio. A class
+    # method because MZ drives the same bridge: rmmz's AudioManager exposes the
+    # same high-level surface AUDIO_BRIDGE_JS overrides, so both runtimes queue
+    # identical ops and both drain them through here.
+    def apply_audio_op(call)
+      case call[0]
+      when :bgm_play then RGSS::Audio.bgm_play(call[1], call[2], call[3])
+      when :bgs_play then RGSS::Audio.bgs_play(call[1], call[2], call[3])
+      when :me_play then RGSS::Audio.me_play(call[1], call[2], call[3])
+      when :se_play then RGSS::Audio.se_play(call[1], call[2], call[3])
+      when :bgm_stop then RGSS::Audio.bgm_stop
+      when :bgs_stop then RGSS::Audio.bgs_stop
+      when :me_stop then RGSS::Audio.me_stop
+      when :se_stop then RGSS::Audio.se_stop
+      when :bgm_fade then RGSS::Audio.bgm_fade(call[1])
+      when :bgs_fade then RGSS::Audio.bgs_fade(call[1])
+      when :me_fade then RGSS::Audio.me_fade(call[1])
+      when :all_stop
+        RGSS::Audio.bgm_stop
+        RGSS::Audio.bgs_stop
+        RGSS::Audio.me_stop
+        RGSS::Audio.se_stop
+      end
+    end
+
     # Does the directory look like an RPG Maker MV project?
     def project?(dir = GAME_DIR)
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }
@@ -327,24 +352,7 @@ class MV
 
   # Dispatch a parsed audio call (see MV.parse_audio_op) to RGSS::Audio.
   def apply_audio(call)
-    case call[0]
-    when :bgm_play then RGSS::Audio.bgm_play(call[1], call[2], call[3])
-    when :bgs_play then RGSS::Audio.bgs_play(call[1], call[2], call[3])
-    when :me_play then RGSS::Audio.me_play(call[1], call[2], call[3])
-    when :se_play then RGSS::Audio.se_play(call[1], call[2], call[3])
-    when :bgm_stop then RGSS::Audio.bgm_stop
-    when :bgs_stop then RGSS::Audio.bgs_stop
-    when :me_stop then RGSS::Audio.me_stop
-    when :se_stop then RGSS::Audio.se_stop
-    when :bgm_fade then RGSS::Audio.bgm_fade(call[1])
-    when :bgs_fade then RGSS::Audio.bgs_fade(call[1])
-    when :me_fade then RGSS::Audio.me_fade(call[1])
-    when :all_stop
-      RGSS::Audio.bgm_stop
-      RGSS::Audio.bgs_stop
-      RGSS::Audio.me_stop
-      RGSS::Audio.se_stop
-    end
+    self.class.apply_audio_op(call)
   end
 
   # If a screenshot path was requested (`--mv_screenshot`), write the rendered
