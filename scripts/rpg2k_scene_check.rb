@@ -1795,6 +1795,33 @@ check 'the choice window plays the cursor and decision system sounds' do
   ok !scene.instance_variable_get(:@message), 'the choice window closed on confirm'
 end
 
+check 'the message window moves away from the hero when not position-fixed' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  cfg = st.message_config
+  # A tall map so the follow camera clamps and the hero can sit low on screen.
+  w = 6; h = 30
+  tall = Game::Map.new(1, OpenStruct.new(
+    width: w, height: h, chipset_id: 1,
+    lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+    events: {}))
+  scene.instance_variable_set(:@map, tall)
+  st.map = tall
+  win_h = 80
+  mwy = ->(c) { scene.send(:message_window_y, win_h, c) }
+  # Default (not fixed): hero near the bottom -> the window jumps to the top.
+  st.y = 28
+  eq 0, mwy.call(cfg), 'hero low on screen -> window at the top'
+  # Hero at the top of the map -> the window sits at the bottom.
+  st.y = 0
+  eq 240 - win_h, mwy.call(cfg), 'hero high on screen -> window at the bottom'
+  # Pinned: the configured position wins regardless of where the hero stands.
+  cfg.position_fixed = true
+  cfg.position = Game::MessageConfig::POS_MIDDLE
+  st.y = 28
+  eq (240 - win_h) / 2, mwy.call(cfg), 'position-fixed keeps the configured slot'
+end
+
 check 'Weather draws a particle overlay when active and hides it when clear' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
@@ -1815,6 +1842,25 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   st.weather.set(0, 0) # clear
   scene.update
   ok !wsp.visible, 'clearing weather hides the overlay'
+end
+
+check 'the timer window shows M:SS while visible and hides when never shown' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok scene.instance_variable_get(:@timer_window).nil?, 'no window until shown'
+  # Show a 75 s timer (Start with the show flag on).
+  st.timer_frames = 75 * 60
+  st.timer_visible = true
+  scene.update
+  win = scene.instance_variable_get(:@timer_window)
+  ok win, 'the window is built on first display'
+  ok win.visible, 'and shown'
+  eq '1:15', win.contents.draw_calls.last[4], 'it draws the M:SS text'
+  # Hiding the timer hides the window.
+  st.timer_visible = false
+  scene.update
+  ok !win.visible, 'clearing visibility hides the timer window'
 end
 
 check 'boarding plays the vehicle BGM; disembarking restores the map BGM' do

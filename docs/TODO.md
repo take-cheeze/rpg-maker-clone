@@ -411,9 +411,13 @@ The work below is roughly ordered by the critical path to a walkable game
   the swatch's shading reads as a top-to-bottom gradient on the text the way
   RPG2000 draws it (`Game::MessagePalette` locates each swatch — a 10×2 grid of
   16×16 cells from y = 48, per EasyRPG's layout), falling back to a flat colour
-  only when no windowskin loaded or for an out-of-range index. Auto-positioning
-  the window away from the hero (when not pinned) and the mirrored-face flag are
-  later refinements
+  only when no windowskin loaded or for an out-of-range index. When the message
+  is **not pinned** (`position_fixed` off, the RPG2000 default) the window now
+  relocates to keep clear of the hero — top when the hero sits in the lower half
+  of the screen, bottom otherwise — so talking to something at a map's bottom
+  edge shows the text up top; the exact zone boundary is approximate pending a
+  wine diff, but the direction matches RPG_RT. The mirrored-face flag is a
+  later refinement
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
@@ -422,7 +426,11 @@ The work below is roughly ordered by the critical path to a walkable game
   the message/choice UI (those requests are skipped) — full parallel UI is a
   later refinement
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
-  `Game::State` countdown). The **Tint Screen** (11030) command now drives a
+  `Game::State` countdown) and is now **drawn**: the start operation's
+  "show timer" flag sets a `timer_visible` state (persisted in the save), and
+  while set `Scene::Map` shows a small top-centre window counting down as
+  `M:SS`, independent of whether the timer is still running. The **Tint Screen**
+  (11030) command now drives a
   `Game::Screen` tint state machine on `Game::State`: it interpolates the four
   RPG2000 channels (red/green/blue/saturation, 0..200) toward their target over
   the command's duration (advanced each frame by `Scene::Map`), and the wait
