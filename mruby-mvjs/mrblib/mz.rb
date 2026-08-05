@@ -201,6 +201,8 @@ class MZ
     boot unless @booted
     return if @boot_scene.nil? || @boot_scene.empty?
 
+    sync_input # push RGSS input into MZ's Input before the scene updates
+    sync_touch # push RGSS mouse into MZ's TouchInput before the scene update
     # Advance one MZ frame (SceneManager.update renders the scene through PIXI
     # into the WebGL canvas), then blit that frame on-screen. Guard the update so
     # a per-frame throw is logged, not fatal — one bad frame never aborts the
@@ -231,6 +233,36 @@ class MZ
       $stderr.puts "[MZ-BOOT] booted to #{@boot_scene} through the WebGL renderer"
     end
     create_screen
+  end
+
+  # Push the engine's held keys (RGSS::Input) into MZ's `Input._currentState`
+  # before the scene updates, so SceneManager.update sees them. rmmz's Input has
+  # the same virtual-button names and `_currentState` shape as rmmv, so the key
+  # map and injection are shared with MV (MV.pressed_buttons reads only
+  # RGSS::Input). Mirrors MV#sync_input.
+  def sync_input
+    assigns = MV.pressed_buttons.map { |b| "c['#{b}']=true;" }.join
+    MV::JS.eval(
+      "(function(){ if (typeof Input === 'undefined' || !Input._currentState) " \
+      "return; var c = Input._currentState; for (var k in c) c[k] = false; " \
+      "#{assigns} })();"
+    )
+  rescue StandardError => e
+    $stderr.puts "[MZ] input sync error: #{e.message}"
+  end
+
+  # Push a pointer sample (mouse x/y + left button) into MZ's TouchInput before
+  # the scene updates, so menu/map clicks work. rmmz's TouchInput takes the same
+  # `_newState` edges as rmmv, so the bridge JS is shared with MV. Mirrors
+  # MV#sync_touch.
+  def sync_touch
+    MV::JS.eval(
+      MV.touch_bridge_js(
+        RGSS::Input.mouse_x, RGSS::Input.mouse_y, RGSS::Input.mouse_pressed?
+      )
+    )
+  rescue StandardError => e
+    $stderr.puts "[MZ] touch sync error: #{e.message}"
   end
 
   # The on-screen surface MZ's WebGL frame is presented onto: one full-screen
@@ -352,11 +384,11 @@ class MZ
     return if @warned_runtime_pending
     @warned_runtime_pending = true
     $stderr.puts "[MZ] RPG Maker MZ support is under construction: where the " \
-                 "WebGL backend is available the engine boots to Scene_Boot and " \
-                 "presents frames on-screen (M6.3), but this build/run has no " \
-                 "usable WebGL context (or the boot did not reach a scene), so " \
-                 "there is nothing to present; input is not wired yet either. " \
-                 "The engine/host/IO/input/audio layers are shared with MV. See " \
+                 "WebGL backend is available the engine boots to Scene_Boot, " \
+                 "presents frames on-screen and takes input (M6.3), but this " \
+                 "build/run has no usable WebGL context (or the boot did not " \
+                 "reach a scene), so there is nothing to present. The " \
+                 "engine/host/IO/input/audio layers are shared with MV. See " \
                  "docs/adr/0004-javascript-maker-mv-quickjs.md (M6)."
   end
 end
