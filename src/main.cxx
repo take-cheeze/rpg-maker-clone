@@ -113,6 +113,14 @@ DEFINE_bool(
     "pixels actually moved. Needs no game; run under xvfb in CI as the "
     "render_probe ctest — the one check that can catch \"the effect code runs "
     "and the screen does not change\"");
+DEFINE_bool(
+    rgss_audio_probe,
+    false,
+    "Play a sound through the real mixer, first from a loose file and then out "
+    "of an encrypted archive, and check both advance Audio.bgm_pos "
+    "(RGSS.audio_probe). Exits 0 only if the archived one played too. Needs no "
+    "game; run with SDL_AUDIODRIVER=dummy in CI as the audio_probe ctest, "
+    "which decodes and mixes with no sound card");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -637,12 +645,15 @@ int main(int argc, char** argv) {
   }
   return EXIT_SUCCESS;
 #else
-  // The render probe needs the display and mruby, but no game: it builds its
-  // own viewport/sprite and measures the frame. Run it here, before the
-  // game-class dispatch, and report through the exit code.
-  if (FLAGS_rgss_effect_probe) {
-    const mrb_value ok = mrb_funcall(
-        M, mrb_obj_value(mrb_module_get(M, "RGSS")), "effect_probe", 0);
+  // The probes need the display, the audio backend and mruby, but no game: each
+  // builds what it measures. Run them here, before the game-class dispatch, and
+  // report through the exit code.
+  const char* probe = FLAGS_rgss_effect_probe  ? "effect_probe"
+                      : FLAGS_rgss_audio_probe ? "audio_probe"
+                                               : nullptr;
+  if (probe) {
+    const mrb_value ok =
+        mrb_funcall(M, mrb_obj_value(mrb_module_get(M, "RGSS")), probe, 0);
     CHECK_NO_EXC(M);
     rgss_audio_shutdown();
     gflags::ShutDownCommandLineFlags();

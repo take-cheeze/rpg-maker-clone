@@ -718,9 +718,17 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   real binary by `scripts/rgssad_asset_check.bash`, which packs the test bed
   twice — with and without a title graphic in the archive — and asserts the
   engine finds it only when it is there; a single run would pass just as well if
-  the archive were never consulted. Remaining: **audio**, which plays through a C
-  function table (`include/rgss_audio.hxx`) whose entry points all take a path,
-  so a packed BGM needs that interface to grow memory variants.
+  the archive were never consulted. **Audio comes out of the archive too**: each
+  entry point of the backend's C function table (`include/rgss_audio.hxx`) has
+  grown a `*_play_mem` twin taking the encoded bytes, fed to SDL_mixer through an
+  `SDL_RWops`, with the Ruby side crossing the four kinds' archive folders with
+  the same extensions the disk search uses. The lifetime is the subtle part —
+  `Mix_LoadMUS_RW` *streams* from the RWops, and RGSS replays the BGM after a
+  music effect, which for an archived track means replaying from bytes that must
+  still be there — so the backend owns both buffers and frees them only with the
+  stream they feed. Measured by the `audio_probe` ctest under
+  `SDL_AUDIODRIVER=dummy` (decodes and mixes with no sound card): loose plays,
+  stop reads 0, packed plays.
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
@@ -744,8 +752,8 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
   the native `Graphics.snap_to_bitmap` — see the VX section below.)
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
-  (Asyncify or a per-frame driver), and read **audio** out of the encrypted
-  archive (graphics already come out of it — see Encrypted archives above).
+  (Asyncify or a per-frame driver). (Graphics and audio both come out of the
+  encrypted archive now — see Encrypted archives above.)
 - ✅ **Cross-runtime testing** — an XP project is booted in every runtime it can
   run in, all asserting the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks
   New Game without input): `scripts/rpgxp_boot_check.bash` (the native binary,
@@ -799,8 +807,8 @@ screen (544×416). Full rationale:
 - ✅ **Encrypted archives** — `Game.rgss2a` (v1) and `Game.rgss3a` (v3) load
   through the XP reader (`RPGXP::RGSSAD`) unchanged, so a single-archive release
   boots with no loose files, and — like XP, through the same shared
-  `RGSS.asset_archive` the VX boot shell registers — finds its **graphics** in
-  there as well. Same remaining gap as XP: **audio** is still loose-file only.
+  `RGSS.asset_archive` the VX boot shell registers — finds its **graphics and
+  audio** in there as well, so a packed release needs nothing loose at all.
 - 🚧 **Run the bundled scripts** — a VX/VX Ace game's engine is its script
   bundle, so this is *the* path rather than a later refinement. The host runs
   (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver shared by both

@@ -637,6 +637,119 @@ assert "RGSS::Audio primitives are inert without a backend" do
   assert_nil RGSS::Audio._se_play("nope")
   assert_nil RGSS::Audio._se_stop
   assert_nil RGSS::Audio._update
+  # The same for the memory entry points, and _can_play_mem? reports the
+  # backend's absence so the Ruby layer can say a packed game will be silent
+  # instead of dropping every play without a word.
+  assert_nil RGSS::Audio._bgm_play_mem("nope", "bytes")
+  assert_nil RGSS::Audio._bgs_play_mem("nope", "bytes")
+  assert_nil RGSS::Audio._me_play_mem("nope", "bytes")
+  assert_nil RGSS::Audio._se_play_mem("nope", "bytes")
+  assert_false RGSS::Audio._can_play_mem?
+end
+
+# ---- Playing audio out of an encrypted archive ----------------------------
+#
+# A released game packs its whole Audio/ tree into Game.rgssad / .rgss2a /
+# .rgss3a with nothing loose, so the disk search finds nothing and every track
+# has to come out of the archive. Whether the bytes then reach the mixer is
+# native and unobservable here (this binary installs no audio backend) — that is
+# what the `audio_probe` ctest measures. What is checked here is the Ruby half:
+# which archive names are tried, in what order, and that a loose file still wins.
+assert "RGSS::Audio plays a packed track through RGSS.asset_archive" do
+  wav = "RIFFtestWAVEfixture"
+  archive = FakeArchive.new({ "Audio/BGM/Theme1.ogg" => wav })
+  class << RGSS::Audio
+    alias _bgm_play_mem_orig _bgm_play_mem
+    alias _can_play_mem_orig _can_play_mem?
+    def _bgm_play_mem(name, bytes, volume, pitch)
+      $audio_mem_capture = [name, bytes, volume, pitch]
+      nil
+    end
+    # No backend is installed in this binary, so pretend one is: without it the
+    # loader would (correctly) report that it cannot play packed audio here.
+    def _can_play_mem? = true
+  end
+  RGSS.asset_archive = archive
+  begin
+    $audio_mem_capture = nil
+    RGSS::Audio.bgm_play("Theme1", 80, 90)
+    assert_false $audio_mem_capture.nil?, "expected the packed BGM to play"
+    # The entry name found, not the bare name the game asked for — the folder
+    # and extension are the loader's doing.
+    assert_equal "Audio/BGM/Theme1.ogg", $audio_mem_capture[0]
+    assert_equal wav, $audio_mem_capture[1]
+    assert_equal 80, $audio_mem_capture[2]
+    assert_equal 90, $audio_mem_capture[3]
+    # BGM looks in Audio/BGM before anywhere else.
+    assert_equal "Audio/BGM/Theme1", archive.asked.first
+
+    # A name in no folder of the archive plays nothing at all.
+    $audio_mem_capture = nil
+    RGSS::Audio.bgm_play("NoSuchTrack")
+    assert_true $audio_mem_capture.nil?, "a missing entry must not play"
+  ensure
+    RGSS.asset_archive = nil
+    class << RGSS::Audio
+      alias _bgm_play_mem _bgm_play_mem_orig
+      alias _can_play_mem? _can_play_mem_orig
+    end
+  end
+end
+
+assert "RGSS::Audio prefers a loose file over the archive" do
+  # As with Bitmap: loose shadows packed, which is what RGSS does. The archive
+  # must not even be consulted when a file resolves.
+  path = "test-packed-se.wav"
+  File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
+  archive = FakeArchive.new({ "Audio/SE/test-packed-se.wav" => "packed" })
+  class << RGSS::Audio
+    alias _se_play_orig2 _se_play
+    def _se_play(p, v, pi)
+      $audio_se_capture = [p, v, pi]
+      nil
+    end
+  end
+  RGSS.asset_archive = archive
+  begin
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-packed-se")
+    assert_equal "test-packed-se.wav", $audio_se_capture[0]
+    assert_true archive.asked.empty?, "archive was consulted: #{archive.asked}"
+  ensure
+    RGSS.asset_archive = nil
+    class << RGSS::Audio
+      alias _se_play _se_play_orig2
+    end
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Audio says so when it cannot play packed audio" do
+  # A build with no audio backend must not swallow the play silently: the
+  # loader reports it once through warn_stub. Checked by observing that the
+  # native primitive is never reached while the entry *was* found.
+  archive = FakeArchive.new({ "Audio/SE/Beep.wav" => "RIFFtestWAVEfixture" })
+  RGSS.asset_archive = archive
+  begin
+    RGSS::Audio.se_play("Beep")
+    assert_true archive.asked.include?("Audio/SE/Beep.wav"),
+                "the entry should have been found: #{archive.asked}"
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Audio survives an archive that raises" do
+  broken = Object.new
+  def broken.read(_name)
+    raise "archive is corrupt"
+  end
+  RGSS.asset_archive = broken
+  begin
+    assert_nil RGSS::Audio.bgm_play("Theme1")
+  ensure
+    RGSS.asset_archive = nil
+  end
 end
 
 assert "RGSS::Audio.se_play resolves a name to a real file" do
