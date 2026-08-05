@@ -3142,8 +3142,10 @@ module Game
     # `crit_denom` chance. `accuracy`, when true, rolls each basic attack's
     # to-hit chance so it can miss (see #to_hit). All three are off by default so
     # a seeded fight is exactly reproducible; the live game turns them on.
+    # `first_strike`, when true, gives the party a pre-emptive opening round: the
+    # enemies are caught off guard and skip their turn in round 1 only.
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
-                   criticals = false, accuracy = false)
+                   criticals = false, accuracy = false, first_strike = false)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
@@ -3151,6 +3153,7 @@ module Game
       @variance = variance
       @criticals = criticals
       @accuracy = accuracy
+      @first_strike = first_strike
       @rounds = 0
       @result = nil
       @escaped = false     # set once the party successfully flees (#attempt_escape)
@@ -3414,7 +3417,11 @@ module Game
 
     def refill_queue
       @rounds += 1
-      @queue = turn_order unless @rounds > MAX_ROUNDS
+      return if @rounds > MAX_ROUNDS
+      @queue = turn_order
+      # A pre-emptive first strike catches the enemies off guard: they skip the
+      # opening round, so only the party acts in round 1.
+      @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
     end
 
     # Battlers ordered by agility (highest first); ties keep their listed order.

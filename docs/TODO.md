@@ -390,10 +390,15 @@ The work below is roughly ordered by the critical path to a walkable game
   attacks can also **miss**: `Battle#to_hit` takes the attacker's base hit rate
   (weapon / unarmed 90, a "miss"-flagged enemy 70) and applies EasyRPG's
   agility-ratio adjustment (`100 - (100 - base)*(srcAgi + tgtAgi)/(2*srcAgi)`),
-  so a nimble target dodges more; a missed swing deals no damage. Still to come:
-  enemy-cast infliction, all-target skill/item scopes, per-attribute rate
-  overrides from the Attribute table, the per-terrain backdrop and the RPG2000
-  Game Over graphic.
+  so a nimble target dodges more; a missed swing deals no damage. A skill's
+  **status infliction** is scaled by the target's `state_ranks` susceptibility
+  (RPG2000's A..E table 100/80/60/30/0 percent), so a resistant foe shrugs it
+  off and an immune one never catches it. A **pre-emptive first strike** (the
+  Enemy Encounter's first-strike flag) gives the party a free opening round —
+  the ambushed enemies skip their turn in round 1 and rejoin from round 2. Still
+  to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
+  rate overrides from the Attribute table, the per-terrain backdrop and the
+  RPG2000 Game Over graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM

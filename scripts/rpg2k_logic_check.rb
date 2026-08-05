@@ -4246,6 +4246,37 @@ check 'with accuracy on the to-hit roll both lands and misses over many swings' 
   ok swings.any? { |e| !e[:missed] }, 'and connects sometimes'
 end
 
+# -- Battle first strike (pre-emptive) ----------------------------------------
+
+check 'battle first strike: the party acts while the enemies skip round 1' do
+  hero = combatant('Hero', 40, 0, 5, 100)            # slower than the slime...
+  slime = combatant('Slime', 40, 0, 50, 100)         # ...which would normally go first
+  # 8-arg: variance / criticals / accuracy off, first_strike on.
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, false, true)
+  entries = b.run_round
+  eq 1, entries.length, 'only the party acts in the opening round'
+  eq 'Hero', entries.first[:attacker], 'the hero strikes first despite lower agility'
+  eq 100, hero.hp, 'the ambushed slime never swung'
+  eq 80, slime.hp, 'but the hero connected'
+end
+
+check 'battle first strike: the enemies rejoin from the second round' do
+  hero = combatant('Hero', 8, 0, 5, 100)
+  slime = combatant('Slime', 40, 0, 50, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, false, true)
+  b.run_round                                        # round 1: only the hero
+  eq 100, hero.hp, 'no enemy action in the pre-emptive round'
+  b.run_round                                        # round 2: the slime strikes back
+  ok hero.hp < 100, 'the enemy acts normally from round 2'
+end
+
+check 'battle without first strike: both sides act in the opening round' do
+  hero = combatant('Hero', 8, 0, 5, 100)
+  slime = combatant('Slime', 8, 0, 50, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # no first strike
+  eq 2, b.run_round.length, 'both battlers act in round 1'
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }
