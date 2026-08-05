@@ -984,16 +984,27 @@ module Game
       @charset_index = index
     end
 
-    # The actor's database FaceSet graphic (顔グラフィック), shown on the
-    # save-select screen (the SAVE_TITLE face slots) -- distinct from the message
-    # face configured per Show Message. Defaults to none when the database row
-    # (or edition) does not carry one.
+    # The actor's FaceSet graphic (顔グラフィック), shown on the save-select
+    # screen (the SAVE_TITLE face slots) -- distinct from the message face
+    # configured per Show Message. Comes from the database row until a Change
+    # Actor Face event command (10640) overrides it; defaults to none when the
+    # database row (or edition) does not carry one.
     def faceset_name
+      return @faceset_name if @faceset_name
       @db_row.respond_to?(:faceset_name) ? (@db_row.faceset_name || '') : ''
     end
 
     def faceset_index
+      return @faceset_index if @faceset_index
       @db_row.respond_to?(:faceset_index) ? (@db_row.faceset_index || 0) : 0
+    end
+
+    # Replace the actor's FaceSet graphic (the Change Actor Face event command):
+    # `name` is the file and `index` the cell within it. The override outlives
+    # the database default for the rest of the session.
+    def set_faceset(name, index)
+      @faceset_name = name || ''
+      @faceset_index = index || 0
     end
 
     # Whether the actor knows `skill_id`.
@@ -1993,20 +2004,46 @@ module Game
       @chipset_id = unit.chipset_id
       @lower = unit.lower_layer || []
       @upper = unit.upper_layer || []
+      # Tile Substitution (11750) rewrites, per layer: { old_id => new_id }. Kept
+      # as a lookup applied on read rather than as an edit of the layer arrays,
+      # the way RPG_RT does it — the map data stays pristine, a second
+      # substitution of the same tile replaces (not chains with) the first, and
+      # passability follows the substituted tile because every reader goes
+      # through #lower / #upper. Cleared with the map, so leaving resets it.
+      @substitutions = [{}, {}]
     end
 
     def in_bounds?(x, y)
       x >= 0 && y >= 0 && x < @width && y < @height
     end
 
-    def lower(x, y); tile(@lower, x, y); end
-    def upper(x, y); tile(@upper, x, y); end
+    def lower(x, y); tile(@lower, 0, x, y); end
+    def upper(x, y); tile(@upper, 1, x, y); end
+
+    # Tile Substitution: from now on draw (and treat) every `old_id` tile on
+    # `layer` (0 lower, 1 upper) as `new_id`. Substituting a tile back to itself
+    # drops the rewrite.
+    def substitute_tile(layer, old_id, new_id)
+      table = @substitutions[layer == 0 ? 0 : 1]
+      if old_id == new_id
+        table.delete(old_id)
+      else
+        table[old_id] = new_id
+      end
+    end
+
+    # Whether any tile on either layer is currently rewritten.
+    def substituted?
+      !@substitutions[0].empty? || !@substitutions[1].empty?
+    end
 
     private
 
-    def tile(layer, x, y)
+    def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)
-      layer[y * @width + x]
+      id = layer[y * @width + x]
+      table = @substitutions[index]
+      table.empty? ? id : (table[id] || id)
     end
   end
 
@@ -3585,6 +3622,11 @@ module Game
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
     attr_accessor :current_bgm, :memorized_bgm
+    # Whether the current BGM has wrapped back to its start at least once — the
+    # "BGM played once" conditional-branch test (12010 type 9). Cleared whenever
+    # a new BGM starts; set by Scene::Map, which watches `RGSS::Audio.bgm_pos`
+    # and treats a playback position that jumped backwards as a loop.
+    attr_accessor :bgm_looped
     # Whether the party leader's map sprite is hidden, toggled by the Set
     # Transparent Flag / Change Player Visibility (11310) event command. Defaults
     # off (the hero is shown) and is persisted in the save.
@@ -3643,6 +3685,7 @@ module Game
       @escape_access = false
       @current_bgm = nil
       @memorized_bgm = nil
+      @bgm_looped = false
       @player_transparent = false
       @encounter_rate = nil
       @save_count = 0

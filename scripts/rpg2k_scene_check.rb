@@ -48,6 +48,10 @@ module RGSS
     attr_reader :fill_calls
     def blt(*); end
     def stretch_blt(*); end
+    # Record the tone a Flash Sprite pass asks for, so the flash checks can
+    # assert the colour actually reached the renderer.
+    def tone_blt(src, tone); (@tone_calls ||= []) << [src, tone]; self; end
+    attr_reader :tone_calls
     # Record draw_text / blend_text calls so message-rendering checks can assert
     # which path (flat colour vs windowskin blend) was taken.
     def draw_text(*a); (@draw_calls ||= []) << a; end
@@ -62,6 +66,9 @@ module RGSS
   # A readable colour (the real Color stub above swallows its args); get_pixel
   # returns one of these so tests can inspect the sampled components.
   Color2 = Struct.new(:red, :green, :blue, :alpha)
+
+  # RGSS Tone, as tone_blt (the Flash Sprite pass) takes it.
+  Tone = Struct.new(:red, :green, :blue, :gray)
 
   class Sprite
     attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
@@ -99,6 +106,11 @@ module RGSS
 
   module Audio
     def self.bgm_play(*); end
+    def self.bgm_fade(*); end
+    # Scriptable playback position, so the "BGM played once" watcher can be
+    # driven: a value that jumps backwards is how SDL_mixer reports a loop.
+    class << self; attr_accessor :pos; end
+    def self.bgm_pos; @pos || 0; end
     # Record se_play calls so system-SFX checks can assert which sound fired.
     class << self; attr_accessor :se_calls; end
     def self.se_play(*a); (@se_calls ||= []) << a; end
@@ -265,6 +277,9 @@ class FakeParent
   # Return to Title Screen (12510) hands control back here; record that it fired.
   attr_reader :returned_to_title
   def return_to_title; @returned_to_title = true; end
+  # Open Save Menu (11910) saves through the app; record the calls.
+  def saved; @saved ||= []; end
+  def save_game(state); saved << state; true; end
 end
 
 def fake_parent(db)
@@ -2214,6 +2229,139 @@ check 'Flash Screen drives the flash layer, and refills only on a colour change'
   eq 1, (flash.bitmap.fill_calls || []).length,
      'an unchanged colour does not re-fill the screen-sized layer'
   eq true, flash.opacity <= before, 'the flash decays'
+end
+
+# -- newly-wired event commands -----------------------------------------------
+
+IC2 = Game::Interpreter::Cmd
+
+# A parallel event whose page runs `cmds` every frame, so a check can drive any
+# command through the real scene without pressing buttons.
+def parallel_event(cmds, x = 2, y = 2)
+  pg = page(trigger: 4)
+  pg.event_commands = cmds
+  { 1 => event(x, y, pg) }
+end
+
+check 'Flash Sprite tones the flashed event and decays away' do
+  pg = page(trigger: 4, charset_name: 'Hero')
+  # Flash event 1 white at full power for 2 tenths (12 frames), no wait.
+  pg.event_commands = [ECmd.new(IC2::FLASH_SPRITE, [1, 31, 31, 31, 31, 2, 0])]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  scene.update
+  ev = event_hashes(scene)[1]
+  ok ev[:flash], 'the event carries a running flash'
+  out = scene.instance_variable_get(:@flash_out_buffer)
+  ok out && (out.tone_calls || []).length > 0, 'the flash reached tone_blt'
+  tone = out.tone_calls.last[1]
+  ok tone.red > 0 && tone.gray == 0, "flash tone brightens: #{tone.inspect}"
+end
+
+check 'Flash Sprite on the hero holds a waiting event until it decays' do
+  # 1 tenth (6 frames) with the wait flag set, then a variable bump that only
+  # runs once the flash is over.
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10001, 31, 0, 0, 31, 1, 1]),
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update
+  ok scene.instance_variable_get(:@player_flash), 'the hero is flashing'
+  eq 0, st.variables[5], 'the event is held while the flash runs'
+  10.times { scene.update }
+  ok !scene.instance_variable_get(:@player_flash), 'the flash decayed away'
+  eq 1, st.variables[5], 'the event resumed once the flash finished'
+end
+
+check 'Tile Substitution rewrites the map the scene walks on' do
+  cmds = [ECmd.new(IC2::TILE_SUBSTITUTION, [0, 0, 41])]
+  scene = new_scene(parallel_event(cmds), player: [0, 0])
+  scene.update
+  eq 41, scene.instance_variable_get(:@state).map.lower(3, 3)
+end
+
+check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
+  cmds = [ECmd.new(IC2::ENTER_EXIT_VEHICLE, [])]
+  scene = new_scene(parallel_event(cmds), player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = st.x
+  boat.y = st.y
+  scene.update
+  eq :boat, st.boarded
+  scene.update # the command runs again next loop and steps back off
+  eq nil, st.boarded
+end
+
+check 'Open Main Menu pushes the field menu and resumes when it closes' do
+  # A foreground event, not a parallel one: a background process resumes every
+  # UI wait itself, and Open Main Menu is a UI wait.
+  cmds = [ECmd.new(IC2::OPEN_MAIN_MENU, []), add_var_cmd(6)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # runs the command and raises the :menu wait
+  scene.update # the wait opens the menu
+  eq 1, parent.pushed.length, 'the menu scene was pushed'
+  eq 0, st.variables[6], 'the event is paused while the menu is open'
+  scene.update # back from the menu: the wait is released...
+  scene.update # ...and the next frame runs the rest of the event
+  eq 1, st.variables[6], 'the event resumed after the menu closed'
+end
+
+check 'Open Save Menu saves through the parent and resumes the event' do
+  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(7)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  3.times { scene.update }
+  eq 1, parent.saved.length, 'the save went through the app'
+  eq 1, st.variables[7], 'the event continued afterwards'
+end
+
+check 'Open Save Menu honours a Change Save Access lock' do
+  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(8)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  st.save_access = false
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  3.times { scene.update }
+  eq 0, parent.saved.length, 'saving was disabled, so nothing was written'
+  eq 1, st.variables[8], 'the event still continues past the locked save'
+end
+
+check 'a BGM position that jumps backwards counts as one play-through' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.current_bgm = { name: 'Town', volume: 100, tempo: 100 }
+  RGSS::Audio.pos = 5000
+  scene.update
+  ok !st.bgm_looped, 'still on the first play-through'
+  RGSS::Audio.pos = 10 # SDL_mixer seeks back to the start to loop
+  scene.update
+  ok st.bgm_looped, 'the wrap counted as a completed play-through'
+  RGSS::Audio.pos = 0
+end
+
+check 'the action key marks the event it started for the type-8 branch' do
+  pg = page(trigger: 0)
+  pg.event_commands = [
+    ECmd.new(IC2::CONDITIONAL, [8], indent: 0),
+    ECmd.new(Game::Interpreter::Cmd::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 1),
+    ECmd.new(IC2::END_BRANCH, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6 # face the event
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  3.times { scene.update }
+  ok st.switches[9], 'the decision-key branch ran'
 end
 
 # -- summary ------------------------------------------------------------------

@@ -43,11 +43,15 @@
   Call Event (run a common event / another event's page), Move Event (force a
   move route onto an event or the player), Halt All Movement (cancel every forced
   route), Change / Trade Event Location (snap or swap event/player tiles), Change
-  Map Tileset (swap the map's chipset), Weather Effects (set rain/snow type and
-  strength), Set
-  Transparent Flag (hide/show the hero), Return to Title and Erase
+  Map Tileset (swap the map's chipset), Tile Substitution (rewrite a tile id on a
+  map layer, drawing and passability both), Weather Effects (set rain/snow type
+  and strength), Set
+  Transparent Flag (hide/show the hero), Flash Sprite (pulse a character with a
+  decaying colour), Enter/Exit Vehicle, Open Save Menu / Open Main Menu, Fade Out
+  BGM, Return to Title and Erase
   Event (remove an event from
-  the map). Events start on the action button, on
+  the map) — **every RPG2000 map / common-event command now has a handler**;
+  only the battle-page commands (13110–13410) are still to come. Events start on the action button, on
   player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;

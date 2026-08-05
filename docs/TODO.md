@@ -388,8 +388,19 @@ The work below is roughly ordered by the critical path to a walkable game
   to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
   rate overrides from the Attribute table, the per-terrain backdrop and the
   RPG2000 Game Over graphic.
-  The remaining event commands (tile substitution and other native-render
-  effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
+  **Every RPG2000 map / common-event command now has a handler.** The last gaps
+  closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
+  (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
+  (11520), Play Movie (11560), Tile Substitution (11750) and Open Save Menu /
+  Open Main Menu (11910 / 11950), together with the last two Conditional Branch
+  tests (the decision key started this event; the BGM has played through once).
+  Three opcodes that never matched liblcf's `Code` enum were corrected in the
+  same pass — Change Equipment is 10450 (10440 is Change Skills) and Game Over is
+  12420 — so those commands are recognised in real game data at all. Still TODO
+  here: **battle-page event commands** (13110–13410 and the `_B` conditional
+  markers), which need a battle-event interpreter the battle scene does not have
+  yet, and video playback for Play Movie (no decoder is linked in; the request is
+  logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
   wait flag (per-cell zoom / tone and target-only flashes are approximations for
