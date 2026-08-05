@@ -163,7 +163,24 @@ The work below is roughly ordered by the critical path to a walkable game
   move type or custom route (paced by move frequency) and keeps events off each
   other, the player and impassable tiles. Covered by
   `scripts/rpg2k_logic_check.rb` (pure logic) and `scripts/rpg2k_scene_check.rb`
-  (scene integration under host Ruby)
+  (scene integration under host Ruby).
+  **Jumps really jump now.** `Begin Jump` / `End Jump` were both treated as
+  waits, so the moves between them stepped one tile at a time — three route
+  commands where RPG_RT runs one, testing every tile on the way when a jump is
+  the thing that clears them. `Game::MoveRoute#do_jump` ports EasyRPG's
+  `BeginMoveRouteJump`: the enclosed moves contribute a tile of offset each
+  without stepping, faces and turns only steer what the next move contributes,
+  and `Game::Character#jump` lands the character on the summed destination in
+  one move, facing the jump's dominant axis (a tie going vertical) rather than
+  its last move. Only the landing is tested — a new `can_land?` on the movement
+  world (`Scene::Map#char_can_land?`), because the genuine runtime skips the
+  "may I leave this tile" half of its check while jumping. Nepheshel has 625 jump
+  blocks, every one enclosing a runtime-directed move (484 away from the hero,
+  188 toward it, 133 forward) rather than a literal direction, and 141 enclose
+  more than one, so those now clear the tile they hop over. Remaining: the visual
+  arc — RPG_RT lifts the sprite along the hop and this build snaps it to the
+  landing tile, which needs the same per-frame sprite offset the walk
+  interpolation already has
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented

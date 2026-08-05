@@ -16,7 +16,9 @@
 - Events move on their own: each event walks per its page's movement type
   (random, vertical/horizontal pacing, approaching or fleeing the hero) or runs a
   custom move route, paced by its move frequency and blocked by terrain, the
-  player and other events
+  player and other events. A route's **Begin Jump / End Jump** block hops to the
+  destination its enclosed moves add up to, in one move and testing only where it
+  lands — so a jump clears what it passes over, the way the real runtime's does
 - Tiles are blitted from the map's real ChipSet graphic — lower/upper chips,
   water and terrain autotiles assembled from quarter-tiles, and animated tiles —
   falling back to colour blocks only when the chipset image is missing
