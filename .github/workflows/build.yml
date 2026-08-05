@@ -305,16 +305,16 @@ jobs:
 
           # The same guard for the RPG Maker XP runtime: the XP checks above run
           # mruby-rpgxp's sources under CRuby, so only booting the real binary
-          # catches mruby/CRuby divergence. Each bed boots twice: once with no
-          # flags, where the RGSS script host — the default path — runs the
-          # game's own scripts and logs `[RPGXP-SCRIPTS]`, and once with
-          # `--rpgxp_new_game`, which drives the built-in flow past its title
-          # into the start map and logs `[RPGXP-MAP]`. Two beds: the
-          # editor-shaped OpenGame test bed and the *released* Pray for You
-          # (Game.rgssad only, several maps), on displays 112 and 113 — one per
-          # game (see the reserved server-num map above). See
+          # catches mruby/CRuby divergence. Each bed runs *its own* engine —
+          # there is no reimplemented flow any more (ADR 0030): the check taps
+          # confirm on the game's own title screen, logs every scene it reaches
+          # as `[RPGXP-SCRIPTS]`/`[RPGXP-HOST-SCENE]`, and walks the party on the
+          # editor bed's map (`[RPGXP-HOST-MOVE]`). Two beds: the editor-shaped
+          # OpenGame test bed and the *released* Pray for You (Game.rgssad only,
+          # several maps), on displays 112 and 113 — one per game (see the
+          # reserved server-num map above). See
           # docs/adr/0025-rpgxp-cross-runtime-testing.md and
-          # docs/adr/0029-rgss-script-host-by-default.md.
+          # docs/adr/0030-rgss-only-the-games-own-engine.md.
           - name: RPG XP real-game boot smoke test
             run: ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112
 
@@ -419,6 +419,24 @@ jobs:
             continue-on-error: true
             env:
               MZ_MODE: battle
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
+          # Reaching Scene_Battle is a much smaller claim than combat working,
+          # and the gap between them is where MZ's battles were found frozen:
+          # the bed's enemy had an empty `battlerName`, so `Sprite_Enemy` never
+          # loaded a bitmap and `updateFrame` threw on every frame of every
+          # battle, taking out the rest of Scene_Battle.update. The smoke above
+          # stayed green throughout, because the scene is entered before the
+          # first broken update. This mode plays the fight out — confirm is
+          # tapped through the party/actor/target windows until an enemy takes
+          # damage and the victory sequence hands back to the map — and asserts
+          # `damaged=true ended=true`. Longer timeout: several turns of software
+          # GL. See ADR 0004 M6.3i.
+          - name: MZ battle-play smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: battle_play
+              MZ_TIMEOUT_MS: "120000"
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
           # Run the battle smoke against the real bed (Lunatic-Core): it ships

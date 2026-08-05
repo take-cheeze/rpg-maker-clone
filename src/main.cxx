@@ -55,25 +55,14 @@ DEFINE_bool(
     "Save<N>.lsd (see scripts/compare-nepheshel-save-wine.bash) instead of "
     "being driven there by counting key presses");
 DEFINE_bool(
-    rpgxp_new_game,
-    false,
-    "For RPG Maker XP: once the title screen appears, auto-select New Game so "
-    "the game advances into its start map without input, and log the map it "
-    "reaches as [RPGXP-MAP]. Used to smoke-test the RGSS path headlessly (in "
-    "CI, in the browser build and beside the genuine RGSS runtime under wine; "
-    "see scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash). "
-    "It is the *built-in* title screen this drives, so the flag also runs the "
-    "built-in reimplemented flow in place of the default RGSS script host "
-    "(equivalent to --norgss_script_host)");
-DEFINE_bool(
     rgss_script_host,
     true,
     "For the RGSS makers (XP / VX / VX Ace): run the project's own bundled "
     "scripts (Data/Scripts.rxdata, Scripts.rvdata[2]) the way RGSS104E.dll "
-    "does. On by default; --norgss_script_host boots the built-in "
-    "reimplemented "
-    "title/map flow instead, which is also what a project shipping no scripts "
-    "and a script host that fails to boot fall back to. The RGSS_SCRIPT_HOST "
+    "does. On by default, and the only way a game runs: there is no second "
+    "engine, so --norgss_script_host merely loads the project and reports that "
+    "it will not run it (docs/adr/0030-rgss-only-the-games-own-engine.md). The "
+    "RGSS_SCRIPT_HOST "
     "environment variable seeds this flag (set it to 0/false/off/no to opt "
     "out); an explicit --rgss_script_host on the command line wins over it. "
     "See docs/adr/0029-rgss-script-host-by-default.md");
@@ -83,9 +72,19 @@ DEFINE_bool(
     "For the RGSS makers under the script host: tap the confirm key on the "
     "game's own title screen once a second, so a headless run gets into the "
     "game without a keyboard, and log each scene the game reaches as "
-    "[RPGXP-HOST-SCENE]. The script-host twin of --rpgxp_new_game, which "
-    "drives "
-    "the *built-in* title screen (and with it the built-in flow) instead. Used "
+    "[RPGXP-HOST-SCENE]. A game shows its own title screen, so this is how a "
+    "headless run gets past it. Used by scripts/rpgxp_boot_check.bash");
+DEFINE_bool(
+    rgss_host_move_test,
+    false,
+    "For the RGSS makers under the script host: once the game's own map scene "
+    "is "
+    "up, hold each direction in turn and log where the party started and ended "
+    "as [RPGXP-HOST-MOVE] (implies --rgss_host_new_game to reach the map). The "
+    "rung above reaching the map: a game whose own Game_Player reads "
+    "Input.dir4 "
+    "and steps across its own passability is being played, not just drawn. "
+    "Used "
     "by scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
     mv_new_game,
@@ -189,6 +188,16 @@ DEFINE_int32(
     "(implies --mz_new_game to reach the map) and log whether Scene_Battle was "
     "reached, so a headless run confirms the combat entry path works. 0 "
     "disables. Used in CI");
+DEFINE_bool(
+    mz_battle_play,
+    false,
+    "For RPG Maker MZ: once in the battle --mz_battle_test starts, play it out "
+    "— tap confirm through the party/actor command windows and the target "
+    "selection until the enemy's HP falls and the battle hands back to the "
+    "map — and log whether the fight actually resolved. Reaching Scene_Battle "
+    "is a much smaller claim than combat working; this covers what lies "
+    "between. Implies --mz_battle_test (troop 1 unless one is named). Used in "
+    "CI");
 DEFINE_string(
     mz_screenshot,
     "",
@@ -793,9 +802,6 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_CONTINUE"),
                 mrb_bool_value(FLAGS_rpg2k_continue));
-  mrb_const_set(M, mrb_obj_value(M->object_class),
-                mrb_intern_lit(M, "RPGXP_NEW_GAME"),
-                mrb_bool_value(FLAGS_rpgxp_new_game));
   // Whether the RGSS script host runs the project's own scripts (the default)
   // or the built-in flow does. Resolved from --rgss_script_host and the
   // RGSS_SCRIPT_HOST environment variable above, because the Ruby side cannot
@@ -805,9 +811,15 @@ int main(int argc, char** argv) {
                 mrb_bool_value(FLAGS_rgss_script_host));
   // Whether the script host taps confirm on the game's own title screen (see
   // RPGXP::ScriptHost.watch_frame).
+  // The move probe implies the confirm tap: it has to get onto a map first,
+  // which means getting off the game's own title screen.
+  mrb_const_set(
+      M, mrb_obj_value(M->object_class),
+      mrb_intern_lit(M, "RGSS_HOST_NEW_GAME"),
+      mrb_bool_value(FLAGS_rgss_host_new_game || FLAGS_rgss_host_move_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
-                mrb_intern_lit(M, "RGSS_HOST_NEW_GAME"),
-                mrb_bool_value(FLAGS_rgss_host_new_game));
+                mrb_intern_lit(M, "RGSS_HOST_MOVE_TEST"),
+                mrb_bool_value(FLAGS_rgss_host_move_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));
@@ -856,6 +868,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_BATTLE_TEST"),
                 mrb_fixnum_value(FLAGS_mz_battle_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_BATTLE_PLAY"),
+                mrb_bool_value(FLAGS_mz_battle_play));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mz_screenshot.c_str()));

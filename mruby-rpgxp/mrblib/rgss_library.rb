@@ -30,7 +30,8 @@
 #     copy would give two Ruby objects one buffer to free.
 #   * **A missing asset yields a blank 32x32 bitmap and a warning**, where RGSS
 #     raises. A game whose RTP is not installed must not die on its first
-#     graphic — the built-in flow already draws placeholders for the same reason.
+#     graphic, and with no second engine to fall back to (ADR 0030) a raise here
+#     would end the run.
 #   * **Fully-qualified `RGSS::` names**, so the file also loads under the CRuby
 #     harness (scripts/rpgxp_script_host_check.rb), which shims those classes.
 #   * Integer conversions where RGSS relies on Ruby's implicit Float→Integer in

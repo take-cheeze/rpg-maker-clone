@@ -80,6 +80,18 @@ class MZ
   # a headless software-GL frame is slower than 60Hz.
   BATTLE_PROBE_FRAMES = 240
 
+  # Frames the battle-play probe drives the fight for before giving up. A turn
+  # on software GL costs far more wall clock than it does frames, and the bed's
+  # slime takes several of them, so this is generous — it is a give-up bound,
+  # not an expected duration (the probe reports the moment the battle ends).
+  BATTLE_PLAY_FRAMES = 1200
+
+  # How often the battle-play probe taps confirm, in frames. rmmz's `Input`
+  # reports a *trigger* on the edge, so the key has to be released between
+  # taps; and the taps have to be slow enough that a window which is not ready
+  # yet (mid-animation, mid-message) does not swallow them all.
+  BATTLE_PLAY_TAP_PERIOD = 12
+
   # The files that unambiguously mark a directory as an RPG Maker MZ project:
   # the core engine script and the system database. MV uses `js/rpg_core.js`
   # instead, so the two never collide.
@@ -383,6 +395,48 @@ class MZ
       "{code:0,indent:0,parameters:[]}], 0); })();"
     end
 
+    # JS that reads the fight back as
+    # "hp=<n> max=<n> phase=<s> alive=<n>": the troop's total remaining HP and
+    # its total max HP, `BattleManager`'s phase, and how many enemies are still
+    # standing. Read once a frame by #maybe_battle_play_test, which needs only
+    # to watch the total fall — the damage formula's exact numbers are the
+    # game's business, not the smoke test's.
+    def battle_state_js
+      "(function(){ if (typeof $gameTroop === 'undefined' || !$gameTroop || " \
+      "!$gameTroop.members) return 'hp=-1 max=-1 alive=-1 phase= win= input=0'; " \
+      "var m = $gameTroop.members(); var hp = 0, mx = 0, alive = 0; " \
+      "for (var i = 0; i < m.length; i++) { hp += m[i].hp; mx += m[i].mhp; " \
+      "if (m[i].isAlive()) alive++; } " \
+      "var bm = (typeof BattleManager !== 'undefined') ? BattleManager : null; " \
+      "var p = bm ? (bm._phase || '') : ''; " \
+      "var inp = (bm && bm.isInputting && bm.isInputting()) ? 1 : 0; " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; var w = ''; if (s) { " \
+      "if (s._partyCommandWindow && s._partyCommandWindow.active) w = 'party'; " \
+      "else if (s._actorCommandWindow && s._actorCommandWindow.active) " \
+      "w = 'actor'; " \
+      "else if (s._enemyWindow && s._enemyWindow.active) w = 'enemy'; " \
+      "else if (s._skillWindow && s._skillWindow.active) w = 'skill'; " \
+      "else if (s._itemWindow && s._itemWindow.active) w = 'item'; } " \
+      "var msg = (typeof $gameMessage !== 'undefined' && $gameMessage && " \
+      "$gameMessage.isBusy()) ? 1 : 0; " \
+      "var mo = (s && s._messageWindow) ? s._messageWindow.openness : -1; " \
+      "var busy = (bm && bm.isBusy && bm.isBusy()) ? 1 : 0; " \
+      "return 'hp=' + hp + ' max=' + mx + ' alive=' + alive + ' phase=' + p + " \
+      "' win=' + w + ' input=' + inp + ' msg=' + msg + ' mopen=' + mo + " \
+      "' busy=' + busy; })();"
+    end
+
+    # Pull one `key=value` field out of a probe's state string as an Integer,
+    # or nil when the field is absent. The state strings are built above, so
+    # this is parsing our own format, not the engine's.
+    def state_field(state, key)
+      part = state.to_s.split("#{key}=")[1]
+      return nil if part.nil?
+
+      part.split(" ")[0].to_i
+    end
+
     # Quote a Ruby string as a single-quoted JavaScript string literal, escaping
     # what would otherwise end or reopen it (backslash, quote, newline). The
     # probe text is ASCII at every call site, so nothing else needs encoding.
@@ -466,6 +520,7 @@ class MZ
     log_scene_transition # trace progress (Scene_Boot -> Scene_Title -> Map)
     maybe_new_game # CI: auto-advance past the title to the first map
     maybe_battle_test # CI: start a battle from the map and log Scene_Battle
+    maybe_battle_play_test # CI: play that battle out and log the fight resolved
     maybe_move_test # CI: hold a direction on the map and log that the player moved
     maybe_message_test # CI: show a message on the map and log the window opened
     maybe_animation_test # CI: play an animation on the player and log it drew
@@ -754,6 +809,85 @@ class MZ
     $stderr.puts "[MZ] message test error: #{e.message}"
   end
 
+  # Whether --mz_battle_play was requested (a launcher constant set by
+  # main.cxx). Implies --mz_battle_test, since it plays out the fight that
+  # starts.
+  def battle_play_requested?
+    (begin
+      MZ_BATTLE_PLAY
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_battle_play is set (CI), once `Scene_Battle` is up, *play* the
+  # fight: tap confirm until the enemy's HP falls and the battle ends.
+  #
+  # The existing battle probe proves combat can be **entered**, which is a
+  # different and much smaller claim than combat working. Everything between
+  # the two is untested by it: `Window_PartyCommand` taking Fight,
+  # `Window_ActorCommand` taking Attack, the enemy-target window,
+  # `BattleManager`'s turn order, the action's damage formula reaching an
+  # enemy's HP, the battle log, and the victory sequence that hands the scene
+  # back to the map.
+  #
+  # It drives that with real key presses rather than by calling the scene's
+  # methods, unlike the menu probe: the command windows *are* what is being
+  # tested here, so reaching past them into `BattleManager` would test the part
+  # that was already working. Confirm is tapped rather than held because rmmz
+  # reports a trigger on the key's edge, so a held key advances one window and
+  # then nothing.
+  #
+  # The report is one-shot, and it lands the moment the battle ends rather than
+  # at the frame bound, so a fight that finishes early does not stall the run.
+  def maybe_battle_play_test
+    return if @btl_play_done
+    return unless battle_play_requested?
+    return unless current_scene == "Scene_Battle" || @btl_play_started
+
+    @btl_play_frame ||= 0
+    state = MV::JS.eval(self.class.battle_state_js)
+    hp = MZ.state_field(state, "hp")
+    alive = MZ.state_field(state, "alive")
+
+    if @btl_play_frame.zero?
+      @btl_play_started = true
+      @btl_play_hp0 = hp
+      $stderr.puts "[MZ] auto battle play: troop hp #{@btl_play_hp0}"
+    end
+    @btl_play_frame += 1
+    @btl_play_damaged ||= !@btl_play_hp0.nil? && !hp.nil? &&
+                          @btl_play_hp0 > 0 && hp < @btl_play_hp0
+    @btl_play_hp = hp
+    @btl_play_alive = alive
+    @btl_play_state = state
+
+    # Trace on change rather than on a timer: a fight that is progressing prints
+    # a handful of lines (the phase and the active window move), and one that is
+    # wedged prints nothing after the first — which is the diagnosis.
+    if state != @btl_play_last_state
+      @btl_play_last_state = state
+      $stderr.puts "[MZ-BTLPLAY] state #{state}"
+    end
+
+    # Tap confirm: one frame down per period, released the rest of the time.
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.press(RGSS::Input::C) if (@btl_play_frame % BATTLE_PLAY_TAP_PERIOD).zero?
+
+    # The battle is over when the scene has handed back to the map.
+    ended = @btl_play_started && current_scene == "Scene_Map"
+    return if !ended && @btl_play_frame < BATTLE_PLAY_FRAMES
+
+    @btl_play_done = true
+    RGSS::Input.release(RGSS::Input::C)
+    $stderr.puts "[MZ-BTLPLAY] hp_before=#{@btl_play_hp0} hp_after=#{@btl_play_hp} " \
+                 "alive=#{@btl_play_alive} damaged=#{@btl_play_damaged ? true : false} " \
+                 "ended=#{ended ? true : false} scene=#{current_scene} " \
+                 "last=[#{@btl_play_state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] battle play error: #{e.message}"
+  end
+
   # Whether --mz_animation_test was requested (a launcher constant set by
   # main.cxx). Implies New Game, since the probe plays on the map.
   def animation_test_requested?
@@ -911,7 +1045,12 @@ class MZ
     rescue StandardError
       0
     end
-    v.is_a?(Integer) ? v : 0
+    troop = v.is_a?(Integer) ? v : 0
+    # --mz_battle_play is about the fight, not about which troop it is against,
+    # so it implies the entry probe with the first troop unless one was named.
+    return 1 if troop.zero? && battle_play_requested?
+
+    troop
   end
 
   # When --mz_battle_test=<troopId> is set (CI), start a battle against that

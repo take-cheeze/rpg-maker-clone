@@ -123,112 +123,59 @@
 
 ### RPG Maker XP
 
-- Alongside RPG Maker 2000/2003 (LCF) projects, an **RPG Maker XP** project
-  (a folder with `Game.ini` and a `Data/*.rxdata` database) now loads and boots.
-  XP stores its whole database as Ruby `Marshal` dumps, which load straight
+- An **RPG Maker XP** project (a folder with `Game.ini` and a `Data/*.rxdata`
+  database) runs **its own engine**: the ~90 Ruby sections inside
+  `Data/Scripts.rxdata` are evaluated the way `RGSS104E.dll` evaluates them, so
+  the game's own title screen, map, menus, battle system and any community
+  scripts are what you play. There is no second, reimplemented engine — a
+  reimplementation can only ever reproduce the *default* scripts, and every game
+  worth running customises them (see
+  [`docs/adr/0030-rgss-only-the-games-own-engine.md`](docs/adr/0030-rgss-only-the-games-own-engine.md))
+- XP stores its whole database as Ruby `Marshal` dumps, which load straight
   through the bundled marshal reader into a typed `RPG::*` schema
   (`mruby-rpgxp`); the RGSS value types (`Table`, `Color`, `Tone`, `Rect`) are
   the same native classes the rest of the engine already uses
-- The engine reads `Game.ini`, shows the **title screen** (the game's title
-  graphic behind a New Game / Continue / Shutdown window, with the database's
-  title BGM and cursor/decision sound effects) and, on **New Game**, builds the
-  party and enters a walkable **map**: the three XP tile layers are drawn from
-  the project's real tileset — regular tiles blitted from the tileset graphic,
-  autotiles assembled from their quads and animated, and priority tiles sorted
-  above the characters — with the party leader and every event drawn from their
-  `Graphics/Characters` sheets (or the tile a page uses as its graphic), stacked
-  by screen row the way RMXP sorts them, and movement using the tileset's
-  passage flags with a follow camera
+- The **RGSS class library** those scripts run against is this engine: `Bitmap`,
+  `Sprite`, `Viewport`, `Window`, `Plane`, `Tilemap`, `Graphics`, `Input`,
+  `Audio` and the value types are native (`mruby-rgss`), and the Ruby classes the
+  player supplies rather than the project — **`RPG::Sprite`** (the battler and
+  character sprite base: whiten / appear / escape / collapse, the floating damage
+  pop-up, blinking, and `RPG::Animation` playback with each frame's sound and
+  flash), **`RPG::Weather`** and **`RPG::Cache`** — are supplied too
+  (`mruby-rpgxp/mrblib/rgss_library.rb`). The gap between what a game calls and
+  what exists is tracked in
+  [`docs/rpgxp-rgss-api-gap.md`](docs/rpgxp-rgss-api-gap.md)
+- The scripts own their whole blocking main loop (`$scene.main while $scene`),
+  which is driven one frame per callback through an mruby `Fiber`, so the
+  browser build keeps its frame budget without Asyncify
+  ([`docs/adr/0023-rpgxp-script-host-frame-driver.md`](docs/adr/0023-rpgxp-script-host-frame-driver.md))
 - Both an **unpacked** project (a loose `Data/` folder) and an **encrypted
   archive** load: a packed release that ships only a `Game.rgssad` (RPG Maker XP;
   RPG Maker VX's same-format `Game.rgss2a` too) or a VX Ace `Game.rgss3a` is
-  decrypted transparently, so the database loads with no loose files present.
-  Loose files, when present, shadow the archive (as in RGSS)
-- The window is sized to XP's native 640×480 automatically.
-- The **RGSS script host** is how a project boots by default: the game's own
-  bundled scripts (`Data/Scripts.rxdata`) run unmodified, the way `RGSS104E.dll`
-  runs them — the host decompresses the ~90 Ruby sections, supplies the
-  `load_data`/`save_data` built-ins and evaluates each at the top level (via
-  `mruby-eval`), then drives their blocking main loop one frame per callback
-  through a Fiber, so the game's own title, menus, battle system and any
-  community scripts are what run. The classes the player supplies and no project
-  ships are supplied too — **`RPG::Sprite`** (the battler/character sprite base:
-  the whiten/appear/escape/collapse transitions, the floating damage pop-up,
-  blinking, and animation playback with each frame's sound and flash),
-  **`RPG::Weather`** and **`RPG::Cache`** — which is what a game's own
-  `class Sprite_Character < RPG::Sprite` needs to exist at all. The
-  reimplemented flow above stays as the
-  fallback — for a project that ships no scripts, if the host fails to boot, and
-  on demand with `--norgss_script_host` (or `RGSS_SCRIPT_HOST=0`); see
-  [`docs/adr/0029-rgss-script-host-by-default.md`](docs/adr/0029-rgss-script-host-by-default.md)
-  and [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
-  (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
-- An XP project is exercised **against the genuine runtime as well as our own**,
-  both reaching the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks New Game
-  without input, and with it the built-in flow): `scripts/rpgxp_boot_check.bash`
-  boots the native binary headlessly (in CI) — once that way and once with no
-  flags, where the script host runs the game's own scripts and logs
-  `[RPGXP-SCRIPTS]`, so both boot paths are covered — and
-  `scripts/compare-rpgxp-wine.bash` diffs our frames
-  against the **genuine RGSS runtime**, booting the project's own
-  `Game.exe`/`RGSS104E.dll` under wine on the same key script (the XP twin of the
-  RPG2000 comparison; install the RTP into that wine prefix with
-  `scripts/rtp_xp_install.bash` and both runtimes read the same assets). A
-  browser pass ran alongside these for a while and found two page-only bugs — an
-  XP project rendering on a 320x240 screen with its title window off-canvas, and
-  the loader panel staying on top of the running game; it has since been dropped
-  because the headless browser it needed dominated the dev shell's download. The
-  wine pass found four more bugs that had kept an
-  XP project from drawing its RTP art at all: the XP RTP registry key was never
-  read, `.jpg` was missing from the asset search, truecolour images came out with
-  red and blue exchanged, and an RGBA image loaded opaque drew garbage. With those
-  fixed (RPG2000 rendering byte-identical) the title screen went from 74% of its
-  pixels differing from the genuine runtime to 15%; see
+  decrypted transparently, so the database *and* the graphics and audio a game
+  asks for load with no loose files present. Loose files, when present, shadow
+  the archive (as in RGSS)
+- The window is sized to XP's native 640×480 automatically
+- **CI plays both beds, headlessly**: `scripts/rpgxp_boot_check.bash` boots the
+  editor-shaped OpenGame test bed and the *released* **Pray for You**
+  (`Game.ini` + `Game.rgssad`, nothing loose — 69 maps, 1107 event pages, 15,797
+  event commands), taps the confirm key on each game's own title screen, and logs
+  every scene the game reaches as `[RPGXP-HOST-SCENE]`. Pray for You walks its
+  own `Scene_logo → Scene_Title → Scene_Map`; the test bed is then made to walk
+  its party (`[RPGXP-HOST-MOVE]`), which is what proves a game's own
+  `Game_Player` is reading input and stepping across its own passability.
+  `scripts/rpgxp_script_host_check.rb` covers the same ground under CRuby —
+  every section of both bundles evaluates, and the RGSS standard library behaves
+- `scripts/compare-rpgxp-wine.bash` diffs our frames against the **genuine RGSS
+  runtime**, booting the project's own `Game.exe`/`RGSS104E.dll` under wine on
+  the same key script (install the RTP into that prefix with
+  `scripts/rtp_xp_install.bash` so both runtimes read the same assets). It found
+  four bugs that had kept an XP project from drawing its RTP art at all: the XP
+  RTP registry key was never read, `.jpg` was missing from the asset search,
+  truecolour images came out with red and blue exchanged, and an RGBA image
+  loaded opaque drew garbage. See
   [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](docs/adr/0025-rpgxp-cross-runtime-testing.md)
-- Those checks run against a **released game**, not only an editor project:
-  *Pray for You* (`scripts/download-prayforyou.bash`) ships as `Game.ini` +
-  `Game.rgssad` with nothing loose on disk — the shape most XP games are
-  distributed in — with 69 maps, 1107 event pages, 15,797 event commands and a
-  Japanese `RGSS103J.dll` to compare against. It boots in CI beside the editor
-  bed, and driving it exposed three things a one-map project cannot: a
-  **Transfer Player** left the previous map's ground on screen (the `Tilemap`
-  was never rebuilt), **Change Screen Color Tone** was ignored (now applied to
-  the screen-sized viewport that holds the map, like RMXP's `Spriteset_Map`),
-  and the message box was full-width at the bottom instead of RMXP's inset
-  480×160. On the same map frame that took the difference from 97% of pixels to
-  25%, the rest being the reference's own missing font. Playing it further added
-  **Wait for Move's Completion** (210), **Set Event Location** (202) and
-  **Change Transparent Flag** (208), and turned up ten unplayable music tracks —
-  its `Audio/BGM` mixes `.MID` with `.mid`, which only a case-sensitive
-  filesystem tells apart. See
-  [`docs/adr/0027-rpgxp-released-game-parity.md`](docs/adr/0027-rpgxp-released-game-parity.md)
-- **Pictures** are drawn: Show / Move / Rotate / Change Tone / Erase Picture
-  (231–235), a `Game::Picture` per slot mirroring RMXP's `Game_Picture` — origin,
-  position, zoom, opacity, blend type, tone and angle, eased with RMXP's own
-  weighted average — layered in their own viewport above the map and below the
-  windows, and surviving a Transfer Player. Message boxes also draw the
-  windowskin's blinking **pause arrow** while they hold text, as the genuine
-  runtime does. `STEPS_SPEC` lets the wine comparison drive a game's opening
-  cutscene instead of only walking around its start map
-- The **screen effects** run too: Prepare / Execute **Transition** (221/222)
-  holds the screen on a snapshot so a teleport or map change happens behind it,
-  then dissolves the still away — spread over real frames rather than blocking
-  in `Graphics.transition`, so the browser build's frame callback keeps its
-  budget — and **Screen Flash** / **Screen Shake** (224/225) carry RMXP's own
-  maths (an alpha that reaches zero exactly on the duration, a shake that
-  reverses past twice its power and settles back on centre) into the map
-  viewport's colour overlay and scroll origin
-- **Scroll Map** (203) pushes the camera off the party leader for a cutscene,
-  clamped to the map, and **Show Animation** (207) plays an `RPG::Animation` on
-  the hero or any event — its cells blitted from the 192×192 grid of the sheet
-  with each cell's offset, zoom, angle, mirror, opacity and blend, four game
-  frames apiece, anchored over / on / under the target or fixed to the screen,
-  with the per-frame timings' sound effect and flash
-- **Script** (355) runs a game's inline Ruby: the command and its continuation
-  lines are joined and evaluated at the top level, with `$game_switches` and
-  `$game_variables` bound to the same switches and variables the event commands
-  write, and a raising script reported rather than swallowed. That leaves the XP
-  map scene with a handler for **every** event command a real game uses
+  and [`docs/adr/0027-rpgxp-released-game-parity.md`](docs/adr/0027-rpgxp-released-game-parity.md)
 
 ### RPG Maker VX / VX Ace
 
@@ -304,7 +251,16 @@
   `$gameMessage` opens `Window_Message` over the map, `Scene_Map`'s own
   `callMenu` reaches `Scene_Menu`, a save round-trips through the real
   `DataManager` and a Battle Processing command run through the map interpreter
-  lands in `Scene_Battle`. MZ's save path is a **promise chain** (JsonEx → pako
+  lands in `Scene_Battle` — and, in `battle_play` mode, that fight is **played
+  out**: confirm is tapped through the party, actor and target windows until the
+  enemy's HP reaches zero and the victory sequence hands back to the map. That
+  mode was written because reaching `Scene_Battle` is true the moment the scene
+  is pushed, before its first update, and it immediately showed that MZ's
+  battles had never actually run — the test bed's enemy had an empty
+  `battlerName`, which is the one value `Sprite_Enemy` treats as "nothing
+  changed", so its bitmap stayed undefined and `updateFrame` threw on every
+  frame inside `Scene_Battle.update`, freezing the fight before the first
+  window opened. MZ's save path is a **promise chain** (JsonEx → pako
   → localforage) rather than MV's synchronous call, so the probe starts it and
   polls until it settles, then re-enters the map the way `Scene_Load` does
 - All of that is **on screen**, not just in the scene graph: the title and its
@@ -327,8 +283,9 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `menu`, `animation`, `save` or `battle`, each
-  with its own success line so a probe that merely ran cannot pass; `ruby
+  key moves the player), `message`, `menu`, `animation`, `save`, `battle` or
+  `battle_play`, each with its own success line so a probe that merely ran
+  cannot pass; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 - Those assertions all read the engine's **log**, which is how the empty frames

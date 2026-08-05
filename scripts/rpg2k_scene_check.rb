@@ -3350,6 +3350,14 @@ check 'the action banner announces the states an action landed and lifted' do
                recover_hp: 0, recover_mp: 0, cured: [3], target_ally: true })
   ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
       .include?('Hero is cured.'), 'the recovery sentence'
+
+  # So does a state a blow shook off (`woke`, a state's release_by_attack) --
+  # the state lifting is the same event however it happened.
+  scene.send(:show_battle_action,
+             { attacker: 'Hero', target: 'Slime', damage: 9,
+               woke: [3], target_ally: false })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Slime is cured.'), 'a state shaken off by a blow reads the same'
 end
 
 check 'being downed is announced with the death state own sentence' do

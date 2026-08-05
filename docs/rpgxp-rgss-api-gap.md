@@ -6,10 +6,11 @@ project's own `Data/Scripts.rxdata` unmodified. The scripts assume the engine
 it as `mruby-rgss` natively, plus the three Ruby classes the player also ships
 (`mruby-rpgxp/mrblib/rgss_library.rb` — see gap 0). This document tracks **what
 the stock scripts call** versus **what the engine provides**. The gaps that
-blocked a default-on host have closed and it is now the default boot path
-([ADR 0029](adr/0029-rgss-script-host-by-default.md)); what remains here is the
-polish list, and the measure of how far a game gets before it needs the
-built-in flow as a fallback.
+blocked a default-on host have closed and running a game's own scripts is now
+the **only** way an XP project runs — the reimplemented engine that used to stand
+in for them is gone ([ADR 0030](adr/0030-rgss-only-the-games-own-engine.md)). So
+this list is the whole XP roadmap: every entry is something a real game asked for
+and did not get, and what a boot check reports is what goes in it.
 
 The "needed" column is derived from the real `data/OpenGame.exe/Testbed/XP`
 scripts (all 90 sections), by counting method/`.new`/constant usage — see the
@@ -254,6 +255,44 @@ so it stayed green throughout. That harness now loads the real
 effects, the animation, the weather and the cache against fakes for the native
 classes only.
 
+### 0i. `Math` ✅ (the first jump on a game's own map)
+
+With the input path live, both beds walk their own maps — the test bed
+`start=9,7 end=9,8 moved=true`, *Pray for You* `start=1,0 end=12,14` — and the
+released game's opening then stopped here:
+
+```
+[RGSS] script host: section "Main" raised NameError: uninitialized constant Game_Character::Math
+[RGSS] script host:   from Game_Character 3:328:in jump
+[RGSS] script host:   from map_light:752:in move_type_custom
+[RGSS] script host:   from Game_Character 1:117:in force_move_route
+[RGSS] script host:   from Interpreter 5:201:in command_209
+```
+
+`Game_Character#jump` is **stock RMXP** — it sizes its arc with
+`Math.sqrt(x_plus * x_plus + y_plus * y_plus).round` — so this is not a
+*Pray for You* peculiarity: every game reaches it the first time an event, a move
+route or a Set Move Route command jumps. mruby keeps `Math` in its own core gem
+(`mrbgems/math.gembox`), which was not in the build; added to `build_config.rb`
+with the dependency edge in `mrbgem.rake`, and an availability test in
+`mruby-rpgxp/test/rpgxp_test.rb`.
+
+Worth noting *how* it hid: the CRuby harness cannot catch a missing mruby core
+gem, because CRuby has `Math`. Every gap of this family (`sprintf`, `Integer()`,
+`rand`, now `Math`) is only ever found by a booted game, which is the argument
+for the boot check getting a game as far as possible rather than asserting early.
+
+**`Time` was fixed in the same change, without waiting for its report.** Both
+script bundles were then swept for the standard library they call, which turned
+up one more absence: stock `Scene_Load` seeds its newest-save search with
+`Time.at(0)` and `Window_SaveFile` stamps each slot with `File#mtime` — and
+mruby-io's `File#mtime` answers a `Time`, while `mruby-time` is only a *test*
+dependency of mruby-io and so was not linked. Every game's save and load screens
+need it. The rest of the sweep came back clean: `Marshal` (mruby-marshal),
+`File`/`FileTest` (mruby-io) and `Regexp` (mruby-onig-regexp) are all linked, and
+neither bundle touches `Dir`, `Struct`, `Set`, `ObjectSpace` or the metaprogramming
+gems.
+
 ### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
@@ -380,10 +419,11 @@ driver ends the game on (see item 3 above / ADR 0023).
 
 ## Notes
 
-- **The host is now on by default** ([ADR 0029](adr/0029-rgss-script-host-by-default.md));
-  `RGSS_SCRIPT_HOST=0` is the opt-out that restores the built-in flow, which also
-  remains the automatic fallback for a script-less project or a host that fails to
-  boot. The last blocker before that flip was reconciling the scripts' blocking
+- **The host is how a game runs** ([ADR 0029](adr/0029-rgss-script-host-by-default.md)
+  made it the default, [ADR 0030](adr/0030-rgss-only-the-games-own-engine.md) made
+  it the only path); `--norgss_script_host` loads a project without running it,
+  which is an inspection tool, not a second engine. The last blocker before the
+  flip was reconciling the scripts' blocking
   `$scene.main while $scene` loop with the web build's per-frame
   `emscripten_set_main_loop` callback
   (the desktop build blocks fine; the web build calls `RPGXP#main_loop` once per
@@ -395,8 +435,9 @@ driver ends the game on (see item 3 above / ADR 0023).
   wired too — it raises a `SystemExit` the driver ends the game on. The remaining
   step is to boot a real project under the **web** build and confirm it end to
   end; the native beds are booted under the host by
-  `scripts/rpgxp_boot_check.bash` in CI, which asserts the host's
-  `[RPGXP-SCRIPTS]` marker and fails if it fell back to the built-in flow.
+  `scripts/rpgxp_boot_check.bash` in CI, which taps confirm on each game's own
+  title screen, asserts it reaches a second scene, and walks the party on the
+  editor bed's map.
 - None of the native items above can be built or run in the current CI sandbox;
   each is verified by `mruby-rgss/test` (compiled and run in CI) plus the
   host-side `scripts/rpgxp_script_host_check.rb`. The Ruby half (gap 0) is

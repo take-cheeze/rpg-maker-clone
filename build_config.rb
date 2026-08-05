@@ -36,6 +36,18 @@ def rpg_maker_gems(conf)
   # (its runs are diffed frame by frame against the genuine runtimes), which is
   # why the gem was never needed until games ran their own code.
   conf.gem core: 'mruby-random'
+  # The Math module. `Game_Character#jump` — stock RMXP, run by every game the
+  # moment an event or a move route jumps — sizes its arc with
+  # `Math.sqrt(x_plus * x_plus + y_plus * y_plus).round`, and community scripts
+  # reach for sin/cos to move things in circles. Not in the default gem set:
+  # mruby keeps Math in its own core gem (mrbgems/math.gembox).
+  conf.gem core: 'mruby-math'
+  # Time. Stock `Scene_Load` picks the newest save with `latest_time =
+  # Time.at(0)` and `Window_SaveFile` stamps each slot with `file.mtime` — and
+  # mruby-io's File#mtime answers a Time, so the save and load screens of every
+  # game need this gem even though nothing in the engine's own code does. Only a
+  # test dependency of mruby-io, so it does not come along for the ride.
+  conf.gem core: 'mruby-time'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 

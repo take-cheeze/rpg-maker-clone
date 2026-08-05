@@ -69,6 +69,9 @@ DB_SYSTEM = 22
 SYS_PARTY = 22
 DB_COMMON_EVENT = 25
 CE_COMMANDS = 22
+DB_SKILL = 12
+DB_ITEM = 13
+DB_STATE = 18
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -294,7 +297,181 @@ if dirs.empty?
   exit 0
 end
 
-dirs.each { |d| check_game(d) }
+# What the menus offer a party that knows everything and carries one of each.
+#
+# A real game's skills and items have to reach its menus, and "reaches nothing"
+# is the failure this catches: gating every skill on `occasion_battle` (a flag
+# RPG2000 only writes for switch skills) left the battle skill menu **empty in
+# both test beds** — 306 skills and 134 skills, none of them offered — while
+# every fixture check passed.
+def check_menus(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+  leader = party.leader
+  unless leader
+    puts "   (no party leader — menus skipped)"
+    return
+  end
+  skill_ids = []
+  db[DB_SKILL]&.each { |id, _| skill_ids << id }
+  skill_ids.each { |id| leader.learn_skill(id) }
+  leader.mp = 99_999                     # affordability is not what is under test
+  db[DB_ITEM]&.each { |id, _| party.gain_item(id, 1) }
+
+  field_skills = party.field_skills(leader)
+  battle_skills = party.battle_skills(leader, leader)
+  field_items = party.field_items
+  battle_items = party.battle_items
+  puts format('   menus: %d/%d skills field/battle, %d/%d items field/battle ' \
+              '(of %d skills, %d items)',
+              field_skills.size, battle_skills.size, field_items.size,
+              battle_items.size, skill_ids.size, party.items.size)
+
+  check "#{name}: the battle skill menu is not empty" do
+    ok battle_skills.size > 0, "#{skill_ids.size} skills, none offered in battle"
+  end
+  check "#{name}: the field skill menu is not empty" do
+    ok field_skills.size > 0, "#{skill_ids.size} skills, none offered in the field"
+  end
+  check "#{name}: the field item menu is not empty" do
+    ok field_items.size > 0, 'the bag holds one of everything and offers nothing'
+  end
+
+  # Every skill kind the game actually uses has to be reachable somewhere: a
+  # skill offered in neither menu is one no player can ever cast. Escape and
+  # teleport skills are the known exception (see Party#unsupported_field_skill?).
+  check "#{name}: no skill is unreachable from both menus" do
+    unreachable = skill_ids.reject do |id|
+      sk = party.db_skill(id)
+      next true if party.unsupported_field_skill?(sk)
+      party.field_skill?(sk) || party.battle_skill?(sk)
+    end
+    eq [], unreachable.first(8), "#{unreachable.size} skill(s) castable nowhere"
+  end
+
+  # Special items (type 9) invoke a skill; switch items (type 10) flip a switch.
+  # Reading those two the other way round put the special items on the switch
+  # branch, where they flipped the switch id they never set — the default, 1.
+  special = []
+  switch = []
+  db[DB_ITEM]&.each do |id, it|
+    special << id if it.type == Game::Party::ITEM_SPECIAL
+    switch << id if it.type == Game::Party::ITEM_SWITCH
+  end
+  return if special.empty? && switch.empty?
+  puts "   #{special.size} special item(s), #{switch.size} switch item(s)"
+
+  check "#{name}: special items invoke a real skill, switch items a real switch" do
+    special.each do |id|
+      sk = party.db_skill(party.db_item(id).skill_id)
+      ok sk, "special item ##{id} names a skill that exists"
+      ok party.field_usable?(id) || party.battle_usable?(id),
+         "special item ##{id} (#{sk.name}) is usable somewhere"
+    end
+    switch.each do |id|
+      sid = party.db_item(id).switch_id
+      ok sid && sid > 1,
+         "switch item ##{id} names a switch of its own, not the default 1"
+      ok party.switch_item?(id), "switch item ##{id} is recognised as one"
+    end
+  end
+end
+
+# The status effects a real game's 状態 table asks for, exercised against that
+# table. A state whose numbers the runtime never reads is a status that does
+# nothing — Blind not blinding, a blow never waking a sleeper, Silence not
+# silencing — and that is invisible to any fixture built from the same
+# assumption. See docs/adr/0032-state-effects.md.
+def combatant(name, atk, dfn, agi, hp, states = [])
+  c = Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
+  c.states = states
+  c.state_turns = {}
+  c.hit_rate = 90
+  c
+end
+
+def check_states(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  states = db[DB_STATE]
+  return unless states
+
+  blinding = []
+  waking = []
+  sealing = []
+  states.each do |id, r|
+    blinding << id if r.reduce_hit_ratio && r.reduce_hit_ratio < 100
+    waking << id if (r.release_by_attack || 0) > 0
+    sealing << id if r.restrict_magic || r.restrict_skill
+  end
+  puts format('   states: %d blinding, %d shaken off by a blow, %d sealing',
+              blinding.size, waking.size, sealing.size)
+
+  unless blinding.empty?
+    check "#{name}: a blinding state cuts accuracy" do
+      foe = combatant('Foe', 0, 0, 10, 100)
+      bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)], [foe],
+                             Game::Rng.new(1), states, false, false, true)
+      clear = bat.allies[0]
+      base = bat.send(:to_hit, clear, foe)
+      ok base > 0, 'an unafflicted attacker can hit'
+      blinding.each do |sid|
+        clear.states = [sid]
+        ratio = states[sid].reduce_hit_ratio
+        eq base * ratio / 100, bat.send(:to_hit, clear, foe),
+           "state ##{sid} (#{states[sid].name}) scales accuracy by #{ratio}%"
+      end
+    end
+  end
+
+  unless waking.empty?
+    check "#{name}: a blow shakes off a state that allows it" do
+      # Roll each state many times; a state set to N% must come off sometimes and
+      # a 100% one every time. Seeds vary so the rolls do.
+      sid = waking.max_by { |i| states[i].release_by_attack }
+      shaken = 0
+      200.times do |i|
+        foe = combatant('Foe', 0, 0, 5, 1000, [sid])
+        bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)], [foe],
+                               Game::Rng.new(i + 1), states)
+        shaken += 1 if bat.send(:deal_attack, bat.allies[0], foe)[:woke]
+      end
+      ok shaken > 0,
+         "state ##{sid} (#{states[sid].name}, #{states[sid].release_by_attack}%) " \
+         'never came off in 200 blows'
+    end
+  end
+
+  unless sealing.empty?
+    check "#{name}: a sealing state seals magic but not plain physical skills" do
+      bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)],
+                             [combatant('B', 0, 0, 5, 100)], Game::Rng.new(1), states)
+      caster = bat.allies[0]
+      sealing.each do |sid|
+        caster.states = [sid]
+        sealed = 0
+        physical_sealed = 0
+        total_magic = 0
+        db[DB_SKILL]&.each do |_id, sk|
+          if (sk.magical_rate || 0) > 0
+            total_magic += 1
+            sealed += 1 if bat.skill_sealed?(caster, sk)
+          elsif (sk.physical_rate || 0) == 0
+            physical_sealed += 1 if bat.skill_sealed?(caster, sk)
+          end
+        end
+        next unless states[sid].restrict_magic
+        ok total_magic.zero? || sealed > 0,
+           "state ##{sid} (#{states[sid].name}) seals no magic at all"
+        eq 0, physical_sealed,
+           "state ##{sid} left rate-0 skills alone"
+      end
+    end
+  end
+end
+
+dirs.each { |d| check_game(d); check_menus(d); check_states(d) }
 
 if $failures.zero?
   puts "rpg2k test-bed logic check: #{$checks} checks passed"

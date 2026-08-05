@@ -1850,43 +1850,57 @@ end
 FakeActorSystem = Struct.new(:party)
 # A database item row exposing the equipment-bonus fields Game::Actor reads plus
 # the medicine recovery/scope fields Game::Party#use_item reads.
+# The occasion fields are named the way the real item row names them:
+# `occasion_field1` (37) bars battle use, `occasion_field2` (57) is a switch
+# item's field flag and `occasion_battle` (58) its battle flag. This fixture used
+# to offer a single `occasion_field`, a name no genuine row carries — which is
+# exactly how the runtime's gate came to read a field that was never there.
 FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :max_hp_points, :max_sp_points, :type, :name, :scope,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
-                      :prevent_critical, :attribute_set, :switch_id, :occasion_field)
+                      :prevent_critical, :attribute_set, :switch_id,
+                      :occasion_field2, :occasion_field1)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
-              attribute_set: nil, switch_id: 0, occ_field: true)
+              attribute_set: nil, switch_id: 0, occ_field: true,
+              field_only: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit, attribute_set, switch_id, occ_field)
+               prevent_crit, attribute_set, switch_id, occ_field, field_only)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
                        :affect_hp, :affect_sp, :occasion_battle,
                        :state_effects, :reverse_state_effect, :hit, :variance,
-                       :attribute_effects)
+                       :attribute_effects, :switch_id)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
-               variance: 4, attribute_effects: nil)
+               variance: 4, attribute_effects: nil, switch_id: 1)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
-                variance, attribute_effects)
+                variance, attribute_effects, switch_id)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
 FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           :sp_change_val, :sp_change_max,
                           :hold_turn, :auto_release_prob,
-                          # ... and what showing the state needs: its display
+                          # A blow can shake a state off (release_by_attack), a
+                          # state can spoil its victim's aim (reduce_hit_ratio,
+                          # 100 = unhindered) and it can seal skills above a
+                          # physical / magical threshold.
+                          :release_by_attack, :reduce_hit_ratio,
+                          :restrict_skill, :restrict_skill_level,
+                          :restrict_magic, :restrict_magic_level,
+                          # ... and what *showing* the state needs: its display
                           # name, its message-palette colour, the priority that
                           # decides which state a battler shows, and RPG2000's
                           # own sentences for it landing and lifting. Appended
@@ -1894,6 +1908,20 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # constructions above keep working.
                           :name, :color, :priority,
                           :message_actor, :message_enemy, :message_recovery)
+# A state row carrying only the fields a check names, with the rest at the
+# database defaults — notably reduce_hit_ratio 100, which is "does not blind".
+def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
+               hold_turn: 0, auto_release: 0, release_by_attack: 0,
+               reduce_hit_ratio: 100, restrict_skill: false, restrict_skill_level: 0,
+               restrict_magic: false, restrict_magic_level: 0,
+               name: '', color: Game::States::DEFAULT_COLOR, priority: 50,
+               actor_msg: nil, enemy_msg: nil, recovery_msg: nil)
+  FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
+                   auto_release, release_by_attack, reduce_hit_ratio,
+                   restrict_skill, restrict_skill_level,
+                   restrict_magic, restrict_magic_level,
+                   name, color, priority, actor_msg, enemy_msg, recovery_msg)
+end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
 class JobRow
@@ -2756,25 +2784,44 @@ check 'field_items lists only held medicines, in id order with counts' do
   eq [[5, 1], [9, 2]], st.party.field_items
 end
 
-check 'a battle-only medicine is hidden from the field menu but shown in battle' do
+check 'a field-only medicine is kept out of battle; every medicine is in the field' do
+  # RPG2000 gives a medicine exactly one occasion flag, `occasion_field1`, and it
+  # only ever *subtracts*: set, the medicine is field-only. There is no way to
+  # make a medicine battle-only, which is why `field_usable?` asks nothing of it
+  # (EasyRPG: `return !in_battle || !item->occasion_field1`).
   items = {
-    5 => fake_item(type: 6, rhp: 50, occ_field: true,  occ_battle: false), # field only
-    6 => fake_item(type: 6, rhp: 50, occ_field: false, occ_battle: true),  # battle only
+    5 => fake_item(type: 6, rhp: 50),                     # usable anywhere
+    6 => fake_item(type: 6, rhp: 50, field_only: true),   # field only
   }
   st = item_party(items)
   st.party.gain_item(5, 1)
   st.party.gain_item(6, 1)
-  ok st.party.field_usable?(5), 'the field medicine is usable in the field'
-  ok !st.party.field_usable?(6), 'the battle-only medicine is hidden from the field'
-  eq [[5, 1]], st.party.field_items
-  # ... and the reverse holds for the battle item list.
-  ok st.party.battle_usable?(6), 'the battle-only medicine is usable in battle'
-  ok !st.party.battle_usable?(5), 'the field-only medicine is not usable in battle'
-  eq [[6, 1]], st.party.battle_items
+  ok st.party.field_usable?(5), 'an ordinary medicine is usable in the field'
+  ok st.party.field_usable?(6), 'and so is a field-only one'
+  eq [[5, 1], [6, 1]], st.party.field_items
+  ok st.party.battle_usable?(5), 'the ordinary medicine is usable in battle'
+  ok !st.party.battle_usable?(6), 'the field-only one is not'
+  eq [[5, 1]], st.party.battle_items
+end
+
+check 'a switch item reads its own pair of occasion flags' do
+  # A switch item is the one item kind gated on both sides, and by its *own*
+  # fields: occasion_field2 (57) and occasion_battle (58).
+  items = {
+    5 => fake_item(type: 10, switch_id: 3, occ_field: true,  occ_battle: false),
+    6 => fake_item(type: 10, switch_id: 4, occ_field: false, occ_battle: true),
+  }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(6, 1)
+  eq [[5, 1]], st.party.field_items, 'only the field-flagged switch item'
+  eq [[6, 1]], st.party.battle_items, 'only the battle-flagged one'
 end
 
 check 'a switch item is field-usable, effective, and flips its switch on use' do
-  items = { 4 => fake_item(type: 9, switch_id: 12, name: 'Whistle') }
+  # Type 10 is the switch item (スイッチ); 9 is the special item that invokes a
+  # skill. This fixture said 9, which is what the runtime used to believe too.
+  items = { 4 => fake_item(type: 10, switch_id: 12, name: 'Whistle') }
   st = item_party(items)
   st.party.gain_item(4, 2)
   eq [[4, 2]], st.party.field_items, 'switch items appear in the field menu'
@@ -2954,14 +3001,74 @@ end
 
 # A two-actor party (Hero atk 10 / spirit 12 / max SP 30, Ally max HP 50) plus
 # the given skill table, for the field-skill checks.
-def skill_party(skills)
+def skill_party(skills, items = {})
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
     2 => FakePlayerRow.new('Ally', '', 0, 3,
                            max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
   }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills)), 1, 0, 0)
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items, skills)), 1, 0, 0)
+end
+
+check 'an RPG2003 subskill category behaves as an ordinary skill' do
+  # Types from 4 up are 2003's custom battle-command categories, not a different
+  # kind of skill. mtf-meido-action files 57 of its 134 skills that way — every
+  # healing line among them — so reading type != 0 as "not a real skill" hid
+  # them from both menus.
+  skills = {
+    1 => fake_skill(scope: 3, sp_cost: 1, power: 10, hp: true),          # type 0
+    2 => fake_skill(scope: 3, sp_cost: 1, power: 10, hp: true, type: 5), # subskill
+    3 => fake_skill(scope: 0, sp_cost: 1, power: 10, type: 7),           # subskill, foes
+  }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  [1, 2, 3].each { |s| hero.learn_skill(s) }
+  eq [[1, 1], [2, 1]], st.party.field_skills(hero), 'the subskill heal is offered'
+  caster = Game::Battle.from_actor(hero)
+  eq [[1, 1], [2, 1], [3, 1]], st.party.battle_skills(hero, caster)
+end
+
+check 'a switch skill is cast for its switch, and only where its flags allow' do
+  skills = {
+    4 => fake_skill(name: 'Summon', type: 3, sp_cost: 6, switch_id: 17),
+    5 => fake_skill(name: 'Boost', type: 3, sp_cost: 2, switch_id: 18,
+                    occ: false, occ_battle: true),
+  }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  [4, 5].each { |s| hero.learn_skill(s) }
+  caster = Game::Battle.from_actor(hero)
+  # Skill 4 is field+battle by default; 5 is flagged battle-only.
+  eq [[4, 6]], st.party.field_skills(hero), 'the battle-only switch skill is hidden'
+  eq [[4, 6], [5, 2]], st.party.battle_skills(hero, caster)
+  ok st.party.switch_skill?(4)
+  before = hero.mp
+  eq 17, st.party.cast_switch_skill(hero, 4), 'casting returns the switch to flip'
+  eq before - 6, hero.mp, 'and spends the SP'
+  # A non-switch skill is not one, and spends nothing.
+  ok st.party.cast_switch_skill(hero, 99).nil?
+end
+
+check 'a special item invokes its skill, free of SP and without knowing it' do
+  # Type 9 is 特殊: the item names a skill in skill_id and casting it is what
+  # using the item does. Nepheshel's whole thrown-bomb line works this way.
+  skills = { 8 => fake_skill(name: 'Elixir', scope: 3, sp_cost: 99,
+                             power: 40, hp: true) }
+  items = { 3 => fake_item(type: 9, skill_id: 8, name: 'Vial') }
+  st = skill_party(skills, items)
+  hero = st.party.actor_by_id(1)
+  hero.change_hp(-50)
+  hero.mp = 0                                   # cannot afford the skill itself
+  ok !hero.knows_skill?(8), 'and has never learnt it'
+  st.party.gain_item(3, 2)
+  ok st.party.field_usable?(3), 'its skill targets an ally, so the field offers it'
+  ok st.party.item_effective?(3, hero)
+  affected = st.party.use_item(3, hero)
+  eq [hero], affected
+  eq 90, hero.hp, 'the skill landed'
+  eq 0, hero.mp, 'no SP was spent'
+  eq 1, st.party.item_count(3), 'one was consumed'
 end
 
 check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
@@ -2982,16 +3089,20 @@ check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
 end
 
 check 'field_skills lists only known field-usable ally skills; can_cast? checks SP' do
+  # What keeps an ordinary skill out of the field menu is its *scope* and whether
+  # it does anything at all — not `occasion_field`, which RPG2000 only reads for
+  # a switch skill (skill 9 here carries it off and is listed all the same).
   skills = {
     7  => fake_skill(scope: 3, sp_cost: 5, power: 10, hp: true),        # usable
     8  => fake_skill(scope: 0, sp_cost: 1, power: 10, hp: true),        # enemy scope
-    9  => fake_skill(scope: 3, occ: false, sp_cost: 1, power: 10, hp: true), # not field
+    9  => fake_skill(scope: 3, occ: false, sp_cost: 1, power: 10, hp: true),
     10 => fake_skill(scope: 4, sp_cost: 99, power: 10, hp: true),       # too costly
+    11 => fake_skill(scope: 3, sp_cost: 1, power: 10),                  # affects nothing
   }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)               # max SP 30
-  [7, 8, 9, 10].each { |s| hero.learn_skill(s) }
-  eq [[7, 5], [10, 99]], st.party.field_skills(hero)  # ally-scope, field-usable
+  [7, 8, 9, 10, 11].each { |s| hero.learn_skill(s) }
+  eq [[7, 5], [9, 1], [10, 99]], st.party.field_skills(hero)
   eq true, st.party.can_cast?(hero, 7)
   eq false, st.party.can_cast?(hero, 10)       # 99 SP > 30
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
@@ -5710,16 +5821,22 @@ check 'battle_skills lists the caster\'s battle-usable skills with SP cost' do
     7  => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 20, mrate: 40),
     8  => fake_skill(name: 'Heal', scope: 3, sp_cost: 5, power: 20, mrate: 40, hp: true),
     9  => fake_skill(name: 'Guard', scope: 2, sp_cost: 3, power: 10, hp: true),
-    10 => fake_skill(name: 'FieldOnly', scope: 3, sp_cost: 4, hp: true, occ_battle: false),
+    # `occasion_battle` off does *not* keep an ordinary skill out of a fight:
+    # RPG2000 reads that flag for switch skills only, and once a battle is
+    # running every other skill is usable. Skill 13 is a switch skill, which is
+    # the one kind the flag really does exclude.
+    10 => fake_skill(name: 'NotFlagged', scope: 3, sp_cost: 4, hp: true, occ_battle: false),
     11 => fake_skill(name: 'AllFoes', scope: 1, sp_cost: 8, power: 20),  # all enemies
-    12 => fake_skill(name: 'AllHeal', scope: 4, sp_cost: 7, power: 20, hp: true) # all allies
+    12 => fake_skill(name: 'AllHeal', scope: 4, sp_cost: 7, power: 20, hp: true), # all allies
+    13 => fake_skill(name: 'Summon', type: 3, sp_cost: 2, occ_battle: false)
   }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
-  [7, 8, 9, 10, 11, 12].each { |s| hero.learn_skill(s) }
+  [7, 8, 9, 10, 11, 12, 13].each { |s| hero.learn_skill(s) }
   caster = Game::Battle.from_actor(hero)
-  eq [[7, 6], [8, 5], [9, 3], [11, 8], [12, 7]], st.party.battle_skills(hero, caster),
-     'single- and all-target battle skills, in id order (field-only excluded)'
+  eq [[7, 6], [8, 5], [9, 3], [10, 4], [11, 8], [12, 7]],
+     st.party.battle_skills(hero, caster),
+     'every ordinary skill, in id order; the unflagged switch skill excluded'
   eq :enemy,     st.party.battle_skill_target(st.party.db_skill(7))
   eq :ally,      st.party.battle_skill_target(st.party.db_skill(8))
   eq :self,      st.party.battle_skill_target(st.party.db_skill(9))
@@ -5907,9 +6024,9 @@ check 'Battle command_item restores HP and tags the entry for bag consumption' d
 end
 
 check 'battle_items lists battle medicines; battle_item_command recovers' do
-  items = { 5 => fake_item(type: 6, rhp: 40),                    # battle medicine
-            6 => fake_item(type: 6, rhp: 20, occ_battle: false), # field-only
-            7 => fake_item(type: 1, atk: 5) }                    # a weapon
+  items = { 5 => fake_item(type: 6, rhp: 40),                     # battle medicine
+            6 => fake_item(type: 6, rhp: 20, field_only: true),   # field-only
+            7 => fake_item(type: 1, atk: 5) }                     # a weapon
   st = item_party(items)
   st.party.gain_item(5, 2)
   st.party.gain_item(6, 1)
@@ -6062,11 +6179,13 @@ end
 # The simulation acts on state *ids*; putting one on screen needs the row. These
 # pin the reading of the row the battle status window and action banner use.
 
-# A state row carrying only the display fields, at the tail of FakeStateDef.
-def display_state(name:, color: 6, priority: 50, actor_msg: nil, enemy_msg: nil,
-                  recovery_msg: nil)
-  FakeStateDef.new(0, 0, 0, 0, 0, 0, 0, name, color, priority,
-                   actor_msg, enemy_msg, recovery_msg)
+# A state row carrying only the display fields (`fake_state` defaults the
+# simulation ones), so a check reads as what it is about.
+def display_state(name:, color: Game::States::DEFAULT_COLOR, priority: 50,
+                  actor_msg: nil, enemy_msg: nil, recovery_msg: nil)
+  fake_state(name: name, color: color, priority: priority,
+             actor_msg: actor_msg, enemy_msg: enemy_msg,
+             recovery_msg: recovery_msg)
 end
 
 check 'States.significant: death outranks everything it is carried with' do
@@ -6152,6 +6271,72 @@ check 'a battle log entry records which side the target was on' do
   b2.run_round
   heal = b2.log.find { |e| e[:recover] }
   eq true, heal[:target_ally], 'a party target is an ally'
+end
+
+check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio' do
+  # A state's reduce_hit_ratio scales the attacker's to-hit chance. Blind is the
+  # status whose whole purpose is this; nothing read the field before, so it did
+  # nothing at all.
+  states = { 8 => fake_state(reduce_hit_ratio: 50),
+             9 => fake_state(reduce_hit_ratio: 20) }
+  clear = combatant('Clear', 10, 0, 10, 100)
+  blind = combatant('Blind', 10, 0, 10, 100)
+  blind.states = [8]
+  foe = combatant('Foe', 0, 0, 10, 100)
+  bat = Game::Battle.new([clear, blind], [foe], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 90, bat.send(:to_hit, clear, foe), 'unhindered: the plain 90% base'
+  eq 45, bat.send(:to_hit, blind, foe), 'halved by the state'
+
+  # Several states take the *lowest* ratio, not the product of them.
+  blind.states = [8, 9]
+  eq 18, bat.send(:to_hit, blind, foe), 'the worst state wins (20%, not 50%*20%)'
+end
+
+check 'battle: a normal attack can shake a state off its target' do
+  states = { 10 => fake_state(release_by_attack: 100),  # always
+             11 => fake_state(release_by_attack: 0) }   # never
+  hero = combatant('Hero', 20, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [10, 11]
+  foe.state_turns = {}
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [10], entry[:woke], 'the 100% state was shaken off and reported'
+  eq false, foe.state?(10)
+  eq true, foe.state?(11), 'the 0% state held'
+
+  # A blow that kills leaves the states alone — there is no one left to wake.
+  dying = combatant('Dying', 0, 0, 5, 1)
+  dying.states = [10]
+  dying.state_turns = {}
+  bat2 = Game::Battle.new([hero], [dying], Game::Rng.new(1), states)
+  e2 = bat2.send(:deal_attack, hero, dying)
+  ok e2[:defeated]
+  ok e2[:woke].nil?, 'nothing is shaken off a defeated target'
+end
+
+check 'battle: a sealing state blocks skills above its threshold' do
+  # restrict_magic bars any skill whose magical_rate reaches the level; a purely
+  # physical skill (magical_rate 0) is left alone. Both test beds use level 1.
+  states = { 12 => fake_state(restrict_magic: true, restrict_magic_level: 1),
+             13 => fake_state(restrict_skill: true, restrict_skill_level: 2) }
+  magic = fake_skill(name: 'Fire', mrate: 3, prate: 0)
+  physical = fake_skill(name: 'Slash', mrate: 0, prate: 4)
+  weak_phys = fake_skill(name: 'Tap', mrate: 0, prate: 1)
+  hero = combatant('Hero', 10, 0, 10, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+
+  hero.states = []
+  eq false, bat.skill_sealed?(hero, magic), 'unafflicted: nothing is sealed'
+  hero.states = [12]
+  eq true, bat.skill_sealed?(hero, magic), 'silence seals the magic skill'
+  eq false, bat.skill_sealed?(hero, physical), 'but not the physical one'
+  hero.states = [13]
+  eq true, bat.skill_sealed?(hero, physical), 'rate 4 reaches the level-2 seal'
+  eq false, bat.skill_sealed?(hero, weak_phys), 'rate 1 stays under it'
+  eq false, bat.skill_sealed?(hero, nil), 'a missing skill row is not sealed'
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do

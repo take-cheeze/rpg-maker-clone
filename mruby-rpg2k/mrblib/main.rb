@@ -2970,7 +2970,17 @@ class RPG2k
       # no battle-usable skill).
       def open_battle_skill
         actor = current_actor_row
-        @battle_ui[:skills] = actor ? @state.party.battle_skills(actor, current_actor) : []
+        list = actor ? @state.party.battle_skills(actor, current_actor) : []
+        # A status that seals skills (封印 / Silence) takes them off the menu
+        # rather than letting the actor pick one that would be refused.
+        battle = @battle_ui[:battle]
+        battler = current_actor
+        if battle && battler
+          list = list.reject do |sid, _cost|
+            battle.skill_sealed?(battler, @state.party.db_skill(sid))
+          end
+        end
+        @battle_ui[:skills] = list
         return if @battle_ui[:skills].empty?
         @battle_ui[:skill_i] = 0
         @battle_ui[:phase] = :skill
@@ -3717,7 +3727,10 @@ class RPG2k
           lines << (Game::States.inflict_message(id, table, name, ally) ||
                     "#{name} is #{state_label(id, table)}")
         end
-        (entry[:cured] || []).each do |id|
+        # `cured` is a medicine or a cure skill lifting a state; `woke` is a blow
+        # shaking one off (a state's `release_by_attack`). Both are the state
+        # lifting, which has one wording whichever side it happened to.
+        ((entry[:cured] || []) + (entry[:woke] || [])).each do |id|
           lines << (Game::States.recovery_message(id, table, name) ||
                     "#{name} recovers from #{state_label(id, table)}")
         end
@@ -5340,16 +5353,30 @@ class RPG2k
         it = @state.party.db_item(id)
         # A switch item has no actor target; an all-ally medicine skips the
         # target prompt; single-target medicines / skill books ask who to use on.
+        # A special item follows the *skill* it invokes, since that is what
+        # decides the scope — self (2) or all-ally (4) needs no prompt.
         if it && it.type == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
+        elsif it && it.type == Game::Party::ITEM_SPECIAL
+          sk = @state.party.db_skill(it.skill_id)
+          if sk && (sk.scope == 2 || sk.scope == 4)
+            apply_item(id, nil)
+          else
+            prompt_item_target(id)
+          end
         elsif it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
           apply_item(id, nil)
         else
-          @pending_item = id
-          @mode = :target
-          @target_index = 0
-          build_target_window
+          prompt_item_target(id)
         end
+      end
+
+      # Ask which party member the pending item is used on.
+      def prompt_item_target(id)
+        @pending_item = id
+        @mode = :target
+        @target_index = 0
+        build_target_window
       end
 
       # A switch item turns on its game switch (the party consumes one); the menu
@@ -5839,9 +5866,11 @@ class RPG2k
         return if skills.empty?
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
-        # A self (2) or all-ally (4) skill needs no target prompt; a single-ally
-        # skill (3) asks which ally.
-        if sk && (sk.scope == 2 || sk.scope == 4)
+        # A switch skill has no target at all; a self (2) or all-ally (4) skill
+        # needs no target prompt; a single-ally skill (3) asks which ally.
+        if sk && sk.type == Game::Party::SKILL_SWITCH
+          apply_switch_skill(sid)
+        elsif sk && (sk.scope == 2 || sk.scope == 4)
           apply_skill(sid, nil)
         else
           @pending_skill = sid
@@ -5872,6 +5901,19 @@ class RPG2k
           show_message("It had no effect.")
         else
           show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+        end
+      end
+
+      # A switch skill (type 3) spends its SP and turns on a game switch, with
+      # nothing to target. This is how a Nepheshel player summons and dismisses a
+      # companion — the switch is what its common event watches.
+      def apply_switch_skill(sid)
+        switch = @state.party.cast_switch_skill(caster, sid)
+        if switch
+          @state.switches[switch] = true
+          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+        else
+          show_message("It had no effect.")
         end
       end
 

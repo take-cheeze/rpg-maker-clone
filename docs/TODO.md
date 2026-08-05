@@ -60,7 +60,10 @@ RGSS stubs). `scripts/rpg2k_testbed_logic_check.rb` is the join of the two
 kinds — a *real* game's `RPG_RT.ldb` driven through the *real*
 `Game::Interpreter` — for rules that only genuine data violates: its first
 subject is Nepheshel's companion swaps, where the party-roster bug of ADR 0030
-passed every fixture check while breaking the actual game.
+passed every fixture check while breaking the actual game. It also asks the real
+databases what the menus offer, which is how the empty battle skill menus of ADR
+0031 were found — 306 and 134 skills, none of them reachable, with every fixture
+check green.
 
 The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
@@ -506,7 +509,25 @@ The work below is roughly ordered by the critical path to a walkable game
   afflicts the foe, which then slips or skips via the per-turn processing above.
   A state also **auto-recovers**: a per-battler turn counter lets `apply_turn_
   states` roll `auto_release_prob` once the state has held past its `hold_turn`,
-  so a temporary ailment wears off. **Forced-action restrictions** work too: a
+  so a temporary ailment wears off. Three more of the 状態 row's fields are read
+  now, and they are the ones that give the genre's most familiar statuses their
+  meaning (ADR 0032): **`reduce_hit_ratio`** scales the afflicted attacker's
+  accuracy, the lowest ratio winning when several apply, so **Blind blinds** —
+  mtf-meido-action's cuts a 90% base to 19.6%, and since Blind is that field and
+  nothing else it used to be purely cosmetic; **`release_by_attack`** rolls after
+  a normal attack the target survives, so **a blow wakes a sleeper** (Nepheshel's
+  睡眠 on 80% of hits) — normal attacks only, as RPG_RT does it, so a skill never
+  shakes a status loose; and **`restrict_skill` / `restrict_magic`** seal a skill
+  whose physical / magical rate reaches the state's threshold, so **封印 /
+  Silence silence** — a sealed actor's skills leave the battle menu and a sealed
+  enemy's action entry stops firing. Nine of Nepheshel's 25 states and two of
+  mtf's ten carry a reduced hit ratio, four and three a release chance, two and
+  one a seal. Still unread: **map-step slip damage**
+  (`hp_change_map_steps`, a status that drains HP as the party walks — only
+  mtf's Poison uses it, and it wants a step counter on `Game::State` nothing else
+  needs yet), and `affect_type` stat halving / doubling plus the RPG2003-only
+  `avoid_attacks` / `reflect_magic`, which no state in either test bed sets.
+  **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random
   member of its own side. Basic attacks **and attack skills** apply RPG2000's
@@ -955,14 +976,30 @@ The work below is roughly ordered by the critical path to a walkable game
   `can_cast?` / `skill_effect` / `cast_skill` for skills) and `Game::Actor`
   (`next_level_exp` / `exp_to_next` for status), covered by
   `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
-  A **switch item** (type 9) is field-usable too: `Game::Party#use_switch_item`
-  consumes one and returns the game switch it turns on, which the item menu then
-  sets (matching EasyRPG, where the scene owns the switch table). The **usable
-  occasion** is honoured on both sides: a medicine / switch item flagged
-  battle-only (`occasion_field` off) is hidden from the field menu, and one
-  flagged field-only is hidden from the battle item list (books / seeds stay
-  field-only). Teleport/escape/switch skill types, the battle-time skill
-  variance, and two-handed / dual-wield equipping are later refinements.
+  A **switch item** (type **10**, not 9 — see below) is field-usable too:
+  `Game::Party#use_switch_item` consumes one and returns the game switch it turns
+  on, which the item menu then sets (matching EasyRPG, where the scene owns the
+  switch table). A **special item** (type 9, 特殊) invokes the skill named in its
+  `skill_id`, with the item standing in for the SP cost — the user pays nothing
+  and need not have learnt it, which is what Nepheshel's whole thrown-bomb line
+  is. **Switch skills** (type 3) flip their switch: that is how a Nepheshel
+  player summons and dismisses a companion.
+
+  What decides usability is the **type**, not the occasion flags, and getting
+  that wrong used to leave the battle skill menu **empty in both test beds** —
+  306 skills and 134 skills, none offered. `occasion_field` / `occasion_battle`
+  gate **switch skills only** (RPG_RT reads them in one arm of
+  `Algo::IsSkillUsable`, and the editor only offers the checkboxes there); an
+  RPG2003 **subskill category** (type >= 4) is an ordinary skill filed under a
+  custom battle command, which is 57 of mtf-meido-action's 134 including all its
+  healing; and an item's occasion flags are `occasion_field1` (bars battle use),
+  `occasion_field2` and `occasion_battle` (a switch item's own pair) — this build
+  asked for `occasion_field`, a name no real row carries, so the gate silently
+  never fired. An earlier version of this list claimed that gate worked; it did
+  not, on any genuine item. See ADR 0031. Remaining: **teleport / escape** skill
+  types (one of each across both test beds; teleport wants a destination picker
+  this build has no screen for, so `Party#unsupported_field_skill?` declares the
+  gap), the battle-time skill variance, and two-handed / dual-wield equipping.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -1159,9 +1196,6 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   stream they feed. Measured by the `audio_probe` ctest under
   `SDL_AUDIODRIVER=dummy` (decodes and mixes with no sound card): loose plays,
   stop reads 0, packed plays.
-- **Menus / save / battle** — the default menu screens, saving in the real
-  `.rxdata` save format (a portable Marshal save is used for now), and the
-  battle system.
 - ✅ **Run the bundled RGSS scripts** — the largest direction: an `eval`-based
   host that runs `Data/Scripts.rxdata` unmodified against the RGSS class library
   (the equivalent of the MV "embed the real engine" choice), which also runs
@@ -1169,11 +1203,10 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   the script sections, `RPGXP::RGSSData` exposes
   `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost` installs the
   Kernel `load_data`/`save_data` built-ins and evaluates every section at the top
-  level (mruby-eval) so "Main" drives the game. **It is now the default boot
-  path** (ADR 0029): a project that ships scripts runs its own engine, and the
-  built-in flow is the fallback for a script-less project, a host that fails to
-  boot, and the `RGSS_SCRIPT_HOST=0` opt-out (which `--rpgxp_new_game` implies,
-  since it drives the built-in title screen). What made the flip possible: the
+  level (mruby-eval) so "Main" drives the game. **It is now the only boot path**
+  (ADR 0029 made it the default, ADR 0030 deleted the reimplemented title/map/
+  interpreter it used to fall back to — ~4,600 lines that could only ever
+  reproduce the *default* scripts). What made that possible: the
   `mruby-rgss` class library the stock scripts call is complete enough — `Font`,
   `Graphics` timing, `Input`, `Audio`, `Sprite`'s extended properties and the
   `Window`/`Tilemap`/`Plane` widgets all render, plus `Kernel#sprintf` and
@@ -1186,31 +1219,24 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   remaining polish is tracked in
   [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). Decoding, the built-ins
   and top-level evaluation of real script source are covered by
-  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`; CI also boots both
-  XP beds under the host natively (`scripts/rpgxp_boot_check.bash`, asserting the
-  `[RPGXP-SCRIPTS]` marker and no fallback). Still unverified: the frame driver
-  in a real **browser**. (Graphics and audio both come out of the encrypted
+  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`; CI boots both XP
+  beds natively (`scripts/rpgxp_boot_check.bash`), taps confirm on each game's own
+  title screen and walks the party on the editor bed's map. Still unverified: the
+  frame driver in a real **browser**. (Graphics and audio both come out of the encrypted
   archive now — see Encrypted archives above.)
 - ✅ **Cross-runtime testing** — an XP project is booted natively and against the
-  genuine runtime, both asserting the same `[RPGXP-MAP]` marker
-  (`--rpgxp_new_game` picks New Game without input, and with it the built-in
-  flow): `scripts/rpgxp_boot_check.bash` (the native binary, in CI — the guard
-  against mruby/CRuby divergence the CRuby-hosted checks cannot see; it boots
-  each bed a second time with no flags, where the script host runs the game's own
-  scripts) and
-  `scripts/compare-rpgxp-wine.bash`, which diffs our frames against the genuine
-  `Game.exe` + `RGSS104E.dll` under wine, the XP twin of
-  `compare-nepheshel-wine.bash`. That comparison is the harness the remaining
-  render work below is meant to be driven by. See
+  genuine runtime: `scripts/rpgxp_boot_check.bash` runs the game's own scripts in
+  the built binary (the guard against mruby/CRuby divergence the CRuby-hosted
+  checks cannot see) and `scripts/compare-rpgxp-wine.bash` diffs our frames
+  against the genuine `Game.exe` + `RGSS104E.dll` under wine, driving both with
+  the same keys — so since ADR 0030 it compares the game's own engine against the
+  genuine one. See
   [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](adr/0025-rpgxp-cross-runtime-testing.md);
   a third check played the project in the **browser build** and found (and this
   fixed) an XP project rendering on a 320x240 screen in the page and the loader
   panel covering the running game, and the wine pass found four more (the XP RTP
   key was never read, `.jpg` was missing from the asset search, truecolour images
-  were red/blue-swapped, and an RGBA image loaded opaque drew garbage) — the XP
-  title screen now differs from the genuine runtime in 15% of its pixels, down
-  from 74%, the rest being the windowskin's opacity and the reference's font-less
-  text.
+  were red/blue-swapped, and an RGBA image loaded opaque drew garbage).
 - **Re-test the browser build without a heavyweight dependency.**
   `scripts/rpgxp_browser_check.py` drove the emscripten page in headless Chromium
   over the DevTools protocol, but the `chromium` it needed was the largest
@@ -1222,7 +1248,7 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   host** in the browser (the ADR 0023 frame driver has never been verified in a
   real browser), loading a **packed** release (`Game.ini` + `Game.rgssad`) through
   the shell, and a way to pass engine flags to the page so a browser check can use
-  `--rpgxp_new_game` instead of pressing keys.
+  `--rgss_host_new_game` instead of pressing keys.
 - ✅ **A released game as a test bed** — every XP check above also runs on
   *Pray for You* (`scripts/download-prayforyou.bash`): a packed release
   (`Game.ini` + `Game.rgssad`, nothing loose), 69 maps, 1107 event pages, 15,797
@@ -1376,10 +1402,9 @@ screen (544×416). Full rationale:
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
-- **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
-  runtimes have (title → New Game → walkable map). Not written yet; the script
-  host (on by default) runs a project that ships scripts, and a boot without it —
-  no script bundle, or `RGSS_SCRIPT_HOST=0` — reports that instead of showing a
+- ~~**Built-in title/map flow**~~ — dropped, not deferred: a VX/VX Ace game *is*
+  its script bundle, and ADR 0030 removed the XP side's reimplementation for the
+  same reason. A project that ships no scripts reports that instead of showing a
   blank window.
 - **A real test bed.** Neither editor nor its RTP is redistributable and no
   open-source VX/VX Ace project ships a genuine `Data/*.rvdata(2)` tree, so

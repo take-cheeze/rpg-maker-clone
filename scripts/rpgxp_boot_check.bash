@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Boot the built engine on a real RPG Maker XP project and confirm it reaches
-# the map, headlessly.
+# Boot the built engine on a real RPG Maker XP project and confirm the game's own
+# engine runs, headlessly: off its title screen and onto its map.
 #
 # Why this exists: the RPG Maker XP runtime is written in Ruby under
 # mruby-rpgxp, and the checks that cover it (scripts/rpgxp_testbed_check.rb,
@@ -9,23 +9,23 @@
 # That cannot see mruby/CRuby divergence -- exactly the gap that had shipped two
 # RPG2000 bugs (a bare `module_function`, `Enumerable#none?`) with every check
 # green, which is why the LCF side grew scripts/rpg2k_boot_check.bash. This is
-# the same guard for the XP side, on the same projects and the same marker as
+# the same guard for the XP side, on the same projects as
 # scripts/compare-rpgxp-wine.bash.
 #
 # The engine aborts on an uncaught mruby exception, so simply running it is most
-# of the test. Each game is booted twice, once per path into a running game:
+# of the test. What is asserted beyond that is how far the game's own engine gets
+# (ADR 0030 -- there is no second engine to fall back to any more):
 #
-#   1. **The default**: the RGSS script host runs the project's own
-#      Data/Scripts.rxdata (ADR 0029). `--rgss_host_new_game` taps confirm on the
-#      game's own title screen and each scene the game reaches is logged as
-#      `[RPGXP-HOST-SCENE]`, so reaching a *second* one means the game's engine
-#      took a keypress and started something. A host that fails falls back to the
-#      built-in flow without changing the exit code, so the run also fails on a
-#      `script host failed` line.
-#   2. **The built-in reimplemented flow**: `--rpgxp_new_game` selects New Game
-#      without input (which also pins the boot to that flow) and logs the
-#      `[RPGXP-MAP]` marker, pushing the run past the title screen into the map
-#      scene and its renderer -- the path compare-rpgxp-wine.bash measures.
+#   * `--rgss_host_move_test` taps confirm on the game's own title screen, then
+#     walks the party on its map. Every scene the game reaches is logged as
+#     `[RPGXP-HOST-SCENE]`, so reaching a *second* one means its title screen
+#     took a keypress and started something.
+#   * the walk is reported as `[RPGXP-HOST-MOVE] start=.. end=.. moved=..`,
+#     which is asserted for the editor test bed: its start map is plain and
+#     walkable. A released game opens on a cutscene, so its walk is logged and
+#     not asserted.
+#   * a `script host failed` line fails the run: the game's own scripts stopping
+#     is the failure this check exists to catch.
 #
 # Game directories that are not present are skipped with a message rather than
 # silently passed over -- but if *none* of them is present the check fails,
@@ -45,7 +45,13 @@ SERVER_NUM="${1:-112}"
 shift || true
 
 ENGINE="${ENGINE:-./build/rpg_maker_clone}"
-TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-20000}"
+# Wall-clock budget per run. The engine counts it in Graphics.update, but what
+# has to fit inside it is a *frame* count -- the game's own title screen, then
+# the settle and the four held directions of the move probe -- and CI has no GPU,
+# so a 640x480 tilemap redraw is nowhere near the 40 fps RGSS nominally runs at.
+# 20s was enough to reach the map and not to finish the walk; this is sized so
+# the probe still lands at well under ten frames a second.
+TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-45000}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
@@ -72,10 +78,8 @@ num="${SERVER_NUM}"
 #   $4 the marker its log must contain, $5 extra engine flags (may be empty),
 #   $6 how many [RPGXP-HOST-SCENE] lines the game must reach (0 = do not check)
 # A run fails when the engine exits non-zero (any uncaught mruby exception aborts
-# it), when its marker is missing, when the script host reported a boot failure
-# and quietly fell back to the built-in flow -- that fallback keeps the exit code
-# at zero, so without that test a broken default would pass -- or when the game
-# never got past its first scene.
+# it), when its marker is missing, when the script host reported a failure inside
+# the game's own scripts, or when the game never got past its first scene.
 run_boot() {
     local game="$1" display="$2" label="$3" marker="$4" flags="$5" scenes="${6:-0}"
     local log rc=0
@@ -93,7 +97,7 @@ run_boot() {
         echo "FAILED: ${game} (${label}): ${marker} missing" >&2
         rc=1
     elif grep -q 'script host failed' "${log}" ; then
-        echo "FAILED: ${game} (${label}): the script host fell back to the built-in flow" >&2
+        echo "FAILED: ${game} (${label}): the game's own scripts stopped" >&2
         grep 'script host failed' "${log}" >&2
         rc=1
     elif [ "${scenes}" -gt 0 ] &&
@@ -121,21 +125,15 @@ for game in "${GAMES[@]}" ; do
     checked=$((checked + 1))
     echo "== ${game}"
 
-    # 1. The default boot: no flags but `--rgss_host_new_game`, so the RGSS
-    #    script host runs the game's own Data/Scripts.rxdata (ADR 0029), taps
-    #    confirm on the game's own title screen and logs every scene the game
-    #    reaches. Asserting on the *second* scene is what makes this more than a
-    #    "did not crash" check: it means the game's own title screen took a
-    #    keypress and started something.
-    run_boot "${game}" "${num}" "script host (default)" '\[RPGXP-HOST-SCENE\]' \
-        "--rgss_host_new_game" 2 || failed=$((failed + 1))
-
-    # 2. The built-in reimplemented flow, which `--rpgxp_new_game` selects (it
-    #    drives the built-in title screen, so it also switches the host off --
-    #    see RPGXP#builtin_flow_forced?). This is the render path
-    #    scripts/compare-rpgxp-wine.bash measures against the genuine runtime.
-    run_boot "${game}" "${num}" "built-in flow (--rpgxp_new_game)" '\[RPGXP-MAP\]' \
-        "--rpgxp_new_game" || failed=$((failed + 1))
+    # The editor test bed opens on a plain walkable map, so its walk is the
+    # assertion; a released game opens on a cutscene, where a walk that does not
+    # happen says nothing about the engine. Both log everything either way.
+    case "${game}" in
+        *Testbed*) marker='\[RPGXP-HOST-MOVE\] .*moved=true' ;;
+        *)         marker='\[RPGXP-HOST-SCENE\]' ;;
+    esac
+    run_boot "${game}" "${num}" "script host" "${marker}" \
+        "--rgss_host_move_test" 2 || failed=$((failed + 1))
 
     num=$((num + 1))
 done
@@ -147,9 +145,9 @@ if [ "${checked}" -eq 0 ] ; then
 fi
 
 if [ "${failed}" -ne 0 ] ; then
-    echo "rpgxp boot check: ${failed} of $((checked * 2)) run(s) FAILED" >&2
+    echo "rpgxp boot check: ${failed} of ${checked} run(s) FAILED" >&2
     exit 1
 fi
 
-echo "rpgxp boot check: ${checked} game(s) booted twice -- their own scripts" \
-     "under the script host, and the built-in flow into the map"
+echo "rpgxp boot check: ${checked} game(s) ran their own scripts, off their own" \
+     "title screens and onto their own maps"
