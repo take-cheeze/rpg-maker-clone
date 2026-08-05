@@ -2027,6 +2027,37 @@ check 'a stat command naming a fixed actor reaches one who is out of the party' 
   eq leader_before + 9, st.party.leader.level, 'and does apply to the members present'
 end
 
+check 'reading an actor sees one who is out of the party; "in party" does not' do
+  db = roster_db
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ic = Game::Interpreter::Cmd
+  interp = Game::Interpreter.new(st)
+
+  st.party.add_actor(2)
+  away = st.party.actor_by_id(2)
+  away.change_level_by(4)          # 3 -> 7
+  st.party.remove_actor(2)
+
+  # Control Variables operand 5: [.., .., .., .., 5 operand, actor id, attribute]
+  # attribute 0 = level. The absent ally reports their real level, not 0.
+  interp.start([FakeCmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 5, 2, 0])])
+  interp.update while interp.running? && !interp.waiting?
+  eq 7, st.variables[1], "an absent actor's level reads through"
+
+  # Conditional type 5: [5 type, actor id, sub-condition, value].
+  # Sub-condition 2 is "level >=" — asked of the actor, so it is true.
+  eq true, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 2, 7])),
+     'a level test sees the absent actor'
+  eq false, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 2, 8])),
+     'and compares properly'
+  # Sub-condition 0 is "is in the party" — that one really is about the party.
+  eq false, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 0, 0])),
+     '"in party" stays false while they are away'
+  st.party.add_actor(2)
+  eq true, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 0, 0])),
+     'and true once they rejoin'
+end
+
 check 'State save round-trips the message configuration' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,

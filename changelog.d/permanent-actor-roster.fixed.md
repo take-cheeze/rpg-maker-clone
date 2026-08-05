@@ -18,6 +18,13 @@
   command in Nepheshel (7805 — Change Skills on actor 1 alone is 2871) names a
   companion the game also dismisses, so 653 of the game's own commands per
   companion silently did nothing whenever that companion was away.
+- **Reading an actor sees one who is out of the party.** Control Variables'
+  actor-stat operand and Conditional Branch's actor tests (level / HP / name /
+  knows-skill / has-equipped / has-state) now read the roster; only the
+  "is in the party" test still asks the party, which is the split RPG_RT makes.
+  All 2436 of Nepheshel's actor-stat reads name a swappable companion and its
+  party status display is built out of them, so a dismissed member showed as
+  level 0; 243 conditionals took the wrong branch for the same reason.
 - **`\N[n]` in a message names the live actor**, not the database row, so a hero
   the player named through Enter Hero Name is called what they chose — Nepheshel
   renames actor 1 and then refers to `\N[1]` in 34 messages. **`\N[0]`** is the

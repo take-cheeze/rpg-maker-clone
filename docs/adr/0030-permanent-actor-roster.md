@@ -125,6 +125,16 @@ Introduce `Game::Actors`, a permanent roster keyed by database id, and demote
   roster rather than better: before, a dismissed companion was rebuilt from the
   database anyway, so a missed Change Skills was masked by the larger reset;
   now the companion persists, so the skill is simply never learned.
+- **Reading an actor goes through the roster too**, and the split is the
+  interesting part. Conditional Branch type 5 has seven sub-conditions: "is in
+  the party" is a *party* question (`IsActorInParty`) and the other six —
+  name, level, HP, knows-skill, has-equipped, has-state — are *actor* questions
+  (`Game_Actors::GetActor`). Nepheshel writes 28 of the first kind and 243 of
+  the second, so answering both from the party sent 243 branches down the wrong
+  path whenever the companion they named was away. Control Variables' actor-stat
+  operand is the same: **all 2436** of Nepheshel's name a swappable companion,
+  and the game's party status display is built out of them, so a dismissed
+  member was listed at level 0.
 
 ## Consequences
 

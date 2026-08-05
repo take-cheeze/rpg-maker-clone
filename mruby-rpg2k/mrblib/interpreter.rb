@@ -524,7 +524,10 @@ module Game
     # paused on the :name_input wait, then calls this with the entered name.
     def resume_name_input(name)
       req = @name_input_request
-      actor = req && party.actor_by_id(req[:actor_id])
+      # Through the roster, matching the lookup #do_name_input opened the request
+      # with — otherwise naming a companion who is out of the party would put up
+      # the widget and then quietly drop what was typed.
+      actor = req && party.roster[req[:actor_id]]
       actor.name = name if actor && name && !name.empty?
       reset_waits
     end
@@ -1278,10 +1281,16 @@ module Game
     # attribute (0 level, 1 EXP, 2 HP, 3 MP, 4 max HP, 5 max MP, 6 attack,
     # 7 defence, 8 spirit, 9 agility, then 10..14 the id of the item in each
     # equipment slot — weapon, shield, armour, helmet, accessory, in the order
-    # Game::Actor::EQUIP_ORDER already stores them, 0 for an empty slot). An
-    # actor not in the party reads as 0.
+    # Game::Actor::EQUIP_ORDER already stores them, 0 for an empty slot).
+    #
+    # Read through the roster (RPG_RT's `Game_Actors::GetActor`), so a companion
+    # who is out of the party reports their real level and gear rather than 0.
+    # **Every** actor-stat read in Nepheshel — all 2436 — names a swappable
+    # companion, and its party status display is built out of them, so a
+    # dismissed member used to be listed at level 0. Only an id the database has
+    # no row for reads as 0.
     def actor_operand(cmd)
-      actor = party.actor_by_id(cmd.param(5))
+      actor = party.roster[cmd.param(5)]
       return 0 unless actor
       attr = cmd.param(6)
       case attr
@@ -1836,12 +1845,14 @@ module Game
       end
     end
 
-    # Enable Combo (1007), RPG2003-only: arm party actor param0's battle command
-    # param1 to repeat param2 times. Recorded on the actor; the ATB battle system
-    # that spends a combo is not modelled here, so nothing acts on it yet.
+    # Enable Combo (1007), RPG2003-only: arm actor param0's battle command param1
+    # to repeat param2 times. The actor is named by id, so it resolves through the
+    # roster like the other fixed-id commands. Recorded on the actor; the ATB
+    # battle system that spends a combo is not modelled here, so nothing acts on
+    # it yet.
     def do_enable_combo(cmd)
       return unless @battle
-      actor = party.actor_by_id(cmd.param(0))
+      actor = identity_target(cmd)
       return unless actor
       actor.set_battle_combo(cmd.param(1), cmd.param(2))
     end
@@ -2024,12 +2035,19 @@ module Game
     # Conditional type 5 (actor/hero): param1 is the actor id, param2 selects the
     # sub-condition — 0 in party, 1 name equals the command string, 2 level >=
     # param3, 3 HP >= param3, 4 knows skill param3, 5 has item param3 equipped,
-    # 6 afflicted by state param3. The stat checks need the actor to be in the
-    # party (the only actors this build instantiates); a missing actor is false.
+    # 6 afflicted by state param3.
+    #
+    # Only sub-condition 0 asks the party; the rest ask the **actor**, through
+    # the roster, exactly as RPG_RT splits them (`IsActorInParty` versus
+    # `Game_Actors::GetActor`). The distinction decides which branch runs, and
+    # real data leans on it: Nepheshel writes 28 "is in the party" tests and 243
+    # state tests, all of the latter naming a companion it also dismisses — so
+    # answering them from the party alone sent every one down the false branch
+    # while that companion was away. A missing database row is still false.
     def actor_condition(cmd)
       id = cmd.param(1)
       return party.include_actor?(id) if cmd.param(2) == 0
-      actor = party.actor_by_id(id)
+      actor = party.roster[id]
       return false unless actor
       case cmd.param(2)
       when 1 then actor.name == cmd.string

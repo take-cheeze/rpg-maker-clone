@@ -315,7 +315,15 @@ The work below is roughly ordered by the critical path to a walkable game
   and `Game_Actors::GetActor` otherwise. That too is the common case rather than
   a corner: all **7805** fixed-actor-id commands in Nepheshel name a companion it
   also dismisses (Change Skills on actor 1 alone is 2871), and 653 per companion
-  silently did nothing while that companion was away. See ADR 0030. **Control
+  silently did nothing while that companion was away. **Reading** an actor goes
+  the same way, with one deliberate exception: Conditional Branch's "is this
+  actor in the party" test really does ask the party, while its other six tests
+  (name / level / HP / knows-skill / has-equipped / has-state) and Control
+  Variables' actor-stat operand ask the actor — the split RPG_RT makes between
+  `IsActorInParty` and `Game_Actors::GetActor`. Nepheshel writes 28 of the first
+  and 243 of the second, and all **2436** of its actor-stat reads name a
+  swappable companion, which is why its party status display used to list a
+  dismissed member at level 0. See ADR 0030. **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility, and the **id of the item in each of the five equipment
