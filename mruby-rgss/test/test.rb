@@ -149,6 +149,44 @@ assert "RGSS value types survive #clone and #dup" do
   assert_equal 7, table[1, 1], "the original table shares its copy's storage"
 end
 
+# RGSS's own RPG::Cache builds a hue variant with `@cache[path].clone` followed
+# by `hue_change`, so one decode serves every hue a game asks for. That only
+# works if the copy owns its pixels: hue_change rewrites the buffer in place, so
+# a shallow copy would recolour the cached original along with the variant, and a
+# copy with no payload at all — what mruby's clone gives a data object without
+# initialize_copy — raises on first use.
+assert "RGSS::Bitmap#clone copies pixels, not the handle" do
+  bmp = RGSS::Bitmap.new(4, 3)
+  bmp.set_pixel(0, 0, RGSS::Color.new(255, 0, 0, 255))
+  bmp.set_pixel(3, 2, RGSS::Color.new(0, 255, 0, 255))
+
+  [bmp.clone, bmp.dup].each do |copy|
+    assert_equal 4, copy.width
+    assert_equal 3, copy.height
+    assert_equal 255, copy.get_pixel(0, 0).red.to_i
+    assert_equal 255, copy.get_pixel(3, 2).green.to_i
+
+    # Writing the copy must not reach the original — the case RPG::Cache hits
+    # the moment a second hue is asked for.
+    copy.set_pixel(0, 0, RGSS::Color.new(0, 0, 255, 255))
+    assert_equal 255, copy.get_pixel(0, 0).blue.to_i
+    assert_equal 255, bmp.get_pixel(0, 0).red.to_i,
+                 "the original bitmap shares its copy's pixels"
+    assert_equal 0, bmp.get_pixel(0, 0).blue.to_i
+
+    # ...and neither must its font, which the scripts set per draw.
+    copy.font.size = 9
+    assert_equal 9, copy.font.size
+    assert_not_equal 9, bmp.font.size
+  end
+
+  # The whole point, in the shape RPG::Cache uses it.
+  variant = bmp.clone
+  variant.hue_change(120)
+  assert_equal 255, bmp.get_pixel(0, 0).red.to_i,
+               "hue_change on a clone recoloured the cached original"
+end
+
 assert "RGSS::Table drops out-of-range writes without reading the value" do
   t = RGSS::Table.new(2, 2)
   t[0, 0] = 5

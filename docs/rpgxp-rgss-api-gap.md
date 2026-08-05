@@ -224,10 +224,18 @@ object, which the four value types now define. Games do this constantly (the
 screen tone, the flash colour, a map's fog tone, a picture's tone), so it is on
 the path of anything that tints the screen.
 
-**Still open in the same family:** `Bitmap#clone` — RGSS's own `RPG::Cache`
-clones bitmaps for hue variants (ours re-loads instead, see gap 0), but a
-community script that clones one will raise the same way. It needs a real pixel
-copy, not a payload copy.
+**`Bitmap#clone` ✅, closed after the fact.** It was the one member of this family
+a payload copy could not fix: a `Bitmap` owns a pixel buffer, so a copy that
+shared it would have been worse than one with no payload at all. RGSS's own
+`RPG::Cache` builds every hue variant with
+`@cache[key] = @cache[path].clone; @cache[key].hue_change(hue)` — one decode per
+file however many hues a game asks for — and `hue_change` rewrites the buffer in
+place, so a shared buffer would recolour the cached original along with the
+variant. `initialize_copy` now copies the pixels, marks the copy dirty so
+anything already showing it repaints, and gives it its own `Font` so a size or
+colour set on the clone cannot reach back. `rgss_library.rb`'s `RPG::Cache` is
+the published definition again — the "reloads for a hue variant" deviation is
+gone from its header.
 
 ### 0g. `Table#[]=` past the edge ✅ (a write RGSS drops, we raised on)
 

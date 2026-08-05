@@ -25,9 +25,6 @@
 #     is baked into a pre-composited scratch bitmap when it is *assigned*
 #     (mruby-rgss), so mutating the Color object in place would change nothing on
 #     screen. Every `color.set` below is `self.color = RGSS::Color.new(...)`.
-#   * **`RPG::Cache` reloads a bitmap for a hue variant** instead of RGSS's
-#     `@cache[path].clone`: a Bitmap here wraps a native handle, and a shallow
-#     copy would give two Ruby objects one buffer to free.
 #   * **A missing asset yields a blank 32x32 bitmap and a warning**, where RGSS
 #     raises. A game whose RTP is not installed must not die on its first
 #     graphic, and with no second engine to fall back to (ADR 0030) a raise here
@@ -117,7 +114,7 @@ module RPG
         @cache[path] = bitmap
       end
       return bitmap if hue == 0
-      hued(path, filename, hue, bitmap)
+      hued(path, hue, bitmap)
     end
 
     def self.animation(filename, hue)
@@ -194,19 +191,18 @@ module RPG
       GC.start if Object.const_defined?(:GC)
     end
 
-    # A hue-rotated copy, cached under its own key. RGSS clones the cached bitmap
-    # and rotates the clone; a native handle cannot be shallow-copied, so this
-    # loads the file a second time instead. `base` is the hue-0 bitmap already in
-    # the cache, returned when there is nothing to reload — an empty name, or a
-    # file that did not load, where rotating the stand-in would only give the
-    # caller a *differently* blank bitmap.
-    def self.hued(path, filename, hue, base)
-      cached = @cache["#{path}\t#{hue}"]
+    # A hue-rotated copy, cached under its own key — RGSS's own
+    # `@cache[key] = @cache[path].clone; @cache[key].hue_change(hue)`, so the
+    # file is decoded once however many hues a game asks for. `base` is the hue-0
+    # bitmap already in the cache; `RGSS::Bitmap#initialize_copy` copies its
+    # pixels, so rotating the copy leaves the cached original alone.
+    def self.hued(path, hue, base)
+      key = "#{path}\t#{hue}"
+      cached = @cache[key]
       return cached unless cached.nil? || cached.disposed?
-      bitmap = filename == "" ? nil : load_file(path)
-      return base if bitmap.nil?
+      bitmap = base.clone
       bitmap.hue_change(hue)
-      @cache["#{path}\t#{hue}"] = bitmap
+      @cache[key] = bitmap
     end
 
     # Load one file, or report it and let the caller stand in. RGSS raises here;

@@ -461,6 +461,15 @@ def check_rgss_library
   hued = RPG::Cache.character("Hero", 120)
   errors += check.call(!hued.equal?(plain) && hued.hue == 120,
                        "RPG::Cache did not build a hue variant")
+  # The variant is a *copy* of the cached bitmap, as RGSS's own version is
+  # (`@cache[path].clone`), and hue_change rewrites pixels in place — so a copy
+  # that shared them would recolour every later user of the plain charset too.
+  # The native side is where that can actually go wrong (RGSS::Bitmap
+  # #initialize_copy); this only holds the contract the cache is written to.
+  errors += check.call(plain.hue.nil?,
+                       "building a hue variant recoloured the cached original")
+  errors += check.call(hued.equal?(RPG::Cache.character("Hero", 120)),
+                       "RPG::Cache rebuilt a cached hue variant")
   errors += check.call(RPG::Cache.character("", 0).width == 32,
                        "an empty name did not give a blank bitmap")
   errors += check.call(RPG::Cache.picture("MissingOnPurpose").width == 32,

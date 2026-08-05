@@ -1085,6 +1085,43 @@ mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// RGSS's own RPG::Cache clones a cached bitmap before recolouring it:
+//
+//     @cache[key] = @cache[path].clone
+//     @cache[key].hue_change(hue)
+//
+// so the plain and hue-rotated variants of a charset share one decode of the
+// file. mruby's clone/dup copy the instance variables and then call
+// initialize_copy, which for a data object is the only place the native payload
+// can be copied -- without this the copy carried no pixels at all and the first
+// use of it raised "uninitialized RGSS::Bitmap", which is why RPG::Cache here
+// used to load the file a second time instead.
+//
+// The pixels are *copied*, not shared, and that is the whole point: hue_change
+// rewrites the buffer in place, so a shallow copy would have recoloured the
+// cache's original along with the variant. The copy starts dirty so anything
+// already showing it repaints, and gets its own Font, so setting a size or
+// colour on the clone cannot reach back into the bitmap it came from.
+mrb_value bmp_init_copy(mrb_state* M, V self) {
+  V other;
+  mrb_get_args(M, "o", &other);
+  if (mrb_obj_equal(M, self, other))
+    return self;
+  const Bitmap& src = DataType<Bitmap>::get(M, other);
+  Bitmap& dst = DATA_PTR(self)
+                    ? DataType<Bitmap>::get(M, self)
+                    : DataType<Bitmap>::alloc_obj(M, self, src.width,
+                                                  src.height, src.format);
+  dst = src;
+  dst.dirty = true;
+
+  const mrb_sym font_iv = mrb_intern_lit(M, "@font");
+  const V font = mrb_iv_get(M, self, font_iv);
+  if (!mrb_nil_p(font))
+    mrb_iv_set(M, self, font_iv, mrb_funcall(M, font, "dup", 0));
+  return self;
+}
+
 // Read a whole file. Answers false when it cannot be opened or read fully, so
 // the caller can fall through to the next candidate path in silence.
 static bool slurp_file(const char* f, std::vector<uint8_t>& out) {
@@ -5538,6 +5575,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+  // #clone / #dup: a real pixel copy, which RPG::Cache's hue variants need.
+  mrb_define_method(M, bmp, "initialize_copy", bmp_init_copy, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
