@@ -298,7 +298,9 @@ def fake_parent(db)
 end
 
 def fake_party
-  OpenStruct.new(leader: nil, actors: [])
+  # `revision` is what the scene watches to know a page condition may have
+  # changed; a test bumps it to ask for a refresh.
+  OpenStruct.new(leader: nil, actors: [], revision: 0)
 end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil)
@@ -349,6 +351,86 @@ check 'a custom-route jump clears a tile and stops at the map edge' do
   # the event holds at 4 rather than clipping to the edge the way a step does.
   eq 4, c.x, 'hopped two tiles at a time and stopped when the landing left the map'
   eq 1, c.y
+end
+
+# -- event page refresh -------------------------------------------------------
+
+# An event with two pages: page 1 unconditional, page 2 gated on switch
+# `switch_id`. Later pages win, so page 2 takes over the moment the switch goes
+# on — the "talk to me once and I become someone else" idiom.
+def two_page_event(x, y, switch_id, page1, page2)
+  page2.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A,
+                                   switch_a_id: switch_id)
+  OpenStruct.new(x: x, y: y, pages: { 1 => page1, 2 => page2 })
+end
+
+check 'flipping a switch re-selects an event page mid-map' do
+  ic = Game::Interpreter::Cmd
+  # Page 1 is a stationary NPC; page 2 is a parallel process that sets switch 5.
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 4, charset_name: 'Ghost')
+  p2.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  scene = new_scene({ 1 => two_page_event(2, 2, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  5.times { scene.update }
+  ev = event_hashes(scene)[1]
+  eq 0, ev[:trigger], 'page 1 is active while switch 3 is off'
+  ok !st.switches[5], 'so the page-2 parallel process is not running'
+
+  st.switches[3] = true
+  5.times { scene.update }
+  ev = event_hashes(scene)[1]
+  eq 4, ev[:trigger], 'switch 3 flipped the event to page 2'
+  ok st.switches[5], 'and its parallel process now runs'
+end
+
+check 'a page change keeps the event where it stands' do
+  # The event walks east on page 1; when it flips to page 2 it must stay put
+  # rather than snapping back to its spawn tile.
+  p1 = page(x_move_type: Game::MoveType::CUSTOM, route: move_route([R::MOVE_RIGHT]))
+  p2 = page(trigger: 0, charset_name: 'Stopped')
+  scene = new_scene({ 1 => two_page_event(0, 1, 3, p1, p2) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  60.times { scene.update }
+  moved_x = chars(scene)[1].x
+  ok moved_x > 0, "the event walked east first (got #{moved_x})"
+
+  st.switches[3] = true
+  scene.update
+  eq moved_x, chars(scene)[1].x, 'the page change left it where it was'
+  eq 1, chars(scene)[1].y
+end
+
+check 'a refresh does not resurrect an erased event' do
+  ic = Game::Interpreter::Cmd
+  p1 = page(trigger: 3) # auto-start: erase myself
+  p1.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  p2 = page(trigger: 0)
+  scene = new_scene({ 1 => two_page_event(2, 2, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update }
+  ok event_hashes(scene)[1].nil?, 'the event erased itself'
+
+  st.switches[3] = true # would select page 2 if it were still around
+  5.times { scene.update }
+  ok event_hashes(scene)[1].nil?, 'an Erase Event outlasts a page refresh'
+end
+
+check 'an event with no matching page drops off the map, and comes back' do
+  # Only one page, gated on switch 3: with it off there is no active page at all.
+  only = page(trigger: 0)
+  only.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A,
+                                  switch_a_id: 3)
+  scene = new_scene({ 1 => OpenStruct.new(x: 2, y: 2, pages: { 1 => only }) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok event_hashes(scene)[1].nil?, 'no page holds, so nothing is on the map'
+
+  st.switches[3] = true
+  scene.update
+  ok event_hashes(scene)[1], 'the condition now holds, so the event appears'
 end
 
 check 'a random-mover roams but stays in bounds and off the player tile' do

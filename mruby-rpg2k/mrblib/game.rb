@@ -848,21 +848,47 @@ module Game
 
   # Game switches: a 1-indexed set of booleans, defaulting to false.
   class Switches
-    def initialize; @data = {}; end
+    # Bumped on every change of value. An event page's conditions are read from
+    # the switches, the variables, the party roster and its items, so the map
+    # scene watches these counters to know when a page might have flipped and
+    # its events need re-selecting (see Scene::Map#refresh_event_pages). Writing
+    # the value a switch already holds does not count as a change — a parallel
+    # process that sets the same flag every frame must not keep the map busy.
+    attr_reader :revision
+
+    def initialize; @data = {}; @revision = 0; end
     def [](id); @data[id] || false; end
-    def []=(id, v); @data[id] = v ? true : false; end
+
+    def []=(id, v)
+      nv = v ? true : false
+      return nv if self[id] == nv
+      @data[id] = nv
+      @revision += 1
+      nv
+    end
+
     def flip(id); self[id] = !self[id]; end
     def to_h; @data; end
-    def replace(h); @data = h || {}; end
+    def replace(h); @data = h || {}; @revision += 1; end
   end
 
   # Game variables: a 1-indexed set of integers, defaulting to 0.
   class Variables
-    def initialize; @data = {}; end
+    # See Switches#revision: page conditions read variables too.
+    attr_reader :revision
+
+    def initialize; @data = {}; @revision = 0; end
     def [](id); @data[id] || 0; end
-    def []=(id, v); @data[id] = v; end
+
+    def []=(id, v)
+      return v if self[id] == v
+      @data[id] = v
+      @revision += 1
+      v
+    end
+
     def to_h; @data; end
-    def replace(h); @data = h || {}; end
+    def replace(h); @data = h || {}; @revision += 1; end
   end
 
   # A digit-entry model backing the Input Number event command: `digits` cells,
@@ -1604,12 +1630,17 @@ module Game
 
     attr_reader :actors, :items, :gold
 
+    # Bumped whenever the roster or the bag changes — the two halves of the party
+    # an event page's conditions can test (see Switches#revision).
+    attr_reader :revision
+
     def initialize(db, ids = nil)
       @db = db
       ids ||= db.system.party || []
       @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| Actor.new(db, i) }
       @items = {}  # item id => count
       @gold = 0
+      @revision = 0
     end
 
     # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
@@ -1643,6 +1674,7 @@ module Game
     # its base stats), then the saved HP/MP are laid over the recomputed maxima.
     # A save written before actor_meta existed simply keeps the database defaults.
     def load_state(data)
+      @revision += 1
       @items = data[:items] || {}
       @gold = data[:gold] || 0
       exp = data[:exp] || {}
@@ -1691,9 +1723,14 @@ module Game
     def add_actor(id)
       return if include_actor?(id)
       @actors.push Actor.new(@db, id)
+      @revision += 1
     end
 
-    def remove_actor(id); @actors.reject! { |a| a.id == id }; end
+    def remove_actor(id)
+      before = @actors.size
+      @actors.reject! { |a| a.id == id }
+      @revision += 1 unless @actors.size == before
+    end
 
     def item_count(id); @items[id] || 0; end
     def has_item?(id); item_count(id) > 0; end
@@ -1702,7 +1739,10 @@ module Game
       c = item_count(id) + n
       c = 0 if c < 0
       c = 99 if c > 99
+      return c if @items[id] == c
       @items[id] = c
+      @revision += 1
+      c
     end
 
     def lose_item(id, n = 1); gain_item(id, -n); end
