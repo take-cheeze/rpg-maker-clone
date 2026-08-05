@@ -1,10 +1,11 @@
 - RPG Maker 2000: `scripts/analyze_game.rb` gained a **`--troops`** mode that
   reports a game's troop battle-event pages — how many carry a condition, which
   condition-flag bits they use, the turn base/multiple pairs and enemy-HP windows
-  those bits imply, which battle-only commands the pages run, and whether any
-  command lacks a handler. This is what validates `Game::BattlePage`'s flag bit
-  assignments against **real bytes** rather than against liblcf's declaration
-  order alone, per ADR 0002.
+  those bits imply, which battle-only commands the pages run (an explicit code
+  set, so the ordinary ShowMessage / Comment continuation markers are not
+  miscounted as battle-only), and whether any command lacks a handler. This is
+  what validates `Game::BattlePage`'s flag bit assignments against **real bytes**
+  rather than against liblcf's declaration order alone, per ADR 0002.
   Run against Nepheshel (3265 troop pages, 2819 conditional) it confirms four
   bits: `switch_a` (0) and `switch_b` (1) — bit 1 only ever appears alongside
   bit 0 and those pages carry a *pair* of plausible switch ids; `turn` (3) — 156

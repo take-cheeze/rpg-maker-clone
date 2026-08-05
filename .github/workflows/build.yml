@@ -67,7 +67,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - run: nix develop -c echo test
+      - run: ./scripts/nix-develop.bash echo test
 
       - name: cache rtp
         uses: actions/cache@v6
@@ -286,7 +286,7 @@ jobs:
           # in the archive — and asserts the engine finds it only when it is
           # there, which is what makes the check non-vacuous. Displays 114-115.
           - name: RGSSAD packed-asset smoke test
-            run: nix develop -c ./scripts/rgssad_asset_check.bash 114
+            run: ./scripts/nix-develop.bash ./scripts/rgssad_asset_check.bash 114
 
           - name: MV boot smoke test
             continue-on-error: true
@@ -553,7 +553,7 @@ jobs:
       # no other nix process running, keeps those steps from racing each other
       # for the store lock; it costs nothing overall because each of them would
       # otherwise pay for the same realisation anyway.
-      - run: nix develop -c echo test
+      - run: ./scripts/nix-develop.bash echo test
 
       # Fetch + build the MIT MV engine into the committed sample so it can be
       # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
@@ -614,6 +614,36 @@ jobs:
             emcmake cmake -S . -B wasm-build -GNinja \
             -DWASM_SAMPLE_DIR=data/mv-sample \
             -DWASM_MIDI_PATCHES=ON
+          # cmake/emscripten-probe-cache.cmake records which branch it took. It
+          # falls back to probing whenever the Emscripten version moved, which
+          # is correct but costs ~100s, and the only other symptom is a slow
+          # step -- easy to read as noise. Say so instead. A warning, not an
+          # error: the fallback builds the same thing, it just wants a
+          # regeneration.
+          status="$(cat wasm-build/emscripten-probe-cache.status 2>/dev/null \
+            || echo 'missing')"
+          echo "Emscripten probe cache: $status"
+          case "$status" in
+            applied*) ;;
+            *) echo "::warning::the Emscripten probe pre-seed did not apply" \
+                 "($status), so the wasm configure probed the toolchain the" \
+                 "slow way. Regenerate cmake/emscripten-probe-cache.cmake --" \
+                 "see the header of that file." ;;
+          esac
+
+      # Prove the pre-seeded answers still match what the toolchain reports. The
+      # version guard in the seed cannot see a sysroot that changed underneath
+      # the same Emscripten release, so this re-probes for real and diffs. That
+      # is the ~110s configure the seed exists to avoid, so it runs alongside
+      # the build instead of in front of it and costs no critical path; the
+      # barrier further down is what turns a drift into a failed job. It writes
+      # only to mktemp directories, so it cannot race the build.
+      - name: Check the Emscripten probe cache
+        id: probe-cache
+        background: true
+        run: |
+          ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
+            ./scripts/check_emscripten_probe_cache.bash
 
       # Barrier: the link step packages data/mv-sample and the MIDI patch set
       # into index.data, so both must be in place before the build starts. A
@@ -644,6 +674,11 @@ jobs:
             ./scripts/nix-develop.bash ccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Barrier: a drifted probe cache means the page below was configured with
+      # stale answers, so surface it before the artifact is published.
+      - name: Wait for the probe-cache check
+        wait: [probe-cache]
 
       - uses: actions/upload-artifact@v7
         with:

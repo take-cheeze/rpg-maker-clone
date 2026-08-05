@@ -321,6 +321,14 @@ end
 BATTLE_PAGE_FLAGS = %w[switch_a switch_b variable turn fatigue enemy_hp
                        actor_hp turn_enemy turn_actor command_actor].freeze
 
+# The commands that only exist inside a battle-event page. Listed explicitly
+# rather than matched as a numeric range: a range over 13000..24000 also catches
+# ShowMessage(cont.) 20110 and Comment(cont.) 22410, which are ordinary
+# continuation markers a battle page uses exactly as a map event does, and
+# reporting them under "battle-only" misrepresents what the page is doing.
+BATTLE_ONLY_CODES = [13110, 13120, 13130, 13150, 13210, 13260, 13310, 13410,
+                     23310, 23311].to_set
+
 def report_troops(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
   pages = 0
@@ -360,7 +368,7 @@ def report_troops(dir)
     puts 'enemy-HP windows (a non-default 0..100 proves the bit):'
     windows.uniq.each { |e, lo, hi| puts "  enemy #{e}: #{lo}..#{hi}%" }
   end
-  battle = cmds.keys.select { |c| c >= 13000 && c < 24000 }.sort
+  battle = cmds.keys.select { |c| BATTLE_ONLY_CODES.include?(c) }.sort
   unless battle.empty?
     puts 'battle-only commands used:'
     battle.each { |c| puts "  #{c} #{(CODE_NAMES[c] || '?').ljust(24)} x#{cmds[c]}" }
