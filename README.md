@@ -74,10 +74,13 @@
 - The engine reads `Game.ini`, shows the **title screen** (the game's title
   graphic behind a New Game / Continue / Shutdown window, with the database's
   title BGM and cursor/decision sound effects) and, on **New Game**, builds the
-  party and enters a walkable **map**: the three XP tile layers are drawn as
-  placeholder colour blocks (real tileset/autotile rendering is planned, as on
-  the RPG2000 side), the party leader walks from its character graphic, and
-  movement uses the tileset's passage flags with a follow camera
+  party and enters a walkable **map**: the three XP tile layers are drawn from
+  the project's real tileset — regular tiles blitted from the tileset graphic,
+  autotiles assembled from their quads and animated, and priority tiles sorted
+  above the characters — with the party leader and every event drawn from their
+  `Graphics/Characters` sheets (or the tile a page uses as its graphic), stacked
+  by screen row the way RMXP sorts them, and movement using the tileset's
+  passage flags with a follow camera
 - Both an **unpacked** project (a loose `Data/` folder) and an **encrypted
   archive** load: a packed release that ships only a `Game.rgssad` (RPG Maker XP;
   RPG Maker VX's same-format `Game.rgss2a` too) or a VX Ace `Game.rgss3a` is
