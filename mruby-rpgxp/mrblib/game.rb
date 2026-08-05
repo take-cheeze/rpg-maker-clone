@@ -438,6 +438,143 @@ class RPGXP
       end
     end
 
+    # Playback state for one Show Animation (207): which frame of an
+    # `RPG::Animation` is on screen and what its cells say to draw. Pure logic —
+    # the scene turns each cell into a sprite.
+    #
+    # RMXP's `Sprite_Base` runs an animation for `frame_max * 4 + 1` game frames
+    # and reads the frame back out of that countdown, so every animation frame is
+    # held for four game frames. A frame's `cell_data` is a Table of up to
+    # sixteen cells by eight columns: the sheet pattern, x and y offsets from the
+    # anchor, zoom in percent, angle, a mirror flag, opacity and blend type. A
+    # pattern of -1 (or a missing row) means that cell draws nothing.
+    class Animation
+      CELLS = 16          # RMXP allocates exactly sixteen cell sprites
+      CELL_SIZE = 192     # each cell is a 192x192 square of the sheet
+      SHEET_COLUMNS = 5   # ... laid out five to a row
+      FRAME_TICKS = 4     # game frames per animation frame
+      NO_CELL = -1
+
+      # RPG::Animation#position: over the target's head, on it, at its feet, or
+      # fixed to the screen.
+      POSITION_TOP = 0
+      POSITION_MIDDLE = 1
+      POSITION_BOTTOM = 2
+      POSITION_SCREEN = 3
+
+      # Timing#flash_scope: none, the target, the whole screen, or hide target.
+      FLASH_NONE = 0
+      FLASH_TARGET = 1
+      FLASH_SCREEN = 2
+
+      def initialize(record)
+        @record = record
+        @duration = record.frame_max.to_i * FRAME_TICKS + 1
+      end
+
+      attr_reader :record
+
+      def playing?; @duration > 0; end
+      def position; @record.position.to_i; end
+      def sheet_name; @record.animation_name; end
+      def sheet_hue; @record.animation_hue.to_i; end
+
+      # The animation frame to draw this tick, or nil once it is over.
+      #
+      # The countdown is one longer than the frames need, and RMXP's own formula
+      # yields -1 on that leading tick — so it reads `frames[-1]`, the *last*
+      # frame, for one game frame before the animation starts. That is a bug in
+      # the original, visible as a flash of the end of the animation; clamping to
+      # the first frame holds it for five ticks instead.
+      def frame_index
+        return nil unless playing?
+        i = @record.frame_max.to_i - (@duration + FRAME_TICKS - 1) / FRAME_TICKS
+        i < 0 ? 0 : i
+      end
+
+      # One tick. Call after drawing the current frame, as RMXP does.
+      def update
+        @duration -= 1
+      end
+
+      # The drawable cells of `index` as [pattern, x, y, zoom, angle, mirror,
+      # opacity, blend] rows, skipping the blank ones.
+      def cells(index)
+        frame = index && @record.frames && @record.frames[index]
+        return [] unless frame
+        data = frame.cell_data
+        return [] unless data
+        count = frame.cell_max.to_i
+        count = CELLS if count > CELLS
+        out = []
+        i = 0
+        while i < count
+          pattern = data[i, 0]
+          out << [pattern, data[i, 1], data[i, 2], data[i, 3], data[i, 4],
+                  data[i, 5], data[i, 6], data[i, 7]] if pattern && pattern != NO_CELL
+          i += 1
+        end
+        out
+      end
+
+      # The source rect of a cell pattern on the sheet, as [x, y, w, h].
+      def self.cell_rect(pattern)
+        [pattern % SHEET_COLUMNS * CELL_SIZE, pattern / SHEET_COLUMNS * CELL_SIZE,
+         CELL_SIZE, CELL_SIZE]
+      end
+
+      # The timings that fire on `index` (sound effects and flashes).
+      def timings_at(index)
+        return [] if index.nil? || @record.timings.nil?
+        @record.timings.select { |t| t.frame.to_i == index }
+      end
+    end
+
+    # Scroll Map (203): the camera pushed off the party leader for a cutscene.
+    #
+    # RMXP has no separate notion here — `$game_map.display_x/y` *is* the camera,
+    # and Game_Player scrolls it as the hero walks — but ours derives the camera
+    # from the leader every frame, so a commanded scroll is carried as an offset
+    # on top of that. It persists until another scroll moves it (which is how
+    # games use it: scroll out, play the scene, scroll back), and the scene
+    # clamps the result to the map the same way the follow camera is clamped.
+    class Scroll
+      # Distance is in tiles; RMXP moves 2**speed pixels a frame.
+      attr_reader :x, :y
+
+      def initialize
+        @x = 0
+        @y = 0
+        @rest = 0
+        @step_x = 0
+        @step_y = 0
+      end
+
+      def scrolling?; @rest > 0; end
+
+      # `direction` is an RPG direction (2 down, 4 left, 6 right, 8 up).
+      def start(direction, distance, speed, tile)
+        step = 1 << speed.to_i
+        step = 1 if step < 1
+        @rest = distance.to_i * tile
+        dx, dy = Character::DIR_DELTA[direction.to_i] || [0, 0]
+        @step_x = dx * step
+        @step_y = dy * step
+        @rest = 0 if dx.zero? && dy.zero?
+      end
+
+      def update
+        return if @rest <= 0
+        # The last frame moves only what is left, so the scroll lands on a whole
+        # number of tiles however the speed divides it.
+        move = @step_x.abs + @step_y.abs
+        move = @rest if move > @rest
+        @x += @step_x.zero? ? 0 : (@step_x > 0 ? move : -move)
+        @y += @step_y.zero? ? 0 : (@step_y > 0 ? move : -move)
+        @rest -= move
+      end
+    end
+
     # The screen-wide effects of RMXP's `Game_Screen` that are not the tone:
     # Screen Flash (224) and Screen Shake (225). Pure data plus RMXP's own
     # per-frame maths, so the scene only has to hand the results to a viewport

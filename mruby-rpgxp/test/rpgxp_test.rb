@@ -814,6 +814,156 @@ assert "Interpreter: set move route resolves the target" do
   assert_true it4.take_move_route_requests.empty?
 end
 
+# Build an RPG::Animation with `frame_max` frames, each holding `cells` rows of
+# the eight-column cell_data RMXP writes.
+def make_animation(frame_max, cells_per_frame = 1)
+  a = RPG::Animation.new
+  a.id = 1
+  a.animation_name = "malch8"
+  a.animation_hue = 0
+  a.position = RPGXP::Game::Animation::POSITION_MIDDLE
+  a.frame_max = frame_max
+  a.frames = (0...frame_max).map do |f|
+    fr = RPG::Animation::Frame.new
+    fr.cell_max = cells_per_frame
+    data = Table.new(cells_per_frame, 8)
+    cells_per_frame.times do |i|
+      data[i, 0] = f * 10 + i   # pattern
+      data[i, 1] = 4            # x
+      data[i, 2] = -8           # y
+      data[i, 3] = 100          # zoom %
+      data[i, 4] = 0            # angle
+      data[i, 5] = 0            # mirror
+      data[i, 6] = 255          # opacity
+      data[i, 7] = 1            # blend
+    end
+    fr.cell_data = data
+    fr
+  end
+  a.timings = []
+  a
+end
+
+assert "Game::Animation holds each frame for four game frames" do
+  anim = RPGXP::Game::Animation.new(make_animation(3))
+  assert_true anim.playing?
+  # Read the frame, then tick — the order the scene draws in.
+  seen = []
+  while anim.playing?
+    seen << anim.frame_index
+    anim.update
+  end
+  # frame_max * 4 + 1 ticks. The "+ 1" all lands on the first frame, which is
+  # held for five: RMXP's own index formula yields -1 on that leading tick — it
+  # reads frames[-1], the *last* frame, for one game frame — and this clamps to
+  # the first instead. Every other frame gets its four.
+  assert_equal 13, seen.size
+  assert_equal [0, 0, 0, 0, 0], seen[0, 5]
+  assert_equal [1, 1, 1, 1], seen[5, 4]
+  assert_equal [2, 2, 2, 2], seen[9, 4]
+  assert_false anim.playing?
+  assert_nil anim.frame_index
+end
+
+assert "Game::Animation reads a frame's drawable cells" do
+  anim = RPGXP::Game::Animation.new(make_animation(2, 3))
+  cells = anim.cells(1)
+  assert_equal 3, cells.size
+  # [pattern, x, y, zoom, angle, mirror, opacity, blend]
+  assert_equal 10, cells[0][0]
+  assert_equal 4, cells[0][1]
+  assert_equal(-8, cells[0][2])
+  assert_equal 1, cells[0][7]
+  # A cell whose pattern is -1 draws nothing and is skipped.
+  blank = make_animation(1, 2)
+  blank.frames[0].cell_data[0, 0] = -1
+  assert_equal 1, RPGXP::Game::Animation.new(blank).cells(0).size
+  # Out-of-range frames are empty rather than an error.
+  assert_equal 0, anim.cells(99).size
+  assert_equal 0, anim.cells(nil).size
+end
+
+assert "Game::Animation maps a pattern onto the sheet grid" do
+  # Five 192x192 cells to a row.
+  assert_equal [0, 0, 192, 192], RPGXP::Game::Animation.cell_rect(0)
+  assert_equal [768, 0, 192, 192], RPGXP::Game::Animation.cell_rect(4)
+  assert_equal [0, 192, 192, 192], RPGXP::Game::Animation.cell_rect(5)
+  assert_equal [384, 384, 192, 192], RPGXP::Game::Animation.cell_rect(12)
+end
+
+assert "Interpreter: show animation queues without pausing" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(207, [-1, 3], 0),          # on the player
+    cmd(207, [0, 4], 0),           # on this event
+    cmd(207, [2, 0], 0),           # animation 0 = "none", dropped
+    cmd(121, [5, 5, 0], 0)
+  ], 1, 7)
+  it.update
+  assert_false it.waiting?
+  assert_true s.switches[5]
+  reqs = it.take_animation_requests
+  assert_equal 2, reqs.size
+  assert_equal :player, reqs[0][:target]
+  assert_equal 3, reqs[0][:animation_id]
+  assert_equal 7, reqs[1][:target]   # "this event"
+  assert_equal 4, reqs[1][:animation_id]
+  assert_true it.take_animation_requests.empty?
+end
+
+assert "Game::Scroll moves a whole number of tiles and stops" do
+  sc = RPGXP::Game::Scroll.new
+  assert_false sc.scrolling?
+  # Two tiles right (direction 6) at speed 4 -> 16 pixels a frame over a 32px
+  # tile, so four frames.
+  sc.start(6, 2, 4, 32)
+  assert_true sc.scrolling?
+  4.times { sc.update }
+  assert_equal 64, sc.x
+  assert_equal 0, sc.y
+  assert_false sc.scrolling?
+  # Further frames do not drift.
+  sc.update
+  assert_equal 64, sc.x
+
+  # A speed that does not divide the distance still lands exactly, because the
+  # last frame moves only what is left.
+  s2 = RPGXP::Game::Scroll.new
+  s2.start(8, 1, 5, 32) # up, 1 tile, 32px a frame
+  s2.update
+  assert_equal(-32, s2.y)
+  assert_false s2.scrolling?
+
+  # Offsets accumulate: scrolling back returns to where it started.
+  s3 = RPGXP::Game::Scroll.new
+  s3.start(4, 3, 5, 32)
+  10.times { s3.update }
+  assert_equal(-96, s3.x)
+  s3.start(6, 3, 5, 32)
+  10.times { s3.update }
+  assert_equal 0, s3.x
+end
+
+assert "Interpreter: scroll map suspends until the scene can start it" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([cmd(203, [6, 2, 4], 0), cmd(121, [5, 5, 0], 0)], 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal :scroll, it.wait_kind
+  r = it.scroll_request
+  assert_equal 6, r[:direction]
+  assert_equal 2, r[:distance]
+  assert_equal 4, r[:speed]
+  assert_false s.switches[5]
+  # The scene starts the scroll and resumes at once — the scroll itself does not
+  # hold the list up.
+  it.resume
+  assert_false it.waiting?
+  assert_true s.switches[5]
+end
+
 assert "Game::Screen decays a flash to nothing over its duration" do
   sc = RPGXP::Game::Screen.new
   assert_false sc.flashing?

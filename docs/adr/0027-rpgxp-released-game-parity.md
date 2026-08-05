@@ -8,8 +8,10 @@ Accepted — the data, script-host and boot checks run green on both the
 OpenGame.exe test bed and the packed *Pray for You* release; the wine comparison
 stays a manual/dev script, as in ADR 0021 / 0025.
 
-**Amended 2026-08-05: the picture layer, the message pause arrow and the screen
-effects (transitions, flash, shake) landed**, and
+**Amended 2026-08-05: the picture layer, the message pause arrow, the screen
+effects (transitions, flash, shake), Scroll Map and Show Animation landed** —
+leaving the map scene with a handler for every event command a real XP game uses
+except `355` (script) — and
 `scripts/compare-rpgxp-wine.bash` grew a `STEPS_SPEC` override so a game's
 opening cutscene can be driven instead of only its start map. See the follow-ups
 below for what that closed and what it did not.
@@ -160,9 +162,23 @@ screen). The rest is the windowskin background's shading.
   foreground interpreter freezes the screen: a background process is never
   suspended on a UI request, so its 222 would never dissolve the still and the
   screen would stay stuck on a snapshot for good.
-- Still no handler: `203` (scroll map), `207` (show animation) and `355`
-  (script). 207 needs the animation system; 355 needs a decision about what a
-  game's inline Ruby should be evaluated against.
+- **Scroll Map (203) and Show Animation (207) are done**, which leaves the map
+  scene with a handler for every command a real game uses except one. 203 is
+  carried as an offset on top of the follow camera (RMXP has no separate notion:
+  its `display_x`/`display_y` *is* the camera), clamped to the map the same way.
+  207 blits an animation's cells from the 192x192 grid of its sheet with each
+  cell's own offset, zoom, angle, mirror, opacity and blend, four game frames
+  per animation frame, and runs the per-frame timings' sound effect and flash.
+  Its leading tick is worth knowing about: RMXP's own index formula yields -1
+  there, so the genuine runtime shows the *last* frame for one game frame before
+  the animation starts — clamping to the first frame instead holds that one for
+  five ticks.
+- **`355` (script) is the last one, and it is a design question rather than a
+  gap.** `mruby-eval` makes evaluating a game's inline Ruby mechanically
+  possible; what it should be evaluated *against* — which of RMXP's globals and
+  objects a script may reasonably expect to find in the built-in flow, when the
+  script host exists precisely to give it all of them — is the part to settle
+  first.
 - **Driving the reference past the opening needs 32-bit GStreamer.** Pray for
   You's opening plays MP3 BGM, and `RGSS103J.dll` decodes it through
   winegstreamer; without `gstreamer1.0-plugins-base:i386` (and friends) in the

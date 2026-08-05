@@ -97,7 +97,9 @@ class RPGXP
       CHANGE_EQUIP    = 319
       TRANSFER_PLAYER = 201
       EVENT_LOCATION  = 202
+      SCROLL_MAP      = 203
       TRANSPARENT     = 208
+      SHOW_ANIMATION  = 207
       MOVE_ROUTE      = 209
       WAIT_FOR_MOVE   = 210
       PREPARE_TRANSITION = 221
@@ -165,6 +167,7 @@ class RPGXP
         @location_requests = []
         @picture_requests = []
         @screen_requests = []
+        @animation_requests = []
         @erase_requested = false
         @freeze_requested = false
         @running = true
@@ -181,6 +184,7 @@ class RPGXP
         @location_requests = []
         @picture_requests = []
         @screen_requests = []
+        @animation_requests = []
         @freeze_requested = false
         @running = false
         reset_waits
@@ -240,6 +244,16 @@ class RPGXP
         @picture_requests = []
         reqs
       end
+
+      # Drain the Show Animation (207) requests queued since the last call.
+      def take_animation_requests
+        reqs = @animation_requests || []
+        @animation_requests = []
+        reqs
+      end
+
+      # The Scroll Map (203) the interpreter is suspended on, or nil.
+      attr_reader :scroll_request
 
       # True (once) if a Prepare for Transition ran since the last call.
       def take_freeze_request
@@ -310,6 +324,7 @@ class RPGXP
         @location_requests = []
         @picture_requests = []
         @screen_requests = []
+        @animation_requests = []
         @erase_requested = false
         @freeze_requested = false
         reset_waits
@@ -326,6 +341,7 @@ class RPGXP
         @input_variable = nil
         @input_digits = nil
         @transition_name = nil
+        @scroll_request = nil
       end
 
       def switches;  @state.switches;  end
@@ -368,8 +384,10 @@ class RPGXP
         when TRANSFER_PLAYER then do_transfer(cmd)
         when EVENT_LOCATION  then do_event_location(cmd)
         when TRANSPARENT     then do_transparent(cmd)
+        when SHOW_ANIMATION  then do_show_animation(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
         when WAIT_FOR_MOVE   then do_wait_for_move(cmd)
+        when SCROLL_MAP      then do_scroll_map(cmd)
         when PREPARE_TRANSITION then do_prepare_transition(cmd)
         when EXECUTE_TRANSITION then do_execute_transition(cmd)
         when TINT_SCREEN     then do_tint_screen(cmd)
@@ -1010,6 +1028,42 @@ class RPGXP
         @screen_requests << { op: :shake, power: param(cmd, 0, 0).to_i,
                               speed: param(cmd, 1, 0).to_i,
                               duration: param(cmd, 2, 0).to_i }
+      end
+
+      # Show Animation (207): [target, animation id]. RMXP's `command_207` just
+      # writes `character.animation_id`, and Sprite_Character plays it on the
+      # next frame -- nothing pauses, and a second animation on the same
+      # character replaces the first. Queued for the scene, which owns the
+      # sprites; the target uses the same character codes as Set Move Route.
+      def do_show_animation(cmd)
+        target = param(cmd, 0)
+        id = param(cmd, 1, 0).to_i
+        @index += 1
+        return if id <= 0
+        resolved =
+          case target
+          when MOVE_TARGET_PLAYER then :player
+          when MOVE_TARGET_THIS   then @event_id
+          else target
+          end
+        return if resolved.nil?
+        @animation_requests << { target: resolved, animation_id: id }
+      end
+
+      # Scroll Map (203): [direction, distance in tiles, speed]. RMXP's
+      # `command_203` returns false — "run me again next frame" — while a scroll
+      # is still in progress, so a second Scroll Map holds the list until the
+      # first has finished and only then starts. Ours suspends for the same
+      # reason and the scene resumes it the moment it could start the scroll,
+      # which is the same frame when nothing else is scrolling. The scroll itself
+      # does not pause the list (games follow it with their own Wait).
+      def do_scroll_map(cmd)
+        @index += 1
+        @scroll_request = { direction: param(cmd, 0, 0).to_i,
+                            distance: param(cmd, 1, 0).to_i,
+                            speed: param(cmd, 2, 0).to_i }
+        @wait_kind = :scroll
+        @waiting = true
       end
 
       # Prepare for Transition (221): freeze the screen as it is now. RMXP's
