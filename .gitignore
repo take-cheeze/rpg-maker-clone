@@ -10,5 +10,13 @@
 !/data/mz-sample
 /ss
 
+# The MIDI instrument patches (~32 MiB of GUS samples) are fetched by
+# scripts/download-freepats.bash rather than committed. Ignore everything the
+# script writes under assets/timidity, but keep the checked-in README that
+# explains what belongs there and how to get it.
+/assets/.freepats
+/assets/timidity/*
+!/assets/timidity/README.md
+
 # Runtime save artifacts written by the MV/websave (localStorage) shim.
 /save

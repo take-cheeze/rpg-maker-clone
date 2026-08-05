@@ -188,11 +188,40 @@ screen does not change* — the failure mode that hid the RPG2000 screen tint
 (`docs/TODO.md`). Measured: `base=[128,128,128] color=[191,63,63]
 tone=[128,128,255] cleared=[0,0,0] mid=[94,94,94] after=[0,0,0]`.
 
-### 4. Window open/close is not animated, and `Window#tone` is not applied
+### 4. Window open/close animates, and `Window#tone` is applied ✅
 
-`openness` is stored and the scripts' open/close loops terminate correctly, but
-the native window is drawn full-size throughout, so a menu pops rather than
-unrolls. `Window#tone` (the windowskin colour tint) is likewise stored only.
+`openness` used to be stored while the window drew full-size throughout, so a
+menu popped rather than unrolled; `Window#tone` was stored only.
+
+**`openness` is drawn now.** The window unrolls from its horizontal centre line:
+the frame is composited at `height * openness / 255` and the object shifted down
+by half of what it lost, so it grows out of the middle the way RGSS does it. The
+9-slice's corner height is clamped to half the drawn height, so a part-open
+window keeps a frame instead of laying its top and bottom borders over each
+other. Contents, cursor and pause arrow are hidden until it is fully open —
+only the frame animates. `Window_Base#open` steps `openness` by 48 a frame, so
+this is the whole animation.
+
+**`Window#tone` is drawn too**, over the *background* only: it is applied to the
+canvas right after the background tile is laid down and before the frame and
+contents go on top, which confines it without a second buffer. Unlike
+`Viewport#tone` it is not folded in by children — a window composites itself, so
+it tones its own pixels — but the per-pixel maths is the same shared
+`apply_tone_px`, so the three tone paths cannot drift. `Window#update`
+re-checks it, because the scripts mutate the Tone in place
+(`window.tone.set(...)`); one comparison a frame when it has not moved.
+
+Both are native, and deliberately *not* redefined in mrblib: that loads after the
+C init, so a Ruby accessor there would shadow the native one and quietly go back
+to storing a value that draws nothing.
+
+Measured by `RGSS.window_probe` in the `render_probe` ctest — a 320×240
+solid-blue window on a 544×416 screen, so the frame's mean blue is the fraction
+of the screen it covers: `drawn=[0,0,86] half=[0,0,43] closed=[0,0,0]
+toned=[86,0,86]`. 43 is half of 86, and 86 is 255 × 320×240 / (544×416). Both
+halves were confirmed non-vacuous by breaking them in turn.
+
+### 5. `Bitmap#blur` / `#radial_blur`
 
 ### 5. `Bitmap#blur` / `#radial_blur`
 
@@ -253,6 +282,7 @@ a position for music that was not playing. Fixed while building the probe.
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
 the only route to a real game. A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
-tints, flashes and fades the screen, dissolves between scenes, and — packed or
-loose — finds its graphics and its music. What is left is cosmetic: the window
-open/close animation and `Window#tone` (item 4), and the two blurs (item 5).
+tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
+its windows, and — packed or loose — finds its graphics and its music. What is
+left is `Bitmap#blur`/`#radial_blur` (item 5, one use each) and the two tilemap
+polish items in item 1.

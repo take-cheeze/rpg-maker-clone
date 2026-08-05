@@ -130,6 +130,14 @@ jobs:
         background: true
         run: ./scripts/nix-develop.bash ./scripts/download-mz-corescript.bash
 
+      # MIDI instrument patches for SDL_mixer's TiMidity synth. Not committed
+      # (~32 MiB of samples), so fetch them here or the `timidity_patches` check
+      # skips and any .mid the smoke tests touch plays silence.
+      - name: Download MIDI patches
+        id: dl-freepats
+        background: true
+        run: ./scripts/nix-develop.bash ./scripts/download-freepats.bash
+
       - name: pre-commit
         id: pre-commit
         background: true
@@ -174,7 +182,9 @@ jobs:
       # checks that consume them. A failed background step (e.g. pre-commit)
       # surfaces here and fails the job, exactly as it did when these ran inline.
       - name: Wait for lint and downloads
-        wait: [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample]
+        wait:
+          [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample,
+           dl-freepats]
 
       - name: Prepare screenshot dir
         run: mkdir -p ss
@@ -557,6 +567,15 @@ jobs:
         background: true
         run: ./scripts/nix-develop.bash ./scripts/download-mv-corescript.bash
 
+      # Instrument samples for the TiMidity decoder the port is built with
+      # (-sSDL2_MIXER_FORMATS in CMakeLists.txt). They are packaged into
+      # index.data at link time by -DWASM_MIDI_PATCHES=ON below, so this is
+      # awaited by the pre-link barrier rather than the configure.
+      - name: Download MIDI patches
+        id: freepats
+        background: true
+        run: ./scripts/nix-develop.bash ./scripts/download-freepats.bash
+
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
@@ -589,17 +608,16 @@ jobs:
             CMAKE_C_COMPILER_LAUNCHER=ccache \
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja \
-            -DWASM_SAMPLE_DIR=data/mv-sample
+            -DWASM_SAMPLE_DIR=data/mv-sample \
+            -DWASM_MIDI_PATCHES=ON
 
-      # Barrier: the link step packages data/mv-sample into index.data, so the
-      # engine files must be in place before the build starts. A failed
-      # background fetch surfaces here and fails the job, exactly as it did when
-      # this ran inline.
-      - name: Wait for the MV sample engine
-        wait: [mv-sample]
+      # Barrier: the link step packages data/mv-sample and the MIDI patch set
+      # into index.data, so both must be in place before the build starts. A
+      # failed background fetch surfaces here and fails the job, exactly as it
+      # did when this ran inline.
+      - name: Wait for the MV sample engine and MIDI patches
+        wait: [mv-sample, freepats]
 
-      # The RPG XP test bed is still downloading in the background here (its own
-      # barrier is further down), so this overlaps a second nix process.
       - name: build
         run: |
           ./scripts/nix-develop.bash ccache --zero-stats
@@ -608,8 +626,10 @@ jobs:
 
       - name: ccache stats
         if: always()
-        # As in the `build` job: the test-bed download may still be in flight,
-        # and this captures stdout into the step summary.
+        # As in the `build` job: this captures stdout into the step summary, so
+        # nix's own stderr has to stay out of it. `if: always()` can also land
+        # here with a background fetch still in flight (when the barrier above
+        # failed), which is the other half of what the wrapper handles.
         env:
           NIX_DEVELOP_SEPARATE_STREAMS: 1
         run: |

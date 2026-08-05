@@ -951,21 +951,74 @@ end
 
 assert "RGSS::Audio.setup_midi is a safe no-op" do
   # RGSS2+; the VX/VX Ace scripts call it at boot when the project asks for
-  # MIDI. SDL_mixer picks its own synth, so there is nothing to configure.
+  # MIDI. The synth is configured when the audio device opens (src/sdl_audio.cxx
+  # resolves assets/timidity or TIMIDITY_CFG), so there is nothing left to do.
   assert_nil RGSS::Audio.setup_midi
+end
+
+assert "RGSS::Audio.midi_available? is false without a backend" do
+  # This binary installs no audio backend, so nothing can synthesise MIDI. The
+  # query must say so rather than claim MIDI works and play silence.
+  assert_false RGSS::Audio.midi_available?
+end
+
+# Minimal $stderr stand-in for the warn_once test below. It collects whole
+# lines rather than capturing text and re-parsing it: mruby's String#scan comes
+# from mruby-onig-regexp and takes a Regexp, not the String a literal search
+# would want, so counting occurrences in captured output is a trap.
+class WarnOnceSink
+  attr_reader :lines
+
+  def initialize
+    @lines = []
+  end
+
+  def puts(message)
+    @lines << message
+  end
+
+  # Not used by warn_once, but an object standing in for $stderr is expected to
+  # be writable, and some runtimes reject one that is not.
+  def write(text)
+    @lines << text
+    text.to_s.size
+  end
+end
+
+assert "RGSS.warn_once reports each message only once" do
+  # warn_stub is built on warn_once; both must stay quiet after the first call
+  # so a per-frame caller cannot flood the log.
+  sink = WarnOnceSink.new
+  original = $stderr
+  begin
+    $stderr = sink
+    RGSS.warn_once("warn-once-test-message")
+    RGSS.warn_once("warn-once-test-message")
+  ensure
+    $stderr = original
+  end
+  assert_equal 1, sink.lines.size
+  assert_equal "[RGSS] warn-once-test-message", sink.lines[0]
 end
 
 assert "RGSS::Window RGSS2/RGSS3 API surface" do
   # Window.new needs a live display (see the Tilemap note below), so assert the
-  # VX/VX Ace surface is defined; the behaviour of these accessors is exercised
-  # by the VX runtime checks (scripts/rpgvx_testbed_check.rb). The dual-form
-  # constructor (RGSS1's optional viewport / RGSS2's x, y, width, height) needs
-  # no assertion here: it aliases the native initialize at load, so a broken
-  # alias would fail the whole gem, not one test.
+  # VX/VX Ace surface is defined; what these accessors actually *draw* is
+  # measured on a real display by RGSS.window_probe (the render_probe ctest).
+  # The dual-form constructor (RGSS1's optional viewport / RGSS2's x, y, width,
+  # height) needs no assertion here: it aliases the native initialize at load, so
+  # a broken alias would fail the whole gem, not one test.
   %i[openness openness= open? close? padding padding= padding_bottom
      padding_bottom= arrows_visible arrows_visible= tone tone=].each do |m|
     assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
   end
+  # `openness=`, `tone` and `tone=` must stay native: each redraws, and a
+  # plain-Ruby accessor would store the value and animate nothing. mrblib loads
+  # after the C init, so re-adding one there silently shadows the native and the
+  # window stops opening. That cannot be told apart from here — this mruby has no
+  # instance_method/source_location to ask with — so the guard is
+  # RGSS.window_probe, which measures the area the window covers at three
+  # openness values and fails if it does not change.
 end
 
 assert "RGSS::Viewport RGSS2/RGSS3 screen-effect surface" do

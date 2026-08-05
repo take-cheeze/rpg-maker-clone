@@ -10,8 +10,19 @@ if(EMSCRIPTEN)
   # Emscripten ships SDL2 and SDL2_mixer as "ports": -sUSE_SDL=2 /
   # -sUSE_SDL_MIXER=2 provide both the headers (needed while compiling lvgl's
   # SDL driver and the audio backend) and the libraries at link time.
-  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
-  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
+  #
+  # The port compiles one decoder per requested format and defaults to
+  # SDL2_MIXER_FORMATS=["ogg"] — WAV is unconditional, everything else is
+  # opt-in. So a stock -sUSE_SDL_MIXER=2 build has no MIDI decoder at all, and a
+  # .mid would stay silent no matter how the synthesiser is configured. Adding
+  # "mid" builds the port with -DMUSIC_MID_TIMIDITY, i.e. the same TiMidity
+  # codec the native build uses (tools/ports/sdl2_mixer.py upstream). It needs a
+  # patch set to make sound: see WASM_MIDI_PATCHES below. Must be set for both
+  # compile and link, as the setting is [compile+link].
+  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2"
+                      "-sSDL2_MIXER_FORMATS=ogg,mid")
+  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2"
+                   "-sSDL2_MIXER_FORMATS=ogg,mid")
   # mruby is built with MRB_USE_CXX_EXCEPTION and throws real C++ exceptions for
   # its internal control flow, so exception support must be enabled across the
   # whole binary; otherwise the first throw aborts in the catch machinery.
@@ -244,6 +255,20 @@ target_link_libraries(
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
 
+# MIDI instruments for SDL_mixer's built-in TiMidity synthesiser. A .mid holds
+# note events only, so without a GUS patch set MIDI music loads and then plays
+# silence. The patches are ~32 MiB of samples, so they are downloaded by
+# scripts/download-freepats.bash rather than committed.
+#
+# The path is baked in unconditionally and probed at run time (sdl_audio.cxx),
+# never tested here: the download is independent of the configure, so a
+# configure-time EXISTS check would freeze whichever order they happened to run
+# in and force a re-configure on anyone who built before fetching.
+set(TIMIDITY_ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/timidity)
+target_compile_definitions(
+  ${PROJECT_NAME}
+  PRIVATE "RGSS_TIMIDITY_CFG_SOURCE=\"${TIMIDITY_ASSET_DIR}/timidity.cfg\"")
+
 if(EMSCRIPTEN)
   # Emit a runnable page (index.html + .js + .wasm) with a growable heap so the
   # interpreter and game assets fit.
@@ -320,9 +345,34 @@ if(EMSCRIPTEN)
     target_link_options(${PROJECT_NAME} PRIVATE
                         "--preload-file=${WASM_SAMPLE_DIR}@/game_sample")
   endif()
+
+  # Mount the MIDI patch set at /timidity, where src/sdl_audio.cxx looks for it.
+  # The TiMidity decoder above is only half of MIDI playback; without these
+  # instrument samples a .mid still plays silence in the browser.
+  #
+  # Off by default because FreePats adds ~32 MiB to index.data, which is a lot
+  # for a web page whose games are mostly OGG. Turn on with
+  # -DWASM_MIDI_PATCHES=ON, having run scripts/download-freepats.bash.
+  #
+  # Deliberately not guarded on the directory existing, matching WASM_SAMPLE_DIR
+  # above: the download runs concurrently with this configure and is awaited
+  # before the link, so a configure-time check would race it.
+  option(WASM_MIDI_PATCHES "Preload the MIDI patch set into the wasm build" OFF)
+  if(WASM_MIDI_PATCHES)
+    target_link_options(${PROJECT_NAME} PRIVATE
+                        "--preload-file=${TIMIDITY_ASSET_DIR}@/timidity")
+  endif()
 endif()
 
 install(TARGETS ${PROJECT_NAME} RUNTIME)
+
+# Ship the MIDI patch set beside the binary so an installed build keeps working
+# without the source tree. src/sdl_audio.cxx probes <exe>/../share/... for it.
+if(NOT EMSCRIPTEN AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
+  include(GNUInstallDirs)
+  install(DIRECTORY ${TIMIDITY_ASSET_DIR}/
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/rpg-maker-clone/timidity)
+endif()
 
 enable_testing()
 
@@ -331,6 +381,15 @@ if(NOT EMSCRIPTEN)
     NAME mruby_test
     COMMAND env ${MRB_OPTS} rake test
     WORKING_DIRECTORY "${MRUBY_PREFIX}")
+
+  # A patch missing from the downloaded set is silent at run time (TiMidity just
+  # drops that instrument), so check the config against the files. The script
+  # skips cleanly when the patches were never downloaded, so this is registered
+  # unconditionally and stays honest either way.
+  add_test(
+    NAME timidity_patches
+    COMMAND ruby ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_timidity_patches.rb
+            ${TIMIDITY_ASSET_DIR})
 
   set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
                    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)
