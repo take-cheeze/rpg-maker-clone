@@ -16,6 +16,13 @@
 # other version falls through to probing normally, so a toolchain bump costs
 # configure time but can never silently apply a wrong answer.
 #
+# Whichever branch is taken is recorded in emscripten-probe-cache.status in the
+# build tree, so a caller can tell "the seed applied" from "the seed was stale
+# and the toolchain got probed" without parsing the configure log. CI asserts on
+# it; see scripts/check_emscripten_probe_cache.bash, which additionally
+# re-probes and diffs to catch values that went stale *without* the version
+# changing (a sysroot rebuilt under the same release, say).
+#
 # GENERATED FILE - do not edit by hand. To regenerate after an Emscripten bump
 # or a 3rd/ submodule update:
 #
@@ -34,8 +41,13 @@ if(NOT EMSCRIPTEN_VERSION VERSION_EQUAL "${EMSCRIPTEN_PROBE_CACHE_VERSION}")
       "cache (${EMSCRIPTEN_PROBE_CACHE_VERSION}); probing the toolchain "
       "instead. Regenerate cmake/emscripten-probe-cache.cmake to speed this "
       "configure back up -- see the header of that file.")
+  file(WRITE "${CMAKE_BINARY_DIR}/emscripten-probe-cache.status"
+       "stale ${EMSCRIPTEN_VERSION} != ${EMSCRIPTEN_PROBE_CACHE_VERSION}\n")
   return()
 endif()
+
+file(WRITE "${CMAKE_BINARY_DIR}/emscripten-probe-cache.status"
+     "applied ${EMSCRIPTEN_PROBE_CACHE_VERSION}\n")
 
 set("COMPILER_HAS_DEPRECATED"
     "1"

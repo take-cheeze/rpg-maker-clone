@@ -12,3 +12,14 @@
   `scripts/gen_emscripten_probe_cache.rb` and gated on the Emscripten version,
   so a toolchain bump falls back to probing normally (with a `STATUS` message
   asking for a regeneration) rather than silently reusing stale answers.
+- CI now **verifies the pre-seeded probe answers instead of trusting them**.
+  The version guard cannot see a sysroot that changed underneath the same
+  Emscripten release, so `scripts/check_emscripten_probe_cache.bash` re-probes
+  the toolchain for real (`-DEMSCRIPTEN_PROBE_CACHE=OFF`), regenerates the file
+  and diffs it — any drift fails the `wasm` job with the offending values and
+  the regeneration command. It runs as a `background: true` step alongside the
+  build, so the ~110s probing configure it needs costs no critical path. The
+  configure also records which branch the guard took in
+  `emscripten-probe-cache.status`, and the `cmake` step warns when the seed did
+  not apply, so falling back to probing shows up as an annotation rather than
+  as an unexplained slowdown.

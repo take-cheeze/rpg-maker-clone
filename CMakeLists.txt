@@ -43,7 +43,13 @@ endif()
 # Emscripten version so a toolchain bump falls back to probing rather than
 # reusing values that no longer apply. Must stay above the add_subdirectory
 # calls below -- a check_* macro only skips when its result is already cached.
-if(EMSCRIPTEN)
+#
+# -DEMSCRIPTEN_PROBE_CACHE=OFF runs the probes for real instead, which is how
+# scripts/check_emscripten_probe_cache.bash gets a second opinion to diff the
+# seeded answers against.
+option(EMSCRIPTEN_PROBE_CACHE
+       "Seed the Emscripten toolchain probe results instead of running them" ON)
+if(EMSCRIPTEN AND EMSCRIPTEN_PROBE_CACHE)
   include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/emscripten-probe-cache.cmake)
 endif()
 
