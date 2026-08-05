@@ -286,6 +286,11 @@ class RPGXP
     # "Save1.rxdata" in the game root, ...). A loose file on disk shadows the
     # archive, matching RGSS; when there is none the entry is pulled from the
     # encrypted archive. The RGSS script host uses this to feed Kernel#load_data.
+    # A file that is in neither place raises Errno::ENOENT with RGSS's own
+    # message ("No such file or directory - <path>"), because that is the
+    # exception a game is written to handle: the stock "Main" rescues it and
+    # prints the filename out of the message (see rgss_library.rb). It is a
+    # StandardError, so callers that rescue broadly are unaffected.
     def read_object(relative_path)
       full = "#{@game_dir}/#{relative_path}"
       return File.open(full, "rb") { |f| Marshal.load(f.read) } if File.exist?(full)
@@ -293,7 +298,7 @@ class RPGXP
         bytes = @archive.read(relative_path)
         return Marshal.load(bytes) if bytes
       end
-      raise "cannot load #{relative_path}: no loose file and no archive entry"
+      raise Errno::ENOENT.new(relative_path)
     end
 
     # Marshal-dump `obj` to a project-relative file (RGSS's Kernel#save_data).

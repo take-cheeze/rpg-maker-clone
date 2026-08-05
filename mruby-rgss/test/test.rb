@@ -381,6 +381,39 @@ assert "RGSS::Bitmap#draw_text renders in the font colour" do
   assert_equal 0.0, drawn.blue
 end
 
+# RGSS overloads #draw_text: a Rect stands in for x/y/width/height, the way
+# #fill_rect takes either. It is not a nicety — `Window_Command#draw_item`, the
+# menu every RPG Maker XP title screen is built from, calls
+# `contents.draw_text(rect, text)` — so with only the four-number form a game's
+# own engine died at its first window ("wrong number of arguments (given 2,
+# expected 5..6)"), which is how the script-host boot check found this.
+assert "RGSS::Bitmap#draw_text takes a Rect as well as x/y/width/height" do
+  pixels = lambda do |bitmap|
+    seen = []
+    0.upto(bitmap.height - 1) do |y|
+      0.upto(bitmap.width - 1) do |x|
+        seen.push([x, y]) if bitmap.get_pixel(x, y).alpha > 0
+      end
+    end
+    seen
+  end
+
+  numbers = RGSS::Bitmap.new(64, 24)
+  numbers.draw_text(8, 4, 40, 16, "Hi", 1)
+  rect = RGSS::Bitmap.new(64, 24)
+  assert_equal rect, rect.draw_text(RGSS::Rect.new(8, 4, 40, 16), "Hi", 1)
+
+  drawn = pixels.call(rect)
+  assert_true drawn.size > 0, "the Rect form drew nothing"
+  assert_equal pixels.call(numbers), drawn,
+               "the Rect form drew somewhere else than x/y/width/height"
+
+  # Without an align argument, as Window_Command calls it.
+  plain = RGSS::Bitmap.new(64, 24)
+  plain.draw_text(RGSS::Rect.new(0, 0, 64, 24), "Hi")
+  assert_true pixels.call(plain).size > 0, "the 2-argument Rect form drew nothing"
+end
+
 # The fallback for projects that ship no font. RGSS.default_font_path finds the
 # bundled default font (assets/fonts) — downloaded rather than committed, so nil
 # is a normal answer here — and Font.default_path is the opt-in switch each

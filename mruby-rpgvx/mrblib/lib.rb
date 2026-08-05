@@ -117,7 +117,9 @@ class RPGVX
     RGSS.asset_archive = @db.archive if @db
     @title = read_title
     # A VX/VX Ace project's engine *is* its script bundle, so the script host is
-    # the only path that can currently run one. Off by default, like XP's.
+    # the only path that can run one — and it is on by default, like XP's. The
+    # pending-runtime notice below is what a project without scripts (or a boot
+    # with RGSS_SCRIPT_HOST=0) gets instead.
     @use_script_host = @db && RPGXP::ScriptHost.enabled? && @db.scripts?
     setup_script_host_driver if @use_script_host
   rescue StandardError => e
@@ -225,8 +227,9 @@ class RPGVX
                  "database (Data/*#{@edition ? self.class.data_ext(@edition) : ".rvdata"}, " \
                  "loose or inside an encrypted archive) loads, but the built-in " \
                  "title/map flow is not written yet. A project that ships its " \
-                 "scripts can be driven by the RGSS script host instead " \
-                 "(--rgss_script_host). See " \
+                 "scripts is run by the RGSS script host instead, which is on " \
+                 "by default — so this project either ships none or was booted " \
+                 "with RGSS_SCRIPT_HOST=0. See " \
                  "docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md."
   end
 end

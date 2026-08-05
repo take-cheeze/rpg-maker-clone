@@ -542,7 +542,30 @@ module RGSS
 
   class Sprite
     attr_reader :bitmap
-    attr_reader :x, :y, :z
+
+    # The viewport the sprite was created in (the native #initialize stores it to
+    # keep it alive). RPG::Sprite reads it to put its damage pop-up and animation
+    # cells in the same viewport as the battler — RGSS exposes it, and without the
+    # reader those sprites would land on the default screen viewport instead.
+    attr_reader :viewport
+
+    # Position. Native `x=`/`y=`/`z=` store these ivars, but nothing sets them
+    # before the first assignment, so the readers have to answer RGSS's default of
+    # 0 rather than nil: a sprite's `x` is read *before* it is written on every
+    # relative move (`RPG::Sprite#x=` computes the shift to carry its animation
+    # cells along, `RPG::Weather#update` scrolls each drop from where it is), and
+    # nil would raise there.
+    def x
+      @x || 0
+    end
+
+    def y
+      @y || 0
+    end
+
+    def z
+      @z || 0
+    end
 
     # RGSS Sprite properties the stock scripts set — opacity fades, zoom, angle,
     # tone/colour, scroll origin, mirror, bush depth, blend mode, source rect,

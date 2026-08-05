@@ -13,21 +13,34 @@
 # section against the top level using its editor name — so the game's own logic
 # runs unmodified, rather than the reimplemented default flow in game.rb/scene.rb.
 #
-# It is the alternative to that reimplementation (see
-# docs/adr/0017-rpgxp-rgss-script-host.md). Because the scripts drive their own
-# blocking main loop and lean on the full RGSS class library, the host is an
-# opt-in path for now (RPGXP::ScriptHost.enabled?), with the built-in flow as the
-# default and the fallback. `Kernel#eval` comes from the core mruby-eval gem,
-# a hard dependency of this gem (mruby-rpgxp/mrbgem.rake).
+# It was built as the alternative to that reimplementation (see
+# docs/adr/0017-rpgxp-rgss-script-host.md) and is now the **default** path
+# (docs/adr/0029-rgss-script-host-by-default.md): a project that ships scripts
+# ships its own engine, so running them is what running the game means. The
+# built-in flow stays as the fallback — for a project that ships no scripts, when
+# the host fails to boot, and whenever the opt-out (RGSS_SCRIPT_HOST=0) is set.
+# `Kernel#eval` comes from the core mruby-eval gem, a hard dependency of this gem
+# (mruby-rpgxp/mrbgem.rake).
 class RPGXP
   # Defined with explicit `def self.` singleton methods (not a bare
   # `module_function`, which this mruby build does not apply to later defs) so
   # the host is callable as RPGXP::ScriptHost.<method>.
   module ScriptHost
-    # Environment variable / constant that turns the script host on. Off by
-    # default: the built-in flow is the verified path, and running the bundled
-    # scripts needs both eval and a complete-enough RGSS class library.
+    # Environment variable that switches the script host off. The host is on by
+    # default, so this is an *opt-out*: set RGSS_SCRIPT_HOST to one of
+    # DISABLED_VALUES to boot the built-in reimplemented flow instead (what the
+    # headless render checks compare against, and the escape hatch for a project
+    # whose scripts the host cannot yet run). The native binary spells the same
+    # switch --norgss_script_host.
     ENABLED_ENV = "RGSS_SCRIPT_HOST".freeze
+
+    # The values that turn the host *off*, compared literally in lower case (no
+    # String#downcase, which this mruby build is not known to carry — the same
+    # reason the rest of this gem sticks to the common subset). Anything else —
+    # including "1" — leaves the host on. src/main.cxx carries the same list for
+    # the environment variable it reads on the Ruby side's behalf; keep them
+    # together.
+    DISABLED_VALUES = ["0", "false", "off", "no"].freeze
 
     # True while the host's blocking `Main` runs inside the driver Fiber (see
     # RPGXP#setup_script_host_driver). The wrapped Graphics.update reads this to
@@ -43,31 +56,45 @@ class RPGXP
       @driving = v
     end
 
-    # Whether to run the bundled scripts instead of the built-in flow. Off by
-    # default; an explicit opt-in, from either of two places.
+    # Whether to run the bundled scripts instead of the built-in flow. **On by
+    # default**: an RGSS project's scripts *are* its engine, so running them is
+    # the faithful boot; the built-in reimplementation is the fallback for a
+    # project that ships none, and for a host that cannot get the game's own
+    # engine up. Only an explicit opt-out turns it off, from either of two
+    # places, because the two runtimes read their settings differently:
     #
-    # **The `--rgss_script_host` flag** is the one that works in a built engine.
-    # src/main.cxx publishes it as the RGSS_SCRIPT_HOST constant, the way it
-    # publishes `--rpgxp_new_game` as RPGXP_NEW_GAME, and it is read through its
-    # own rescue because an undefined constant raises here (this mruby has no
-    # `defined?(CONST)`).
+    # **The `--rgss_script_host` flag** is the switch that works in a built
+    # engine. src/main.cxx publishes it as the RGSS_SCRIPT_HOST constant, the way
+    # it publishes `--rpgxp_new_game` as RPGXP_NEW_GAME, and it is read through
+    # its own rescue because an undefined constant raises here (this mruby has no
+    # `defined?(CONST)`). It also folds in the environment variable below, which
+    # a booted game cannot read for itself.
     #
     # **The RGSS_SCRIPT_HOST environment variable** is what every document used
-    # to name, and it could never have turned the host on: this mruby build has
-    # no ENV at all, so the check below was simply always false in the engine.
-    # Only the CRuby harnesses — where ENV does exist — ever saw it work, which
-    # is why the dead switch went unnoticed. It is still honoured, for them.
+    # to name, and on its own it could never have switched the host: this mruby
+    # build has no ENV at all, so the check below was simply never reached in the
+    # engine. Only the CRuby harnesses — where ENV does exist — ever saw it work,
+    # which is why the dead switch went unnoticed. It is still honoured, for them.
+    #
+    # With neither present — an embedded target, or a host-side unit test — the
+    # default stands.
     def self.enabled?
-      return true if flag_enabled?
-      return false unless Object.const_defined?(:ENV)
+      setting = flag_setting
+      return setting unless setting.nil?
+      return true unless Object.const_defined?(:ENV)
       flag = ENV[ENABLED_ENV]
-      !(flag.nil? || flag.empty? || flag == "0" || flag == "false")
+      # Unset or empty is "not asked for either way" — the default wins.
+      return true if flag.nil? || flag.empty?
+      !DISABLED_VALUES.include?(flag)
     end
 
-    def self.flag_enabled?
+    # The RGSS_SCRIPT_HOST constant the native binary publishes, or nil where
+    # there is none (the CRuby harnesses, mrbtest, an embedded build) — nil is
+    # "nothing said", which is why this cannot just answer true/false.
+    def self.flag_setting
       RGSS_SCRIPT_HOST
     rescue StandardError
-      false
+      nil
     end
 
     # Run the project's bundled scripts to completion. `db` answers #scripts
@@ -87,6 +114,10 @@ class RPGXP
       # some scripts read it (e.g. to hot-reload). Mirror that shape.
       idx = -1
       $RGSS_SCRIPTS = sections.map { |name, source| [idx += 1, name, source] }
+      # A machine-readable marker, the script-host twin of the built-in flow's
+      # [RPGXP-MAP]: it is what a headless run (scripts/rpgxp_boot_check.bash)
+      # asserts on to prove the host — not the built-in flow — booted the game.
+      $stderr.puts "[RPGXP-SCRIPTS] running #{sections.size} script sections"
       sections.each do |name, source|
         # Evaluate through the top-level helper so a section's `class Scene_Title`
         # etc. define global (::) constants, as under RGSS — see rgss_eval_section.

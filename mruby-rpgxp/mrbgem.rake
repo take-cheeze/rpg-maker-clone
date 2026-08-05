@@ -34,7 +34,11 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # constants (and pulls RGSS into Object), which the scene/game sources read at
   # class-body evaluation time. Set the order explicitly rather than relying on
   # the default alphabetical glob.
-  spec.rbfiles = %w[lib rgss_data script_host rgssad game interpreter scene].map do |name|
+  # rgss_library defines RPG::Sprite (a subclass of the native RGSS::Sprite) at
+  # load time, so it comes after lib.rb pulls RGSS in; the script host evaluates
+  # a game's own scripts against it.
+  spec.rbfiles = %w[lib rgss_data rgss_library script_host rgssad game
+                    interpreter scene].map do |name|
     "#{dir}/mrblib/#{name}.rb"
   end
 end

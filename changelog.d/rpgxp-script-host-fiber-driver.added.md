@@ -5,6 +5,6 @@
   exactly one game frame per call — which lets the web build's per-frame
   `emscripten_set_main_loop` callback keep control each frame instead of hanging on
   the scripts' blocking loop. The scripts run unmodified and no Asyncify is needed.
-  Gated behind the (off-by-default) `RGSS_SCRIPT_HOST` flag, so the built-in flow is
-  unchanged; `mruby-fiber` is added to the build. See
+  It was gated behind the `RGSS_SCRIPT_HOST` flag when it landed and drives every
+  boot now that the host is the default; `mruby-fiber` is added to the build. See
   `docs/adr/0023-rpgxp-script-host-frame-driver.md`.

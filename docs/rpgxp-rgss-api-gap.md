@@ -3,9 +3,13 @@
 The [RGSS script host](adr/0017-rpgxp-rgss-script-host.md) runs an RPG Maker XP
 project's own `Data/Scripts.rxdata` unmodified. The scripts assume the engine
 (normally `RGSS104E.dll`) supplies the RGSS class library; this project supplies
-it as `mruby-rgss`. This document tracks **what the stock scripts call** versus
-**what `mruby-rgss` provides**, so the host can be turned on by default once the
-gaps close.
+it as `mruby-rgss` natively, plus the three Ruby classes the player also ships
+(`mruby-rpgxp/mrblib/rgss_library.rb` — see gap 0). This document tracks **what
+the stock scripts call** versus **what the engine provides**. The gaps that
+blocked a default-on host have closed and it is now the default boot path
+([ADR 0029](adr/0029-rgss-script-host-by-default.md)); what remains here is the
+polish list, and the measure of how far a game gets before it needs the
+built-in flow as a fallback.
 
 The "needed" column is derived from the real `data/OpenGame.exe/Testbed/XP`
 scripts (all 90 sections), by counting method/`.new`/constant usage — see the
@@ -41,35 +45,107 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
-### 0. `RPG::Sprite` and `RPG::Weather` ❌ (the first thing that stops a boot)
+### 0. The RGSS standard library — `RPG::Sprite`, `RPG::Weather`, `RPG::Cache` ✅ (was the first thing that stopped a boot)
 
-Measured, not counted: with `--rgss_script_host` the test bed now gets 21
-sections in before
+Measured, not counted: with the host on, the test bed used to get 21 sections in
+before
 
 ```
 [RGSS] script host: section "Sprite_Character" raised NameError: uninitialized constant RPG::Sprite
 ```
 
-`RPG::Sprite` is **not in the script bundle** — the 90 sections of the
-`OpenGame.exe` bed define no such section, because `RGSS104E.dll` supplies it,
-along with `RPG::Weather`. `Sprite_Character < RPG::Sprite` is therefore the
-first line of the game's own engine that cannot run, and everything downstream
-(`Spriteset_Map`, `Scene_Map`, `Main`) is behind it.
+None of these three is **in the script bundle** — the 90 sections of the
+`OpenGame.exe` bed define no such section, because `RGSS104E.dll` supplies them.
+`Sprite_Character < RPG::Sprite` was therefore the first line of the game's own
+engine that could not run, with everything downstream (`Spriteset_Map`,
+`Scene_Map`, `Main`) behind it, and `RPG::Cache` — which every graphic a game
+loads goes through — behind that at runtime.
 
-What RGSS's `RPG::Sprite` is: a `Sprite` subclass adding the battle/animation
-behaviour — `damage(value, critical)` (the floating damage number),
-`animation(animation, hit)` and `loop_animation` (playing an `RPG::Animation`
-over the sprite), `blink_on`/`blink_off`/`blink?`, `effect?`, and the battler
-transitions `whiten`/`black_out`/`appear`/`escape`/`collapse`, all advanced by
-its own `update`.
+They are plain Ruby in the real player too, so they are plain Ruby here:
+**`mruby-rpgxp/mrblib/rgss_library.rb`**, transcribed from the definitions the
+RGSS Reference Manual publishes, on top of the native `mruby-rgss` primitives.
 
-Most of the animation half already exists in this tree, written for the
-built-in flow's Show Animation (207): `RPGXP::Game::Animation` decodes the frame
-timing and cell rows, and the map scene blits the cells. Lifting that into an
-`RPG::Sprite` the scripts can subclass is the next concrete step for the host.
+- **`RPG::Sprite`** — a `Sprite` subclass adding the battle/animation behaviour:
+  `damage(value, critical)` (the floating damage number, white / green for
+  recovery / `CRITICAL` above it, arcing up and fading over 40 frames),
+  `animation(animation, hit)` and `loop_animation` (an `RPG::Animation` played
+  over the sprite through 16 cell sprites at z 2000, with the frame timings' SE
+  and flash), `blink_on`/`blink_off`/`blink?`, `effect?`, and the battler
+  transitions `whiten`/`appear`/`escape`/`collapse` — all advanced by its own
+  `update`, and its animation cells carried along when the sprite moves.
+- **`RPG::Weather`** — rain, storm and snow: 40 recycled drop sprites over three
+  bitmaps the class draws for itself.
+- **`RPG::Cache`** — the bitmap cache every `RPG::Cache.character` /
+  `.tile` / `.windowskin` call in a game goes through, including cutting a 32x32
+  tile out of a tileset and building hue-rotated variants.
 
-**This gap was invisible until now**, because the switch that turns the host on
-could not work in a built engine — see the note at the end of this document.
+Three deliberate deviations, all forced by this engine and listed in the file's
+header: colours are re-assigned rather than mutated in place (our compositor
+snapshots on assignment), a hue variant is re-loaded rather than `clone`d (a
+native handle must not be shallow-copied), and an asset that will not load gives
+a blank bitmap with a warning instead of raising (a game whose RTP is missing
+must not die on its first graphic).
+
+With those three in place the host runs a game's whole bundle — **all 103
+sections of the released *Pray for You*** — and reaches `Main`, where it met the
+next one:
+
+### 0b. `Errno::ENOENT` ✅ (an unresolvable rescue clause eats every exception)
+
+The editor writes this into the `Main` section of *every* project:
+
+```ruby
+begin
+  $scene = Scene_Title.new
+  $scene.main while $scene != nil
+  Graphics.transition(20)
+rescue Errno::ENOENT
+  print("Unable to find file #{$!.message.sub("No such file or directory - ", "")}.")
+end
+```
+
+mruby ships no `Errno` (no `mruby-errno` gem is vendored or configured). A rescue
+clause is evaluated when an exception passes through it, so *any* exception
+leaving the game loop — including the timeout a headless run ends on — came back
+as `NameError: uninitialized constant Errno`, which reads as "the game crashed"
+when the game was running fine. `rgss_library.rb` defines `Errno::ENOENT` (plus
+`EACCES`/`EEXIST`/`EINVAL`/`EISDIR`, so a script rescuing one of those does not
+hit the same trap) and `SystemCallError`, each only when absent — the file is
+loaded under CRuby too, where the real ones exist. `RGSSData#read_object` now
+raises `Errno::ENOENT` with RGSS's own message shape, so the handler above
+prints the filename it was written to print.
+
+### 0c. `Bitmap#draw_text`'s Rect form ✅ (the first window a game opens)
+
+RGSS overloads `draw_text` the way it overloads `fill_rect`:
+
+```ruby
+draw_text(x, y, width, height, str[, align])
+draw_text(rect, str[, align])
+```
+
+Only the first was implemented, and `Window_Command#draw_item` — the menu every
+title screen is built from — calls the second, so a game died at its first window
+with `ArgumentError: wrong number of arguments (given 2, expected 5..6)`. The
+native method now takes both, on the same `mrb_get_argc` branch `fill_rect`
+already used.
+
+Worth noting how this was found and bounded: `MRB_ARGS_*` does not enforce
+anything — the `mrb_get_args` format string does — so the arities a game can
+actually call are the union of the format strings in each native function. A
+sweep comparing every call site in both beds' bundles (193 sections) against
+those formats reports no other mismatch, and the calls it does resolve include
+the other overloaded ones (`fill_rect`, `gradient_fill_rect`, `blt`,
+`stretch_blt`), which were already right.
+
+**This gap was invisible for a long time**, for two compounding reasons: the
+switch that turns the host on could not work in a built engine (see the note at
+the end of this document), and `scripts/rpgxp_script_host_check.rb` *stubbed*
+`RPG::Sprite` with an empty class and evaluated only a hand-picked logic subset,
+so it stayed green throughout. That harness now loads the real
+`rgss_library.rb`, evaluates **every** section except `Main`, and drives the
+effects, the animation, the weather and the cache against fakes for the native
+classes only.
 
 ### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
@@ -197,22 +273,28 @@ driver ends the game on (see item 3 above / ADR 0023).
 
 ## Notes
 
-- With the display classes now rendering, the remaining blocker to turning the
-  host on by default is reconciling the scripts' blocking `$scene.main while
-  $scene` loop with the web build's per-frame `emscripten_set_main_loop` callback
+- **The host is now on by default** ([ADR 0029](adr/0029-rgss-script-host-by-default.md));
+  `RGSS_SCRIPT_HOST=0` is the opt-out that restores the built-in flow, which also
+  remains the automatic fallback for a script-less project or a host that fails to
+  boot. The last blocker before that flip was reconciling the scripts' blocking
+  `$scene.main while $scene` loop with the web build's per-frame
+  `emscripten_set_main_loop` callback
   (the desktop build blocks fine; the web build calls `RPGXP#main_loop` once per
   browser frame, so an unmodified blocking script loop would hang the tab). This
   is now **implemented** ([ADR 0023](adr/0023-rpgxp-script-host-frame-driver.md)):
   when the host is enabled, `RPGXP` runs `Main` inside an mruby `Fiber` and the
   wrapped `Graphics.update` yields it once per frame, so `main_loop` drives one
-  game frame per browser callback. It is gated behind `RGSS_SCRIPT_HOST` (off by
-  default), so the built-in flow is unchanged. `exit` (used by the `Interpreter`)
-  is now wired too — it raises a `SystemExit` the driver ends the game on. The
-  remaining step is to boot a real project under the web build with the flag on and
-  confirm it end to end.
-- None of the above can be built or run in the current CI sandbox; each item is
-  verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
-  `scripts/rpgxp_script_host_check.rb`.
+  game frame per browser callback. `exit` (used by the `Interpreter`) is now
+  wired too — it raises a `SystemExit` the driver ends the game on. The remaining
+  step is to boot a real project under the **web** build and confirm it end to
+  end; the native beds are booted under the host by
+  `scripts/rpgxp_boot_check.bash` in CI, which asserts the host's
+  `[RPGXP-SCRIPTS]` marker and fails if it fell back to the built-in flow.
+- None of the native items above can be built or run in the current CI sandbox;
+  each is verified by `mruby-rgss/test` (compiled and run in CI) plus the
+  host-side `scripts/rpgxp_script_host_check.rb`. The Ruby half (gap 0) is
+  verified for real by that harness — it loads `rgss_library.rb` itself rather
+  than stubbing it, which is the mistake that let gap 0 hide.
 
 ## Why this list was never measured in the engine
 

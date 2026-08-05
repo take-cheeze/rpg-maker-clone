@@ -873,10 +873,11 @@ class RPGXP
       #   * the RMXP globals this runtime can honestly back are bound to it --
       #     `$game_switches` and `$game_variables` reach the same switches and
       #     variables the Control Switches / Control Variables commands write;
-      #   * anything else a script reaches for is simply not there. The built-in
-      #     flow is a reimplementation, not RGSS; a game that needs the rest of
-      #     RMXP's object graph wants RGSS_SCRIPT_HOST, which exists to give it
-      #     all of them.
+      #   * anything else a script reaches for is simply not there. This flow is
+      #     a reimplementation, not RGSS; a game that needs the rest of RMXP's
+      #     object graph wants the script host, which exists to give it all of
+      #     them — and which is the default boot path, so a game only lands here
+      #     when it ships no scripts or the host was opted out of / fell back.
       #
       # A script that raises must not take the map down with it: the failure is
       # reported (never swallowed) and the event carries on.

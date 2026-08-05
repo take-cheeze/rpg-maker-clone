@@ -288,12 +288,16 @@ jobs:
 
           # The same guard for the RPG Maker XP runtime: the XP checks above run
           # mruby-rpgxp's sources under CRuby, so only booting the real binary
-          # catches mruby/CRuby divergence. `--rpgxp_new_game` drives each bed
-          # past its title into the start map and logs `[RPGXP-MAP]`, which the
-          # script asserts on. Two beds: the editor-shaped OpenGame test bed and
-          # the *released* Pray for You (Game.rgssad only, several maps), on
-          # displays 112 and 113 — one per game (see the reserved server-num map
-          # above). See docs/adr/0025-rpgxp-cross-runtime-testing.md.
+          # catches mruby/CRuby divergence. Each bed boots twice: once with no
+          # flags, where the RGSS script host — the default path — runs the
+          # game's own scripts and logs `[RPGXP-SCRIPTS]`, and once with
+          # `--rpgxp_new_game`, which drives the built-in flow past its title
+          # into the start map and logs `[RPGXP-MAP]`. Two beds: the
+          # editor-shaped OpenGame test bed and the *released* Pray for You
+          # (Game.rgssad only, several maps), on displays 112 and 113 — one per
+          # game (see the reserved server-num map above). See
+          # docs/adr/0025-rpgxp-cross-runtime-testing.md and
+          # docs/adr/0029-rgss-script-host-by-default.md.
           - name: RPG XP real-game boot smoke test
             run: ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112
 

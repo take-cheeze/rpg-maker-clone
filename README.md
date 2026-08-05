@@ -129,18 +129,31 @@
   decrypted transparently, so the database loads with no loose files present.
   Loose files, when present, shadow the archive (as in RGSS)
 - The window is sized to XP's native 640×480 automatically.
-- An experimental **RGSS script host** can run the game's own bundled scripts
-  (`Data/Scripts.rxdata`) unmodified — the way `RGSS104E.dll` does — instead of
-  the reimplemented flow: it decompresses the ~90 Ruby sections, supplies the
+- The **RGSS script host** is how a project boots by default: the game's own
+  bundled scripts (`Data/Scripts.rxdata`) run unmodified, the way `RGSS104E.dll`
+  runs them — the host decompresses the ~90 Ruby sections, supplies the
   `load_data`/`save_data` built-ins and evaluates each at the top level (via
-  `mruby-eval`) so the game drives itself. It is opt-in
-  (`--rgss_script_host`) while the RGSS class library is completed; see
-  [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
+  `mruby-eval`), then drives their blocking main loop one frame per callback
+  through a Fiber, so the game's own title, menus, battle system and any
+  community scripts are what run. The classes the player supplies and no project
+  ships are supplied too — **`RPG::Sprite`** (the battler/character sprite base:
+  the whiten/appear/escape/collapse transitions, the floating damage pop-up,
+  blinking, and animation playback with each frame's sound and flash),
+  **`RPG::Weather`** and **`RPG::Cache`** — which is what a game's own
+  `class Sprite_Character < RPG::Sprite` needs to exist at all. The
+  reimplemented flow above stays as the
+  fallback — for a project that ships no scripts, if the host fails to boot, and
+  on demand with `--norgss_script_host` (or `RGSS_SCRIPT_HOST=0`); see
+  [`docs/adr/0029-rgss-script-host-by-default.md`](docs/adr/0029-rgss-script-host-by-default.md)
+  and [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
   (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
 - An XP project is exercised **against the genuine runtime as well as our own**,
   both reaching the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks New Game
-  without input): `scripts/rpgxp_boot_check.bash` boots the native binary
-  headlessly (in CI), and `scripts/compare-rpgxp-wine.bash` diffs our frames
+  without input, and with it the built-in flow): `scripts/rpgxp_boot_check.bash`
+  boots the native binary headlessly (in CI) — once that way and once with no
+  flags, where the script host runs the game's own scripts and logs
+  `[RPGXP-SCRIPTS]`, so both boot paths are covered — and
+  `scripts/compare-rpgxp-wine.bash` diffs our frames
   against the **genuine RGSS runtime**, booting the project's own
   `Game.exe`/`RGSS104E.dll` under wine on the same key script (the XP twin of the
   RPG2000 comparison; install the RTP into that wine prefix with
@@ -215,10 +228,10 @@
   same reader the XP side uses, so a single-archive release loads too
 - The window is sized to VX's native 544×416 automatically
 - A VX/VX Ace game's engine *is* its script bundle, so a project that ships
-  `Data/Scripts.rvdata[2]` can be driven by the same experimental **RGSS script
-  host** as XP (`--rgss_script_host`); the built-in title/map flow is not written
-  yet, and a boot without the host says so rather than opening a blank window.
-  See
+  `Data/Scripts.rvdata[2]` is driven by the same **RGSS script host** as XP, on
+  by default here too; there is no built-in title/map flow to fall back to, so a
+  project without scripts (or a boot with `RGSS_SCRIPT_HOST=0`) says so rather
+  than opening a blank window. See
   [`docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md`](docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md)
 - The **RGSS2/RGSS3 built-ins** those scripts call on their way to a first frame
   are in place: keys named as symbols (`Input.trigger?(:C)`, which VX and VX Ace

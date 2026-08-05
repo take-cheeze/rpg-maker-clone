@@ -13,9 +13,16 @@
 # scripts/compare-rpgxp-wine.bash.
 #
 # The engine aborts on an uncaught mruby exception, so simply running it is most
-# of the test; `--rpgxp_new_game` selects New Game without input and logs the
-# `[RPGXP-MAP]` marker this asserts on, which is what pushes the run past the
-# title screen into the map scene and its renderer.
+# of the test. Each game is booted twice, once per path into a running game:
+#
+#   1. **The default**: no flags, so the RGSS script host runs the project's own
+#      Data/Scripts.rxdata (ADR 0029) and logs `[RPGXP-SCRIPTS]`. A host that
+#      fails falls back to the built-in flow without changing the exit code, so
+#      the run also fails on a `script host failed` line.
+#   2. **The built-in reimplemented flow**: `--rpgxp_new_game` selects New Game
+#      without input (which also pins the boot to that flow) and logs the
+#      `[RPGXP-MAP]` marker, pushing the run past the title screen into the map
+#      scene and its renderer -- the path compare-rpgxp-wine.bash measures.
 #
 # Game directories that are not present are skipped with a message rather than
 # silently passed over -- but if *none* of them is present the check fails,
@@ -57,30 +64,63 @@ checked=0
 failed=0
 num="${SERVER_NUM}"
 
+# One headless run of the engine.
+#   $1 game dir, $2 display number, $3 what the run is called in the log,
+#   $4 the marker its log must contain, $5 extra engine flags (may be empty)
+# A run fails when the engine exits non-zero (any uncaught mruby exception aborts
+# it), when its marker is missing, or when the script host reported a boot
+# failure and quietly fell back to the built-in flow -- that fallback keeps the
+# exit code at zero, so without the third test a broken default would pass.
+run_boot() {
+    local game="$1" display="$2" label="$3" marker="$4" flags="$5"
+    local log rc=0
+    log="$(mktemp)"
+    echo "-- ${label}"
+    # Each run gets its own display number: xvfb-run -a's probe is not atomic
+    # and can steal a display from a concurrent run (see build.yml).
+    # shellcheck disable=SC2086 # ${flags} is a deliberate word-split flag list
+    if ! xvfb-run --server-num="${display}" timeout 180 "${ENGINE}" \
+            --game_dir "${game}" ${flags} \
+            --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
+        echo "FAILED: ${game} (${label}): the engine exited non-zero" >&2
+        rc=1
+    elif ! grep -q "${marker}" "${log}" ; then
+        echo "FAILED: ${game} (${label}): ${marker} missing" >&2
+        rc=1
+    elif grep -q 'script host failed' "${log}" ; then
+        echo "FAILED: ${game} (${label}): the script host fell back to the built-in flow" >&2
+        grep 'script host failed' "${log}" >&2
+        rc=1
+    else
+        grep "${marker}" "${log}"
+    fi
+    # ALSA has no device under CI and floods stderr; keep the rest.
+    grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
+    rm -f "${log}"
+    return "${rc}"
+}
+
 for game in "${GAMES[@]}" ; do
     if [ ! -f "${game}/Game.ini" ] ; then
         echo "skip ${game}: no Game.ini (run scripts/download-opengame-xp.bash first)"
         continue
     fi
     checked=$((checked + 1))
-    log="$(mktemp)"
     echo "== ${game}"
-    # Each game gets its own display number: xvfb-run -a's probe is not atomic
-    # and can steal a display from a concurrent run (see build.yml).
-    if ! xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
-            --game_dir "${game}" --rpgxp_new_game \
-            --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
-        echo "FAILED: ${game}: the engine exited non-zero" >&2
+
+    # 1. The default boot: no flags, so the RGSS script host runs the game's own
+    #    Data/Scripts.rxdata (ADR 0029) and logs how many sections it evaluated.
+    #    This is the pass that proves the default path works on the real binary.
+    run_boot "${game}" "${num}" "script host (default)" '\[RPGXP-SCRIPTS\]' "" ||
         failed=$((failed + 1))
-    elif ! grep -q '\[RPGXP-MAP\]' "${log}" ; then
-        echo "FAILED: ${game}: never reached the map scene ([RPGXP-MAP] missing)" >&2
-        failed=$((failed + 1))
-    else
-        grep '\[RPGXP-MAP\]' "${log}"
-    fi
-    # ALSA has no device under CI and floods stderr; keep the rest.
-    grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
-    rm -f "${log}"
+
+    # 2. The built-in reimplemented flow, which `--rpgxp_new_game` selects (it
+    #    drives the built-in title screen, so it also switches the host off --
+    #    see RPGXP#builtin_flow_forced?). This is the render path
+    #    scripts/compare-rpgxp-wine.bash measures against the genuine runtime.
+    run_boot "${game}" "${num}" "built-in flow (--rpgxp_new_game)" '\[RPGXP-MAP\]' \
+        "--rpgxp_new_game" || failed=$((failed + 1))
+
     num=$((num + 1))
 done
 
@@ -91,8 +131,9 @@ if [ "${checked}" -eq 0 ] ; then
 fi
 
 if [ "${failed}" -ne 0 ] ; then
-    echo "rpgxp boot check: ${failed} of ${checked} game(s) FAILED" >&2
+    echo "rpgxp boot check: ${failed} of $((checked * 2)) run(s) FAILED" >&2
     exit 1
 fi
 
-echo "rpgxp boot check: ${checked} game(s) booted into the map"
+echo "rpgxp boot check: ${checked} game(s) booted twice -- their own scripts" \
+     "under the script host, and the built-in flow into the map"

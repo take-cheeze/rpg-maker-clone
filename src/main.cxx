@@ -61,16 +61,22 @@ DEFINE_bool(
     "the game advances into its start map without input, and log the map it "
     "reaches as [RPGXP-MAP]. Used to smoke-test the RGSS path headlessly (in "
     "CI, in the browser build and beside the genuine RGSS runtime under wine; "
-    "see scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash)");
+    "see scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash). "
+    "It is the *built-in* title screen this drives, so the flag also runs the "
+    "built-in reimplemented flow in place of the default RGSS script host "
+    "(equivalent to --norgss_script_host)");
 DEFINE_bool(
     rgss_script_host,
-    false,
-    "For RPG Maker XP / VX / VX Ace: run the game's own bundled scripts "
-    "(Data/Scripts.rxdata) instead of the reimplemented title/map flow, the "
-    "way RGSS10*.dll does. Off by default while the RGSS class library is "
-    "completed (docs/rpgxp-rgss-api-gap.md). This flag is the only way to turn "
-    "the host on in a built engine: the RGSS_SCRIPT_HOST environment variable "
-    "the docs used to name cannot work, because this mruby has no ENV");
+    true,
+    "For the RGSS makers (XP / VX / VX Ace): run the project's own bundled "
+    "scripts (Data/Scripts.rxdata, Scripts.rvdata[2]) the way RGSS104E.dll "
+    "does. On by default; --norgss_script_host boots the built-in "
+    "reimplemented "
+    "title/map flow instead, which is also what a project shipping no scripts "
+    "and a script host that fails to boot fall back to. The RGSS_SCRIPT_HOST "
+    "environment variable seeds this flag (set it to 0/false/off/no to opt "
+    "out); an explicit --rgss_script_host on the command line wins over it. "
+    "See docs/adr/0029-rgss-script-host-by-default.md");
 DEFINE_bool(
     mv_new_game,
     false,
@@ -571,7 +577,24 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
 }
 #endif
 
+// The value RGSS_SCRIPT_HOST asks for. The script host is on by default, so the
+// variable is an opt-out and only these spellings mean "off" -- the same list
+// RPGXP::ScriptHost::DISABLED_VALUES holds on the Ruby side (empty, unset or
+// anything else leaves the host on).
+static bool script_host_env_enabled(const std::string& value) {
+  return !(value == "0" || value == "false" || value == "off" || value == "no");
+}
+
 int main(int argc, char** argv) {
+  // Seed the script-host flag from the environment *before* parsing, so an
+  // explicit --rgss_script_host on the command line still wins. The variable is
+  // the documented opt-out and this mruby build has no ENV for the Ruby side to
+  // read, so the native runtime resolves it and hands Ruby the answer as the
+  // RGSS_SCRIPT_HOST constant below.
+  if (const char* host_env = std::getenv("RGSS_SCRIPT_HOST"))
+    if (*host_env != '\0')
+      FLAGS_rgss_script_host = script_host_env_enabled(host_env);
+
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_game_dir.empty()) {
 #ifdef __EMSCRIPTEN__
@@ -753,6 +776,10 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPGXP_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpgxp_new_game));
+  // Whether the RGSS script host runs the project's own scripts (the default)
+  // or the built-in flow does. Resolved from --rgss_script_host and the
+  // RGSS_SCRIPT_HOST environment variable above, because the Ruby side cannot
+  // read the environment in this build (RPGXP::ScriptHost.enabled?).
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_SCRIPT_HOST"),
                 mrb_bool_value(FLAGS_rgss_script_host));
@@ -887,8 +914,9 @@ int main(int argc, char** argv) {
     // RPG Maker VX / VX Ace: a Marshal database like XP's under a different
     // extension (Data/*.rvdata[2]) and schema. Checked before the XP branch,
     // which only looks for Game.ini — a VX project has one too. The database
-    // loads; the built-in title/map flow is still to come, so an unpacked
-    // project reports that unless the RGSS script host is enabled. See
+    // loads and the RGSS script host (the default path) runs the project's own
+    // scripts; the built-in title/map flow is still to come, so a project that
+    // ships no scripts — or a boot with RGSS_SCRIPT_HOST=0 — reports that. See
     // mruby-rpgvx and docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
     error_dump_set_context("project", "RPG Maker VX / VX Ace");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &args);

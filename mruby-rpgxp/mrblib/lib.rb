@@ -47,10 +47,13 @@ class RPGXP
     # own scripts, so the loaders need it globally (see RGSS.asset_archive).
     RGSS.asset_archive = @db.archive
     @scenes = []
-    # When the script host is enabled and the project ships its scripts, the
-    # game's own Ruby drives everything (see script_host.rb); skip building the
-    # built-in title scene, which #start would otherwise run instead.
-    @use_script_host = ScriptHost.enabled? && @db.scripts?
+    # The default path: when the project ships its scripts, the game's own Ruby
+    # drives everything (see script_host.rb); skip building the built-in title
+    # scene, which #start would otherwise run instead. The built-in flow takes
+    # over for a project that ships no scripts, when the host is switched off
+    # (--norgss_script_host / RGSS_SCRIPT_HOST=0, or --rpgxp_new_game below), and
+    # if the host fails to boot (see #drive_script_host).
+    @use_script_host = ScriptHost.enabled? && @db.scripts? && !builtin_flow_forced?
     if @use_script_host
       # The scripts own their whole blocking main loop; drive it one frame at a
       # time through a Fiber so the web build's per-frame callback still gets
@@ -167,6 +170,23 @@ class RPGXP
   end
 
   private
+
+  # `--rpgxp_new_game` drives the *built-in* title screen (Scene::Title picks New
+  # Game without input and logs [RPGXP-MAP]) — the game's own scripts show their
+  # own title and cannot be driven that way. The flag therefore means "run the
+  # built-in flow", so the headless render checks that pass it
+  # (scripts/rpgxp_boot_check.bash, scripts/rgssad_asset_check.bash) keep
+  # measuring the reimplementation now that the script host is the default.
+  #
+  # Read through its own begin/rescue like Scene::Title#auto_new_game?: the
+  # constant is defined by the native binary (src/main.cxx) and absent under the
+  # CRuby harnesses, and Module#const_get is not something this mruby build is
+  # known to carry.
+  def builtin_flow_forced?
+    RPGXP_NEW_GAME
+  rescue StandardError
+    false
+  end
 
   # Build the driver Fiber for the bundled scripts (which installs the per-frame
   # Graphics.update yield). Only reached when the host is enabled, so the

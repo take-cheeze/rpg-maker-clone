@@ -1155,8 +1155,9 @@ class Checker
   end
 
   # Boot the project the way src/main.cxx does: construct the shell (which
-  # detects the edition and loads the database) with the RGSS script host on, and
-  # let it drive the game's own scripts to completion. The sample's Main section
+  # detects the edition and loads the database) and let the RGSS script host —
+  # the default boot path — drive the game's own scripts to completion, then do
+  # it again with the RGSS_SCRIPT_HOST opt-out set. The sample's Main section
   # reads the database back through the host's Kernel#load_data and drives three
   # frames, so this covers detection -> database -> host -> per-frame Fiber
   # driver end to end.
@@ -1167,9 +1168,10 @@ class Checker
     RGSS::Audio.reset
     previous = ENV["RGSS_SCRIPT_HOST"]
 
-    # Host off (the default): the shell must load the database, report the
-    # pending built-in flow and return — not run anything, and not hang.
-    ENV.delete("RGSS_SCRIPT_HOST")
+    # Host explicitly off (RGSS_SCRIPT_HOST=0, the opt-out from its default-on):
+    # the shell must load the database, report the pending built-in flow and
+    # return — not run anything, and not hang.
+    ENV["RGSS_SCRIPT_HOST"] = "0"
     with_game_dir(dir) do
       game = RPGVX.new([])
       expect(game.db.is_a?(RPGVX::RGSSData), "boot: no database without the script host")
@@ -1178,7 +1180,8 @@ class Checker
     expect($rgss_sample_booted.nil?,
            "boot: the bundled scripts ran even though the host is disabled")
 
-    ENV["RGSS_SCRIPT_HOST"] = "1"
+    # Host on because nothing said otherwise — the default a real boot gets.
+    ENV.delete("RGSS_SCRIPT_HOST")
     with_game_dir(dir) do
       game = RPGVX.new([])
       expect(game.edition == edition,

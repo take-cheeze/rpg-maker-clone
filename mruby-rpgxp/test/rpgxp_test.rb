@@ -1728,6 +1728,108 @@ assert "ScriptHost.run returns false when the project ships no scripts" do
   assert_false RPGXP::ScriptHost.run(FakeScriptDB.new([]))
 end
 
+# The RGSS standard library (mrblib/rgss_library.rb) — the classes RGSS104E.dll
+# supplies and no project ships. These tests run in the *built* engine, where
+# RPG::Sprite really does subclass the native RGSS::Sprite; they are what would
+# catch the library being dropped from the gem's rbfiles, or a native base class
+# losing a method it is built on. Sprite/Viewport instances need a live display
+# the headless test binary lacks (see mruby-rgss's own tests), so the behaviour
+# of the effects is checked against fakes in scripts/rpgxp_script_host_check.rb
+# and what is pinned here is the shape a game's scripts subclass.
+assert "RPG::Sprite is the native Sprite plus the RGSS effect surface" do
+  assert_equal RGSS::Sprite, RPG::Sprite.superclass
+  methods = RPG::Sprite.instance_methods
+  # Everything Sprite_Battler and Sprite_Character call on their superclass.
+  %i[whiten appear escape collapse damage animation loop_animation
+     blink_on blink_off blink? effect? update dispose].each do |name|
+    assert_true methods.include?(name), "RPG::Sprite##{name} missing"
+  end
+end
+
+# Errno, which mruby does not ship and every RGSS game's "Main" names:
+#
+#   begin ... $scene.main while $scene != nil ... rescue Errno::ENOENT
+#
+# A rescue clause is evaluated when an exception passes through it, so without
+# the constant *any* exception leaving a game's main loop became
+# "NameError: uninitialized constant Errno" — the boot check caught exactly that
+# on a released game, where the ordinary end-of-run timeout was rewritten into a
+# crash. What matters is that a foreign exception passes through the clause.
+assert "Errno::ENOENT exists so a game's `rescue Errno::ENOENT` resolves" do
+  assert_true Object.const_defined?(:Errno), "Errno missing"
+  assert_true Errno::ENOENT.ancestors.include?(StandardError)
+  # RGSS's message shape: the stock Main strips the prefix to name the file.
+  assert_equal "No such file or directory - Data/Foo.rxdata",
+               Errno::ENOENT.new("Data/Foo.rxdata").message
+  passed_through = false
+  begin
+    begin
+      raise "not a file error"
+    rescue Errno::ENOENT
+      # Unreachable — and before Errno existed, getting here raised NameError.
+    end
+  rescue StandardError => e
+    passed_through = e.message == "not a file error"
+  end
+  assert_true passed_through, "a foreign exception did not survive the rescue clause"
+end
+
+assert "RPG::Weather offers the surface Spriteset_Map drives" do
+  methods = RPG::Weather.instance_methods
+  %i[type= max= ox= oy= update dispose type max ox oy].each do |name|
+    assert_true methods.include?(name), "RPG::Weather##{name} missing"
+  end
+end
+
+# RPG::Cache is the one part that runs headlessly: it only builds Bitmaps.
+assert "RPG::Cache caches by path and stands in for what will not load" do
+  RPG::Cache.clear
+  # Nothing on disk under this name, and RGSS would raise; the cache reports it
+  # and hands back a blank so a missing RTP cannot end a boot.
+  missing = RPG::Cache.picture("NoSuchPictureHere")
+  assert_equal 32, missing.width
+  assert_equal 32, missing.height
+  # An empty name is RGSS's own "no graphic", also a blank.
+  assert_equal 32, RPG::Cache.character("", 0).width
+  # Same path, same object — a map redrawing its charsets every frame must not
+  # reload them.
+  assert_true RPG::Cache.picture("NoSuchPictureHere").equal?(missing)
+  RPG::Cache.clear
+  assert_false RPG::Cache.picture("NoSuchPictureHere").equal?(missing)
+end
+
+# The host is the default boot path (ADR 0029): with neither the native binary's
+# RGSS_SCRIPT_HOST constant nor an opt-out in the environment, enabled? is true.
+# This runs in the *built* engine, which is where a divergence between the CRuby
+# harness and mruby would show — including ENV being absent here, which must
+# still leave the host on rather than raise.
+assert "ScriptHost.enabled? defaults on" do
+  assert_true RPGXP::ScriptHost.enabled?
+  # The opt-out list the native runtime mirrors (src/main.cxx) — kept in the
+  # test so a spelling cannot silently drop out of one side.
+  assert_equal ["0", "false", "off", "no"], RPGXP::ScriptHost::DISABLED_VALUES
+  assert_equal "RGSS_SCRIPT_HOST", RPGXP::ScriptHost::ENABLED_ENV
+end
+
+# The environment channel, when this build has an ENV to read (the native binary
+# resolves the variable in C++ instead — see enabled?).
+assert "ScriptHost.enabled? honours the RGSS_SCRIPT_HOST opt-out in ENV" do
+  skip "no ENV in this build" unless Object.const_defined?(:ENV)
+  previous = ENV[RPGXP::ScriptHost::ENABLED_ENV]
+  begin
+    ENV[RPGXP::ScriptHost::ENABLED_ENV] = ""      # unset, as a plain boot is
+    assert_true RPGXP::ScriptHost.enabled?
+    RPGXP::ScriptHost::DISABLED_VALUES.each do |off|
+      ENV[RPGXP::ScriptHost::ENABLED_ENV] = off
+      assert_false RPGXP::ScriptHost.enabled?, "#{off.inspect} should disable the host"
+    end
+    ENV[RPGXP::ScriptHost::ENABLED_ENV] = "1"
+    assert_true RPGXP::ScriptHost.enabled?
+  ensure
+    ENV[RPGXP::ScriptHost::ENABLED_ENV] = previous.nil? ? "" : previous
+  end
+end
+
 assert "ScriptHost.install_kernel wires load_data / save_data round-trip" do
   db = FakeScriptDB.new([["x", "0"]])
   RPGXP::ScriptHost.install_kernel(db)
