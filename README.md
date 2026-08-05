@@ -53,7 +53,10 @@
   BGM, Return to Title, Game Over (the database's `GameOver/` picture over its
   game-over music, dismissed back to the title) and Erase
   Event (remove an event from
-  the map) — **every RPG2000 event command now has a handler**. Events start on the action button, on
+  the map) — **every RPG2000 event command now has a handler**. An event that
+  **wipes the party** ends the game the same way, without needing a Game Over
+  command: every command that can knock the last member out re-checks, as the
+  real runtime does, so a damage floor that kills you is fatal. Events start on the action button, on
   player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;

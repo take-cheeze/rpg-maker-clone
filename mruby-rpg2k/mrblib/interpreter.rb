@@ -1388,6 +1388,31 @@ module Game
       else
         party.remove_actor(actor)
       end
+      check_game_over
+    end
+
+    # Did that command just wipe the party? RPG_RT re-asks after **every**
+    # command that can knock a member out — Change Party Member / EXP / Level /
+    # Parameters / Skills / Equipment / HP / MP / Condition, Full Heal, Simulated
+    # Attack and Change Class — and drops straight into Game Over when the answer
+    # is yes outside battle. Without it a Simulated Attack floor trap (850 of them
+    # in Nepheshel) leaves the player walking around a map with a dead party.
+    #
+    # Two guards come with it, both EasyRPG's `Game_Interpreter::CheckGameOver`:
+    # a **battle** page resolves its own defeat through the battle's own handler,
+    # and an **empty** party is explicitly allowed — a game that has taken every
+    # member away is between members, not over.
+    #
+    # Suspends on the same :game_over wait the Game Over command (12420) raises,
+    # so the scene tears the play scenes down exactly as it already does. Returns
+    # true when it fired, so a caller can drop what it was about to do.
+    def check_game_over
+      return false if @battle
+      return false if party.actors.empty?
+      return false unless party.all_dead?
+      @wait_kind = :game_over
+      @waiting = true
+      true
     end
 
     # -- actor EXP / level ----------------------------------------------------
@@ -1408,6 +1433,9 @@ module Game
         a.gain_exp(amount)
         queue_level_up_messages(a, before, a.level) if show_msg
       end
+      # RPG_RT asks about the wipe first: a level change that killed the party
+      # goes to Game Over instead of announcing the level-up.
+      return if check_game_over
       show_next_pending_message
     end
 
@@ -1425,6 +1453,7 @@ module Game
         a.change_level_by(amount)
         queue_level_up_messages(a, before, a.level) if show_msg
       end
+      return if check_game_over
       show_next_pending_message
     end
 
@@ -1480,16 +1509,19 @@ module Game
       amount = stat_amount(cmd)
       allow_death = cmd.param(5) != 0
       stat_targets(cmd).each { |a| a.change_hp(amount, allow_death) }
+      check_game_over
     end
 
     def do_change_mp(cmd)
       amount = stat_amount(cmd)
       stat_targets(cmd).each { |a| a.change_mp(amount) }
+      check_game_over
     end
 
     # Full recovery: restore HP and MP to their maxima for the target actors.
     def do_full_heal(cmd)
       stat_targets(cmd).each { |a| a.full_heal }
+      check_game_over
     end
 
     # Simulated Attack (10500): hurt the target actors with an attack that has no
@@ -1511,6 +1543,7 @@ module Game
         a.change_hp(-damage, true)
       end
       variables[cmd.param(7)] = damage if cmd.param(6) != 0
+      check_game_over
     end
 
     # A Simulated Attack's random damage spread, as a percentage in
@@ -1532,6 +1565,7 @@ module Game
       stat_targets(cmd).each do |a|
         remove ? a.remove_state(state_id) : a.add_state(state_id)
       end
+      check_game_over
     end
 
     # -- RPG2003 class / battle commands --------------------------------------
@@ -1560,6 +1594,7 @@ module Game
         next unless a.level > before || skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE
         @pending_messages.push([level_up_message(a, a.level)])
       end
+      return if check_game_over
       show_next_pending_message
     end
 
@@ -1663,6 +1698,7 @@ module Game
       amount = cmd.param(4) == 0 ? cmd.param(5) : variables[cmd.param(5)]
       amount = -amount if cmd.param(2) != 0
       stat_targets(cmd).each { |a| a.change_param(type, amount) }
+      check_game_over # a lowered max HP can knock the party out
     end
 
     # Change Skills (10440): teach or remove a skill. param0/param1 pick the
@@ -1677,6 +1713,7 @@ module Game
       stat_targets(cmd).each do |a|
         forget ? a.forget_skill(skill_id) : a.learn_skill(skill_id)
       end
+      check_game_over
     end
 
     # Change Equipment (10450). param2 selects the operation: 0 equips an item
@@ -1692,6 +1729,7 @@ module Game
       else
         targets.each { |a| a.unequip(cmd.param(4)) }
       end
+      check_game_over # losing an item's max-HP bonus can knock the party out
     end
 
     # -- battle-event commands ------------------------------------------------

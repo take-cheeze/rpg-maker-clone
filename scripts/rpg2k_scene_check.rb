@@ -1659,6 +1659,49 @@ check 'Game Over event command returns to the title, abandoning the event' do
   ok !st.switches[5], 'the rest of the event never ran'
 end
 
+# A one-member party for the wipe check: the scene's usual fake party is empty,
+# which RPG_RT (rightly) does not treat as a Game Over.
+class WipeStubActor
+  attr_reader :id
+  attr_accessor :hp
+  def initialize; @id = 1; @hp = 30; end
+  def change_hp(amount, allow_death)
+    @hp += amount
+    floor = allow_death ? 0 : 1
+    @hp = floor if @hp < floor
+  end
+  def dead?; @hp <= 0; end
+end
+
+class WipeStubParty
+  attr_reader :actors
+  attr_accessor :leader
+  def initialize; @actors = [WipeStubActor.new]; @leader = nil; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+  def all_dead?; @actors.all? { |a| a.dead? }; end
+end
+
+check 'an event that wipes the party drops into Game Over' do
+  # No Game Over command anywhere — the wipe itself is what ends the game, the
+  # way a Simulated Attack floor trap does in a real game.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_HP, [0, 0, 1, 0, 9999, 1], indent: 0), # party, lethal
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, WipeStubParty.new)
+  parent = scene.instance_variable_get(:@parent)
+  5.times do
+    scene.update
+    break if parent.game_over_shown
+  end
+  ok parent.game_over_shown, 'the wipe put up the Game Over screen'
+  ok !st.switches[5], 'and the rest of the event never ran'
+end
+
 check 'the Game Over screen shows its picture, plays its BGM and waits' do
   parent = fake_parent(fake_db)
   Audio.reset_bgm
@@ -1780,6 +1823,8 @@ class LevelStubParty
   attr_accessor :leader
   def initialize; @actors = [LevelStubActor.new]; @leader = nil; end
   def actor_by_id(id); @actors.find { |a| a.id == id }; end
+  # The stat commands re-check for a party wipe; this stub's actor is alive.
+  def all_dead?; false; end
 end
 
 check 'Change Level show-message: the scene shows a message per level, then resumes' do

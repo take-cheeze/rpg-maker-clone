@@ -298,7 +298,16 @@ The work below is roughly ordered by the critical path to a walkable game
   stands the ally up and its recovery then lands, and a cure skill is usable even
   at full HP. A **party wipe now ends the game** (a game-over-mode battle defeat
   puts up the Game Over screen, then the title — see the Enemy Encounter
-  entry). Still remaining:
+  entry), and **so does one an event causes**: the twelve commands that can
+  knock the party out on the map — Change Party Member / EXP / Level /
+  Parameters / Skills / Equipment / HP / MP / Condition, Full Heal, Simulated
+  Attack and Change Class — each re-check afterwards, through
+  `Game::Interpreter#check_game_over` (EasyRPG's `CheckGameOver`), and suspend on
+  the same `:game_over` wait the Game Over command raises. Both of RPG_RT's
+  guards come with it: a battle-event page leaves defeat to the fight's own
+  `[Defeat]` handler, and an **empty** party is not a wipe. Without this a
+  Simulated Attack damage floor — Nepheshel runs 850 of them — could kill the
+  party and leave the player walking the map with it. Still remaining:
   inflicting states from **battle** (rolling `state_chance` / to-hit, the
   non-reverse item case, enemy attacks).
   **Show / Move / Erase
