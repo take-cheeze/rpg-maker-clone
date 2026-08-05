@@ -1746,6 +1746,34 @@ assert "RPG::Sprite is the native Sprite plus the RGSS effect surface" do
   end
 end
 
+# Errno, which mruby does not ship and every RGSS game's "Main" names:
+#
+#   begin ... $scene.main while $scene != nil ... rescue Errno::ENOENT
+#
+# A rescue clause is evaluated when an exception passes through it, so without
+# the constant *any* exception leaving a game's main loop became
+# "NameError: uninitialized constant Errno" — the boot check caught exactly that
+# on a released game, where the ordinary end-of-run timeout was rewritten into a
+# crash. What matters is that a foreign exception passes through the clause.
+assert "Errno::ENOENT exists so a game's `rescue Errno::ENOENT` resolves" do
+  assert_true Object.const_defined?(:Errno), "Errno missing"
+  assert_true Errno::ENOENT.ancestors.include?(StandardError)
+  # RGSS's message shape: the stock Main strips the prefix to name the file.
+  assert_equal "No such file or directory - Data/Foo.rxdata",
+               Errno::ENOENT.new("Data/Foo.rxdata").message
+  passed_through = false
+  begin
+    begin
+      raise "not a file error"
+    rescue Errno::ENOENT
+      # Unreachable — and before Errno existed, getting here raised NameError.
+    end
+  rescue StandardError => e
+    passed_through = e.message == "not a file error"
+  end
+  assert_true passed_through, "a foreign exception did not survive the rescue clause"
+end
+
 assert "RPG::Weather offers the surface Spriteset_Map drives" do
   methods = RPG::Weather.instance_methods
   %i[type= max= ox= oy= update dispose type max ox oy].each do |name|

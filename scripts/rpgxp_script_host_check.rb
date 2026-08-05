@@ -33,6 +33,7 @@
 # Exits non-zero if any invariant is violated.
 
 require "zlib"
+require "tmpdir"
 
 # --- RGSS value-type + native shims (native classes in the real build) ------
 
@@ -229,7 +230,20 @@ class Checker
     sys = obj.send(:load_data, "Data/System.rxdata")
     expect(sys.is_a?(RPG::System), "load_data did not return an RPG::System")
     expect(sys.start_map_id.to_i > 0, "load_data System.start_map_id not positive")
-    puts "  Kernel#load_data returns RPG::System (start_map_id=#{sys.start_map_id})"
+    # A file in neither the game directory nor the archive raises RGSS's own
+    # Errno::ENOENT, which is what the stock "Main" rescues and reports.
+    missing = begin
+                obj.send(:load_data, "Data/NoSuchFile.rxdata")
+                "no exception"
+              rescue Errno::ENOENT => e
+                e.message
+              rescue StandardError => e
+                "wrong class: #{e.class}: #{e.message}"
+              end
+    expect(missing == "No such file or directory - Data/NoSuchFile.rxdata",
+           "load_data on a missing file gave #{missing.inspect}")
+    puts "  Kernel#load_data returns RPG::System (start_map_id=#{sys.start_map_id}) " \
+         "and raises Errno::ENOENT for a missing file"
   end
 
   # Evaluate the bundle the way the host does and confirm the real classes and
@@ -426,6 +440,18 @@ def check_rgss_library
   weather.update
   errors += check.call([drops[1].x, drops[1].y] != before, "no weather drop moved")
 
+  # Errno, which every game's "Main" names in `rescue Errno::ENOENT` and mruby
+  # does not ship. The clause is evaluated when an exception passes through it,
+  # so a missing constant turned any exception leaving the game loop into a
+  # NameError. CRuby has its own Errno, so what is checked here is the *shape*
+  # our fill-in has to match (rgss_library.rb only defines what is absent).
+  errors += check.call(Errno::ENOENT.ancestors.include?(StandardError),
+                       "Errno::ENOENT is not a StandardError")
+  errors += check.call(
+    Errno::ENOENT.new("Data/Foo.rxdata").message ==
+      "No such file or directory - Data/Foo.rxdata",
+    "Errno::ENOENT's message is not RGSS's shape (the stock Main strips it)"
+  )
   # The cache: one bitmap per path, a hue variant of its own, a blank for an
   # empty name, and — our deviation from RGSS — a blank for an asset that will
   # not load rather than a raise that would end the game.

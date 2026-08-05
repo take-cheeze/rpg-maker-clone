@@ -27,6 +27,14 @@
   deviations this engine forces (listed in the file's header). A missing asset
   now yields a blank bitmap and a warning where RGSS raises, so a game whose RTP
   is not installed still boots.
+- **`Errno::ENOENT` exists, so a game's own `Main` cannot swallow every
+  exception.** The editor wraps every project's main loop in
+  `begin … rescue Errno::ENOENT`, mruby ships no `Errno`, and a rescue clause is
+  evaluated when an exception passes through it — so anything leaving the game
+  loop (including the timeout a headless run ends on) came back as
+  `NameError: uninitialized constant Errno`. `RGSSData#read_object` now raises
+  `Errno::ENOENT` with RGSS's message shape ("No such file or directory - <path>",
+  which that handler strips to name the file) on both the XP and VX sides.
 - `scripts/rpgxp_script_host_check.rb` **stops stubbing our own Ruby**: it loads
   the real `rgss_library.rb`, evaluates *every* section of a real bundle except
   `Main` (it used to evaluate a hand-picked subset), and drives the sprite

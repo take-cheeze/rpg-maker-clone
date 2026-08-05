@@ -106,7 +106,10 @@ class RPGVX
     # RGSS's Kernel#load_data ("Data/System.rvdata2", "Save1.rvdata2", ...). A
     # loose file on disk shadows the archive, matching RGSS; when there is none
     # the entry is pulled from the encrypted archive. The RGSS script host uses
-    # this to feed Kernel#load_data.
+    # this to feed Kernel#load_data. A file in neither place raises
+    # Errno::ENOENT, the exception RGSS raises and a game's scripts are written
+    # to handle, with RGSS's own message shape — same as the XP side (see
+    # mruby-rpgxp/mrblib/rgss_library.rb, which defines it for this build).
     def read_object(relative_path)
       full = "#{@game_dir}/#{relative_path}"
       return File.open(full, "rb") { |f| Marshal.load(f.read) } if File.exist?(full)
@@ -114,7 +117,7 @@ class RPGVX
         bytes = @archive.read(relative_path)
         return Marshal.load(bytes) if bytes
       end
-      raise "cannot load #{relative_path}: no loose file and no archive entry"
+      raise Errno::ENOENT.new(relative_path)
     end
 
     # Marshal-dump `obj` to a project-relative file (RGSS's Kernel#save_data).

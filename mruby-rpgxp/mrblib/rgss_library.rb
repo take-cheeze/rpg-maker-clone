@@ -45,6 +45,57 @@
 # quirks included (`RPG::Weather` loops 1..40 over a 0..39 array, so a game asking
 # for 40 drops gets 39 — in the real player too).
 
+# Ruby's own `Errno`, which this mruby build does not ship (no mruby-errno gem is
+# vendored or configured) and which every RGSS game needs to *exist*, whether or
+# not it is ever raised. The editor writes this into the "Main" section of every
+# project:
+#
+#   begin
+#     $scene = Scene_Title.new
+#     $scene.main while $scene != nil
+#     Graphics.transition(20)
+#   rescue Errno::ENOENT
+#     print("Unable to find file #{$!.message.sub("No such file or directory - ", "")}.")
+#   end
+#
+# A rescue clause is evaluated when an exception passes through it, so with no
+# `Errno` *any* exception leaving the game loop — including the timeout a
+# headless run ends on — turned into `NameError: uninitialized constant Errno`.
+# That reads as "the game crashed" when the game was running fine: it is what
+# scripts/rpgxp_boot_check.bash caught the first time it booted a released game
+# under the host.
+#
+# ENOENT is the one RGSS itself raises (RPGXP::RGSSData#read_object does now, with
+# the same message shape, so the handler above prints the filename it was written
+# to print). The others are here so a script that rescues one resolves the
+# constant rather than losing its real exception to a NameError.
+# Each definition is guarded: this file is also loaded by the CRuby harnesses
+# (scripts/rpgxp_script_host_check.rb), where Ruby's real Errno already exists and
+# must not be redefined — the shapes match, so the guard is what keeps this a
+# *fill-in* rather than a monkeypatch.
+class SystemCallError < StandardError
+end unless Object.const_defined?(:SystemCallError)
+
+module Errno
+  # RGSS's message is "No such file or directory - <path>", and the stock Main
+  # strips that prefix to name the file — so the argument is the *path*, as in
+  # CRuby, not the whole message.
+  unless const_defined?(:ENOENT)
+    class ENOENT < SystemCallError
+      PREFIX = "No such file or directory".freeze
+
+      def initialize(path = nil)
+        super(path.nil? || path.empty? ? PREFIX : "#{PREFIX} - #{path}")
+      end
+    end
+  end
+
+  class EACCES < SystemCallError; end unless const_defined?(:EACCES)
+  class EEXIST < SystemCallError; end unless const_defined?(:EEXIST)
+  class EINVAL < SystemCallError; end unless const_defined?(:EINVAL)
+  class EISDIR < SystemCallError; end unless const_defined?(:EISDIR)
+end
+
 module RPG
   # The bitmap cache. Every graphic a game loads goes through here — the scripts
   # call `RPG::Cache.character(name, hue)`, `.tile(tileset, id, hue)`,

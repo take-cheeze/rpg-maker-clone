@@ -86,6 +86,35 @@ native handle must not be shallow-copied), and an asset that will not load gives
 a blank bitmap with a warning instead of raising (a game whose RTP is missing
 must not die on its first graphic).
 
+With those three in place the host runs a game's whole bundle — **all 103
+sections of the released *Pray for You*** — and reaches `Main`, where it met the
+next one:
+
+### 0b. `Errno::ENOENT` ✅ (an unresolvable rescue clause eats every exception)
+
+The editor writes this into the `Main` section of *every* project:
+
+```ruby
+begin
+  $scene = Scene_Title.new
+  $scene.main while $scene != nil
+  Graphics.transition(20)
+rescue Errno::ENOENT
+  print("Unable to find file #{$!.message.sub("No such file or directory - ", "")}.")
+end
+```
+
+mruby ships no `Errno` (no `mruby-errno` gem is vendored or configured). A rescue
+clause is evaluated when an exception passes through it, so *any* exception
+leaving the game loop — including the timeout a headless run ends on — came back
+as `NameError: uninitialized constant Errno`, which reads as "the game crashed"
+when the game was running fine. `rgss_library.rb` defines `Errno::ENOENT` (plus
+`EACCES`/`EEXIST`/`EINVAL`/`EISDIR`, so a script rescuing one of those does not
+hit the same trap) and `SystemCallError`, each only when absent — the file is
+loaded under CRuby too, where the real ones exist. `RGSSData#read_object` now
+raises `Errno::ENOENT` with RGSS's own message shape, so the handler above
+prints the filename it was written to print.
+
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at
 the end of this document), and `scripts/rpgxp_script_host_check.rb` *stubbed*
