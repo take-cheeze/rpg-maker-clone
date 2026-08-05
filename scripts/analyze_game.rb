@@ -15,7 +15,11 @@
 # implements.
 #
 # Usage:
-#   ruby scripts/analyze_game.rb [--json] [--troops] [--enemies] GAME_DIR [...]
+#   ruby scripts/analyze_game.rb [--json] [--troops] [--enemies]
+#                                [--params [--code N,N]] GAME_DIR [...]
+# `--params` reports the parameter *modes* behind each opcode — the view that
+# catches a command dispatched to a handler which ignores half of what the game
+# supplies, which per-opcode coverage cannot see. `--code` narrows it.
 # `--troops` reports the troops' battle-event pages instead: which condition
 # flag bits the game uses and which battle-only commands its pages run.
 # `--enemies` reports the enemies' action patterns (行動パターン): the kinds,
@@ -497,9 +501,82 @@ rescue StandardError => e
   warn "  enemy analysis failed for #{dir}: #{e.class}: #{e.message}"
 end
 
+# --params: the parameter *modes* behind each opcode.
+#
+# The coverage figures above are per **opcode**, and an opcode-complete runtime
+# can still be wrong: a command is dispatched to a handler that reads only some
+# of the parameter values the game supplies. Every event-command bug found in
+# the 2026-08 audit was of that shape — a "this event" reference the read side
+# could not resolve, a Show Choices cancel setting nobody looked at, an
+# Erase Screen transition style that was recorded and ignored.
+#
+# This is the view that finds them. For each opcode it lists, per parameter
+# index, how many distinct values the game supplies and — when there are few
+# enough to be a *mode selector* rather than an id or a coordinate — which ones.
+# Read it next to the handler's `case` arms: a value the game uses and the
+# handler has no branch for is the bug.
+#
+# It cannot decide anything on its own, so it reports rather than judging.
+MODE_VALUES_SHOWN = 10
+
+def report_params(dir, only_codes)
+  st = analyze_params(dir)
+  puts "== #{File.basename(dir.chomp('/'))} parameter modes =="
+  puts '   (per parameter index: distinct-value count, and the values when few'
+  puts '    enough to be a mode selector. Compare against the handler.)'
+  st.sort_by { |code, _| code }.each do |code, params|
+    next if only_codes && !only_codes.include?(code)
+    total = params[:count]
+    puts format('  %-28s %6d use(s)', cmd_label(code), total)
+    params[:values].sort.each do |idx, vals|
+      next if vals.size == 1 && vals.keys.first.to_i.zero? # an always-zero slot
+      shown =
+        if vals.size <= MODE_VALUES_SHOWN
+          vals.sort_by { |v, _| v.to_i }
+              .map { |v, n| "#{v}(#{n})" }.join(' ')
+        else
+          "#{vals.size} distinct"
+        end
+      puts format('      param%-2d %s', idx, shown)
+    end
+  end
+end
+
+# Tally, per opcode, the distinct values at each parameter index.
+def analyze_params(dir)
+  out = Hash.new { |h, k| h[k] = { count: 0, values: Hash.new { |g, i| g[i] = Hash.new(0) } } }
+  tally = lambda do |cmds|
+    next unless cmds
+    cmds.each do |c|
+      e = out[c.code]
+      e[:count] += 1
+      n = (c.parameters || []).size
+      n.times { |i| e[:values][i][c.param(i)] += 1 }
+    end
+  end
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  db.common_event&.each { |_id, ce| tally.call(ce.event) }
+  Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
+    lmu = LCF::MapUnit.new(File.open(f, 'rb'))
+    lmu.events.each { |_id, ev| ev.pages.each { |_pid, pg| tally.call(pg.event_commands) } }
+  rescue StandardError => e
+    warn "  #{File.basename(f)}: #{e.class}: #{e.message}"
+  end
+  out
+end
+
 json = ARGV.delete('--json')
 troops = ARGV.delete('--troops')
 enemies_only = ARGV.delete('--enemies')
+params_only = ARGV.delete('--params')
+# --params may be narrowed to a comma-separated opcode list, e.g. --code 10140.
+code_arg = ARGV.index('--code')
+only_codes = nil
+if code_arg
+  ARGV.delete_at(code_arg)
+  only_codes = (ARGV.delete_at(code_arg) || '').split(',').map(&:to_i)
+  only_codes = nil if only_codes.empty?
+end
 games = ARGV.dup
 if games.empty?
   root = File.expand_path('../data', __dir__)
@@ -507,7 +584,7 @@ if games.empty?
 end
 if games.empty?
   warn 'usage: ruby scripts/analyze_game.rb [--json] [--troops] [--enemies] ' \
-       'GAME_DIR [GAME_DIR ...]'
+       '[--params [--code N,N]] GAME_DIR [GAME_DIR ...]'
   exit 1
 end
 
@@ -518,6 +595,11 @@ end
 
 if enemies_only
   games.each { |g| report_enemies(g) }
+  exit 0
+end
+
+if params_only
+  games.each { |g| report_params(g, only_codes) }
   exit 0
 end
 

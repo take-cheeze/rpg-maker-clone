@@ -780,7 +780,40 @@ The work below is roughly ordered by the critical path to a walkable game
   black mask cannot express — the scrolls and the combine / division pairs slide
   the live scene itself, zoom / mosaic / wave resample it, and random blocks wants
   thousands of block blits a frame — which run as a fade of the right length and
-  the right end state until the renderer can capture a screen and transform it.
+  the right end state for now.
+
+  **That remainder was written up as blocked on a screen capture the renderer
+  does not have. It is not: `RGSS::Graphics.snap_to_bitmap` exists, is tested
+  (`mruby-rgss/test/test.rb`), is enabled on the builds that draw
+  (`LV_USE_SNAPSHOT` in `include/lv_conf.h`; the Wio/PSP builds compile it out
+  and it answers nil there), and the **RPG Maker XP scene already uses it**
+  (`mruby-rpgxp/mrblib/scene.rb`) for exactly this — its own transitions.** The
+  same mistake as the fade/flash note below: a capability assumed missing that
+  was already there. What is actually left per style:
+
+  - **Scroll (settings 9–12)** and **combine / division (13–15)**: capture the
+    outgoing screen once when the transition starts, then each frame paint the
+    overlay as the full composite — black plus the capture blitted at the
+    sliding offset — rather than as a mask. `Bitmap#blt` is enough; no native
+    work. The overlay is opaque and above everything, so painting the whole
+    frame into it is what lets the scene appear to move, which a mask cannot do.
+  - **Zoom (16)**: the same, with `stretch_blt` instead of `blt`.
+  - **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
+    exist but a full-screen loop per frame in Ruby is far too slow, so these are
+    the only two that genuinely want a native pass.
+  - **Random blocks (1–3)**: expressible as a mask already; it needs the
+    *incremental* paint RPG_RT uses (only the newly-covered blocks each frame,
+    ~120 of 4800) rather than repainting every block, which is why it was left.
+
+  One wrinkle a Show Screen has and an Erase does not: its capture is of the
+  screen being arrived at, and `snap_to_bitmap` grabs the rendered screen
+  *including* the erase overlay that is currently hiding it. RPG_RT's equivalent
+  draws everything below the transition layer only
+  (`Graphics::LocalDraw(..., GetZ() - 1)`); here that means hiding the fade
+  sprite around the snapshot. Worth confirming in the real binary before
+  building on it — the RPG2003 test-bed uses zoom / mosaic / wave twelve times,
+  which is what makes the family worth finishing (`ruby scripts/analyze_game.rb
+  --params --code 11010 data/mtf-meido-action/Debug`).
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already
