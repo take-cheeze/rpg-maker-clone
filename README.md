@@ -135,6 +135,14 @@
   its `Audio/BGM` mixes `.MID` with `.mid`, which only a case-sensitive
   filesystem tells apart. See
   [`docs/adr/0027-rpgxp-released-game-parity.md`](docs/adr/0027-rpgxp-released-game-parity.md)
+- **Pictures** are drawn: Show / Move / Rotate / Change Tone / Erase Picture
+  (231–235), a `Game::Picture` per slot mirroring RMXP's `Game_Picture` — origin,
+  position, zoom, opacity, blend type, tone and angle, eased with RMXP's own
+  weighted average — layered in their own viewport above the map and below the
+  windows, and surviving a Transfer Player. Message boxes also draw the
+  windowskin's blinking **pause arrow** while they hold text, as the genuine
+  runtime does. `STEPS_SPEC` lets the wine comparison drive a game's opening
+  cutscene instead of only walking around its start map
 
 ### RPG Maker VX / VX Ace
 

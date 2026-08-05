@@ -438,6 +438,145 @@ class RPGXP
       end
     end
 
+    # One slot of RMXP's `$game_screen.pictures`: what Show Picture (231) put on
+    # screen, and where a Move Picture (232) / Rotate Picture (233) / Change
+    # Picture Tone (234) is taking it. Pure data plus the per-frame easing, the
+    # way `Game_Picture` is; the map scene turns each one into a Sprite.
+    #
+    # The eases are RMXP's own weighted average -- `v = (v * (d - 1) + target) /
+    # d` with d counting down -- which lands exactly on the target on the last
+    # frame without accumulating error.
+    #
+    # `tone` is kept as the four numbers rather than an RGSS::Tone so this class
+    # stays loadable under CRuby (scripts/rpgxp_testbed_check.rb drives the same
+    # sources with only a Marshal shim for the value types); the scene builds the
+    # Tone.
+    class Picture
+      attr_reader :number, :name, :origin, :x, :y, :zoom_x, :zoom_y, :opacity,
+                  :blend_type, :angle, :tone
+
+      def initialize(number)
+        @number = number
+        erase
+      end
+
+      # RMXP's Game_Picture#initialize defaults, which `erase` returns to.
+      def erase
+        @name = ""
+        @origin = 0
+        @x = 0.0
+        @y = 0.0
+        @zoom_x = 100.0
+        @zoom_y = 100.0
+        @opacity = 255.0
+        @blend_type = 1 # RMXP's default for a picture is 1, not 0
+        @duration = 0
+        @target_x = 0.0
+        @target_y = 0.0
+        @target_zoom_x = 100.0
+        @target_zoom_y = 100.0
+        @target_opacity = 255.0
+        @tone = [0.0, 0.0, 0.0, 0.0]
+        @tone_target = [0.0, 0.0, 0.0, 0.0]
+        @tone_duration = 0
+        @angle = 0.0
+        @rotate_speed = 0
+      end
+
+      # Whether anything should be drawn for this slot.
+      def shown?; !@name.nil? && !@name.empty?; end
+
+      def show(name, origin, x, y, zoom_x, zoom_y, opacity, blend_type)
+        @name = name.to_s
+        @origin = origin.to_i
+        @x = x.to_f
+        @y = y.to_f
+        @zoom_x = zoom_x.to_f
+        @zoom_y = zoom_y.to_f
+        @opacity = opacity.to_f
+        @blend_type = blend_type.to_i
+        @duration = 0
+        @target_x = @x
+        @target_y = @y
+        @target_zoom_x = @zoom_x
+        @target_zoom_y = @zoom_y
+        @target_opacity = @opacity
+        @tone = [0.0, 0.0, 0.0, 0.0]
+        @tone_target = [0.0, 0.0, 0.0, 0.0]
+        @tone_duration = 0
+        @angle = 0.0
+        @rotate_speed = 0
+      end
+
+      def move(duration, origin, x, y, zoom_x, zoom_y, opacity, blend_type)
+        @origin = origin.to_i
+        @blend_type = blend_type.to_i
+        @target_x = x.to_f
+        @target_y = y.to_f
+        @target_zoom_x = zoom_x.to_f
+        @target_zoom_y = zoom_y.to_f
+        @target_opacity = opacity.to_f
+        @duration = duration.to_i
+        return unless @duration <= 0
+        # A zero-frame move is a snap, not a no-op.
+        @x = @target_x
+        @y = @target_y
+        @zoom_x = @target_zoom_x
+        @zoom_y = @target_zoom_y
+        @opacity = @target_opacity
+      end
+
+      # Rotate Picture (233): degrees per two frames, signed. 0 stops it.
+      def rotate(speed)
+        @rotate_speed = speed.to_i
+      end
+
+      # Change Picture Tone (234). `tone` is [red, green, blue, gray].
+      def start_tone_change(tone, duration)
+        @tone_target = tone
+        @tone_duration = duration.to_i
+        return if @tone_duration > 0
+        @tone = [tone[0], tone[1], tone[2], tone[3]]
+      end
+
+      def update
+        step_move
+        step_tone
+        step_rotation
+      end
+
+      private
+
+      def step_move
+        return if @duration < 1
+        d = @duration
+        @x = (@x * (d - 1) + @target_x) / d
+        @y = (@y * (d - 1) + @target_y) / d
+        @zoom_x = (@zoom_x * (d - 1) + @target_zoom_x) / d
+        @zoom_y = (@zoom_y * (d - 1) + @target_zoom_y) / d
+        @opacity = (@opacity * (d - 1) + @target_opacity) / d
+        @duration = d - 1
+      end
+
+      def step_tone
+        return if @tone_duration < 1
+        d = @tone_duration
+        i = 0
+        while i < 4
+          @tone[i] = (@tone[i] * (d - 1) + @tone_target[i]) / d
+          i += 1
+        end
+        @tone_duration = d - 1
+      end
+
+      def step_rotation
+        return if @rotate_speed == 0
+        @angle += @rotate_speed / 2.0
+        @angle += 360.0 while @angle < 0
+        @angle -= 360.0 while @angle >= 360.0
+      end
+    end
+
     # RPG Maker XP character sheets are a 4x4 grid: four columns (walk patterns)
     # by four rows (facing down/left/right/up, top to bottom). One frame is a
     # quarter of the sheet in each axis.

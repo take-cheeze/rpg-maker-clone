@@ -814,6 +814,120 @@ assert "Interpreter: set move route resolves the target" do
   assert_true it4.take_move_route_requests.empty?
 end
 
+assert "Game::Picture eases a move onto its target and stops there" do
+  p = RPGXP::Game::Picture.new(1)
+  p.show("CG1", 0, 0, 0, 100, 100, 255, 0)
+  assert_true p.shown?
+  assert_equal 0.0, p.x
+  # Four frames to (40, 20) at half opacity: RMXP's weighted average lands
+  # exactly on the target on the last frame.
+  p.move(4, 0, 40, 20, 200, 200, 128, 1)
+  4.times { p.update }
+  assert_equal 40.0, p.x
+  assert_equal 20.0, p.y
+  assert_equal 200.0, p.zoom_x
+  assert_equal 128.0, p.opacity
+  assert_equal 1, p.blend_type
+  # Done: further frames do not overshoot.
+  p.update
+  assert_equal 40.0, p.x
+
+  # A zero-frame move snaps instead of doing nothing.
+  p.move(0, 0, 5, 6, 100, 100, 255, 0)
+  assert_equal 5.0, p.x
+  assert_equal 6.0, p.y
+end
+
+assert "Game::Picture eases its tone and wraps its rotation" do
+  p = RPGXP::Game::Picture.new(2)
+  p.show("CG2", 1, 10, 10, 100, 100, 255, 0)
+  assert_equal [0.0, 0.0, 0.0, 0.0], p.tone
+  p.start_tone_change([-68, 0, 68, 255], 2)
+  p.update
+  p.update
+  assert_equal(-68.0, p.tone[0])
+  assert_equal 255.0, p.tone[3]
+
+  # A zero duration applies at once.
+  p.start_tone_change([0, 0, 0, 0], 0)
+  assert_equal [0, 0, 0, 0], p.tone
+
+  # Rotation is degrees per two frames and stays in 0...360.
+  p.rotate(-4)
+  p.update            # -2
+  p.update            # -4 -> wraps
+  assert_true p.angle >= 0.0 && p.angle < 360.0
+  assert_equal 356.0, p.angle
+  p.rotate(0)
+  before = p.angle
+  p.update
+  assert_equal before, p.angle
+
+  # Erase returns the slot to its defaults, and it stops being drawn.
+  p.erase
+  assert_false p.shown?
+  assert_equal 100.0, p.zoom_x
+  assert_equal 0.0, p.angle
+end
+
+assert "Interpreter: picture commands queue without pausing" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    # Show Picture 1 "CG1", centred origin, direct (0) coords 320,240,
+    # zoom 100/100, opacity 255, blend 0.
+    cmd(231, [1, "CG1", 1, 0, 320, 240, 100, 100, 255, 0], 0),
+    cmd(235, [1], 0),               # Erase Picture 1
+    cmd(121, [5, 5, 0], 0)          # proves neither paused
+  ], 1, 7)
+  it.update
+  assert_false it.waiting?
+  assert_true s.switches[5]
+  reqs = it.take_picture_requests
+  assert_equal 2, reqs.size
+  assert_equal :show, reqs[0][:op]
+  assert_equal 1, reqs[0][:number]
+  assert_equal "CG1", reqs[0][:name]
+  assert_equal 1, reqs[0][:origin]
+  assert_equal 320, reqs[0][:x]
+  assert_equal 240, reqs[0][:y]
+  assert_equal :erase, reqs[1][:op]
+  assert_true it.take_picture_requests.empty?
+end
+
+assert "Interpreter: picture position can come from variables" do
+  s = new_state
+  s.variables[3] = 64
+  s.variables[4] = 96
+  it = RPGXP::Game::Interpreter.new(s)
+  # appoint_with_variables = 1, so the x/y slots name variables 3 and 4.
+  it.start([cmd(231, [2, "CG2", 0, 1, 3, 4, 100, 100, 255, 0], 0)], 1, 7)
+  it.update
+  r = it.take_picture_requests[0]
+  assert_equal 64, r[:x]
+  assert_equal 96, r[:y]
+
+  # Move Picture puts a duration where Show has the name, then the same tail.
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(232, [2, 20, 0, 0, 10, 12, 50, 50, 128, 1], 0)], 1, 7)
+  it2.update
+  m = it2.take_picture_requests[0]
+  assert_equal :move, m[:op]
+  assert_equal 20, m[:duration]
+  assert_equal 10, m[:x]
+  assert_equal 50, m[:zoom_x]
+  assert_equal 128, m[:opacity]
+
+  # Rotate carries its speed; a tone command with no Tone object is dropped.
+  it3 = RPGXP::Game::Interpreter.new(s)
+  it3.start([cmd(233, [2, -4], 0), cmd(234, [2, nil, 10], 0)], 1, 7)
+  it3.update
+  rots = it3.take_picture_requests
+  assert_equal 1, rots.size
+  assert_equal :rotate, rots[0][:op]
+  assert_equal(-4, rots[0][:speed])
+end
+
 assert "Interpreter: set event location queues a snap without pausing" do
   s = new_state
   it = RPGXP::Game::Interpreter.new(s)
