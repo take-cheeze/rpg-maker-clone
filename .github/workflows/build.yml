@@ -919,8 +919,15 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
+      # Piped through the ref-noise filter for the same reason every
+      # `nix develop` is (scripts/nix-develop.bash): fetching this flake with
+      # `self.submodules = true` makes nix fetch each submodule with
+      # `refs/*:refs/*` and print a `* [new ref]` line per ref, ~20k of them
+      # ahead of the first build log line. Merging stderr into stdout is what
+      # lets one filter see both; `-L`'s build logs stay untouched, they are
+      # prefixed with the derivation name rather than looking like fetch output.
       - name: Build flake
-        run: nix build -L '.#build'
+        run: nix build -L '.#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 
   # Publish the WebAssembly page to GitHub Pages on every push to master. The
   # build carries no pthreads/SharedArrayBuffer, so it needs no COOP/COEP

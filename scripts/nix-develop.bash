@@ -38,6 +38,16 @@ delay=${NIX_DEVELOP_RETRY_DELAY:-5}
 # back until the command exits.
 separate=${NIX_DEVELOP_SEPARATE_STREAMS:-0}
 
+# `nix develop` fetches this flake with `self.submodules = true`, which makes
+# nix fetch every submodule from its remote with the refspec `refs/*:refs/*`
+# and `--progress`: a `* [new ref]` line per ref — ~20k of them, GitHub's
+# `refs/pull/*` included, on the first nix command of a job — plus the object
+# counters git would otherwise keep to itself when stderr is not a terminal. It
+# all comes from a `git` child process holding nix's stderr, so no nix
+# verbosity flag suppresses it; see the filter for the full story. The same
+# filter also quiets the clones the download scripts run inside the shell.
+drop_fetch_noise="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drop-git-fetch-noise.bash"
+
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 
@@ -46,11 +56,12 @@ for ((attempt = 1; ; attempt++)); do
     if [ "$separate" = 1 ]; then
         nix develop -c "$@" 2>"$log"
         status=$?
-        cat "$log" >&2
+        "$drop_fetch_noise" <"$log" >&2
     else
         # `tee` is what lets the retry check read nix's diagnostics while they
-        # still stream live, hence PIPESTATUS for the real exit status.
-        nix develop -c "$@" 2>&1 | tee "$log"
+        # still stream live, hence PIPESTATUS for the real exit status — which
+        # is still element 0 with the filter spliced in ahead of `tee`.
+        nix develop -c "$@" 2>&1 | "$drop_fetch_noise" | tee "$log"
         status=${PIPESTATUS[0]}
     fi
     set -e
