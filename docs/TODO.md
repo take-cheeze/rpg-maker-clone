@@ -402,7 +402,8 @@ The work below is roughly ordered by the critical path to a walkable game
   dismissing), and the **pacing codes act**: `Game::Message.scan` surfaces
   `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds) and `\^` (close the
   window without a keypress) in revealed-character coordinates, and the reveal
-  halts at each until released. `\c[n]` **colour codes** are
+  halts at each until released. `\$` opens a small **gold window** (the party's
+  money) alongside the message, closed with it. `\c[n]` **colour codes** are
   drawn in colour: `Game::Message.parse` splits a line into `{text:, color:}`
   runs and `Scene::Map` draws each run in its palette colour, revealing across
   runs (`Game::Message.visible_segments`). **Message Options** (10120) and

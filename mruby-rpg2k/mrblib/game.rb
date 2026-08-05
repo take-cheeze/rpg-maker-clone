@@ -32,10 +32,10 @@ module Game
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
   # `\n[n]` the name of actor n, `\\` a literal backslash, `\_` a space; `\c[n]`
-  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits) and `\^` (auto-close)
-  # are surfaced by #scan for the typewriter to act on; the remaining display
-  # codes (`\s` speed, `\>`/`\<`, `\$`) are dropped. `names` may be a Hash or any
-  # object responding to `[]`.
+  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits), `\^` (auto-close) and
+  # `\$` (show the gold window) are surfaced by #scan for the scene to act on; the
+  # remaining display codes (`\s` speed, `\>`/`\<`) are dropped. `names` may be a
+  # Hash or any object responding to `[]`.
   module Message
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
@@ -62,11 +62,13 @@ module Game
     #   :pauses  — [{ at:, kind: }] for `\!` (:key, wait for a button), `\.`
     #              (:quarter) and `\|` (:full) timed holds;
     #   :auto_close — `\^` (close the window without a keypress once revealed);
+    #   :show_gold — `\$` (show the party's gold in a small window);
     #   :length  — the visible character count (what the reveal counts).
     def self.scan(text, variables, names)
       segs = []
       pauses = []
       auto_close = false
+      show_gold = false
       cur = ''
       color = 0
       count = 0 # visible characters emitted so far (pause positions index this)
@@ -91,8 +93,9 @@ module Game
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
           when '^'      then auto_close = true
-          # other display codes (`\s` speed, `\>`/`\<`, `\$`) produce no
-          # characters and no pacing here: dropped.
+          when '$'      then show_gold = true # show the gold window
+          # other display codes (`\s` speed, `\>`/`\<`) produce no characters and
+          # no pacing here: dropped.
           end
         else
           cur << ch
@@ -101,7 +104,8 @@ module Game
         end
       end
       segs << { text: cur, color: color } unless cur.empty?
-      { segments: segs, pauses: pauses, auto_close: auto_close, length: count }
+      { segments: segs, pauses: pauses, auto_close: auto_close,
+        show_gold: show_gold, length: count }
     end
 
     # Truncate per-line colour segments to the first `revealed` characters

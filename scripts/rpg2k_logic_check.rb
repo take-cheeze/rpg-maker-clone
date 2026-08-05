@@ -413,6 +413,17 @@ check 'Message.scan records pacing codes in revealed-char coordinates' do
   eq [{ at: 2, kind: :key }], s2[:pauses], '42 is two chars, so \\! sits at 2'
 end
 
+check 'Message.scan flags \$ (show gold) and drops it from the text' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  s = Game::Message.scan('Gold:\$ here', vars, names)
+  ok s[:show_gold], '\\$ sets show_gold'
+  eq 'Gold: here'.length, s[:length], '\\$ emits no visible character'
+  # No \$ -> flag stays off.
+  ok !Game::Message.scan('plain', vars, names)[:show_gold]
+end
+
 # -- Screen (tint state machine) ---------------------------------------------
 
 check 'Screen starts neutral and settled' do
