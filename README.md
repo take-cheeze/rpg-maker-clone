@@ -60,6 +60,15 @@
   runs the ordinary command set plus the battle-only commands — Change Monster
   HP / MP / Condition, Show Hidden Monster, Change Battle Background, the battle
   Show Battle Animation, the battle Conditional Branch and Terminate Battle
+- The **RPG2003-only event commands** run too — the low opcodes the 2003 editor
+  emits for the features RPG2000 never had. **Change Class** (1008) moves an
+  actor to a database class, re-reading its growth curve, learn table and EXP
+  curve from the class row and honouring the command's skill and parameter modes
+  (keep / reset / add, keep / halve / reset); **Change Battle Commands** (1009)
+  edits an actor's battle-command list; **Force Flee** (1006), **Enable Combo**
+  (1007) and **Call Common Event** (1005) act inside a battle-event page; and the
+  English-release **Open Load Menu** (5001) / **Exit Game** (5002) leave the map
+  for the loader or quit
 - Message text reveals gradually (a typewriter effect; a button press completes
   it, then dismisses), expands the common control codes (`\v[n]` variable,
   `\n[n]` actor name, `\\`) and draws `\c[n]` colour changes

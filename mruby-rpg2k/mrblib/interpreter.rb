@@ -11,6 +11,21 @@ module Game
   class Interpreter
     # RPG2000 event command opcodes (subset).
     module Cmd
+      # RPG2003-only commands. The editor emits these low opcodes for the
+      # features RPG2000 never had: the 100x block is the battle-event page's
+      # own extras plus the class / battle-command changes, and the 500x block
+      # is the "RPG2003 English release" (2k3e) system commands. The numbers are
+      # liblcf's `EventCommand::Code` enum, not a guess -- RPG2000 game data
+      # never carries them, so they only ever fire on a 2003 project.
+      CALL_COMMON_EVENT      = 1005
+      FORCE_FLEE             = 1006
+      ENABLE_COMBO           = 1007
+      CHANGE_CLASS           = 1008
+      CHANGE_BATTLE_COMMANDS = 1009
+      OPEN_LOAD_MENU         = 5001
+      EXIT_GAME              = 5002
+      TOGGLE_FULLSCREEN      = 5004
+      OPEN_VIDEO_OPTIONS     = 5005
       SHOW_MESSAGE     = 10110
       MESSAGE_2        = 20110
       MESSAGE_OPTIONS  = 10120
@@ -166,6 +181,7 @@ module Game
       @movie_request = nil
       @triggered_by_decision_key = false
       @revealed_monsters = []
+      @fled_monsters = []
       @battle_background = nil
       @input_variable = nil
       @input_digits = 1
@@ -217,6 +233,7 @@ module Game
       @vehicle_toggle_requested = false
       @movie_request = nil
       @revealed_monsters = []
+      @fled_monsters = []
       @battle_background = nil
       # Cleared per run so a reused interpreter (the shared foreground one, or a
       # looping parallel process) never inherits the previous event's trigger;
@@ -358,6 +375,15 @@ module Game
     def take_revealed_monsters
       ids = @revealed_monsters
       @revealed_monsters = []
+      ids
+    end
+
+    # Drain the Force Flee (1006) troop-member indices queued since the last
+    # call — the members that just ran from the fight. The scene polls this and
+    # drops their sprites. Non-blocking.
+    def take_fled_monsters
+      ids = @fled_monsters
+      @fled_monsters = []
       ids
     end
 
@@ -653,6 +679,8 @@ module Game
       when Cmd::CHANGE_CONDITION then do_change_condition cmd
       when Cmd::FULL_HEAL        then do_full_heal cmd
       when Cmd::SIMULATED_ATTACK then do_simulated_attack cmd
+      when Cmd::CHANGE_CLASS     then do_change_class cmd
+      when Cmd::CHANGE_BATTLE_COMMANDS then do_change_battle_commands cmd
       when Cmd::CHANGE_ACTOR_NAME   then do_change_actor_name cmd
       when Cmd::CHANGE_ACTOR_TITLE  then do_change_actor_title cmd
       when Cmd::CHANGE_ACTOR_SPRITE then do_change_actor_sprite cmd
@@ -716,6 +744,11 @@ module Game
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
       when Cmd::GAME_OVER        then do_game_over cmd
       when Cmd::CALL_EVENT       then do_call_event cmd
+      when Cmd::CALL_COMMON_EVENT then do_call_common_event cmd
+      when Cmd::OPEN_LOAD_MENU   then do_open_load_menu cmd
+      when Cmd::EXIT_GAME        then do_exit_game cmd
+      when Cmd::TOGGLE_FULLSCREEN then do_toggle_fullscreen cmd
+      when Cmd::OPEN_VIDEO_OPTIONS then do_open_video_options cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
       when Cmd::END_EVENT        then @index = @list.size
       when Cmd::LABEL            then nil # jump target only; Jump to Label finds it
@@ -724,6 +757,8 @@ module Game
       when Cmd::CHANGE_MONSTER_MP        then do_change_monster_mp cmd
       when Cmd::CHANGE_MONSTER_CONDITION then do_change_monster_condition cmd
       when Cmd::SHOW_HIDDEN_MONSTER      then do_show_hidden_monster cmd
+      when Cmd::FORCE_FLEE               then do_force_flee cmd
+      when Cmd::ENABLE_COMBO             then do_enable_combo cmd
       when Cmd::CHANGE_BATTLE_BG         then do_change_battle_bg cmd
       when Cmd::SHOW_BATTLE_ANIM_B       then do_show_battle_animation_b cmd
       when Cmd::CONDITIONAL_B            then do_conditional_battle cmd
@@ -1257,8 +1292,14 @@ module Game
     def queue_level_up_messages(actor, old_level, new_level)
       return unless new_level > old_level
       ((old_level + 1)..new_level).each do |lv|
-        @pending_messages.push(["#{actor.name} is now level #{lv}!"])
+        @pending_messages.push([level_up_message(actor, lv)])
       end
+    end
+
+    # The one line a level-up announces. RPG_RT phrases it from the database
+    # terms; this build uses a plain English line for now.
+    def level_up_message(actor, level)
+      "#{actor.name} is now level #{level}!"
     end
 
     # Enter the next queued level-up message as a :message wait; returns false
@@ -1349,6 +1390,44 @@ module Game
       stat_targets(cmd).each do |a|
         remove ? a.remove_state(state_id) : a.add_state(state_id)
       end
+    end
+
+    # -- RPG2003 class / battle commands --------------------------------------
+
+    # Change Class (1008), an RPG2003-only command: move the target actor(s) to
+    # database class param2 (0 = no class). param3 sets the level to 1 rather
+    # than keeping the current one, param4 is the skill mode and param5 the
+    # parameter mode (see Game::Actor::CLASS_SKILL_* / CLASS_PARAM_*), and param6
+    # is the "show level-up message" flag the Change Level command also carries.
+    # An RPG2000 project cannot emit this, and a database without a class table
+    # leaves every actor class-less, so the command self-limits to 2003 data.
+    def do_change_class(cmd)
+      class_id = cmd.param(2)
+      level_1 = cmd.param(3) != 0
+      skill_mode = cmd.param(4)
+      param_mode = cmd.param(5)
+      show_msg = cmd.param(6) != 0
+      stat_targets(cmd).each do |a|
+        before = a.level
+        next unless a.change_class(class_id, level_1 ? 1 : a.level,
+                                   skill_mode, param_mode)
+        # Unlike Change Level (which announces every level crossed) RPG_RT shows
+        # a single line here, and shows it whenever the class change taught new
+        # skills even if the level itself did not move (EasyRPG's ChangeClass).
+        next unless show_msg && a.level > 1
+        next unless a.level > before || skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE
+        @pending_messages.push([level_up_message(a, a.level)])
+      end
+      show_next_pending_message
+    end
+
+    # Change Battle Commands (1009), RPG2003-only: add (param3 non-zero) or
+    # remove battle command param2 from the target actor(s). Removing command 0
+    # clears the list back to the Row entry alone.
+    def do_change_battle_commands(cmd)
+      cmd_id = cmd.param(2)
+      add = cmd.param(3) != 0
+      stat_targets(cmd).each { |a| a.change_battle_commands(add, cmd_id) }
     end
 
     # -- actor identity / graphic ---------------------------------------------
@@ -1541,6 +1620,55 @@ module Game
     def do_show_hidden_monster(cmd)
       return unless @battle
       @revealed_monsters.push(cmd.param(0))
+    end
+
+    # Force Flee (1006), RPG2003-only: make somebody leave the fight. param0
+    # picks who — 0 the party (which only *grants* the escape: the player still
+    # has to choose Flee, and then always succeeds), 1 every troop member still
+    # standing, 2 the single member param1. param2 is RPG_RT's "check the battle
+    # condition" flag, which suppresses the flee in a pincer / surround ambush;
+    # this runtime models neither formation, so every fight counts as a normal
+    # one and the flee always goes ahead. Enemies that leave are recorded so the
+    # scene can drop their sprites and play the escape sound.
+    def do_force_flee(cmd)
+      return unless @battle
+      case cmd.param(0)
+      when 0 then @battle.force_flee_party
+      when 1 then @fled_monsters.concat(@battle.flee_all_enemies)
+      when 2
+        index = cmd.param(1)
+        @fled_monsters.push(index) if @battle.flee_enemy(index)
+      end
+    end
+
+    # Enable Combo (1007), RPG2003-only: arm party actor param0's battle command
+    # param1 to repeat param2 times. Recorded on the actor; the ATB battle system
+    # that spends a combo is not modelled here, so nothing acts on it yet.
+    def do_enable_combo(cmd)
+      return unless @battle
+      actor = party.actor_by_id(cmd.param(0))
+      return unless actor
+      actor.set_battle_combo(cmd.param(1), cmd.param(2))
+    end
+
+    # Call Common Event (1005), the RPG2003 battle page's own call command:
+    # param0 is the common event id, and unlike the map's Call Event (12330)
+    # there is no map-event form. Runs through the same call stack.
+    def do_call_common_event(cmd)
+      return unless @resolver
+      cmds = common_event_commands(cmd.param(0))
+      return if cmds.nil? || cmds.empty?
+      return if @call_stack.size >= MAX_CALL_DEPTH
+      @call_stack.push [@list, @index]
+      @list = cmds
+      @index = 0
+    end
+
+    def common_event_commands(id)
+      @resolver.common_event_commands(id)
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] Call Common Event #{id} failed: #{e.message}"
+      nil
     end
 
     # Change Battle Background (13210): swap the backdrop to the Backdrop/<name>
@@ -1939,6 +2067,37 @@ module Game
     def do_return_to_title(_cmd)
       @wait_kind = :return_title
       @waiting = true
+    end
+
+    # -- RPG2003 English-release (2k3e) system commands ------------------------
+
+    # Open Load Menu (5001): leave the map for the save-slot loader, the way
+    # Return to Title leaves it. Raised as a :load_menu request; there is nothing
+    # to resume, because whatever the player loads replaces this scene.
+    def do_open_load_menu(_cmd)
+      @wait_kind = :load_menu
+      @waiting = true
+    end
+
+    # Exit Game (5002): quit outright — the title screen's Shutdown entry, driven
+    # by an event. Raised as an :exit_game request the scene answers by leaving
+    # the process; nothing resumes.
+    def do_exit_game(_cmd)
+      @wait_kind = :exit_game
+      @waiting = true
+    end
+
+    # Toggle Fullscreen (5004) / Open Video Options (5005): the 2k3e display
+    # commands. This build's display backend offers neither a fullscreen toggle
+    # nor a video-options screen, so — like EasyRPG on a platform whose window
+    # cannot change mode — the command is a logged no-op rather than a silent
+    # one, and the event runs straight on.
+    def do_toggle_fullscreen(_cmd)
+      $stderr.puts '[RPG2k] Toggle Fullscreen: this display has no fullscreen mode'
+    end
+
+    def do_open_video_options(_cmd)
+      $stderr.puts '[RPG2k] Open Video Options: no video-options screen in this build'
     end
 
     # Game Over (12420): raised as a :game_over request the owning scene answers
