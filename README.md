@@ -127,7 +127,13 @@
   `load_data`/`save_data` built-ins and evaluates each at the top level (via
   `mruby-eval`), then drives their blocking main loop one frame per callback
   through a Fiber, so the game's own title, menus, battle system and any
-  community scripts are what run. The reimplemented flow above stays as the
+  community scripts are what run. The classes the player supplies and no project
+  ships are supplied too — **`RPG::Sprite`** (the battler/character sprite base:
+  the whiten/appear/escape/collapse transitions, the floating damage pop-up,
+  blinking, and animation playback with each frame's sound and flash),
+  **`RPG::Weather`** and **`RPG::Cache`** — which is what a game's own
+  `class Sprite_Character < RPG::Sprite` needs to exist at all. The
+  reimplemented flow above stays as the
   fallback — for a project that ships no scripts, if the host fails to boot, and
   on demand with `--norgss_script_host` (or `RGSS_SCRIPT_HOST=0`); see
   [`docs/adr/0029-rgss-script-host-by-default.md`](docs/adr/0029-rgss-script-host-by-default.md)

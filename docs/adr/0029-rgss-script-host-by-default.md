@@ -45,6 +45,14 @@ before it could become the default. Each of those has since been closed:
   driver ends the game on, and graphics and audio now load out of an encrypted
   `Game.rgssad` / `.rgss2a` / `.rgss3a`, so a packed release runs from the
   scripts too.
+- **The last one, found by finally being able to run it.** Turning the host on in
+  a built engine (the `--rgss_script_host` flag, which replaced a dead
+  environment-variable switch) showed the bed stopping 21 sections in, on
+  `class Sprite_Character < RPG::Sprite`: `RPG::Sprite`, `RPG::Weather` and
+  `RPG::Cache` are Ruby classes **the player supplies**, so no project ships
+  them and this engine did not have them. They are implemented here — see the
+  Decision — which is what makes the default mean "the game's own engine runs"
+  rather than "the game's own engine is attempted".
 
 Meanwhile the VX / VX Ace runtime ([ADR 0024](0024-rpgvx-rgss2-rgss3-data-layer.md))
 has no reimplemented flow at all: for those editions the host is the *only* way a
@@ -53,8 +61,22 @@ construction" for a game it could have played.
 
 ## Decision
 
-Make the script host the **default** boot path for every RGSS maker, and turn
-`RGSS_SCRIPT_HOST` from an opt-in into an **opt-out**.
+Supply the missing half of the RGSS class library, then make the script host the
+**default** boot path for every RGSS maker, turning the switch from an opt-in
+into an **opt-out**.
+
+- **`mruby-rpgxp/mrblib/rgss_library.rb`** adds the three classes `RGSS104E.dll`
+  supplies as Ruby and no project ships: `RPG::Sprite` (the battler/character
+  sprite base — the timed whiten/appear/escape/collapse transitions, the floating
+  damage pop-up, blinking, and `RPG::Animation` playback through 16 cell sprites
+  with the frames' SE and flash timings), `RPG::Weather` (rain/storm/snow) and
+  `RPG::Cache` (the bitmap cache every graphic a game loads goes through).
+  Transcribed from the definitions published in the RGSS Reference Manual, on
+  top of the native `mruby-rgss` primitives, with three deviations this engine
+  forces — colours re-assigned rather than mutated in place, hue variants
+  re-loaded rather than `clone`d, and a bitmap that will not load standing in as
+  a blank rather than raising. `RGSS::Sprite` grew the `viewport` reader and
+  0-defaulting `x`/`y`/`z` readers those classes read back before writing.
 
 - `RPGXP::ScriptHost.enabled?` returns true unless something says otherwise.
   Two channels, because the two runtimes read their settings differently: the
@@ -86,6 +108,14 @@ Make the script host the **default** boot path for every RGSS maker, and turn
   code at zero) and once with `--rpgxp_new_game` (the built-in flow into the
   map). Both beds are covered — the editor-shaped OpenGame test bed and the
   released *Pray for You*.
+- **`scripts/rpgxp_script_host_check.rb` stops stubbing our own Ruby.** It used
+  to define an empty `RPG::Sprite` and evaluate a hand-picked "logic subset" of
+  the bundle, which is why it stayed green while no game could boot. It now
+  loads the real `rgss_library.rb`, evaluates **every** section but `Main`
+  against fakes for the *native* classes only, asserts `Sprite_Character` and
+  `Sprite_Battler` really do inherit `RPG::Sprite`, and drives the effects,
+  animation, weather and cache. Shimming native code is unavoidable in a CRuby
+  harness; shimming our own is how a gap hides.
 
 ## Consequences
 
@@ -95,9 +125,15 @@ Make the script host the **default** boot path for every RGSS maker, and turn
   project plays instead of printing "under construction".
 - **The fallback is now the exception**, which changes what a regression looks
   like: a game that used to reach the built-in map may now stop inside its own
-  scripts on an `mruby-rgss` method that is still missing. The failure is
-  reported and the built-in flow takes over, so a boot never ends at a blank
-  window, and `RGSS_SCRIPT_HOST=0` restores the old behaviour in one step.
+  scripts on an `mruby-rgss` method that is still missing. The failure names the
+  section, the built-in flow takes over, so a boot never ends at a blank window,
+  and `--norgss_script_host` restores the old behaviour in one step.
+- **Two Ruby files now have to agree with the game's own engine.**
+  `rgss_library.rb` is a transcription of code a game was written against, so it
+  is a compatibility surface, not ours to improve: the deviations are listed in
+  its header, and an "obvious" cleanup there (making `RPG::Weather`'s 1..40 loop
+  over a 0..39 array right, say) would change what a script reading `max` back
+  sees. The published definitions are the specification.
 - **The reimplementation keeps paying for itself.** It is what the wine
   comparison diffs against the genuine runtime, the fallback for script-less
   projects, and the only path on targets too small for the host — so this ADR

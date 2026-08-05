@@ -1728,6 +1728,48 @@ assert "ScriptHost.run returns false when the project ships no scripts" do
   assert_false RPGXP::ScriptHost.run(FakeScriptDB.new([]))
 end
 
+# The RGSS standard library (mrblib/rgss_library.rb) — the classes RGSS104E.dll
+# supplies and no project ships. These tests run in the *built* engine, where
+# RPG::Sprite really does subclass the native RGSS::Sprite; they are what would
+# catch the library being dropped from the gem's rbfiles, or a native base class
+# losing a method it is built on. Sprite/Viewport instances need a live display
+# the headless test binary lacks (see mruby-rgss's own tests), so the behaviour
+# of the effects is checked against fakes in scripts/rpgxp_script_host_check.rb
+# and what is pinned here is the shape a game's scripts subclass.
+assert "RPG::Sprite is the native Sprite plus the RGSS effect surface" do
+  assert_equal RGSS::Sprite, RPG::Sprite.superclass
+  methods = RPG::Sprite.instance_methods
+  # Everything Sprite_Battler and Sprite_Character call on their superclass.
+  %i[whiten appear escape collapse damage animation loop_animation
+     blink_on blink_off blink? effect? update dispose].each do |name|
+    assert_true methods.include?(name), "RPG::Sprite##{name} missing"
+  end
+end
+
+assert "RPG::Weather offers the surface Spriteset_Map drives" do
+  methods = RPG::Weather.instance_methods
+  %i[type= max= ox= oy= update dispose type max ox oy].each do |name|
+    assert_true methods.include?(name), "RPG::Weather##{name} missing"
+  end
+end
+
+# RPG::Cache is the one part that runs headlessly: it only builds Bitmaps.
+assert "RPG::Cache caches by path and stands in for what will not load" do
+  RPG::Cache.clear
+  # Nothing on disk under this name, and RGSS would raise; the cache reports it
+  # and hands back a blank so a missing RTP cannot end a boot.
+  missing = RPG::Cache.picture("NoSuchPictureHere")
+  assert_equal 32, missing.width
+  assert_equal 32, missing.height
+  # An empty name is RGSS's own "no graphic", also a blank.
+  assert_equal 32, RPG::Cache.character("", 0).width
+  # Same path, same object — a map redrawing its charsets every frame must not
+  # reload them.
+  assert_true RPG::Cache.picture("NoSuchPictureHere").equal?(missing)
+  RPG::Cache.clear
+  assert_false RPG::Cache.picture("NoSuchPictureHere").equal?(missing)
+end
+
 # The host is the default boot path (ADR 0029): with neither the native binary's
 # RGSS_SCRIPT_HOST constant nor an opt-out in the environment, enabled? is true.
 # This runs in the *built* engine, which is where a divergence between the CRuby

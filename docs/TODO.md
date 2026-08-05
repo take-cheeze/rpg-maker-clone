@@ -918,8 +918,12 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `mruby-rgss` class library the stock scripts call is complete enough — `Font`,
   `Graphics` timing, `Input`, `Audio`, `Sprite`'s extended properties and the
   `Window`/`Tilemap`/`Plane` widgets all render, plus `Kernel#sprintf` and
-  `exit` — and the scripts' blocking main loop is reconciled with the emscripten
-  frame loop by the per-frame Fiber driver (ADR 0023), rather than Asyncify. The
+  `exit`; the scripts' blocking main loop is reconciled with the emscripten
+  frame loop by the per-frame Fiber driver (ADR 0023), rather than Asyncify; and
+  the **RGSS standard library** — `RPG::Sprite`, `RPG::Weather`, `RPG::Cache`,
+  the Ruby classes `RGSS104E.dll` supplies and no project ships — is now
+  supplied by `mruby-rpgxp/mrblib/rgss_library.rb`, without which a game stopped
+  21 sections in on `class Sprite_Character < RPG::Sprite`. The
   remaining polish is tracked in
   [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). Decoding, the built-ins
   and top-level evaluation of real script source are covered by
