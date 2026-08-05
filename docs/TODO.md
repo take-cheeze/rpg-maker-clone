@@ -1138,6 +1138,19 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
           distinct from the host's `Image`, it built a *fresh* image and assigned
           the object to its `src`, so every loaded bitmap became a broken
           texture. `MZ::HOST_GLOBALS_JS` now aliases the two.
+        - **The native Canvas2D context had no `strokeRect`.** MV never calls it,
+          so it was never implemented; MZ calls it on a hot path —
+          `Window_Selectable.drawBackgroundRect` strokes the frame of *every*
+          item in *every* selectable window — so building the title's command
+          window threw `TypeError: not a function` at `rmmz_core.js:1587`
+          (`Bitmap.prototype.strokeRect`) on the first drawn frame. This one is
+          invisible to a permissive JS harness and only showed up on the real
+          engine (measured in CI on the diagnostic branch of PR #333, whose
+          `[MZ-DIAG]` line reported `Scene_Title` with every readiness gate
+          true — the boot was no longer waiting on anything, it was dying inside
+          the title's drawing). `mvcanvas.cxx` now implements it as four
+          `lineWidth`-thick bars through the same native fill, so the transform,
+          alpha and composite mode behave exactly as for a filled rect.
         - **The bed was too thin to leave the loading scene.** `data/mz-sample`
           is now authored by `scripts/gen-mz-sample.py` (like MV's bed): real
           terms, a tileset + `MapInfos` entry, a walled 17×13 room, a party

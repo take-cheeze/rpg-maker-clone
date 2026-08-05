@@ -8,6 +8,12 @@
   screen. `MZ::HOST_GLOBALS_JS` also aliases `HTMLImageElement` to the host's
   own `Image`, so PIXI v5 recognises loaded bitmaps as image sources instead of
   wrapping them into broken textures.
+- MZ: the native Canvas2D context gained `strokeRect`. MV never calls it, but MZ
+  strokes an item-background frame for every row of every selectable window
+  (`Window_Selectable.drawBackgroundRect` → `Bitmap.prototype.strokeRect`), so
+  building the title's command window threw `TypeError: not a function` on the
+  first drawn frame. It is drawn as four `lineWidth`-thick bars through the same
+  native fill, sharing `fillRect`'s transform, alpha and composite handling.
 - MZ: `data/mz-sample` is now authored by `scripts/gen-mz-sample.py` (as the MV
   bed is) and carries what MZ's scenes require — real terms, a tileset,
   `MapInfos`, a walled 17×13 room with a parallel test event, a party sprite,

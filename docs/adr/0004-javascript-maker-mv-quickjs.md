@@ -218,7 +218,21 @@ JavaScript loads and interprets the JSON.
          assigned our image *object* to its `src` — every bitmap a broken
          texture. The globals now alias the two, which routes uploads through the
          wrapper's `texImage2D(..., src.__h)` canvas/image-handle path.
-      3. **The bed must carry MZ's required art and flags.** `Sprite_Button`
+      3. **The Canvas2D context needed `strokeRect`.** MV never calls it; MZ
+         strokes an item-background frame for every row of every selectable
+         window (`Window_Selectable.drawBackgroundRect` →
+         `Bitmap.prototype.strokeRect`), so the title's command window threw
+         `TypeError: not a function` at `rmmz_core.js:1587` on the first drawn
+         frame. `mvcanvas.cxx` implements it as four `lineWidth`-thick bars
+         through the existing native fill, so the transform, alpha, composite
+         mode and colour parsing are shared with `fillRect`. Worth noting *how*
+         this was caught: a permissive JS harness stubs every context method and
+         therefore cannot see a gap in the native surface — it took the real
+         engine (the `[MZ-DIAG]` readiness dump on PR #333's CI run, which showed
+         `Scene_Title` with every gate true and the boot dying inside its
+         drawing). The dev harness is only trustworthy for this class of bug if
+         its context exposes exactly `Ctx.prototype`'s methods and no more.
+      4. **The bed must carry MZ's required art and flags.** `Sprite_Button`
          *throws* on a `ButtonSet.png` narrower than 11 × 48 px (MZ's touch UI
          builds those buttons in every scrollable window), and a tileset whose
          `flags[0]` lacks `0x10` ("no effect on passage") makes every cell
