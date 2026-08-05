@@ -169,7 +169,51 @@ module RGSS
     sprite.dispose
     bitmap.dispose
     viewport.dispose
+    ok = false unless window_probe
     $stderr.puts "[RGSS-PROBE] #{ok ? "ok" : "failed"}"
+    ok
+  end
+
+  # Prove RGSS::Window is the native widget and that it draws.
+  #
+  # This exists because it silently was not. Every maker gem reopens the shared
+  # RGSS namespace and loads after mruby-rgss, so a class one of them defines
+  # under RGSS replaces this one for the whole process — which is what RPG2000's
+  # window did, leaving `Window.new` returning an object with no LVGL object
+  # behind it and `window_refresh` returning early forever. Nothing in-tree
+  # noticed, because nothing in-tree constructs an RGSS::Window: only a real
+  # XP/VX game's own scripts do (`Window_Base < Window`), through the script
+  # host.
+  #
+  # So: build one on an empty screen with a solid-blue background tile in its
+  # skin, and require that it is alive and that it covers the area it should.
+  def self.window_probe
+    skin = Bitmap.new(192, 128)
+    # The windowskin layout the native drawing reads: background tile at
+    # (0,0,128,128), frame at (128,0,64,64). Only the background is filled, so
+    # the frame contributes nothing and the measurement is pure area.
+    skin.fill_rect(0, 0, 128, 128, Color.new(0, 0, 255, 255))
+
+    win = Window.new(0, 0, 320, 240)
+    alive = !win.disposed?
+    win.windowskin = skin
+    Graphics.update
+    drawn = frame_mean
+
+    $stderr.puts "[RGSS-PROBE] window alive=#{alive} drawn=#{drawn.inspect}"
+
+    ok = true
+    unless alive
+      $stderr.puts "[RGSS-PROBE] FAIL Window.new produced no native object — " \
+                   "RGSS::Window has been replaced by another gem's class"
+      ok = false
+    end
+    unless drawn[2] > 20
+      $stderr.puts "[RGSS-PROBE] FAIL the window did not draw"
+      ok = false
+    end
+    win.dispose
+    skin.dispose
     ok
   end
 
