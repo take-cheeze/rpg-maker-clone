@@ -417,6 +417,32 @@ The work below is roughly ordered by the critical path to a walkable game
   Three opcodes that never matched liblcf's `Code` enum were corrected in the
   same pass — Change Equipment is 10450 (10440 is Change Skills) and Game Over is
   12420 — so those commands are recognised in real game data at all.
+  **The RPG2003-only commands are handled now as well** — the low opcodes the
+  2003 editor emits for what RPG2000 never had, none of which had a handler
+  while the opcode table stopped at the shared set. **Change Class** (1008)
+  re-points an actor at a database class (職業, chunk 30 / `db.job`): equipment is
+  stripped, the class row takes over the growth curve, the learn table and the
+  EXP curve (`Game::Actor#curve_row`, mirroring how EasyRPG's `GetBaseMaxHp` /
+  `LearnLevelSkills` / `CalculateExp` branch on `class_id > 0`), EXP resets to
+  the new level's threshold, and the command's skill mode (keep / reset / add)
+  and parameter mode (keep / halve / the class's level-1 or current-level values)
+  both apply; an actor whose row names a class reads its curves from startup, and
+  the change survives Save / Continue. **Change Battle Commands** (1009) edits
+  the actor's 戦闘コマンド list with RPG_RT's six-plus-Row capacity rule.
+  **Force Flee** (1006), **Enable Combo** (1007) and **Call Common Event** (1005)
+  run inside a battle-event page — Force Flee either grants the party a
+  guaranteed escape or hides the troop members that run (out of the fight, not
+  killed), playing the database escape SE. **Open Load Menu** (5001) and **Exit
+  Game** (5002) leave the map for the loader / quit; **Toggle Fullscreen** (5004)
+  and **Open Video Options** (5005) are logged no-ops because this build's
+  display backend has neither, the same answer EasyRPG gives on a platform whose
+  window cannot change mode. Still open here: **Toggle ATB Mode** (5003), which
+  needs the RPG2003 ATB battle system this runtime does not model, so it is
+  deliberately left as a reported gap rather than a silent no-op; and the combo
+  an Enable Combo arms is recorded on the actor but never spent, for the same
+  reason. The opcodes were read out of liblcf's `EventCommand::Code` enum, which
+  also corrected `analyze_game.rb` — it had Change Class / Change Battle Commands
+  at 12610 / 12710, numbers the enum does not define at all.
   **Battle-event pages now run too**: a troop's pages (`enemy_group` chunk 11)
   are evaluated by `Game::BattlePage` at the start of every turn — switch,
   variable, turn, enemy-HP and actor-HP conditions — and each matching page runs

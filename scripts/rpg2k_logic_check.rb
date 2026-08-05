@@ -1406,13 +1406,44 @@ end
 FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           :sp_change_val, :sp_change_max,
                           :hold_turn, :auto_release_prob)
+# An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
+# table, EXP curve and battle-command list, exposed the way a real LCF row is.
+class JobRow
+  attr_reader :name, :skills, :battle_commands,
+              :exp_basic, :exp_increase, :exp_correction
+  def initialize(name, curve, learns = [], battle_commands = nil,
+                 exp_basic: 30, exp_increase: 30, exp_correction: 0)
+    @name = name
+    @curve = curve
+    @skills = FakeLearnTable.new(learns)
+    @battle_commands = battle_commands
+    @exp_basic = exp_basic
+    @exp_increase = exp_increase
+    @exp_correction = exp_correction
+  end
+
+  def int16_values(idx); idx == 31 ? @curve : nil; end
+end
+
+# An actor row that starts out in a class (RPG2003 field 57) and carries its own
+# battle-command list (field 80).
+class ClassedRow < SkillRow
+  attr_reader :class_id, :battle_commands
+  def initialize(name, cs, ci, level, curve, learns, class_id, battle_commands = nil)
+    super(name, cs, ci, level, curve, learns)
+    @class_id = class_id
+    @battle_commands = battle_commands
+  end
+end
+
 class FakeActorDB
-  attr_reader :player, :system, :item, :skill
-  def initialize(players, party_ids, items = {}, skills = {})
+  attr_reader :player, :system, :item, :skill, :job
+  def initialize(players, party_ids, items = {}, skills = {}, jobs = {})
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
     @skill = skills
+    @job = jobs
   end
 end
 
@@ -1608,6 +1639,182 @@ check 'Actor learns skills from the growth table up to its level' do
   # restoring a saved set replaces it.
   a.skills = [1, 2, 2, 0]
   eq [1, 2], a.skills.sort
+end
+
+# -- RPG2003 class (Change Class 1008 / Change Battle Commands 1009) ----------
+
+# A party of one whose actor row and class rows are all set up for the class
+# checks: the actor is a level-3 "Fighter" curve, class 1 is twice as strong and
+# class 2 half as strong, and each class teaches its own skill.
+def class_db(class_id = 0, actor_learns = [[10, 1]])
+  actor_curve = [] # levels 1..3, six stats each
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = [] # class 1: double the actor's HP curve, distinct battle stats
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  job2 = []
+  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
+  players = {
+    1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, class_id,
+                        [1, 2, 0, -1, -1, -1, -1]),
+  }
+  jobs = {
+    1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
+    2 => JobRow.new('Mage', job2, [[31, 1]]),
+  }
+  FakeActorDB.new(players, [1], {}, {}, jobs)
+end
+
+def class_state(class_id = 0, actor_learns = [[10, 1]])
+  Game::State.new(Game::Party.new(class_db(class_id, actor_learns)), 1, 0, 0)
+end
+
+check 'an actor with a startup class reads its curve, learn table and EXP from it' do
+  a = class_state(1).party.actor_by_id(1)
+  eq 1, a.class_id
+  eq 220, a.max_hp, "class 1's level-3 max HP, not the actor row's 120"
+  eq [21, 22], a.skills.sort, "the class's learn table, not the actor's skill 10"
+  # A database with no class table (every RPG2000 game) leaves the actor
+  # class-less, so nothing changes for 2000 data.
+  b = party_state.party.actor_by_id(1)
+  eq 0, b.class_id
+end
+
+check 'Change Class swaps the growth curve and resets EXP' do
+  st = class_state
+  a = st.party.actor_by_id(1)
+  eq 0, a.class_id
+  eq 120, a.max_hp
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed actor 1), class 2, keep level, skills add, params reset-level.
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 2, 0, Game::Actor::CLASS_SKILL_ADD,
+                         Game::Actor::CLASS_PARAM_RESET_LEVEL, 0])])
+  it.update
+  eq 2, a.class_id
+  eq 3, a.level, 'the level is kept when the "level 1" flag is off'
+  eq 70, a.max_hp, "class 2's level-3 max HP"
+  eq a.exp_for_level(3), a.exp, 'RPG_RT resets EXP to the level threshold'
+  ok a.skills.include?(31), "the new class's skill was added"
+  ok a.skills.include?(10), 'and the actor kept what it already knew'
+end
+
+check 'Change Class parameter modes carry, halve or reset the base stats' do
+  keep = class_state.party.actor_by_id(1)
+  before = keep.max_hp
+  keep.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                    Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq before, keep.max_hp, 'no-change carries the pre-swap stats across'
+
+  half = class_state.party.actor_by_id(1)
+  half.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                    Game::Actor::CLASS_PARAM_HALF)
+  eq before / 2, half.max_hp, 'halve applies to the pre-swap stats'
+
+  lv1 = class_state.party.actor_by_id(1)
+  lv1.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                   Game::Actor::CLASS_PARAM_RESET_LV1)
+  eq 200, lv1.max_hp, "reset-to-level-1 takes the new class's first row"
+  eq 3, lv1.level, 'while the level itself still moves'
+end
+
+check 'Change Class skill modes keep, replace or add to the known skills' do
+  keep = class_state.party.actor_by_id(1)
+  keep.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                    Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq [10], keep.skills, 'no-change leaves the skill set exactly as it was'
+
+  reset = class_state.party.actor_by_id(1)
+  reset.change_class(1, 3, Game::Actor::CLASS_SKILL_RESET,
+                     Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq [21, 22], reset.skills.sort, "reset forgets everything but the class's"
+
+  add = class_state.party.actor_by_id(1)
+  add.change_class(1, 3, Game::Actor::CLASS_SKILL_ADD,
+                   Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq [10, 21, 22], add.skills.sort, 'add keeps both sets'
+end
+
+check 'Change Class to level 1 rewinds the level; an unknown class is a no-op' do
+  a = class_state.party.actor_by_id(1)
+  a.change_class(1, 1, Game::Actor::CLASS_SKILL_RESET,
+                 Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  eq 1, a.level
+  eq 200, a.max_hp
+  eq [21], a.skills, 'only the level-1 class skill is learnt'
+
+  b = class_state(1).party.actor_by_id(1)
+  eq false, b.change_class(99, 3, 0, 0), 'an undefined class changes nothing'
+  eq 1, b.class_id
+  eq 220, b.max_hp, 'and leaves the stats it had'
+end
+
+check 'Change Class shows one level-up line when it taught skills' do
+  st = class_state
+  it = Game::Interpreter.new(st)
+  # class 1, keep level 3, skills reset, params reset-level, show message on.
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 1, 0, Game::Actor::CLASS_SKILL_RESET,
+                         Game::Actor::CLASS_PARAM_RESET_LEVEL, 1])])
+  it.update
+  eq :message, it.wait_kind
+  eq ['Hero is now level 3!'], it.message_lines
+  it.resume
+  it.update
+  ok !it.waiting?, 'a class change announces one line, not one per level'
+end
+
+check 'Change Class stays quiet when the level held and no skills moved' do
+  st = class_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 1, 0, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                         Game::Actor::CLASS_PARAM_NO_CHANGE, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'nothing to announce'
+  eq true, st.switches[1]
+end
+
+check 'Change Battle Commands adds, removes and clears the command list' do
+  st = class_state
+  a = st.party.actor_by_id(1)
+  eq [1, 2, 0, -1, -1, -1, -1], a.battle_commands, 'straight from the database'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_BATTLE_COMMANDS, [1, 1, 5, 1])]) # add cmd 5
+  it.update
+  eq [1, 2, 5, 0], a.battle_commands, 'the new command lands before Row'
+  a.change_battle_commands(true, 5)
+  eq [1, 2, 5, 0], a.battle_commands, 'adding a command it already has is a no-op'
+  a.change_battle_commands(false, 2)
+  eq [1, 5, 0], a.battle_commands, 'removing drops just that entry'
+  a.change_battle_commands(false, 0)
+  eq [0], a.battle_commands, 'removing command 0 clears back to Row alone'
+end
+
+check 'Change Battle Commands stops at six commands plus Row' do
+  a = class_state.party.actor_by_id(1)
+  (3..8).each { |id| a.change_battle_commands(true, id) }
+  eq [1, 2, 3, 4, 5, 6, 0], a.battle_commands, 'the seventh add is dropped'
+end
+
+check 'a class change takes the class battle commands' do
+  a = class_state.party.actor_by_id(1)
+  a.change_class(1, 3, 0, 0)
+  eq [3, 0, -1, -1, -1, -1, -1], a.battle_commands
+end
+
+check 'a class change and its battle commands survive Save / Continue' do
+  st = class_state
+  st.party.actor_by_id(1).change_class(1, 3, Game::Actor::CLASS_SKILL_RESET,
+                                       Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  st.party.actor_by_id(1).change_battle_commands(true, 7)
+  saved = st.to_h
+
+  restored = Game::State.load(class_db, saved)
+  a = restored.party.actor_by_id(1)
+  eq 1, a.class_id
+  eq 220, a.max_hp, "the class's curve, not the actor row's"
+  eq [3, 7, 0], a.battle_commands
 end
 
 check 'Change HP command damages a fixed actor' do
@@ -5509,13 +5716,139 @@ check 'battle-only commands are no-ops outside a battle' do
     FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 30, 1]),
     FakeCmd.new(IC::SHOW_HIDDEN_MONSTER, [1]),
     FakeCmd.new(IC::CHANGE_BATTLE_BG, [], string: 'Cave'),
+    FakeCmd.new(IC::FORCE_FLEE, [1, 0, 1]),
+    FakeCmd.new(IC::ENABLE_COMBO, [1, 4, 3]),
     FakeCmd.new(IC::TERMINATE_BATTLE, []),
     FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0]),
   ])
   it.update
   eq [], it.take_revealed_monsters
+  eq [], it.take_fled_monsters
   eq nil, it.take_battle_background
   ok st.switches[2], 'the list still runs to the end'
+end
+
+# -- RPG2003 battle-page commands (Force Flee / Enable Combo / Call Common) ----
+
+check 'RPG2003 event opcodes match the LCF Code enum' do
+  eq 1005, IC::CALL_COMMON_EVENT
+  eq 1006, IC::FORCE_FLEE
+  eq 1007, IC::ENABLE_COMBO
+  eq 1008, IC::CHANGE_CLASS
+  eq 1009, IC::CHANGE_BATTLE_COMMANDS
+  eq 5001, IC::OPEN_LOAD_MENU
+  eq 5002, IC::EXIT_GAME
+  eq 5004, IC::TOGGLE_FULLSCREEN
+  eq 5005, IC::OPEN_VIDEO_OPTIONS
+end
+
+check 'Force Flee target 0 grants the party a guaranteed escape' do
+  b = escape_battle(5, 20)                 # 0% by agility: never flees on its own
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::FORCE_FLEE, [0, 0, 0])])
+  it.update
+  ok b.force_flee?, 'the escape is granted...'
+  ok !b.escaped?, '...but not taken until the party chooses Flee'
+  ok b.attempt_escape, 'and then it always succeeds'
+  eq :escaped, b.result
+  eq [], it.take_fled_monsters, 'no troop member left'
+end
+
+check 'Force Flee target 2 takes one troop member out of the fight' do
+  hero = combatant('Hero', 10, 0, 10, 100)
+  foes = [combatant('Slime', 5, 0, 5, 30), combatant('Bat', 5, 0, 5, 30)]
+  b = Game::Battle.new([hero], foes, Game::Rng.new(1))
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::FORCE_FLEE, [2, 1, 0])])
+  it.update
+  eq [1], it.take_fled_monsters
+  ok b.enemy(1).hidden, 'the member is hidden, not killed'
+  ok b.enemy(1).hp > 0
+  ok !b.finished?, 'the other member keeps the fight going'
+  eq [], it.take_fled_monsters, 'the queue drains'
+end
+
+check 'Force Flee target 1 empties the troop and ends the fight' do
+  hero = combatant('Hero', 10, 0, 10, 100)
+  foes = [combatant('Slime', 5, 0, 5, 30), combatant('Bat', 5, 0, 5, 0)]
+  b = Game::Battle.new([hero], foes, Game::Rng.new(1))
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::FORCE_FLEE, [1, 0, 0])])
+  it.update
+  eq [0], it.take_fled_monsters, 'only the member still standing ran'
+  ok b.finished?, 'nobody is left to fight'
+  ok b.enemy(0).hp > 0, 'the runaway was not killed to end it'
+  b.end_round # the scene settles the outcome at the end of the turn
+  eq :victory, b.result
+end
+
+check 'Enable Combo arms a battle combo on a party actor' do
+  st = class_state
+  it = Game::Interpreter.new(st)
+  it.battle = battle_with
+  it.start([FakeCmd.new(IC::ENABLE_COMBO, [1, 4, 3]),
+            FakeCmd.new(IC::ENABLE_COMBO, [99, 1, 2])]) # not in the party
+  it.update
+  eq({ command_id: 4, multiple: 3 }, st.party.actor_by_id(1).battle_combo)
+end
+
+check 'Call Common Event runs the common event and returns to the page' do
+  st = new_state
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: { 4 => called })
+  it.start([FakeCmd.new(IC::CALL_COMMON_EVENT, [4]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq true, st.switches[9], 'the common event ran'
+  eq true, st.switches[1], 'and control came back'
+end
+
+check 'Call Common Event with no resolver or an unknown id is a safe no-op' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CALL_COMMON_EVENT, [4]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq true, st.switches[1]
+
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.resolver = FakeResolver.new(common: {})
+  it2.start([FakeCmd.new(IC::CALL_COMMON_EVENT, [4]),
+             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it2.update
+  eq true, st2.switches[1]
+end
+
+# -- RPG2003 English-release (2k3e) system commands ---------------------------
+
+check 'Open Load Menu and Exit Game raise their scene requests' do
+  it = Game::Interpreter.new(new_state)
+  it.start([FakeCmd.new(IC::OPEN_LOAD_MENU, [])])
+  it.update
+  ok it.waiting?
+  eq :load_menu, it.wait_kind
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.start([FakeCmd.new(IC::EXIT_GAME, [])])
+  it2.update
+  ok it2.waiting?
+  eq :exit_game, it2.wait_kind
+end
+
+check 'Toggle Fullscreen / Open Video Options run on without pausing' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TOGGLE_FULLSCREEN, []),
+            FakeCmd.new(IC::OPEN_VIDEO_OPTIONS, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'neither command blocks the event'
+  eq true, st.switches[1]
 end
 
 check 'Show Battle Animation (battle form) waits like the map form' do

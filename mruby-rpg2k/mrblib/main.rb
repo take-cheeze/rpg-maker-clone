@@ -1677,6 +1677,26 @@ class RPG2k
         @interpreter.resume
       end
 
+      # Open Load Menu (5001, RPG2003): hand the game back to the loader, which
+      # replaces this scene with the loaded save's map. Nothing resumes here, so
+      # the interpreter is stopped rather than released — the same shape as
+      # Return to Title. A failed load leaves the player on this map, so the
+      # event is only stopped, never silently resumed into a discarded scene.
+      def perform_event_load
+        @interpreter.stop
+        @parent.continue_game
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Open Load Menu failed: #{e.message}"
+        @interpreter.stop
+      end
+
+      # Exit Game (5002, RPG2003): quit, the way the title screen's Shutdown
+      # entry does.
+      def perform_exit_game
+        @interpreter.stop
+        exit
+      end
+
       # Open Main Menu (11950): push the field menu over the map, then resume the
       # event once the player closes it again. `@event_menu` marks that this
       # scene is waiting on its own menu, so the event stays paused for exactly
@@ -1977,6 +1997,8 @@ class RPG2k
           when :sprite_flash then @interpreter.resume unless sprite_flashing?
           when :save_menu then perform_event_save
           when :menu then perform_event_menu
+          when :load_menu then perform_event_load
+          when :exit_game then perform_exit_game
           end
         else
           @interpreter.update
@@ -2375,6 +2397,9 @@ class RPG2k
                        events: Game::Interpreter.new(@state), event_win: nil,
                        pages_run: {} }
         @battle_ui[:events].battle = @battle_ui[:battle]
+        # A battle page can Call Common Event (1005), so it needs the same
+        # resolver the map's events run against.
+        @battle_ui[:events].resolver = @interpreter.resolver
         build_battle_sprites
         refresh_battle_status
         # Turn-0 pages fire before the party is asked for its first command —
@@ -2935,6 +2960,9 @@ class RPG2k
       # backdrop.
       def apply_battle_event_requests(it)
         it.take_revealed_monsters.each { |i| reveal_battle_monster(i) }
+        fled = it.take_fled_monsters
+        fled.each { |i| remove_fled_monster(i) }
+        play_escape_se unless fled.empty?
         name = it.take_battle_background
         rebuild_battle_back(name) unless name.nil?
       rescue StandardError => e
@@ -2960,6 +2988,22 @@ class RPG2k
         spr.z = 100 + index
         dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
         @battle_ui[:enemy_sprites][index] = spr
+      end
+
+      # Force Flee: the troop member ran, so drop its sprite. Game::Battle has
+      # already hidden the combatant (which takes it out of play without counting
+      # as a kill), and the troop member's own flag is set so a later rebuild does
+      # not draw it again.
+      def remove_fled_monster(index)
+        member = @battle_ui[:troop].members[index]
+        member.hidden = true if member
+        dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
+        @battle_ui[:enemy_sprites][index] = nil
+      end
+
+      # The escape sound RPG_RT plays when a Force Flee sends enemies running.
+      def play_escape_se
+        play_system_se(SFX_ESCAPE)
       end
 
       # Terminate Battle: leave the fight with no victory / defeat processing.
@@ -3857,8 +3901,14 @@ class RPG2k
       SFX_DECISION = 1
       SFX_CANCEL = 2
       SFX_BUZZER = 3
+      # The slots keep the database's own order (System fields 41..52), so slot 4
+      # is Battle Start and slot 5 Escape — the sound RPG_RT plays when someone
+      # runs from a fight (Force Flee, 1006).
+      SFX_BATTLE = 4
+      SFX_ESCAPE = 5
       DB_SE_FIELD = { SFX_CURSOR => :cursor_se, SFX_DECISION => :decision_se,
-                      SFX_CANCEL => :cancel_se, SFX_BUZZER => :buzzer_se }.freeze
+                      SFX_CANCEL => :cancel_se, SFX_BUZZER => :buzzer_se,
+                      SFX_BATTLE => :battle_se, SFX_ESCAPE => :escape_se }.freeze
 
       # Play a system sound effect by slot, preferring a Change System SFX
       # override held on the game state and falling back to the database's own

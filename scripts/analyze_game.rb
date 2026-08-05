@@ -52,6 +52,18 @@ CODE_NAMES = {
   # carry no string and no parameters). RPG_RT skips them and so does the
   # interpreter (`else nil`), so they are correctly handled, not feature gaps.
   0  => 'BlankLine/End(no-op)', 10 => 'BlankLine(no-op)',
+  # RPG2003-only commands. The editor emits these low opcodes for the features
+  # RPG2000 never had — the 100x block for the battle-event page extras plus the
+  # class / battle-command changes, the 500x block for the "RPG2003 English
+  # release" (2k3e) system commands. They used to be listed here as 12610 /
+  # 12710, which are not opcodes liblcf defines at all, so real 2003 data
+  # carrying a Change Class was reported as an unnamed gap.
+  1005 => 'CallCommonEvent',         1006 => 'ForceFlee',
+  1007 => 'EnableCombo',             1008 => 'ChangeClass',
+  1009 => 'ChangeBattleCommands',
+  5001 => 'OpenLoadMenu',            5002 => 'ExitGame',
+  5003 => 'ToggleAtbMode',           5004 => 'ToggleFullscreen',
+  5005 => 'OpenVideoOptions',
   10110 => 'ShowMessage',            20110 => 'ShowMessage(cont.)',
   10120 => 'MessageOptions',         10130 => 'ChangeFaceGraphic',
   10140 => 'ShowChoice',             20140 => 'ShowChoiceOption', 20141 => 'ShowChoiceEnd',
@@ -92,7 +104,6 @@ CODE_NAMES = {
   12310 => 'EndEventProcessing',     12320 => 'EraseEvent',        12330 => 'CallEvent',
   12410 => 'Comment',                22410 => 'Comment(cont.)',
   12420 => 'GameOver',               12510 => 'ReturnToTitleScreen',
-  12610 => 'ChangeClass',            12710 => 'ChangeBattleCommands',
   # Battle-only: these appear in a troop's battle-event pages, never in a map or
   # common event. Reported by --troops.
   13110 => 'ChangeMonsterHP',        13120 => 'ChangeMonsterMP',
@@ -338,7 +349,8 @@ BATTLE_PAGE_FLAGS = %w[switch_a switch_b variable turn fatigue enemy_hp
 # ShowMessage(cont.) 20110 and Comment(cont.) 22410, which are ordinary
 # continuation markers a battle page uses exactly as a map event does, and
 # reporting them under "battle-only" misrepresents what the page is doing.
-BATTLE_ONLY_CODES = [13110, 13120, 13130, 13150, 13210, 13260, 13310, 13410,
+BATTLE_ONLY_CODES = [1005, 1006, 1007,
+                     13110, 13120, 13130, 13150, 13210, 13260, 13310, 13410,
                      23310, 23311].to_set
 
 def report_troops(dir)

@@ -921,6 +921,14 @@ module Game
     # (状態) currently afflicting the actor.
     attr_reader :equipment, :skills, :states
 
+    # The actor's RPG2003 class (職業, database chunk 30 -- `db.job`), 0 for none.
+    # RPG2000 databases carry no class table, so this stays 0 there. With a class
+    # set, the class row -- not the actor row -- supplies the growth curve, the
+    # skill learn table and the EXP curve, exactly as RPG_RT reads them
+    # (EasyRPG's Game_Actor::GetBaseMaxHp / LearnLevelSkills / CalculateExp all
+    # branch on `class_id > 0`).
+    attr_reader :class_id
+
     def initialize(db, id)
       @db = db
       @id = id
@@ -933,6 +941,9 @@ module Game
       @charset_index = a.charset_index
       @transparent = a.respond_to?(:semi_transparent) ? (a.semi_transparent ? true : false) : false
       @db_row = a
+      set_class_id(a.respond_to?(:class_id) ? (a.class_id || 0) : 0)
+      @battle_commands = nil # lazily taken from the database on the first change
+      @battle_combo = nil
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
       @skills = []
@@ -968,9 +979,10 @@ module Game
     end
 
     # The database learn table as [skill_id, level] pairs (empty for a row that
-    # exposes no learn table, e.g. the test fixtures).
+    # exposes no learn table, e.g. the test fixtures). Read from the class row
+    # when the actor has one (see #class_id).
     def learn_table
-      a = @db_row
+      a = curve_row
       return [] unless a.respond_to?(:skills) && a.skills
       out = []
       a.skills.each { |_i, l| out.push([l.skill_id, l.level]) }
@@ -1125,9 +1137,9 @@ module Game
     # curve (six shorts per level) via LCF::Array1D#int16_values; index it by
     # level, clamped to the curve's length. A row that only offers a single
     # `status` hash (the test fixtures, or a database without a curve) is treated
-    # as level-independent.
+    # as level-independent. With a class set the class row's curve wins.
     def base_stats(level)
-      a = @db_row
+      a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
       if curve && curve.size >= STAT_NAMES.size
         levels = curve.size / STAT_NAMES.size
@@ -1401,7 +1413,135 @@ module Game
       recompute_stats
     end
 
+    # -- RPG2003 class (職業) and battle commands ----------------------------
+
+    # How Change Class (1008) treats the actor's skills, in the command's own
+    # parameter order.
+    CLASS_SKILL_NO_CHANGE = 0 # keep exactly the skills the actor already knows
+    CLASS_SKILL_RESET     = 1 # forget everything, then learn the new class's
+    CLASS_SKILL_ADD       = 2 # keep them and add the new class's on top
+
+    # How Change Class treats the six base parameters.
+    CLASS_PARAM_NO_CHANGE   = 0 # keep the values the actor had
+    CLASS_PARAM_HALF        = 1 # halve them
+    CLASS_PARAM_RESET_LV1   = 2 # take the new class's level-1 values
+    CLASS_PARAM_RESET_LEVEL = 3 # take the new class's values at the new level
+
+    # Change Class (event command 1008). Ported from EasyRPG's
+    # Game_Actor::ChangeClass, which is where the order of operations comes from:
+    #
+    # * every equipment slot is stripped first (RPG_RT always does this),
+    # * the base parameters in force *before* the change are captured, because
+    #   the "no change" and "halve" modes carry them across the class swap,
+    # * the class is swapped and the level set, which re-reads the growth curve,
+    #   the learn table and the EXP curve from the new class row (#curve_row),
+    # * EXP is reset to the new level's threshold -- RPG_RT does this even when
+    #   the level is unchanged,
+    # * and the skill mode is applied last, on top of whatever levelling learnt.
+    #
+    # Current HP/SP survive the change, re-clamped to the refreshed maxima.
+    # Returns whether the class actually changed — false for a class id this
+    # database does not define, which RPG_RT leaves entirely alone.
+    def change_class(class_id, new_level, skill_mode, param_mode)
+      return false if class_id > 0 && class_row_for(class_id).nil?
+
+      unequip(EQUIP_ORDER.size)
+      hp = @hp
+      mp = @mp
+      old_base = @base.dup
+      old_skills = @skills.dup
+
+      set_class_id(class_id)
+      set_level(Game.clamp(new_level || 1, 1, max_level))
+      @battle_commands = class_battle_commands
+      @exp = exp_for_level(@level)
+
+      case param_mode
+      when CLASS_PARAM_NO_CHANGE then @base = old_base
+      when CLASS_PARAM_HALF      then @base = old_base.map { |v| v / 2 }
+      when CLASS_PARAM_RESET_LV1 then @base = base_stats(1)
+      end
+      recompute_stats
+
+      @hp = Game.clamp(hp, 0, @max_hp) if hp
+      @mp = Game.clamp(mp, 0, @max_mp) if mp
+
+      case skill_mode
+      when CLASS_SKILL_NO_CHANGE then @skills = old_skills
+      when CLASS_SKILL_RESET     then @skills = []; learn_level_skills
+      end
+      true
+    end
+
+    # The actor's RPG2003 battle-command ids (戦闘コマンド, database field 80 --
+    # seven slots padded with -1, the 0 entry standing for the Row command).
+    # Until a Change Battle Commands (1009) edits them they are read straight
+    # from the database, which is also how RPG_RT defers materialising the list.
+    def battle_commands
+      @battle_commands ||= class_battle_commands
+    end
+
+    # Change Battle Commands (event command 1009). `add` inserts command `id`
+    # ahead of the Row entry; otherwise it is removed, and id 0 clears the whole
+    # list back to Row alone. Ported from EasyRPG's
+    # Game_Actor::ChangeBattleCommands, including its capacity rule: the list
+    # holds at most six real commands plus Row, so a seventh add is dropped.
+    def change_battle_commands(add, id)
+      cmds = battle_commands
+      if add
+        return if id.nil? || id <= 0 || cmds.include?(id)
+        kept = cmds.reject { |c| c == 0 || c == -1 }
+        return if kept.size >= 6
+        @battle_commands = kept + [id, 0]
+      elsif id == 0
+        @battle_commands = [0]
+      else
+        idx = cmds.index(id)
+        return unless idx
+        kept = cmds.dup
+        kept.delete_at(idx)
+        @battle_commands = kept
+      end
+    end
+
+    # Put the actor back into class `id` without any of Change Class's side
+    # effects (Continue restoring a saved class): the curves are re-read at the
+    # current level, but equipment, EXP and skills are restored separately from
+    # the save and must not be reset here.
+    def restore_class(id)
+      set_class_id(id)
+      set_level(@level)
+      @battle_commands = nil
+    end
+
+    # Replace the battle-command list (Continue restoring a saved one). nil keeps
+    # whatever the database / class defines.
+    def battle_commands=(ids)
+      @battle_commands = ids && !ids.empty? ? ids.dup : nil
+    end
+
+    # The RPG2003 battle combo an Enable Combo (1007) armed: the battle command
+    # to repeat and how many times. nil until a battle page arms one.
+    attr_reader :battle_combo
+
+    # Enable Combo (event command 1007): make `command_id` repeat `multiple`
+    # times when this actor uses it. Stored on the actor the way RPG_RT keeps it
+    # (EasyRPG's Game_Actor::SetBattleCombo); the ATB battle system that spends
+    # it is not modelled here, so this records the arming rather than acting.
+    def set_battle_combo(command_id, multiple)
+      @battle_combo = { command_id: command_id, multiple: multiple }
+    end
+
     private
+
+    # The battle-command list the actor's current class (or, class-less, its
+    # database row) defines. An edition / fixture row without the field yields
+    # the RPG2003 default of Row alone.
+    def class_battle_commands
+      row = @class_row || @db_row
+      list = row.respond_to?(:battle_commands) ? row.battle_commands : nil
+      list.is_a?(Array) && !list.empty? ? list.dup : [0]
+    end
 
     # EasyRPG's CalculateExp(n): the RPG2000 standard EXP curve summed over n
     # steps. Float arithmetic mirrors RPG_RT; the running total truncates toward
@@ -1420,9 +1560,35 @@ module Game
     end
 
     # Read a numeric EXP-curve field from the database row, defaulting when the
-    # row (a test fixture) does not carry it.
+    # row (a test fixture) does not carry it. The class row wins when the actor
+    # has a class, mirroring EasyRPG's CalculateExp.
     def db_exp_param(field)
-      @db_row.respond_to?(field) ? (@db_row.__send__(field) || EXP_DEFAULT) : EXP_DEFAULT
+      row = curve_row
+      row.respond_to?(field) ? (row.__send__(field) || EXP_DEFAULT) : EXP_DEFAULT
+    end
+
+    # The database row the level-scaled tables are read from: the class row (職業)
+    # when the actor has a class, the actor row otherwise. Only the growth curve,
+    # the learn table and the EXP curve follow the class -- the attribute / state
+    # ranks stay on the actor row, which is where RPG_RT keeps reading them.
+    def curve_row
+      @class_row || @db_row
+    end
+
+    # Point the actor at class `id` (0 = none), resolving its database row. A
+    # database with no class table (every RPG2000 game) or an unknown id leaves
+    # the actor class-less, so the actor row keeps supplying the curves.
+    def set_class_id(id)
+      @class_id = id && id > 0 ? id : 0
+      @class_row = @class_id > 0 ? class_row_for(@class_id) : nil
+      @class_id = 0 if @class_row.nil?
+    end
+
+    # The database class row for `id`, or nil when this database has no class
+    # table (RPG2000) or does not define that id.
+    def class_row_for(id)
+      return nil unless @db.respond_to?(:job) && @db.job
+      @db.job[id]
     end
   end
 
@@ -1456,7 +1622,12 @@ module Game
         meta[a.id] = { name: a.name, title: a.title,
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
-                       transparent: a.transparent, states: a.states.dup }
+                       transparent: a.transparent, states: a.states.dup,
+                       # RPG2003: a Change Class / Change Battle Commands is a
+                       # permanent edit, so it has to outlive Save / Continue the
+                       # way the name and sprite overrides do.
+                       class_id: a.class_id,
+                       battle_commands: a.battle_commands.dup }
       end
       { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
         hp: hp, mp: mp, exp: exp, actor_meta: meta }
@@ -1474,10 +1645,14 @@ module Game
       mp = data[:mp] || {}
       meta = data[:actor_meta] || {}
       @actors.each do |a|
+        # The class comes back first: it decides which growth and EXP curves the
+        # restored EXP is then read against.
+        m = meta[a.id]
+        a.restore_class(m[:class_id]) if m && m[:class_id]
         a.set_exp(exp[a.id]) if exp[a.id]
         a.hp = hp[a.id] if hp[a.id]
         a.mp = mp[a.id] if mp[a.id]
-        apply_actor_meta(a, meta[a.id])
+        apply_actor_meta(a, m)
       end
     end
 
@@ -1492,6 +1667,7 @@ module Game
       end
       actor.transparent = m[:transparent] unless m[:transparent].nil?
       actor.states = m[:states] if m[:states]
+      actor.battle_commands = m[:battle_commands] if m[:battle_commands]
     end
 
     def each(&blk); @actors.each(&blk); end
@@ -3318,6 +3494,7 @@ module Game
       @result = nil
       @escaped = false     # set once the party successfully flees (#attempt_escape)
       @escape_chance = nil # lazily computed from agilities on the first attempt
+      @force_flee = false  # a battle page granted the party a guaranteed escape
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
       @pending = []  # extra hits of an all-target action, drained one per #step
@@ -3371,6 +3548,33 @@ module Game
     def enemy_turn(_index); nil; end
     def actor_turn(_id); nil; end
     def actor_command(_id); nil; end
+
+    # Force Flee (1006), target 0: let the party leave whenever it next tries.
+    # RPG_RT grants the escape rather than performing it, so the player still has
+    # to pick Flee — #attempt_escape then always succeeds.
+    def force_flee_party; @force_flee = true; end
+
+    # Whether a Force Flee has granted the party its guaranteed escape.
+    def force_flee?; @force_flee; end
+
+    # Force Flee, target 2: troop member `index` runs from the fight. The
+    # combatant is hidden, which takes it out of play (Combatant#out_of_play?)
+    # without counting as a kill. Returns whether anyone actually left, so the
+    # caller only plays the escape sound when one did.
+    def flee_enemy(index)
+      foe = enemy(index)
+      return false if foe.nil? || foe.dead? || foe.hidden
+      foe.hidden = true
+      true
+    end
+
+    # Force Flee, target 1: every troop member still standing runs. Returns the
+    # indices that left.
+    def flee_all_enemies
+      fled = []
+      @enemies.each_index { |i| fled.push(i) if flee_enemy(i) }
+      fled
+    end
 
     # Terminate Battle (13410): abandon the fight outright. Unlike a victory or
     # defeat this has no outcome to process, so it is kept as its own flag the
@@ -3471,14 +3675,15 @@ module Game
       @escape_chance = Game.clamp(150 - base, 0, 100)
     end
 
-    # Attempt to flee the fight. A `preemptive` first strike always succeeds;
-    # otherwise a 0..99 roll under #escape_chance wins. Success ends the battle as
-    # :escaped (#finished? / #escaped?); a failure raises the next attempt's
-    # chance by 10 (per EasyRPG) and returns false, leaving the fight running so
-    # the enemies still take their round.
+    # Attempt to flee the fight. A `preemptive` first strike always succeeds, as
+    # does an escape a Force Flee battle page has granted; otherwise a 0..99 roll
+    # under #escape_chance wins. Success ends the battle as :escaped (#finished? /
+    # #escaped?); a failure raises the next attempt's chance by 10 (per EasyRPG)
+    # and returns false, leaving the fight running so the enemies still take
+    # their round.
     def attempt_escape(preemptive = false)
       return false if finished?
-      if preemptive || @rng.random(100) < escape_chance
+      if preemptive || @force_flee || @rng.random(100) < escape_chance
         @escaped = true
         @result = :escaped
         true
