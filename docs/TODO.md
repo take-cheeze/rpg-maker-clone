@@ -248,7 +248,13 @@ The work below is roughly ordered by the critical path to a walkable game
   Change Parallax Background, Proceed
   With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
-  loop can't hang. **Memorize Location** stores the player's current map id, x and y
+  loop can't hang. **Teleport** (10810) honours RPG2003's arrival-facing
+  argument: it is 1-based over the editor's up / right / down / left, not the
+  2/4/6/8 numpad the runtime speaks, and was being assigned raw — leaving two of
+  the four values (the editor's *up* and *down*) as numbers that are not
+  directions at all. The RPG2003 test-bed sets a facing on 25 of its 26
+  teleports; an RPG2000 project writes 0 there, so Nepheshel's 2021 were
+  unaffected. **Memorize Location** stores the player's current map id, x and y
   into three variables, and **Recall to Location** teleports back to a location
   held in three variables (routed through the same teleport the Teleport command
   uses). **Call Event**
