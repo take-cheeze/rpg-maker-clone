@@ -3143,11 +3143,13 @@ class RPG2k
         # the visible length of the lines before it) so one reveal counter drives
         # the whole window.
         pauses = []
+        instants = []
         auto_close = false
         show_gold = false
         offset = 0
         scans.each_with_index do |s, li|
           s[:pauses].each { |p| pauses << { at: offset + p[:at], kind: p[:kind] } }
+          (s[:instants] || []).each { |a, b| instants << [offset + a, offset + b] }
           auto_close ||= s[:auto_close]
           show_gold ||= s[:show_gold]
           offset += plain[li].length
@@ -3173,7 +3175,7 @@ class RPG2k
         contents = Bitmap.new(inner_w, inner_h)
 
         # Plain messages type out gradually; choice lists appear at once.
-        reveal = Game::TextReveal.new(plain, 0, pauses, auto_close)
+        reveal = Game::TextReveal.new(plain, 0, pauses, auto_close, instants)
         reveal.reveal_all if choice
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil

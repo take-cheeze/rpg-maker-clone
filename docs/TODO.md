@@ -400,10 +400,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `\_` space). Text now **reveals gradually** (a `Game::TextReveal` typewriter
   driven by `Scene::Map`, with a button press completing the reveal before
   dismissing), and the **pacing codes act**: `Game::Message.scan` surfaces
-  `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds) and `\^` (close the
-  window without a keypress) in revealed-character coordinates, and the reveal
-  halts at each until released. `\$` opens a small **gold window** (the party's
-  money) alongside the message, closed with it. `\c[n]` **colour codes** are
+  `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds), `\^` (close the
+  window without a keypress) and `\>` / `\<` (an **instant span** that reveals in
+  one frame) in revealed-character coordinates; the reveal halts at each pause
+  until released and collapses each instant span (still stopping at a pause that
+  falls inside it). `\$` opens a small **gold window** (the party's money)
+  alongside the message, closed with it. `\c[n]` **colour codes** are
   drawn in colour: `Game::Message.parse` splits a line into `{text:, color:}`
   runs and `Scene::Map` draws each run in its palette colour, revealing across
   runs (`Game::Message.visible_segments`). **Message Options** (10120) and

@@ -883,6 +883,22 @@ check 'a message with \$ shows a gold window; a plain one does not' do
   ok msg2[:gold_window].nil?, 'no \\$ -> no gold window'
 end
 
+check 'a \> \< instant span reveals far faster than the typewriter' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # 'a', a long instant span 'bcdefghij', then 'z' (11 visible characters).
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'a\\>bcdefghij\\<z')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  # At 2 chars/frame the plain typewriter would show ~4 characters in two frames;
+  # the instant span collapses, so 'a' + the whole span is already out.
+  2.times { RGSS::Input.reset; scene.update }
+  ok reveal.revealed >= 10, 'the instant span revealed all at once, not 2/frame'
+end
+
 # Tick a scene until its message window opens (or give up after `limit` frames).
 def open_msg(scene, limit = 15)
   msg = nil

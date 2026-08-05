@@ -4,12 +4,13 @@ set -eux
 
 cd $(dirname $0)
 
+# See rtp_install.bash for why wget/unar are quietened.
 if [ ! -f xp_rtp103.zip ] ; then
-  wget https://cdn.tkool.jp/updata/rtp/xp_rtp103.zip
+  wget -nv https://cdn.tkool.jp/updata/rtp/xp_rtp103.zip
 fi
 
 if [ ! -d RPGXP_RTP103 ] ; then
-  unar -e cp932 xp_rtp103.zip
+  unar -q -e cp932 xp_rtp103.zip
 fi
 
 if [ ! -v WINEPREFIX ] ; then
@@ -21,6 +22,9 @@ Xvfb "${DISPLAY}" -screen 0 1920x1080x24 &
 
 export WINEDLLOVERRIDES="mscoree,mshtml="
 export LC_ALL=ja_JP.UTF-8
+# Drop wine's `fixme:` stub chatter; `err:`/`warn:` still print. See
+# rtp_install.bash.
+export WINEDEBUG=fixme-all
 
 winecfg /v win10
 cp setup.iss "${WINEPREFIX}/drive_c"

@@ -20,7 +20,7 @@ sample="$here/data/mz-sample"
 cache="$here/data/.mz-corescript"
 
 if [ ! -d "$cache" ]; then
-    git clone --depth 1 https://github.com/stak/rmmz-corescript.git "$cache"
+    git clone --quiet --depth 1 https://github.com/stak/rmmz-corescript.git "$cache"
 fi
 
 mkdir -p "$sample/js/libs"

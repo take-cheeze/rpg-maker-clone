@@ -15,5 +15,6 @@ mkdir -p "$(dirname "$0")/../data"
 cd "$(dirname "$0")/../data"
 
 if [ ! -d Lunatic-Core ]; then
-    git clone --depth 1 https://github.com/KinoAR/Lunatic-Core.git Lunatic-Core
+    git clone --quiet --depth 1 https://github.com/KinoAR/Lunatic-Core.git \
+        Lunatic-Core
 fi

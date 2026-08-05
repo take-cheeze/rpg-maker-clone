@@ -424,6 +424,40 @@ check 'Message.scan flags \$ (show gold) and drops it from the text' do
   ok !Game::Message.scan('plain', vars, names)[:show_gold]
 end
 
+check 'Message.scan records \> \< instant spans (and an unclosed one to EOL)' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  s = Game::Message.scan('ab\>cd\<ef', vars, names)
+  eq 6, s[:length], '"abcdef" = 6 visible characters'
+  eq [[2, 4]], s[:instants], 'cd is the instant span'
+  # An unclosed \> runs to the end of the line.
+  s2 = Game::Message.scan('ab\>cd', vars, names)
+  eq [[2, 4]], s2[:instants]
+end
+
+check 'TextReveal reveals an instant span in a single advance' do
+  # "ab" normal, "cd" instant (\> \<), "ef" normal -> instant span [2, 4).
+  r = Game::TextReveal.new(['abcdef'], 0, [], false, [[2, 4]])
+  r.advance(1)
+  eq 1, r.revealed, 'the first normal char reveals one at a time'
+  r.advance(1)                          # lands at 2 -> inside the span -> jump to 4
+  eq 4, r.revealed, 'the instant span appears at once'
+  r.advance(1)
+  eq 5, r.revealed, 'normal characters resume after the span'
+end
+
+check 'an instant span still stops at a pause inside it' do
+  # instant [1, 5) but a \! pause sits at 3: the span cannot leap past the pause.
+  r = Game::TextReveal.new(['abcdef'], 0, [{ at: 3, kind: :key }], false, [[1, 5]])
+  r.advance(1)                          # 0 -> 1 (span start); capped at the pause 3
+  eq 3, r.revealed, 'the instant leap is capped at the pause'
+  ok r.pending_pause, 'the pause gates the span'
+  r.release_pause
+  r.advance(1)                          # 3 -> 4, still inside the span -> jump to 5
+  eq 5, r.revealed, 'the rest of the span reveals once released'
+end
+
 # -- Screen (tint state machine) ---------------------------------------------
 
 check 'Screen starts neutral and settled' do
