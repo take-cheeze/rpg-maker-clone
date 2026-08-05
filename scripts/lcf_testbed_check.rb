@@ -126,11 +126,46 @@ class Checker
       upper = lmu.upper_layer
       fail "#{base}: lower layer #{lower.size} != #{w}x#{h}" if lower && lower.size != w * h
       fail "#{base}: upper layer #{upper.size} != #{w}x#{h}" if upper && upper.size != w * h
+      check_generator(base, lmu)
       lmu.events.each { |_id, _ev| @events += 1 }
       @maps += 1
     end
   rescue => ex
     fail "#{dir}: #{ex.class}: #{ex.message}"
+  end
+
+  # The RPG2003 dungeon-generator block (chunks 40-62) and the 2k3e save counter
+  # (90). These are not documented on the 200X wiki's マップ page, so their ids,
+  # types and defaults come from liblcf — which means they are worth asserting
+  # against real bytes rather than trusting.
+  #
+  # Two things could silently go wrong: an id could be attached to the wrong
+  # field (the values would still parse, just as the wrong thing), and a width
+  # could be misread (chunk 62 is shorts, and reading it as int32 yields
+  # plausible-looking large numbers rather than an error). Both are caught by
+  # checking that what comes out is the shape the format promises.
+  def check_generator(base, lmu)
+    # Every declared field must materialise, from the file or from its default,
+    # so a map that omits the whole block still answers.
+    fail "#{base}: generator_width did not default" if lmu.generator_width.nil?
+    fail "#{base}: generator_surround did not default" if lmu.generator_surround.nil?
+    h = lmu.generator_height
+    fail "#{base}: generator_height #{h.inspect} not a positive int" if h.nil? || h < 1
+
+    # The room slots are parallel arrays: nine x/y coordinates and their tile
+    # ids. A wrong element width would change these counts.
+    gx = lmu.generator_x
+    gy = lmu.generator_y
+    fail "#{base}: generator_x is #{gx.size} values, expected 9" if gx && gx.size != 9
+    fail "#{base}: generator_y is #{gy.size} values, expected 9" if gy && gy.size != 9
+
+    ids = lmu.generator_tile_ids
+    return unless ids
+    fail "#{base}: generator_tile_ids is #{ids.size} values, expected 18" if ids.size != 18
+    # Read as shorts these are ordinary RPG2000 tile ids; read as int32 they run
+    # into the millions. Bound them by the same range the map layers use.
+    bad = ids.reject { |t| t >= 0 && t <= 20_000 }
+    fail "#{base}: generator_tile_ids out of tile range: #{bad.first(4).inspect}" unless bad.empty?
   end
 
   def report

@@ -8,10 +8,26 @@
   `使用時アニメ` weapon fields (the shared `BATTLER_ANIMATION` union),
   skill switch/occasion chunks (13, 16, 18, 19), and the `battle_anime2`
   attack-motion + `基本と拡張`/`武器` pose object lists (chunks 2, 10, 11).
-  The remaining map-unit chunks that appear in real data (42, 50, 60–62, 90 —
-  save/encounter/parallax metadata) are **not documented on the wiki's マップ
-  page**, so they still need to be derived from the test-bed walk. These are
-  editor/battle/2003 details not on the walkable-game critical path
+  The map-unit chunks that used to be unaccounted for (42, 50, 60–62, 90) are
+  **declared now**. They are not the save/encounter/parallax metadata they were
+  guessed to be: they are the **RPG2003 random dungeon generator** block plus the
+  2k3e save counter, and since the wiki's マップ page does not document them the
+  ids, types and defaults come from liblcf's `LMU_Reader::ChunkMap` / `RPG::Map`
+  (0x28..0x3E, 0x5A) — chunk 42 is `top_level`, 50 `generator_height`, 60/61/62
+  the nine room slots' `generator_x` / `generator_y` / `generator_tile_ids`, 90
+  `save_count_2k3e`. The whole block (40–56 as well, which no test bed writes) is
+  declared so a real map parses with nothing left over. The bytes confirm the
+  reading rather than merely tolerating it: chunk 62 read as **shorts** yields
+  ordinary tile ids (49 lower-layer, 10000/10001/10006/10007 upper-layer) where
+  an int32 reading gives numbers in the millions, and the fields mtf-meido-action
+  omits are exactly the ones already at their liblcf default (`generator_width`
+  4, the six `true` flags) — which is what an eliding writer produces. Only that
+  game writes them at all, being the RPG2003 test bed; Nepheshel's 543 maps read
+  the whole block from its defaults. `lcf_testbed_check.rb` now asserts the
+  shape (nine coordinates, eighteen tile ids, every field materialising), and
+  that guard was checked by mis-declaring chunk 62 and watching it fail. These
+  remain editor-only details off the walkable-game critical path — nothing reads
+  them at run time, RPG_RT included
 - ✅ Show window component for title scene
 - ✅ Implement New Game functionality — builds the party, loads the start map
   and enters a walkable `Scene::Map` with events
