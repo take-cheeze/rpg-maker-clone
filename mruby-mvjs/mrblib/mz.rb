@@ -98,6 +98,13 @@ class MZ
   # two makes `Bitmap._createBaseTexture(this._image)` take PIXI's image path,
   # which uploads through the wrapper's `texImage2D` canvas/image handle.
   #
+  # `FontFace` is needed the moment a project names a font: MZ's
+  # `FontManager.startLoading` does `new FontFace(family, url)` and waits on its
+  # `load()` promise, and an undefined constructor throws inside
+  # `Scene_Boot.onDatabaseLoaded`, killing the boot. The shim only has to satisfy
+  # that bookkeeping — the glyphs themselves are rasterised natively from the
+  # file in the game's `fonts/` dir (mvcanvas.cxx), not through the DOM.
+  #
   # `indexedDB` is the one host global MZ's boot needs that MV's did not reach:
   # `SceneManager.checkBrowser` (run after `Utils.canUseWebGL`, which the WebGL
   # backend now passes) throws "does not support IndexedDB" without it, and
@@ -111,6 +118,10 @@ class MZ
     "g.HTMLVideoElement = function(){}; " \
     "g.HTMLImageElement = (typeof g.Image === 'function') ? g.Image : " \
     "function(){}; " \
+    "if (typeof g.FontFace === 'undefined') { " \
+    "g.FontFace = function(family, source){ this.family = family; " \
+    "this.source = source; this.status = 'loaded'; }; " \
+    "g.FontFace.prototype.load = function(){ return Promise.resolve(this); }; } " \
     "if (typeof g.indexedDB === 'undefined') " \
     "g.indexedDB = { open: function(){ return { onsuccess: null, " \
     "onerror: null, onupgradeneeded: null, result: null }; }, " \
