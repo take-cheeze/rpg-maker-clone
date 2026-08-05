@@ -274,9 +274,11 @@ JavaScript loads and interprets the JSON.
       With all of it, `--mz_new_game`/`--mz_move_test` boot the bed to
       `Scene_Title`, start a New Game and walk the player on the start map, and
       `--mz_screenshot` captures the frame (`MV::JS.screenshot_gl`, the FBO
-      counterpart of MV's canvas capture). Remaining: mapping the wrapper's
-      stubbed `stencilFunc`/`Op`/`Mask` onto GL so window clipping works (the
-      FBO's stencil buffer already exists), an MZ audio bridge (MV's `AudioManager` →
+      counterpart of MV's canvas capture). The wrapper's `stencilFunc`/`Op`/`Mask` now map onto GL as well, so
+      `WindowLayer`'s per-window clipping actually clips (the FBO's packed
+      DEPTH24_STENCIL8 buffer had been attached since M6.3a and simply never
+      programmed); `gl_test` asserts the masking at the pixel level on the real
+      backend. Remaining: an MZ audio bridge (MV's `AudioManager` →
       `RGSS::Audio` route is not wired for MZ yet) and `.woff` font loading, all
       verified against a real MZ project.
 

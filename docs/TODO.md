@@ -1233,12 +1233,20 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
           Note the smoke is still `continue-on-error`, so **read its log** rather
           than the job's conclusion: a `FAILED:` line there is a real regression
           even though the job stays green.
+      - ✅ **Window clipping.** `WindowLayer.render` masks each window to its own
+        shape with the stencil buffer — draw where the buffer is 0, stamp the
+        shape with `REPLACE`, so a window behind cannot paint over the one in
+        front. The wrapper accepted `stencilFunc`/`stencilOp`/`stencilMask` and
+        threw them away, so every window overpainted its neighbours; the FBO's
+        packed DEPTH24_STENCIL8 buffer had been there since M6.3a, just never
+        programmed. All three now map onto GL, as does `clearStencil`. `gl_test`
+        proves it at the pixel level on the real backend: stamp the left half,
+        draw a full-screen quad, and assert only the right half survives — which
+        is the same shape the window masking uses, and which came out green on
+        both halves with the stubs.
       - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
         back without it, and `getExtension` returns null so the fallback is what
-        runs); real `stencilFunc`/`stencilOp`/`stencilMask` in the wrapper, so
-        `WindowLayer` actually clips each window to its shape instead of the
-        clip being a no-op (the FBO's stencil buffer is already there, only the
-        three entry points are stubbed);
+        runs);
         texture Y-flip and uniform-introspection polish as real content exercises
         them; MZ's audio bridge (MV routes `AudioManager` to `RGSS::Audio`; MZ
         still runs on the silent Web Audio stub, so the bed ships no sounds), and

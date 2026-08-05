@@ -209,3 +209,90 @@ assert 'a WebGL context follows its canvas when the canvas is resized' do
   assert_true c.red < 60
   assert_equal 255.0, c.alpha
 end
+
+assert 'the stencil test masks a draw, the way MZ clips its windows' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # MZ's WindowLayer.render masks with the stencil buffer: each window is drawn
+  # where the buffer is 0, then its own shape is stamped with REPLACE so the
+  # window behind it cannot paint over it. The wrapper used to accept
+  # stencilFunc/stencilOp/stencilMask and throw them away, so every window
+  # overpainted its neighbours — the FBO's packed DEPTH24_STENCIL8 buffer was
+  # there all along, just never programmed.
+  #
+  # Reproduce that shape at the pixel level: stamp the left half of the target,
+  # then draw a full-screen quad that must only survive on the *right*. Returns
+  # "left,right" green channels.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 64, H = 64;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvoid main(){ gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nuniform vec4 uCol;\nvoid main(){ gl_FragColor = uCol; }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      var uCol = gl.getUniformLocation(p, 'uCol');
+      gl.viewport(0, 0, W, H);
+
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      function quad(x0, x1) {
+        gl.bufferData(gl.ARRAY_BUFFER,
+          new Float32Array([x0,-1, x1,-1, x0,1, x1,-1, x1,1, x0,1]), gl.STATIC_DRAW);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clearStencil(0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+      gl.enable(gl.STENCIL_TEST);
+
+      // Pass 1: stamp stencil = 1 over the left half (colour irrelevant).
+      gl.stencilMask(0xff);
+      gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+      gl.uniform4f(uCol, 0.0, 0.0, 0.0, 1.0);
+      quad(-1.0, 0.0);
+
+      // Pass 2: draw green everywhere, but only where the stencil is still 0.
+      gl.stencilFunc(gl.EQUAL, 0, 0xff);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+      gl.uniform4f(uCol, 0.0, 1.0, 0.0, 1.0);
+      quad(-1.0, 1.0);
+      gl.finish();
+
+      var l = new Uint8Array(4), r = new Uint8Array(4);
+      gl.readPixels(W / 4, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, l);      // left
+      gl.readPixels(W * 3 / 4, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, r);  // right
+      gl.disable(gl.STENCIL_TEST);
+      return l[1] + ',' + r[1];
+    })()
+  JS
+
+  # Surface a setup failure as itself rather than as a confusing 0,0.
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+
+  # The masked (left) half must have stayed black and the unmasked (right) half
+  # must be green. With the old no-op stubs both halves came out green, since
+  # nothing ever wrote or tested the buffer.
+  parts = out.split(",")
+  assert_equal 2, parts.size
+  assert_true parts[1].to_i > 200 # right: drawn
+  assert_true parts[0].to_i < 60  # left: masked out
+end
