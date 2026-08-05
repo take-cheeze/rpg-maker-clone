@@ -4188,6 +4188,64 @@ check 'command_skip forfeits an ally turn while the enemies still act' do
   ok hero.hp < 100, 'but the slime still struck back'
 end
 
+# -- Battle hit / miss (accuracy) ---------------------------------------------
+
+check 'Battle#to_hit uses the base hit rate adjusted by the agility ratio' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 10, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  tgt = b.enemies.first
+  atk.hit_rate = 90
+  eq 90, b.to_hit(atk, tgt), 'equal agility -> the base hit rate'
+  tgt.agi = 30                                       # a 3x faster target dodges more
+  eq 80, b.to_hit(atk, tgt), '100 - 10*(10+30)/(2*10) = 80'
+  tgt.agi = 0                                        # a motionless target
+  eq 95, b.to_hit(atk, tgt), '100 - 10*(10+0)/(2*10) = 95'
+end
+
+check 'Battle#to_hit clamps to 0..100 and a 100% base never misses' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 999, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  atk.hit_rate = 100
+  eq 100, b.to_hit(atk, b.enemies.first), 'a perfect base stays 100 despite fast target'
+end
+
+check 'with accuracy off a basic attack always connects' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.hit_rate = 1                                  # would nearly always miss...
+  slime = combatant('Slime', 0, 0, 20, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # accuracy off (default)
+  b.begin_round
+  e = b.step_action
+  eq 20, e[:damage], '...but accuracy is off, so it lands for full damage'
+  ok !e[:missed]
+end
+
+check 'with accuracy on a sure-miss attack deals no damage' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.hit_rate = 0                                  # 0% base, equal agility -> 0% hit
+  slime = combatant('Slime', 0, 0, 20, 100)
+  # 7-arg: variance off, criticals off, accuracy on.
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, true)
+  b.begin_round
+  e = b.step_action
+  eq 0, e[:damage]
+  ok e[:missed], 'flagged as a miss'
+  eq 100, slime.hp, 'no HP lost'
+end
+
+check 'with accuracy on the to-hit roll both lands and misses over many swings' do
+  hero = combatant('Hero', 40, 0, 10, 1_000_000)
+  hero.hit_rate = 50                                 # equal agility -> 50% to hit
+  slime = combatant('Slime', 0, 0, 10, 1_000_000)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, true)
+  40.times { b.run_round }
+  swings = b.log.select { |e| e[:attacker] == 'Hero' }
+  ok swings.any? { |e| e[:missed] }, 'a 50% attacker whiffs sometimes'
+  ok swings.any? { |e| !e[:missed] }, 'and connects sometimes'
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }

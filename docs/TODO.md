@@ -386,10 +386,14 @@ The work below is roughly ordered by the critical path to a walkable game
   **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
   (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
   gets away, and a failed attempt forfeits the party's round (every member
-  skips, the enemies still act) while raising the next try by 10 points. Still
-  to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
-  rate overrides from the Attribute table, the per-terrain backdrop and the
-  RPG2000 Game Over graphic.
+  skips, the enemies still act) while raising the next try by 10 points. Basic
+  attacks can also **miss**: `Battle#to_hit` takes the attacker's base hit rate
+  (weapon / unarmed 90, a "miss"-flagged enemy 70) and applies EasyRPG's
+  agility-ratio adjustment (`100 - (100 - base)*(srcAgi + tgtAgi)/(2*srcAgi)`),
+  so a nimble target dodges more; a missed swing deals no damage. Still to come:
+  enemy-cast infliction, all-target skill/item scopes, per-attribute rate
+  overrides from the Attribute table, the per-terrain backdrop and the RPG2000
+  Game Over graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
