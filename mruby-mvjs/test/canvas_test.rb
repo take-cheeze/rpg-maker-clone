@@ -444,3 +444,26 @@ assert 'MV canvas save/restore round-trips the transform' do
                   "x.save(); x.translate(5,7); x.scale(2,2); x.restore(); x._m.join(',')")
   assert_equal "1,0,0,1,0,0", m
 end
+
+assert 'MV canvas strokeRect outlines a rect without filling it' do
+  # MZ's Window_Selectable.drawBackgroundRect strokes the frame of every item in
+  # every selectable window (Bitmap.strokeRect -> context.strokeRect), so a
+  # context without this method throws "not a function" the first time a command
+  # window is built and the boot dies at Scene_Title. Check the outline lands on
+  # the border and leaves the interior alone.
+  MV::JS.eval(
+    "globalThis.SR=document.createElement('canvas'); SR.width=6; SR.height=6; " \
+    "var c=SR.getContext('2d'); c.strokeStyle='#00ff00'; c.lineWidth=1; " \
+    "c.strokeRect(1,1,4,4);"
+  )
+  # All four edges are stroked: the box spans x/y 1..5 (the rect's own border,
+  # since a 1px line centred on the path rounds onto it).
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(SR.__h,2,1).join(',')")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(SR.__h,2,5).join(',')")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(SR.__h,1,3).join(',')")
+  assert_equal "0,255,0,255", MV::JS.eval("__mv_canvasGetPixel(SR.__h,5,3).join(',')")
+  # ...and the middle is untouched: a stroke is not a fill.
+  assert_equal "0,0,0,0", MV::JS.eval("__mv_canvasGetPixel(SR.__h,3,3).join(',')")
+  # strokeRect must not leak the stroke colour into fillStyle for later draws.
+  assert_equal "#000000", MV::JS.eval("SR.getContext('2d').fillStyle")
+end

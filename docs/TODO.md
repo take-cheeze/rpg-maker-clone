@@ -1139,24 +1139,73 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         the `[MZ-BOOT] booted to <scene>` marker in CI. Discovered/validated by
         booting PIXI v5.2.4 + rmmz under Node against the wrapper's surface.
       - ✅ On-screen present: `MZ.runtime_available?` tracks `MV::GL.available?`,
-        so `MZ#start` boots once and then runs a per-frame loop like MV —
-        `SceneManager.update` renders the scene through PIXI into the WebGL
-        canvas, `MZ#present` reads that FBO back (`MV::JS.present_gl` /
-        `mv_webgl_pixels`) onto a full-screen `RGSS::Sprite`/`Bitmap`, and
-        `RGSS::Graphics.update` draws it. `mz_boot_check.bash` runs the loop
-        headless (SDL `dummy` video driver, no X — Mesa rejects a GLX
-        make-current whenever an X server is reachable) and logs `presenting
-        frames on-screen (webgl handle N)`. `MV::JS.present_gl` is covered by
-        `gl_test`.
+        so `MZ#start` boots once and then runs a per-frame loop like MV — PIXI
+        renders the scene into the WebGL canvas, `MZ#present` reads that FBO back
+        (`MV::JS.present_gl` / `mv_webgl_pixels`) onto a full-screen
+        `RGSS::Sprite`/`Bitmap`, and `RGSS::Graphics.update` draws it.
+        `mz_boot_check.bash` runs the loop headless (SDL `dummy` video driver, no
+        X — Mesa rejects a GLX make-current whenever an X server is reachable)
+        and logs `presenting frames on-screen (webgl handle N)`.
+        `MV::JS.present_gl` is covered by `gl_test`.
       - ✅ Input: `MZ#main_loop` feeds `RGSS::Input`/mouse into rmmz's
         `Input._currentState` / `TouchInput` each frame (`sync_input` /
         `sync_touch`), reusing MV's shared key map and touch bridge (rmmz and
         rmmv share the button names and state shape).
+      - ✅ **Title and a walkable map.** MZ now boots past the loading scene into
+        `Scene_Title` and, on New Game, into its start map with the player
+        walking. Three things were in the way, each found by booting PIXI v5.2.4
+        + rmmz under Node against the host's semantics:
+        - **The frame loop never pumped the host.** `MZ#main_loop` called
+          `SceneManager.update` itself, but MZ drives itself from PIXI's ticker:
+          `SceneManager.run` hands over to `Graphics.startGameLoop`, and it is
+          `Graphics._onTick` — reached only through `requestAnimationFrame` —
+          that both updates the scene *and* calls `_app.render()`. Calling
+          `update` directly therefore rendered nothing and, worse, left every
+          promise microtask and rAF callback queued forever, so `Scene_Boot` —
+          a *loading* scene that polls `ImageManager`/`FontManager`/
+          `ConfigManager`/`StorageManager` readiness across frames — could never
+          become ready. `MZ#pump_frame` now advances the host once per frame like
+          MV, and `#boot_probe` pumps until the boot scene hands over instead of
+          spinning a fixed count.
+        - **`HTMLImageElement` was a separate empty constructor.** PIXI v5 wraps
+          a texture source by `source instanceof HTMLImageElement`; with the shim
+          distinct from the host's `Image`, it built a *fresh* image and assigned
+          the object to its `src`, so every loaded bitmap became a broken
+          texture. `MZ::HOST_GLOBALS_JS` now aliases the two.
+        - **The native Canvas2D context had no `strokeRect`.** MV never calls it,
+          so it was never implemented; MZ calls it on a hot path —
+          `Window_Selectable.drawBackgroundRect` strokes the frame of *every*
+          item in *every* selectable window — so building the title's command
+          window threw `TypeError: not a function` at `rmmz_core.js:1587`
+          (`Bitmap.prototype.strokeRect`) on the first drawn frame. This one is
+          invisible to a permissive JS harness and only showed up on the real
+          engine (measured in CI on the diagnostic branch of PR #333, whose
+          `[MZ-DIAG]` line reported `Scene_Title` with every readiness gate
+          true — the boot was no longer waiting on anything, it was dying inside
+          the title's drawing). `mvcanvas.cxx` now implements it as four
+          `lineWidth`-thick bars through the same native fill, so the transform,
+          alpha and composite mode behave exactly as for a filled rect.
+        - **The bed was too thin to leave the loading scene.** `data/mz-sample`
+          is now authored by `scripts/gen-mz-sample.py` (like MV's bed): real
+          terms, a tileset + `MapInfos` entry, a walled 17×13 room, a party
+          sprite, and the system art MZ *requires* — `img/system/ButtonSet.png`
+          at ≥ 11×48 px wide, because `Sprite_Button.checkBitmap` throws
+          ("ButtonSet image is too small") on anything smaller and MZ's touch UI
+          puts those buttons in every scrollable window. The tileset's `flags[0]`
+          carries `0x10` ("no effect on passage"): `Game_Map.checkPassage` reads
+          the four layers top-down and the first tile not marked so decides, so a
+          plain `0` there makes the empty upper layers report every cell passable
+          and no wall blocks (checked against a real editor-written tileset).
+        - Validation: `--mz_new_game` / `--mz_move_test` / `--mz_screenshot`
+          drive it in CI (`scripts/mz_boot_check.bash` asserts `[MZ-BOOT]` is not
+          the loading scene, `[MZ-MAP]` was reached and `[MZ-MOVE] moved=true`),
+          and the blocking `scripts/mz_testbed_check.rb` guards the bed's data
+          and art under plain CRuby — including the two rules above, which a JSON
+          shape check cannot see. It is equally useful against a real MZ project.
       - 🚧 Remaining: resize the FBO to the canvas when PIXI resizes it; optional
         VAO / `vertexAttribDivisor` fast path (PIXI falls back without it);
-        texture Y-flip + image uploads and uniform-introspection polish as real
-        content exercises them. Validation to add: a gameplay input probe (New
-        Game → map → a keypress moves the player, like MV's `mv_move_test`) and a
-        screenshot smoke of a content-bearing scene — the minimal `data/mz-sample`
-        currently rests at `Scene_Boot` (a loading scene), so reaching
-        `Scene_Title`/a map needs a fuller sample database first.
+        texture Y-flip and uniform-introspection polish as real content exercises
+        them; MZ's audio bridge (MV routes `AudioManager` to `RGSS::Audio`; MZ
+        still runs on the silent Web Audio stub, so the bed ships no sounds), and
+        a `.woff` font path (the canvas text loader finds only `.ttf`/`.otf` in a
+        game's `fonts/`, and MZ games ship `.woff`, so their text draws blank).

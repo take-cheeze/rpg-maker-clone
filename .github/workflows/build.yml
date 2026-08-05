@@ -82,7 +82,7 @@ jobs:
         id: cache
         with:
           path: data
-          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html') }}
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
 
       # The native compile is the long pole. Everything that does not feed the
       # compiler — the RTP/game/MV downloads (network-bound) and pre-commit
@@ -247,6 +247,15 @@ jobs:
           - name: MV test-bed data check
             run: ./scripts/nix-develop.bash ruby scripts/mv_testbed_check.rb data/mv-sample
 
+          # The same blocking guard for the MZ bed (data/mz-sample, authored by
+          # scripts/gen-mz-sample.py). MZ's boot is fussier than MV's about two
+          # things a JSON-shape check cannot see — the ButtonSet sheet's minimum
+          # size, which Sprite_Button *asserts*, and the "no effect on passage"
+          # flag on the empty tile, without which no wall blocks — so this runs
+          # ahead of the non-blocking native MZ smoke below.
+          - name: MZ test-bed data check
+            run: ./scripts/nix-develop.bash ruby scripts/mz_testbed_check.rb data/mz-sample
+
           - name: RPG2k game-logic checks
             run: |
               ./scripts/nix-develop.bash ruby scripts/rpg2k_logic_check.rb
@@ -319,14 +328,16 @@ jobs:
                 --timeout_ms=5000 --game_dir data/mv-sample \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
-          # Boot RPG Maker MZ (M6.3c): the fetched rmmz corescript + PIXI v5 on
-          # the committed data/mz-sample database. The check asserts MZ gets past
-          # the old WebGL wall — Graphics creates the PIXI renderer on the native
-          # surfaceless-EGL backend and SceneManager.run(Scene_Boot) renders,
-          # logging `[MZ-BOOT] booted to <scene>`. Non-blocking while the MZ
-          # runtime is brought up, like the MV smokes; display 111 (see the
+          # Play RPG Maker MZ (M6.3c): the fetched rmmz corescript + PIXI v5 on
+          # the committed data/mz-sample project. The check asserts the boot
+          # reaches a real scene through the native surfaceless-EGL renderer
+          # (`[MZ-BOOT] booted to <scene>`, and not the Scene_Boot loading
+          # screen), that New Game gets to the start map (`[MZ-MAP]`) and that a
+          # held direction actually walks the player (`[MZ-MOVE] moved=true`),
+          # and it captures the frame to ss/mz_play.png. Non-blocking while the
+          # MZ runtime is brought up, like the MV smokes; display 111 (see the
           # reserved server-num map above).
-          - name: MZ boot smoke test
+          - name: MZ play smoke test
             continue-on-error: true
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
@@ -442,6 +453,14 @@ jobs:
         with:
           name: mv-menu-screenshot
           path: ss/mv_menu.png
+          if-no-files-found: warn
+
+      - name: Upload MZ play screenshot
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mz-play-screenshot
+          path: ss/mz_play.png
           if-no-files-found: warn
 
   # `/preview` command gate. Cloudflare previews are opt-in per pull request:

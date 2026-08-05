@@ -1,36 +1,50 @@
-# RPG Maker MZ support (foundation — milestone M6.1).
+# RPG Maker MZ support (milestone M6).
 #
 # MZ is the JavaScript maker family's newer member: like MV it is a *JavaScript*
 # application with a `data/*.json` database, and it runs on the same embedded
-# quickjs-ng host, host-global shims and IO/input/audio bridges that MV already
-# uses (see mruby-mvjs and docs/adr/0004-javascript-maker-mv-quickjs.md). Two
-# things set it apart:
+# quickjs-ng host, host-global shims and IO/input bridges that MV already uses
+# (see mruby-mvjs and docs/adr/0004-javascript-maker-mv-quickjs.md). Two things
+# set it apart:
 #
 #   1. Its engine scripts are `js/rmmz_*.js` (not MV's `js/rpg_*.js`), loaded in
 #      a slightly different order (pako/localforage/effekseer instead of MV's
 #      lz-string). Unlike MV — whose corescript is an official MIT project
 #      (rpgtkoolmv, redistributed by KADOKAWA) that `data/mv-sample` fetches —
 #      MZ has no equivalent official open-source release, so `data/mz-sample`
-#      commits only an authored minimal database and fetches the rmmz engine from
+#      commits only an authored database and art and fetches the rmmz engine from
 #      a community mirror at build time (`scripts/download-mz-corescript.bash`) —
 #      a CI-only test fixture, downloaded the same way the proprietary RPG2k/XP
 #      games are, never committed or redistributed.
 #   2. It ships **PIXI v5, which is WebGL-only** — there is no Canvas2D renderer
-#      to map onto the `Canvas2D -> Bitmap` bridge MV drives. Rendering therefore
-#      needs a WebGL-subset backend on LVGL, which is the bulk of milestone M6
-#      and is **not built yet**.
+#      to map onto the `Canvas2D -> Bitmap` bridge MV drives, so rendering goes
+#      through the native surfaceless-EGL GLES2 backend instead (`MV::GL` /
+#      `mruby-mvjs/src/mvwebgl.cxx`, milestone M6.3).
 #
-# This class carries the M6.1 foundation (project detection + canonical script
-# load order) and the M6.2 host reuse: when pointed at an MZ game it now drives
-# the shared quickjs host through the real `rmmz_*` engine as far as it goes
-# without a renderer — loading every script, installing the extra host globals
-# MZ needs, and running `SceneManager.run(Scene_Boot)` up to the point PIXI v5
-# demands WebGL — then reports that precise boundary and the pending backend
-# cleanly. Only the WebGL-subset renderer (M6.3) is still missing.
+# With that backend built, this class boots a real MZ game and plays it: it
+# loads the `rmmz_*` scripts on the shared host, installs the extra globals MZ
+# needs, runs `SceneManager.run(Scene_Boot)` and then advances the game by
+# pumping the host once per frame — MZ drives itself from PIXI's ticker, so a
+# pumped frame is what updates the scene, renders it into the WebGL canvas and
+# runs the asynchronous loads the boot waits on. The rendered frame is read back
+# out of the FBO and presented on an RGSS sprite, and RGSS input is fed into
+# rmmz's `Input`/`TouchInput`, so the title screen and the map are on-screen and
+# walkable. Where the backend is absent (Emscripten uses the browser's own
+# WebGL; header-less builds) it degrades to reporting how far the boot got.
 class MZ
   # RPG Maker MZ renders at 816x624 by default, same nominal canvas as MV.
   WIDTH = 816
   HEIGHT = 624
+
+  # How many frames #boot_probe pumps while waiting for `Scene_Boot` to finish
+  # loading and hand over to the title. Generous: the boot polls the database,
+  # the system images, the fonts and the storage layer, each of which resolves a
+  # frame or more after it is requested, and a headless run is slower than 60Hz.
+  BOOT_PROBE_FRAMES = 600
+
+  # Frames to wait for `Scene_Map` after requesting New Game before reporting a
+  # failure (see #maybe_move_test). The title's command window closing, its fade
+  # out and the map's own fade in all have to play out first.
+  MAP_PROBE_FRAMES = 300
 
   # The files that unambiguously mark a directory as an RPG Maker MZ project:
   # the core engine script and the system database. MV uses `js/rpg_core.js`
@@ -73,8 +87,16 @@ class MZ
   # references `HTMLVideoElement` and `HTMLImageElement` at module-load time
   # (its Graphics/Video setup) and the whole module fails to define if they are
   # undefined; MV's `rpg_*` never touch them, so the shared host does not
-  # provide them. Empty constructors are enough to get past module load — the
-  # host draws through RGSS::Bitmap, not the DOM.
+  # provide them. An empty constructor is enough for the video one — the host
+  # draws through RGSS::Bitmap, not the DOM.
+  #
+  # `HTMLImageElement` must be the host's own `Image` constructor, though, not a
+  # fresh empty one: PIXI v5 decides how to wrap a texture source with
+  # `source instanceof HTMLImageElement` (`ImageResource`), and when that is
+  # false it builds a *new* `Image` and assigns the object it was handed to its
+  # `src`. Every bitmap MZ loads would then be a broken texture. Aliasing the
+  # two makes `Bitmap._createBaseTexture(this._image)` take PIXI's image path,
+  # which uploads through the wrapper's `texImage2D` canvas/image handle.
   #
   # `indexedDB` is the one host global MZ's boot needs that MV's did not reach:
   # `SceneManager.checkBrowser` (run after `Utils.canUseWebGL`, which the WebGL
@@ -87,8 +109,8 @@ class MZ
     "(function(g){ " \
     "if (typeof g.HTMLVideoElement === 'undefined') " \
     "g.HTMLVideoElement = function(){}; " \
-    "if (typeof g.HTMLImageElement === 'undefined') " \
-    "g.HTMLImageElement = function(){}; " \
+    "g.HTMLImageElement = (typeof g.Image === 'function') ? g.Image : " \
+    "function(){}; " \
     "if (typeof g.indexedDB === 'undefined') " \
     "g.indexedDB = { open: function(){ return { onsuccess: null, " \
     "onerror: null, onupgradeneeded: null, result: null }; }, " \
@@ -136,9 +158,9 @@ class MZ
 
     # True where the WebGL-subset backend PIXI v5 needs (milestone M6.3) is
     # compiled in — the surfaceless-EGL GLES2 context (MV::GL). There MZ boots to
-    # Scene_Boot and presents frames on-screen (see #start / #main_loop); where
-    # it is absent (Emscripten uses the browser's own WebGL; header-less builds)
-    # MZ falls back to the boot probe that reports the pending state.
+    # the title, plays and presents frames on-screen (see #start / #main_loop);
+    # where it is absent (Emscripten uses the browser's own WebGL; header-less
+    # builds) MZ falls back to the boot probe that reports the pending state.
     def runtime_available?
       MV::GL.available?
     end
@@ -152,11 +174,10 @@ class MZ
   attr_reader :game_dir
 
   # Native entry point. Boot the real MZ engine on the shared host through the
-  # WebGL renderer and report how far it got. A `[MZ-BOOT]` marker on success
-  # (the reached scene) is what `scripts/mz_boot_check.rb` asserts in CI; a boot
-  # error is surfaced instead. Continuous play (input, per-frame present) is not
-  # wired yet, so the pending notice still follows. The rest of the binary — and
-  # the other makers — are unaffected either way.
+  # WebGL renderer, report how far it got and then run the game. A `[MZ-BOOT]`
+  # marker naming the reached scene is what `scripts/mz_boot_check.bash` asserts
+  # in CI; a boot error is surfaced instead. The rest of the binary — and the
+  # other makers — are unaffected either way.
   def start
     unless self.class.runtime_available?
       # No native WebGL backend (e.g. header-less builds): probe how far the
@@ -203,27 +224,49 @@ class MZ
 
     sync_input # push RGSS input into MZ's Input before the scene updates
     sync_touch # push RGSS mouse into MZ's TouchInput before the scene update
-    # Advance one MZ frame (SceneManager.update renders the scene through PIXI
-    # into the WebGL canvas), then blit that frame on-screen. Guard the update so
-    # a per-frame throw is logged, not fatal — one bad frame never aborts the
-    # loop, as in a browser.
-    MV::JS.eval(
-      "(function(){ if (typeof SceneManager !== 'undefined') { try { " \
-      "SceneManager.update(1); } catch(e){ if (typeof console !== " \
-      "'undefined' && console.error) console.error('[MZ] frame: ' + " \
-      "((e && (e.stack || e.message)) || e)); } } })();"
-    )
+    pump_frame # advance MZ one frame: its own rAF loop updates and renders
+    @scene = scene_name # read once a frame; the probes below all consult it
+    log_scene_transition # trace progress (Scene_Boot -> Scene_Title -> Map)
+    maybe_new_game # CI: auto-advance past the title to the first map
+    maybe_move_test # CI: hold a direction on the map and log that the player moved
     present
+    maybe_screenshot # capture the presented frame once, if requested (CI)
     RGSS::Input.update
     RGSS::Graphics.update
   end
 
   private
 
-  # Boot the engine once: run it to Scene_Boot (via #boot_probe), report the
-  # `[MZ-BOOT]` marker (or the boundary if it stopped early), and create the
-  # on-screen surface frames are presented onto. Sets @booted so the lazy boot
-  # in #main_loop runs only once.
+  # Advance the JavaScript host by one frame. This is the whole of MZ's update:
+  # `SceneManager.run` hands the loop to `Graphics.startGameLoop`, which starts
+  # PIXI's ticker, and the ticker re-arms itself through `requestAnimationFrame`.
+  # Pumping the host therefore fires the ticker (which calls `SceneManager.update`
+  # through `Graphics._onTick` *and* renders the scene into the WebGL canvas),
+  # runs due timers and drains the promise microtasks the engine's asynchronous
+  # loads (localforage saves/config, image decode callbacks) wait on.
+  #
+  # Calling `SceneManager.update` from Ruby instead — as this loop used to — runs
+  # the scene without ever rendering it (`Graphics._onTick` is what calls
+  # `_app.render()`) and leaves those callbacks queued forever, which is why the
+  # boot could not get past `Scene_Boot`: it polls `ImageManager`/`ConfigManager`
+  # readiness that only a pumped frame can deliver. Shared cadence with MV
+  # (MV#pump_frame): a fixed 1/60s step, so the JS clock matches the engine's.
+  def pump_frame
+    @clock = (@clock || 0.0) + 1000.0 / 60.0
+    MV::JS.pump(@clock)
+  rescue StandardError => e
+    # One bad frame is logged, not fatal — as in a browser, where an exception
+    # in a rAF callback does not stop the page. A failure that repeats every
+    # frame is reported once rather than per frame, so the log stays readable.
+    return if e.message == @last_frame_error
+    @last_frame_error = e.message
+    $stderr.puts "[MZ] frame error: #{e.message}"
+  end
+
+  # Boot the engine once: run it up to the game's first scene (via #boot_probe),
+  # report the `[MZ-BOOT]` marker (or the boundary if it stopped early), and
+  # create the on-screen surface frames are presented onto. Sets @booted so the
+  # lazy boot in #main_loop runs only once.
   def boot
     @booted = true
     boundary = boot_probe
@@ -233,6 +276,39 @@ class MZ
       $stderr.puts "[MZ-BOOT] booted to #{@boot_scene} through the WebGL renderer"
     end
     create_screen
+  end
+
+  # The running scene's class name, or "" before the first scene is created.
+  def scene_name
+    MV::JS.eval(
+      "(function(){ return (typeof SceneManager !== 'undefined' && " \
+      "SceneManager._scene && SceneManager._scene.constructor) ? " \
+      "SceneManager._scene.constructor.name : ''; })();"
+    )
+  rescue StandardError
+    ""
+  end
+
+  # Has the boot handed over from the loading scene to the game's first real
+  # scene? True once a scene exists and it is no longer `Scene_Boot`.
+  def boot_finished?
+    name = scene_name
+    !name.empty? && name != "Scene_Boot"
+  end
+
+  # The scene name sampled by the current frame (see #main_loop), so the probes
+  # below share one lookup instead of each evaluating JS again.
+  def current_scene
+    @scene || ""
+  end
+
+  # Log each scene change once, so a headless run shows how far the game got
+  # (Scene_Boot -> Scene_Title -> Scene_Map). Mirrors MV#log_scene_transition.
+  def log_scene_transition
+    name = current_scene
+    return if name.empty? || name == @last_scene
+    @last_scene = name
+    $stderr.puts "[MZ-SCENE] #{name}"
   end
 
   # Push the engine's held keys (RGSS::Input) into MZ's `Input._currentState`
@@ -263,6 +339,131 @@ class MZ
     )
   rescue StandardError => e
     $stderr.puts "[MZ] touch sync error: #{e.message}"
+  end
+
+  # Whether --mz_new_game was requested (a launcher constant set by main.cxx).
+  # Read defensively: the constant is absent under the mruby test harness, and
+  # mruby treats `defined?` as a method call, so it is read through a rescue.
+  def new_game_requested?
+    (begin
+      MZ_NEW_GAME
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # Whether --mz_move_test was requested (a launcher constant set by main.cxx).
+  # Implies New Game, since the probe needs the map.
+  def move_test_requested?
+    (begin
+      MZ_MOVE_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_new_game is set (CI) — or the movement probe is requested, which
+  # needs the map first — pick "New Game" once the title is up, so the game
+  # advances to its start map without any input and a headless run exercises the
+  # in-game render path instead of only the title. One-shot; a no-op during
+  # normal play (flags unset). Mirrors MV#maybe_new_game.
+  def maybe_new_game
+    return if @new_game_done
+    return unless new_game_requested? || move_test_requested?
+    return unless current_scene == "Scene_Title"
+
+    @new_game_done = true
+    MV::JS.eval(
+      "(function(){ if (SceneManager._scene && " \
+      "SceneManager._scene.commandNewGame) " \
+      "SceneManager._scene.commandNewGame(); })();"
+    )
+    $stderr.puts "[MZ] auto New Game"
+  rescue StandardError => e
+    $stderr.puts "[MZ] new game error: #{e.message}"
+  end
+
+  # The player's current map tile as "x,y", or "" before the game is up.
+  def player_tile
+    MV::JS.eval(
+      "(function(){ return (typeof $gamePlayer !== 'undefined' && $gamePlayer) " \
+      "? ($gamePlayer.x + ',' + $gamePlayer.y) : ''; })();"
+    )
+  rescue StandardError
+    ""
+  end
+
+  # When --mz_move_test is set (CI), once on the map hold a direction — cycling
+  # so some open direction is found — through RGSS::Input for MV::MOVE_PROBE_FRAMES
+  # frames, then log the player's start/end tile and whether it ever moved. This
+  # drives the whole chain (RGSS::Input -> #sync_input -> rmmz Input -> Scene_Map
+  # -> Game_Player -> Game_Map passability -> position), so a headless run proves
+  # input actually walks the player rather than only that a map renders. The keys
+  # are read by the next frame's #sync_input. One-shot; a no-op during normal
+  # play. Mirrors MV#maybe_move_test, and reuses MV's probe cadence and direction
+  # cycle so both runtimes are exercised the same way.
+  def maybe_move_test
+    return if @move_test_done
+    return unless move_test_requested?
+
+    unless current_scene == "Scene_Map"
+      # Still on the way there (title fade, map load). Give up with a failure
+      # line if the map never arrives, rather than probing forever.
+      @map_wait = (@map_wait || 0) + 1
+      return if @map_wait < MAP_PROBE_FRAMES
+
+      @move_test_done = true
+      $stderr.puts "[MZ-MOVE] never reached the map (scene #{current_scene})"
+      return
+    end
+
+    @move_frame ||= 0
+    if @move_frame.zero?
+      @move_start = player_tile
+      $stderr.puts "[MZ-MAP] reached the map at #{@move_start}"
+      $stderr.puts "[MZ-MOVE] start #{@move_start}"
+    end
+    cur = player_tile
+    @move_seen = true if !cur.empty? && cur != @move_start
+
+    dirs = [RGSS::Input::UP, RGSS::Input::DOWN, RGSS::Input::LEFT,
+            RGSS::Input::RIGHT]
+    dirs.each { |k| RGSS::Input.release(k) }
+    @move_frame += 1
+    if @move_frame < MV::MOVE_PROBE_FRAMES
+      RGSS::Input.press(MV.move_probe_dir(@move_frame))
+      return
+    end
+
+    @move_test_done = true
+    $stderr.puts "[MZ-MOVE] end #{player_tile} moved=#{@move_seen ? true : false}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] move test error: #{e.message}"
+  end
+
+  # If a screenshot path was requested (`--mz_screenshot`), write the presented
+  # WebGL frame to it once, a couple of seconds in — enough for the boot to
+  # reach a scene and its images to load and draw. Used to capture the visual
+  # output in CI; a no-op during normal play (no path configured).
+  def maybe_screenshot
+    return if @shot_taken
+
+    path = begin
+      MZ_SCREENSHOT
+    rescue StandardError
+      ""
+    end
+    return if path.nil? || path.empty?
+
+    @frames = (@frames || 0) + 1
+    return if @frames < 120
+
+    @shot_taken = true
+    handle = mz_gl_handle
+    ok = handle && handle > 0 && MV::JS.screenshot_gl(path, handle)
+    $stderr.puts "[MZ] screenshot #{ok ? "saved" : "failed"}: #{path}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] screenshot error: #{e.message}"
   end
 
   # The on-screen surface MZ's WebGL frame is presented onto: one full-screen
@@ -319,15 +520,16 @@ class MZ
   # the WebGL backend built (M6.3), `SceneManager.run(Scene_Boot)` gets past the
   # `Utils.canUseWebGL()` guard that used to be the wall (M6.2): `Graphics`
   # creates the PIXI renderer on the native surfaceless-EGL GLES2 context and
-  # the scene runs. A handful of frames are then driven so `Scene_Boot` actually
-  # creates and renders — the M6.3c "renders Scene_Boot" goal — rather than only
-  # constructing the SceneManager.
+  # the scene runs. Frames are then pumped until `Scene_Boot` finishes loading
+  # and hands over to `Scene_Title`, so the reported boot result is the game's
+  # first real scene rather than the loading screen.
   #
   # Records the reached scene name in `@boot_scene`, and returns the caught boot
   # error (empty string on success, or when the engine scripts are absent so
   # there is nothing to run). The engine is fetched into `data/mz-sample` by
   # `scripts/download-mz-corescript.bash`, so — unlike under M6.2 — this now runs
-  # in CI (`scripts/mz_boot_check.rb`), not only against a user-supplied project.
+  # in CI (`scripts/mz_boot_check.bash`), not only against a user-supplied
+  # project.
   def boot_probe
     @boot_scene = ""
     return "" unless self.class.project?(@game_dir)
@@ -349,31 +551,45 @@ class MZ
       end
     end
 
-    # Replace catchException so a boot error is captured (not swallowed), run the
-    # boot, then drive a few frames so Scene_Boot creates and renders through the
-    # WebGL renderer rather than only instantiating the SceneManager.
+    # Replace catchException so a boot error is captured (not swallowed) and run
+    # the boot. `SceneManager.run` starts PIXI's ticker and returns; the scene is
+    # then driven by pumping the host, one frame per pump (see #pump_frame).
     MV::JS.eval(
       "(function(){ if (typeof SceneManager === 'undefined' || " \
       "typeof Scene_Boot === 'undefined') return; " \
       "SceneManager.__mzErr = null; " \
       "SceneManager.catchException = function(e){ SceneManager.__mzErr = " \
       "(e && (e.stack || e.message)) || String(e); }; " \
-      "try { SceneManager.run(Scene_Boot); " \
-      "for (var i = 0; i < 60 && !SceneManager.__mzErr; i++) { " \
-      "try { SceneManager.update(1); } catch(e){ SceneManager.__mzErr = " \
-      "(e && (e.stack || e.message)) || String(e); break; } } " \
-      "} catch(e){ SceneManager.__mzErr = " \
+      "try { SceneManager.run(Scene_Boot); } catch(e){ SceneManager.__mzErr = " \
       "(e && (e.stack || e.message)) || String(e); } })();"
     )
-    @boot_scene = MV::JS.eval(
-      "(function(){ return (typeof SceneManager !== 'undefined' && " \
-      "SceneManager._scene && SceneManager._scene.constructor) ? " \
-      "SceneManager._scene.constructor.name : ''; })();"
-    )
-    MV::JS.eval(
+
+    # Drive frames until the boot scene hands over to the next one (normally
+    # Scene_Title). Scene_Boot is a *loading* scene: it polls its database,
+    # image, font and storage loads across frames and only then goes to the
+    # title, so stopping after a fixed handful of frames would report the
+    # loading screen as the boot result. Bounded, and it stops early on a caught
+    # boot error, so an engine that never becomes ready still returns and its
+    # boundary is reported.
+    BOOT_PROBE_FRAMES.times do
+      break if boot_finished? || !boot_error.empty?
+      pump_frame
+    end
+
+    @boot_scene = scene_name
+    boot_error
+  end
+
+  # The boot error `SceneManager.catchException` captured (see #boot_probe), or
+  # "" while the boot is healthy.
+  def boot_error
+    err = MV::JS.eval(
       "(function(){ return (typeof SceneManager !== 'undefined' && " \
       "SceneManager.__mzErr) ? SceneManager.__mzErr : ''; })();"
     )
+    err.is_a?(String) ? err : ""
+  rescue StandardError => e
+    "MV::JS eval failed: #{e.message}"
   end
 
   attr_reader :boot_scene
@@ -384,11 +600,11 @@ class MZ
     return if @warned_runtime_pending
     @warned_runtime_pending = true
     $stderr.puts "[MZ] RPG Maker MZ support is under construction: where the " \
-                 "WebGL backend is available the engine boots to Scene_Boot, " \
-                 "presents frames on-screen and takes input (M6.3), but this " \
-                 "build/run has no usable WebGL context (or the boot did not " \
-                 "reach a scene), so there is nothing to present. The " \
-                 "engine/host/IO/input/audio layers are shared with MV. See " \
-                 "docs/adr/0004-javascript-maker-mv-quickjs.md (M6)."
+                 "WebGL backend is available the engine boots to the title, " \
+                 "walks the map, presents frames on-screen and takes input " \
+                 "(M6.3), but this build/run has no usable WebGL context (or " \
+                 "the boot did not reach a scene), so there is nothing to " \
+                 "present. The engine/host/IO/input layers are shared with MV. " \
+                 "See docs/adr/0004-javascript-maker-mv-quickjs.md (M6)."
   end
 end

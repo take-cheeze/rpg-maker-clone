@@ -998,6 +998,28 @@ const char* kCanvasPreamble = R"MVJS(
     g.__mv_canvasFillRect(this.__h, r[0], r[1], r[2], r[3], c[0], c[1], c[2], a,
                           mode);
   };
+  // Outline a rect in strokeStyle, as four `lineWidth`-thick bars through the
+  // same native fill. MV never calls this, but MZ does on a hot path:
+  // Window_Selectable.drawBackgroundRect strokes the frame of *every* item in
+  // *every* selectable window (via Bitmap.strokeRect), so the title command
+  // window throws "TypeError: not a function" on the first drawn frame without
+  // it — which is exactly what stopped MZ's boot at Scene_Title (see ADR 0004
+  // M6.3c). Canvas centres a stroke on the path, so each bar straddles the edge
+  // by half the line width.
+  Ctx.prototype.strokeRect = function (x, y, w, h) {
+    var lw = this.lineWidth > 0 ? this.lineWidth : 1;
+    var half = lw / 2;
+    // Draw through fillRect so the transform, alpha, composite mode and colour
+    // parsing all behave exactly as they do for a filled rect. fillStyle is
+    // swapped in and restored rather than saved on the stack, which callers own.
+    var fs = this.fillStyle;
+    this.fillStyle = this.strokeStyle;
+    this.fillRect(x - half, y - half, w + lw, lw);          // top
+    this.fillRect(x - half, y + h - half, w + lw, lw);      // bottom
+    this.fillRect(x - half, y + half, lw, h - lw);          // left
+    this.fillRect(x + w - half, y + half, lw, h - lw);      // right
+    this.fillStyle = fs;
+  };
   // Fill a rect with a gradient fillStyle. The rect and the gradient axis are
   // both mapped through the current transform to device space, then the native
   // rasteriser projects each pixel onto the axis. A radial gradient (no true

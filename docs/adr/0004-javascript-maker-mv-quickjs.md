@@ -198,9 +198,56 @@ JavaScript loads and interprets the JSON.
       in CI. The gap set was found by booting PIXI v5.2.4 + rmmz under Node
       against the wrapper's method surface — the single wrapper fix it required
       was the enum statics (above); VAO/instancing are feature-detected and fall
-      back cleanly. Remaining for full play: per-frame on-screen present + FBO
-      resize (input/present, not just the probe), verified against a real MZ
-      project.
+      back cleanly.
+    - **M6.3c (cont.) — title screen and a walkable map.** Reaching a *playable*
+      scene took three fixes, again found by driving PIXI v5.2.4 + rmmz under
+      Node with the host's own semantics:
+      1. **The frame is the pump, not `SceneManager.update`.** MZ hands its loop
+         to PIXI's ticker (`SceneManager.run` → `Graphics.startGameLoop`), and
+         only `Graphics._onTick` — reached through `requestAnimationFrame` — both
+         updates the scene and calls `_app.render()`. `MZ#main_loop` used to call
+         `SceneManager.update` itself, which rendered nothing and left every
+         promise microtask and rAF callback queued, so `Scene_Boot` (a *loading*
+         scene polling `ImageManager`/`FontManager`/`ConfigManager`/
+         `StorageManager` across frames) could never become ready. `MZ#pump_frame`
+         now advances the host once per frame, exactly as the MV path does, and
+         `#boot_probe` pumps until the boot scene hands over.
+      2. **`HTMLImageElement` must be the host's `Image`.** PIXI v5 decides how to
+         wrap a texture source with `source instanceof HTMLImageElement`; a
+         separate empty shim made that false, so PIXI built a fresh image and
+         assigned our image *object* to its `src` — every bitmap a broken
+         texture. The globals now alias the two, which routes uploads through the
+         wrapper's `texImage2D(..., src.__h)` canvas/image-handle path.
+      3. **The Canvas2D context needed `strokeRect`.** MV never calls it; MZ
+         strokes an item-background frame for every row of every selectable
+         window (`Window_Selectable.drawBackgroundRect` →
+         `Bitmap.prototype.strokeRect`), so the title's command window threw
+         `TypeError: not a function` at `rmmz_core.js:1587` on the first drawn
+         frame. `mvcanvas.cxx` implements it as four `lineWidth`-thick bars
+         through the existing native fill, so the transform, alpha, composite
+         mode and colour parsing are shared with `fillRect`. Worth noting *how*
+         this was caught: a permissive JS harness stubs every context method and
+         therefore cannot see a gap in the native surface — it took the real
+         engine (the `[MZ-DIAG]` readiness dump on PR #333's CI run, which showed
+         `Scene_Title` with every gate true and the boot dying inside its
+         drawing). The dev harness is only trustworthy for this class of bug if
+         its context exposes exactly `Ctx.prototype`'s methods and no more.
+      4. **The bed must carry MZ's required art and flags.** `Sprite_Button`
+         *throws* on a `ButtonSet.png` narrower than 11 × 48 px (MZ's touch UI
+         builds those buttons in every scrollable window), and a tileset whose
+         `flags[0]` lacks `0x10` ("no effect on passage") makes every cell
+         passable, because `Game_Map.checkPassage` lets the first non-"no effect"
+         tile from the top layer down decide and the empty upper layers answer
+         first. `scripts/gen-mz-sample.py` authors both (plus a windowskin, icon
+         sheet, tileset, party sprite, a walled room and real terms), and
+         `scripts/mz_testbed_check.rb` is the blocking CRuby guard for them.
+      With those, `--mz_new_game`/`--mz_move_test` boot the bed to `Scene_Title`,
+      start a New Game and walk the player on the start map headlessly in CI,
+      and `--mz_screenshot` captures the frame (`MV::JS.screenshot_gl`, the FBO
+      counterpart of MV's canvas capture). Remaining: FBO resize on a PIXI canvas
+      resize, an MZ audio bridge (MV's `AudioManager` → `RGSS::Audio` route is
+      not wired for MZ yet) and `.woff` font loading, all verified against a real
+      MZ project.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

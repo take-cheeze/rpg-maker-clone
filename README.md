@@ -178,6 +178,39 @@
   editors are commercial and no open-source test bed exists, so that check is
   how the schema gets validated against genuine editor output
 
+### RPG Maker MV / MZ (the JavaScript makers)
+
+- An **MV** (`js/rpg_core.js`) or **MZ** (`js/rmmz_core.js`) project runs its
+  *own* JavaScript: rather than reimplement the engine, the binary embeds
+  [quickjs-ng](https://github.com/quickjs-ng/quickjs) and provides the browser
+  host the game expects — `window`/`document`/`XMLHttpRequest`/`Image`,
+  `requestAnimationFrame` and timers, `localStorage` and NW.js `require('fs')`
+  saves — so the corescript, PIXI and any plugins execute unmodified. See
+  [`docs/adr/0004-javascript-maker-mv-quickjs.md`](docs/adr/0004-javascript-maker-mv-quickjs.md)
+- **MV** draws through PIXI's Canvas2D renderer, mapped onto native RGBA
+  surfaces (`fillRect`/`drawImage`/`getImageData`, the full 2D transform, PNG
+  decoding and stb_truetype text), presented on-screen each frame. It boots to
+  the title, starts a New Game, walks the map, opens the menu, shows messages,
+  reaches `Scene_Battle`, and round-trips a save — all exercised headlessly in CI
+  against a real downloaded MV game
+- **MZ** ships PIXI v5, which is **WebGL-only**, so it renders through a native
+  **surfaceless-EGL GLES2** backend instead: `canvas.getContext("webgl")` returns
+  a real context (`mruby-mvjs/src/mvwebgl.cxx`), PIXI renders the scene into its
+  FBO, and the frame is read back onto the screen sprite. MZ now **boots to the
+  title screen and walks its start map** — the game is advanced by pumping the
+  host once per frame, which is what drives rmmz's own `requestAnimationFrame`
+  loop (PIXI's ticker updates *and* renders the scene) and delivers the
+  asynchronous loads `Scene_Boot` waits on. Keyboard and pointer input are fed
+  into rmmz's `Input`/`TouchInput`
+- The MZ engine is not redistributable (unlike MV's MIT corescript), so
+  `data/mz-sample` commits only an authored database and art —
+  `scripts/gen-mz-sample.py` writes both — and
+  `scripts/download-mz-corescript.bash` fetches the engine at build time.
+  `scripts/mz_boot_check.bash` boots that bed headlessly and asserts the game
+  reaches the map and that a held key moves the player; `ruby
+  scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
+  boot-critical data and system art without a build
+
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
   **sixel** protocol or **iTerm2's inline-image** protocol
