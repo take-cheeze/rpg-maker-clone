@@ -2738,11 +2738,19 @@ module Game
 
     # `ctx` is the battle context the interpreter also runs against; it answers
     # `turn`, `enemy(index)`, `ally_by_actor_id(id)`, `enemy_turn(index)`,
-    # `actor_turn(id)` and `actor_command(id)`. A context that cannot answer a
-    # tested sub-condition fails the page.
+    # `actor_turn(id)`, `fatigue` and `actor_command(id)`. A context that cannot
+    # answer a tested sub-condition fails the page.
     def self.active?(cond, switches, variables, ctx)
-      return true if cond.nil?
+      # A page whose condition box is entirely unticked never runs — RPG_RT
+      # treats "no trigger" as "never", not as "always" (EasyRPG's
+      # AreConditionsMet opens with exactly this test). Worth stating because the
+      # opposite reading is the natural one: every other page kind in RPG2000
+      # runs when its conditions are vacuously satisfied. Both test beds do have
+      # such pages (446 of Nepheshel's 3265, all 88 of mtf-meido-action's), and
+      # every one of them is empty, so the rule costs those games nothing.
+      return false if cond.nil?
       flags = cond.flags || 0
+      return false if flags == 0
       return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
       return false if (flags & SWITCH_B) != 0 && !switches[cond.switch_b_id]
       if (flags & VARIABLE) != 0
@@ -2771,9 +2779,11 @@ module Game
       if (flags & COMMAND_ACTOR) != 0
         return false unless ctx.actor_command(cond.command_actor_id) == cond.command_id
       end
-      # The party-fatigue condition is an RPG2003 mechanic the runtime does not
-      # model; a page gated on it never fires rather than firing unchecked.
-      return false if (flags & FATIGUE) != 0
+      if (flags & FATIGUE) != 0
+        f = ctx.fatigue
+        return false if f.nil?
+        return false if f < cond.fatigue_min || f > cond.fatigue_max
+      end
       true
     end
 
@@ -3385,8 +3395,18 @@ module Game
                            :action, :defending, :mp, :max_mp, :spi, :command,
                            :actor, :states, :state_turns, :crit_denom,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
-                           :hit_rate, :state_ranks, :hidden) do
+                           :hit_rate, :state_ranks, :hidden, :battle_turn) do
       def dead?; hp <= 0; end
+
+      # RPG2003 counts turns per battler as well as per battle: this is how many
+      # turns *this* battler has taken, which the troop pages' turn_enemy /
+      # turn_actor conditions are written against. Mirrors EasyRPG's
+      # Game_Battler::GetBattleTurn, which Scene_Battle's NextTurn(battler)
+      # increments as that battler's own turn begins (and ResetBattle zeroes).
+      # Struct members start nil, so the reader normalises rather than every
+      # construction site having to pass 0.
+      def turns_taken; battle_turn || 0; end
+      def next_battle_turn; self.battle_turn = turns_taken + 1; end
       # A troop member the editor placed but flagged invisible has not entered
       # the fight yet: it does not act, cannot be targeted and does not keep the
       # battle going. Show Hidden Monster (13150) clears the flag and brings it
@@ -3541,12 +3561,49 @@ module Game
       @allies.find { |a| a.actor && a.actor.respond_to?(:id) && a.actor.id == id }
     end
 
-    # RPG2000 also counts turns *per battler* and remembers each actor's chosen
-    # battle command; neither is modelled here, so the page conditions that read
-    # them report "unknown" (nil) and Game::BattlePage fails that page rather
-    # than firing it on an unchecked condition.
-    def enemy_turn(_index); nil; end
-    def actor_turn(_id); nil; end
+    # Turns taken by troop member `index` / by the party member whose database
+    # actor id is `id` — the RPG2003 per-battler turn counters the pages'
+    # turn_enemy / turn_actor conditions test (Combatant#turns_taken). nil for a
+    # battler that is not in this fight, which fails the page rather than
+    # answering a condition about someone who is not here.
+    def enemy_turn(index)
+      foe = enemy(index)
+      foe && foe.turns_taken
+    end
+
+    def actor_turn(id)
+      ally = ally_by_actor_id(id)
+      ally && ally.turns_taken
+    end
+
+    # The party's exhaustion, 0 (untouched) to 100 (wiped out) — the RPG2003
+    # `fatigue` page condition. Ported from EasyRPG's Game_Party::GetFatigue:
+    # HP is two thirds of the weight and SP one third, so a party at full HP with
+    # no SP left still only reaches 33. Written in integer arithmetic (mruby has
+    # no rounding helper here) with the same round-half-up the C++ does; an
+    # SP-less party divides by 1 rather than 0, exactly as the original notes.
+    def fatigue
+      return 0 if @allies.empty?
+      hp = 0; total_hp = 0; sp = 0; total_sp = 0
+      @allies.each do |a|
+        hp += a.hp
+        total_hp += a.max_hp || 0
+        sp += a.mp || 0
+        total_sp += a.max_mp || 0
+      end
+      return 0 if total_hp <= 0
+      total_sp = 1 if total_sp <= 0
+      num = 100 * (2 * hp * total_sp + sp * total_hp)
+      den = 3 * total_hp * total_sp
+      100 - (2 * num + den) / (2 * den)
+    end
+
+    # RPG2000 also remembers each actor's chosen battle command, which the
+    # `command_actor` page condition tests. RPG_RT only answers it for the
+    # battler whose action triggered the check (EasyRPG's AreConditionsMet bails
+    # on a null `source`), and this runtime evaluates pages once per turn with no
+    # acting battler, so the condition reports "unknown" (nil) and
+    # Game::BattlePage fails that page rather than firing it unchecked.
     def actor_command(_id); nil; end
 
     # Force Flee (1006), target 0: let the party leave whenever it next tries.
@@ -3608,6 +3665,10 @@ module Game
         return nil if @queue.empty? # hit MAX_ROUNDS
         b = @queue.shift
         next if b.dead?
+        # The battler's own turn starts here, whether or not it ends up able to
+        # act — RPG_RT bumps the per-battler counter as the turn begins, not
+        # once the action lands (EasyRPG's Scene_Battle::NextTurn).
+        b.next_battle_turn
         can_act = apply_turn_states(b)
         next if b.dead? || !can_act
         entry = record_action(strike(b))

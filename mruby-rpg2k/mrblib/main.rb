@@ -4127,7 +4127,13 @@ class RPG2k
         end
       end
 
-      def render
+      # The view's top-left corner in map pixels — where the camera is looking
+      # this frame. Extracted from #render so the Control Variables "screen
+      # coordinate" operand can ask for it too; it is a pure function of the
+      # hero position, the pan lock/offset and the shake, apart from `@locked_cam`
+      # being captured the first frame the camera locks (which is idempotent, so
+      # an extra caller cannot move the view).
+      def camera_position
         px, py = player_pixel
         screen = @state.screen
         hero_cx = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
@@ -4147,8 +4153,35 @@ class RPG2k
         # Screen shake slides the whole view horizontally (the player moves with
         # the map, so the entire screen shakes); the map edge may show a sliver
         # of void during the shake/pan, which is fine.
-        cam_x = base_x + ox - screen.shake_offset
-        cam_y = base_y + oy
+        [base_x + ox - screen.shake_offset, base_y + oy]
+      end
+
+      # Where a character sits on screen, for the Control Variables "character"
+      # operand's screen-coordinate selectors. `ref` is the operand's reference:
+      # 10001 the hero, a positive id a map event. nil when it names something
+      # this scene cannot place.
+      #
+      # RPG_RT measures X from the tile's centre and Y from its *bottom* — the
+      # asymmetry is real (EasyRPG's GetScreenX subtracts half a tile after
+      # adding a whole one, GetScreenY only adds the whole one), so it is
+      # reproduced rather than tidied up.
+      def character_screen_position(ref)
+        pixel =
+          if ref == 10001
+            player_pixel
+          else
+            e = @events.find { |ev| ev[:id] == ref }
+            e && event_pixel(e)
+          end
+        return nil unless pixel
+        cam_x, cam_y = camera_position
+        { x: pixel[0] - cam_x + TILE / 2, y: pixel[1] - cam_y + TILE }
+      end
+      public :camera_position, :character_screen_position
+
+      def render
+        px, py = player_pixel
+        cam_x, cam_y = camera_position
 
         draw_parallax cam_x, cam_y
         draw_layers cam_x, cam_y
