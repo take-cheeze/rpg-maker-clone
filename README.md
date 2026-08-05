@@ -60,7 +60,10 @@
   player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
-  auto-start and parallel common events run too
+  auto-start and parallel common events run too. Pages are re-selected **while
+  the map runs**, so setting the switch an event's page 2 waits on turns it into
+  that page there and then — keeping where it stands — rather than only on the
+  next visit to the map
 - A command that names **"this event"** rather than an event id resolves to the
   event running it, on both sides: the scene already steered Move Event and
   friends that way, and the interpreter now answers the reads too — the

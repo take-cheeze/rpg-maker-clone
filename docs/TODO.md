@@ -184,7 +184,22 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
-  (`Game::EventPage`), and all five start triggers now run: **action button**
+  (`Game::EventPage`) and **re-evaluated while the map runs**, not just when it
+  loads. They were selected once in `build_events`, so an event kept whichever
+  page it started the visit with however the state moved — talk to an NPC, set
+  the switch meant to turn it into its page 2, and nothing happened until the
+  party left and came back. `Scene::Map#refresh_event_pages` re-selects whenever
+  anything a condition reads has changed, carrying each event's position and
+  facing across (RPG_RT changes an event's page, not where it stands) and
+  rebuilding the parallel processes, since a page change can add or remove one;
+  an erased event stays erased for the visit. RPG_RT flags this per command
+  (`Game_Map::SetNeedRefresh` from Control Switches / Variables, Change Items,
+  Change Party Member) — this build instead gives `Game::Switches`,
+  `Game::Variables` and `Game::Party` revision counters and watches those, which
+  covers every writer including the ones that are not event commands, like the
+  item menu. Writing a value already held does not count, so a parallel process
+  setting the same flag every frame costs a sweep rather than a rebuild.
+  All five start triggers run: **action button**
   (0), **player touch** (1, walking into the event), **event touch** (2, the
   event walking into the player), **auto-start** (3) and **parallel** (4, a
   background interpreter per event, driven by `Scene::Map#step_parallels`). A
