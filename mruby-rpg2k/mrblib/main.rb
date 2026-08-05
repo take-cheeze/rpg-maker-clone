@@ -344,6 +344,40 @@ class RPG2k
         sx, sy = Game::MessagePalette.cell_origin(idx)
         bmp.blend_text x, y, w, h, text, skin, sx, sy, cell, cell, align
       end
+
+      # The condition a battler carrying `states` shows, as [text, palette colour
+      # index]: the significant state's name in its own colour, or the database's
+      # "normal" term when there is none. A state the database does not name
+      # falls back to its id, so an unnamed one still reads as *something* rather
+      # than silently as normal.
+      #
+      # The single place the state table's display side is read, so the battle
+      # status panel (which lays its own columns out and needs the pieces) and
+      # the field windows (which draw straight) cannot drift apart.
+      def state_display(states)
+        table = db.respond_to?(:situation) ? db.situation : nil
+        id = Game::States.significant(states, table)
+        return [normal_status_term, 0] unless id
+        [Game::States.name(id, table) || "state #{id}",
+         Game::States.color(id, table)]
+      end
+
+      # Draw an actor's condition, as RPG_RT does in every field window that
+      # shows one — the menu party list, the item / skill target list and the
+      # status screen (EasyRPG's Window_Base#DrawActorState).
+      def draw_actor_state(bmp, actor, x, y, w, h, skin, align = 0)
+        text, color = state_display(actor.states)
+        draw_system_text bmp, x, y, w, h, text, skin, color, align
+      end
+
+      # The database's word for "no condition" (RPG_RT shows it rather than
+      # leaving the column blank), or a plain English stand-in for a database
+      # that leaves the term unset.
+      def normal_status_term
+        t = db.respond_to?(:term) ? db.term : nil
+        s = t && t.respond_to?(:normal_status) ? t.normal_status : nil
+        s.nil? || s.to_s.empty? ? 'Normal' : s
+      end
     end
 
     # Adapter that exposes the running map to the movement engine
@@ -3328,6 +3362,12 @@ class RPG2k
       # Apply the requests a battle page queued: revealed troop members get the
       # sprite they never had, and a Change Battle Background rebuilds the
       # backdrop.
+      #
+      # The status panel is rebuilt unconditionally afterwards. A battle page's
+      # Change Monster HP / MP / Condition commands write straight to the live
+      # combatants rather than queueing a request, so nothing here would have
+      # told the panel it is stale — a page that poisoned the boss changed the
+      # fight but not the screen until the next action happened to redraw it.
       def apply_battle_event_requests(it)
         it.take_revealed_monsters.each { |i| reveal_battle_monster(i) }
         fled = it.take_fled_monsters
@@ -3335,6 +3375,7 @@ class RPG2k
         play_escape_se unless fled.empty?
         name = it.take_battle_background
         rebuild_battle_back(name) unless name.nil?
+        refresh_battle_status
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle event request failed: #{e.message}"
         nil
@@ -3452,7 +3493,9 @@ class RPG2k
       end
 
       def log_round(entries)
-        entries.each { |e| $stderr.puts "[RPG2k battle] #{battle_action_line(e)}" }
+        entries.each do |e|
+          battle_action_lines(e).each { |l| $stderr.puts "[RPG2k battle] #{l}" }
+        end
       end
 
       # A one-line description of a battle log entry, for the on-screen banner and
@@ -3487,9 +3530,15 @@ class RPG2k
           line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
           line += ' (critical!)' if e[:critical]
           line += ' (charged)' if e[:charged]
-          line += ' — defeated!' if e[:defeated]
           line
         end
+      end
+
+      # Everything the action announces: what it did, then the conditions it
+      # changed. `log_round` traces all of it and `show_battle_action` banners
+      # all of it, so the console and the screen never disagree.
+      def battle_action_lines(entry)
+        [battle_action_line(entry)] + battle_state_lines(entry)
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained
@@ -3516,16 +3565,44 @@ class RPG2k
 
       BATTLE_LINE_H = 14
 
-      # Rebuild the status panel near the top: the enemy troop (marked down when
-      # defeated), then each party member with their HP and SP.
+      # Column origins within the status panel's contents, in the order RPG_RT's
+      # battle status window uses them: who, what condition they are in, then the
+      # gauges. The condition column is why this window is laid out in columns at
+      # all — a state is drawn in its *own* palette colour, which a single
+      # `draw_text` of a whole line cannot do.
+      STATUS_NAME_X  = 0
+      STATUS_STATE_X = 84
+      STATUS_HP_X    = 156
+      STATUS_MP_X    = 220
+
+      # Rebuild the status panel near the top: the enemy troop, then each party
+      # member with their HP and SP. Every battler also shows the one condition
+      # RPG_RT shows — the significant state, or the database's "normal" term
+      # when there is none — so a status inflicted by a skill or by a battle
+      # page's Change Monster Condition is visible rather than only simulated.
       def refresh_battle_status
         @battle_ui[:status_win].dispose if @battle_ui[:status_win]
-        lines = @battle_ui[:foes].map { |e| e.dead? ? "#{e.name} (down)" : e.name }
-        lines += @battle_ui[:allies].map do |a|
-          hp = a.hp < 0 ? 0 : a.hp
-          "#{a.name}  HP #{hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
-        end
-        @battle_ui[:status_win] = battle_text_window(lines, 6, 300)
+        rows = @battle_ui[:foes].map { |e| battle_status_row(e, false) }
+        rows += @battle_ui[:allies].map { |a| battle_status_row(a, true) }
+        @battle_ui[:status_win] = battle_status_window(rows, 6, 300)
+      end
+
+      # One battler's row as [text, x, colour index] segments. Enemies have no
+      # gauges on an RPG2000 battle screen, so they stop after their condition.
+      def battle_status_row(b, ally)
+        state = battle_state_segment(b)
+        row = [[b.name, STATUS_NAME_X, 0], state]
+        return row unless ally
+        hp = b.hp < 0 ? 0 : b.hp
+        row + [["HP #{hp}/#{b.max_hp}", STATUS_HP_X, 0],
+               ["MP #{b.mp}/#{b.max_mp}", STATUS_MP_X, 0]]
+      end
+
+      # The condition column, as a status-panel segment: the same reading the
+      # field windows draw (Scene::Base#state_display), placed in its column.
+      def battle_state_segment(b)
+        text, color = state_display(b.states)
+        [text, STATUS_STATE_X, color]
       end
 
       # The current actor's command menu — their name as a header, then Attack /
@@ -3657,8 +3734,50 @@ class RPG2k
       # banner and dropped when the round settles.
       def show_battle_action(entry)
         @battle_ui[:action_win].dispose if @battle_ui[:action_win]
-        y = SCREEN_H - BATTLE_LINE_H - Window::BORDER * 2 - 6
-        @battle_ui[:action_win] = battle_text_window([battle_action_line(entry)], y, 340)
+        lines = battle_action_lines(entry)
+        y = SCREEN_H - lines.length * BATTLE_LINE_H - Window::BORDER * 2 - 6
+        @battle_ui[:action_win] = battle_text_window(lines, y, 340)
+      end
+
+      # The conditions the action just landed or lifted, one sentence each under
+      # the action's own line — RPG_RT announces every one of them, and until now
+      # a skill that poisoned its target said only how much damage it did.
+      #
+      # The sentences come from the state row itself (`message_actor` /
+      # `message_enemy` for one landing, `message_recovery` for one lifting),
+      # which is where the game's own wording lives. An English-release database
+      # leaves them blank, so a plain composition stands in.
+      def battle_state_lines(entry)
+        table = db.respond_to?(:situation) ? db.situation : nil
+        name = entry[:target].to_s
+        ally = entry[:target_ally] ? true : false
+        lines = []
+        (entry[:inflicted] || []).each do |id|
+          lines << (Game::States.inflict_message(id, table, name, ally) ||
+                    "#{name} is #{state_label(id, table)}")
+        end
+        # `cured` is a medicine or a cure skill lifting a state; `woke` is a blow
+        # shaking one off (a state's `release_by_attack`). Both are the state
+        # lifting, which has one wording whichever side it happened to.
+        ((entry[:cured] || []) + (entry[:woke] || [])).each do |id|
+          lines << (Game::States.recovery_message(id, table, name) ||
+                    "#{name} recovers from #{state_label(id, table)}")
+        end
+        # Being downed is state 1 landing, and RPG_RT announces it with that
+        # state's own sentence — which is worded from the *speaker's* side, so a
+        # Japanese game says "ゼロは倒れた！" of a party member and "スライムを
+        # 倒した！" of an enemy. The simulation reports it as a flag on the hit
+        # rather than through `inflicted`, so it is read from there.
+        if entry[:defeated]
+          lines << (Game::States.inflict_message(Game::States::DEATH_ID, table,
+                                                 name, ally) ||
+                    "#{name} is defeated!")
+        end
+        lines
+      end
+
+      def state_label(id, table)
+        Game::States.name(id, table) || "state #{id}"
       end
 
       def close_battle_action
@@ -3684,6 +3803,29 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
+        end
+        win.contents = c
+        win
+      end
+
+      # The same panel, but each row is a list of [text, x, colour index]
+      # segments rather than one string, so a row can mix colours. Drawn through
+      # `draw_system_text`, which fills the glyphs from the System graphic's own
+      # palette swatch (and falls back to flat white text when the project ships
+      # no windowskin) — the way RPG_RT colours a state name.
+      def battle_status_window(rows, y, z)
+        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        inner_h = [rows.length, 1].max * BATTLE_LINE_H
+        win = Window.new(10, y, SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win.z = z
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        rows.each_with_index do |segments, i|
+          segments.each do |text, x, color|
+            draw_system_text c, x, i * BATTLE_LINE_H, inner_w - x,
+                             BATTLE_LINE_H, text.to_s, @windowskin, color
+          end
         end
         win.contents = c
         win
@@ -5112,6 +5254,10 @@ class RPG2k
         @state.party.actors.each_with_index do |a, i|
           y = i * 40
           sc.draw_text 0, y, sc.width, 14, a.name.to_s
+          # The condition rides on the name row, right-aligned. RPG_RT sits it
+          # beside the level, but that row already carries HP and MP here and
+          # this panel is only 196px wide, so it goes where there is room.
+          draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
           sc.draw_text 0, y + 16, sc.width, 14,
                        "Lv #{a.level}  HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end
@@ -5365,6 +5511,10 @@ class RPG2k
         party.each_with_index do |a, i|
           y = i * LINE_H * 2
           c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          # RPG_RT's target list shows each member's condition (its
+          # Window_ActorTarget draws one) -- which is most of the point of the
+          # list, since it is where you pick who to use an antidote on.
+          draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
                       "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end
@@ -5608,6 +5758,11 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
       SLOTS = ["Weapon", "Shield", "Armor", "Helmet", "Accessory"].freeze
+      # The condition row: which line of the panel it is, its label, and where
+      # the state itself starts (clear of the label).
+      STATE_ROW = 4
+      STATE_LABEL = "State".freeze
+      STATE_VALUE_X = 48
 
       def initialize parent, state
         super parent
@@ -5660,6 +5815,11 @@ class RPG2k
           "Lv #{a.level}    EXP #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
           "HP #{a.hp}/#{a.max_hp}    MP #{a.mp}/#{a.max_mp}",
           "Atk #{a.atk}   Def #{a.def}   Int #{a.int}   Agi #{a.agi}",
+          # The condition gets a labelled row of its own, as on RPG_RT's status
+          # screen (its Window_ActorInfo draws the label then the state). Only
+          # the label goes through the flat pass below; the state itself is drawn
+          # after it so it can take its own palette colour.
+          STATE_LABEL,
           "",
         ]
         eqp = a.equipment
@@ -5667,6 +5827,8 @@ class RPG2k
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end
+        draw_actor_state c, a, STATE_VALUE_X, STATE_ROW * LINE_H,
+                         inner_w - STATE_VALUE_X, LINE_H, @skin
         @window.contents = c
       end
     end
@@ -5870,6 +6032,10 @@ class RPG2k
         party.each_with_index do |a, i|
           y = i * LINE_H * 2
           c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          # RPG_RT's target list shows each member's condition (its
+          # Window_ActorTarget draws one) -- which is most of the point of the
+          # list, since it is where you pick who to use an antidote on.
+          draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
                       "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end

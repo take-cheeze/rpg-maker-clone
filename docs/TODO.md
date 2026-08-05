@@ -571,7 +571,41 @@ The work below is roughly ordered by the critical path to a walkable game
   so a nimble target dodges more; a missed swing deals no damage. A skill's
   **status infliction** is scaled by the target's `state_ranks` susceptibility
   (RPG2000's A..E table 100/80/60/30/0 percent), so a resistant foe shrugs it
-  off and an immune one never catches it. A **pre-emptive first strike** (the
+  off and an immune one never catches it.
+  **Conditions are now visible, not merely simulated.** All of the above moved
+  state ids around inside `Game::Battle` while the battle screen showed none of
+  it: the status panel listed a name and HP/MP, the action banner reported damage
+  and nothing else, so a poisoned hero and a healthy one looked identical.
+  `Game::States` reads the display side of the database `situation` table and the
+  screen uses it in three places. The **status panel** gained a condition column
+  showing the *significant* state — death first, then the highest `priority`,
+  ties going to the later id (EasyRPG's `State::GetSignificantState`) — drawn in
+  the state's own palette colour through `draw_system_text`, or the database's
+  `normal_status` term when the battler is clear. That tie rule is not academic
+  for Nepheshel: **22 of its 25 states share priority 50**, so which one shows is
+  decided by it. The **action banner** announces every condition an action landed
+  or lifted, using the state row's own sentences — `message_actor` /
+  `message_enemy` for one landing, `message_recovery` for one lifting — which are
+  worded from the speaker's side and really do differ: Nepheshel's 恐怖 reads
+  「ゼロは恐怖に陥った！」 of a party member and 「スライムは恐れおののいた！」
+  of an enemy, and 封印 flips 「の魔法が封じられた！」 to 「の魔法を封じた！」.
+  Being downed goes through the same path as state 1, so it reads
+  「スライムを倒した！」 instead of the invented `— defeated!`; a database with
+  no sentence (Nepheshel's own unnamed state 11, and English releases generally)
+  falls back to a composed line rather than printing nothing. Finally, a battle
+  page's **Change Monster Condition** (13130) writes straight to the live
+  combatant instead of queueing a request, so nothing told the panel it was
+  stale — `apply_battle_event_requests` now rebuilds it, and a page that poisons
+  the boss changes the screen as well as the fight.
+  The **field windows show a condition too** — the menu party list, the item and
+  skill target lists and the status screen (a labelled row of its own), which are
+  the three RPG_RT draws one in (`Window_MenuStatus`, `Window_ActorTarget`,
+  `Window_ActorInfo`). The target lists matter most: they are where a player
+  picks who to use an antidote on, and until now a downed actor read only as
+  `HP 0/120`. All four windows and the battle panel go through one
+  `Scene::Base#state_display`, so the menu and the fight cannot disagree about
+  which state a battler is showing.
+  A **pre-emptive first strike** (the
   Enemy Encounter's first-strike flag) gives the party a free opening round —
   the ambushed enemies skip their turn in round 1 and rejoin from round 2.
   **All-target skills** work too: a scope-1 (all enemies) or scope-4 (all allies)

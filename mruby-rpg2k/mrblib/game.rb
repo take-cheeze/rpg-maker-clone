@@ -4413,6 +4413,95 @@ module Game
     end
   end
 
+  # Read-only helpers over the database's state table (the `situation` array,
+  # id -> row). The battle simulation acts on state *ids*; showing one needs its
+  # name, its palette colour and the sentences RPG_RT prints when it lands or
+  # lifts, and all of those live on the row.
+  #
+  # Every accessor tolerates a row that omits a field — the table is a fixture in
+  # the unit checks and an English game leaves the message strings blank — so a
+  # caller can always ask and decide what to do with a nil answer.
+  module States
+    # State 1 is 戦闘不能 (death) in every RPG2000 database; it is the one state
+    # whose priority is not consulted.
+    DEATH_ID = 1
+    # The `situation` table's own default colour (schema element 3).
+    DEFAULT_COLOR = 6
+
+    def self.row(id, table)
+      return nil if id.nil? || id <= 0 || table.nil?
+      table[id]
+    rescue StandardError
+      nil
+    end
+
+    # The one state a battler *shows*, from the ids it carries: death outranks
+    # everything, otherwise the highest `priority` wins, ties going to the later
+    # id. A port of EasyRPG's State::GetSignificantState, whose `>=` comparison
+    # is what makes the tie go to the later one. nil when the battler is clear.
+    def self.significant(ids, table)
+      return nil if ids.nil? || ids.empty?
+      best = nil
+      best_priority = -1
+      # Ascending id order, because the tie rule depends on it: EasyRPG walks the
+      # table from id 1 upward and keeps a state whose priority merely *equals*
+      # the best so far, so among equal priorities the highest id wins. A
+      # battler's own list is in the order the states landed, which is not that.
+      ids.compact.sort.each do |id|
+        next if id <= 0
+        return DEATH_ID if id == DEATH_ID
+        r = row(id, table)
+        priority = r && r.respond_to?(:priority) ? (r.priority || 0) : 0
+        next if priority < best_priority
+        best = id
+        best_priority = priority
+      end
+      best
+    end
+
+    # The state's display name, or nil when the table does not name it (a
+    # fixture, or an id the database does not define).
+    def self.name(id, table)
+      r = row(id, table)
+      n = r && r.respond_to?(:name) ? r.name : nil
+      n.nil? || n.empty? ? nil : n
+    end
+
+    # The message-palette colour index the name is drawn in.
+    def self.color(id, table)
+      r = row(id, table)
+      c = r && r.respond_to?(:color) ? r.color : nil
+      c.nil? ? DEFAULT_COLOR : c
+    end
+
+    # RPG_RT's sentence for a state landing on `battler_name`. The database
+    # stores the *predicate* only ("は毒にかかった！"), which RPG2000 prints
+    # straight after the battler's name — EasyRPG's GetStateMessage, whose
+    # placeholder form is RPG2003-only. Actors and enemies get different
+    # wordings (message_actor / message_enemy). nil when the database has no
+    # sentence, so the caller can compose its own.
+    def self.inflict_message(id, table, battler_name, ally)
+      message(battler_name,
+              field(id, table, ally ? :message_actor : :message_enemy))
+    end
+
+    # ... and for a state lifting, which has one wording for both sides.
+    def self.recovery_message(id, table, battler_name)
+      message(battler_name, field(id, table, :message_recovery))
+    end
+
+    def self.field(id, table, name)
+      r = row(id, table)
+      v = r && r.respond_to?(name) ? r.send(name) : nil
+      v.nil? || v.empty? ? nil : v
+    end
+
+    def self.message(battler_name, predicate)
+      return nil unless predicate
+      "#{battler_name}#{predicate}"
+    end
+  end
+
   # resolution. It works on Combatant snapshots, so the caller can resolve a
   # battle without mutating the real party. This is a deliberately simple first
   # cut — escape and enemy-cast state infliction are still to come, and the
@@ -5012,6 +5101,14 @@ module Game
     # The state definition for `id` from the lookup, or nil (no lookup / unknown).
     def state_def(id); @states ? @states[id] : nil; end
 
+    # Which side a combatant is on. Only a party member carries the live
+    # Game::Actor it was snapshotted from, so that is the test. Recorded on a log
+    # entry because a state's message is worded differently for an actor and an
+    # enemy, and the entry only carries the target's *name*.
+    def ally?(battler)
+      battler.respond_to?(:actor) && !battler.actor.nil?
+    end
+
     # A field off a state row, tolerating a fixture that omits it.
     def state_field(d, name); d.respond_to?(name) ? (d.send(name) || 0) : 0; end
 
@@ -5419,7 +5516,7 @@ module Game
       woke = target.dead? ? [] : shake_off_states(target)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
                 charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
-                defeated: target.dead? }
+                defeated: target.dead?, target_ally: ally?(target) }
       entry[:woke] = woke unless woke.empty?
       entry
     end
@@ -5604,7 +5701,7 @@ module Game
         inflicted = target.dead? ? [] : roll_inflict(target, cmd)
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          inflicted: inflicted, skill: cmd[:name] }
+          inflicted: inflicted, target_ally: ally?(target), skill: cmd[:name] }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -5617,7 +5714,8 @@ module Game
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], target: target.name,
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
-          cured: cured, target_hp: target.hp, target_mp: target.mp }
+          cured: cured, target_ally: ally?(target),
+          target_hp: target.hp, target_mp: target.mp }
       end
     end
 

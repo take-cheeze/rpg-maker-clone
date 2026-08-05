@@ -1902,17 +1902,28 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # physical / magical threshold.
                           :release_by_attack, :reduce_hit_ratio,
                           :restrict_skill, :restrict_skill_level,
-                          :restrict_magic, :restrict_magic_level)
+                          :restrict_magic, :restrict_magic_level,
+                          # ... and what *showing* the state needs: its display
+                          # name, its message-palette colour, the priority that
+                          # decides which state a battler shows, and RPG2000's
+                          # own sentences for it landing and lifting. Appended
+                          # after the simulation fields so the positional
+                          # constructions above keep working.
+                          :name, :color, :priority,
+                          :message_actor, :message_enemy, :message_recovery)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                hold_turn: 0, auto_release: 0, release_by_attack: 0,
                reduce_hit_ratio: 100, restrict_skill: false, restrict_skill_level: 0,
-               restrict_magic: false, restrict_magic_level: 0)
+               restrict_magic: false, restrict_magic_level: 0,
+               name: '', color: Game::States::DEFAULT_COLOR, priority: 50,
+               actor_msg: nil, enemy_msg: nil, recovery_msg: nil)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
-                   restrict_magic, restrict_magic_level)
+                   restrict_magic, restrict_magic_level,
+                   name, color, priority, actor_msg, enemy_msg, recovery_msg)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -6165,6 +6176,104 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   bat.command_defend(hero)                                # tries to defend...
   bat.run_round
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
+end
+
+# -- the state table's display side (Game::States) ----------------------------
+# The simulation acts on state *ids*; putting one on screen needs the row. These
+# pin the reading of the row the battle status window and action banner use.
+
+# A state row carrying only the display fields (`fake_state` defaults the
+# simulation ones), so a check reads as what it is about.
+def display_state(name:, color: Game::States::DEFAULT_COLOR, priority: 50,
+                  actor_msg: nil, enemy_msg: nil, recovery_msg: nil)
+  fake_state(name: name, color: color, priority: priority,
+             actor_msg: actor_msg, enemy_msg: enemy_msg,
+             recovery_msg: recovery_msg)
+end
+
+check 'States.significant: death outranks everything it is carried with' do
+  table = { 1 => display_state(name: 'Down', priority: 10),
+            4 => display_state(name: 'Poison', priority: 90) }
+  # Priority 90 would otherwise win; state 1 is death, which never loses.
+  eq 1, Game::States.significant([4, 1], table)
+  eq 1, Game::States.significant([1], table)
+  eq 4, Game::States.significant([4], table)
+end
+
+check 'States.significant: the highest priority wins, ties to the later id' do
+  table = { 2 => display_state(name: 'Poison', priority: 30),
+            3 => display_state(name: 'Sleep',  priority: 70),
+            5 => display_state(name: 'Silence', priority: 70) }
+  eq 3, Game::States.significant([2, 3], table)
+  # 3 and 5 tie at 70; RPG_RT walks the table upward keeping the equal one, so
+  # the *later* id shows. The battler's own list is in the order the states
+  # landed, and must not change the answer.
+  eq 5, Game::States.significant([3, 5], table)
+  eq 5, Game::States.significant([5, 3], table)
+  eq nil, Game::States.significant([], table), 'a clear battler shows no state'
+  eq nil, Game::States.significant(nil, table)
+end
+
+check 'States.significant: an id the table does not define reads as priority 0' do
+  table = { 2 => display_state(name: 'Poison', priority: 30) }
+  eq 2, Game::States.significant([2, 9], table), 'the known state outranks it'
+  eq 9, Game::States.significant([9], table), 'but alone it is still what shows'
+  # With no table at all every state ties at 0, so the highest id shows.
+  eq 9, Game::States.significant([2, 9], nil)
+end
+
+check 'States.name / color fall back when the row does not say' do
+  table = { 2 => display_state(name: 'Poison', color: 2),
+            3 => display_state(name: '') }
+  eq 'Poison', Game::States.name(2, table)
+  eq 2, Game::States.color(2, table)
+  eq nil, Game::States.name(3, table), 'a blank name reads as none'
+  eq nil, Game::States.name(9, table), '... as does an unknown id'
+  eq Game::States::DEFAULT_COLOR, Game::States.color(9, table)
+  eq nil, Game::States.name(2, nil)
+end
+
+check 'States messages read the row and are worded per side' do
+  table = { 2 => display_state(name: 'Poison',
+                               actor_msg: ' is poisoned!',
+                               enemy_msg: ' succumbs to poison!',
+                               recovery_msg: ' is cured of poison.'),
+            3 => display_state(name: 'Sleep') }
+  # RPG2000 stores the predicate only and prints it straight after the name.
+  eq 'Hero is poisoned!', Game::States.inflict_message(2, table, 'Hero', true)
+  eq 'Slime succumbs to poison!',
+     Game::States.inflict_message(2, table, 'Slime', false)
+  eq 'Hero is cured of poison.',
+     Game::States.recovery_message(2, table, 'Hero')
+  # A database that ships no sentence (an English release) says so, so the
+  # caller can compose its own rather than printing a bare name.
+  eq nil, Game::States.inflict_message(3, table, 'Hero', true)
+  eq nil, Game::States.recovery_message(3, table, 'Hero')
+  eq nil, Game::States.inflict_message(2, nil, 'Hero', true)
+end
+
+check 'a battle log entry records which side the target was on' do
+  # Which wording a state message takes depends on it, and the entry carries
+  # only the target's name.
+  hero = combatant_mp('Hero', 0, 0, 20, 100, 10)
+  foe  = combatant('Foe', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  b.command_skill(hero, foe, name: 'Fire', cost: 0, hp: -10)
+  b.run_round
+  hit = b.log.find { |e| e[:skill] == 'Fire' }
+  eq false, hit[:target_ally], 'an enemy target is not an ally'
+
+  # A heal aimed at a party member reads the other way. from_actor is what
+  # carries the live actor, which is the test the entry records.
+  st = party_state
+  wounded = st.party.actor_by_id(2)
+  wounded.change_hp(-20)
+  ally = Game::Battle.from_actor(wounded)
+  b2 = Game::Battle.new([ally], [combatant('Foe', 0, 0, 1, 100)], Game::Rng.new(1))
+  b2.command_item(ally, ally, item_id: 3, name: 'Potion', hp: 20)
+  b2.run_round
+  heal = b2.log.find { |e| e[:recover] }
+  eq true, heal[:target_ally], 'a party target is an ally'
 end
 
 check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio' do

@@ -87,6 +87,27 @@
   Show Hidden Monster, Change Battle Background, the battle Show Battle
   Animation, the battle Conditional Branch and Terminate Battle. A page whose
   condition box is entirely unticked never fires, which is how RPG_RT reads it
+- **Status conditions show on the battle screen**, where until now they were only
+  simulated — a poisoned hero and a healthy one looked identical. The status
+  panel gained a condition column carrying the *significant* state (death first,
+  then the highest `priority`, ties to the later id, as RPG_RT resolves it),
+  drawn in the state's own palette colour, or the database's "normal" term when
+  the battler is clear. That tie rule decides the answer more often than it
+  sounds: 22 of Nepheshel's 25 states share priority 50. The action banner
+  announces each condition an action lands or lifts using the state row's own
+  sentences (`message_actor` / `message_enemy` / `message_recovery`), which are
+  worded from the speaker's side — Nepheshel's 恐怖 reads 「ゼロは恐怖に陥った！」
+  of a party member but 「スライムは恐れおののいた！」 of an enemy. Being downed
+  goes through the same path, so it reads 「スライムを倒した！」 rather than an
+  invented English string. And a battle page's **Change Monster Condition** now
+  redraws the panel: it writes straight to the live combatant, so nothing had
+  told the screen it was out of date
+- The **field windows show a condition too** — the menu party list, the item and
+  skill target lists, and the status screen, which are the three RPG_RT draws one
+  in. The target lists are the point: they are where you pick who to use an
+  antidote on, and a downed actor used to read only as `HP 0/120`. All of them
+  and the battle panel resolve it through one place, so the menu and the fight
+  cannot disagree about which state a battler is showing
 - The **RPG2003-only event commands** run too — the low opcodes the 2003 editor
   emits for the features RPG2000 never had. **Change Class** (1008) moves an
   actor to a database class, re-reading its growth curve, learn table and EXP

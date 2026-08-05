@@ -193,8 +193,23 @@ def fake_db(common = nil, troop_pages = nil)
     # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
     chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
     # Terms the Show Inn window reads; blank greeting fields exercise the
-    # scene's English fallbacks.
-    term: OpenStruct.new(gold: 'G'),
+    # scene's English fallbacks. `normal_status` is what the battle status
+    # window shows for a battler carrying no state.
+    term: OpenStruct.new(gold: 'G', normal_status: 'Normal'),
+    # The state table the battle status window and action banner read: a name, a
+    # palette colour, the priority that decides which one a battler shows, and
+    # RPG2000's own sentences for it landing and lifting. State 5 deliberately
+    # ships no sentences, so the scene's own fallback wording is exercised.
+    situation: { 1 => OpenStruct.new(name: 'Down', color: 14, priority: 100,
+                                     message_actor: ' falls!',
+                                     message_enemy: ' is struck down!',
+                                     message_recovery: ' stands up!'),
+                 3 => OpenStruct.new(name: 'Poison', color: 2, priority: 30,
+                                     message_actor: ' is poisoned!',
+                                     message_enemy: ' looks ill!',
+                                     message_recovery: ' is cured.'),
+                 4 => OpenStruct.new(name: 'Sleep', color: 4, priority: 80),
+                 5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10) },
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
@@ -3244,6 +3259,231 @@ check 'a hidden troop member is not targetable until it is revealed' do
   ok !ui[:foes][1].hidden, 'revealing clears the combatant flag, not just the sprite'
   eq 2, scene.send(:living_foes).length, 'and it becomes targetable'
   ok ui[:enemy_sprites][1], 'with a sprite built for it'
+end
+
+# Every string a window's contents had drawn into it, whichever path drew it:
+# `draw_text(x, y, w, h, text, align)` and `blend_text(x, y, w, h, text, skin,
+# ...)` both carry the text at index 4.
+def window_texts(win)
+  c = win && win.contents
+  return [] unless c
+  ((c.draw_calls || []) + (c.blend_calls || [])).map { |a| a[4] }
+end
+
+# Open a battle and run it up to the command phase, answering [scene, ui].
+def battle_at_command(pages = nil)
+  scene, = battle_scene_with_pages(pages)
+  ui = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  [scene, ui]
+end
+
+check 'the battle status window shows each battler condition, or the normal term' do
+  scene, ui = battle_at_command
+  texts = window_texts(ui[:status_win])
+  eq 3, texts.count { |t| t == 'Normal' },
+     'two foes and one ally all start clear, showing the database normal term'
+
+  ui[:foes][0].states = [3]                      # Poison
+  ui[:allies][0].states = [4]                    # Sleep
+  scene.send(:refresh_battle_status)
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Poison'), 'the afflicted foe shows its state'
+  ok texts.include?('Sleep'), 'and so does the afflicted ally'
+  eq 1, texts.count { |t| t == 'Normal' }, 'only the untouched foe is normal'
+end
+
+check 'the condition shown is the significant state, in the state colour' do
+  scene, ui = battle_at_command
+  # Sleep (priority 80) outranks Silence (10) whichever order they landed in.
+  ui[:foes][0].states = [4, 5]
+  scene.send(:refresh_battle_status)
+  ok window_texts(ui[:status_win]).include?('Sleep'), 'the higher priority wins'
+  ui[:foes][0].states = [5, 4]
+  scene.send(:refresh_battle_status)
+  ok window_texts(ui[:status_win]).include?('Sleep'), 'regardless of order'
+
+  # The state's own palette colour reaches the draw call. This project ships no
+  # windowskin in the fake database, so the flat path runs and the colour is
+  # carried as the font colour rather than a blend swatch -- what matters here
+  # is that battle_state_segment resolved it from the row at all.
+  eq 2, Game::States.color(3, scene.db.situation), 'Poison draws in colour 2'
+  eq 4, Game::States.color(4, scene.db.situation), 'Sleep in colour 4'
+end
+
+check 'Change Monster Condition on a battle page shows on the status window' do
+  ic = Game::Interpreter::Cmd
+  # Inflict state 3 (Poison) on troop member 0 the moment the fight opens.
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_CONDITION, [0, 0, 3])]) }
+  scene, ui = battle_at_command(pages)
+  eq true, ui[:foes][0].state?(3), 'the page inflicted the state'
+  # ...and the panel says so without waiting for the next action to redraw it.
+  ok window_texts(ui[:status_win]).include?('Poison'),
+     'the status window was rebuilt after the page ran'
+end
+
+check 'the action banner announces the states an action landed and lifted' do
+  scene, = battle_at_command
+  # The database's own sentences, printed straight after the target's name.
+  scene.send(:show_battle_action,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Venom',
+               inflicted: [3], target_ally: false })
+  ui = scene.instance_variable_get(:@battle_ui)
+  texts = window_texts(ui[:action_win])
+  ok texts.any? { |t| t.include?('Venom') }, 'the action itself still reads'
+  ok texts.include?('Slime looks ill!'), 'with the enemy wording for the state'
+
+  # The same state on a party member takes the actor wording.
+  scene.send(:show_battle_action,
+             { attacker: 'Slime', target: 'Hero', damage: 7,
+               inflicted: [3], target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero is poisoned!'), 'and the actor wording for an ally'
+
+  # A cure reads the recovery sentence.
+  scene.send(:show_battle_action,
+             { recover: true, actor: 'Hero', source: 'Antidote', target: 'Hero',
+               recover_hp: 0, recover_mp: 0, cured: [3], target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero is cured.'), 'the recovery sentence'
+
+  # So does a state a blow shook off (`woke`, a state's release_by_attack) --
+  # the state lifting is the same event however it happened.
+  scene.send(:show_battle_action,
+             { attacker: 'Hero', target: 'Slime', damage: 9,
+               woke: [3], target_ally: false })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Slime is cured.'), 'a state shaken off by a blow reads the same'
+end
+
+check 'being downed is announced with the death state own sentence' do
+  scene, = battle_at_command
+  # State 1 is death; the fake database words it from the speaker's side, the
+  # way a real one does.
+  scene.send(:show_battle_action,
+             { attacker: 'Hero', target: 'Slime', damage: 30,
+               defeated: true, target_ally: false })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Slime is struck down!'), 'the enemy wording'
+  scene.send(:show_battle_action,
+             { attacker: 'Slime', target: 'Hero', damage: 30,
+               defeated: true, target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero falls!'), 'and the actor wording'
+end
+
+check 'a state the database gives no sentence still gets announced' do
+  scene, = battle_at_command
+  # State 5 (Silence) has a name but no message_actor / message_enemy, which is
+  # what an English-release database looks like.
+  scene.send(:show_battle_action,
+             { attacker: 'Slime', target: 'Hero', damage: 3,
+               inflicted: [5], target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero is Silence'), 'the scene composes its own wording'
+
+  # An id the table does not define at all still reads as something.
+  scene.send(:show_battle_action,
+             { attacker: 'Slime', target: 'Hero', damage: 3,
+               inflicted: [99], target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero is state 99'), 'falling back to the id'
+end
+
+# -- conditions on the field windows ------------------------------------------
+# RPG_RT shows an actor's condition in three field windows as well as in battle
+# (its Window_MenuStatus, Window_ActorTarget and Window_ActorInfo), which is
+# where a player finds out who needs the antidote.
+
+# A party the field menus can render: one actor exposing everything the menu
+# party list, the item / skill target list and the status screen read. The item
+# and skill lists are empty — what these checks are about is the condition,
+# not the lists.
+class MenuStubActor
+  attr_reader :name, :title, :level, :hp, :max_hp, :mp, :max_mp,
+              :atk, :def, :int, :agi, :exp, :states, :equipment
+  def initialize
+    @name = 'Hero'; @title = 'Wanderer'; @level = 5
+    @hp = 80; @max_hp = 120; @mp = 10; @max_mp = 30
+    @atk = 20; @def = 12; @int = 9; @agi = 14; @exp = 300
+    @states = []
+    @equipment = [0, 0, 0, 0, 0]
+  end
+  def exp_to_next; 120; end
+  def add_state(id); @states.push(id) unless @states.include?(id); end
+end
+
+class MenuStubParty
+  attr_reader :actors, :gold, :revision
+  attr_accessor :leader
+  def initialize
+    @actors = [MenuStubActor.new]; @gold = 0; @leader = nil; @revision = 0
+  end
+  def field_items; []; end
+  def field_skills(_actor); []; end
+end
+
+def menu_scene(klass, state)
+  klass.new(fake_parent(fake_db), state)
+end
+
+def menu_state
+  Game::State.new(MenuStubParty.new, 1, 0, 0)
+end
+
+check 'the menu party list shows each member condition' do
+  st = menu_state
+  hero = st.party.actors.first
+  win = menu_scene(RPG2k::Scene::Menu, st).instance_variable_get(:@status)
+  ok window_texts(win).include?('Normal'),
+     'a clear member shows the database normal term'
+
+  hero.add_state(3)                                     # Poison
+  texts = window_texts(menu_scene(RPG2k::Scene::Menu, st)
+                         .instance_variable_get(:@status))
+  ok texts.include?('Poison'), 'and an afflicted one shows the state'
+  ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
+end
+
+check 'the item / skill target list shows who is afflicted' do
+  st = menu_state
+  st.party.actors.first.add_state(4)                    # Sleep
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, st)
+    scene.send(:build_target_window)
+    texts = window_texts(scene.instance_variable_get(:@target_window))
+    ok texts.include?('Sleep'), "the #{klass} target list shows the condition"
+  end
+end
+
+check 'the status screen gives the condition a labelled row' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('State'), 'the row is labelled'
+  ok texts.include?('Normal'), 'and reads normal for a clear actor'
+
+  st.party.actors.first.add_state(1)                    # the death state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
+end
+
+check 'the field windows resolve the same condition the battle panel does' do
+  # Both go through Scene::Base#state_display, so a state that outranks another
+  # in battle outranks it in the menu too.
+  st = menu_state
+  hero = st.party.actors.first
+  hero.add_state(5)                                     # Silence, priority 10
+  hero.add_state(4)                                     # Sleep, priority 80
+  texts = window_texts(menu_scene(RPG2k::Scene::Menu, st)
+                         .instance_variable_get(:@status))
+  ok texts.include?('Sleep'), 'the significant state wins here as well'
+  ok !texts.include?('Silence'), 'and the outranked one is not shown'
 end
 
 check 'a transformed monster is redrawn with its new battler graphic' do
