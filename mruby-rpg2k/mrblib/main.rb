@@ -1194,12 +1194,44 @@ class RPG2k
 
       # On the action button, run the trigger-0 event the player is facing. The
       # faced event turns toward the player before its commands run.
+      # RPG_RT looks through at most three counter tiles in a row before giving
+      # up (EasyRPG's `Game_Player::CheckActionEvent`).
+      MAX_COUNTER_REACH = 3
+
       def try_action_trigger
         return if event_busy?
         return unless Input.trigger?(Input::C)
+        # An action event **under the player** fires too: RPG_RT checks the tile
+        # the party is standing on before the one it faces, which is how a
+        # trigger-0 event on a doorway tile answers the action button.
+        here = event_at(@state.x, @state.y)
+        return start_event(here, true) if actionable?(here)
+
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        start_event(ev, true) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
+        return start_event(ev, true) if actionable?(ev)
+
+        # Nothing on the faced tile: if it is a **counter** — a shop or inn
+        # counter, marked in the chipset's upper-layer passage table — look
+        # across it for whoever is standing behind, up to three counters deep.
+        MAX_COUNTER_REACH.times do
+          break unless counter_tile?(fx, fy)
+          fx, fy = target_tile(fx, fy, @state.direction)
+          ev = event_at(fx, fy)
+          return start_event(ev, true) if actionable?(ev)
+        end
+        nil
+      end
+
+      # Whether an event can answer the action button.
+      def actionable?(ev)
+        ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands] ? true : false
+      end
+
+      # Whether (x, y) carries an upper-layer counter tile.
+      def counter_tile?(x, y)
+        return false if @chipset.nil? || !@map.in_bounds?(x, y)
+        @chipset.counter?(@map.upper(x, y))
       end
 
       # On the action button, board a placed vehicle the party is standing on

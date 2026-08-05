@@ -162,8 +162,22 @@ def fake_chipset(name = 'cs')
   # every tile of the synthetic all-zero map maps to).
   td = Array.new(162, 0)
   td[0] = 42
+  # The upper passage table marks chip 0 as a counter, so a test can lay a
+  # counter tile by putting BLOCK_F in the upper layer.
+  up = Array.new(144, 0)
+  up[0] = Game::ChipSet::COUNTER_BIT
   OpenStruct.new(name: name, chipset_name: name, passable_data_lower: nil,
-                 terrain_data: td)
+                 passable_data_upper: up, terrain_data: td)
+end
+
+# A map whose upper layer carries a counter tile at each of `counters`.
+def fake_map_with_counters(id, events, counters)
+  w = 6; h = 5
+  upper = Array.new(w * h, 1) # 1 is not an upper tile id, so: no counter
+  counters.each { |x, y| upper[y * w + x] = Game::ChipsetLayout::BLOCK_F }
+  Game::Map.new(id, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                   lower_layer: Array.new(w * h, 0),
+                                   upper_layer: upper, events: events))
 end
 
 def fake_db(common = nil, troop_pages = nil)
@@ -510,6 +524,70 @@ check 'action (trigger 0) does not fire on mere contact' do
   6.times { scene.update }
   st = scene.instance_variable_get(:@state)
   ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
+end
+
+# A scene on a map with counter tiles, for the talk-across-a-counter checks.
+def counter_scene(events, counters, player:)
+  db = fake_db
+  state = Game::State.new(fake_party, 1, player[0], player[1])
+  state.map = fake_map_with_counters(1, events, counters)
+  RPG2k::Scene::Map.new(fake_parent(db), state)
+end
+
+check 'the action button reaches across a shop counter' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # Player at (0,0) facing east; (1,0) is the counter, the keeper is at (2,0).
+  scene = counter_scene({ 1 => event(2, 0, pg) }, [[1, 0]], player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok st.switches[4], 'talked to the keeper standing behind the counter'
+end
+
+check 'the reach stops after three counters, and at a non-counter tile' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # (1,0) is a counter but (2,0) is not, so the event at (3,0) is out of reach.
+  scene = counter_scene({ 1 => event(3, 0, pg) }, [[1, 0]], player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'the run of counters ended, so nothing was reached'
+
+  # Four counters deep is one more than RPG_RT looks through.
+  far = counter_scene({ 1 => event(5, 0, pg) },
+                      [[1, 0], [2, 0], [3, 0], [4, 0]], player: [0, 0])
+  st2 = far.instance_variable_get(:@state)
+  st2.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  far.update
+  RGSS::Input.reset
+  5.times { far.update }
+  ok !st2.switches[4], 'four counters is past the three-tile reach'
+end
+
+check 'an action event under the player answers the action button' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # The event shares the player's tile — RPG_RT checks there before the tile
+  # ahead, which is how a trigger-0 event on a doorway answers the button.
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [2, 2])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok st.switches[4], 'the event under the party ran'
 end
 
 # CONTROL_VARS params to add `by` to variable `id`:

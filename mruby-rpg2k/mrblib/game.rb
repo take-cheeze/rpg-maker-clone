@@ -394,6 +394,10 @@ module Game
   class ChipSet
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
+    # The non-directional bits of the same passage byte (EasyRPG's `Passable`).
+    # Only the counter flag is read so far: it marks a tile you may talk *across*
+    # — the shop counter an NPC stands behind.
+    COUNTER_BIT = 0x40
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
 
@@ -402,6 +406,9 @@ module Game
       @name = c ? c.name : ''
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
+      # The upper layer's own passage table, which is where the counter flag
+      # lives (the lower table has no room for it).
+      @passable_upper = c ? c.passable_data_upper : nil
       @terrain = c ? c.terrain_data : nil
       # Water-animation parameters (chipset chunks 11/12): the animation "type"
       # (0 = 3-frame back-and-forth, 1 = 3-frame cycle) and speed flag (0 slow,
@@ -429,6 +436,19 @@ module Game
       flags = @passable_lower[idx]
       return true if flags.nil?
       (flags & (DIR_BIT[dir] || 0)) != 0
+    end
+
+    # Is this an upper-layer **counter** tile — one the action button reaches
+    # across? RPG2000 marks shop and inn counters with it so the keeper can stand
+    # behind an impassable tile and still be talked to. Upper-layer ids start at
+    # BLOCK_F and index the upper passage table directly; anything below that is
+    # not an upper tile at all. A chipset without the table has no counters.
+    def counter?(upper_tile_id)
+      return false if @passable_upper.nil? || upper_tile_id.nil?
+      idx = upper_tile_id - ChipsetLayout::BLOCK_F
+      return false if idx < 0 || idx >= @passable_upper.size
+      flags = @passable_upper[idx]
+      !flags.nil? && (flags & COUNTER_BIT) != 0
     end
 
     # Terrain id of a lower-layer tile (for the Store Terrain ID command), looked
