@@ -143,8 +143,24 @@ start_ours() {
 
 # Hold each key for ~120ms: RPG_RT polls the keyboard once a frame and drops a
 # key that goes down and up between two polls.
+# Point the display's input focus at the game, before every key. A window
+# manager focuses a window when it maps, and both runtimes map one and then
+# resize it to the game's resolution -- and when the resize wins that race the
+# window ends up unfocused and every synthesised key goes to the root window
+# instead, which reads as a runtime that ignored half the script. Each display
+# runs exactly one game, so its only visible window is the one that should have
+# the keys.
+focus_window() {
+    local disp="$1" id
+    id=$(DISPLAY="${disp}" xdotool search --onlyvisible --name . 2>/dev/null |
+             tail -1)
+    [ -n "${id}" ] || return 0
+    DISPLAY="${disp}" xdotool windowactivate --sync "${id}" 2>/dev/null || true
+}
+
 send_keys() {
     local disp="$1" ; shift
+    focus_window "${disp}"
     for spec in "$@" ; do
         [ "${spec}" = "-" ] && continue
         local k="${spec%%\**}" n=1

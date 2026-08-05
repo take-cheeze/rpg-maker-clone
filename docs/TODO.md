@@ -395,10 +395,16 @@ The work below is roughly ordered by the critical path to a walkable game
   (RPG2000's A..E table 100/80/60/30/0 percent), so a resistant foe shrugs it
   off and an immune one never catches it. A **pre-emptive first strike** (the
   Enemy Encounter's first-strike flag) gives the party a free opening round —
-  the ambushed enemies skip their turn in round 1 and rejoin from round 2. Still
-  to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
-  rate overrides from the Attribute table, the per-terrain backdrop and the
-  RPG2000 Game Over graphic.
+  the ambushed enemies skip their turn in round 1 and rejoin from round 2.
+  **All-target skills** work too: a scope-1 (all enemies) or scope-4 (all allies)
+  skill resolves against every living target in one action — `command_skill_all`
+  spends the SP once and `apply_command` produces one log entry per target,
+  buffered so the screen animates the volley hit by hit — with attack damage
+  still computed per target's defence. **All-party items** (medicine scope 1)
+  work the same way through `command_item_all`, healing / curing every living
+  ally and consuming a single item for the whole volley. Still to come:
+  enemy-cast infliction, per-attribute rate overrides from the Attribute table,
+  the per-terrain backdrop and the RPG2000 Game Over graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
@@ -416,7 +422,12 @@ The work below is roughly ordered by the critical path to a walkable game
   (13110 / 13120 / 13130), **Show Hidden Monster** (13150), **Change Battle
   Background** (13210), the battle **Show Battle Animation** (13260),
   **Conditional Branch** (13310 with its `_B` markers) and **Terminate Battle**
-  (13410). Messages from a page are shown in a battle panel. Still TODO here:
+  (13410). Messages from a page are shown in a battle panel. The flag bits are
+  **validated against real bytes** — `ruby scripts/analyze_game.rb --troops
+  <game>` reports a game's troop pages, and Nepheshel's 2819 conditional pages
+  confirm the `switch_a` / `switch_b` / `turn` / `enemy_hp` bits and show that
+  every battle-only command it uses has a handler (see the comment on
+  `Game::BattlePage` for what each bit is confirmed by). Still TODO here:
   the per-battler turn counters and the party-fatigue / chosen-command
   conditions (pages gated on those deliberately do not fire rather than firing
   unchecked), and video playback for Play Movie (no decoder is linked in; the
@@ -623,9 +634,17 @@ The work below is roughly ordered by the critical path to a walkable game
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
-  `Music/`/`Sound/`/`Audio/*`. Remaining polish: pitch/tempo control (SDL_mixer
-  exposes none) and guaranteeing a MIDI synth in the build (depends on the
-  SDL_mixer build's MIDI support; WAV/OGG work everywhere)
+  `Music/`/`Sound/`/`Audio/*`
+- ✅ MIDI music — `scripts/download-freepats.bash` installs the FreePats patch
+  set into `assets/timidity` (git-ignored, ~32 MiB), which drives SDL_mixer's
+  built-in TiMidity synthesiser, so the `.mid` BGM that RPG2000 projects ship is
+  audible (ADR 0026). `TIMIDITY_CFG` overrides the patch set;
+  `Audio.midi_available?` reports whether one was found. Remaining polish:
+  pitch/tempo control (SDL_mixer exposes none), MIDI for SE/BGS (they play as
+  samples, which are never synthesised). The browser build plays MIDI too: the
+  Emscripten SDL2_mixer port is asked for `-sSDL2_MIXER_FORMATS=ogg,mid` (it
+  defaults to OGG-only, so it had no MIDI decoder at all) and CI mounts the
+  patch set with `-DWASM_MIDI_PATCHES=ON`, at ~32 MiB of `index.data`
 - ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)
@@ -907,10 +926,21 @@ screen (544×416). Full rationale:
     the `render_probe` ctest under xvfb (display 98) and needs no game. Verified
     to have teeth by neutering `vp_refresh_overlay` and the transition in turn —
     each broke exactly the assertion it should.
-  - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: `Viewport#tone` on `Window` contents (a different composite
-    path; RGSS keeps windows in their own viewport, so a map tint does not tint
-    the message window anyway), the window open/close animation, and
+  - ✅ **`Window#openness` and `Window#tone`** — the VX open/close animation and
+    the windowskin tint. The window unrolls from its horizontal centre line: the
+    frame is composited at `height * openness / 255` and shifted down by half of
+    what it lost, with the 9-slice's corner height clamped to half the drawn
+    height so a part-open window keeps a frame; contents, cursor and pause arrow
+    stay hidden until it is fully open. The tone goes on the *background* only —
+    applied right after the background tile and before anything on top — through
+    the shared `apply_tone_px`, and is re-checked from `#update` because the
+    scripts mutate the Tone in place. Both native, and deliberately not
+    redefined in mrblib (which loads after the C init and would shadow them).
+    Measured by `RGSS.window_probe`: `drawn=[0,0,86] half=[0,0,43]
+    closed=[0,0,0] toned=[86,0,86]`.
+  - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
+    contents (a different composite path; RGSS keeps windows in their own
+    viewport, so a map tint does not tint the message window anyway) and
     `Bitmap#blur`/`#radial_blur`.
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
@@ -1066,8 +1096,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         the old `Utils.canUseWebGL()` wall. `scripts/mz_boot_check.bash` asserts
         the `[MZ-BOOT] booted to <scene>` marker in CI. Discovered/validated by
         booting PIXI v5.2.4 + rmmz under Node against the wrapper's surface.
-      - 🚧 Remaining: present the GL frame on-screen each frame + resize the FBO
-        to the canvas (continuous play, not just the boot probe); optional VAO /
-        `vertexAttribDivisor` fast path (PIXI falls back without it); texture
-        Y-flip + image uploads and uniform-introspection polish as real content
-        (a user-supplied MZ project) exercises them.
+      - ✅ On-screen present: `MZ.runtime_available?` tracks `MV::GL.available?`,
+        so `MZ#start` boots once and then runs a per-frame loop like MV —
+        `SceneManager.update` renders the scene through PIXI into the WebGL
+        canvas, `MZ#present` reads that FBO back (`MV::JS.present_gl` /
+        `mv_webgl_pixels`) onto a full-screen `RGSS::Sprite`/`Bitmap`, and
+        `RGSS::Graphics.update` draws it. `mz_boot_check.bash` runs the loop
+        headless (SDL `dummy` video driver, no X — Mesa rejects a GLX
+        make-current whenever an X server is reachable) and logs `presenting
+        frames on-screen (webgl handle N)`. `MV::JS.present_gl` is covered by
+        `gl_test`.
+      - ✅ Input: `MZ#main_loop` feeds `RGSS::Input`/mouse into rmmz's
+        `Input._currentState` / `TouchInput` each frame (`sync_input` /
+        `sync_touch`), reusing MV's shared key map and touch bridge (rmmz and
+        rmmv share the button names and state shape).
+      - 🚧 Remaining: resize the FBO to the canvas when PIXI resizes it; optional
+        VAO / `vertexAttribDivisor` fast path (PIXI falls back without it);
+        texture Y-flip + image uploads and uniform-introspection polish as real
+        content exercises them. Validation to add: a gameplay input probe (New
+        Game → map → a keypress moves the player, like MV's `mv_move_test`) and a
+        screenshot smoke of a content-bearing scene — the minimal `data/mz-sample`
+        currently rests at `Scene_Boot` (a loading scene), so reaching
+        `Scene_Title`/a map needs a fuller sample database first.

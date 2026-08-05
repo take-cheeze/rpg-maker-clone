@@ -2,7 +2,7 @@ class Object
   include RGSS
 end
 
-module RGSS
+class RPG2k
   # RPG Maker 2000 style window. The visual is assembled from a "windowskin"
   # System graphic laid out in the classic 160x80 arrangement:
   #
@@ -15,6 +15,13 @@ module RGSS
   # frame), the selection cursor, and the contents (text and other graphics
   # drawn by callers). Keeping them apart means updating the cursor or the text
   # no longer forces the skin to be re-blitted.
+  #
+  # RPG2k::Window, not RGSS::Window: this is the RPG Maker 2000 window, and the
+  # RGSS one is a different widget with a different windowskin layout that a
+  # real XP/VX game's own scripts subclass (`Window_Base < Window`). Defining
+  # this one under RGSS used to replace that native class for the whole process,
+  # since mruby-rpg2k loads after mruby-rgss -- see the note in build_config.rb.
+  # Every use is inside `class RPG2k`, so the bare name still resolves here.
   class Window
     # Windows are drawn above ordinary background sprites (which default to
     # z == 0), so give the backing viewport a high z by default.
@@ -288,9 +295,7 @@ module RGSS
       @cursor_bmp.fill_rect x + w - 1, y, 1, h, border
     end
   end
-end
 
-class RPG2k
   WIDTH = 320
   HEIGHT = 240
 
@@ -2616,6 +2621,10 @@ class RPG2k
           @battle_ui[:target_i] = 0
           @battle_ui[:phase] = :target
           draw_battle_target
+        when :all_enemy
+          apply_pending_skill_all(living_foes)
+        when :all_ally
+          apply_pending_skill_all(living_allies)
         else # :ally
           @battle_ui[:ally_i] = 0
           @battle_ui[:phase] = :ally_target
@@ -2634,6 +2643,28 @@ class RPG2k
                                           inflict: c[:inflict], chance: c[:chance],
                                           variance: c[:variance] || 0,
                                           attributes: c[:attributes])
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
+      end
+
+      # Commit the pending all-target skill on every `targets` combatant (all
+      # living enemies for an attack skill, all living allies for a heal): build
+      # one per-target effect from the model (attack damage varies with each
+      # target's defence) and queue them as a single volley. The shared SP cost /
+      # infliction ride along once.
+      def apply_pending_skill_all(targets)
+        sk = @battle_ui[:pending][:sk]
+        meta = @state.party.battle_skill_command(sk, current_actor, targets.first)
+        effects = targets.map do |t|
+          c = @state.party.battle_skill_command(sk, current_actor, t)
+          { target: t, hp: c[:hp], mp: c[:mp] }
+        end
+        @battle_ui[:battle].command_skill_all(current_actor, effects,
+                                              name: sk.name, cost: meta[:cost],
+                                              inflict: meta[:inflict], chance: meta[:chance],
+                                              variance: meta[:variance] || 0,
+                                              attributes: meta[:attributes])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -2664,9 +2695,13 @@ class RPG2k
           it = @state.party.db_item(item_id)
           @battle_ui[:pending] = { kind: :item, item_id: item_id, it: it }
           close_battle_item
-          @battle_ui[:ally_i] = 0
-          @battle_ui[:phase] = :ally_target
-          draw_battle_ally_target
+          if @state.party.item_all_allies?(it)
+            apply_pending_item_all(living_allies)
+          else
+            @battle_ui[:ally_i] = 0
+            @battle_ui[:phase] = :ally_target
+            draw_battle_ally_target
+          end
         elsif Input.trigger?(Input::B)
           close_battle_item
           @battle_ui[:phase] = :command
@@ -2713,6 +2748,23 @@ class RPG2k
                                          item_id: pending[:item_id],
                                          name: pending[:it].name,
                                          hp: c[:hp], mp: c[:mp], cured: c[:cured])
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
+      end
+
+      # Commit an all-party item on every living ally: one per-member recovery
+      # from the model, queued as a single volley that consumes one item.
+      def apply_pending_item_all(targets)
+        pending = @battle_ui[:pending]
+        effects = targets.map do |t|
+          c = @state.party.battle_item_command(pending[:it], t)
+          { target: t, hp: c[:hp], mp: c[:mp] }
+        end
+        cured = @state.party.battle_item_command(pending[:it], targets.first)[:cured]
+        @battle_ui[:battle].command_item_all(current_actor, effects,
+                                             item_id: pending[:item_id],
+                                             name: pending[:it].name, cured: cured)
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -5284,6 +5336,7 @@ class RPG2k
         @window.contents = contents
 
         refresh_cursor
+        play_title_bgm
       end
 
       def update
@@ -5387,6 +5440,24 @@ class RPG2k
         Audio.se_play name, se.volume, se.pitch
       rescue StandardError => e
         $stderr.puts "[RGSS] cursor SE playback failed: #{e.message}"
+      end
+
+      # Play the database's title music (System > title BGM), as RPG_RT does
+      # when the title screen comes up. Re-entering the title (Return to Title)
+      # builds a new scene and so restarts it, which is what RPG_RT does too.
+      #
+      # `fade_in` is read from the record but not honoured: the audio backend
+      # can fade a BGM out, not in (see ADR 0006), so the music starts at full
+      # volume. A no-op when the game defines no title music, the file is
+      # missing, or no audio backend is installed.
+      def play_title_bgm
+        bgm = db.system.title_music
+        return unless bgm
+        name = bgm.file
+        return if name.nil? || name.empty?
+        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] title BGM playback failed: #{e.message}"
       end
     end
   end

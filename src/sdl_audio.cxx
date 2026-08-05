@@ -30,8 +30,10 @@
 
 #include <ng-log/logging.h>
 
+#include <cctype>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "rgss_audio.hxx"
 
@@ -62,9 +64,114 @@ std::string g_bgm_bytes;
 // music is freed.
 std::string g_music_bytes;
 
+// Playback position of the music stream, tracked from the clock rather than
+// asked of the decoder. Mix_GetMusicPosition is not a cheap getter: on the MIDI
+// decoder it costs *hundreds of milliseconds* a call, and the RPG2000 runtime
+// polls the position every frame to answer the "BGM played once" branch, which
+// dragged Nepheshel's opening (135 .mid tracks) from 60 frames a second to
+// under two. The only consumer is that loop detection, which needs no more than
+// a value that wraps when the track restarts -- so the start time plus the
+// track's duration answers it for free. Zero duration (an unknown-length
+// stream) reports position 0 throughout, exactly as a backend that cannot
+// report a position does.
+Uint64 g_music_start_ms = 0;
+int g_music_duration_ms = 0;
+
 // Loaded SE / BGS samples, keyed by path -- or, for archived audio, by the
 // archive entry name -- so repeated plays don't re-decode.
 std::unordered_map<std::string, Mix_Chunk*> g_chunks;
+
+// Resolved TiMidity configuration, or empty when none was found (MIDI then
+// loads but plays silence). Set once by init_midi_config().
+std::string g_timidity_cfg;
+
+bool file_exists(const std::string& path) {
+  if (path.empty())
+    return false;
+  SDL_RWops* rw = SDL_RWFromFile(path.c_str(), "rb");
+  if (!rw)
+    return false;
+  SDL_RWclose(rw);
+  return true;
+}
+
+bool has_midi_extension(const std::string& path) {
+  std::string ext;
+  size_t dot = path.find_last_of('.');
+  if (dot == std::string::npos)
+    return false;
+  for (size_t i = dot; i < path.size(); ++i)
+    ext += (char)std::tolower((unsigned char)path[i]);
+  return ext == ".mid" || ext == ".midi";
+}
+
+// Point SDL_mixer's built-in TiMidity synthesiser at a patch set.
+//
+// MIDI carries note events but no audio, so the synth needs a config naming a
+// GUS patch (.pat) per GM program; with none, a .mid loads fine and then plays
+// silence. The engine bundles the FreePats set in assets/timidity, so the usual
+// answer is the copy shipped next to the executable — but a user-supplied
+// TIMIDITY_CFG always wins, and a system-wide set is used when we ship none.
+//
+// Must run before Mix_OpenAudio: SDL_mixer initialises the TiMidity codec while
+// opening the device, and reads the config exactly once at that point.
+void init_midi_config(void) {
+  // An explicit TIMIDITY_CFG is the user's override; SDL_mixer already honours
+  // it ahead of everything else (TIMIDITY_Open in src/codecs/music_timidity.c),
+  // so record it and leave it alone.
+  const char* from_env = SDL_getenv("TIMIDITY_CFG");
+  if (from_env && *from_env) {
+    g_timidity_cfg = from_env;
+    LOG(INFO) << "Audio: MIDI instruments from TIMIDITY_CFG='" << g_timidity_cfg
+              << "'";
+    return;
+  }
+
+  std::vector<std::string> candidates;
+  // Next to the executable, both in a build tree and in an installed prefix.
+  if (char* base = SDL_GetBasePath()) {
+    candidates.push_back(std::string(base) + "assets/timidity/timidity.cfg");
+    candidates.push_back(std::string(base) +
+                         "../share/rpg-maker-clone/timidity/timidity.cfg");
+    SDL_free(base);
+  }
+#ifdef RGSS_TIMIDITY_CFG_SOURCE
+  // Configure-time path into the source tree, so a build-directory run finds
+  // the patches without copying 33 MB next to the binary.
+  candidates.push_back(RGSS_TIMIDITY_CFG_SOURCE);
+#endif
+  // Emscripten preload mount (see WASM_MIDI_PATCHES in CMakeLists.txt).
+  candidates.push_back("/timidity/timidity.cfg");
+  // Fall back to a system-wide patch set; these mirror the paths SDL_mixer
+  // itself compiles in, and cover distro timidity/freepats packages.
+  candidates.push_back("/etc/timidity.cfg");
+  candidates.push_back("/etc/timidity/timidity.cfg");
+  candidates.push_back("/etc/timidity/freepats.cfg");
+  candidates.push_back("/usr/share/timidity/timidity.cfg");
+
+  for (const std::string& path : candidates) {
+    if (!file_exists(path))
+      continue;
+    g_timidity_cfg = path;
+#if defined(SDL_MIXER_VERSION_ATLEAST) && SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+    Mix_SetTimidityCfg(g_timidity_cfg.c_str());
+#endif
+    // Also export it: SDL_mixer before 2.6 has no setter, and the env var is
+    // read by every 2.x. Do not overwrite — an existing value was handled above
+    // and must keep winning.
+    SDL_setenv("TIMIDITY_CFG", g_timidity_cfg.c_str(), 0);
+    LOG(INFO) << "Audio: MIDI instruments from '" << g_timidity_cfg << "'";
+    return;
+  }
+
+  LOG(WARNING) << "Audio: no TiMidity configuration found; MIDI music will "
+                  "load but play silence. Set TIMIDITY_CFG to a patch set, or "
+                  "install assets/timidity next to the executable.";
+}
+
+int midi_available(void) {
+  return g_timidity_cfg.empty() ? 0 : 1;
+}
 
 int to_mix_volume(int rpg_volume) {
   if (rpg_volume < 0)
@@ -80,9 +187,17 @@ Mix_Chunk* load_chunk(const std::string& path) {
   if (it != g_chunks.end())
     return it->second;
   Mix_Chunk* chunk = Mix_LoadWAV(path.c_str());
-  if (!chunk)
+  if (!chunk && has_midi_extension(path)) {
+    // SE/BGS play as mixer samples, and SDL_mixer only synthesises MIDI on the
+    // single music stream — so a MIDI SE cannot be decoded here however the
+    // synth is configured. Say that outright rather than leaving a bare decode
+    // error that looks like a missing patch set.
+    LOG(WARNING) << "Audio: cannot play MIDI '" << path
+                 << "' as an SE/BGS; MIDI is supported for BGM/ME only";
+  } else if (!chunk) {
     LOG(WARNING) << "Audio: failed to load sample '" << path
                  << "': " << Mix_GetError();
+  }
   // Cache even a null result so a missing file is not retried every frame.
   g_chunks[path] = chunk;
   return chunk;
@@ -132,6 +247,15 @@ bool start_music(const std::string& what, int volume, int loops) {
                  << "': " << Mix_GetError();
     return false;
   }
+  // Start the clock this stream's position is read off (see g_music_start_ms).
+  // The duration is asked for once per track here, not once per frame.
+  g_music_start_ms = SDL_GetTicks64();
+  g_music_duration_ms = 0;
+#if defined(SDL_MIXER_VERSION_ATLEAST) && SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+  const double seconds = Mix_MusicDuration(g_music);
+  if (seconds > 0.0)
+    g_music_duration_ms = (int)(seconds * 1000.0);
+#endif
   return true;
 }
 
@@ -229,21 +353,19 @@ void bgm_fade(int ms) {
     Mix_FadeOutMusic(ms);
 }
 
+// Milliseconds into the current BGM, wrapping every time the loop restarts.
+// Read from the clock, not from the decoder -- see g_music_start_ms.
 int bgm_pos(void) {
-#if defined(SDL_MIXER_VERSION_ATLEAST) && SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
   // Mix_PlayingMusic() matters as much as g_music: halting the music does not
-  // free the stream, and Mix_GetMusicPosition happily keeps reporting where a
-  // stopped one had got to. Without this, Audio.bgm_pos answers a stale
-  // position after Audio.bgm_stop -- and a game that saves bgm_pos to resume
-  // the track later (which is what RGSS2's `$game_system.bgm_pos` is for)
-  // would write down a position for music that is not playing.
-  if (g_music && !g_me_active && Mix_PlayingMusic()) {
-    double sec = Mix_GetMusicPosition(g_music);
-    if (sec >= 0.0)
-      return (int)(sec * 1000.0);
-  }
-#endif
-  return 0;
+  // free the stream, and the position must not keep advancing for music that
+  // is not playing -- a game that saves bgm_pos to resume the track later
+  // (which is what RGSS2's `$game_system.bgm_pos` is for) would otherwise
+  // write down a position for music that is stopped.
+  if (!g_music || g_me_active || !g_bgm_valid || g_music_duration_ms <= 0 ||
+      !Mix_PlayingMusic())
+    return 0;
+  const Uint64 elapsed = SDL_GetTicks64() - g_music_start_ms;
+  return (int)(elapsed % (Uint64)g_music_duration_ms);
 }
 
 // -- BGS --------------------------------------------------------------------
@@ -364,9 +486,10 @@ void update(void) {
 }
 
 const RgssAudioBackend kBackend = {
-    bgm_play, bgm_stop, bgm_fade,     bgm_pos,      bgs_play,    bgs_stop,
-    bgs_fade, bgs_pos,  me_play,      me_stop,      me_fade,     se_play,
-    se_stop,  update,   bgm_play_mem, bgs_play_mem, me_play_mem, se_play_mem,
+    bgm_play,     bgm_stop,    bgm_fade,    bgm_pos,        bgs_play,
+    bgs_stop,     bgs_fade,    bgs_pos,     me_play,        me_stop,
+    me_fade,      se_play,     se_stop,     update,         bgm_play_mem,
+    bgs_play_mem, me_play_mem, se_play_mem, midi_available,
 };
 
 }  // namespace
@@ -385,6 +508,9 @@ extern "C" void rgss_audio_init(void) {
   }
   // Best-effort codec init; unsupported formats simply stay unavailable.
   Mix_Init(MIX_INIT_OGG | MIX_INIT_MID | MIX_INIT_MP3 | MIX_INIT_FLAC);
+  // Resolve the MIDI patch set before opening the device: SDL_mixer starts the
+  // TiMidity codec from Mix_OpenAudio and reads its config only then.
+  init_midi_config();
   if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
     LOG(WARNING) << "Audio: Mix_OpenAudio failed: " << Mix_GetError()
                  << "; audio disabled";
@@ -417,5 +543,6 @@ extern "C" void rgss_audio_shutdown(void) {
   Mix_CloseAudio();
   Mix_Quit();
   SDL_QuitSubSystem(SDL_INIT_AUDIO);
+  g_timidity_cfg.clear();
   g_opened = false;
 }

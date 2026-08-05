@@ -15,7 +15,9 @@
 # implements.
 #
 # Usage:
-#   ruby scripts/analyze_game.rb [--json] GAME_DIR [GAME_DIR ...]
+#   ruby scripts/analyze_game.rb [--json] [--troops] GAME_DIR [GAME_DIR ...]
+# `--troops` reports the troops' battle-event pages instead: which condition
+# flag bits the game uses and which battle-only commands its pages run.
 # With no GAME_DIR it scans ./data for directories containing an RPG_RT.ldb.
 #
 # Only structural, encoding-independent facts are reported, so the Windows-31J
@@ -91,6 +93,13 @@ CODE_NAMES = {
   12410 => 'Comment',                22410 => 'Comment(cont.)',
   12420 => 'GameOver',               12510 => 'ReturnToTitleScreen',
   12610 => 'ChangeClass',            12710 => 'ChangeBattleCommands',
+  # Battle-only: these appear in a troop's battle-event pages, never in a map or
+  # common event. Reported by --troops.
+  13110 => 'ChangeMonsterHP',        13120 => 'ChangeMonsterMP',
+  13130 => 'ChangeMonsterCondition', 13150 => 'ShowHiddenMonster',
+  13210 => 'ChangeBattleBG',         13260 => 'ShowBattleAnimation(B)',
+  13310 => 'ConditionalBranch(B)',   13410 => 'TerminateBattle',
+  23310 => 'ElseBranch(B)',          23311 => 'EndBranch(B)',
 }.freeze
 
 MOVE_NAMES = {
@@ -303,15 +312,81 @@ def to_h(st)
   }
 end
 
+# Troop battle-event pages: which condition-flag bits real games actually use,
+# and which battle-only commands their pages run. This is what validates
+# Game::BattlePage's flag bit assignments against real bytes rather than against
+# liblcf's declaration order alone -- a page's condition fields are only
+# meaningful if the bit that gates them is the one we think it is (see the
+# comment on Game::BattlePage).
+BATTLE_PAGE_FLAGS = %w[switch_a switch_b variable turn fatigue enemy_hp
+                       actor_hp turn_enemy turn_actor command_actor].freeze
+
+def report_troops(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  pages = 0
+  conditional = 0
+  bits = Hash.new(0)
+  cmds = Hash.new(0)
+  windows = []
+  turns = Hash.new(0)
+  db.enemy_group.each do |_gid, group|
+    next unless group.respond_to?(:pages) && group.pages
+    group.pages.each do |_pid, page|
+      pages += 1
+      cond = page.condition
+      flags = cond && cond.flags ? cond.flags : 0
+      conditional += 1 if flags != 0
+      BATTLE_PAGE_FLAGS.each_index { |b| bits[b] += 1 if (flags & (1 << b)) != 0 }
+      # The two sub-conditions whose *values* prove the bit: a deliberate HP
+      # window (rather than the 0..100 default) and the turn base/multiple pair.
+      windows << [cond.enemy_id, cond.enemy_hp_min, cond.enemy_hp_max] if (flags & 0x020) != 0
+      turns["base=#{cond.turn_b} multiple=#{cond.turn_a}"] += 1 if (flags & 0x008) != 0
+      (page.event || []).each { |c| cmds[c.code] += 1 }
+    end
+  end
+
+  puts "\n== #{dir} troop battle-event pages =="
+  puts "pages: #{pages}  with a condition: #{conditional}"
+  puts 'condition flag bits in use:'
+  BATTLE_PAGE_FLAGS.each_index do |b|
+    next if bits[b].zero?
+    puts format('  bit %d (0x%03x) %-14s %d pages', b, 1 << b, BATTLE_PAGE_FLAGS[b], bits[b])
+  end
+  unless turns.empty?
+    puts 'turn conditions:'
+    turns.sort_by { |_, n| -n }.each { |k, n| puts "  #{k}  x#{n}" }
+  end
+  unless windows.empty?
+    puts 'enemy-HP windows (a non-default 0..100 proves the bit):'
+    windows.uniq.each { |e, lo, hi| puts "  enemy #{e}: #{lo}..#{hi}%" }
+  end
+  battle = cmds.keys.select { |c| c >= 13000 && c < 24000 }.sort
+  unless battle.empty?
+    puts 'battle-only commands used:'
+    battle.each { |c| puts "  #{c} #{(CODE_NAMES[c] || '?').ljust(24)} x#{cmds[c]}" }
+  end
+  missing = cmds.keys.reject { |c| SUPPORTED.include?(c) || NOOP_BY_DESIGN.include?(c) }.sort
+  puts(missing.empty? ? 'every command these pages use has a handler' :
+       "commands with NO handler: #{missing.inspect}")
+rescue StandardError => e
+  warn "  troop analysis failed for #{dir}: #{e.class}: #{e.message}"
+end
+
 json = ARGV.delete('--json')
+troops = ARGV.delete('--troops')
 games = ARGV.dup
 if games.empty?
   root = File.expand_path('../data', __dir__)
   games = Dir.glob(File.join(root, '**', 'RPG_RT.ldb')).map { |f| File.dirname(f) }.sort
 end
 if games.empty?
-  warn 'usage: ruby scripts/analyze_game.rb [--json] GAME_DIR [GAME_DIR ...]'
+  warn 'usage: ruby scripts/analyze_game.rb [--json] [--troops] GAME_DIR [GAME_DIR ...]'
   exit 1
+end
+
+if troops
+  games.each { |g| report_troops(g) }
+  exit 0
 end
 
 stats = games.map { |g| analyze(g) }

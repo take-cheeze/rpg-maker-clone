@@ -2,6 +2,9 @@
 
 set -eux -o pipefail
 
+# Retried because these external clones fail intermittently in CI.
+. "$(dirname "$0")/git-clone-retry.bash"
+
 # Fetch the RPG Maker MZ corescript (rmmz_*.js + libs/pixi.js ...) into the
 # committed sample project (data/mz-sample). The sample commits only our
 # authored data + shell; the engine is fetched here so it is never redistributed
@@ -20,7 +23,7 @@ sample="$here/data/mz-sample"
 cache="$here/data/.mz-corescript"
 
 if [ ! -d "$cache" ]; then
-    git clone --quiet --depth 1 https://github.com/stak/rmmz-corescript.git "$cache"
+    clone_retry --quiet --depth 1 https://github.com/stak/rmmz-corescript.git "$cache"
 fi
 
 mkdir -p "$sample/js/libs"

@@ -8,12 +8,15 @@
 
 set -eux -o pipefail
 
+# Retried because these external clones fail intermittently in CI.
+. "$(dirname "$0")/git-clone-retry.bash"
+
 mkdir -p $(dirname $0)/../data
 
 cd $(dirname $0)/../data
 
 if [ ! -d OpenGame.exe ] ; then
-    git clone --quiet --depth 1 --filter=blob:none --sparse \
+    clone_retry --quiet --depth 1 --filter=blob:none --sparse \
         https://github.com/aphadeon/OpenGame.exe.git
     git -C OpenGame.exe sparse-checkout set Testbed/XP
 fi
