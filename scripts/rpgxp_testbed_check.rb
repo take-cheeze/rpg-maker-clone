@@ -105,10 +105,10 @@ class Checker
   def check_game(dir)
     puts "== #{dir} =="
     db = RPGXP::RGSSData.new(dir)
+    @db = db
 
     check_system(db.system)
     check_actors(db.actors)
-    @db = db
     check_game_actors(db)
     check_tilesets(db.tilesets)
     @resolver = CommonResolver.new(db.common_events)
@@ -124,8 +124,16 @@ class Checker
     expect(sys.title_name.is_a?(String), "System.title_name must be a String")
     expect(sys.words.is_a?(RPG::System::Words), "System.words missing")
     expect(sys.title_bgm.is_a?(RPG::AudioFile), "System.title_bgm must be an AudioFile")
-    expect(sys.party_members.is_a?(Array) && !sys.party_members.empty?,
-           "System.party_members must be a non-empty Array")
+    # An *empty* starting party is legal and real games use it: Pray for You
+    # starts on an empty opening map and adds its members from that map's
+    # autorun event, so RMXP's editor field is left blank. What must hold is
+    # that every id it does list resolves to a database actor, which is what a
+    # mis-decoded field would break.
+    expect(sys.party_members.is_a?(Array), "System.party_members must be an Array")
+    (sys.party_members || []).each do |id|
+      expect(@db.actors[id].is_a?(RPG::Actor),
+             "System.party_members lists actor #{id.inspect}, which is not in Actors")
+    end
     puts "  system: title=#{sys.title_name.inspect} start=(#{sys.start_map_id},#{sys.start_x},#{sys.start_y}) party=#{sys.party_members.inspect}"
   end
 
@@ -265,8 +273,10 @@ class Checker
                  "\xc8\x00\x00\xb4\x8b\x02\x41").b
 
   def check_archive(dir, disk)
-    files = Dir[File.join(dir, "Data", "*.rxdata")].sort.map do |f|
-      ["Data\\#{File.basename(f)}", File.binread(f)]
+    files = archive_source_data(dir, disk)
+    if files.empty?
+      fail "#{dir}: no Data/*.rxdata to pack, loose or archived"
+      return
     end
     # A released game packs Graphics/ into the same archive as Data/, with no
     # loose copy on disk — so this is the only route to the game's art.
@@ -277,6 +287,21 @@ class Checker
                          RPGXP::RGSSAD.pack_v3(files))
   rescue => ex
     fail "#{dir}: archive check raised: #{ex.class}: #{ex.message}"
+  end
+
+  # The Data/ entries to re-pack, as [archive name, bytes]. An editor project
+  # has them loose on disk; a *released* game — the shape most XP games ship in,
+  # and the one this check most wants to cover — has none, only the entries
+  # inside its own Game.rgssad. Reading those back out and re-packing them keeps
+  # the round-trip meaningful there instead of failing on an empty Data/.
+  def archive_source_data(dir, disk)
+    loose = Dir[File.join(dir, "Data", "*.rxdata")].sort.map do |f|
+      ["Data\\#{File.basename(f)}", File.binread(f)]
+    end
+    return loose unless loose.empty?
+    return [] unless disk.archived?
+    disk.archive.names.sort.select { |n| n =~ /\AData[\\\/].*\.rxdata\z/i }
+        .map { |n| [n, disk.archive.read(n)] }
   end
 
   def check_archive_format(disk, files, version, filename, archive)
@@ -328,10 +353,16 @@ class Checker
   end
 end
 
+# Every XP project under `root`: an editor project (a loose Data/System.rxdata)
+# or a *released* one, whose whole tree — Data/ included — is inside an
+# encrypted Game.rgssad and which therefore has no loose Data/ to glob for.
 def discover_games(root)
   return [] unless Dir.exist?(root)
-  Dir.glob(File.join(root, "**", "Data", "System.rxdata"))
-     .map { |f| File.dirname(File.dirname(f)) }.sort.uniq
+  loose = Dir.glob(File.join(root, "**", "Data", "System.rxdata"))
+             .map { |f| File.dirname(File.dirname(f)) }
+  packed = Dir.glob(File.join(root, "**", "Game.rgssad"))
+              .map { |f| File.dirname(f) }
+  (loose + packed).sort.uniq
 end
 
 games = ARGV.dup

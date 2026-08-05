@@ -39,7 +39,13 @@ TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-20000}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
-    GAMES=(data/OpenGame.exe/Testbed/XP)
+    # The editor-shaped test bed (loose Data/), and a *released* game -- Pray
+    # for You ships as Game.ini + Game.rgssad with nothing loose, which is the
+    # shape most RPG Maker XP games are distributed in and a different path
+    # through the loader. It is also the only bed here with more than one map,
+    # so it is what exercises Transfer Player and the scenes a real game's
+    # opening builds. Absent directories are skipped with a message below.
+    GAMES=(data/OpenGame.exe/Testbed/XP data/PrayforYou)
 fi
 
 if [ ! -x "${ENGINE}" ] ; then

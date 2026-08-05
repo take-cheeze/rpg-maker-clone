@@ -805,9 +805,7 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `scripts/compare-rpgxp-wine.bash`, which diffs our frames against the genuine
   `Game.exe` + `RGSS104E.dll` under wine, the XP twin of
   `compare-nepheshel-wine.bash`. That comparison is the harness the remaining
-  render work below is meant to be driven by: the tile layers are still
-  placeholder colour blocks, so its map steps differ wholesale until real
-  tileset/autotile blitting lands. See
+  render work below is meant to be driven by. See
   [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](adr/0025-rpgxp-cross-runtime-testing.md);
   the browser pass already found (and this fixed) an XP project rendering on a
   320x240 screen in the page and the loader panel covering the running game, and
@@ -820,6 +818,22 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   frame driver has never been verified in a real browser), and a way to pass
   engine flags to the page so the browser check can use `--rpgxp_new_game`
   instead of pressing keys.
+- ✅ **A released game as a test bed** — every XP check above also runs on
+  *Pray for You* (`scripts/download-prayforyou.bash`): a packed release
+  (`Game.ini` + `Game.rgssad`, nothing loose), 69 maps, 1107 event pages, 15,797
+  event commands, Japanese `RGSS103J.dll`. The data check went from 1 map / 2
+  event pages / 15 commands to 70 / 1109 / 15,812 and the script host from 90 to
+  193 sections; both games boot in CI. It found a Transfer Player leaving the
+  old map's ground on screen, an ignored Change Screen Color Tone (223) and a
+  message box laid out the RPG2000 way instead of RMXP's inset 480x160 — with
+  those fixed a map frame differs from the genuine runtime in 25% of its pixels,
+  down from 97%, the rest being the reference's own font-less message box. See
+  [`docs/adr/0026-rpgxp-released-game-parity.md`](adr/0026-rpgxp-released-game-parity.md).
+  The event-command histogram over that whole game names what a real XP game
+  uses that we still skip: `221`/`222` (prepare/execute transition), `210` (wait
+  for move completion), `231`/`235` (show/erase picture), `224`/`225` (screen
+  flash/shake), `202` (set event location), `203` (scroll map), `207` (show
+  animation), `208` (change transparency) and `355` (script).
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

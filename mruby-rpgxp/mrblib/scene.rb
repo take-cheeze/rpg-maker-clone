@@ -426,6 +426,19 @@ class RPGXP
       # the tileset graphic in reading order.
       TILE_ID_BASE = 384
       MSG_LINE_H = 32
+      # The message box, laid out as RMXP's Window_Message does it:
+      # `super(80, 304, 480, 160)` on a 640x480 screen — an inset 480x160 box
+      # sixteen pixels off the bottom, four 32px lines inside its 16px border,
+      # with the text at x=4 of the contents. Ours used to span the whole screen
+      # width at the very bottom (the RPG2000 layout), which the wine comparison
+      # against the genuine RGSS runtime showed as a differently sized and
+      # placed box on every message. Derived from the screen size so the
+      # constants hold if it ever changes.
+      MSG_W = 480
+      MSG_H = MSG_LINE_H * 4 + Panel::BORDER * 2
+      MSG_X = (SCREEN_W - MSG_W) / 2
+      MSG_MARGIN = 16 # gap between the box's bottom edge and the screen's
+      MSG_TEXT_X = 4
 
       # Event-page start triggers (RPG::Event::Page#trigger).
       TRIGGER_ACTION       = 0 # player presses the action button facing it
@@ -484,7 +497,7 @@ class RPGXP
         close_message
         close_number_input
         @event_sprites.each_value { |s| s[:sprite].dispose } if @event_sprites
-        [@tilemap, @player_sprite].each { |s| s.dispose if s }
+        [@tilemap, @player_sprite, @screen_viewport].each { |s| s.dispose if s }
       end
 
       def update
@@ -506,6 +519,7 @@ class RPGXP
           end
         end
         animate_player
+        step_tone_change
         render
       end
 
@@ -730,6 +744,59 @@ class RPGXP
         $stderr.puts "[RGSS] Set Move Route apply failed: #{e.message}"
       end
 
+      # Apply the Change Screen Color Tone (223) requests an interpreter queued
+      # this frame. Like a Set Move Route it does not suspend the interpreter, so
+      # it is polled the same way.
+      def apply_tint_requests(interp)
+        reqs = interp.take_tint_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| start_tone_change(r[:tone], r[:duration]) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] screen tone apply failed: #{e.message}"
+      end
+
+      # Begin easing the screen viewport's tone toward `tone` over `duration`
+      # frames, as RMXP's Game_Screen#start_tone_change does. A zero duration
+      # snaps. The tone lives on the viewport that holds the map (see
+      # setup_sprites), so windows drawn above it keep their own colours.
+      def start_tone_change(tone, duration)
+        return unless @screen_viewport && tone
+        target = [tone.red, tone.green, tone.blue, tone.gray]
+        frames = duration.to_i
+        if frames <= 0
+          @tone_change = nil
+          set_screen_tone(target)
+          return
+        end
+        cur = @screen_viewport.tone
+        @tone_change = { from: [cur.red, cur.green, cur.blue, cur.gray],
+                         to: target, frames: frames, step: 0 }
+      end
+
+      # One frame of the running tone ease (no-op when none is running).
+      def step_tone_change
+        c = @tone_change
+        return unless c
+        c[:step] += 1
+        if c[:step] >= c[:frames]
+          set_screen_tone(c[:to])
+          @tone_change = nil
+          return
+        end
+        t = c[:step]
+        n = c[:frames]
+        set_screen_tone((0..3).map { |i| c[:from][i] + (c[:to][i] - c[:from][i]) * t / n })
+      rescue StandardError => e
+        $stderr.puts "[RGSS] screen tone step failed: #{e.message}"
+        @tone_change = nil
+      end
+
+      def set_screen_tone(v)
+        return unless @screen_viewport
+        @screen_viewport.tone = Tone.new(v[0], v[1], v[2], v[3])
+        @screen_viewport.update
+      end
+
       def apply_move_request(r)
         route = Game::MoveRoute.from_page(r[:route])
         return unless route
@@ -828,6 +895,7 @@ class RPGXP
         else
           @interpreter.update
           apply_move_requests(@interpreter)
+          apply_tint_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -899,11 +967,13 @@ class RPGXP
         elsif it.running?
           it.update
           apply_move_requests(it)
+          apply_tint_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
           it.update
           apply_move_requests(it)
+          apply_tint_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError
@@ -920,6 +990,16 @@ class RPGXP
         @state.y = y
         @state.direction = dir if dir && dir > 0
         @tileset = Game::TileSet.new(@db, @map.tileset_id)
+        # The ground is a Tilemap built from the *map's* data/priorities and its
+        # tileset's graphics, so a map change has to build a new one -- RMXP
+        # disposes the whole Spriteset_Map and makes another in
+        # Scene_Map#transfer_player. Keeping the old one left the new map drawn
+        # with the previous map's tiles (black, when the previous map was the
+        # empty opening map Pray for You starts on) while its events and the
+        # party walked on top.
+        @tilemap.dispose if @tilemap
+        @tilemap = nil
+        setup_tilemap
         @moving = false
         @move_count = 0
         @dest_x = x
@@ -957,13 +1037,18 @@ class RPGXP
           Game::Message.expand(l.to_s, @state.variables, names)
         end
         lines = [""] if lines.empty?
-        h = lines.length * MSG_LINE_H + Panel::BORDER * 2
-        win = Panel.new(0, SCREEN_H - h - 8, SCREEN_W, h, load_windowskin)
+        # RMXP's box is a fixed four-line 480x160; a longer list (a Show Choices
+        # appended under the text) grows it upward from the same bottom edge
+        # rather than clipping.
+        h = [lines.length * MSG_LINE_H + Panel::BORDER * 2, MSG_H].max
+        win = Panel.new(MSG_X, SCREEN_H - MSG_MARGIN - h, MSG_W, h,
+                        load_windowskin)
         win.z = 300
         contents = Bitmap.new(win.inner_width, win.inner_height)
         contents.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
-          contents.draw_text 8, i * MSG_LINE_H + 2, contents.width - 16, MSG_LINE_H, line
+          contents.draw_text MSG_TEXT_X, i * MSG_LINE_H,
+                             contents.width - MSG_TEXT_X, MSG_LINE_H, line
         end
         win.contents = contents
         @message = { window: win, choice: choice, count: lines.length }
@@ -1085,9 +1170,17 @@ class RPGXP
       end
 
       def setup_sprites
+        # RMXP's Spriteset_Map puts the ground, the characters and the weather
+        # into one screen-sized viewport (its @viewport1) and leaves the windows
+        # outside it -- which is exactly what makes Change Screen Color Tone
+        # (223) tint the map and not the message box. Ours is built the same
+        # way, so the tone has one place to live. Panels sit at z 100, above
+        # this.
+        @screen_viewport = Viewport.new(0, 0, SCREEN_W, SCREEN_H)
+        @screen_viewport.z = 0
         setup_tilemap
 
-        @player_sprite = Sprite.new
+        @player_sprite = Sprite.new(@screen_viewport)
         # z is set per frame from the screen row the leader stands on, so
         # characters overlap in the right order (see character_z).
         pw = @charset ? Game::CharSet.cell_width(@charset) : TILE
@@ -1114,7 +1207,7 @@ class RPGXP
       # A missing tileset graphic must not take the map down: the Tilemap simply
       # draws nothing, and the scene stays walkable.
       def setup_tilemap
-        @tilemap = Tilemap.new
+        @tilemap = Tilemap.new(@screen_viewport)
         @tilemap.map_data = @map.data
         ts = @db.tilesets[@map.tileset_id]
         unless ts
@@ -1192,7 +1285,7 @@ class RPGXP
       end
 
       def new_event_sprite(bitmap, charset, w, h)
-        sprite = Sprite.new
+        sprite = Sprite.new(@screen_viewport)
         sprite.bitmap = bitmap
         { sprite: sprite, bitmap: bitmap, charset: charset, w: w, h: h,
           frame: nil, opacity: nil, blend_type: nil }
