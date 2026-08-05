@@ -284,12 +284,16 @@ The work below is roughly ordered by the critical path to a walkable game
   snow (drifting 2×2 flecks), the particle count scaling with strength and the
   positions advancing with the scene's animation frame so the field animates.
   **Set Teleport / Escape Target** (11810 / 11830), **Change Encounter Rate**
-  (11740) and **Change System BGM / SFX** (10660 / 10670) record their payloads
+  (11740) and **Change System BGM** (10660) record their payloads
   on `Game::State` — a per-map teleport-target registry, a single escape target,
-  the encounter step rate and per-slot system music / sound overrides — and
+  the encounter step rate and per-slot system music overrides — and
   round-trip through the save, but nothing consumes them yet (the Teleport /
-  Escape skills, encounter system and battle / menu scenes are not built), so
-  they are modelled for save fidelity like the access flags.
+  Escape skills, encounter system and battle scene are not built), so
+  they are modelled for save fidelity like the access flags. **Change System
+  SFX** (10670) is now consumed on the map: the choice window plays the cursor
+  sound as the selection moves and the decision sound on confirm, resolving a
+  Change System SFX override on `Game::State` before the database default
+  (`Scene::Map#system_se` / `play_system_se`).
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the

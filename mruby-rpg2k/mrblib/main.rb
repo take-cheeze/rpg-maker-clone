@@ -3271,10 +3271,13 @@ class RPG2k
           if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
             @choice_index += 1
             set_choice_cursor
+            play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::UP) && @choice_index > 0
             @choice_index -= 1
             set_choice_cursor
+            play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::C)
+            play_system_se(SFX_DECISION)
             index = @choice_index
             close_message
             @interpreter.choose(index)
@@ -3282,6 +3285,45 @@ class RPG2k
         else
           drive_text_message
         end
+      end
+
+      # RPG2000 system-sound slots (Change System SFX / 10670 stores overrides by
+      # these indices; the same order backs the database defaults).
+      SFX_CURSOR = 0
+      SFX_DECISION = 1
+      SFX_CANCEL = 2
+      SFX_BUZZER = 3
+      DB_SE_FIELD = { SFX_CURSOR => :cursor_se, SFX_DECISION => :decision_se,
+                      SFX_CANCEL => :cancel_se, SFX_BUZZER => :buzzer_se }.freeze
+
+      # Play a system sound effect by slot, preferring a Change System SFX
+      # override held on the game state and falling back to the database's own
+      # sound. A no-op when neither names a file (or no audio backend is present).
+      def play_system_se(slot)
+        se = system_se(slot)
+        return unless se
+        Audio.se_play se[:name], se[:volume] || 100, se[:tempo] || 100
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] system SE '#{slot}' playback failed: #{e.message}"
+      end
+
+      # The audio for a system slot as { name:, volume:, tempo: } — the state
+      # override (set by Change System SFX) first, then the database default for
+      # that slot, or nil when neither names a file.
+      def system_se(slot)
+        ov = @state.system_sfx[slot]
+        return ov if ov && ov[:name] && !ov[:name].empty?
+        db_system_se(slot)
+      end
+
+      def db_system_se(slot)
+        field = DB_SE_FIELD[slot]
+        return nil unless field && db.system.respond_to?(field)
+        se = db.system.send(field)
+        name = se && se.respond_to?(:file) ? se.file : nil
+        return nil if name.nil? || name.empty?
+        { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
+          tempo: (se.respond_to?(:pitch) ? se.pitch : 100) }
       end
 
       # A plain (non-choice) message: type the text out, and let a button press

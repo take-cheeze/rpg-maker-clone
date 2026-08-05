@@ -99,7 +99,10 @@ module RGSS
 
   module Audio
     def self.bgm_play(*); end
-    def self.se_play(*); end
+    # Record se_play calls so system-SFX checks can assert which sound fired.
+    class << self; attr_accessor :se_calls; end
+    def self.se_play(*a); (@se_calls ||= []) << a; end
+    def self.reset_se; @se_calls = []; end
   end
 
   def self.warn_stub(*); end
@@ -152,7 +155,9 @@ def fake_db(common = nil)
     system: OpenStruct.new(system_graphic: '',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
                            ship_music: OpenStruct.new(file: 'ShipBGM', volume: 80, pitch: 100),
-                           airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100)),
+                           airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
+                           cursor_se: OpenStruct.new(file: 'Cursor1', volume: 100, pitch: 100),
+                           decision_se: OpenStruct.new(file: 'Decision1', volume: 100, pitch: 100)),
     # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
     chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
     # Terms the Show Inn window reads; blank greeting fields exercise the
@@ -1751,6 +1756,43 @@ check 'Tint Screen darkens the view through a black overlay; neutral clears it' 
   st.screen.tint_to(100, 100, 100, 100, 0)
   scene.update
   eq 0, tint.opacity, 'a neutral tint clears the overlay'
+end
+
+check 'the choice window plays the cursor and decision system sounds' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'Yes'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'No'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
+  ok(msg && msg[:choice], 'choice window opened')
+  RGSS::Audio.reset_se
+  # Moving the cursor plays the database cursor sound.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 'Cursor1', RGSS::Audio.se_calls.last[0], 'cursor move plays the cursor SE'
+  # A Change System SFX override then wins over the database default.
+  st = scene.instance_variable_get(:@state)
+  st.system_sfx[0] = { name: 'MyCursor', volume: 90, tempo: 100 }
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 'MyCursor', RGSS::Audio.se_calls.last[0], 'the override wins over the DB default'
+  # Confirming plays the decision sound and closes the window.
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 'Decision1', RGSS::Audio.se_calls.last[0], 'confirm plays the decision SE'
+  ok !scene.instance_variable_get(:@message), 'the choice window closed on confirm'
 end
 
 check 'Weather draws a particle overlay when active and hides it when clear' do
