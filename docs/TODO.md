@@ -739,12 +739,21 @@ screen (544×416). Full rationale:
     `#fade`, the class-side `last`/`stop`/`fade`), and the RGSS3 Kernel methods
     **`rgss_main`** (the whole `Main` section of every VX Ace project),
     `rgss_stop`, `msgbox`/`msgbox_p`.
+  - ✅ **`Viewport#color` / `#flash`** — VX does every screen effect through the
+    viewport (`@viewport3.color.set(0, 0, 0, 255 - brightness)` is the fade,
+    `@viewport2.color` the flash, `viewport.flash` the animation flashes), so
+    these are now native: a colour overlay canvas the size of the viewport,
+    above its content layer, repainted from `#update` — which is what makes the
+    scripts' in-place `color.set(...)` visible. Same mechanism ADR 0021 measured
+    working for the RPG2000 fade, moved into the viewport so it clips and
+    scrolls with it.
   - Remaining, all native `mruby-rgss` work and ordered by what blocks a
     playable game: the **VX/VX Ace `Tilemap`** (nine `bitmaps` sheets + the
     `flags` table instead of XP's single tileset/autotiles — without it a game
-    boots but no map draws), **`Viewport#tone`/`#color`/`#flash`** (VX does
-    every tint / flash / fade through the viewport, so all screen effects are
-    inert — the same native tone work the RPG2000 tint needs),
+    boots but no map draws), **`Viewport#tone`** (unlike `color` a tone rescales
+    what is already drawn, so it needs a per-pixel pass over the viewport's
+    contents — the same native work the RPG2000 screen tint is waiting on, and
+    doing it once here would serve both),
     **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene transitions),
     the window open/close animation, and `Bitmap#blur`/`#radial_blur`.
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP

@@ -99,22 +99,34 @@ the different **autotile geometry** (A1 water/A2 ground/A3 buildings/A4 walls
 and the direct B–E pages). Native work in `mruby-rgss/src/lib.cxx`, and the
 single biggest item here: without it a VX game boots but shows no map.
 
-### 2. `Viewport#tone` / `#color` / `#flash` — no screen tint, flash or fade
+### 2. `Viewport#tone` — no screen tint (`#color` / `#flash` now draw ✅)
 
 VX/VX Ace do every screen effect through the viewport, not a sprite overlay:
 
 ```ruby
-@viewport1.tone.set($game_map.screen.tone)              # tint
-@viewport2.color.set($game_map.screen.flash_color)      # flash
-@viewport3.color.set(0, 0, 0, 255 - $game_map.screen.brightness)  # fade
-viewport.flash(timing.flash_color, timing.flash_duration)         # animations
+@viewport1.tone.set($game_map.screen.tone)              # tint          ❌
+@viewport2.color.set($game_map.screen.flash_color)      # flash         ✅
+@viewport3.color.set(0, 0, 0, 255 - $game_map.screen.brightness)  # fade ✅
+viewport.flash(timing.flash_color, timing.flash_duration)  # animations ✅
 ```
 
-Our `Viewport` has none of these (`ox`/`oy`/`rect`/`z`/`visible` only), so tint,
-flash, fade-in/out and animation flashes are all inert. This is the same native
-tone work the RPG2000 side is waiting on (`docs/TODO.md`), and doing it once on
-`Viewport` would serve both. `Graphics.brightness` is tracked but not drawn for
-exactly this reason.
+**`Viewport#color` and `#flash` are implemented natively**: a colour overlay
+canvas the size of the viewport, held above its content layer and refreshed from
+`#update` — which is what makes the scripts' in-place `color.set(...)` visible,
+since they mutate the Color object and call `update` every frame. It is the same
+"screen-sized colour at an opacity" mechanism ADR 0021 measured working for the
+RPG2000 fade, moved into the viewport so it clips, scrolls and hides with it. So
+the **screen fade** (`Graphics.fadeout`/`fadein` via viewport3), the **flash**,
+and **animation flashes** all reach the display.
+
+**`tone` is still missing.** Unlike `color`, a tone *rescales what is already
+drawn* (desaturate toward luminance, then offset each channel), which cannot be
+one more layer on top — it needs a per-pixel pass over the viewport's contents.
+That is the same native work the RPG2000 screen tint is waiting on
+(`docs/TODO.md`), and doing it once on `Viewport` would serve both.
+`Viewport#tone=` keeps the value (so a script's bookkeeping stays consistent and
+the tint lands the moment the pass exists) and reports once that it is not drawn;
+`Graphics.brightness` is tracked-not-drawn for the same reason.
 
 ### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — no scene transitions
 
@@ -145,7 +157,7 @@ packed VX Ace game needs next after the tilemap.
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
-the only route to a real game. With this round in place a bundle **runs**: it
-loads its database, plays its music, reads input, drives frames and lays out its
-windows. What it cannot yet do is **draw the map or any screen effect**, which
-is items 1–3, all native `mruby-rgss` work.
+the only route to a real game. A bundle now **runs**: it loads its database,
+plays its music, reads input, drives frames, lays out its windows, and fades and
+flashes the screen. What it cannot yet do is **draw the map** (item 1) or tint it
+(item 2's remaining half), both native `mruby-rgss` work.
