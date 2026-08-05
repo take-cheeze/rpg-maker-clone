@@ -780,17 +780,17 @@ class RPG2k
       # backdrop the plain void — when the map has no parallax or the image is
       # missing.
       def setup_parallax
-        u = @map.unit
-        return unless (u.parallax_flag rescue false)
-        name = (u.parallax_name rescue '').to_s
+        cfg = parallax_config
+        return unless cfg
+        name = cfg[:name].to_s
         return if name.empty?
         @parallax_img = Bitmap.new "Panorama/#{name}"
-        @par_loop_x = (u.parallax_loop_x rescue false) ? true : false
-        @par_loop_y = (u.parallax_loop_y rescue false) ? true : false
-        @par_auto_x = (u.parallax_autoloop_x rescue false) ? true : false
-        @par_auto_y = (u.parallax_autoloop_y rescue false) ? true : false
-        @par_sx = (u.parallax_sx rescue 0) || 0
-        @par_sy = (u.parallax_sy rescue 0) || 0
+        @par_loop_x = cfg[:loop_x] ? true : false
+        @par_loop_y = cfg[:loop_y] ? true : false
+        @par_auto_x = cfg[:auto_x] ? true : false
+        @par_auto_y = cfg[:auto_y] ? true : false
+        @par_sx = cfg[:sx] || 0
+        @par_sy = cfg[:sy] || 0
         @parallax_sprite = Sprite.new
         @parallax_sprite.z = -1
         @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
@@ -798,6 +798,22 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] parallax load failed, no backdrop drawn: #{e.message}"
         @parallax_img = nil
+      end
+
+      # The parallax settings to draw: a Change Parallax Background override
+      # (Game::State#parallax) when one is active, otherwise the map's own
+      # panorama fields. nil when the map declares no parallax and none was set.
+      def parallax_config
+        ov = @state.parallax
+        return ov if ov
+        u = @map.unit
+        return nil unless (u.parallax_flag rescue false)
+        { name: (u.parallax_name rescue '').to_s,
+          loop_x: (u.parallax_loop_x rescue false),
+          loop_y: (u.parallax_loop_y rescue false),
+          auto_x: (u.parallax_autoloop_x rescue false),
+          auto_y: (u.parallax_autoloop_y rescue false),
+          sx: (u.parallax_sx rescue 0), sy: (u.parallax_sy rescue 0) }
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -1067,6 +1083,7 @@ class RPG2k
         apply_location_requests(it, p[:event])
         apply_erase_request(it, p[:event])
         apply_tileset_request(it)
+        apply_parallax_request(it)
       rescue StandardError
         nil
       end
@@ -1457,6 +1474,32 @@ class RPG2k
         nil
       end
 
+      # -- Change Parallax Background -----------------------------------------
+
+      # If the interpreter ran a Change Parallax Background this step, tear down
+      # the old panorama sprite and rebuild it from the new override
+      # (Game::State#parallax). The override lasts until the next map load (see
+      # perform_teleport, which clears it), when the map's own panorama returns.
+      def apply_parallax_request(interp)
+        return unless interp.take_parallax_request
+        dispose_parallax
+        setup_parallax
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Change Parallax Background failed: #{e.message}"
+        nil
+      end
+
+      # Release the current parallax sprite / buffers before a rebuild, so a
+      # mid-map panorama swap does not leak the old bitmaps.
+      def dispose_parallax
+        @parallax_sprite.dispose if @parallax_sprite
+        @parallax_bmp.dispose if @parallax_bmp
+        @parallax_img.dispose if @parallax_img
+        @parallax_sprite = nil
+        @parallax_bmp = nil
+        @parallax_img = nil
+      end
+
       # -- Move Event (Set Move Route) ----------------------------------------
 
       # Apply the Move Event requests an interpreter queued this step. `this_event`
@@ -1745,6 +1788,7 @@ class RPG2k
           apply_halt_request(@interpreter)
           apply_graphic_change(@interpreter)
           apply_tileset_request(@interpreter)
+          apply_parallax_request(@interpreter)
         end
       end
 
@@ -3061,6 +3105,12 @@ class RPG2k
         # pictures on top of the first room and the map is never visible —
         # exactly what the wine comparison showed (ADR 0021).
         @state.erase_all_pictures
+        # A Change Parallax Background override does not survive a teleport
+        # either; the destination map's own panorama applies. Rebuild the
+        # backdrop from the new map so it isn't drawn with the old one.
+        @state.clear_parallax
+        dispose_parallax
+        setup_parallax
         # ... nor does a Pan Screen offset / camera lock: the camera re-centres
         # on the hero on the new map. Nepheshel's opening pans a long way before
         # teleporting into the first room, and keeping that offset drew the room
