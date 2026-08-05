@@ -5,11 +5,17 @@
 # used by run-rpg2k-wine.bash.
 #
 # The repo's own rpg2k test-bed (mtf-meido-action) only ships EasyRPG's
-# Player.exe, and the classic RPG_RT.exe games referenced by the other download
-# scripts (Nepheshel, PrayforYou) live on hosts that are blocked from
+# Player.exe, and the one classic RPG_RT.exe game the other download scripts
+# fetch (Nepheshel) lives on a host that has been unreliable from
 # sandboxed/proxied CI. So this pulls "Song-of-the-Sea" (by lychees, the same
 # author as the mtf-meido-action test-bed), which ships a real 32-bit
 # RPG_RT.exe (RPG Maker 2003) directly in git.
+#
+# PrayforYou used to be listed here as a second RPG_RT.exe game. It is not one:
+# it is an RPG Maker *XP* project (Game.ini `Library=RGSS103J.dll`,
+# `Scripts=Data\Scripts.rxdata`, shipping RGSS103J.dll and a packed
+# Game.rgssad, with no RPG_RT.ldb / .lmu / .lmt anywhere), so it could never
+# have served as an RPG2000 runtime comparison. See download-prayforyou.bash.
 #
 # RPG_RT.exe is a 32-bit binary, so 32-bit wine is required:
 #   dpkg --add-architecture i386 && apt-get update
