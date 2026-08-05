@@ -2267,31 +2267,43 @@ module Game
     # screen effect's 0.1s-unit duration into a frame count.
     FRAMES_PER_TENTH = 6
 
-    # Fixed length of an Erase / Show Screen transition. RPG_RT runs these for a
-    # set per-style duration rather than an event-supplied one; this approximates
-    # the common fade at ~0.5s.
-    SCREEN_FADE_FRAMES = 32
-
-    # Erase Screen (11010) / Show Screen (11020): fade the whole screen out to
-    # black or back in over a fixed duration, using the transition style in
-    # param0 (0 = fade; higher = block / stripe / scroll variants, of which only
-    # the fade is modelled). Both always run their transition and pause the event
-    # until it settles — the owning scene advances Game::Screen each frame and
-    # resumes us on the :screen wait. Only the fade *level* is modelled; drawing
-    # the black overlay is the native refinement still pending for the tint and
-    # flash overlays too.
+    # Erase Screen (11010) / Show Screen (11020): take the whole screen to black
+    # or back, in the transition style param0 names. The style table and each
+    # style's own length live in Game::Transition; **param0 = -1 means "use the
+    # configured transition"**, which is the Change Screen Transitions (10690)
+    # slot for a teleport erase / show — itself seeded from the database. That is
+    # the overwhelmingly common value in real games (2124 of Nepheshel's 2146
+    # Erase Screens), so leaving it unresolved meant almost every fade in the
+    # game ran an unnamed style of a made-up length.
+    #
+    # Both pause the event until the transition settles — the owning scene
+    # advances Game::Screen each frame and resumes us on the :screen wait — but
+    # an instant style (the cuts, or a transition onto a screen already in that
+    # state) settles at once and does not wait at all.
     def do_erase_screen(cmd)
-      @state.screen.erase(cmd.param(0), SCREEN_FADE_FRAMES)
+      style = Game::Transition.erase_style(cmd.param(0), teleport_transition(0))
+      @state.screen.erase(style)
       return unless @state.screen.fading?
       @wait_kind = :screen
       @waiting = true
     end
 
     def do_show_screen(cmd)
-      @state.screen.show(cmd.param(0), SCREEN_FADE_FRAMES)
+      style = Game::Transition.show_style(cmd.param(0), teleport_transition(1))
+      @state.screen.show(style)
       return unless @state.screen.fading?
       @wait_kind = :screen
       @waiting = true
+    end
+
+    # The configured teleport transition **setting** a -1 falls back to: slot 0
+    # is the erase and slot 1 the show, in the same order Change Screen
+    # Transitions (10690) writes them and the save stores them (chunks 111/112).
+    # The state seeds these from the database when the game starts; setting 0,
+    # the plain fade, stands in for a state that never got the chance.
+    def teleport_transition(slot)
+      v = @state.screen_transitions[slot]
+      Game::Transition.setting?(v) ? v : 0
     end
 
     # Tint Screen: transition the shared screen tint to the RPG2000 channels

@@ -1229,7 +1229,7 @@ end
 
 check 'Show Screen fades back in from black' do
   st = new_state
-  st.screen.erase(0, 32)
+  st.screen.erase(Game::Transition::FADE_OUT, 32)
   st.screen.update until !st.screen.fading? # start fully black
   eq 255, st.screen.fade_level
   it = Game::Interpreter.new(st)
@@ -1253,12 +1253,161 @@ end
 
 check 'Erase Screen records the transition style and ramps the level' do
   st = new_state
-  st.screen.erase(3, 32) # transition style 3 (a block/stripe variant)
-  eq 3, st.screen.fade_transition, 'the style is recorded for fidelity'
+  # Setting 2 is Random Blocks Down, one of the styles a black mask cannot
+  # express, so it runs as a fade of the same length.
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [2])])
+  it.update
+  eq Game::Transition::RANDOM_BLOCKS_DOWN, st.screen.fade_transition
+  ok st.screen.transition.uniform?, 'an unported style falls back to the fade'
+  eq 41, st.screen.transition.frames, 'but keeps its own length'
   before = st.screen.fade_level
   st.screen.update
   ok st.screen.fade_level > before, 'the level eases toward black'
   ok st.screen.fade_level < 255, 'over time, not instantly'
+end
+
+# -- screen transitions (Game::Transition) ------------------------------------
+
+TR = Game::Transition
+
+check 'Erase / Show Screen map their parameter onto the RPG2000 style table' do
+  # The two directions read the same setting index differently.
+  eq TR::FADE_OUT,    TR.erase_style(0, 0)
+  eq TR::FADE_IN,     TR.show_style(0, 0)
+  eq TR::BLIND_CLOSE, TR.erase_style(4, 0)
+  eq TR::BLIND_OPEN,  TR.show_style(4, 0)
+  eq TR::CUT_OUT,     TR.erase_style(19, 0)
+  eq TR::CUT_IN,      TR.show_style(19, 0)
+  # Setting 20 and anything past the table are "no transition".
+  eq TR::NONE, TR.erase_style(20, 0)
+  eq TR::NONE, TR.erase_style(99, 0)
+  # -1 means "use the configured transition", which is itself a setting index.
+  eq TR::BLIND_CLOSE, TR.erase_style(-1, 4)
+  eq TR::BLIND_OPEN,  TR.show_style(-1, 4)
+  eq TR::NONE, TR.erase_style(-1, nil), 'an unconfigured slot has no style'
+end
+
+check 'each transition style runs for its own length' do
+  eq 35, TR.default_frames(TR::FADE_OUT)
+  eq 35, TR.default_frames(TR::FADE_IN)
+  eq 1,  TR.default_frames(TR::CUT_OUT)
+  eq 0,  TR.default_frames(TR::NONE)
+  eq 41, TR.default_frames(TR::BLIND_CLOSE), 'the shaped ones all take 41'
+end
+
+check 'Erase Screen resolves -1 against the configured transition' do
+  st = new_state
+  st.set_screen_transition(0, 4) # teleport erase -> blinds
+  st.set_screen_transition(1, 4) # teleport show  -> blinds
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [-1])])
+  it.update
+  eq TR::BLIND_CLOSE, st.screen.fade_transition
+  ok !st.screen.transition.uniform?, 'the blinds are painted, not faded'
+  st.screen.update until !st.screen.fading?
+
+  it.resume
+  it.start([FakeCmd.new(IC::SHOW_SCREEN, [-1])])
+  it.update
+  eq TR::BLIND_OPEN, st.screen.fade_transition
+end
+
+check 'a cut transition takes a single frame, not a fade' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [19]),   # cut out
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq TR::CUT_OUT, st.screen.fade_transition
+  eq 1, st.screen.transition.frames, 'a cut is one frame long, not 35'
+  # RPG_RT shows the live screen for that frame and lands black after it.
+  eq [[0, 0, 320, 240]], st.screen.transition.visible_rects
+  st.screen.update
+  ok !st.screen.fading?, 'and it is over after that one frame'
+  eq 255, st.screen.fade_level
+  it.resume
+  it.update
+  eq true, st.switches[1]
+end
+
+check '"no transition" neither animates nor changes the screen' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [20]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq TR::NONE, st.screen.fade_transition
+  eq 0, st.screen.fade_level, 'the screen is left exactly as it was'
+  ok !st.screen.erased?
+  eq true, st.switches[1], 'and nothing waited'
+end
+
+check 'a fade ramps the overlay opacity, an erase up and a show down' do
+  out = TR.new(TR::FADE_OUT, 35, 320, 240, true)
+  eq 255 * 1 / 33, out.black_alpha, 'the ramp runs over total - 2 frames'
+  32.times { out.advance }
+  eq 255, out.black_alpha, 'and lands fully black before the last frame'
+
+  into = TR.new(TR::FADE_IN, 35, 320, 240, false)
+  eq 255 - 255 / 33, into.black_alpha, 'a show is the same ramp inverted'
+  32.times { into.advance }
+  eq 0, into.black_alpha
+end
+
+check 'blinds close band by band and open the other way' do
+  # 8-pixel bands, one more pixel shut every five frames.
+  close = TR.new(TR::BLIND_CLOSE, 41, 320, 240, true)
+  rects = close.visible_rects
+  eq 30, rects.size, '240 / 8 bands still showing'
+  eq [0, 1, 320, 7], rects[0], 'one pixel of the first band has closed'
+  eq [0, 9, 320, 7], rects[1], 'and of the second'
+  4.times { close.advance }
+  eq [0, 1, 320, 7], close.visible_rects[0], 'still one pixel four frames in'
+  close.advance
+  eq [0, 2, 320, 6], close.visible_rects[0], 'a pixel more every five frames'
+
+  open = TR.new(TR::BLIND_OPEN, 41, 320, 240, false)
+  eq [0, 7, 320, 1], open.visible_rects[0], 'opening reveals from the bottom up'
+end
+
+check 'stripe transitions march in from both edges' do
+  # Vertical stripes: 3-pixel rows on a 6-pixel pitch. A show reveals the rows
+  # the arriving screen has taken; an erase keeps the ones it has not.
+  into = TR.new(TR::VERTICAL_STRIPES_IN, 41, 320, 240, false)
+  eq [[0, 0, 320, 3], [0, 237, 320, 3]], into.visible_rects
+  into.advance
+  eq 4, into.visible_rects.size, 'one row from each edge per frame'
+
+  out = TR.new(TR::VERTICAL_STRIPES_OUT, 41, 320, 240, true)
+  # 39 rows from each edge, less the bottom one RPG_RT places at y = h — off the
+  # screen on the first frame, and clipped away here rather than drawn.
+  eq 77, out.visible_rects.size, 'an erase starts with nearly every row live'
+  eq [0, 3, 320, 3], out.visible_rects[0]
+
+  # Horizontal stripes are the same march in 4-pixel columns on an 8-pixel pitch.
+  cols = TR.new(TR::HORIZONTAL_STRIPES_IN, 41, 320, 240, false)
+  eq [[0, 0, 4, 240], [316, 0, 4, 240]], cols.visible_rects
+end
+
+check 'the window transitions shrink, grow, and invert for the other direction' do
+  # Border to centre, erasing: the live scene is the shrinking centred window.
+  out = TR.new(TR::BORDER_TO_CENTER_OUT, 41, 320, 240, true)
+  eq [[0, 0, 320, 240]], out.visible_rects, 'the full screen on frame 0'
+  20.times { out.advance }
+  eq [[80, 60, 160, 120]], out.visible_rects, 'half way in, a half-size window'
+
+  # Showing, the arriving screen is *outside* that window, so the live regions
+  # are the four bands around it.
+  into = TR.new(TR::BORDER_TO_CENTER_IN, 41, 320, 240, false)
+  20.times { into.advance }
+  eq [[0, 0, 320, 60], [0, 180, 320, 60], [0, 60, 80, 120], [240, 60, 80, 120]],
+     into.visible_rects
+
+  # Centre to border grows a window out of the middle.
+  grow = TR.new(TR::CENTER_TO_BORDER_IN, 41, 320, 240, false)
+  20.times { grow.advance }
+  eq [[80, 60, 160, 120]], grow.visible_rects
 end
 
 check 'conditional branch on the timer' do
@@ -3448,7 +3597,11 @@ check 'Change Screen Transitions sets the chosen slot; round-trips through save'
                                      max_hp: 100, max_mp: 30, atk: 10, def: 8) }
   db = FakeActorDB.new(players, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  eq [0, 0, 0, 0, 0, 0], st.screen_transitions, 'all slots default to 0'
+  eq [nil] * 6, st.screen_transitions, 'a fresh state has no slot configured'
+  # Seeding fills every slot from the database's System settings; this fake
+  # database carries none, so each falls back to setting 0 (the plain fade).
+  st.seed_screen_transitions(db)
+  eq [0, 0, 0, 0, 0, 0], st.screen_transitions, 'seeded to the database defaults'
 
   it = Game::Interpreter.new(st)
   # Slot 2 (battle-start erase) -> style 5, slot 5 (battle-end show) -> style 9.
