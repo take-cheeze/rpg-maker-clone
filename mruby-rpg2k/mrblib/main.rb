@@ -2616,6 +2616,10 @@ class RPG2k
           @battle_ui[:target_i] = 0
           @battle_ui[:phase] = :target
           draw_battle_target
+        when :all_enemy
+          apply_pending_skill_all(living_foes)
+        when :all_ally
+          apply_pending_skill_all(living_allies)
         else # :ally
           @battle_ui[:ally_i] = 0
           @battle_ui[:phase] = :ally_target
@@ -2634,6 +2638,28 @@ class RPG2k
                                           inflict: c[:inflict], chance: c[:chance],
                                           variance: c[:variance] || 0,
                                           attributes: c[:attributes])
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
+      end
+
+      # Commit the pending all-target skill on every `targets` combatant (all
+      # living enemies for an attack skill, all living allies for a heal): build
+      # one per-target effect from the model (attack damage varies with each
+      # target's defence) and queue them as a single volley. The shared SP cost /
+      # infliction ride along once.
+      def apply_pending_skill_all(targets)
+        sk = @battle_ui[:pending][:sk]
+        meta = @state.party.battle_skill_command(sk, current_actor, targets.first)
+        effects = targets.map do |t|
+          c = @state.party.battle_skill_command(sk, current_actor, t)
+          { target: t, hp: c[:hp], mp: c[:mp] }
+        end
+        @battle_ui[:battle].command_skill_all(current_actor, effects,
+                                              name: sk.name, cost: meta[:cost],
+                                              inflict: meta[:inflict], chance: meta[:chance],
+                                              variance: meta[:variance] || 0,
+                                              attributes: meta[:attributes])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -2664,9 +2690,13 @@ class RPG2k
           it = @state.party.db_item(item_id)
           @battle_ui[:pending] = { kind: :item, item_id: item_id, it: it }
           close_battle_item
-          @battle_ui[:ally_i] = 0
-          @battle_ui[:phase] = :ally_target
-          draw_battle_ally_target
+          if @state.party.item_all_allies?(it)
+            apply_pending_item_all(living_allies)
+          else
+            @battle_ui[:ally_i] = 0
+            @battle_ui[:phase] = :ally_target
+            draw_battle_ally_target
+          end
         elsif Input.trigger?(Input::B)
           close_battle_item
           @battle_ui[:phase] = :command
@@ -2713,6 +2743,23 @@ class RPG2k
                                          item_id: pending[:item_id],
                                          name: pending[:it].name,
                                          hp: c[:hp], mp: c[:mp], cured: c[:cured])
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
+      end
+
+      # Commit an all-party item on every living ally: one per-member recovery
+      # from the model, queued as a single volley that consumes one item.
+      def apply_pending_item_all(targets)
+        pending = @battle_ui[:pending]
+        effects = targets.map do |t|
+          c = @state.party.battle_item_command(pending[:it], t)
+          { target: t, hp: c[:hp], mp: c[:mp] }
+        end
+        cured = @state.party.battle_item_command(pending[:it], targets.first)[:cured]
+        @battle_ui[:battle].command_item_all(current_actor, effects,
+                                             item_id: pending[:item_id],
+                                             name: pending[:it].name, cured: cured)
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor

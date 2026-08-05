@@ -2029,6 +2029,7 @@ class BattleMagicParty
   end
   def db_item(id); id == 5 ? OpenStruct.new(name: 'Potion') : nil; end
   def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
+  def item_all_allies?(it); it.respond_to?(:scope) && it.scope == 1; end
 end
 
 # Open a battle and step to the per-actor command menu.

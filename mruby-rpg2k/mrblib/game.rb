@@ -1919,9 +1919,9 @@ module Game
     # all-target scopes (1 all enemies, 4 all allies) and the battle SP / damage
     # variance are later refinements.
 
-    # Single-target battle skill scopes: 0 single enemy, 2 the caster, 3 a single
-    # ally. (1 all enemies and 4 all allies are deferred.)
-    BATTLE_SKILL_SCOPES = [0, 2, 3].freeze
+    # Battle skill scopes the menu offers: 0 single enemy, 1 all enemies, 2 the
+    # caster, 3 a single ally, 4 all allies.
+    BATTLE_SKILL_SCOPES = [0, 1, 2, 3, 4].freeze
 
     # `actor`'s known normal skills usable in battle — flagged `occasion_battle`
     # with a single-target scope — as `[skill_id, cost]` pairs in ascending id
@@ -1941,11 +1941,14 @@ module Game
       sk.respond_to?(:occasion_battle) ? sk.occasion_battle : true
     end
 
-    # Whom a battle skill targets: :enemy (scope 0), :self (scope 2) or :ally (3).
+    # Whom a battle skill targets: :enemy (scope 0), :all_enemy (1), :self (2),
+    # :all_ally (4) or a single :ally (3, the default).
     def battle_skill_target(sk)
       case sk.scope
       when 0 then :enemy
+      when 1 then :all_enemy
       when 2 then :self
+      when 4 then :all_ally
       else :ally
       end
     end
@@ -1981,7 +1984,7 @@ module Game
     def battle_skill_command(sk, caster, target)
       cost = skill_cost(sk, caster)
       base = skill_effect(sk, caster)
-      if sk.scope == 0
+      if sk.scope == 0 || sk.scope == 1 # single or all enemies: an attack skill
         dmg = base - (target ? target.def / 4 : 0)
         dmg = 1 if dmg < 1
         { cost: cost, hp: -dmg, mp: 0,
@@ -2018,6 +2021,13 @@ module Game
     def battle_item_command(it, target)
       hp, mp = item_recovery(it, target)
       { hp: hp, mp: mp, cured: item_cured_states(it) }
+    end
+
+    # Whether medicine `it` targets the whole party (item scope 1) rather than a
+    # single ally (scope 0). The battle menu casts an all-party item on every
+    # living member at once, skipping target selection.
+    def item_all_allies?(it)
+      it.respond_to?(:scope) && it.scope == 1
     end
   end
 
@@ -3260,6 +3270,7 @@ module Game
       @escape_chance = nil # lazily computed from agilities on the first attempt
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
+      @pending = []  # extra hits of an all-target action, drained one per #step
     end
 
     # RPG2000 normal-attack damage variance on the 0-10 `var` scale.
@@ -3336,6 +3347,7 @@ module Game
     # battle is already decided (or has hit the round cap). Living battlers act
     # in agility order; a new round refills the queue.
     def step
+      return @pending.shift unless @pending.empty?
       loop do
         return nil if finished?
         refill_queue if @queue.empty?
@@ -3344,11 +3356,24 @@ module Game
         next if b.dead?
         can_act = apply_turn_states(b)
         next if b.dead? || !can_act
-        entry = strike(b)
+        entry = record_action(strike(b))
         next unless entry # attacker had no living target; try the next
-        @log << entry
         return entry
       end
+    end
+
+    # Log the result of a battler's action and return its first entry, buffering
+    # the rest. A basic attack / single-target skill returns one entry; an
+    # all-target skill returns an array — every entry is logged now (the effects
+    # all landed at once) but surfaced one per #step so the screen animates them
+    # in turn. nil (no living target) passes straight through.
+    def record_action(result)
+      return nil if result.nil?
+      entries = result.is_a?(Array) ? result : [result]
+      return nil if entries.empty?
+      entries.each { |e| @log << e }
+      @pending.concat(entries[1..-1])
+      entries.first
     end
 
     # Step the fight to completion and return :victory, :defeat or (if the party
@@ -3441,6 +3466,21 @@ module Game
       ally.action = nil; ally.defending = false
     end
 
+    # Queue an all-target Skill for `ally` (scope 1 all enemies / 4 all allies):
+    # `targets` is a list of per-target `{ target:, hp:, mp: }` effects (the same
+    # signed HP / SP deltas #command_skill takes, one per target, since attack
+    # damage varies with each target's defence). The SP `cost` is spent once when
+    # the action resolves; the shared `inflict` / `chance` / `variance` /
+    # `attributes` apply to every target. #apply_command produces one log entry
+    # per living target, drained one at a time by #step_action.
+    def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
+                          variance: 0, attributes: nil)
+      ally.command = { kind: :skill, all: true, targets: targets, name: name,
+                       cost: cost, inflict: inflict || [], chance: chance,
+                       variance: variance, attributes: attributes || [] }
+      ally.action = nil; ally.defending = false
+    end
+
     # Queue a single-target Item for `ally` on `target`: restore the HP / SP and
     # cure the status conditions from Game::Party#battle_item_command. `item_id`
     # rides along on the log entry so the scene consumes one from the bag when the
@@ -3448,6 +3488,17 @@ module Game
     def command_item(ally, target, item_id:, name:, hp: 0, mp: 0, cured: nil)
       ally.command = { kind: :item, target: target, item_id: item_id,
                        name: name, hp: hp, mp: mp, cured: cured || [] }
+      ally.action = nil; ally.defending = false
+    end
+
+    # Queue an all-ally Item for `ally` (an item scope 1, the whole party):
+    # `targets` is a list of per-member `{ target:, hp:, mp: }` recoveries. The
+    # shared `cured` states apply to each. One item is consumed for the volley
+    # (only the first produced entry carries `item_id`, so the scene's per-entry
+    # bag deduction fires once).
+    def command_item_all(ally, targets, item_id:, name:, cured: nil)
+      ally.command = { kind: :item, all: true, item_id: item_id, targets: targets,
+                       name: name, cured: cured || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -3470,6 +3521,7 @@ module Game
     # action rather than applying it all at once (#run_round is just this three-
     # step sequence run to completion). Counts towards the MAX_ROUNDS cap.
     def begin_round
+      @pending = []
       refill_queue
     end
 
@@ -3479,6 +3531,7 @@ module Game
     # the caller then clears commands with #end_round and either shows the result
     # or asks for the next round. Unlike #step it never starts a new round.
     def step_action
+      return @pending.shift unless @pending.empty? # drain a buffered all-target hit
       loop do
         return nil if finished? || @queue.empty?
         b = @queue.shift
@@ -3488,9 +3541,8 @@ module Game
         # turn is skipped.
         can_act = apply_turn_states(b)
         next if b.dead? || !can_act
-        entry = strike(b)
+        entry = record_action(strike(b))
         next unless entry
-        @log << entry
         return entry
       end
     end
@@ -3709,11 +3761,34 @@ module Game
     # restores HP / SP clamped to the target's maxima and reads as a `recover`.
     def apply_command(b)
       cmd = b.command
+      return apply_command_all(b, cmd) if cmd[:all]
       target = cmd[:target]
       return nil if target.nil? || target.dead?
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
-      hp = cmd[:hp] || 0
-      mp = cmd[:mp] || 0
+      apply_skill_hit(b, target, cmd[:hp] || 0, cmd[:mp] || 0, cmd)
+    end
+
+    # An all-target Skill (scope 1 all enemies / 4 all allies): spend the SP once,
+    # then apply the per-target effect to every living target, returning one log
+    # entry per hit (which #step_action surfaces one at a time). Fizzles — nil, no
+    # SP spent — when every listed target has already fallen this round.
+    def apply_command_all(b, cmd)
+      live = (cmd[:targets] || []).select { |t| t[:target] && !t[:target].dead? }
+      return nil if live.empty?
+      b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
+      entries = live.map { |t| apply_skill_hit(b, t[:target], t[:hp] || 0, t[:mp] || 0, cmd) }
+      # An all-ally item is consumed once for the whole volley: keep item_id on
+      # the first hit only, so the scene's per-entry bag deduction fires once.
+      entries.each_with_index { |e, i| e[:item_id] = nil unless i.zero? } if cmd[:item_id]
+      entries
+    end
+
+    # Apply one skill / item effect from `b` to `target`: a negative `hp` is an
+    # attack (elemental scaling, variance, then state infliction, reading as a
+    # `skill:` hit), a non-negative one restores HP / SP and cures states (reading
+    # as a `recover`). Returns the log entry. Shared by single- and all-target
+    # commands.
+    def apply_skill_hit(b, target, hp, mp, cmd)
       if hp < 0
         dmg = -hp
         # An elemental skill scales its damage by the target's resistance first
