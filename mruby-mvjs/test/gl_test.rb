@@ -169,3 +169,43 @@ assert 'MV::JS.present_gl returns false for a bad handle' do
   bmp = RGSS::Bitmap.new(2, 2)
   assert_equal false, MV::JS.present_gl(bmp, 0)
 end
+
+assert 'a WebGL context follows its canvas when the canvas is resized' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # MZ's order, which the tests above did not cover: take the context *first*
+  # (from a canvas that is still 0x0, so the native target is created at the
+  # 1x1 minimum), and only then size the canvas — Scene_Boot.resizeScreen ->
+  # Graphics.resize -> PIXI's renderer.resize assigns canvas.width/height. Before
+  # the render target followed, the whole game rendered into that 1x1 buffer, so
+  # the on-screen present and the screenshot both read back a single pixel.
+  handle = MV::JS.eval(<<~'JS')
+    (function () {
+      var cv = document.createElement('canvas');
+      globalThis.RCV = cv;
+      var gl = cv.getContext('webgl');   // canvas still 0x0 here
+      if (!gl) return 0;
+      globalThis.RGL = gl;
+      cv.width = 24; cv.height = 16;     // ... sized only afterwards
+      return gl.__gl;
+    })()
+  JS
+  assert_true handle > 0
+
+  # The context reports the new size...
+  assert_equal 24, MV::JS.eval("RGL.drawingBufferWidth")
+  assert_equal 16, MV::JS.eval("RGL.drawingBufferHeight")
+
+  # ...and the render target really is that big: clear it blue and read a pixel
+  # back from a corner only the resized buffer has.
+  MV::JS.eval(
+    "RGL.viewport(0, 0, 24, 16); RGL.clearColor(0.0, 0.0, 1.0, 1.0); " \
+    "RGL.clear(RGL.COLOR_BUFFER_BIT); RGL.finish();"
+  )
+  bmp = RGSS::Bitmap.new(24, 16)
+  assert_equal true, MV::JS.present_gl(bmp, handle)
+  c = bmp.get_pixel(20, 12) # outside a 1x1 target
+  assert_true c.blue > 200
+  assert_true c.red < 60
+  assert_equal 255.0, c.alpha
+end

@@ -1268,13 +1268,24 @@ const char* kCanvasPreamble = R"MVJS(
     this.__h = g.__mv_canvasCreate(this._w, this._h);
     this._ctx = null;
     this.style = {};
+    // Resizing the canvas resizes its backing buffer *and*, when a WebGL
+    // context has been taken from it, that context's off-screen render target.
+    // MZ creates its context while the canvas is still 0x0 and only sizes it in
+    // Scene_Boot.resizeScreen -> Graphics.resize -> PIXI's renderer.resize,
+    // which assigns these properties; without following through, the whole game
+    // renders into the 1x1 target the context was created with.
+    function resized() {
+      g.__mv_canvasResize(self.__h, self._w, self._h);
+      if (self._glctx && self._glctx.__mv_resize)
+        self._glctx.__mv_resize(self._w, self._h);
+    }
     Object.defineProperty(this, 'width', {
       get: function () { return self._w; },
-      set: function (v) { self._w = v | 0; g.__mv_canvasResize(self.__h, self._w, self._h); },
+      set: function (v) { self._w = v | 0; resized(); },
     });
     Object.defineProperty(this, 'height', {
       get: function () { return self._h; },
-      set: function (v) { self._h = v | 0; g.__mv_canvasResize(self.__h, self._w, self._h); },
+      set: function (v) { self._h = v | 0; resized(); },
     });
   }
   Canvas.prototype.getContext = function (type) {

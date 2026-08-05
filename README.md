@@ -196,12 +196,15 @@
 - **MZ** ships PIXI v5, which is **WebGL-only**, so it renders through a native
   **surfaceless-EGL GLES2** backend instead: `canvas.getContext("webgl")` returns
   a real context (`mruby-mvjs/src/mvwebgl.cxx`), PIXI renders the scene into its
-  FBO, and the frame is read back onto the screen sprite. MZ now **boots to the
-  title screen and walks its start map** — the game is advanced by pumping the
-  host once per frame, which is what drives rmmz's own `requestAnimationFrame`
-  loop (PIXI's ticker updates *and* renders the scene) and delivers the
-  asynchronous loads `Scene_Boot` waits on. Keyboard and pointer input are fed
-  into rmmz's `Input`/`TouchInput`
+  FBO, and the frame is read back onto the screen sprite. MZ **boots through the
+  title screen into its start map, with a held key walking the player** — the
+  game is advanced by pumping the host once per frame, which is what drives
+  rmmz's own `requestAnimationFrame` loop (PIXI's ticker updates *and* renders
+  the scene) and delivers the asynchronous loads `Scene_Boot` waits on. Keyboard
+  and pointer input are fed into rmmz's `Input`/`TouchInput`. This is younger
+  than the MV path and is still being brought up against real games — the
+  headless CI smoke is what the claim rests on, and it is not yet a blocking
+  check
 - The MZ engine is not redistributable (unlike MV's MIT corescript), so
   `data/mz-sample` commits only an authored database and art —
   `scripts/gen-mz-sample.py` writes both — and

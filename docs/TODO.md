@@ -1151,10 +1151,15 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `Input._currentState` / `TouchInput` each frame (`sync_input` /
         `sync_touch`), reusing MV's shared key map and touch bridge (rmmz and
         rmmv share the button names and state shape).
-      - ✅ **Title and a walkable map.** MZ now boots past the loading scene into
+      - ✅ **Title and a walkable map.** MZ boots past the loading scene into
         `Scene_Title` and, on New Game, into its start map with the player
-        walking. Three things were in the way, each found by booting PIXI v5.2.4
-        + rmmz under Node against the host's semantics:
+        walking. Five things were in the way. The first three were found by
+        booting PIXI v5.2.4 + rmmz under Node against the host's semantics; the
+        last two only surfaced on the real engine in CI, because the Node harness
+        stubbed *every* Canvas2D/WebGL method and so could not see a gap in the
+        native surface at all. The harness now mirrors `Ctx.prototype` and
+        `mvwebgl.cxx`'s `P.*` list exactly — **keep it that way**, or it will go
+        on hiding this whole class of bug:
         - **The frame loop never pumped the host.** `MZ#main_loop` called
           `SceneManager.update` itself, but MZ drives itself from PIXI's ticker:
           `SceneManager.run` hands over to `Graphics.startGameLoop`, and it is
@@ -1196,14 +1201,44 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
           the four layers top-down and the first tile not marked so decides, so a
           plain `0` there makes the empty upper layers report every cell passable
           and no wall blocks (checked against a real editor-written tileset).
+        - **`gl.clearStencil` was missing from the WebGL wrapper.**
+          `WindowLayer.render` calls it on every frame that draws a window, so
+          the first rendered frame threw `TypeError: not a function` — and that
+          is *fatal*, not transient: PIXI v5 re-arms its `requestAnimationFrame`
+          only after `update()` returns, so one throw inside the ticker stops the
+          game loop for good. It pinned MZ at `Scene_Title` with New Game already
+          requested. Added as a no-op beside the existing `stencilFunc`/`Op`/
+          `Mask` stubs, together with `polygonOffset` and the `uniform3i`/
+          `uniform4i` setters PIXI generates for `ivec3`/`ivec4`. Note the
+          stencil *buffer* is not the gap — the FBO carries a packed
+          DEPTH24_STENCIL8 renderbuffer already; it is the wrapper's
+          `stencilFunc`/`Op`/`Mask` that are still no-ops, so the per-window
+          clipping does not clip.
+        - **The render target stayed 1x1.** The WebGL context is taken from a
+          canvas that is still 0x0 (clamped to 1x1) and MZ only sizes it later,
+          in `Scene_Boot.resizeScreen` → `Graphics.resize` → PIXI's
+          `renderer.resize`, which assigns `canvas.width/height`. Nothing
+          followed that, so the entire game rendered into one pixel — the CI
+          screenshot came back `1x1` and the on-screen present copied a single
+          pixel. `mvgl::resize` now re-specifies the colour and depth/stencil
+          renderbuffers, `__mv_glResize` exposes it, and the canvas' size setters
+          drive it. `gl_test` covers the order that matters (context first, size
+          second), which the older tests did not.
         - Validation: `--mz_new_game` / `--mz_move_test` / `--mz_screenshot`
           drive it in CI (`scripts/mz_boot_check.bash` asserts `[MZ-BOOT]` is not
           the loading scene, `[MZ-MAP]` was reached and `[MZ-MOVE] moved=true`),
           and the blocking `scripts/mz_testbed_check.rb` guards the bed's data
           and art under plain CRuby — including the two rules above, which a JSON
           shape check cannot see. It is equally useful against a real MZ project.
-      - 🚧 Remaining: resize the FBO to the canvas when PIXI resizes it; optional
-        VAO / `vertexAttribDivisor` fast path (PIXI falls back without it);
+          Note the smoke is still `continue-on-error`, so **read its log** rather
+          than the job's conclusion: a `FAILED:` line there is a real regression
+          even though the job stays green.
+      - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
+        back without it, and `getExtension` returns null so the fallback is what
+        runs); real `stencilFunc`/`stencilOp`/`stencilMask` in the wrapper, so
+        `WindowLayer` actually clips each window to its shape instead of the
+        clip being a no-op (the FBO's stencil buffer is already there, only the
+        three entry points are stubbed);
         texture Y-flip and uniform-introspection polish as real content exercises
         them; MZ's audio bridge (MV routes `AudioManager` to `RGSS::Audio`; MZ
         still runs on the silent Web Audio stub, so the bed ships no sounds), and
