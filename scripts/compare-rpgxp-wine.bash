@@ -136,8 +136,19 @@ STEPS=(
     "walk-up Up*3"
 )
 
+# The reference's screen is taller than the game by the window manager's frame.
+# On a 640x480 screen matchbox sizes the *framed* window to the screen, leaving
+# the genuine runtime a 640x460 client and clipping the game's bottom 20 rows
+# off-screen -- which the diff then counted as 20 rows of pure difference on
+# every frame (70% of the residual on a map step, measured). Giving the screen
+# the frame's height back and cropping the capture to the game's own 640x480
+# compares like with like. Our engine's window needs no such room: it is sized
+# to the screen and undecorated.
+REF_SCREEN_PAD="${REF_SCREEN_PAD:-20}"
+
 start_ref() {
-    Xvfb "${REF_DISPLAY}" -screen 0 640x480x24 >/tmp/rpgxp-ref-xvfb.log 2>&1 &
+    Xvfb "${REF_DISPLAY}" -screen 0 "640x$((480 + REF_SCREEN_PAD))x24" \
+        >/tmp/rpgxp-ref-xvfb.log 2>&1 &
     PIDS+=($!)
     sleep 2
     DISPLAY="${REF_DISPLAY}" matchbox-window-manager -use_titlebar no \
@@ -166,10 +177,26 @@ start_ours() {
     sleep "${OUR_BOOT_WAIT:-8}"
 }
 
+# Point the display's input focus at the game, before every key. A window
+# manager focuses a window when it maps, and both runtimes map one and then
+# resize it to the game's resolution -- and when the resize wins that race the
+# window ends up unfocused, every synthesised key goes to the root window, and
+# the run looks like an engine that ignored New Game and sat on the title
+# screen. Each display runs exactly one game, so its only visible window is the
+# one that should have the keys.
+focus_window() {
+    local disp="$1" id
+    id=$(DISPLAY="${disp}" xdotool search --onlyvisible --name . 2>/dev/null |
+             tail -1)
+    [ -n "${id}" ] || return 0
+    DISPLAY="${disp}" xdotool windowactivate --sync "${id}" 2>/dev/null || true
+}
+
 # Hold each key for ~120ms: both runtimes poll the keyboard once a frame and
 # drop a key that goes down and up between two polls.
 send_keys() {
     local disp="$1" ; shift
+    focus_window "${disp}"
     for spec in "$@" ; do
         [ "${spec}" = "-" ] && continue
         local k="${spec%%\**}" n=1
@@ -183,9 +210,42 @@ send_keys() {
     done
 }
 
+# Capture one display, cropped to the game's own 640x480 picture (the
+# reference's screen is taller by the window manager's frame, see
+# REF_SCREEN_PAD).
 capture() {
     local disp="$1" out="$2"
-    DISPLAY="${disp}" xwd -root -silent | convert xwd:- png:"${out}"
+    DISPLAY="${disp}" xwd -root -silent |
+        convert xwd:- -crop '640x480+0+0' +repage png:"${out}"
+}
+
+# How many rows of the reference frame the genuine runtime actually painted.
+# matchbox keeps its frame even with the titlebar off and sizes the *framed*
+# window to the screen, so RGSS gets a client area shorter than 640x480 (640x460
+# here) and the rest of the capture stays black -- 12,800 pixels of pure
+# measurement artifact per frame, which swamped the real difference. Comparing
+# only the rows both runtimes painted keeps the count honest; the written frames
+# are still the full captures. Detected from the reference rather than assumed,
+# so a different window manager just yields a different (or no) trim, and only
+# ever shrinks the compared area.
+compare_height() {
+    local img="$1" y mean
+    # Walk up from the bottom for the first row the runtime drew anything on.
+    # Deliberately not ImageMagick's -trim: that keys on the *corner* colour, so
+    # on a dark title screen it finds no border and reports the full height,
+    # silently putting the artifact back into the count. Never trims more than
+    # MAX_TRIM rows, so a genuinely black-bottomed frame cannot shrink the
+    # comparison away.
+    local max_trim=80
+    for y in $(seq 479 -1 $((480 - max_trim))) ; do
+        mean=$(convert "${img}[640x1+0+${y}]" -format '%[fx:mean>0.004]' info: \
+                   2>/dev/null || echo 1)
+        if [ "${mean}" = "1" ] ; then
+            echo $((y + 1))
+            return
+        fi
+    done
+    echo 480
 }
 
 start_ref
@@ -222,9 +282,18 @@ for step in "${STEPS[@]}" ; do
              "check /tmp/rpgxp-ref-player.log" >&2
     fi
 
-    total=$(identify -format '%[fx:w*h]' "${ref}")
-    differing=$(compare -metric AE -fuzz "${DIFF_FUZZ:-3%}" "${ref}" "${our}" \
-        null: 2>&1 || true)
+    # Compare only the rows the genuine runtime painted (see compare_height).
+    # Measured once, from the first frame, so every step reports on the same
+    # area.
+    if [ -z "${CMP_H:-}" ] ; then
+        CMP_H=$(compare_height "${ref}")
+        [ "${CMP_H}" -lt 480 ] &&
+            echo "note: the reference painted ${CMP_H} of 480 rows (its window" \
+                 "manager's frame took the rest); diffing that area" >&2
+    fi
+    total=$((640 * CMP_H))
+    differing=$(compare -metric AE -fuzz "${DIFF_FUZZ:-3%}" \
+        "${ref}[640x${CMP_H}+0+0]" "${our}[640x${CMP_H}+0+0]" null: 2>&1 || true)
     printf '%-16s differing pixels: %s / %s\n' "${label}" "${differing}" "${total}"
 done
 

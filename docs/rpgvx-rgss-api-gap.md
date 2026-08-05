@@ -79,9 +79,9 @@ first frame, not what RGSS3 defines.
   (~37) from the core, and the RGSS2/RGSS3-only `rgss_main`, `rgss_stop`,
   `msgbox` (~2) and `msgbox_p`.
 
-## Gaps ❌ (ordered by how much they block a playable VX game)
+## Gaps (ordered by how much they block a playable VX game)
 
-### 1. `Tilemap` is XP-shaped — the map cannot draw
+### 1. `Tilemap` — the VX map now draws ✅
 
 `Spriteset_Map` builds the map with the RGSS2/RGSS3 tilemap:
 
@@ -92,37 +92,101 @@ first frame, not what RGSS3 defines.
 @tilemap.flags     = @tileset.flags         # the 8192-entry Table
 ```
 
-`mruby-rgss`'s `Tilemap` is the XP one: `tileset=` (one sheet), `autotiles`
-(seven) and `priorities`. VX/VX Ace need the **nine-sheet `bitmaps` array**, the
-**`flags` table** (passage/priority/counter/terrain bits packed per tile id) and
-the different **autotile geometry** (A1 water/A2 ground/A3 buildings/A4 walls
-and the direct B–E pages). Native work in `mruby-rgss/src/lib.cxx`, and the
-single biggest item here: without it a VX game boots but shows no map.
+`mruby-rgss`'s `Tilemap` was the XP one — `tileset=` (one sheet), `autotiles`
+(seven), `priorities`. It now also speaks VX: `bitmaps` (the nine sheets,
+assigned by index the way the scripts do it), `flags=`, and the VX tile-id
+decode. A tilemap handed any sheet is drawn the VX way; the XP path is
+untouched.
 
-### 2. `Viewport#tone` / `#color` / `#flash` — no screen tint, flash or fade
+The decode is the interesting half. A VX tile id carries both *which* autotile
+and *which of its edge shapes* to assemble from four quarter-tiles, with a
+different sheet layout per family (A1 water/waterfall with its animation cycles,
+A2 ground with the "table" split, A3 buildings and the A4 wall rows on 16 shapes
+instead of 48, A5 and the B–E pages as plain tiles). It is ported from the
+MIT-licensed MV corescript, which inherited VX Ace's tile system unchanged, and
+**differentially tested against it**: all 8300 tile ids × a full animation cycle
+× the table flag — 66,400 cases — produce byte-identical geometry.
+`Tilemap.vx_tile_quads` exposes the decode so `mruby-rgss/test` pins it without
+needing a display, both as representative cases and as a checksum over the whole
+sweep.
+
+Remaining polish: `flags` bit 0x10 routes a tile to the existing "above the
+characters" layer, which is the same flat approximation ADR 0022 describes for
+XP, and the A2 table-edge tile drawn *below* its neighbour
+(`Tilemap#_drawTableEdge`) is not done.
+
+### 2. `Viewport` screen effects — tint, flash and fade all draw ✅
 
 VX/VX Ace do every screen effect through the viewport, not a sprite overlay:
 
 ```ruby
-@viewport1.tone.set($game_map.screen.tone)              # tint
-@viewport2.color.set($game_map.screen.flash_color)      # flash
-@viewport3.color.set(0, 0, 0, 255 - $game_map.screen.brightness)  # fade
-viewport.flash(timing.flash_color, timing.flash_duration)         # animations
+@viewport1.tone.set($game_map.screen.tone)              # tint          ✅
+@viewport2.color.set($game_map.screen.flash_color)      # flash         ✅
+@viewport3.color.set(0, 0, 0, 255 - $game_map.screen.brightness)  # fade ✅
+viewport.flash(timing.flash_color, timing.flash_duration)  # animations ✅
 ```
 
-Our `Viewport` has none of these (`ox`/`oy`/`rect`/`z`/`visible` only), so tint,
-flash, fade-in/out and animation flashes are all inert. This is the same native
-tone work the RPG2000 side is waiting on (`docs/TODO.md`), and doing it once on
-`Viewport` would serve both. `Graphics.brightness` is tracked but not drawn for
-exactly this reason.
+**`Viewport#color` and `#flash` are implemented natively**: a colour overlay
+canvas the size of the viewport, held above its content layer and refreshed from
+`#update` — which is what makes the scripts' in-place `color.set(...)` visible,
+since they mutate the Color object and call `update` every frame. It is the same
+"screen-sized colour at an opacity" mechanism ADR 0021 measured working for the
+RPG2000 fade, moved into the viewport so it clips, scrolls and hides with it. So
+the **screen fade** (`Graphics.fadeout`/`fadein` via viewport3), the **flash**,
+and **animation flashes** all reach the display.
 
-### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — no scene transitions
+**`tone` is implemented too, by a different mechanism.** Unlike `color`, a tone
+*rescales what is already drawn* (desaturate toward luminance, then offset each
+channel), so it cannot be one more layer on top. Instead every display object in
+the viewport folds the viewport's tone into its own composite as the last step —
+`Sprite` and `Plane` already baked their own tone into a scratch buffer, and the
+`Tilemap` gets a pass over its composed ground and "above" canvases — and the
+viewport re-composites its children when the value changes. That change check
+runs from `#update` as well as on assignment, because the scripts mutate the Tone
+in place (`viewport.tone.set(...)`); the re-composite is skipped unless the tone
+actually moved, so a static map costs one comparison a frame.
+
+This is the per-pixel tone pass the RPG2000 screen tint has also been waiting on
+(`docs/TODO.md`) — `apply_tone_px` is now shared by all three composites, so the
+RPG2000 side can adopt it rather than growing its own.
+
+Not covered: `Window` (its contents are composed by a different path, and RGSS
+puts windows in their own viewport, so a map tint does not tint the message
+window anyway) and `Graphics.brightness`, which stays tracked-not-drawn — VX
+fades through `@viewport3.color`, which does draw.
+
+### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — scene transitions dissolve ✅
 
 `Scene_Base#perform_transition` freezes the frame and transitions into the next
 scene (~5 uses each), and `Scene_Title` snapshots the screen with
-`Graphics.snap_to_bitmap`. `freeze`/`transition` are stubs that now consume the
-right number of frames (so timing is right) but draw nothing; `snap_to_bitmap`
-and `play_movie` do not exist. Needs a native frame grab.
+`Graphics.snap_to_bitmap`.
+
+**`snap_to_bitmap` is native now**: `lv_snapshot_take` re-renders the active
+screen's object tree into an ARGB8888 buffer, which is the only capture that
+works on every backend here — the SDL window, the terminal framebuffer and the
+wasm canvas all buffer differently, and two of them render partially. The rows
+come back in the byte order `Bitmap` already uses, so they copy straight across.
+
+`freeze`/`transition` are built on it and are real: `freeze` keeps the snapshot,
+and `transition` puts it on a full-screen sprite above everything (`z` at
+`Graphics::TRANSITION_Z`) whose opacity is stepped to zero over `duration`
+frames, so the next scene builds itself behind a fading still of the last one —
+RGSS's default dissolve. The `filename`/`vague` form (dissolving *through* a
+transition image) still runs as a plain fade of the same length and says so once.
+
+Not covered: `play_movie` (there is no video decoder in the build).
+
+This is also what made the effects testable. `mruby-rgss/test` has no display —
+a `Viewport` cannot even be constructed there — so `Viewport#color`, `#tone` and
+the transitions all landed without a test that could see a pixel. `RGSS.frame_mean`
+(the mean R/G/B of the frame, sampled on an 8px grid) and `RGSS.effect_probe`
+close that: `rpg_maker_clone --rgss_effect_probe` drives a grey screen, a red
+`Viewport#color`, an additive-blue `Viewport#tone` and a freeze/transition round
+trip on a real display and measures each one. It runs as the `render_probe`
+ctest under xvfb, and it is the check that catches *the effect code runs and the
+screen does not change* — the failure mode that hid the RPG2000 screen tint
+(`docs/TODO.md`). Measured: `base=[128,128,128] color=[191,63,63]
+tone=[128,128,255] cleared=[0,0,0] mid=[94,94,94] after=[0,0,0]`.
 
 ### 4. Window open/close is not animated, and `Window#tone` is not applied
 
@@ -134,18 +198,61 @@ unrolls. `Window#tone` (the windowskin colour tint) is likewise stored only.
 
 One use each (title background, animation effects). Cosmetic.
 
-### 6. Reading graphics/audio out of the encrypted archive
+### 6. Reading graphics and audio out of the encrypted archive ✅
 
-Shared with the XP gap: `RPGVX::RGSSData` resolves `Data/*` through
-`Game.rgss2a`/`Game.rgss3a`, but the native `Bitmap`/`Audio` loaders only read
-loose files, so a packed release boots with no graphics. `Cache.*` (a script
-class) calls `Bitmap.new("Graphics/...")` for every asset, so this is what a
-packed VX Ace game needs next after the tilemap.
+Shared with the XP gap. `RPGVX::RGSSData` has resolved `Data/*` through
+`Game.rgss2a`/`Game.rgss3a` for a while, but the native asset loaders only ever
+opened files, so a packed release booted with no art at all — and `Cache.*` (a
+script class) calls `Bitmap.new("Graphics/...")` for *every* asset.
+
+**Graphics now come out of the archive.** The awkward part is not the decrypting
+— `RPGXP::RGSSAD` already did that — but the plumbing: an asset is asked for by
+name from deep inside a game's own scripts, with no handle to thread down. So
+each boot shell registers its opened archive once as `RGSS.asset_archive`, and
+`Bitmap#initialize` consults it after the loose-file search misses, trying the
+same extension candidates (`.png`, `.jpg`, `.jpeg`, `.xyz`, `.bmp`). Loose files
+still shadow packed ones, which is what RGSS itself does.
+
+The decoding is unchanged, deliberately: `_init_file` and the new `_init_memory`
+share one `bmp_decode_into`, so a packed asset goes through the same stb, XYZ and
+tolerant-PNG path a loose one does — the fallbacks that a real RPG Maker project
+needs are not something the archive path can quietly lack.
+
+Verified end to end in the real binary by `scripts/rgssad_asset_check.bash`: the
+XP test bed is packed twice, differing only in whether its title graphic is
+inside `Game.rgssad`, and the engine must find it in the first and report the
+miss in the second. The A/B is the point — a single run would pass just as well
+if the archive were never consulted.
+
+**Audio comes out of the archive too.** `RGSS::Audio` plays through a C function
+table (`include/rgss_audio.hxx`) whose entry points all took a path, so each has
+grown a `*_play_mem` twin taking the encoded bytes; the SDL backend feeds them to
+`Mix_LoadMUS_RW`/`Mix_LoadWAV_RW` through an `SDL_RWops`. The Ruby side mirrors
+`Bitmap`: after the disk search misses, the four kinds' archive folders are
+crossed with the same extensions, so a bare `"Theme1"` finds
+`Audio/BGM/Theme1.ogg`.
+
+The subtlety is lifetime. `Mix_LoadMUS_RW` *streams* from the RWops, so the bytes
+must outlive the music — and RGSS resumes the BGM after a music effect ends,
+which with an archived track means replaying from bytes that have to still be
+there. Both buffers are owned by the backend and released only where the stream
+they feed is freed.
+
+Verified by the `audio_probe` ctest, which plays the same sound from a loose file
+and then out of an archive under `SDL_AUDIODRIVER=dummy` (SDL's dummy driver
+decodes and mixes with no sound card) and requires both to advance
+`Audio.bgm_pos` — with a *stop* between them that must read 0. That middle step
+is what earns the other two: without it the packed arm passed against an empty
+archive, because `bgm_pos` was reporting the loose track's position. Halting
+music does not free the stream, and `Mix_GetMusicPosition` kept answering for a
+stopped one; a game saving `bgm_pos` to resume a track later would have recorded
+a position for music that was not playing. Fixed while building the probe.
 
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
-the only route to a real game. With this round in place a bundle **runs**: it
-loads its database, plays its music, reads input, drives frames and lays out its
-windows. What it cannot yet do is **draw the map or any screen effect**, which
-is items 1–3, all native `mruby-rgss` work.
+the only route to a real game. A bundle now **runs**: it loads its database,
+plays its music, reads input, drives frames, lays out its windows, draws its map,
+tints, flashes and fades the screen, dissolves between scenes, and — packed or
+loose — finds its graphics and its music. What is left is cosmetic: the window
+open/close animation and `Window#tone` (item 4), and the two blurs (item 5).

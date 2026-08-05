@@ -60,10 +60,10 @@ CODE_NAMES = {
   10440 => 'ChangeSkills',           10450 => 'ChangeEquipment',
   10460 => 'ChangeHP',               10470 => 'ChangeSP',          10480 => 'ChangeCondition',
   10490 => 'FullHeal',               10500 => 'SimulatedAttack',
-  10510 => 'ChangeHeroName',         10520 => 'ChangeHeroTitle',
-  10530 => 'ChangeSpriteAssociation',10540 => 'ChangeActorFace',
-  10610 => 'ChangeVehicleGraphic',   10620 => 'ChangeSystemBGM',   10630 => 'ChangeSystemSFX',
-  10640 => 'ChangeSystemGraphics',   10650 => 'ChangeScreenTransitions',
+  10610 => 'ChangeHeroName',         10620 => 'ChangeHeroTitle',
+  10630 => 'ChangeSpriteAssociation',10640 => 'ChangeActorFace',
+  10650 => 'ChangeVehicleGraphic',   10660 => 'ChangeSystemBGM',   10670 => 'ChangeSystemSFX',
+  10680 => 'ChangeSystemGraphics',   10690 => 'ChangeScreenTransitions',
   10710 => 'EnemyEncounter',         10720 => 'OpenStore',         10730 => 'ShowInn',
   10740 => 'EnterHeroName',
   10810 => 'Teleport',               10820 => 'MemorizeLocation',  10830 => 'RecallToLocation',
@@ -110,15 +110,16 @@ MOVE_NAMES = {
 # Event-command opcodes the runtime interpreter implements with a real handler
 # (mruby-rpg2k/mrblib/interpreter.rb `execute`). Structural markers the
 # interpreter consumes as control flow count as supported.
-SUPPORTED = [
-  10110, 20110, 10120, 10130, 10140, 20140, 20141, 10210, 10220, 10230, 10310,
-  10320, 10330, 10410, 10420, 10430, 10440, 10460, 10470, 10490, 12010, 22010, 22011,
-  12110, 12120,
-  12210, 12220, 22210, 12310, 12320, 12330, 10810, 10820, 10830, 10910, 10920,
-  11030, 11040, 11050, 11060, 11110, 11120, 11130, 11330, 11340, 11410, 11510, 11530, 11540, 11550,
-  11930,
-  11960,
-].to_set
+#
+# Read out of the interpreter's own opcode table rather than duplicated here:
+# every constant in `Game::Interpreter::Cmd` is either dispatched to a handler or
+# consumed as a branch marker, so the coverage figures cannot drift out of date
+# as commands land. interpreter.rb has no load-time dependency on RGSS or the
+# native parser, so it loads under CRuby exactly as the check scripts load it.
+load File.expand_path('../mruby-rpg2k/mrblib/interpreter.rb', __dir__)
+SUPPORTED = Game::Interpreter::Cmd.constants
+                                  .map { |c| Game::Interpreter::Cmd.const_get(c) }
+                                  .to_set
 
 # Opcodes that do nothing at run time by design: developer comments and blank /
 # block-structure lines. The interpreter no-ops them, which is the correct

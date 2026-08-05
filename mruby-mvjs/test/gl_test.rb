@@ -131,3 +131,41 @@ assert 'a green triangle renders end to end through the WebGL wrapper' do
   JS
   assert_true g > 200
 end
+
+# --- M6.3 present path: WebGL FBO -> on-screen RGSS::Bitmap ------------------
+
+assert 'MV::JS.present_gl copies a rendered WebGL frame onto an RGSS::Bitmap' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # Clear a WebGL canvas to opaque green, then present its FBO onto a Bitmap.
+  # This is the native core of the MZ on-screen present (mz.rb copies PIXI's
+  # rendered frame this way each frame). The FBO is RGBA and the Bitmap is
+  # ARGB8888, so it also checks the R/B swap (green reads back as green) and that
+  # the WebGL handle (`.__gl`) resolves.
+  handle = MV::JS.eval(<<~'JS')
+    (function () {
+      var cv = document.createElement('canvas'); cv.width = 8; cv.height = 8;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 0;
+      gl.viewport(0, 0, 8, 8);
+      gl.clearColor(0.0, 1.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.finish();
+      return gl.__gl;
+    })()
+  JS
+  assert_true handle > 0
+
+  bmp = RGSS::Bitmap.new(8, 8)
+  assert_equal true, MV::JS.present_gl(bmp, handle)
+  c = bmp.get_pixel(4, 4)
+  assert_true c.green > 200 # green channel high
+  assert_true c.red < 60    # red low
+  assert_true c.blue < 60   # blue low
+  assert_equal 255.0, c.alpha
+end
+
+assert 'MV::JS.present_gl returns false for a bad handle' do
+  bmp = RGSS::Bitmap.new(2, 2)
+  assert_equal false, MV::JS.present_gl(bmp, 0)
+end

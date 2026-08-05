@@ -395,6 +395,143 @@ assert "RGSS::Bitmap reports a detailed reason when an XYZ fails to decode" do
   end
 end
 
+# ---- Loading assets out of an encrypted archive ---------------------------
+#
+# A released RPG Maker game packs its whole Graphics/ tree into Game.rgssad /
+# .rgss2a / .rgss3a with nothing loose on disk, so the loose-file search finds
+# nothing and every asset has to come out of the archive. The reader itself is
+# RPGXP::RGSSAD (tested in mruby-rpgxp, which also covers the end-to-end path);
+# what is checked here is mruby-rgss's half — that Bitmap consults whatever is
+# registered as RGSS.asset_archive, tries the same extension candidates the
+# loose search does, and decodes the bytes through the same decoders.
+#
+# The fixture is the 3x2 XYZ picture used above: palette 0 = (10,20,30),
+# 1 = red, 2 = green.
+XYZ_3X2 = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xe3\x12\x91\xfb\xcf\xc0" \
+          "\xc0\x00\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00\xb4" \
+          "\x8b\x02\x41"
+
+# Stands in for an RPGXP::RGSSAD: anything answering read(name) -> String or
+# nil will do. Records its lookups so the candidate order can be asserted.
+class FakeArchive
+  def initialize(entries)
+    @entries = entries
+    @asked = []
+  end
+
+  attr_reader :asked
+
+  def read(name)
+    @asked << name
+    @entries[name]
+  end
+end
+
+assert "RGSS::Bitmap decodes packed bytes exactly as it decodes a file" do
+  # Same picture, same expectations as the loose-file XYZ tests above — the two
+  # paths share one decoder (bmp_decode_into), and this is what pins that.
+  archive = FakeArchive.new({ "Graphics/System/Window" => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    b = RGSS::Bitmap.new("Graphics/System/Window")
+    assert_equal 3, b.width
+    assert_equal 2, b.height
+    px = b.get_pixel(0, 0)
+    assert_equal 10.0, px.red
+    assert_equal 20.0, px.green
+    assert_equal 30.0, px.blue
+    assert_equal 255.0, px.alpha
+    assert_equal 255.0, b.get_pixel(1, 0).red
+    assert_equal 255.0, b.get_pixel(2, 0).green
+    # The transparent-colour flag reaches the packed path too.
+    t = RGSS::Bitmap.new("Graphics/System/Window", true)
+    assert_equal 0.0, t.get_pixel(0, 0).alpha
+    assert_equal 255.0, t.get_pixel(1, 0).alpha
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap reports undecodable packed bytes instead of crashing" do
+  archive = FakeArchive.new({ "Graphics/System/Junk" => "not an image at all" })
+  RGSS.asset_archive = archive
+  begin
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("Graphics/System/Junk") }
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap loads a packed asset through RGSS.asset_archive" do
+  archive = FakeArchive.new({ "Graphics/System/Window.xyz" => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    b = RGSS::Bitmap.new("Graphics/System/Window")
+    assert_equal 3, b.width
+    assert_equal 255.0, b.get_pixel(2, 0).green
+    # The bare name is tried before the extension candidates, exactly as the
+    # loose-file search does it.
+    assert_equal "Graphics/System/Window", archive.asked.first
+    assert_true archive.asked.include?("Graphics/System/Window.xyz")
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap prefers a loose file over the archive" do
+  # RGSS lets a loose file shadow the packed entry; the archive must not even be
+  # consulted when one is found. The loose copy here is the raw-DEFLATE spelling
+  # of the same picture, so a wrong pick still decodes and only `asked` tells
+  # them apart.
+  loose = "\x58\x59\x5a\x31\x03\x00\x02\x00\xe3\x12\x91\xfb\xcf\xc0\xc0\x00" \
+          "\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00"
+  path = "test-packed-shadow.xyz"
+  File.open(path, "wb") { |io| io.write(loose) }
+  archive = FakeArchive.new({ path => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    b = RGSS::Bitmap.new(path)
+    assert_equal 3, b.width
+    assert_true archive.asked.empty?, "archive was consulted: #{archive.asked}"
+  ensure
+    RGSS.asset_archive = nil
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap still raises its own diagnostic when the archive misses" do
+  archive = FakeArchive.new({})
+  RGSS.asset_archive = archive
+  begin
+    err = nil
+    begin
+      RGSS::Bitmap.new("Graphics/System/Missing")
+    rescue => e
+      err = e.message
+    end
+    assert_true !err.nil?, "expected a load failure"
+    assert_true err.include?("Graphics/System/Missing"), "message: #{err}"
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap survives an archive that raises" do
+  # A corrupt archive must not turn a missing-asset error into a crash: the read
+  # failure is reported and treated as a miss, so the loader's own diagnostic is
+  # what reaches the caller.
+  broken = Object.new
+  def broken.read(_name)
+    raise "archive is corrupt"
+  end
+  RGSS.asset_archive = broken
+  begin
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("Graphics/System/Window") }
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
 assert "RGSS::Profiler is inert until enabled" do
   # The standalone test binary never calls profiler_configure, so profiling is
   # off by default: query methods report the disabled state and the block-timing
@@ -500,6 +637,119 @@ assert "RGSS::Audio primitives are inert without a backend" do
   assert_nil RGSS::Audio._se_play("nope")
   assert_nil RGSS::Audio._se_stop
   assert_nil RGSS::Audio._update
+  # The same for the memory entry points, and _can_play_mem? reports the
+  # backend's absence so the Ruby layer can say a packed game will be silent
+  # instead of dropping every play without a word.
+  assert_nil RGSS::Audio._bgm_play_mem("nope", "bytes")
+  assert_nil RGSS::Audio._bgs_play_mem("nope", "bytes")
+  assert_nil RGSS::Audio._me_play_mem("nope", "bytes")
+  assert_nil RGSS::Audio._se_play_mem("nope", "bytes")
+  assert_false RGSS::Audio._can_play_mem?
+end
+
+# ---- Playing audio out of an encrypted archive ----------------------------
+#
+# A released game packs its whole Audio/ tree into Game.rgssad / .rgss2a /
+# .rgss3a with nothing loose, so the disk search finds nothing and every track
+# has to come out of the archive. Whether the bytes then reach the mixer is
+# native and unobservable here (this binary installs no audio backend) — that is
+# what the `audio_probe` ctest measures. What is checked here is the Ruby half:
+# which archive names are tried, in what order, and that a loose file still wins.
+assert "RGSS::Audio plays a packed track through RGSS.asset_archive" do
+  wav = "RIFFtestWAVEfixture"
+  archive = FakeArchive.new({ "Audio/BGM/Theme1.ogg" => wav })
+  class << RGSS::Audio
+    alias _bgm_play_mem_orig _bgm_play_mem
+    alias _can_play_mem_orig _can_play_mem?
+    def _bgm_play_mem(name, bytes, volume, pitch)
+      $audio_mem_capture = [name, bytes, volume, pitch]
+      nil
+    end
+    # No backend is installed in this binary, so pretend one is: without it the
+    # loader would (correctly) report that it cannot play packed audio here.
+    def _can_play_mem? = true
+  end
+  RGSS.asset_archive = archive
+  begin
+    $audio_mem_capture = nil
+    RGSS::Audio.bgm_play("Theme1", 80, 90)
+    assert_false $audio_mem_capture.nil?, "expected the packed BGM to play"
+    # The entry name found, not the bare name the game asked for — the folder
+    # and extension are the loader's doing.
+    assert_equal "Audio/BGM/Theme1.ogg", $audio_mem_capture[0]
+    assert_equal wav, $audio_mem_capture[1]
+    assert_equal 80, $audio_mem_capture[2]
+    assert_equal 90, $audio_mem_capture[3]
+    # BGM looks in Audio/BGM before anywhere else.
+    assert_equal "Audio/BGM/Theme1", archive.asked.first
+
+    # A name in no folder of the archive plays nothing at all.
+    $audio_mem_capture = nil
+    RGSS::Audio.bgm_play("NoSuchTrack")
+    assert_true $audio_mem_capture.nil?, "a missing entry must not play"
+  ensure
+    RGSS.asset_archive = nil
+    class << RGSS::Audio
+      alias _bgm_play_mem _bgm_play_mem_orig
+      alias _can_play_mem? _can_play_mem_orig
+    end
+  end
+end
+
+assert "RGSS::Audio prefers a loose file over the archive" do
+  # As with Bitmap: loose shadows packed, which is what RGSS does. The archive
+  # must not even be consulted when a file resolves.
+  path = "test-packed-se.wav"
+  File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
+  archive = FakeArchive.new({ "Audio/SE/test-packed-se.wav" => "packed" })
+  class << RGSS::Audio
+    alias _se_play_orig2 _se_play
+    def _se_play(p, v, pi)
+      $audio_se_capture = [p, v, pi]
+      nil
+    end
+  end
+  RGSS.asset_archive = archive
+  begin
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-packed-se")
+    assert_equal "test-packed-se.wav", $audio_se_capture[0]
+    assert_true archive.asked.empty?, "archive was consulted: #{archive.asked}"
+  ensure
+    RGSS.asset_archive = nil
+    class << RGSS::Audio
+      alias _se_play _se_play_orig2
+    end
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Audio says so when it cannot play packed audio" do
+  # A build with no audio backend must not swallow the play silently: the
+  # loader reports it once through warn_stub. Checked by observing that the
+  # native primitive is never reached while the entry *was* found.
+  archive = FakeArchive.new({ "Audio/SE/Beep.wav" => "RIFFtestWAVEfixture" })
+  RGSS.asset_archive = archive
+  begin
+    RGSS::Audio.se_play("Beep")
+    assert_true archive.asked.include?("Audio/SE/Beep.wav"),
+                "the entry should have been found: #{archive.asked}"
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Audio survives an archive that raises" do
+  broken = Object.new
+  def broken.read(_name)
+    raise "archive is corrupt"
+  end
+  RGSS.asset_archive = broken
+  begin
+    assert_nil RGSS::Audio.bgm_play("Theme1")
+  ensure
+    RGSS.asset_archive = nil
+  end
 end
 
 assert "RGSS::Audio.se_play resolves a name to a real file" do
@@ -582,6 +832,26 @@ assert "RGSS::Window API surface" do
      opacity opacity= back_opacity back_opacity= cursor_rect= active active=
      pause pause= stretch stretch= update].each do |m|
     assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
+  end
+end
+
+assert "RGSS::Input registers a tap that pressed and released in one frame" do
+  # Key transitions reach Input through a buffer drained once a frame, so a
+  # quick tap -- a browser keypad button, a synthesised key -- can deliver both
+  # its press and its release before the game looks. The trigger must survive
+  # to that look, and the key must read as no longer held.
+  begin
+    RGSS::Input.update
+    RGSS::Input.press(RGSS::Input::C)
+    RGSS::Input.release(RGSS::Input::C)
+    assert_true RGSS::Input.trigger?(RGSS::Input::C), "the tap must register"
+    assert_false RGSS::Input.press?(RGSS::Input::C), "and must not read as held"
+    # ... and only for the one frame.
+    RGSS::Input.update
+    assert_false RGSS::Input.trigger?(RGSS::Input::C)
+  ensure
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.update
   end
 end
 
@@ -727,6 +997,127 @@ assert "RGSS::Window RGSS2/RGSS3 API surface" do
      padding_bottom= arrows_visible arrows_visible= tone tone=].each do |m|
     assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
   end
+end
+
+assert "RGSS::Viewport RGSS2/RGSS3 screen-effect surface" do
+  # Viewport.new needs a live display the headless test binary lacks (see the
+  # Tilemap note below), so assert the surface. `color`/`flash` draw a colour
+  # overlay above the viewport's contents; `tone` is folded into each display
+  # object's own composite (a tone rescales what is drawn, so it cannot be a
+  # layer) — all native.
+  %i[color color= flash tone tone= update ox oy rect rect= z= visible
+     visible= dispose disposed?].each do |m|
+    assert_true RGSS::Viewport.method_defined?(m), "Viewport##{m} missing"
+  end
+end
+
+assert "RGSS::Graphics scene-transition surface" do
+  # snap_to_bitmap grabs the rendered screen, so it needs a live display the
+  # headless test binary lacks — as do freeze/transition, which are built on it.
+  # What *can* be checked here is that they exist and that the natives are not
+  # shadowed: mrblib loads after the C init, so a stray Ruby-side definition of
+  # snap_to_bitmap would silently replace the real one (the mistake that had to
+  # be undone for Viewport#tone). Actually drawing them is measured on a real
+  # display by the `render_probe` ctest — see RGSS.effect_probe.
+  %i[snap_to_bitmap freeze transition wait fadeout fadein update].each do |m|
+    assert_true RGSS::Graphics.respond_to?(m), "Graphics.#{m} missing"
+  end
+  %i[frame_mean effect_probe].each do |m|
+    assert_true RGSS.respond_to?(m), "RGSS.#{m} missing"
+  end
+  # The frozen still has to sit above anything a game sets, and RGSS z values
+  # are plain integers.
+  assert_true RGSS::Graphics::TRANSITION_Z > 0xffffff
+end
+
+# The VX / VX Ace tile geometry is pure arithmetic, so it is pinned here even
+# though drawing needs a display. Every expectation below was taken from a
+# differential run against the MIT RPG Maker MV corescript
+# (rpgtkoolmv/corescript, js/rpg_core/Tilemap.js), which inherited VX Ace's tile
+# system unchanged: all 8300 tile ids x 5 animation frames x the table flag
+# produce byte-identical geometry. See docs/rpgvx-rgss-api-gap.md.
+assert "RGSS::Tilemap.vx_tile_quads decodes plain tiles" do
+  # The B/C/D/E pages are sheets 5..8, one 32x32 quad each.
+  assert_equal [[5, 32, 0, 0, 0, 32, 32]], RGSS::Tilemap.vx_tile_quads(1)
+  assert_equal [[8, 0, 128, 0, 0, 32, 32]], RGSS::Tilemap.vx_tile_quads(800)
+  # A5 is sheet 4.
+  assert_equal [[4, 0, 0, 0, 0, 32, 32]], RGSS::Tilemap.vx_tile_quads(1536)
+  # Nothing draws for an empty tile, an out-of-range id, or the unused
+  # 1024..1535 band between the E page and A5.
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(0)
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(1024)
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(8192)
+end
+
+assert "RGSS::Tilemap.vx_tile_quads assembles autotiles from four quads" do
+  # A1 water (sheet 0), shape 0: four 16x16 quarter-tiles.
+  assert_equal [[0, 32, 64, 0, 0, 16, 16], [0, 16, 64, 16, 0, 16, 16],
+                [0, 32, 48, 0, 16, 16, 16], [0, 16, 48, 16, 16, 16, 16]],
+               RGSS::Tilemap.vx_tile_quads(2048)
+  # A2 ground is sheet 1, A3 buildings sheet 2 (16 wall shapes), A4 walls
+  # sheet 3.
+  assert_equal 1, RGSS::Tilemap.vx_tile_quads(2816)[0][0]
+  assert_equal 2, RGSS::Tilemap.vx_tile_quads(4352)[0][0]
+  assert_equal 3, RGSS::Tilemap.vx_tile_quads(5888)[0][0]
+  # A wall family has only 16 shapes, so a higher shape draws nothing (as in
+  # the corescript, whose table lookup simply misses).
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(4352 + 20)
+end
+
+assert "RGSS::Tilemap.vx_tile_quads animates water and waterfalls" do
+  # The water surface cycles 0,1,2,1 over four frames: frames 1 and 3 share a
+  # column, and frame 2 is a further 64px along.
+  f0 = RGSS::Tilemap.vx_tile_quads(2048, 0)
+  f1 = RGSS::Tilemap.vx_tile_quads(2048, 1)
+  f2 = RGSS::Tilemap.vx_tile_quads(2048, 2)
+  f3 = RGSS::Tilemap.vx_tile_quads(2048, 3)
+  assert_equal 32, f0[0][1]
+  assert_equal 96, f1[0][1]
+  assert_equal 160, f2[0][1]
+  assert_equal f1, f3
+  # A waterfall (an odd A1 kind) has its own three-frame cycle, stepping down
+  # the sheet rather than across it.
+  w0 = RGSS::Tilemap.vx_tile_quads(2288, 0)
+  w1 = RGSS::Tilemap.vx_tile_quads(2288, 1)
+  assert_equal [480, 0], [w0[0][1], w0[0][2]]
+  assert_equal [480, 32], [w1[0][1], w1[0][2]]
+end
+
+assert "RGSS::Tilemap.vx_tile_quads matches the reference sweep" do
+  # A checksum over the *whole* decode — every tile id, both table settings, one
+  # full animation cycle (66,400 cases) — so a regression anywhere in it fails
+  # here, not just in the representative cases above. The expected value was
+  # computed from the differential run described at the top of this section, in
+  # which every one of those cases matched the MV corescript byte for byte.
+  #
+  # The rolling hash stays inside a 32-bit mrb_int on purpose: the modulus keeps
+  # the running value under 2**20, so `sum * 31` cannot overflow.
+  sum = 0
+  [0, 1, 2, 3].each do |frame|
+    [false, true].each do |table|
+      id = 0
+      while id < 8300
+        RGSS::Tilemap.vx_tile_quads(id, frame, table).each do |quad|
+          quad.each { |v| sum = (sum * 31 + v) % 1048573 }
+        end
+        sum = (sum * 31 + id) % 1048573
+        id += 1
+      end
+    end
+  end
+  assert_equal 782438, sum
+end
+
+assert "RGSS::Tilemap.vx_tile_quads splits an A2 table tile" do
+  # Without the table flag a shape is four quads; with it, a quad whose source
+  # row is a table row is replaced by the counter row plus a 16x8 strip of the
+  # original drawn over its bottom half — so a counter shows its side.
+  plain = RGSS::Tilemap.vx_tile_quads(2820)
+  table = RGSS::Tilemap.vx_tile_quads(2820, 0, true)
+  assert_equal 4, plain.size
+  assert_equal 5, table.size
+  assert_equal [1, 16, 48, 16, 16, 16, 16], table[3]
+  assert_equal [1, 48, 16, 16, 24, 16, 8], table[4]
 end
 
 assert "RGSS::Tilemap API surface" do

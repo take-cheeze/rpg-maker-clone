@@ -18,23 +18,299 @@ module RGSS
 
   # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
 
+  # The game's encrypted archive, for assets that are not on disk.
+  #
+  # A released RPG Maker game ships one Game.rgssad / .rgss2a / .rgss3a holding
+  # its whole tree — Data/ *and* Graphics/ and Audio/ — with nothing loose. The
+  # data layers open the archive themselves to read Data/, but assets are asked
+  # for by name from anywhere (`Cache.tileset(n)` -> `Bitmap.new("Graphics/...")`
+  # deep inside a game's own scripts), with no handle to thread through. So each
+  # maker's boot shell registers its archive here once and the loaders consult
+  # it after a loose file misses — loose shadows packed, as in RGSS.
+  #
+  # Anything answering `read(name) -> String or nil` will do; in practice it is
+  # an RPGXP::RGSSAD. nil means an unpacked project.
+  class << self
+    attr_accessor :asset_archive
+  end
+
+  # The mean R/G/B of the rendered frame, sampled on an 8px grid (a full
+  # per-pixel walk through get_pixel would take seconds). nil when the backend
+  # cannot snapshot. This is the measurement ADR 0021 used to prove the RPG2000
+  # fade reached the display, available to any caller now that
+  # Graphics.snap_to_bitmap exists.
+  def self.frame_mean
+    bmp = Graphics.snap_to_bitmap
+    return nil if bmp.nil?
+    r = 0
+    g = 0
+    b = 0
+    n = 0
+    y = 0
+    while y < bmp.height
+      x = 0
+      while x < bmp.width
+        c = bmp.get_pixel(x, y)
+        r += c.red.to_i
+        g += c.green.to_i
+        b += c.blue.to_i
+        n += 1
+        x += 8
+      end
+      y += 8
+    end
+    bmp.dispose
+    return nil if n.zero?
+    [r / n, g / n, b / n]
+  end
+
+  # Prove the viewport screen effects actually reach the display.
+  #
+  # Every effect below is native rendering that no unit test can see: the test
+  # binary has no display, so a Viewport cannot even be constructed there. The
+  # failure mode that leaves is the dangerous one — the code runs, the values are
+  # stored, and the screen never changes (exactly what happened to an earlier
+  # RPG2000 screen-tint attempt, see docs/TODO.md). So this drives the real
+  # renderer on a real display and *measures* the frame: grey screen, then a red
+  # colour overlay, then an additive-blue tone, each against the last, and
+  # finally a freeze/transition round trip.
+  #
+  # Run by `rpg_maker_clone --rgss_effect_probe` (under xvfb in CI). Returns true
+  # when every effect moved the pixels it should.
+  def self.effect_probe
+    # Take the screen size from a snapshot rather than Graphics.width/height:
+    # those are the values a game's resize_screen set, and there is no game here
+    # — the sprite has to cover what is actually on the display. Doubles as the
+    # check that this backend can snapshot at all.
+    shape = Graphics.snap_to_bitmap
+    if shape.nil?
+      $stderr.puts "[RGSS-PROBE] snap_to_bitmap unavailable on this backend"
+      return false
+    end
+    w = shape.width
+    h = shape.height
+    shape.dispose
+
+    viewport = Viewport.new(0, 0, w, h)
+    bitmap = Bitmap.new(w, h)
+    bitmap.fill_rect(0, 0, w, h, Color.new(128, 128, 128, 255))
+    sprite = Sprite.new(viewport)
+    sprite.bitmap = bitmap
+    Graphics.update
+    base = frame_mean
+
+    viewport.color = Color.new(255, 0, 0, 128)
+    viewport.update
+    Graphics.update
+    colored = frame_mean
+
+    viewport.color = Color.new(0, 0, 0, 0)
+    viewport.tone = Tone.new(0, 0, 255, 0)
+    viewport.update
+    Graphics.update
+    toned = frame_mean
+
+    viewport.tone = Tone.new(0, 0, 0, 0)
+    viewport.update
+
+    # The scene change: freeze the grey screen, then take the scene away — as a
+    # game does when it swaps scenes — and dissolve. `cleared` is the empty
+    # screen the dissolve runs over, `mid` is a frame from inside it (sampled by
+    # the hook below, since transition blocks until it is done) and `after` is
+    # where it ended. Between them they pin down both halves: the frozen still
+    # really goes up over the new scene, and it really comes down again.
+    Graphics.freeze
+    sprite.visible = false
+    Graphics.update
+    cleared = frame_mean
+
+    $rgss_probe_mid = nil
+    class << Graphics
+      alias_method :_probe_update, :update
+      def update
+        _probe_update
+        $rgss_probe_mid = RGSS.frame_mean if $rgss_probe_mid.nil?
+      end
+    end
+    Graphics.transition(4)
+    class << Graphics
+      alias_method :update, :_probe_update
+    end
+    mid = $rgss_probe_mid
+    after = frame_mean
+
+    $stderr.puts "[RGSS-PROBE] base=#{base.inspect} color=#{colored.inspect} " \
+                 "tone=#{toned.inspect} cleared=#{cleared.inspect} " \
+                 "mid=#{mid.inspect} after=#{after.inspect}"
+
+    ok = true
+    # A half-opaque red overlay pushes red up and the other channels down.
+    unless colored[0] > base[0] + 20 && colored[2] < base[2] - 20
+      $stderr.puts "[RGSS-PROBE] FAIL Viewport#color did not tint the frame"
+      ok = false
+    end
+    # An additive blue tone pushes blue up and leaves red alone.
+    unless toned[2] > base[2] + 20
+      $stderr.puts "[RGSS-PROBE] FAIL Viewport#tone did not tint the frame"
+      ok = false
+    end
+    if (cleared[0] - base[0]).abs < 20
+      $stderr.puts "[RGSS-PROBE] FAIL hiding the sprite did not change the frame"
+      ok = false
+    else
+      # Mid-dissolve the still is partly transparent, so the frame sits between
+      # the frozen screen and the scene behind it.
+      unless mid && (mid[0] - cleared[0]).abs > 20 && (mid[0] - base[0]).abs > 8
+        $stderr.puts "[RGSS-PROBE] FAIL Graphics.transition did not show the " \
+                     "frozen screen"
+        ok = false
+      end
+      if (after[0] - cleared[0]).abs > 8
+        $stderr.puts "[RGSS-PROBE] FAIL Graphics.transition left the frozen " \
+                     "screen up"
+        ok = false
+      end
+    end
+    sprite.dispose
+    bitmap.dispose
+    viewport.dispose
+    $stderr.puts "[RGSS-PROBE] #{ok ? "ok" : "failed"}"
+    ok
+  end
+
+  # A 16-bit mono PCM WAV of `ms` milliseconds of a quiet square wave, built
+  # here so the audio probe below needs no fixture on disk. Long enough that a
+  # few frames of playback land inside it.
+  def self.probe_wav(ms = 2000)
+    rate = 11025
+    samples = rate * ms / 1000
+    pcm = []
+    i = 0
+    while i < samples
+      # ~440Hz at a low amplitude; the dummy audio driver discards it anyway,
+      # but a real device should not be handed a full-scale tone.
+      pcm << (((i * 2 / (rate / 440)) % 2).zero? ? 2000 : -2000)
+      i += 1
+    end
+    data = pcm.pack("s<*")
+    header = ["RIFF"].pack("a4") + [36 + data.bytesize].pack("V") +
+             ["WAVEfmt "].pack("a8") + [16].pack("V") +
+             [1, 1].pack("v2") + [rate, rate * 2].pack("V2") +
+             [2, 16].pack("v2") + ["data"].pack("a4") + [data.bytesize].pack("V")
+    header + data
+  end
+
+  # Prove audio packed into an encrypted archive actually reaches the mixer.
+  #
+  # Like the render probe above, this exists because the interesting half is
+  # native and invisible to `mruby-rgss/test`: that binary installs no audio
+  # backend, so every Audio call there is a no-op and a broken memory path would
+  # look exactly like a working one. Here the real SDL_mixer backend runs (under
+  # SDL_AUDIODRIVER=dummy in CI, which decodes and mixes with no sound card).
+  #
+  # It is an A/B/A. The same sound is played first from a loose file, then
+  # stopped, then played out of an archive:
+  #
+  #   loose   > 0   the observable works at all (an SDL_mixer older than 2.6
+  #                 cannot report a position, and would make everything below
+  #                 look like a failure to play rather than passing vacuously)
+  #   stopped = 0   nothing is playing between the arms
+  #   packed  > 0   the archived sound really started
+  #
+  # The middle step is the one that earns the others. Without it the packed arm
+  # passes against an *empty* archive, because the position it reads is the
+  # loose track's — measured, not assumed: that is exactly what this probe did
+  # before Audio.bgm_pos learned to check Mix_PlayingMusic().
+  #
+  # Run by `rpg_maker_clone --rgss_audio_probe`. Returns true when both play.
+  def self.audio_probe
+    wav = probe_wav
+    ok = true
+
+    path = "rgss-audio-probe.wav"
+    File.open(path, "wb") { |io| io.write(wav) }
+    Audio.bgm_play(path)
+    loose = wait_for_bgm_pos
+    Audio.bgm_stop
+    Graphics.update
+    stopped = Audio.bgm_pos
+    File.delete(path) if File.exist?(path)
+
+    archive = Object.new
+    entries = { "Audio/BGM/Probe.wav" => wav, "Audio/SE/Beep.wav" => wav }
+    archive.instance_variable_set(:@entries, entries)
+    def archive.read(name)
+      @entries[name]
+    end
+    previous = asset_archive
+    self.asset_archive = archive
+    begin
+      # The name a game uses: no folder, no extension. Finding it means the
+      # candidate crossing in Audio.play_packed works, not just the decoder.
+      Audio.bgm_play("Probe")
+      packed = wait_for_bgm_pos
+      Audio.se_play("Beep")
+      Audio.bgm_stop
+    ensure
+      self.asset_archive = previous
+    end
+
+    $stderr.puts "[RGSS-AUDIO] loose=#{loose} stopped=#{stopped} " \
+                 "packed=#{packed}"
+    if loose.zero?
+      $stderr.puts "[RGSS-AUDIO] FAIL a loose file did not play (no audio " \
+                   "device, or this SDL_mixer cannot report a position) — the " \
+                   "packed result proves nothing either way"
+      ok = false
+    elsif !stopped.zero?
+      $stderr.puts "[RGSS-AUDIO] FAIL bgm_pos still reports #{stopped} after " \
+                   "bgm_stop, so it cannot tell the two arms apart"
+      ok = false
+    elsif packed.zero?
+      $stderr.puts "[RGSS-AUDIO] FAIL archived BGM did not reach the mixer"
+      ok = false
+    end
+    $stderr.puts "[RGSS-AUDIO] #{ok ? "ok" : "failed"}"
+    ok
+  end
+
+  # Run frames until the BGM reports a position, and answer it (0 if it never
+  # does). Frames, not sleeps: Graphics.update is what drives the audio
+  # backend's per-frame work.
+  def self.wait_for_bgm_pos(frames = 120)
+    n = 0
+    while n < frames
+      Graphics.update
+      pos = Audio.bgm_pos
+      return pos if pos > 0
+      n += 1
+    end
+    0
+  end
+
   class Bitmap
+    # RGSS resolves a bare asset name against several image formats, and the RPG
+    # Maker XP RTP genuinely mixes them: its windowskins and charsets are .png
+    # while its title backgrounds are .jpg, so a png-only search left every XP
+    # title screen on the fallback background (found by
+    # scripts/compare-rpgxp-wine.bash). stb decodes JPEG, so both spellings of
+    # the extension are just more candidates.
+    EXTENSIONS = [:png, :jpg, :jpeg, :xyz, :bmp].freeze
+
     def initialize f, s = nil
       if f.kind_of? String
         i = self._init_file(f, s)
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
           i = self._init_file("#{d}/#{f}", s) unless i
-          # RGSS resolves a bare asset name against several image formats, and
-          # the RPG Maker XP RTP genuinely mixes them: its windowskins and
-          # charsets are .png while its title backgrounds are .jpg, so a
-          # png-only search left every XP title screen on the fallback
-          # background (found by scripts/compare-rpgxp-wine.bash). stb decodes
-          # JPEG, so both spellings of the extension are just more candidates.
-          [:png, :jpg, :jpeg, :xyz, :bmp].each do |ext|
+          EXTENSIONS.each do |ext|
             i = self._init_file("#{d}/#{f}.#{ext}", s) unless i
           end
         end
+        # A released game packs its whole Graphics/ tree into the encrypted
+        # archive with nothing loose on disk, so try that last — loose files
+        # shadow the archive, which is what RGSS itself does.
+        i = init_from_archive(f, s) unless i
         # Surface the decoder's own reason (e.g. an XYZ "bad dist" zlib error)
         # so failures are diagnosable instead of a bare "Failed to init bitmap".
         unless i
@@ -55,6 +331,33 @@ module RGSS
 
     def font=(f)
       @font = f
+    end
+
+    private
+
+    # Decode `f` out of the game's encrypted archive, if one is registered (see
+    # RGSS.asset_archive). Entry names are project-relative with the extension
+    # spelled out, so the same candidate list the loose-file search uses applies
+    # here — the archive itself normalises the '/' separators.
+    #
+    # Best effort: a broken archive must not take down a Bitmap.new that would
+    # otherwise raise its own diagnostic, so the read failure is logged and
+    # treated as a miss.
+    def init_from_archive(f, s)
+      archive = RGSS.asset_archive
+      return nil if archive.nil?
+      bytes = archive.read(f)
+      if bytes.nil?
+        EXTENSIONS.each do |ext|
+          bytes = archive.read("#{f}.#{ext}")
+          break if bytes
+        end
+      end
+      return nil if bytes.nil?
+      self._init_memory(bytes, s)
+    rescue StandardError => e
+      $stderr.puts "[RGSS] archive read failed for #{f}: #{e.message}"
+      nil
     end
   end
 
@@ -236,6 +539,12 @@ module RGSS
     def autotiles
       @autotiles ||= Array.new(7)
     end
+
+    # RGSS2/RGSS3 (VX, VX Ace) replace the tileset + autotiles with nine sheets
+    # (`bitmaps`, native) and the tileset `flags` table. A tilemap that has been
+    # given any sheet is drawn the VX way; `flags=` is native (it re-tiles), so
+    # this only adds the reader.
+    attr_reader :flags
   end
 
   # RGSS Window: the framed, scrollable box every Window_Base subclass (message,
@@ -364,6 +673,21 @@ module RGSS
     end
   end
 
+  # RGSS Viewport. Native (src/lib.cxx): the clipping frame, its scrolled
+  # content layer, `rect`/`ox`/`oy`/`z`/`visible`, and — for the RGSS2/RGSS3
+  # screen effects — `color`/`color=` and `flash`, drawn as a colour overlay
+  # above the viewport's contents and refreshed from `update`. This reopening
+  # only adds the tone.
+  class Viewport
+    # `tone`/`tone=` are native now too (src/lib.cxx). Unlike `color` — one more
+    # layer over the viewport's contents — a tone *rescales what is drawn*
+    # (desaturate toward luminance, then offset each channel), so it cannot be an
+    # overlay: every display object in the viewport folds the tone into its own
+    # composite, and the viewport re-composites them when the value changes
+    # (including the in-place `viewport.tone.set(...)` the scripts use, which
+    # #update re-reads each frame). Nothing to add here.
+  end
+
   class RGSSError < StandardError
   end
 
@@ -382,10 +706,22 @@ module RGSS
     # Tried in order after the name as-is; the data usually omits the extension.
     EXTS = ["", ".ogg", ".wav", ".mid", ".midi", ".mp3", ".flac"].freeze
 
+    # The archive sub-folders each kind of audio lives in, for a packed release.
+    # Unlike the disk search these are exact: an archive entry name is whatever
+    # the editor wrote, and RGSS2/RGSS3 projects keep the four kinds apart.
+    # Ordered so the usual home of each kind is tried first.
+    ARCHIVE_DIRS = {
+      bgm: ["Audio/BGM", "Audio/ME", "Audio/BGS", "Music", ""],
+      bgs: ["Audio/BGS", "Audio/BGM", "Music", ""],
+      me: ["Audio/ME", "Audio/BGM", "Music", ""],
+      se: ["Audio/SE", "Sound", ""]
+    }.freeze
+
     class << self
       def bgm_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, MUSIC_DIRS)
-        _bgm_play(path, volume, pitch) if path
+        return _bgm_play(path, volume, pitch) if path
+        play_packed(:bgm, filename, volume, pitch)
       end
 
       def bgm_stop
@@ -402,7 +738,8 @@ module RGSS
 
       def bgs_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, MUSIC_DIRS)
-        _bgs_play(path, volume, pitch) if path
+        return _bgs_play(path, volume, pitch) if path
+        play_packed(:bgs, filename, volume, pitch)
       end
 
       def bgs_stop
@@ -419,7 +756,8 @@ module RGSS
 
       def me_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, MUSIC_DIRS)
-        _me_play(path, volume, pitch) if path
+        return _me_play(path, volume, pitch) if path
+        play_packed(:me, filename, volume, pitch)
       end
 
       def me_stop
@@ -432,7 +770,8 @@ module RGSS
 
       def se_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, SOUND_DIRS)
-        _se_play(path, volume, pitch) if path
+        return _se_play(path, volume, pitch) if path
+        play_packed(:se, filename, volume, pitch)
       end
 
       def se_stop
@@ -458,6 +797,55 @@ module RGSS
       end
 
       private
+
+      # Play +filename+ out of the game's encrypted archive, if one is
+      # registered (see RGSS.asset_archive). A released game packs its whole
+      # Audio/ tree in there with nothing loose, so this is the only route to
+      # its music; it runs after the disk search misses, so loose files still
+      # shadow packed ones as in RGSS.
+      #
+      # Returns nil either way — RGSS's Audio.*_play has no return value, and a
+      # miss here is the same "asset not found" silence the disk path gives.
+      def play_packed(kind, filename, volume, pitch)
+        archive = RGSS.asset_archive
+        return nil if archive.nil? || filename.nil? || filename.empty?
+        name, bytes = find_packed(archive, kind, filename)
+        return nil if bytes.nil?
+        # Say so once rather than dropping every play silently: on a build with
+        # no audio backend (or one predating the memory entry points) a packed
+        # game would otherwise be mysteriously mute.
+        unless _can_play_mem?
+          RGSS.warn_stub("Audio: playing from an encrypted archive")
+          return nil
+        end
+        case kind
+        when :bgm then _bgm_play_mem(name, bytes, volume, pitch)
+        when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
+        when :me then _me_play_mem(name, bytes, volume, pitch)
+        else _se_play_mem(name, bytes, volume, pitch)
+        end
+        nil
+      end
+
+      # The first archive entry matching +filename+ for +kind+, as
+      # [entry name, bytes], or nil. Crosses the kind's folders with the same
+      # extensions the disk search uses, because the data usually names a track
+      # without either.
+      def find_packed(archive, kind, filename)
+        ARCHIVE_DIRS[kind].each do |dir|
+          base = dir.empty? ? filename : "#{dir}/#{filename}"
+          EXTS.each do |ext|
+            cand = "#{base}#{ext}"
+            bytes = archive.read(cand)
+            return [cand, bytes] if bytes
+          end
+        end
+        nil
+      rescue StandardError => e
+        # A broken archive must not take down a play call; report and stay quiet.
+        $stderr.puts "[RGSS] archive read failed for #{filename}: #{e.message}"
+        nil
+      end
 
       # First existing file for +filename+ under any (root, dir, extension)
       # combination, or nil. The name is first tried as given (an absolute path
@@ -505,6 +893,10 @@ module RGSS
     @width = 640
     @height = 480
     @brightness = 255
+    # The frozen screen a transition dissolves away sits above every game
+    # object; RGSS z values are ordinary integers, so pick one past anything a
+    # game would set.
+    TRANSITION_Z = 0x40000000
 
     class << self
       attr_accessor :frame_count, :frame_rate
@@ -545,14 +937,40 @@ module RGSS
         self.brightness = 255
       end
 
+      # RGSS's scene change: `freeze` grabs the current screen and `transition`
+      # dissolves it away over `duration` frames, so the next scene builds itself
+      # behind a still of the last one. Both are real now, on the native
+      # snap_to_bitmap: freeze keeps the snapshot, and transition shows it on a
+      # full-screen sprite above everything (z at the maximum) whose opacity is
+      # stepped to zero — which is exactly RGSS's default fade.
+      #
+      # The `filename`/`vague` form (dissolve through a transition *image*) is
+      # not modelled; such a transition still runs, as a plain fade over the same
+      # number of frames, and says so once.
       def freeze
-        RGSS.warn_stub("Graphics.freeze")
+        # nil when the backend cannot snapshot (it says so itself, once);
+        # transition copes by falling back to a plain wait.
+        @frozen = snap_to_bitmap
+        nil
       end
 
       def transition(duration = 8, filename = nil, vague = 40)
-        RGSS.warn_stub("Graphics.transition")
-        wait(duration)
+        RGSS.warn_stub("Graphics.transition with a transition image") if filename
+        frozen = @frozen
+        @frozen = nil
         @brightness = 255
+        return wait(duration) if frozen.nil? || duration <= 0
+
+        sprite = Sprite.new
+        sprite.bitmap = frozen
+        sprite.z = TRANSITION_Z
+        duration.times do |i|
+          sprite.opacity = 255 - (255 * (i + 1) / duration)
+          update
+        end
+        sprite.dispose
+        frozen.dispose
+        nil
       end
 
       def frame_reset
@@ -649,11 +1067,17 @@ module RGSS
       @count[index] = 0
     end
 
+    # A release clears the held state but deliberately leaves `triggered` alone.
+    # Transitions arrive in a buffer that is drained once a frame (the SDL key
+    # watch, the browser's on-screen keypad, the terminal backends), so a quick
+    # tap can deliver its press *and* its release into the same drain. Clearing
+    # the trigger here swallowed that tap completely -- the game saw a key that
+    # was never pressed. `update` clears every trigger at the end of the frame,
+    # so nothing can outlive the frame it arrived in either way.
     def self.release(key)
       index = key_index(key)
       return if index.nil?
       @pressed[index] = false
-      @triggered[index] = false
       @count[index] = 0
     end
 

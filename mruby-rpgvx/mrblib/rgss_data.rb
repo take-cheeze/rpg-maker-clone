@@ -81,6 +81,11 @@ class RPGVX
       !@archive.nil?
     end
 
+    # The opened archive, or nil for an unpacked project. A packed release keeps
+    # its Graphics/ and Audio/ trees in here too, so the boot shell hands this to
+    # RGSS.asset_archive and the native asset loaders read through it.
+    attr_reader :archive
+
     def vxace?
       @edition == :vxace
     end

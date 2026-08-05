@@ -40,6 +40,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          # Keep the checkout quiet. `show-progress` is what adds `--progress`
+          # to the fetch, which prints a "Receiving objects: NN%" line per
+          # update — a screenful of log before anything is built. Dropping the
+          # persisted credentials removes the other half: the post-job step
+          # otherwise walks all 14 submodules unsetting the `includeIf` config
+          # it added, ~10 `[command]git config ...` lines each. Nothing runs an
+          # authenticated git command after checkout (the download scripts
+          # clone public repositories), so both are pure noise. Same two
+          # settings on every checkout below.
+          show-progress: false
+          persist-credentials: false
 
       # Keep the tc39/test262 clone out of CI — `nix develop` fetches this flake
       # with submodules and would otherwise trip over quickjs-ng's unused nested
@@ -83,35 +94,41 @@ jobs:
       # so the wait always has a real step to join). Every write lands on a
       # git-ignored path (build/, data/*, scripts/*.zip, the fetched MV engine
       # files), so nothing here can race pre-commit's tracked-file `git diff`.
+      #
+      # Every step that can overlap another one enters the dev shell through
+      # scripts/nix-develop.bash rather than `nix develop` directly: CI has no
+      # nix-daemon, so concurrent nix processes contend for the store database
+      # lock and the loser aborts with "SQLite database ... is busy". The
+      # wrapper retries just that error; see the script for the details.
       - name: Download RTP
         id: dl-rtp
         background: true
         run: |
-          nix develop -c ./scripts/rtp_install.bash
-          nix develop -c ./scripts/rtp_xp_install.bash
+          ./scripts/nix-develop.bash ./scripts/rtp_install.bash
+          ./scripts/nix-develop.bash ./scripts/rtp_xp_install.bash
 
       - name: Download game
         id: dl-game
         background: true
         run: |
-          nix develop -c ./scripts/download-nepheshel.bash
-          nix develop -c ./scripts/download-mtf-meido-action.bash
-          nix develop -c ./scripts/download-opengame-xp.bash
+          ./scripts/nix-develop.bash ./scripts/download-nepheshel.bash
+          ./scripts/nix-develop.bash ./scripts/download-mtf-meido-action.bash
+          ./scripts/nix-develop.bash ./scripts/download-opengame-xp.bash
 
       - name: Download MV test game
         id: dl-mv
         background: true
-        run: nix develop -c ./scripts/download-lunatic-core.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-lunatic-core.bash
 
       - name: Build MV sample engine
         id: dl-mv-sample
         background: true
-        run: nix develop -c ./scripts/download-mv-corescript.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-mv-corescript.bash
 
       - name: Fetch MZ corescript
         id: dl-mz-sample
         background: true
-        run: nix develop -c ./scripts/download-mz-corescript.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-mz-corescript.bash
 
       # MIDI instrument patches for SDL_mixer's TiMidity synth. Not committed
       # (~32 MiB of samples), so fetch them here or the `timidity_patches` check
@@ -119,7 +136,7 @@ jobs:
       - name: Download MIDI patches
         id: dl-freepats
         background: true
-        run: nix develop -c ./scripts/download-freepats.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-freepats.bash
 
       - name: pre-commit
         id: pre-commit
@@ -127,7 +144,7 @@ jobs:
         env:
           SKIP: nixfmt
         run: |
-          nix develop -c pre-commit run -a || (
+          ./scripts/nix-develop.bash pre-commit run -a || (
             git diff --exit-code ;
             false
           )
@@ -135,22 +152,29 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
 
+      # Runs while the background steps above are still in flight, so it takes
+      # the retrying wrapper too.
       - name: cmake
         run: |
-          nix develop -c cmake -S . -B build -GNinja
+          ./scripts/nix-develop.bash cmake -S . -B build -GNinja
 
       - name: build
         run: |
-          nix develop -c cmake --build build
+          ./scripts/nix-develop.bash cmake --build build
 
       - name: sccache stats
         if: always()
+        # The background downloads can still be running here, so this needs the
+        # retrying wrapper too — in the mode that keeps nix's own stderr out of
+        # the captured stdout, which is going into the step summary verbatim.
+        env:
+          NIX_DEVELOP_SEPARATE_STREAMS: 1
         run: |
           {
             echo "## sccache stats"
             echo ""
             echo '```'
-            nix develop -c sccache --show-stats
+            ./scripts/nix-develop.bash sccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -176,22 +200,31 @@ jobs:
       # never collide. `xvfb-run -a` (auto-picked display) is deliberately
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
-      # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 (see the ctest
-      # `exe_open` test in CMakeLists.txt); MV runs=100..108, the RPG2k
-      # real-game boot smoke=109..110, the MZ boot smoke=111, and the RPG XP
-      # real-game boot smoke=112 below. Every
+      # ("XIO: fatal IO error"). Reserved numbers: exe_open=99,
+      # render_probe=98 and audio_probe=97 (see those ctest tests in
+      # CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
+      # the RPG2k
+      # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
+      # real-game boot smoke=112 and the RGSSAD packed-asset smoke=113..114
+      # (two runs, one per arm of its A/B) below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
+      #
+      # The inline smokes run through `scripts/quiet_alsa.bash`, which drops the
+      # "cannot find card '0'" wall a runner without a sound device produces on
+      # every engine start (the same three patterns the boot-check scripts
+      # already strip) while preserving the engine's exit status and its
+      # `[MV-*]` markers.
       - parallel:
           - name: LCF test-bed smoke check
-            run: nix develop -c ruby scripts/lcf_testbed_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/lcf_testbed_check.rb
 
           - name: RPG XP test-bed smoke check
-            run: nix develop -c ruby scripts/rpgxp_testbed_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_testbed_check.rb
 
           - name: RPG XP script-host smoke check
-            run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_script_host_check.rb
 
           # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
           # open-source test bed (the editors and their RTPs are commercial), so
@@ -201,7 +234,7 @@ jobs:
           # in the schema. It also picks up any real VX/VX Ace project that a
           # future download step unpacks under data/.
           - name: RPG VX / VX Ace data check
-            run: nix develop -c ruby scripts/rpgvx_testbed_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/rpgvx_testbed_check.rb
 
           # Validate the committed MV test-bed database (data/mv-sample) before
           # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
@@ -210,17 +243,17 @@ jobs:
           # committed bed so it stays deterministic even though this parallel
           # group may run alongside the MV game download.
           - name: MV test-bed data check
-            run: nix develop -c ruby scripts/mv_testbed_check.rb data/mv-sample
+            run: ./scripts/nix-develop.bash ruby scripts/mv_testbed_check.rb data/mv-sample
 
           - name: RPG2k game-logic checks
             run: |
-              nix develop -c ruby scripts/rpg2k_logic_check.rb
-              nix develop -c ruby scripts/rpg2k_scene_check.rb
-              nix develop -c ruby scripts/rpg2k_render_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_logic_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_scene_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_render_check.rb
 
           - name: test
             run: |
-              nix develop -c cmake --build build -t test
+              ./scripts/nix-develop.bash cmake --build build -t test
 
           # Boot the built engine on the real RPG2000/2003 test-beds and drive
           # it past the title into the map with --rpg2k_new_game. The CRuby host
@@ -232,7 +265,7 @@ jobs:
           # [RPG2k-MAP] marker fails this step. It uses display 109 and up, one
           # per game. See ADR 0021.
           - name: RPG2k real-game boot smoke test
-            run: nix develop -c ./scripts/rpg2k_boot_check.bash 109
+            run: ./scripts/nix-develop.bash ./scripts/rpg2k_boot_check.bash 109
 
           # The same guard for the RPG Maker XP runtime: the XP checks above run
           # mruby-rpgxp's sources under CRuby, so only booting the real binary
@@ -241,12 +274,21 @@ jobs:
           # the script asserts on. Display 112 (see the reserved server-num map
           # above). See docs/adr/0025-rpgxp-cross-runtime-testing.md.
           - name: RPG XP real-game boot smoke test
-            run: nix develop -c ./scripts/rpgxp_boot_check.bash 112
+            run: ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112
+
+          # A released game keeps its Graphics/ inside the encrypted archive with
+          # nothing loose, so the native asset loaders have to read through it.
+          # Packs the same real test bed twice — with and without a title graphic
+          # in the archive — and asserts the engine finds it only when it is
+          # there, which is what makes the check non-vacuous. Displays 113-114.
+          - name: RGSSAD packed-asset smoke test
+            run: nix develop -c ./scripts/rgssad_asset_check.bash 113
 
           - name: MV boot smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=100 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=100 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=5000 --game_dir data/Lunatic-Core \
                 --mv_screenshot=ss/mv_title.png
 
@@ -260,14 +302,16 @@ jobs:
           - name: MV real-game play smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=105 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=105 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/Lunatic-Core \
                 --mv_new_game --mv_move_test --mv_screenshot=ss/mv_play.png
 
           - name: MV sample smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=101 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=101 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=5000 --game_dir data/mv-sample \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
@@ -280,7 +324,7 @@ jobs:
           # reserved server-num map above).
           - name: MZ boot smoke test
             continue-on-error: true
-            run: nix develop -c ./scripts/mz_boot_check.bash 111
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
           # Run the battle smoke against the real bed (Lunatic-Core): it ships
           # battlers and a battleback, so the captured Scene_Battle frame shows
@@ -291,21 +335,24 @@ jobs:
           - name: MV battle smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=8000 --game_dir data/Lunatic-Core \
                 --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
 
           - name: MV movement smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=103 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=103 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_move_test
 
           - name: MV message smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=104 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=104 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
 
@@ -316,7 +363,8 @@ jobs:
           - name: MV menu smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=106 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=106 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_menu_test --mv_screenshot=ss/mv_menu.png
 
@@ -326,7 +374,8 @@ jobs:
           - name: MV save smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=107 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=107 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_save_test
 
@@ -338,7 +387,8 @@ jobs:
           - name: MV audio smoke test
             continue-on-error: true
             run: |
-              nix develop -c xvfb-run --server-num=108 timeout 120 ./build/rpg_maker_clone \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
+                xvfb-run --server-num=108 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_audio_test
 
@@ -414,10 +464,13 @@ jobs:
     # shape that label is meant for, and it bills at a lower rate.
     runs-on: ubuntu-slim
     permissions:
-      # Read the PR to find its head commit; write reactions on the comment
-      # (a PR conversation comment is an issue comment, hence `issues`).
-      pull-requests: read
-      issues: write
+      # Read the PR to find its head commit, and write the 👀 reaction on the
+      # comment. The reaction goes through `/issues/comments/{id}/reactions`,
+      # but this job only ever runs on a pull request's conversation comment
+      # (see the `if` above), and GitHub authorises those against the pull
+      # request the comment belongs to — `issues: write` is not enough, the
+      # POST 403s without `pull-requests: write`.
+      pull-requests: write
     outputs:
       head-sha: ${{ steps.pr.outputs.head-sha }}
     env:
@@ -432,6 +485,10 @@ jobs:
             --jq '"head-sha=\(.head.sha)"' >> "$GITHUB_OUTPUT"
 
       - name: Acknowledge the command
+        # The reaction is only a visible "the run started" hint, and this job is
+        # what gates the preview build and deploy. Don't let a failed ack cost
+        # someone their preview.
+        continue-on-error: true
         run: |
           gh api --silent -X POST \
             "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" \
@@ -467,6 +524,9 @@ jobs:
           # The PR head for a `/preview` comment; empty everywhere else, which
           # is checkout's default of "the ref that triggered the workflow".
           ref: ${{ needs.preview-gate.outputs.head-sha }}
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
 
       # Same as the `build` job: keep the tc39/test262 clone out of the nix
       # submodule walk that `nix develop` triggers.
@@ -482,6 +542,15 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
+      # Realise the dev shell up front, exactly as the `build` job does. This
+      # job fans out into concurrent `nix develop` steps below, and building the
+      # shell is the one part of them that writes to the Nix store database in
+      # bulk (registering every path it substitutes). Doing it once here, with
+      # no other nix process running, keeps those steps from racing each other
+      # for the store lock; it costs nothing overall because each of them would
+      # otherwise pay for the same realisation anyway.
+      - run: nix develop -c echo test
+
       # Fetch + build the MIT MV engine into the committed sample so it can be
       # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
       # Like the `build` job's downloads, this is network-bound work that feeds
@@ -496,7 +565,7 @@ jobs:
       - name: Build MV sample engine
         id: mv-sample
         background: true
-        run: nix develop -c ./scripts/download-mv-corescript.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-mv-corescript.bash
 
       # The project the browser smoke test below plays. Network-bound and
       # unrelated to the compile, so it overlaps the build like the MV fetch
@@ -504,7 +573,7 @@ jobs:
       - name: Download the RPG XP test bed
         id: xp-testbed
         background: true
-        run: nix develop -c ./scripts/download-opengame-xp.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-opengame-xp.bash
 
       # Instrument samples for the TiMidity decoder the port is built with
       # (-sSDL2_MIXER_FORMATS in CMakeLists.txt). They are packaged into
@@ -513,7 +582,7 @@ jobs:
       - name: Download MIDI patches
         id: freepats
         background: true
-        run: nix develop -c ./scripts/download-freepats.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-freepats.bash
 
       - uses: actions/cache@v6
         with:
@@ -543,7 +612,7 @@ jobs:
         # the sccache launcher the devShell exports (sccache cannot cache emcc).
         # WASM_SAMPLE_DIR bakes the MV sample into the page at /game_sample.
         run: |
-          nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+          ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             CMAKE_C_COMPILER_LAUNCHER=ccache \
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja \
@@ -557,20 +626,26 @@ jobs:
       - name: Wait for the MV sample engine and MIDI patches
         wait: [mv-sample, freepats]
 
+      # The RPG XP test bed is still downloading in the background here (its own
+      # barrier is further down), so this overlaps a second nix process.
       - name: build
         run: |
-          nix develop -c ccache --zero-stats
-          nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+          ./scripts/nix-develop.bash ccache --zero-stats
+          ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
 
       - name: ccache stats
         if: always()
+        # As in the `build` job: the test-bed download may still be in flight,
+        # and this captures stdout into the step summary.
+        env:
+          NIX_DEVELOP_SEPARATE_STREAMS: 1
         run: |
           {
             echo "## ccache stats — wasm"
             echo ""
             echo '```'
-            nix develop -c ccache --show-stats
+            ./scripts/nix-develop.bash ccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -636,6 +711,9 @@ jobs:
         with:
           # LVGL is vendored as a submodule and linked into the firmware.
           submodules: recursive
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -651,7 +729,10 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        # -q keeps pip to warnings and errors: the resolver's per-package
+        # "Collecting/Downloading/Installing" chatter says nothing a green step
+        # does not already say.
+        run: pip install -q --disable-pip-version-check --upgrade platformio
 
       - name: Build firmware
         run: pio run -e wio
@@ -671,11 +752,18 @@ jobs:
         with:
           # LVGL is vendored as a submodule and linked into the EBOOT.
           submodules: recursive
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
 
       - name: Build EBOOT (pspdev container)
         # The pspdev image ships psp-gcc, cmake and the psp-cmake wrapper (which
         # points CMake at the pspdev toolchain and provides create_pbp_file).
+        # Pull it up front with -q: an implicit pull from `docker run` prints a
+        # per-layer download/extract progress block, which `-q` reduces to the
+        # resolved digest.
         run: |
+          docker pull -q pspdev/pspdev:latest
           docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest sh -euc '
             psp-cmake -S app/psp -B build-psp
             cmake --build build-psp -j"$(nproc)"
@@ -719,9 +807,14 @@ jobs:
         # PPSSPP compiles its GL/Vulkan backends even for HEADLESS: its bundled
         # GLEW pulls in GL/glu.h, so libglu is required on top of libgl. Vulkan
         # and fontconfig headers are needed for the SDL/Linux frontend it links.
+        # -qq keeps apt to warnings and errors: the per-index "Get:N ..." and
+        # per-package "Selecting/Unpacking/Setting up ..." lines are noise on a
+        # step whose only interesting outcome is its exit code.
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             libgl1-mesa-dev libglu1-mesa-dev libsdl2-dev libvulkan-dev \
             libfontconfig1-dev zlib1g-dev
@@ -739,7 +832,7 @@ jobs:
       - name: Build PPSSPP headless
         run: |
           if [ ! -d ppsspp/.git ]; then
-            git clone --recursive --depth 1 -b "$PPSSPP_TAG" \
+            git clone --quiet --recursive --depth 1 -b "$PPSSPP_TAG" \
               https://github.com/hrydgard/ppsspp
           fi
           cmake -S ppsspp -B ppsspp/build -GNinja \
@@ -758,25 +851,31 @@ jobs:
           EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
           ls -l "$EBOOT"
           cd ppsspp
-          # Capture the exact supported flags/renderers for reference.
-          echo "=== PPSSPPHeadless --help ==="
-          ./build/PPSSPPHeadless --help 2>&1 | head -80 || true
           # Run from the PPSSPP tree so it finds its assets/ (fonts, etc.).
-          # --timeout ends the otherwise-infinite bring-up loop; a non-zero exit
-          # from the timeout must not mask the heartbeat check, hence `|| true`.
           # The bring-up writes its markers with sceIoWrite(fd 1 and 2); PPSSPP
           # logs those, but below the default headless level, so --log is needed
           # to surface them (plain printf is an unimplemented HLE import under
           # PPSSPP). --timeout ends the otherwise-infinite bring-up loop; `|| true`
           # keeps its non-zero exit from masking the assertion below.
           # (--screenshot is a compare-against input in headless, not an output.)
-          echo "=== run ==="
+          #
+          # --log makes the emulator trace every HLE call, so the output goes to
+          # the log file rather than the console: the whole file is uploaded as
+          # the `psp-smoke` artifact below, and the lines that decide this step
+          # (the markers, or the tail when they are missing) are echoed here.
           ./build/PPSSPPHeadless --log --graphics=software --timeout=15 \
-            "$EBOOT" 2>&1 | tee "$GITHUB_WORKSPACE/headless.log" || true
+            "$EBOOT" > "$GITHUB_WORKSPACE/headless.log" 2>&1 || true
           echo "=== asserting the EBOOT booted (and ideally pumped frames) ==="
           # RPG2K_PSP_BOOT proves it booted with output captured; RPG2K_PSP_BRINGUP
           # (the per-second heartbeat) additionally proves the frame loop runs.
-          grep -qE 'RPG2K_PSP_(BOOT|BRINGUP)' "$GITHUB_WORKSPACE/headless.log"
+          if grep -qE 'RPG2K_PSP_(BOOT|BRINGUP)' "$GITHUB_WORKSPACE/headless.log"; then
+            grep -E 'RPG2K_PSP_(BOOT|BRINGUP)' "$GITHUB_WORKSPACE/headless.log" \
+              | head -5
+          else
+            echo "no bring-up marker in the emulator log; last 100 lines:"
+            tail -100 "$GITHUB_WORKSPACE/headless.log"
+            exit 1
+          fi
 
       - name: Upload smoke-test output
         if: always()
@@ -798,6 +897,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
 
       # Same as the `build` job — `nix build '.?submodules=1'` walks every entry
       # of every nested `.gitmodules`, so drop quickjs-ng's unused test262 entry

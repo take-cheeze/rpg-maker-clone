@@ -36,6 +36,10 @@ class RPGXP
   def initialize(_args)
     @title = read_ini_title
     @db = RGSSData.new(GAME_DIR)
+    # A packed release holds its Graphics/ and Audio/ trees in the same archive
+    # as its Data/, and assets are asked for by name from deep inside the game's
+    # own scripts, so the loaders need it globally (see RGSS.asset_archive).
+    RGSS.asset_archive = @db.archive
     @scenes = []
     # When the script host is enabled and the project ships its scripts, the
     # game's own Ruby drives everything (see script_host.rb); skip building the

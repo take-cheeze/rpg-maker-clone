@@ -256,10 +256,21 @@ class Checker
   # exercising the RGSSAD reader against real file sizes/contents and the
   # RGSSData archive fallback end to end. Both the v1 (`.rgssad`, XP/VX) and v3
   # (`.rgss3a`, VX Ace) formats are checked against the same real data.
+  # A 3x2 XYZ picture (palette 0 = (10,20,30), 1 red, 2 green), packed alongside
+  # the data so the asset half of the archive is covered too. Decoding it is
+  # native and is tested in mruby-rgss; what matters here is that the name a
+  # game actually uses resolves.
+  GRAPHIC_XYZ = ("\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xe3\x12\x91\xfb" \
+                 "\xcf\xc0\xc0\x00\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4" \
+                 "\xc8\x00\x00\xb4\x8b\x02\x41").b
+
   def check_archive(dir, disk)
     files = Dir[File.join(dir, "Data", "*.rxdata")].sort.map do |f|
       ["Data\\#{File.basename(f)}", File.binread(f)]
     end
+    # A released game packs Graphics/ into the same archive as Data/, with no
+    # loose copy on disk — so this is the only route to the game's art.
+    files += [["Graphics\\Titles\\Castle.xyz", GRAPHIC_XYZ]]
     check_archive_format(disk, files, 1, "Game.rgssad",
                          RPGXP::RGSSAD.pack_v1(files))
     check_archive_format(disk, files, 3, "Game.rgss3a",
@@ -294,8 +305,17 @@ class Checker
         expect(pm.width == dm.width && pm.height == dm.height,
                "#{filename}: Map#{id} dimensions differ from on-disk")
       end
+      # The asset half: a game asks by the bare, '/'-spelled name
+      # (`Bitmap.new("Graphics/Titles/Castle")`), so the archive has to answer
+      # that spelling, and the boot shell hands this same object to
+      # RGSS.asset_archive for the native loaders to read through.
+      expect(!packed.archive.nil?, "#{filename}: packed project exposes no archive")
+      expect(packed.archive.read("Graphics/Titles/Castle.xyz") == GRAPHIC_XYZ,
+             "#{filename}: a packed graphic did not read back by its " \
+             "'/'-spelled name")
     end
-    puts "  archive: packed #{files.size} entries; DB loads identically through #{filename}"
+    puts "  archive: packed #{files.size} entries (Data/ + a graphic); DB and " \
+         "assets both load through #{filename}"
   end
 
   def report

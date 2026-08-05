@@ -403,8 +403,8 @@ if(NOT EMSCRIPTEN)
   # `-a`'s auto server-number probe is not atomic — concurrent probes can pick
   # the same display, so one Xvfb loses its server and the client dies with an
   # "XIO: fatal IO error". Each concurrent run gets its own reserved number
-  # (exe_open=99, MV runs=100..104 in .github/workflows/build.yml) so they can
-  # never collide.
+  # (exe_open=99, render_probe=98, audio_probe=97, MV runs=100..104 in
+  # .github/workflows/build.yml) so they can never collide.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(exe_open_cmd xvfb-run --server-num=99
                      "--server-args=-screen 0 640x480x24" ${exe_open_cmd})
@@ -413,4 +413,44 @@ if(NOT EMSCRIPTEN)
     NAME exe_open
     COMMAND ${exe_open_cmd}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # The RGSS screen effects (Viewport#color, Viewport#tone) are native rendering
+  # that mruby_test cannot reach: that binary has no display, so a Viewport
+  # cannot even be constructed. This runs the real renderer and *measures* the
+  # frame through Graphics.snap_to_bitmap, so the failure mode where the effect
+  # code runs and the screen never changes fails a test instead of shipping. It
+  # needs no game directory — the probe builds its own sprite (RGSS.effect_probe
+  # in mruby-rgss/mrblib/lib.rb).
+  set(render_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
+                       --rgss_effect_probe --width=544 --height=416)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(render_probe_cmd
+        xvfb-run --server-num=98 "--server-args=-screen 0 640x480x24"
+        ${render_probe_cmd})
+  endif()
+  add_test(
+    NAME render_probe
+    COMMAND ${render_probe_cmd}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # The audio counterpart: play a sound from a loose file and then out of an
+  # encrypted archive, and check both reach the mixer. mruby_test cannot — that
+  # binary installs no audio backend, so every Audio call there is a no-op and a
+  # broken memory path looks exactly like a working one. See RGSS.audio_probe.
+  set(audio_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
+                      --rgss_audio_probe)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(audio_probe_cmd xvfb-run --server-num=97
+                        "--server-args=-screen 0 640x480x24" ${audio_probe_cmd})
+  endif()
+  add_test(
+    NAME audio_probe
+    COMMAND ${audio_probe_cmd}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  # SDL's dummy driver decodes and mixes with no sound card, so this runs on a
+  # CI box with no audio device — where Mix_OpenAudio would otherwise fail and
+  # leave the backend uninstalled, making the probe untestable rather than
+  # failing. It writes its own fixture into the working directory.
+  set_tests_properties(audio_probe PROPERTIES ENVIRONMENT
+                                              "SDL_AUDIODRIVER=dummy")
 endif()

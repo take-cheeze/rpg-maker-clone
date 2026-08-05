@@ -521,6 +521,8 @@ class RPG2k
         @timer_window.dispose if @timer_window
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
+        @flash_buffer.dispose if @flash_buffer
+        @flash_out_buffer.dispose if @flash_out_buffer
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -529,6 +531,8 @@ class RPG2k
         @state.tick_timer # the timer keeps counting during events too
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
+        update_sprite_flashes # Flash Sprite decays during events too
+        watch_bgm_loop # so the "BGM played once" branch can be answered
         @anim_frame += 1 # water / animated tiles cycle even during events
         if event_busy?
           drive_event
@@ -780,17 +784,17 @@ class RPG2k
       # backdrop the plain void — when the map has no parallax or the image is
       # missing.
       def setup_parallax
-        u = @map.unit
-        return unless (u.parallax_flag rescue false)
-        name = (u.parallax_name rescue '').to_s
+        cfg = parallax_config
+        return unless cfg
+        name = cfg[:name].to_s
         return if name.empty?
         @parallax_img = Bitmap.new "Panorama/#{name}"
-        @par_loop_x = (u.parallax_loop_x rescue false) ? true : false
-        @par_loop_y = (u.parallax_loop_y rescue false) ? true : false
-        @par_auto_x = (u.parallax_autoloop_x rescue false) ? true : false
-        @par_auto_y = (u.parallax_autoloop_y rescue false) ? true : false
-        @par_sx = (u.parallax_sx rescue 0) || 0
-        @par_sy = (u.parallax_sy rescue 0) || 0
+        @par_loop_x = cfg[:loop_x] ? true : false
+        @par_loop_y = cfg[:loop_y] ? true : false
+        @par_auto_x = cfg[:auto_x] ? true : false
+        @par_auto_y = cfg[:auto_y] ? true : false
+        @par_sx = cfg[:sx] || 0
+        @par_sy = cfg[:sy] || 0
         @parallax_sprite = Sprite.new
         @parallax_sprite.z = -1
         @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
@@ -798,6 +802,22 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] parallax load failed, no backdrop drawn: #{e.message}"
         @parallax_img = nil
+      end
+
+      # The parallax settings to draw: a Change Parallax Background override
+      # (Game::State#parallax) when one is active, otherwise the map's own
+      # panorama fields. nil when the map declares no parallax and none was set.
+      def parallax_config
+        ov = @state.parallax
+        return ov if ov
+        u = @map.unit
+        return nil unless (u.parallax_flag rescue false)
+        { name: (u.parallax_name rescue '').to_s,
+          loop_x: (u.parallax_loop_x rescue false),
+          loop_y: (u.parallax_loop_y rescue false),
+          auto_x: (u.parallax_autoloop_x rescue false),
+          auto_y: (u.parallax_autoloop_y rescue false),
+          sx: (u.parallax_sx rescue 0), sy: (u.parallax_sy rescue 0) }
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -1063,10 +1083,7 @@ class RPG2k
           it.start(p[:commands]) # loop the process
           it.update
         end
-        apply_move_requests(it, p[:event])
-        apply_location_requests(it, p[:event])
-        apply_erase_request(it, p[:event])
-        apply_tileset_request(it)
+        apply_interpreter_requests(it, p[:event])
       rescue StandardError
         nil
       end
@@ -1093,11 +1110,14 @@ class RPG2k
         @event_tiles[[x, y]]
       end
 
-      # Turn `ev` to face the player and run its command list.
-      def start_event(ev)
+      # Turn `ev` to face the player and run its command list. `by_decision_key`
+      # records that the action button (not a touch or auto-start) launched it,
+      # which the "the decision key started this event" conditional branch reads.
+      def start_event(ev, by_decision_key = false)
         ev[:char].face(ev[:char].direction_toward(@state.x, @state.y))
         @active_event = ev
         @interpreter.start(ev[:commands])
+        @interpreter.triggered_by_decision_key = by_decision_key
       end
 
       # On the action button, run the trigger-0 event the player is facing. The
@@ -1107,7 +1127,7 @@ class RPG2k
         return unless Input.trigger?(Input::C)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        start_event(ev) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
+        start_event(ev, true) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
       end
 
       # On the action button, board a placed vehicle the party is standing on
@@ -1457,6 +1477,219 @@ class RPG2k
         nil
       end
 
+      # -- Change Parallax Background -----------------------------------------
+
+      # If the interpreter ran a Change Parallax Background this step, tear down
+      # the old panorama sprite and rebuild it from the new override
+      # (Game::State#parallax). The override lasts until the next map load (see
+      # perform_teleport, which clears it), when the map's own panorama returns.
+      def apply_parallax_request(interp)
+        return unless interp.take_parallax_request
+        dispose_parallax
+        setup_parallax
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Change Parallax Background failed: #{e.message}"
+        nil
+      end
+
+      # Release the current parallax sprite / buffers before a rebuild, so a
+      # mid-map panorama swap does not leak the old bitmaps.
+      def dispose_parallax
+        @parallax_sprite.dispose if @parallax_sprite
+        @parallax_bmp.dispose if @parallax_bmp
+        @parallax_img.dispose if @parallax_img
+        @parallax_sprite = nil
+        @parallax_bmp = nil
+        @parallax_img = nil
+      end
+
+      # -- "BGM played once" ---------------------------------------------------
+
+      # Watch the music's playback position so the conditional branch that asks
+      # whether the BGM has played through at least once (12010 type 9) can be
+      # answered. SDL_mixer loops a track by seeking back to its start, so a
+      # position that jumped backwards is a loop; the flag is cleared whenever a
+      # new BGM starts (see Game::Interpreter#play_audio). A backend that cannot
+      # report a position always returns 0, which never counts as a loop.
+      def watch_bgm_loop
+        return if @bgm_pos_unavailable
+        return unless RGSS::Audio.respond_to?(:bgm_pos)
+        pos = RGSS::Audio.bgm_pos.to_i
+        prev = @bgm_pos || 0
+        @bgm_pos = pos
+        @state.bgm_looped = true if pos < prev && @state.current_bgm
+      rescue StandardError => e
+        # Report once and stop polling, rather than repeating the same failure
+        # sixty times a second; the branch then never reports a loop.
+        @bgm_pos_unavailable = true
+        $stderr.puts "[RPG2k] BGM position unavailable, 'BGM played once' " \
+                     "branches will not fire: #{e.message}"
+      end
+
+      # -- Tile Substitution ---------------------------------------------------
+
+      # A Tile Substitution rewrote a tile id on the current map (11750). The map
+      # itself already answers every lookup with the substituted tile
+      # (Game::Map#substitute_tile), and draw_layers rebuilds both tile buffers
+      # from those lookups every frame, so the swap is on screen on the next
+      # render with nothing to invalidate here. Draining the flag is what keeps
+      # the request from being reported again next step.
+      def apply_tile_substitution(interp)
+        interp.take_tiles_changed
+        nil
+      end
+
+      # -- Enter/Exit Vehicle --------------------------------------------------
+
+      # Board or leave a vehicle on the event's behalf (10840) — the same toggle
+      # the action button performs, so an event can put the party on the ship it
+      # just placed, or set them ashore.
+      def apply_vehicle_toggle(interp)
+        return unless interp.take_vehicle_toggle_request
+        if @state.boarded?
+          disembark_vehicle
+        else
+          board_vehicle
+        end
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Enter/Exit Vehicle failed: #{e.message}"
+        nil
+      end
+
+      # -- Play Movie ----------------------------------------------------------
+
+      # Report a Play Movie request (11560). No video decoder is linked in, so
+      # the movie cannot be shown; the request is logged rather than dropped in
+      # silence, so a game that plays a cut-scene here is visible in the trace.
+      def apply_movie_request(interp)
+        req = interp.take_movie_request
+        return if req.nil?
+        $stderr.puts "[RPG2k] Play Movie '#{req[:name]}' at (#{req[:x]}, #{req[:y]}) " \
+                     "#{req[:width]}x#{req[:height]}: video playback is not supported"
+      end
+
+      # -- Flash Sprite --------------------------------------------------------
+
+      # Start the character flashes an interpreter queued this step (11320). The
+      # hero and map events both keep their flash as a decaying colour the
+      # renderer tones their CharSet frame with; a target that cannot be resolved
+      # (a vehicle, or an unknown event id) simply flashes nothing.
+      def apply_sprite_flash_requests(interp, this_event)
+        reqs = interp.take_sprite_flash_requests
+        return if reqs.nil? || reqs.empty?
+        started = nil
+        reqs.each { |r| started = apply_sprite_flash(r, this_event) || started }
+        # A Flash Sprite that carried its wait flag paused the interpreter on a
+        # :sprite_flash wait; remember the flash it started so the wait releases
+        # on *that* character, not on some other one still flashing.
+        @flash_wait = started if interp.wait_kind == :sprite_flash
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Flash Sprite failed: #{e.message}"
+        nil
+      end
+
+      # Start one queued flash, returning the flash it attached to a character
+      # (nil when the target could not be resolved, so nothing flashes).
+      def apply_sprite_flash(r, this_event)
+        flash = { red: r[:red], green: r[:green], blue: r[:blue],
+                  power: r[:power], frames: r[:frames], total: r[:frames] }
+        return nil if flash[:frames] <= 0
+        case r[:target]
+        when MOVE_TARGET_PLAYER
+          @player_flash = flash
+          @last_frame = nil # force the hero's cached frame to be re-toned
+          flash
+        when 0, MOVE_TARGET_THIS
+          this_event ? (this_event[:flash] = flash) : nil
+        else
+          ev = @events.find { |e| e[:id] == r[:target] }
+          ev ? (ev[:flash] = flash) : nil
+        end
+      end
+
+      # Whether the flash a waiting Flash Sprite started is still running. The
+      # flash hash is decayed in place by update_sprite_flashes, so holding the
+      # reference is enough to see it run out even after the character has
+      # dropped it.
+      def sprite_flashing?
+        @flash_wait && @flash_wait[:frames] > 0 ? true : false
+      end
+
+      # Advance every running character flash one frame, dropping the ones that
+      # have decayed away. Called once per frame from #update, so a flash fades
+      # during messages and forced movement too, as RPG_RT's does.
+      def update_sprite_flashes
+        # Invalidate the hero's cached frame whenever a flash was running this
+        # tick — including the tick it ends on, so the last toned frame is
+        # replaced by the plain one instead of staying baked in.
+        @last_frame = nil if @player_flash
+        @player_flash = tick_flash(@player_flash)
+        @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
+      end
+
+      def tick_flash(flash)
+        return nil if flash.nil?
+        flash[:frames] -= 1
+        flash[:frames] > 0 ? flash : nil
+      end
+
+      # The RGSS tone that paints `flash` over a CharSet frame: the flash colour
+      # scaled by how much of the flash is left, added to every pixel (alpha is
+      # untouched, so the sprite keeps its shape).
+      def flash_tone(flash)
+        strength = flash[:power] * flash[:frames] / flash[:total]
+        Tone.new(flash[:red] * strength / 255, flash[:green] * strength / 255,
+                 flash[:blue] * strength / 255, 0)
+      end
+
+      # Scratch CharSet-sized buffers the flash pass uses: the frame is blitted
+      # into the first and toned into the second (tone_blt needs a same-size
+      # source and writes to a separate destination).
+      def flash_buffer
+        @flash_buffer ||= Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+      end
+
+      def flash_out_buffer
+        @flash_out_buffer ||= Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+      end
+
+      # -- Open Save Menu / Open Main Menu -------------------------------------
+
+      # Open Save Menu (11910): save the game on the event's behalf and report
+      # the outcome, then let the event continue. The clone has a single save
+      # slot (Scene::Menu's Save entry writes it), so there is no slot picker to
+      # show; a Change Save Access that forbade saving is honoured, as in RPG_RT.
+      def perform_event_save
+        if @state.save_access
+          saved = @parent.save_game(@state)
+          $stderr.puts "[RPG2k] Open Save Menu: #{saved ? 'saved' : 'save failed'}"
+        else
+          $stderr.puts '[RPG2k] Open Save Menu: saving is disabled'
+        end
+        @interpreter.resume
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Open Save Menu failed: #{e.message}"
+        @interpreter.resume
+      end
+
+      # Open Main Menu (11950): push the field menu over the map, then resume the
+      # event once the player closes it again. `@event_menu` marks that this
+      # scene is waiting on its own menu, so the event stays paused for exactly
+      # one visit instead of re-opening it every frame.
+      def perform_event_menu
+        if @event_menu
+          @event_menu = false
+          @interpreter.resume
+        else
+          @event_menu = true
+          @parent.push Scene::Menu.new(@parent, @state)
+        end
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Open Main Menu failed: #{e.message}"
+        @event_menu = false
+        @interpreter.resume
+      end
+
       # -- Move Event (Set Move Route) ----------------------------------------
 
       # Apply the Move Event requests an interpreter queued this step. `this_event`
@@ -1736,16 +1969,31 @@ class RPG2k
           when :game_over then perform_game_over
           when :name_input then drive_name_input
           when :animation then drive_map_animation
+          when :sprite_flash then @interpreter.resume unless sprite_flashing?
+          when :save_menu then perform_event_save
+          when :menu then perform_event_menu
           end
         else
           @interpreter.update
-          apply_move_requests(@interpreter, @active_event)
-          apply_location_requests(@interpreter, @active_event)
-          apply_erase_request(@interpreter, @active_event)
-          apply_halt_request(@interpreter)
-          apply_graphic_change(@interpreter)
-          apply_tileset_request(@interpreter)
+          apply_interpreter_requests(@interpreter, @active_event)
         end
+      end
+
+      # Drain every non-blocking request the interpreter queued this step and
+      # apply it to the map / scene. Shared by the foreground event and each
+      # parallel process, so both surfaces honour the same commands.
+      def apply_interpreter_requests(interp, this_event)
+        apply_move_requests(interp, this_event)
+        apply_location_requests(interp, this_event)
+        apply_erase_request(interp, this_event)
+        apply_halt_request(interp)
+        apply_graphic_change(interp)
+        apply_tileset_request(interp)
+        apply_parallax_request(interp)
+        apply_tile_substitution(interp)
+        apply_sprite_flash_requests(interp, this_event)
+        apply_vehicle_toggle(interp)
+        apply_movie_request(interp)
       end
 
       # Maps the interpreter's accepted-key symbols onto RGSS input buttons.
@@ -2086,6 +2334,7 @@ class RPG2k
         when :ally_target then drive_battle_ally_target
         when :animate     then drive_battle_animate
         when :result      then drive_battle_result
+        when :event       then drive_battle_event
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
@@ -2102,7 +2351,8 @@ class RPG2k
         situations = db.respond_to?(:situation) ? db.situation : nil
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
-                                                situations, true, true),
+                                                situations, true, true, true,
+                                                req[:first_strike] ? true : false),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
@@ -2110,10 +2360,19 @@ class RPG2k
                        skill_win: nil, item_win: nil, ally_win: nil,
                        action_win: nil, anim_timer: 0,
                        back_sprite: nil, enemy_sprites: nil,
-                       result_win: nil, result: nil }
+                       result_win: nil, result: nil,
+                       # The troop's battle-event pages: their own interpreter,
+                       # the message window they draw into, and which pages have
+                       # already fired this turn (RPG2000 runs a page once per
+                       # turn its condition holds, so this resets each round).
+                       events: Game::Interpreter.new(@state), event_win: nil,
+                       pages_run: {} }
+        @battle_ui[:events].battle = @battle_ui[:battle]
         build_battle_sprites
         refresh_battle_status
-        draw_battle_command
+        # Turn-0 pages fire before the party is asked for its first command —
+        # this is where a troop's opening dialogue lives.
+        draw_battle_command unless run_battle_events
       end
 
       # RPG2000 is a front-view battle: the enemy troop is drawn as sprites over a
@@ -2139,13 +2398,42 @@ class RPG2k
       # A plain dark battle field behind the enemies. The real per-terrain
       # backdrop (Backdrop/<name>, chosen by the tile the encounter started on) is
       # still to come — the encounter request does not carry that terrain yet.
-      def build_battle_back
-        bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+      # Where a battle-event page's message panel sits — above the action banner,
+      # so a page talking mid-round does not fight it for the same row.
+      BATTLE_EVENT_MSG_Y = 8
+
+      def build_battle_back(name = nil)
+        bmp = battle_back_bitmap(name)
         spr = Sprite.new
         spr.bitmap = bmp
         spr.z = 5
         @battle_ui[:back_sprite] = spr
+      end
+
+      # The battle backdrop: the Backdrop/<name> image a Change Battle Background
+      # command (or the encounter) named, falling back to the flat colour field
+      # when there is no name or the file is missing — the same fallback the map
+      # uses for a missing chipset.
+      def battle_back_bitmap(name)
+        return Bitmap.new("Backdrop/#{name}") if name && !name.empty?
+        flat_battle_back
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle backdrop '#{name}' failed to load: #{e.message}"
+        flat_battle_back
+      end
+
+      def flat_battle_back
+        bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+        bmp
+      end
+
+      # Change Battle Background (13210): swap the backdrop mid-fight, releasing
+      # the sprite and bitmap the old one held.
+      def rebuild_battle_back(name)
+        dispose_battle_sprite(@battle_ui[:back_sprite])
+        @battle_ui[:back_sprite] = nil
+        build_battle_back(name)
       end
 
       # The battler graphic for `enemy` (Monster/<battler_name>, colour-keyed), or
@@ -2205,12 +2493,27 @@ class RPG2k
           select_battle_command
         elsif Input.trigger?(Input::B)
           if @battle_ui[:actor_i].zero?
-            finish_battle(:escape) if @battle_ui[:req][:allow_escape]
+            try_battle_escape if @battle_ui[:req][:allow_escape]
           else
             @battle_ui[:actor_i] -= 1 # re-command the previous member
             @battle_ui[:cmd] = 0
             draw_battle_command
           end
+        end
+      end
+
+      # Escape command (cancel on the first actor's menu): roll the party's
+      # agility-based escape chance. On success flee the fight; on a failed roll
+      # the party forfeits the round — every member skips and only the enemies
+      # act — and the next attempt is likelier (Game::Battle#attempt_escape).
+      def try_battle_escape
+        battle = @battle_ui[:battle]
+        if battle.attempt_escape
+          finish_battle(:escape)
+        else
+          $stderr.puts '[RPG2k battle] escape failed'
+          living_allies.each { |a| battle.command_skip(a) }
+          start_round_animation
         end
       end
 
@@ -2329,7 +2632,8 @@ class RPG2k
                                           name: sk.name, cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
-                                          variance: c[:variance] || 0)
+                                          variance: c[:variance] || 0,
+                                          attributes: c[:attributes])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -2479,6 +2783,145 @@ class RPG2k
           @battle_ui[:actor_i] = 0
           @battle_ui[:cmd] = 0
           @battle_ui[:phase] = :command
+          # A new turn re-arms every page: RPG2000 fires a battle page once per
+          # turn in which its condition holds, not once per battle.
+          @battle_ui[:pages_run] = {}
+          draw_battle_command unless run_battle_events
+        end
+      end
+
+      # -- battle-event pages --------------------------------------------------
+
+      # Start the next troop battle-event page whose condition holds and that has
+      # not yet fired this turn, switching to the :event phase. Returns whether a
+      # page was started, so the caller knows whether to draw the command window
+      # or hand the frame to the event. A troop that scripts nothing, or whose
+      # pages have all fired, simply returns false.
+      def run_battle_events
+        ui = @battle_ui
+        return false unless ui && ui[:troop].pages
+        matched = Game::BattlePage.select_all(ui[:troop].pages, @state.switches,
+                                              @state.variables, ui[:battle])
+        entry = matched.find { |(id, _)| !ui[:pages_run][id] }
+        return false unless entry
+        ui[:pages_run][entry[0]] = true
+        cmds = entry[1].event
+        return run_battle_events if cmds.nil? || cmds.empty? # empty page: try the next
+        ui[:events].battle = ui[:battle]
+        ui[:events].start(cmds)
+        ui[:phase] = :event
+        true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle event page failed: #{e.message}"
+        false
+      end
+
+      # Advance the running battle-event page one frame. Battle pages use the
+      # ordinary command set (messages, switches, variables, audio) on top of the
+      # battle-only commands, so the interpreter is driven the same way the map
+      # drives an event — only the UI it may reach for is narrower.
+      def drive_battle_event
+        it = @battle_ui[:events]
+        apply_battle_event_requests(it)
+        return if finish_terminated_battle
+        if it.waiting?
+          drive_battle_event_wait(it)
+        elsif it.running?
+          it.update
+        else
+          leave_battle_event_phase
+        end
+      end
+
+      def drive_battle_event_wait(it)
+        case it.wait_kind
+        when :message, :choice then drive_battle_event_message(it)
+        when :wait
+          @battle_ui[:event_timer] ||= frames_from_tenths(it.wait_frames)
+          if @battle_ui[:event_timer] <= 0
+            @battle_ui[:event_timer] = nil
+            it.resume
+          else
+            @battle_ui[:event_timer] -= 1
+          end
+        else
+          # A battle page cannot open the map's teleport / shop / menu UI; those
+          # requests are released so the page runs on rather than wedging here.
+          it.resume
+        end
+      end
+
+      # Show the page's message lines in a battle text panel and dismiss it on a
+      # button press. A [Show Choices] in a battle page is displayed the same way
+      # and takes the first option, which is what the runtime can answer without
+      # a battle choice widget.
+      def drive_battle_event_message(it)
+        unless @battle_ui[:event_win]
+          lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
+          @battle_ui[:event_win] =
+            battle_text_window(lines || [], BATTLE_EVENT_MSG_Y, 340)
+          return # shown this frame; take the button from the next one
+        end
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        choice = it.wait_kind == :choice
+        close_battle_event_window
+        choice ? it.choose(0) : it.resume
+      end
+
+      def close_battle_event_window
+        return unless @battle_ui && @battle_ui[:event_win]
+        @battle_ui[:event_win].dispose
+        @battle_ui[:event_win] = nil
+      end
+
+      # Apply the requests a battle page queued: revealed troop members get the
+      # sprite they never had, and a Change Battle Background rebuilds the
+      # backdrop.
+      def apply_battle_event_requests(it)
+        it.take_revealed_monsters.each { |i| reveal_battle_monster(i) }
+        name = it.take_battle_background
+        rebuild_battle_back(name) unless name.nil?
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle event request failed: #{e.message}"
+        nil
+      end
+
+      # Show Hidden Monster: clear the member's hidden flag and build the sprite
+      # build_battle_sprites skipped, so it appears mid-fight.
+      def reveal_battle_monster(index)
+        member = @battle_ui[:troop].members[index]
+        return unless member && member.hidden
+        member.hidden = false
+        bmp = battler_bitmap(member)
+        spr = Sprite.new
+        spr.bitmap = bmp
+        spr.x = member.x - bmp.width / 2
+        spr.y = member.y - bmp.height / 2
+        spr.z = 100 + index
+        dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
+        @battle_ui[:enemy_sprites][index] = spr
+      end
+
+      # Terminate Battle: leave the fight with no victory / defeat processing.
+      # Returns whether the battle was ended, so the caller stops driving it.
+      def finish_terminated_battle
+        return false unless @battle_ui[:battle].terminated?
+        close_battle_event_window
+        finish_battle(:abort)
+        true
+      end
+
+      # The running page finished: fire the next matching page, or hand the turn
+      # back — to the result window when the page decided the fight, otherwise to
+      # the party's command phase.
+      def leave_battle_event_phase
+        close_battle_event_window
+        return if run_battle_events
+        battle = @battle_ui[:battle]
+        if battle.finished?
+          enter_battle_result(battle.result)
+        else
+          @battle_ui[:phase] = :command
           draw_battle_command
         end
       end
@@ -2545,6 +2988,8 @@ class RPG2k
           parts << "#{e[:recover_mp]} MP" if e[:recover_mp] && e[:recover_mp] > 0
           body = parts.empty? ? 'no effect' : "+#{parts.join(' / ')}"
           "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
+        elsif e[:missed]
+          "#{e[:attacker]} misses #{e[:target]}"
         else
           hits = e[:skill] ? "'s #{e[:skill]} hits" : ' hits'
           line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
@@ -2565,6 +3010,13 @@ class RPG2k
         lines = ['Victory!']
         lines << "Gained #{exp} EXP." if exp > 0
         lines << "Found #{gold} gold." if gold > 0
+        # Each defeated enemy may drop its treasure item (rolled on the battle's
+        # own RNG); grant it to the bag and name it in the result window.
+        troop.drops(@battle_ui[:battle].rng).each do |iid|
+          @state.party.gain_item(iid, 1)
+          it = @state.party.db_item(iid)
+          lines << "Found #{it ? it.name : "item #{iid}"}."
+        end
         lines
       end
 
@@ -2748,7 +3200,8 @@ class RPG2k
         [@battle_ui[:status_win], @battle_ui[:cmd_win],
          @battle_ui[:target_win], @battle_ui[:skill_win],
          @battle_ui[:item_win], @battle_ui[:ally_win],
-         @battle_ui[:action_win], @battle_ui[:result_win]].each { |w| w.dispose if w }
+         @battle_ui[:action_win], @battle_ui[:result_win],
+         @battle_ui[:event_win]].each { |w| w.dispose if w }
         dispose_battle_sprite(@battle_ui[:back_sprite])
         (@battle_ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
         @battle_ui = nil
@@ -3060,6 +3513,12 @@ class RPG2k
         # pictures on top of the first room and the map is never visible —
         # exactly what the wine comparison showed (ADR 0021).
         @state.erase_all_pictures
+        # A Change Parallax Background override does not survive a teleport
+        # either; the destination map's own panorama applies. Rebuild the
+        # backdrop from the new map so it isn't drawn with the old one.
+        @state.clear_parallax
+        dispose_parallax
+        setup_parallax
         # ... nor does a Pan Screen offset / camera lock: the camera re-centres
         # on the hero on the new map. Nepheshel's opening pans a long way before
         # teleporting into the first room, and keeping that offset drew the room
@@ -3143,11 +3602,15 @@ class RPG2k
         # the visible length of the lines before it) so one reveal counter drives
         # the whole window.
         pauses = []
+        instants = []
         auto_close = false
+        show_gold = false
         offset = 0
         scans.each_with_index do |s, li|
           s[:pauses].each { |p| pauses << { at: offset + p[:at], kind: p[:kind] } }
+          (s[:instants] || []).each { |a, b| instants << [offset + a, offset + b] }
           auto_close ||= s[:auto_close]
+          show_gold ||= s[:show_gold]
           offset += plain[li].length
         end
 
@@ -3171,14 +3634,16 @@ class RPG2k
         contents = Bitmap.new(inner_w, inner_h)
 
         # Plain messages type out gradually; choice lists appear at once.
-        reveal = Game::TextReveal.new(plain, 0, pauses, auto_close)
+        reveal = Game::TextReveal.new(plain, 0, pauses, auto_close, instants)
         reveal.reveal_all if choice
+        # `\$` shows the party's gold in a small window alongside the message.
+        gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
         @message = { window: win, choice: choice, count: plain.length,
                      reveal: reveal, contents: contents, inner_w: inner_w,
                      seg_lines: seg_lines, face: face,
                      face_index: cfg.face_index,
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
-                     text_x: text_x, text_w: text_w }
+                     text_x: text_x, text_w: text_w, gold_window: gold_window }
         draw_message_contents
         win.contents = contents
         @choice_index = 0
@@ -3412,6 +3877,7 @@ class RPG2k
       def close_message
         return unless @message
         @message[:window].dispose
+        @message[:gold_window].dispose if @message[:gold_window]
         @message = nil
       end
 
@@ -3853,7 +4319,32 @@ class RPG2k
         epx, epy = event_pixel(e)
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE)
-        bmp.blt dx, dy, charset, Rect.new(sx, sy, sw, sh), opacity
+        src = Rect.new(sx, sy, sw, sh)
+        toned = e[:flash] && flashed_charset(charset, src, e[:flash])
+        if toned
+          bmp.blt dx, dy, toned,
+                  Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT), opacity
+        else
+          bmp.blt dx, dy, charset, src, opacity
+        end
+      end
+
+      # A Flash-Sprite-tinted copy of one CharSet frame, or nil when the tone
+      # pass is unavailable. The frame is lifted into a scratch buffer (tone_blt
+      # works on same-size bitmaps) and toned with the flash's current colour,
+      # which brightens the sprite toward that colour without touching its alpha
+      # — so the flash keeps the character's outline instead of painting a
+      # rectangle over it.
+      def flashed_charset(charset, src, flash)
+        buf = flash_buffer
+        buf.clear
+        buf.blt 0, 0, charset, src
+        out = flash_out_buffer
+        out.tone_blt buf, flash_tone(flash)
+        out
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] sprite flash tone failed: #{e.message}"
+        nil
       end
 
       # Blit an event whose graphic is a chipset tile (16x16), aligned to its
@@ -3885,8 +4376,18 @@ class RPG2k
         @last_frame = frame
 
         rx, ry, rw, rh = Game::CharSet.frame_rect(@charset_index, @state.direction, pat)
+        src = Rect.new(rx, ry, rw, rh)
+        # A Flash Sprite aimed at the hero tones the frame as it is laid down
+        # (update_sprite_flashes invalidates @last_frame each frame it runs, so
+        # the fading colour is re-applied rather than baked in once).
+        toned = @player_flash && flashed_charset(@charset, src, @player_flash)
         @player_bmp.clear
-        @player_bmp.blt 0, 0, @charset, Rect.new(rx, ry, rw, rh)
+        if toned
+          @player_bmp.blt 0, 0, toned,
+                          Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+        else
+          @player_bmp.blt 0, 0, @charset, src
+        end
       end
 
       # Deterministic, memoised colour for a tile id so distinct tiles read as
@@ -4088,9 +4589,11 @@ class RPG2k
         return if items.empty?
         id, = items[@item_index]
         it = @state.party.db_item(id)
-        # Only an all-ally medicine skips the target prompt; single-target
-        # medicines and skill books (always one actor) ask who to use it on.
-        if it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
+        # A switch item has no actor target; an all-ally medicine skips the
+        # target prompt; single-target medicines / skill books ask who to use on.
+        if it && it.type == Game::Party::ITEM_SWITCH
+          apply_switch_item(id)
+        elsif it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
           apply_item(id, nil)
         else
           @pending_item = id
@@ -4098,6 +4601,14 @@ class RPG2k
           @target_index = 0
           build_target_window
         end
+      end
+
+      # A switch item turns on its game switch (the party consumes one); the menu
+      # owns the switch table.
+      def apply_switch_item(id)
+        sid = @state.party.use_switch_item(id)
+        @state.switches[sid] = true if sid
+        show_message(sid ? "Switch turned on." : "It had no effect.", :used)
       end
 
       def update_target
@@ -4976,6 +5487,7 @@ class RPG2k
   # State#to_lsd, so the slot is readable by real RPG_RT/EasyRPG tooling. The
   # export is best-effort: a failure there is logged but never fails the save.
   def save_game state, slot = 1
+    state.save_count += 1 # RPG2000 counts each save; persisted in the dump below
     data = Marshal.dump state.to_h
     File.open(save_path(slot), "wb") { |f| f.write data }
     export_lsd(state, slot)

@@ -22,6 +22,7 @@ module RGSS
     class << self
       attr_accessor :log
       def bgm_play(*a); (@log ||= []) << [:bgm, *a]; end
+      def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
     end
   end
@@ -102,6 +103,12 @@ class FakeCmd
 end
 
 R = Game::MoveRoute
+
+# A 2x2 Game::Map over literal tile arrays, for the Tile Substitution checks.
+FakeMapUnit = Struct.new(:width, :height, :chipset_id, :lower_layer, :upper_layer)
+def fake_map_2x2(lower, upper)
+  Game::Map.new(1, FakeMapUnit.new(2, 2, 1, lower, upper))
+end
 
 # -- Character ----------------------------------------------------------------
 
@@ -411,6 +418,51 @@ check 'Message.scan records pacing codes in revealed-char coordinates' do
   # Pause offsets count the expanded length of \v / \n, not the code text.
   s2 = Game::Message.scan('\v[3]\!x', vars, names)
   eq [{ at: 2, kind: :key }], s2[:pauses], '42 is two chars, so \\! sits at 2'
+end
+
+check 'Message.scan flags \$ (show gold) and drops it from the text' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  s = Game::Message.scan('Gold:\$ here', vars, names)
+  ok s[:show_gold], '\\$ sets show_gold'
+  eq 'Gold: here'.length, s[:length], '\\$ emits no visible character'
+  # No \$ -> flag stays off.
+  ok !Game::Message.scan('plain', vars, names)[:show_gold]
+end
+
+check 'Message.scan records \> \< instant spans (and an unclosed one to EOL)' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  s = Game::Message.scan('ab\>cd\<ef', vars, names)
+  eq 6, s[:length], '"abcdef" = 6 visible characters'
+  eq [[2, 4]], s[:instants], 'cd is the instant span'
+  # An unclosed \> runs to the end of the line.
+  s2 = Game::Message.scan('ab\>cd', vars, names)
+  eq [[2, 4]], s2[:instants]
+end
+
+check 'TextReveal reveals an instant span in a single advance' do
+  # "ab" normal, "cd" instant (\> \<), "ef" normal -> instant span [2, 4).
+  r = Game::TextReveal.new(['abcdef'], 0, [], false, [[2, 4]])
+  r.advance(1)
+  eq 1, r.revealed, 'the first normal char reveals one at a time'
+  r.advance(1)                          # lands at 2 -> inside the span -> jump to 4
+  eq 4, r.revealed, 'the instant span appears at once'
+  r.advance(1)
+  eq 5, r.revealed, 'normal characters resume after the span'
+end
+
+check 'an instant span still stops at a pause inside it' do
+  # instant [1, 5) but a \! pause sits at 3: the span cannot leap past the pause.
+  r = Game::TextReveal.new(['abcdef'], 0, [{ at: 3, kind: :key }], false, [[1, 5]])
+  r.advance(1)                          # 0 -> 1 (span start); capped at the pause 3
+  eq 3, r.revealed, 'the instant leap is capped at the pause'
+  ok r.pending_pause, 'the pause gates the span'
+  r.release_pause
+  r.advance(1)                          # 3 -> 4, still inside the span -> jump to 5
+  eq 5, r.revealed, 'the rest of the span reveals once released'
 end
 
 # -- Screen (tint state machine) ---------------------------------------------
@@ -1324,28 +1376,30 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
-                      :prevent_critical)
+                      :prevent_critical, :attribute_set, :switch_id, :occasion_field)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
-              state_set: nil, reverse_state: false, prevent_crit: false)
+              state_set: nil, reverse_state: false, prevent_crit: false,
+              attribute_set: nil, switch_id: 0, occ_field: true)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit)
+               prevent_crit, attribute_set, switch_id, occ_field)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
                        :affect_hp, :affect_sp, :occasion_battle,
-                       :state_effects, :reverse_state_effect, :hit, :variance)
+                       :state_effects, :reverse_state_effect, :hit, :variance,
+                       :attribute_effects)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
-               variance: 4)
+               variance: 4, attribute_effects: nil)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
-                variance)
+                variance, attribute_effects)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -1403,6 +1457,22 @@ check 'State save round-trips the message configuration' do
   legacy_loaded = Game::State.load(db, legacy)
   eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
   eq true, legacy_loaded.save_access, 'absent save access defaults on'
+
+  # The save / battle tallies round-trip, and default to 0 in a legacy save.
+  st.save_count = 4
+  st.battle_count = 7
+  st.win_count = 5
+  st.defeat_count = 1
+  st.escape_count = 1
+  counted = Game::State.load(db, st.to_h)
+  eq 4, counted.save_count, 'save count round-trips'
+  eq 7, counted.battle_count, 'battle count round-trips'
+  eq 5, counted.win_count
+  eq 1, counted.defeat_count
+  eq 1, counted.escape_count
+  legacy2 = st.to_h
+  legacy2.delete(:battle_count)
+  eq 0, Game::State.load(db, legacy2).battle_count, 'absent battle count defaults 0'
 end
 
 check 'Vehicle: unplaced by default, placed once positioned' do
@@ -1764,6 +1834,40 @@ check 'field_items lists only held medicines, in id order with counts' do
   st.party.gain_item(5, 1)
   st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
   eq [[5, 1], [9, 2]], st.party.field_items
+end
+
+check 'a battle-only medicine is hidden from the field menu but shown in battle' do
+  items = {
+    5 => fake_item(type: 6, rhp: 50, occ_field: true,  occ_battle: false), # field only
+    6 => fake_item(type: 6, rhp: 50, occ_field: false, occ_battle: true),  # battle only
+  }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(6, 1)
+  ok st.party.field_usable?(5), 'the field medicine is usable in the field'
+  ok !st.party.field_usable?(6), 'the battle-only medicine is hidden from the field'
+  eq [[5, 1]], st.party.field_items
+  # ... and the reverse holds for the battle item list.
+  ok st.party.battle_usable?(6), 'the battle-only medicine is usable in battle'
+  ok !st.party.battle_usable?(5), 'the field-only medicine is not usable in battle'
+  eq [[6, 1]], st.party.battle_items
+end
+
+check 'a switch item is field-usable, effective, and flips its switch on use' do
+  items = { 4 => fake_item(type: 9, switch_id: 12, name: 'Whistle') }
+  st = item_party(items)
+  st.party.gain_item(4, 2)
+  eq [[4, 2]], st.party.field_items, 'switch items appear in the field menu'
+  ok st.party.switch_item?(4)
+  ok st.party.item_effective?(4, st.party.leader), 'a switch item is always effective'
+  # Using it consumes one and returns the switch to flip; the caller sets it.
+  sid = st.party.use_switch_item(4)
+  eq 12, sid, 'use returns the switch id'
+  eq 1, st.party.item_count(4), 'one is consumed'
+  st.switches[sid] = true
+  ok st.switches[12], 'the switch is now on'
+  # A non-switch (or absent) item flips nothing and consumes nothing.
+  ok st.party.use_switch_item(999).nil?, 'a non-switch item is not a switch use'
 end
 
 check 'item_recovery sums the flat amount and the percentage (integer math)' do
@@ -2201,6 +2305,41 @@ check 'Control Variables reads the party size (operand type 7, selector 2)' do
   it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 2])]) # var1 = party size
   it.update
   eq 2, st.variables[1]
+end
+
+check 'Control Variables reads the save / battle / win / defeat / escape counts' do
+  st = new_state
+  st.save_count = 3
+  st.battle_count = 9
+  st.win_count = 6
+  st.defeat_count = 1
+  st.escape_count = 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 3]),   # save count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 7, 4]),   # battle count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 7, 5]),   # win count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 7, 6]),   # defeat count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 7, 7])])  # escape count
+  it.update
+  eq 3, st.variables[1]
+  eq 9, st.variables[2]
+  eq 6, st.variables[3]
+  eq 1, st.variables[4]
+  eq 2, st.variables[5]
+end
+
+check 'battle counters advance: Enemy Encounter and its outcome' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Enemy Encounter (troop 1, no handlers): suspends on a :battle wait.
+  it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0])])
+  it.update
+  eq 1, st.battle_count, 'entering a battle bumps the battle count'
+  eq 0, st.win_count
+  it.resume_battle(:victory)
+  eq 1, st.win_count, 'a victory bumps the win count'
+  eq 0, st.defeat_count
+  eq 0, st.escape_count
 end
 
 check 'Control Variables reads item count and equipped count (operand type 4)' do
@@ -3016,6 +3155,40 @@ check 'Change Map Tileset queues a one-shot tileset request, non-blocking' do
   eq nil, it.take_tileset_request, 'and clears after the first read'
 end
 
+# -- Change Parallax Background -----------------------------------------------
+
+check 'Change Parallax Background records a state override, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  eq nil, st.parallax, 'no override to start (the map panorama applies)'
+  # string = panorama; [loop_x, loop_y, auto_x, sx, auto_y, sy].
+  it.start([FakeCmd.new(IC::CHANGE_PARALLAX, [1, 0, 1, 3, 0, -2], string: 'Sky'),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Change Parallax must not pause the interpreter'
+  eq true, st.switches[1], 'the command after it still ran'
+  eq({ name: 'Sky', loop_x: true, loop_y: false, auto_x: true, sx: 3,
+       auto_y: false, sy: -2 }, st.parallax)
+end
+
+check 'Change Parallax Background flags a one-shot rebuild request' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_PARALLAX, [0, 0, 0, 0, 0, 0], string: 'Cave')])
+  it.update
+  eq true, it.take_parallax_request, 'the scene is told to rebuild once'
+  eq false, it.take_parallax_request, 'and the flag clears after one read'
+end
+
+check 'clear_parallax drops the override so the map panorama returns' do
+  st = party_state
+  st.set_parallax(name: 'Sky', loop_x: true, loop_y: true,
+                  auto_x: false, sx: 0, auto_y: false, sy: 0)
+  ok !st.parallax.nil?, 'override is set'
+  st.clear_parallax
+  eq nil, st.parallax, 'cleared on a map change'
+end
+
 # -- Weather Effects ----------------------------------------------------------
 
 check 'Weather Effects sets the weather type and strength, non-blocking' do
@@ -3603,7 +3776,7 @@ end
 # -- Enemy Encounter (troop model + command) ----------------------------------
 
 EnemyRow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
-                      :agility, :exp, :gold)
+                      :agility, :exp, :gold, :drop_id, :drop_prob)
 GroupMember = Struct.new(:enemy_id, :x, :y, :invisible)
 GroupRow = Struct.new(:name, :members)
 BattleDB = Struct.new(:enemy, :enemy_group)
@@ -3645,6 +3818,37 @@ check 'Game::Enemy reads its combat stats from the database' do
   ok !e.dead?
   e.hp = 0
   ok e.dead?
+end
+
+check 'Game::Enemy reads its treasure drop id and probability' do
+  db = BattleDB.new({ 5 => EnemyRow.new('Golem', 100, 0, 10, 10, 5, 3, 20, 50, 7, 25) }, {})
+  e = Game::Enemy.new(db, 5)
+  eq 7, e.drop_id
+  eq 25, e.drop_prob
+  eq 0, Game::Enemy.new(battle_db, 2).drop_id, 'no drop when the row omits it'
+end
+
+check 'Troop#drops yields certain drops, skipping zero-chance / no-item foes' do
+  db = BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, 7, 100),  # always drops 7
+      3 => EnemyRow.new('Bat',   12, 0, 6, 2, 2, 9, 3,  4, 9, 0),    # 0% -> never
+      4 => EnemyRow.new('Imp',   12, 0, 6, 2, 2, 9, 3,  4, 0, 100) },# no drop item
+    { 1 => GroupRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, false),
+                                 2 => GroupMember.new(3, 0, 0, false),
+                                 3 => GroupMember.new(4, 0, 0, false) }) })
+  troop = Game::Troop.new(db, 1)
+  eq [7], troop.drops(Game::Rng.new(1)), 'only the 100% drop lands'
+end
+
+check 'Troop#drops rolls the drop probability on the given RNG' do
+  db = BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, 7, 50) }, # 50% drop
+    { 1 => GroupRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, false) }) })
+  troop = Game::Troop.new(db, 1)
+  rng = Game::Rng.new(1)                              # one RNG, many independent rolls
+  results = Array.new(40) { troop.drops(rng) }
+  ok results.any? { |r| r == [7] }, 'the 50% drop sometimes lands'
+  ok results.any?(&:empty?), 'and sometimes misses'
 end
 
 check 'a missing troop / enemy degrades to an empty, harmless model' do
@@ -3830,6 +4034,247 @@ check 'Actor#prevents_critical? reads equipped prevent-critical gear' do
   a.equip([0, 8, 0, 0, 0])                           # equip item 8
   eq true, a.prevents_critical?
   eq true, Game::Battle.from_actor(a).prevents_crit  # carried onto the combatant
+end
+
+# -- Battle elemental attributes ----------------------------------------------
+# A weapon / skill carries a set of elements; the target's per-element rank
+# (0=A weakest .. 4=E immune) scales the damage 200/150/100/50/0 percent.
+
+check 'battle: an element the target is weak to amplifies the damage (rank A = 200%)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]                               # weapon carries element 1
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0 }                      # rank A -> 200%
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # variance off
+  bat.begin_round
+  eq 40, bat.step_action[:damage]                    # base 20 * 200%
+end
+
+check 'battle: an element the target resists halves the damage (rank D = 50%)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 3 }                      # rank D -> 50%
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  eq 10, bat.step_action[:damage]
+end
+
+check 'battle: an element the target is immune to deals no damage (rank E = 0%)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  slime.attr_ranks = { 1 => 4 }                      # rank E -> 0%
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  e = bat.step_action
+  eq 0, e[:damage]
+  eq 100, slime.hp, 'no HP lost'
+  ok !e[:defeated]
+end
+
+check 'battle: the attribute multiplier takes the strongest matching element' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]                             # two elements
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 3, 2 => 0 }              # resists 1 (50%), weak to 2 (200%)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  eq 40, bat.step_action[:damage]                    # max(50%, 200%) -> 40
+end
+
+check 'battle: an unlisted element deals full (C = 100%) damage' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [5]                               # slime lists no rank for 5
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0 }
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  bat.begin_round
+  eq 20, bat.step_action[:damage]                    # unchanged base
+end
+
+check 'battle: an elemental skill scales its damage by the target resistance' do
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 3 => 0 }                      # weak to element 3 (200%)
+  bat = Game::Battle.new([mage], [slime], Game::Rng.new(1)) # variance off
+  bat.command_skill(mage, slime, name: 'Flame', cost: 0, hp: -30, attributes: [3])
+  bat.begin_round
+  eq 60, bat.step_action[:damage]                    # 30 * 200%
+end
+
+check 'Party#battle_skill_command carries the skill elemental attributes' do
+  skills = { 7 => fake_skill(name: 'Ice', scope: 0, power: 20, mrate: 40,
+                             attribute_effects: [false, false, true]) } # element 3
+  st = skill_party(skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  slime = combatant('Slime', 0, 0, 5, 100)
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, slime)
+  eq [3], c[:attributes]
+end
+
+check 'Actor weapon/attribute readers feed the combatant snapshot' do
+  items = { 7 => fake_item(type: 1, atk: 10, attribute_set: [true, false, true]) }
+  st = item_party(items)                             # elements 1 & 3 on the weapon
+  a = st.party.actor_by_id(1)
+  eq [], a.weapon_attributes, 'nothing equipped yet'
+  a.equip([7, 0, 0, 0, 0])
+  eq [1, 3], a.weapon_attributes
+  eq [1, 3], Game::Battle.from_actor(a).atk_attrs, 'carried onto the combatant'
+end
+
+check 'Game::Enemy reads its per-attribute defence ranks' do
+  ranks_row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                         :agility, :exp, :gold, :attribute_ranks)
+  db = BattleDB.new({ 5 => ranks_row.new('Golem', 100, 0, 10, 10, 5, 3, 20, 50,
+                                          [2, 4, 0]) }, {})
+  e = Game::Enemy.new(db, 5)
+  eq({ 1 => 2, 2 => 4, 3 => 0 }, e.attribute_ranks)
+  eq({ 1 => 2, 2 => 4, 3 => 0 }, Game::Battle.from_enemy(e).attr_ranks)
+end
+
+# -- Battle escape ------------------------------------------------------------
+
+def escape_battle(party_agi, enemy_agi, seed = 1)
+  Game::Battle.new([combatant('Hero', 0, 0, party_agi, 10)],
+                   [combatant('Slime', 8, 0, enemy_agi, 10)], Game::Rng.new(seed))
+end
+
+check 'Battle#escape_chance scales with the agility ratio, clamped 0..100' do
+  eq 50,  escape_battle(10, 10).escape_chance, 'equal agility -> 150 - 100 = 50'
+  eq 100, escape_battle(20, 5).escape_chance,  'a much faster party clamps at 100'
+  eq 0,   escape_battle(5, 20).escape_chance,  'a much slower party clamps at 0'
+end
+
+check 'Battle#attempt_escape flees the fight when the roll succeeds' do
+  b = escape_battle(20, 5)                            # 100% chance
+  ok b.attempt_escape, 'a 100% chance always flees'
+  ok b.finished?, 'the fight is over'
+  ok b.escaped?, 'flagged as escaped'
+  eq :escaped, b.run, 'and the result stays :escaped'
+end
+
+check 'a failed escape raises the next attempt chance by 10, fight continues' do
+  b = escape_battle(5, 20)                            # 0% chance -> always fails
+  eq 0, b.escape_chance, 'a much slower party starts at 0%'
+  ok !b.attempt_escape, 'and cannot flee'
+  eq 10, b.escape_chance, 'but the next attempt is 10 points likelier'
+  ok !b.finished?, 'the fight is still on'
+  ok !b.escaped?
+end
+
+check 'a preemptive escape always succeeds regardless of the roll' do
+  b = escape_battle(5, 20)                            # 0% by agility...
+  ok b.attempt_escape(true), '...but a first strike guarantees the getaway'
+  eq :escaped, b.result
+end
+
+check 'attempt_escape is a no-op once the battle is already decided' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  downed = combatant('Slime', 0, 0, 5, 0)            # already wiped -> victory
+  b = Game::Battle.new([hero], [downed], Game::Rng.new(1))
+  ok b.finished?, 'enemies already down'
+  ok !b.attempt_escape, 'no escape from a decided fight'
+  ok !b.escaped?
+end
+
+check 'command_skip forfeits an ally turn while the enemies still act' do
+  hero = combatant('Hero', 40, 0, 20, 100)           # faster, acts first
+  slime = combatant('Slime', 20, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  b.command_skip(hero)
+  b.run_round
+  eq 100, slime.hp, 'the hero forfeited its attack'
+  ok hero.hp < 100, 'but the slime still struck back'
+end
+
+# -- Battle hit / miss (accuracy) ---------------------------------------------
+
+check 'Battle#to_hit uses the base hit rate adjusted by the agility ratio' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 10, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  tgt = b.enemies.first
+  atk.hit_rate = 90
+  eq 90, b.to_hit(atk, tgt), 'equal agility -> the base hit rate'
+  tgt.agi = 30                                       # a 3x faster target dodges more
+  eq 80, b.to_hit(atk, tgt), '100 - 10*(10+30)/(2*10) = 80'
+  tgt.agi = 0                                        # a motionless target
+  eq 95, b.to_hit(atk, tgt), '100 - 10*(10+0)/(2*10) = 95'
+end
+
+check 'Battle#to_hit clamps to 0..100 and a 100% base never misses' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 999, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  atk.hit_rate = 100
+  eq 100, b.to_hit(atk, b.enemies.first), 'a perfect base stays 100 despite fast target'
+end
+
+check 'with accuracy off a basic attack always connects' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.hit_rate = 1                                  # would nearly always miss...
+  slime = combatant('Slime', 0, 0, 20, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # accuracy off (default)
+  b.begin_round
+  e = b.step_action
+  eq 20, e[:damage], '...but accuracy is off, so it lands for full damage'
+  ok !e[:missed]
+end
+
+check 'with accuracy on a sure-miss attack deals no damage' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.hit_rate = 0                                  # 0% base, equal agility -> 0% hit
+  slime = combatant('Slime', 0, 0, 20, 100)
+  # 7-arg: variance off, criticals off, accuracy on.
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, true)
+  b.begin_round
+  e = b.step_action
+  eq 0, e[:damage]
+  ok e[:missed], 'flagged as a miss'
+  eq 100, slime.hp, 'no HP lost'
+end
+
+check 'with accuracy on the to-hit roll both lands and misses over many swings' do
+  hero = combatant('Hero', 40, 0, 10, 1_000_000)
+  hero.hit_rate = 50                                 # equal agility -> 50% to hit
+  slime = combatant('Slime', 0, 0, 10, 1_000_000)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, true)
+  40.times { b.run_round }
+  swings = b.log.select { |e| e[:attacker] == 'Hero' }
+  ok swings.any? { |e| e[:missed] }, 'a 50% attacker whiffs sometimes'
+  ok swings.any? { |e| !e[:missed] }, 'and connects sometimes'
+end
+
+# -- Battle first strike (pre-emptive) ----------------------------------------
+
+check 'battle first strike: the party acts while the enemies skip round 1' do
+  hero = combatant('Hero', 40, 0, 5, 100)            # slower than the slime...
+  slime = combatant('Slime', 40, 0, 50, 100)         # ...which would normally go first
+  # 8-arg: variance / criticals / accuracy off, first_strike on.
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, false, true)
+  entries = b.run_round
+  eq 1, entries.length, 'only the party acts in the opening round'
+  eq 'Hero', entries.first[:attacker], 'the hero strikes first despite lower agility'
+  eq 100, hero.hp, 'the ambushed slime never swung'
+  eq 80, slime.hp, 'but the hero connected'
+end
+
+check 'battle first strike: the enemies rejoin from the second round' do
+  hero = combatant('Hero', 8, 0, 5, 100)
+  slime = combatant('Slime', 40, 0, 50, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, false, true)
+  b.run_round                                        # round 1: only the hero
+  eq 100, hero.hp, 'no enemy action in the pre-emptive round'
+  b.run_round                                        # round 2: the slime strikes back
+  ok hero.hp < 100, 'the enemy acts normally from round 2'
+end
+
+check 'battle without first strike: both sides act in the opening round' do
+  hero = combatant('Hero', 8, 0, 5, 100)
+  slime = combatant('Slime', 8, 0, 50, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # no first strike
+  eq 2, b.run_round.length, 'both battlers act in round 1'
 end
 
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
@@ -4055,7 +4500,8 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12, maxSP 30
   foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
   # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
-  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4 },
+  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4,
+       attributes: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
@@ -4112,6 +4558,53 @@ check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
   hp_before = hero.hp
   bat.run_round                                  # next round: the asleep foe skips
   eq hp_before, hero.hp, 'the sleeping foe did not attack'
+end
+
+# -- Battle state susceptibility (state_ranks) --------------------------------
+
+def poison_cast(foe, seed = 1)
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)    # faster -> acts first
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(seed))
+  b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+  b.begin_round
+  b.step_action
+end
+
+check 'battle: an immune target (state rank E) never catches the status' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 4 }                       # rank E -> 0% susceptibility
+  e = poison_cast(foe)
+  eq [], e[:inflicted], 'immunity blocks a sure-fire status'
+  ok !foe.state?(3)
+end
+
+check 'battle: a susceptible target (state rank A) catches a sure status' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 0 }                       # rank A -> 100%
+  e = poison_cast(foe)
+  eq [3], e[:inflicted]
+  ok foe.state?(3)
+end
+
+check 'battle: infliction is unscaled when the target models no state ranks' do
+  foe = combatant('Foe', 0, 0, 5, 100)               # state_ranks nil (a bare fixture)
+  e = poison_cast(foe)
+  eq [3], e[:inflicted], 'a fixture still catches a 100% status'
+end
+
+check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
+  rng = Game::Rng.new(1)                             # one RNG across many casts
+  results = Array.new(40) do
+    foe = combatant('Foe', 0, 0, 5, 100)
+    foe.state_ranks = { 3 => 2 }                     # rank C -> 60%
+    mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+    b = Game::Battle.new([mage], [foe], rng)
+    b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+    b.begin_round
+    b.step_action[:inflicted]
+  end
+  ok results.any? { |r| r == [3] }, 'a 60% status sometimes lands'
+  ok results.any?(&:empty?), 'and sometimes is resisted'
 end
 
 check 'Battle command_skill resolves an attack skill: damage lands, SP is spent' do
@@ -4334,6 +4827,543 @@ check 'Battle end_round clears a queued Skill / Item command' do
   b.command_skill(mage, foe, name: 'Fire', cost: 6, hp: -30)
   b.run_round
   eq nil, mage.command, 'the command is cleared for the next round'
+end
+
+# -- newly-implemented event commands -----------------------------------------
+
+# The opcodes are the numbers real .ldb/.lmu data carries, so a typo here is a
+# command the runtime silently ignores. These pin the four that were wrong or
+# missing against liblcf's Code enum.
+check 'event-command opcodes match the LCF Code enum' do
+  eq 10440, IC::CHANGE_SKILLS
+  eq 10450, IC::CHANGE_EQUIP
+  eq 10500, IC::SIMULATED_ATTACK
+  eq 10640, IC::CHANGE_ACTOR_FACE
+  eq 10840, IC::ENTER_EXIT_VEHICLE
+  eq 11320, IC::FLASH_SPRITE
+  eq 11520, IC::FADEOUT_BGM
+  eq 11560, IC::PLAY_MOVIE
+  eq 11750, IC::TILE_SUBSTITUTION
+  eq 11910, IC::OPEN_SAVE_MENU
+  eq 11950, IC::OPEN_MAIN_MENU
+  eq 12420, IC::GAME_OVER
+  eq 12510, IC::RETURN_TO_TITLE
+end
+
+check 'Change Skills teaches and removes a skill' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed id), actor 1, op 0 (learn), operand const, skill 12
+  it.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 12])])
+  it.update
+  ok hero.knows_skill?(12), 'the skill was learnt'
+
+  it.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 1, 0, 12])]) # op 1 = forget
+  it.update
+  ok !hero.knows_skill?(12), 'the skill was forgotten'
+end
+
+check 'Change Skills reads the skill id from a variable and skips id 0' do
+  st = party_state
+  st.variables[4] = 21
+  hero = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 1, 4]),  # operand type 1 -> var 4
+    FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 0]),  # skill 0 = "none"
+  ])
+  it.update
+  ok hero.knows_skill?(21), 'the variable named the skill'
+  ok !hero.knows_skill?(0), 'skill id 0 is ignored'
+end
+
+check 'Change Skills applies to the whole party with scope 0' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_SKILLS, [0, 0, 0, 0, 9])])
+  it.update
+  ok st.party.actors.all? { |a| a.knows_skill?(9) }, 'everyone learnt it'
+end
+
+check 'Simulated Attack damages the target by atk less its defence share' do
+  st = party_state
+  hero = st.party.actor_by_id(1) # def 8, hp 100
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, atk 50, def-weight 400, spi-weight 0, variance 0,
+  # store-damage flag 0.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 50, 400, 0, 0, 0, 0])])
+  it.update
+  eq 58, hero.hp # 100 HP less (50 - 8 * 400 / 400) = 42 damage
+end
+
+check 'Simulated Attack stores the damage it dealt in a variable' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 30, 0, 0, 0, 1, 6])])
+  it.update
+  eq 30, st.variables[6]
+  eq 70, st.party.actor_by_id(1).hp
+end
+
+check 'Simulated Attack floors the damage at zero' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # An attack far weaker than the target's defence must heal nobody.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 1, 4000, 0, 0, 1, 2])])
+  it.update
+  eq 0, st.variables[2]
+  eq 100, st.party.actor_by_id(1).hp
+end
+
+check 'Change Actor Face overrides the actor FaceSet' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_ACTOR_FACE, [1, 3], string: 'Faces1')])
+  it.update
+  hero = st.party.actor_by_id(1)
+  eq 'Faces1', hero.faceset_name
+  eq 3, hero.faceset_index
+  ok !it.waiting?, 'Change Actor Face must not pause the interpreter'
+end
+
+check 'Enter/Exit Vehicle raises a one-shot toggle request' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ENTER_EXIT_VEHICLE, [])])
+  it.update
+  ok !it.waiting?, 'Enter/Exit Vehicle must not pause the interpreter'
+  eq true, it.take_vehicle_toggle_request
+  eq false, it.take_vehicle_toggle_request, 'the request is one-shot'
+end
+
+check 'Flash Sprite queues a scaled flash and waits when asked' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # target the hero, colour 31/0/16, power 31, 5 tenths, wait flag set
+  it.start([FakeCmd.new(IC::FLASH_SPRITE, [10001, 31, 0, 16, 31, 5, 1])])
+  it.update
+  reqs = it.take_sprite_flash_requests
+  eq 1, reqs.size
+  eq 10001, reqs[0][:target]
+  eq [248, 0, 128, 248], [reqs[0][:red], reqs[0][:green], reqs[0][:blue],
+                          reqs[0][:power]]
+  eq 30, reqs[0][:frames] # 5 tenths at 6 frames each
+  eq :sprite_flash, it.wait_kind
+  eq [], it.take_sprite_flash_requests, 'the queue drains'
+end
+
+check 'Flash Sprite without its wait flag does not pause the interpreter' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FLASH_SPRITE, [10001, 31, 31, 31, 31, 3, 0])])
+  it.update
+  ok !it.waiting?, 'no wait flag, no pause'
+  eq 1, it.take_sprite_flash_requests.size
+end
+
+check 'Fade Out BGM fades the music and forgets the current track' do
+  st = new_state
+  RGSS::Audio.log = []
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'Town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [20]), # 2 seconds
+  ])
+  it.update
+  eq nil, st.current_bgm, 'nothing is playing after a fade-out'
+  eq [:bgm_fade, 2000], RGSS::Audio.log.last, 'faded over 2000 ms'
+end
+
+check 'Play Movie records the request instead of dropping it' do
+  st = new_state
+  st.variables[8] = 40
+  st.variables[9] = 24
+  it = Game::Interpreter.new(st)
+  # position mode 1 = read x/y from variables 8 and 9
+  it.start([FakeCmd.new(IC::PLAY_MOVIE, [1, 8, 9, 160, 120], string: 'Opening')])
+  it.update
+  req = it.take_movie_request
+  eq({ name: 'Opening', x: 40, y: 24, width: 160, height: 120 }, req)
+  eq nil, it.take_movie_request, 'the request is one-shot'
+end
+
+check 'Tile Substitution rewrites a tile on the map and flags a redraw' do
+  st = new_state
+  st.map = fake_map_2x2([5, 5, 7, 5], [0, 0, 0, 0])
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TILE_SUBSTITUTION, [0, 5, 9])]) # lower: 5 -> 9
+  it.update
+  eq 9, st.map.lower(0, 0)
+  eq 7, st.map.lower(0, 1), 'other tiles are untouched'
+  ok !it.waiting?, 'Tile Substitution must not pause the interpreter'
+  eq true, it.take_tiles_changed
+  eq false, it.take_tiles_changed, 'the flag is one-shot'
+end
+
+check 'Game::Map substitutions are per layer and undone by an identity swap' do
+  m = fake_map_2x2([1, 1, 1, 1], [1, 1, 1, 1])
+  m.substitute_tile(1, 1, 4) # upper only
+  eq 1, m.lower(0, 0)
+  eq 4, m.upper(0, 0)
+  ok m.substituted?
+  m.substitute_tile(1, 1, 1) # back to itself: drop the rewrite
+  eq 1, m.upper(0, 0)
+  ok !m.substituted?
+end
+
+check 'Open Save Menu and Open Main Menu pause on their own wait kinds' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::OPEN_SAVE_MENU, [])])
+  it.update
+  eq :save_menu, it.wait_kind
+  it.resume
+
+  it.start([FakeCmd.new(IC::OPEN_MAIN_MENU, [])])
+  it.update
+  eq :menu, it.wait_kind
+end
+
+check 'a conditional branch tests whether the decision key started the event' do
+  st = new_state
+  cmds = [
+    FakeCmd.new(IC::CONDITIONAL, [8], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+    FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+    FakeCmd.new(IC::END_BRANCH, [], indent: 0),
+  ]
+  it = Game::Interpreter.new(st)
+  it.start(cmds)
+  it.update
+  eq 2, st.variables[1], 'not action-triggered: the else branch runs'
+
+  it.start(cmds)
+  it.triggered_by_decision_key = true
+  it.update
+  eq 1, st.variables[1], 'action-triggered: the true branch runs'
+end
+
+check 'a conditional branch tests whether the BGM has played through once' do
+  st = new_state
+  cond = [
+    FakeCmd.new(IC::CONDITIONAL, [9], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+    FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+    FakeCmd.new(IC::END_BRANCH, [], indent: 0),
+  ]
+  it = Game::Interpreter.new(st)
+  it.start(cond)
+  it.update
+  eq 2, st.variables[1], 'a fresh track has not looped'
+
+  st.bgm_looped = true
+  it.start(cond)
+  it.update
+  eq 1, st.variables[1]
+end
+
+check 'starting a new BGM clears the "played once" flag' do
+  st = new_state
+  st.bgm_looped = true
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'Field')])
+  it.update
+  eq false, st.bgm_looped
+end
+
+# -- battle-event pages and their commands ------------------------------------
+
+BP = Game::BattlePage
+
+# A troop battle-event page: a condition plus the command list it runs.
+FakePage = Struct.new(:condition, :event)
+
+# A troop battle-event page condition. Only the fields a given check enables in
+# `flags` are read, so the rest can stay at their editor defaults.
+FakeBattleCond = Struct.new(:flags, :switch_a_id, :switch_b_id, :variable_id,
+                            :variable_value, :turn_a, :turn_b,
+                            :fatigue_min, :fatigue_max,
+                            :enemy_id, :enemy_hp_min, :enemy_hp_max,
+                            :actor_id, :actor_hp_min, :actor_hp_max,
+                            :turn_enemy_id, :turn_enemy_a, :turn_enemy_b,
+                            :turn_actor_id, :turn_actor_a, :turn_actor_b,
+                            :command_actor_id, :command_id)
+def battle_cond(flags, opts = {})
+  c = FakeBattleCond.new(flags)
+  c.variable_value = 0
+  c.turn_a = 0; c.turn_b = 0
+  c.enemy_hp_min = 0; c.enemy_hp_max = 100
+  c.actor_hp_min = 0; c.actor_hp_max = 100
+  c.turn_enemy_a = 0; c.turn_enemy_b = 0
+  c.turn_actor_a = 0; c.turn_actor_b = 0
+  opts.each { |k, v| c.send("#{k}=", v) }
+  c
+end
+
+# A battle whose allies carry a source actor id, so the actor-keyed conditions
+# and the battle Conditional Branch can find them.
+FakeSourceActor = Struct.new(:id)
+def battle_with(ally_hp: 100, foe_hp: 100, foe_mp: 8)
+  hero = combatant('Hero', 10, 0, 10, ally_hp)
+  hero.actor = FakeSourceActor.new(1)
+  foe = combatant_mp('Slime', 5, 0, 5, foe_hp, foe_mp)
+  Game::Battle.new([hero], [foe], Game::Rng.new(1))
+end
+
+check 'battle-event opcodes match the LCF Code enum' do
+  eq 13110, IC::CHANGE_MONSTER_HP
+  eq 13120, IC::CHANGE_MONSTER_MP
+  eq 13130, IC::CHANGE_MONSTER_CONDITION
+  eq 13150, IC::SHOW_HIDDEN_MONSTER
+  eq 13210, IC::CHANGE_BATTLE_BG
+  eq 13260, IC::SHOW_BATTLE_ANIM_B
+  eq 13310, IC::CONDITIONAL_B
+  eq 13410, IC::TERMINATE_BATTLE
+  eq 23310, IC::ELSE_BRANCH_B
+  eq 23311, IC::END_BRANCH_B
+end
+
+check 'BattlePage.check_turns matches RPG2000 turn arithmetic' do
+  # No multiple: the turn must equal the base exactly.
+  ok BP.check_turns(3, 3, 0)
+  ok !BP.check_turns(4, 3, 0)
+  # With a multiple: at or past the base, an exact number of steps beyond it.
+  ok BP.check_turns(0, 0, 2)
+  ok BP.check_turns(4, 0, 2)
+  ok !BP.check_turns(3, 0, 2)
+  ok !BP.check_turns(1, 2, 2), 'before the base never fires'
+end
+
+check 'BattlePage.active? tests switch, variable and turn conditions' do
+  b = battle_with
+  st = new_state
+  sw = st.switches
+  vars = st.variables
+  eq true, BP.active?(nil, sw, vars, b), 'a page with no condition always fires'
+
+  cond = battle_cond(BP::SWITCH_A, switch_a_id: 7)
+  eq false, BP.active?(cond, sw, vars, b)
+  sw[7] = true
+  eq true, BP.active?(cond, sw, vars, b)
+
+  vcond = battle_cond(BP::VARIABLE, variable_id: 3, variable_value: 5)
+  eq false, BP.active?(vcond, sw, vars, b)
+  vars[3] = 5
+  eq true, BP.active?(vcond, sw, vars, b), 'the test is >=, not =='
+
+  # Turn 0 before the first round has run.
+  eq true, BP.active?(battle_cond(BP::TURN, turn_b: 0, turn_a: 0), sw, vars, b)
+  eq false, BP.active?(battle_cond(BP::TURN, turn_b: 2, turn_a: 0), sw, vars, b)
+end
+
+check 'BattlePage.active? tests enemy and actor HP windows' do
+  b = battle_with(ally_hp: 100, foe_hp: 100)
+  st = new_state
+  # Wound the monster to 30%: a "50% or below" page now fires.
+  b.enemy(0).hp = 30
+  cond = battle_cond(BP::ENEMY_HP, enemy_id: 0, enemy_hp_min: 0, enemy_hp_max: 50)
+  eq true, BP.active?(cond, st.switches, st.variables, b)
+  b.enemy(0).hp = 90
+  eq false, BP.active?(cond, st.switches, st.variables, b)
+
+  acond = battle_cond(BP::ACTOR_HP, actor_id: 1, actor_hp_min: 0, actor_hp_max: 25)
+  eq false, BP.active?(acond, st.switches, st.variables, b)
+  b.ally_by_actor_id(1).hp = 10
+  eq true, BP.active?(acond, st.switches, st.variables, b)
+end
+
+check 'BattlePage.active? fails a condition the runtime cannot answer' do
+  b = battle_with
+  st = new_state
+  # Party fatigue is an RPG2003 mechanic that is not modelled, and the per-
+  # battler turn counters are not either: such a page must not fire unchecked.
+  eq false, BP.active?(battle_cond(BP::FATIGUE), st.switches, st.variables, b)
+  eq false, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0),
+                       st.switches, st.variables, b)
+  eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
+                                   command_id: 1), st.switches, st.variables, b)
+end
+
+check 'BattlePage.select_all returns every matching page in order' do
+  b = battle_with
+  st = new_state
+  st.switches[1] = true
+  pages = {
+    1 => FakePage.new(battle_cond(0), []),
+    2 => FakePage.new(battle_cond(BP::SWITCH_A, switch_a_id: 2), []),
+    3 => FakePage.new(battle_cond(BP::SWITCH_A, switch_a_id: 1), []),
+  }
+  got = BP.select_all(pages, st.switches, st.variables, b).map { |(id, _)| id }
+  eq [1, 3], got, 'unlike a map event, every matching battle page runs'
+end
+
+check 'Change Monster HP damages a troop member, honouring the lethal flag' do
+  b = battle_with(foe_hp: 100)
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  # member 0, lose (1), constant operand (0), 30, lethal allowed (1)
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 30, 1])])
+  it.update
+  eq 70, b.enemy(0).hp
+
+  # A non-lethal hit far bigger than its HP leaves it on 1.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 999, 0])])
+  it.update
+  eq 1, b.enemy(0).hp
+
+  # A lethal one finishes it.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 999, 1])])
+  it.update
+  eq 0, b.enemy(0).hp
+  ok b.enemy(0).dead?
+end
+
+check 'Change Monster HP heals, reads a variable and a percentage' do
+  b = battle_with(foe_hp: 100)
+  st = new_state
+  st.variables[4] = 25
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  b.enemy(0).hp = 20
+  # gain (0), variable operand (1) -> variable 4 = 25
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 1, 4, 1])])
+  it.update
+  eq 45, b.enemy(0).hp
+
+  # percentage operand (2): 10% of max_hp (100) = 10
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 2, 10, 1])])
+  it.update
+  eq 55, b.enemy(0).hp
+
+  # Healing never exceeds the maximum.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 0, 999, 1])])
+  it.update
+  eq 100, b.enemy(0).hp
+end
+
+check 'Change Monster MP adjusts SP and clamps to its range' do
+  b = battle_with(foe_mp: 8)
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_MP, [0, 1, 0, 5])]) # lose 5
+  it.update
+  eq 3, b.enemy(0).mp
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_MP, [0, 1, 0, 99])])
+  it.update
+  eq 0, b.enemy(0).mp, 'SP floors at zero'
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_MP, [0, 0, 0, 99])])
+  it.update
+  eq 8, b.enemy(0).mp, 'and caps at the maximum'
+end
+
+check 'Change Monster Condition inflicts and cures a status' do
+  b = battle_with
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_CONDITION, [0, 0, 4])])
+  it.update
+  ok b.enemy(0).state?(4), 'the status was inflicted'
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_CONDITION, [0, 0, 4])])
+  it.update
+  eq [4], b.enemy(0).states, 'inflicting twice does not duplicate it'
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_CONDITION, [0, 1, 4])])
+  it.update
+  ok !b.enemy(0).state?(4), 'and it was cured'
+end
+
+check 'Show Hidden Monster and Change Battle Background raise one-shot requests' do
+  b = battle_with
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::SHOW_HIDDEN_MONSTER, [2]),
+            FakeCmd.new(IC::CHANGE_BATTLE_BG, [], string: 'Cave')])
+  it.update
+  eq [2], it.take_revealed_monsters
+  eq [], it.take_revealed_monsters, 'the queue drains'
+  eq 'Cave', it.take_battle_background
+  eq nil, it.take_battle_background, 'the request is one-shot'
+end
+
+check 'Terminate Battle ends the fight and abandons the rest of the page' do
+  b = battle_with
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  it.start([FakeCmd.new(IC::TERMINATE_BATTLE, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])])
+  it.update
+  ok b.terminated?, 'the battle was told to end'
+  ok !st.switches[3], 'the rest of the page did not run'
+end
+
+check 'the battle Conditional Branch tests switches, variables and battlers' do
+  b = battle_with(foe_hp: 100)
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  # A branch body that sets variable 1 to 1; the else sets it to 2.
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+
+  it.start(branch.call([0, 5, 0])) # switch 5 is on?
+  it.update
+  eq 2, st.variables[1], 'switch off: the else branch runs'
+  st.switches[5] = true
+  it.start(branch.call([0, 5, 0]))
+  it.update
+  eq 1, st.variables[1]
+
+  # type 3: troop member 0 is still standing
+  it.start(branch.call([3, 0, 0]))
+  it.update
+  eq 1, st.variables[1]
+  b.enemy(0).hp = 0
+  it.start(branch.call([3, 0, 0]))
+  it.update
+  eq 2, st.variables[1], 'a downed member fails the "is present" test'
+
+  # type 2: actor 1 is in the fight
+  it.start(branch.call([2, 1, 0]))
+  it.update
+  eq 1, st.variables[1]
+  it.start(branch.call([2, 99, 0]))
+  it.update
+  eq 2, st.variables[1], 'an actor not in the fight fails'
+end
+
+check 'battle-only commands are no-ops outside a battle' do
+  st = new_state
+  it = Game::Interpreter.new(st) # no #battle set: a map/common event
+  it.start([
+    FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 30, 1]),
+    FakeCmd.new(IC::SHOW_HIDDEN_MONSTER, [1]),
+    FakeCmd.new(IC::CHANGE_BATTLE_BG, [], string: 'Cave'),
+    FakeCmd.new(IC::TERMINATE_BATTLE, []),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0]),
+  ])
+  it.update
+  eq [], it.take_revealed_monsters
+  eq nil, it.take_battle_background
+  ok st.switches[2], 'the list still runs to the end'
+end
+
+check 'Show Battle Animation (battle form) waits like the map form' do
+  b = battle_with
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM_B, [7, 0, 1])])
+  it.update
+  eq :animation, it.wait_kind
+  eq 7, it.battle_animation[:animation]
+  eq true, it.battle_animation[:battle]
 end
 
 # -- summary ------------------------------------------------------------------

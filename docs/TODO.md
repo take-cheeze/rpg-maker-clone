@@ -132,7 +132,12 @@ The work below is roughly ordered by the critical path to a walkable game
   in the real Nepheshel data (all 45 parallax maps' images resolve and every
   offset stays in range across a camera sweep) and pinned by
   `scripts/rpg2k_render_check.rb`. The scroll *rate* mirrors EasyRPG's formulae
-  but still wants a native/wine visual diff to confirm.
+  but still wants a native/wine visual diff to confirm. The **Change Parallax
+  Background** event command (11720) swaps this panorama at runtime — the
+  interpreter records a `Game::State#parallax` override (name + loop / autoscroll
+  settings, per EasyRPG's `SetParallax`) and flags a one-shot rebuild the scene
+  polls; the override is dropped on the next map change so the destination map's
+  own panorama returns.
 - ✅ Character sprites — the party leader and every map event render from their
   CharSet graphic (`Game::CharSet`, 4-direction, 3 walk frames). Events also
   draw a chipset tile when their graphic is a tile substitution (empty CharSet
@@ -188,7 +193,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
   Show/Move/Erase Picture,
   Weather Effects, Call
-  Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
+  Event, Move Event, Change / Trade Event Location, Change Map Tileset,
+  Change Parallax Background, Proceed
   With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
   loop can't hang. **Memorize Location** stores the player's current map id, x and y
@@ -234,7 +240,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility), an **item** count (number held, or number equipped across the
-  party), **game quantities** (party gold, timer seconds, party size) and a
+  party), **game quantities** (party gold, timer seconds, party size, and the
+  **save / battle / win / defeat / escape counts** — running tallies bumped by
+  Save and by each Enemy Encounter and its outcome, persisted in the save) and a
   **character position** (the hero's or a map event's map id / x / y / facing —
   an event's map id reads 0, matching an RPG_RT 2000 quirk; screen coordinates
   are not modelled).
@@ -309,7 +317,9 @@ The work below is roughly ordered by the critical path to a walkable game
   buy / sell menus (one unit per confirm — the quantity selector is a later
   refinement).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
-  instantiate a database enemy group into live members and total its EXP / gold,
+  instantiate a database enemy group into live members and total its EXP / gold
+  (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
+  granted to the bag on a win),
   and the command decodes its troop id, escape / defeat modes and first-strike
   and routes the `[Victory]` / `[Escape]` / `[Defeat]` handler branches on the
   outcome (the "end event processing" escape mode abandons the event). The
@@ -368,11 +378,49 @@ The work below is roughly ordered by the critical path to a walkable game
   off for seeded / headless fights. A basic attack can land a **3x critical hit**
   at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
   `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
-  the **`prevent_critical`** flag can never be crit. Still to come: enemy-cast
-  infliction, elemental attributes, all-target skill/item
-  scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
-  The remaining event commands (tile substitution and other native-render
-  effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
+  the **`prevent_critical`** flag can never be crit. **Elemental attributes**
+  scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
+  are matched against the target's per-attribute defence ranks (A..E → 200 / 150
+  / 100 / 50 / 0 percent, strongest element winning), so a foe is hurt more by a
+  weakness and can fully nullify an element it is immune to. The party can also
+  **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
+  (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
+  gets away, and a failed attempt forfeits the party's round (every member
+  skips, the enemies still act) while raising the next try by 10 points. Basic
+  attacks can also **miss**: `Battle#to_hit` takes the attacker's base hit rate
+  (weapon / unarmed 90, a "miss"-flagged enemy 70) and applies EasyRPG's
+  agility-ratio adjustment (`100 - (100 - base)*(srcAgi + tgtAgi)/(2*srcAgi)`),
+  so a nimble target dodges more; a missed swing deals no damage. A skill's
+  **status infliction** is scaled by the target's `state_ranks` susceptibility
+  (RPG2000's A..E table 100/80/60/30/0 percent), so a resistant foe shrugs it
+  off and an immune one never catches it. A **pre-emptive first strike** (the
+  Enemy Encounter's first-strike flag) gives the party a free opening round —
+  the ambushed enemies skip their turn in round 1 and rejoin from round 2. Still
+  to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
+  rate overrides from the Attribute table, the per-terrain backdrop and the
+  RPG2000 Game Over graphic.
+  **Every RPG2000 map / common-event command now has a handler.** The last gaps
+  closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
+  (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
+  (11520), Play Movie (11560), Tile Substitution (11750) and Open Save Menu /
+  Open Main Menu (11910 / 11950), together with the last two Conditional Branch
+  tests (the decision key started this event; the BGM has played through once).
+  Three opcodes that never matched liblcf's `Code` enum were corrected in the
+  same pass — Change Equipment is 10450 (10440 is Change Skills) and Game Over is
+  12420 — so those commands are recognised in real game data at all.
+  **Battle-event pages now run too**: a troop's pages (`enemy_group` chunk 11)
+  are evaluated by `Game::BattlePage` at the start of every turn — switch,
+  variable, turn, enemy-HP and actor-HP conditions — and each matching page runs
+  through a `Game::Interpreter` carrying a `battle` context, so a page has the
+  whole ordinary command set plus **Change Monster HP / MP / Condition**
+  (13110 / 13120 / 13130), **Show Hidden Monster** (13150), **Change Battle
+  Background** (13210), the battle **Show Battle Animation** (13260),
+  **Conditional Branch** (13310 with its `_B` markers) and **Terminate Battle**
+  (13410). Messages from a page are shown in a battle panel. Still TODO here:
+  the per-battler turn counters and the party-fatigue / chosen-command
+  conditions (pages gated on those deliberately do not fire rather than firing
+  unchecked), and video playback for Play Movie (no decoder is linked in; the
+  request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
   wait flag (per-cell zoom / tone and target-only flashes are approximations for
@@ -400,9 +448,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `\_` space). Text now **reveals gradually** (a `Game::TextReveal` typewriter
   driven by `Scene::Map`, with a button press completing the reveal before
   dismissing), and the **pacing codes act**: `Game::Message.scan` surfaces
-  `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds) and `\^` (close the
-  window without a keypress) in revealed-character coordinates, and the reveal
-  halts at each until released. `\c[n]` **colour codes** are
+  `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds), `\^` (close the
+  window without a keypress) and `\>` / `\<` (an **instant span** that reveals in
+  one frame) in revealed-character coordinates; the reveal halts at each pause
+  until released and collapses each instant span (still stopping at a pause that
+  falls inside it). `\$` opens a small **gold window** (the party's money)
+  alongside the message, closed with it. `\c[n]` **colour codes** are
   drawn in colour: `Game::Message.parse` splits a line into `{text:, color:}`
   runs and `Scene::Map` draws each run in its palette colour, revealing across
   runs (`Game::Message.visible_segments`). **Message Options** (10120) and
@@ -528,9 +579,14 @@ The work below is roughly ordered by the critical path to a walkable game
   `can_cast?` / `skill_effect` / `cast_skill` for skills) and `Game::Actor`
   (`next_level_exp` / `exp_to_next` for status), covered by
   `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
-  Switch (type 9) item use, teleport/escape/switch skill types, the battle-time
-  skill variance, the item usable-occasion gate, and two-handed / dual-wield
-  equipping are later refinements.
+  A **switch item** (type 9) is field-usable too: `Game::Party#use_switch_item`
+  consumes one and returns the game switch it turns on, which the item menu then
+  sets (matching EasyRPG, where the scene owns the switch table). The **usable
+  occasion** is honoured on both sides: a medicine / switch item flagged
+  battle-only (`occasion_field` off) is hidden from the field menu, and one
+  flagged field-only is hidden from the battle item list (books / seeds stay
+  field-only). Teleport/escape/switch skill types, the battle-time skill
+  variance, and two-handed / dual-wield equipping are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
@@ -602,11 +658,18 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   XP-styled window, title BGM / cursor & decision SE). `src/main.cxx` sizes the
   window to XP's native 640×480.
 - 🚧 **Map scene** — New Game builds the party from `System.party_members`,
-  loads the start map and enters a walkable `Scene::Map`: the three tile layers
-  render as placeholder colour blocks, the party leader is drawn from its
-  `Graphics/Characters` sheet, and movement is grid-based with tileset
-  passability and a follow camera. Real tileset/autotile blitting and event
-  sprites (events are markers for now) are the remaining rendering work.
+  loads the start map and enters a walkable `Scene::Map`. The three tile layers
+  now render through the native `RGSS::Tilemap` — the project's real tileset
+  graphic, the seven autotiles assembled from their quads and animated, and
+  priority tiles routed above the characters — exactly the objects RMXP's
+  `Spriteset_Map` builds. Every event draws from its active page's graphic (a
+  `Graphics/Characters` sheet, or the tile id a page uses instead); an event with
+  an empty graphic draws nothing, as in RMXP. Characters stack by the screen row
+  they stand on (`Sprite_Character#update`'s `screen_z`), with `always_on_top`
+  pages above the priority layer. Movement is grid-based with tileset passability
+  and a follow camera. Remaining: per-row priority interleaving rather than one
+  flat above-layer (ADR 0022), and the character effects the sprites ignore —
+  opacity, blend mode, hue and step animation.
 - 🚧 **Event system** — event pages select their active page by condition
   (`Game::EventPage`: switch / variable / self-switch, highest match wins) and a
   `Game::Interpreter` runs the XP command list with a suspend/resume model: Show
@@ -623,7 +686,13 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `Game::MoveRoute` drive an event's page move type (fixed / random / approach)
   or custom move route (the full XP move-command set), paced by move frequency
   and blocked by terrain / the player / other events, and the **event-touch**
-  trigger fires when an event walks into the player. The interpreter's *Set Move
+  trigger fires when an event walks into the player. An event **glides** between
+  tiles the way RGSS moves a character: taking a step claims the destination
+  tile at once (that is what collision sees) and the drawn position closes the
+  128-unit gap at `2 ** move_speed` a frame, while the walk row cycles off the
+  same animation counter and falls back to the page's own frame once the event
+  comes to rest. The wait between autonomous steps is RMXP's
+  `(40 - frequency * 2) * (6 - frequency)` frames. The interpreter's *Set Move
   Route* (209) command is now wired up: it queues the `RPG::MoveRoute` packed
   into the command for its target — the player, "this event" or a map event id —
   and `Scene::Map` drains the queue and drives the target along the route in the
@@ -676,9 +745,29 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `RPGXP::RGSSData` falls back to whichever archive is present when a `.rxdata` is
   not loose on disk. Covered by `mruby-rpgxp/test` (v1 and v3 round-trips) and by
   `scripts/rpgxp_testbed_check.rb` (packs the real test bed as both `.rgssad` and
-  `.rgss3a` and reloads the whole DB through each). Remaining: reading
-  **graphics/audio** out of the archive (only the Ruby `Data/` path is wired; the
-  native `Bitmap`/`Audio` loaders still read loose files).
+  `.rgss3a` and reloads the whole DB through each). **Graphics come out of the
+  archive too**: the boot shell registers its opened archive as
+  `RGSS.asset_archive`, and `Bitmap#initialize` consults it after the loose-file
+  search misses, trying the same extension candidates — an asset is asked for by
+  name from deep inside a game's own scripts, so there is no handle to thread
+  down and the registry is what closes that. The bytes go through the same
+  decoder a loose file does (`_init_file` and `_init_memory` share
+  `bmp_decode_into`), so the stb / XYZ / tolerant-PNG fallbacks a real project
+  needs are not quietly missing from the packed path. Checked end to end in the
+  real binary by `scripts/rgssad_asset_check.bash`, which packs the test bed
+  twice — with and without a title graphic in the archive — and asserts the
+  engine finds it only when it is there; a single run would pass just as well if
+  the archive were never consulted. **Audio comes out of the archive too**: each
+  entry point of the backend's C function table (`include/rgss_audio.hxx`) has
+  grown a `*_play_mem` twin taking the encoded bytes, fed to SDL_mixer through an
+  `SDL_RWops`, with the Ruby side crossing the four kinds' archive folders with
+  the same extensions the disk search uses. The lifetime is the subtle part —
+  `Mix_LoadMUS_RW` *streams* from the RWops, and RGSS replays the BGM after a
+  music effect, which for an archived track means replaying from bytes that must
+  still be there — so the backend owns both buffers and frees them only with the
+  stream they feed. Measured by the `audio_probe` ctest under
+  `SDL_AUDIODRIVER=dummy` (decodes and mixes with no sound card): loose plays,
+  stop reads 0, packed plays.
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
@@ -699,10 +788,11 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
   `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
   `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
-  widgets, plus `Kernel#sprintf` and drawing `Graphics.transition/freeze`.
+  widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
+  the native `Graphics.snap_to_bitmap` — see the VX section below.)
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
-  (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
-  archive.
+  (Asyncify or a per-frame driver). (Graphics and audio both come out of the
+  encrypted archive now — see Encrypted archives above.)
 - ✅ **Cross-runtime testing** — an XP project is booted in every runtime it can
   run in, all asserting the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks
   New Game without input): `scripts/rpgxp_boot_check.bash` (the native binary,
@@ -755,8 +845,9 @@ screen (544×416). Full rationale:
   `Data/System.rxdata` — and sizes the window to 544×416.
 - ✅ **Encrypted archives** — `Game.rgss2a` (v1) and `Game.rgss3a` (v3) load
   through the XP reader (`RPGXP::RGSSAD`) unchanged, so a single-archive release
-  boots with no loose files. Same remaining gap as XP: graphics/audio are still
-  read from loose files only.
+  boots with no loose files, and — like XP, through the same shared
+  `RGSS.asset_archive` the VX boot shell registers — finds its **graphics and
+  audio** in there as well, so a packed release needs nothing loose at all.
 - 🚧 **Run the bundled scripts** — a VX/VX Ace game's engine is its script
   bundle, so this is *the* path rather than a later refinement. The host runs
   (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver shared by both
@@ -775,14 +866,60 @@ screen (544×416). Full rationale:
     `#fade`, the class-side `last`/`stop`/`fade`), and the RGSS3 Kernel methods
     **`rgss_main`** (the whole `Main` section of every VX Ace project),
     `rgss_stop`, `msgbox`/`msgbox_p`.
+  - ✅ **`Viewport#color` / `#flash`** — VX does every screen effect through the
+    viewport (`@viewport3.color.set(0, 0, 0, 255 - brightness)` is the fade,
+    `@viewport2.color` the flash, `viewport.flash` the animation flashes), so
+    these are now native: a colour overlay canvas the size of the viewport,
+    above its content layer, repainted from `#update` — which is what makes the
+    scripts' in-place `color.set(...)` visible. Same mechanism ADR 0021 measured
+    working for the RPG2000 fade, moved into the viewport so it clips and
+    scrolls with it.
+  - ✅ **VX/VX Ace `Tilemap`** — `bitmaps` (the nine A1–A5/B–E sheets, assigned
+    by index the way the scripts do), `flags=`, and the VX tile-id decode: a
+    tile id carries both the autotile and which of its 48 (16 for walls, 4 for
+    waterfalls) edge shapes to assemble from four quarter-tiles, per family.
+    Ported from the MIT MV corescript, which inherited VX Ace's tile system
+    unchanged, and **differentially tested against it** — all 8300 ids × a full
+    animation cycle × the table flag (66,400 cases) match byte for byte. The
+    decode is exposed as `Tilemap.vx_tile_quads` so `mruby-rgss/test` pins it
+    without a display, as sample cases plus a checksum over the whole sweep.
+    Left as polish: the flat "above the characters" layer (the same
+    approximation ADR 0022 describes for XP) and the A2 table-edge tile.
+  - ✅ **`Viewport#tone`** — the screen tint. Unlike `color` a tone rescales
+    what is already drawn, so it cannot be a layer: every display object in the
+    viewport folds the viewport's tone into its own composite as its last step
+    (`Sprite`/`Plane` already baked their own; the `Tilemap` gets a pass over its
+    composed canvases), and the viewport re-composites its children when the
+    value changes — checked from `#update` too, since the scripts mutate the Tone
+    in place, and skipped when it did not move. **This is the per-pixel tone pass
+    the RPG2000 screen tint has been waiting on** (see the Screen effects section
+    above): `apply_tone_px` is shared by all three composites, so the RPG2000
+    side can adopt it instead of growing its own.
+  - ✅ **`Graphics.snap_to_bitmap` / `freeze` / `transition`** — scene
+    transitions. `snap_to_bitmap` is `lv_snapshot_take` into a `Bitmap`, the one
+    capture that works on every backend (the SDL window, the terminal
+    framebuffer and the wasm canvas all buffer differently, and two of them
+    render partially). `freeze` keeps the snapshot; `transition` shows it on a
+    full-screen sprite above everything and steps its opacity to zero, so the
+    next scene builds behind a fading still of the last — RGSS's default
+    dissolve. The `filename`/`vague` form runs as a plain fade and says so once.
+  - ✅ **A render probe that can see the screen.** The three items above are
+    native rendering that no unit test could reach: `mruby-rgss/test` has no
+    display, so a `Viewport` cannot even be constructed there, and the failure
+    mode that leaves is the one that hid the RPG2000 screen tint — the code
+    runs, the values are stored, and nothing changes. `RGSS.frame_mean` (the
+    frame's mean R/G/B, sampled on an 8px grid via `snap_to_bitmap`) and
+    `RGSS.effect_probe` close it: `rpg_maker_clone --rgss_effect_probe` drives a
+    grey screen, a red `Viewport#color`, an additive-blue `Viewport#tone` and a
+    freeze/transition round trip on a real display and measures each. It runs as
+    the `render_probe` ctest under xvfb (display 98) and needs no game. Verified
+    to have teeth by neutering `vp_refresh_overlay` and the transition in turn —
+    each broke exactly the assertion it should.
   - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: the **VX/VX Ace `Tilemap`** (nine `bitmaps` sheets + the
-    `flags` table instead of XP's single tileset/autotiles — without it a game
-    boots but no map draws), **`Viewport#tone`/`#color`/`#flash`** (VX does
-    every tint / flash / fade through the viewport, so all screen effects are
-    inert — the same native tone work the RPG2000 tint needs),
-    **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene transitions),
-    the window open/close animation, and `Bitmap#blur`/`#radial_blur`.
+    playable game: `Viewport#tone` on `Window` contents (a different composite
+    path; RGSS keeps windows in their own viewport, so a map tint does not tint
+    the message window anyway), the window open/close animation, and
+    `Bitmap#blur`/`#radial_blur`.
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
   without the script host reports that instead of showing a blank window.

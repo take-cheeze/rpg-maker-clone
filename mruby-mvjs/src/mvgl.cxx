@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 // ES3 renderbuffer/attachment enums the base <GLES2/gl2.h> may not declare. The
@@ -49,6 +50,9 @@
 #ifndef EGL_PLATFORM_SURFACELESS_MESA
 #define EGL_PLATFORM_SURFACELESS_MESA 0x31DD
 #endif
+#ifndef EGL_PLATFORM_DEVICE_EXT
+#define EGL_PLATFORM_DEVICE_EXT 0x313F
+#endif
 
 namespace mvgl {
 
@@ -59,6 +63,61 @@ void warn(const char* what, const char* detail) {
   std::fprintf(stderr, "[MZ-GL] %s%s%s\n", what, detail ? ": " : "",
                detail ? detail : "");
 }
+
+// Pin EGL/GLES to the pure-software surfaceless path for the duration of an EGL
+// call, restoring the environment after. Our GL is entirely off-screen
+// (surfaceless llvmpipe + an FBO) and never needs the window system, so this
+// forces `EGL_PLATFORM=surfaceless` / `GALLIUM_DRIVER=llvmpipe` /
+// `LIBGL_ALWAYS_SOFTWARE=1` and hides `DISPLAY`/`XAUTHORITY`. NOTE this is
+// belt-and-braces, not a guarantee of no-X: when an X server is actually
+// reachable, Mesa still dispatches even a surfaceless `eglMakeCurrent` through
+// GLX and is denied (`X BadAccess` on `X_GLXMakeCurrent`) — hiding the env
+// alone does not stop it. The real off-screen guarantee comes from running with
+// no X server at all (the headless `gl_test`, and the MZ boot smoke via SDL's
+// `dummy` video driver), which is where this binds cleanly. Safe: nothing else
+// in the process uses EGL/GLX (LVGL's SDL backend is the software renderer),
+// and every variable is restored the moment the EGL call returns.
+class ScopedSoftwareEGL {
+ public:
+  ScopedSoftwareEGL() {
+    hide("DISPLAY");
+    hide("XAUTHORITY");
+    force("EGL_PLATFORM", "surfaceless");
+    force("GALLIUM_DRIVER", "llvmpipe");
+    force("LIBGL_ALWAYS_SOFTWARE", "1");
+  }
+  ~ScopedSoftwareEGL() {
+    // Restore in reverse so a name touched twice ends on its original value.
+    for (auto it = saved_.rbegin(); it != saved_.rend(); ++it) {
+      if (it->had)
+        setenv(it->name, it->prev.c_str(), 1);
+      else
+        unsetenv(it->name);
+    }
+  }
+  ScopedSoftwareEGL(const ScopedSoftwareEGL&) = delete;
+  ScopedSoftwareEGL& operator=(const ScopedSoftwareEGL&) = delete;
+
+ private:
+  struct Var {
+    const char* name;
+    bool had;
+    std::string prev;
+  };
+  std::vector<Var> saved_;
+  void snapshot(const char* name) {
+    const char* v = std::getenv(name);
+    saved_.push_back({name, v != nullptr, v ? v : std::string()});
+  }
+  void hide(const char* name) {
+    snapshot(name);
+    unsetenv(name);
+  }
+  void force(const char* name, const char* value) {
+    snapshot(name);
+    setenv(name, value, 1);
+  }
+};
 
 // Compile a GLES2 shader, logging and returning 0 on failure.
 GLuint compile(GLenum type, const char* src) {
@@ -80,10 +139,10 @@ GLuint compile(GLenum type, const char* src) {
   return sh;
 }
 
-// Open the off-screen display. Prefer the surfaceless Mesa platform (no window
-// system, no device node needed) via the 1.5 core entry point, then the EXT
-// entry point, then plain eglGetDisplay as a last resort.
-EGLDisplay open_display() {
+// Open the off-screen display on the surfaceless Mesa platform (no window
+// system, no device node needed), via the 1.5 core entry point then the EXT
+// entry point. This is the path the headless gl_test uses successfully.
+EGLDisplay open_surfaceless_display() {
 #if defined(EGL_VERSION_1_5)
   EGLDisplay d = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
                                        EGL_DEFAULT_DISPLAY, nullptr);
@@ -92,13 +151,49 @@ EGLDisplay open_display() {
 #endif
   auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
       eglGetProcAddress("eglGetPlatformDisplayEXT"));
-  if (get_platform_display) {
-    EGLDisplay d = get_platform_display(EGL_PLATFORM_SURFACELESS_MESA,
-                                        EGL_DEFAULT_DISPLAY, nullptr);
-    if (d != EGL_NO_DISPLAY)
-      return d;
+  if (get_platform_display)
+    return get_platform_display(EGL_PLATFORM_SURFACELESS_MESA,
+                                EGL_DEFAULT_DISPLAY, nullptr);
+  return EGL_NO_DISPLAY;
+}
+
+// Open the off-screen display on an explicit EGL device (via
+// EGL_EXT_platform_device + EGL_EXT_device_enumeration), preferring a device
+// that advertises software
+// rendering (EGL_MESA_device_software, i.e. llvmpipe). Unlike the surfaceless
+// and default platforms, a device display is tied to a concrete device rather
+// than resolved through the window-system path — so it is immune to the EGL
+// routing state that SDL's X11 connection sets up in the main binary, where the
+// surfaceless make-current fails with EGL_BAD_ACCESS while the headless
+// gl_test's identical code succeeds.
+EGLDisplay open_device_display() {
+  auto query_devices = reinterpret_cast<PFNEGLQUERYDEVICESEXTPROC>(
+      eglGetProcAddress("eglQueryDevicesEXT"));
+  auto query_device_string = reinterpret_cast<PFNEGLQUERYDEVICESTRINGEXTPROC>(
+      eglGetProcAddress("eglQueryDeviceStringEXT"));
+  auto get_platform_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+      eglGetProcAddress("eglGetPlatformDisplayEXT"));
+  if (!query_devices || !get_platform_display)
+    return EGL_NO_DISPLAY;
+
+  EGLDeviceEXT devices[16];
+  EGLint n = 0;
+  if (!query_devices(16, devices, &n) || n <= 0)
+    return EGL_NO_DISPLAY;
+
+  EGLDeviceEXT chosen = EGL_NO_DEVICE_EXT;
+  for (EGLint i = 0; i < n; ++i) {
+    const char* ext = query_device_string
+                          ? query_device_string(devices[i], EGL_EXTENSIONS)
+                          : nullptr;
+    if (ext && std::strstr(ext, "EGL_MESA_device_software")) {
+      chosen = devices[i];
+      break;
+    }
   }
-  return eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  if (chosen == EGL_NO_DEVICE_EXT)
+    chosen = devices[0];
+  return get_platform_display(EGL_PLATFORM_DEVICE_EXT, chosen, nullptr);
 }
 
 // Pick an RGBA8 + depth24/stencil8 config. Ask for an ES3-renderable one first
@@ -131,6 +226,87 @@ bool choose_config(EGLDisplay dpy, EGLConfig* out) {
   return false;
 }
 
+// Initialise `dpy` and bind a fresh ES context on it, preferring a surfaceless
+// make-current with a 1x1-pbuffer fallback. `label` names the display strategy
+// for the log. On success returns true with *out_egl / *out_surf filled and the
+// context left current; on failure logs the reason, tears down anything it
+// created, leaves nothing current, and returns false so the caller can try the
+// next display strategy.
+bool bind_context(EGLDisplay dpy,
+                  const char* label,
+                  EGLContext* out_egl,
+                  EGLSurface* out_surf) {
+  EGLint major = 0, minor = 0;
+  if (!eglInitialize(dpy, &major, &minor)) {
+    warn("bind_context: eglInitialize failed", label);
+    return false;
+  }
+  {
+    char buf[256];
+    const char* vnd = eglQueryString(dpy, EGL_VENDOR);
+    const char* ver = eglQueryString(dpy, EGL_VERSION);
+    const char* ext = eglQueryString(dpy, EGL_EXTENSIONS);
+    std::snprintf(buf, sizeof(buf), "%s: vendor=%s version=%s surfaceless=%s",
+                  label, vnd ? vnd : "?", ver ? ver : "?",
+                  (ext && std::strstr(ext, "EGL_KHR_surfaceless_context"))
+                      ? "yes"
+                      : "no");
+    warn("bind_context: EGL initialized", buf);
+  }
+  if (!eglBindAPI(EGL_OPENGL_ES_API)) {
+    warn("bind_context: eglBindAPI(EGL_OPENGL_ES_API) failed", label);
+    return false;
+  }
+
+  EGLConfig cfg = nullptr;
+  if (!choose_config(dpy, &cfg)) {
+    warn("bind_context: eglChooseConfig found no RGBA8 config", label);
+    return false;
+  }
+
+  // Request ES 3.0 (a comfortable superset of the ES 2.0 PIXI needs, and what
+  // llvmpipe advertises), falling back to an ES 2.0 context. The rendering only
+  // uses ES2/ES 1.00-shader features, so either is fine.
+  const EGLint es3_attribs[] = {EGL_CONTEXT_MAJOR_VERSION, 3,
+                                EGL_CONTEXT_MINOR_VERSION, 0, EGL_NONE};
+  EGLContext egl = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, es3_attribs);
+  if (egl == EGL_NO_CONTEXT) {
+    const EGLint es2_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+    egl = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, es2_attribs);
+  }
+  if (egl == EGL_NO_CONTEXT) {
+    warn("bind_context: eglCreateContext failed", label);
+    return false;
+  }
+
+  // Prefer surfaceless (EGL_KHR_surfaceless_context, which llvmpipe advertises)
+  // — an FBO is the render target, so no draw/read surface is needed. A driver
+  // that rejects a no-surface make-current falls back to a 1x1 pbuffer (the
+  // config advertises EGL_PBUFFER_BIT); it exists only to satisfy make-current.
+  EGLSurface surf = EGL_NO_SURFACE;
+  if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl)) {
+    const EGLint surfaceless_err = eglGetError();
+    const EGLint pb_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+    surf = eglCreatePbufferSurface(dpy, cfg, pb_attribs);
+    if (surf == EGL_NO_SURFACE || !eglMakeCurrent(dpy, surf, surf, egl)) {
+      char buf[256];
+      std::snprintf(
+          buf, sizeof(buf),
+          "%s: surfaceless err=0x%04x; pbuffer makeCurrent err=0x%04x", label,
+          surfaceless_err, eglGetError());
+      warn("bind_context: eglMakeCurrent failed (surfaceless and pbuffer)",
+           buf);
+      if (surf != EGL_NO_SURFACE)
+        eglDestroySurface(dpy, surf);
+      eglDestroyContext(dpy, egl);
+      return false;
+    }
+  }
+  *out_egl = egl;
+  *out_surf = surf;
+  return true;
+}
+
 }  // namespace
 
 struct Context {
@@ -155,61 +331,50 @@ Context* create(int width, int height) {
     return nullptr;
   }
 
-  EGLDisplay dpy = open_display();
-  if (dpy == EGL_NO_DISPLAY) {
-    warn("create: no EGL display (surfaceless platform unavailable)", nullptr);
-    return nullptr;
-  }
-  EGLint major = 0, minor = 0;
-  if (!eglInitialize(dpy, &major, &minor)) {
-    warn("create: eglInitialize failed", nullptr);
-    return nullptr;
-  }
-  if (!eglBindAPI(EGL_OPENGL_ES_API)) {
-    warn("create: eglBindAPI(EGL_OPENGL_ES_API) failed", nullptr);
+  // Settle whether a foreign EGL context is the culprit (it is not, in the
+  // main binary: LVGL's SDL backend uses the software renderer and creates no
+  // GL context) — a bind conflict would show up here.
+  if (eglGetCurrentContext() != EGL_NO_CONTEXT)
+    warn("create: an EGL context was already current on this thread", nullptr);
+
+  ScopedSoftwareEGL no_x;
+
+  // Try the surfaceless platform first (what the headless gl_test uses), then
+  // an explicit software EGL device. In the main binary (SDL + Xvfb) the
+  // surfaceless make-current fails with EGL_BAD_ACCESS — SDL's X11 connection
+  // perturbs the window-system EGL path — so the device platform, tied to a
+  // concrete device rather than resolved through the window system, is the
+  // fallback that keeps MZ booting there.
+  struct Candidate {
+    EGLDisplay dpy;
+    const char* label;
+  };
+  Candidate candidates[2];
+  int n = 0;
+  EGLDisplay sdpy = open_surfaceless_display();
+  if (sdpy != EGL_NO_DISPLAY)
+    candidates[n++] = {sdpy, "surfaceless"};
+  EGLDisplay ddpy = open_device_display();
+  if (ddpy != EGL_NO_DISPLAY)
+    candidates[n++] = {ddpy, "device"};
+  if (n == 0) {
+    warn("create: no EGL display (surfaceless and device unavailable)",
+         nullptr);
     return nullptr;
   }
 
-  EGLConfig cfg = nullptr;
-  if (!choose_config(dpy, &cfg)) {
-    warn("create: eglChooseConfig found no RGBA8 config", nullptr);
-    return nullptr;
-  }
-
-  // Request ES 3.0 (a comfortable superset of the ES 2.0 PIXI needs, and what
-  // llvmpipe advertises), falling back to an ES 2.0 context. The rendering only
-  // uses ES2/ES 1.00-shader features, so either is fine.
-  const EGLint es3_attribs[] = {EGL_CONTEXT_MAJOR_VERSION, 3,
-                                EGL_CONTEXT_MINOR_VERSION, 0, EGL_NONE};
-  EGLContext egl = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, es3_attribs);
-  if (egl == EGL_NO_CONTEXT) {
-    const EGLint es2_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
-    egl = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, es2_attribs);
-  }
-  if (egl == EGL_NO_CONTEXT) {
-    warn("create: eglCreateContext failed", nullptr);
-    return nullptr;
-  }
-
-  // Bind the context. Prefer surfaceless (EGL_KHR_surfaceless_context, which
-  // llvmpipe advertises with no display) — an FBO is the render target, so no
-  // draw/read surface is needed. Some environments reject a no-surface
-  // make-current though: notably the main binary under Xvfb (DISPLAY set, SDL
-  // up), where gl_test's headless mruby binary succeeds but this one returned
-  // "eglMakeCurrent(surfaceless) failed". Fall back to a 1x1 pbuffer (the
-  // config advertises EGL_PBUFFER_BIT); it exists only to satisfy make-current.
+  EGLDisplay dpy = EGL_NO_DISPLAY;
+  EGLContext egl = EGL_NO_CONTEXT;
   EGLSurface surf = EGL_NO_SURFACE;
-  if (!eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl)) {
-    const EGLint pb_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
-    surf = eglCreatePbufferSurface(dpy, cfg, pb_attribs);
-    if (surf == EGL_NO_SURFACE || !eglMakeCurrent(dpy, surf, surf, egl)) {
-      warn("create: eglMakeCurrent failed (surfaceless and 1x1 pbuffer)",
-           nullptr);
-      if (surf != EGL_NO_SURFACE)
-        eglDestroySurface(dpy, surf);
-      eglDestroyContext(dpy, egl);
-      return nullptr;
+  for (int i = 0; i < n; ++i) {
+    if (bind_context(candidates[i].dpy, candidates[i].label, &egl, &surf)) {
+      dpy = candidates[i].dpy;
+      break;
     }
+  }
+  if (dpy == EGL_NO_DISPLAY) {
+    warn("create: no EGL display could bind a context", nullptr);
+    return nullptr;
   }
 
   Context* ctx = new Context();
@@ -247,6 +412,7 @@ void destroy(Context* ctx) {
   if (!ctx)
     return;
   if (ctx->dpy != EGL_NO_DISPLAY && ctx->egl != EGL_NO_CONTEXT) {
+    ScopedSoftwareEGL no_x;
     eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl);
     if (ctx->fbo)
       glDeleteFramebuffers(1, &ctx->fbo);
@@ -267,6 +433,7 @@ void destroy(Context* ctx) {
 bool make_current(Context* ctx) {
   if (!ctx || ctx->dpy == EGL_NO_DISPLAY || ctx->egl == EGL_NO_CONTEXT)
     return false;
+  ScopedSoftwareEGL no_x;
   if (!eglMakeCurrent(ctx->dpy, ctx->surf, ctx->surf, ctx->egl))
     return false;
   // A fresh make-current binds the default framebuffer; rebind ours (the

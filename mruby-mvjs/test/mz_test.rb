@@ -91,6 +91,10 @@ assert 'MZ.host_globals_js defines the DOM globals rmmz_managers needs' do
   assert_true js.include?("=== 'undefined'")
 end
 
-assert 'MZ.runtime_available? is false until the WebGL backend lands' do
-  assert_false MZ.runtime_available?
+assert 'MZ.runtime_available? tracks whether the WebGL backend (MV::GL) is built' do
+  # MZ boots to Scene_Boot and presents frames on-screen only where the native
+  # surfaceless-EGL GLES2 backend is compiled in; elsewhere (Emscripten uses the
+  # browser's WebGL; header-less builds) it stays a boot probe. So the predicate
+  # mirrors MV::GL.available? exactly.
+  assert_equal MV::GL.available?, MZ.runtime_available?
 end

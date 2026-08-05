@@ -43,15 +43,23 @@
   Call Event (run a common event / another event's page), Move Event (force a
   move route onto an event or the player), Halt All Movement (cancel every forced
   route), Change / Trade Event Location (snap or swap event/player tiles), Change
-  Map Tileset (swap the map's chipset), Weather Effects (set rain/snow type and
-  strength), Set
-  Transparent Flag (hide/show the hero), Return to Title and Erase
+  Map Tileset (swap the map's chipset), Tile Substitution (rewrite a tile id on a
+  map layer, drawing and passability both), Weather Effects (set rain/snow type
+  and strength), Set
+  Transparent Flag (hide/show the hero), Flash Sprite (pulse a character with a
+  decaying colour), Enter/Exit Vehicle, Open Save Menu / Open Main Menu, Fade Out
+  BGM, Return to Title and Erase
   Event (remove an event from
-  the map). Events start on the action button, on
+  the map) — **every RPG2000 event command now has a handler**. Events start on the action button, on
   player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
+- A troop's **battle-event pages** run during a fight: their conditions (switch,
+  variable, turn, enemy/actor HP) are re-checked each turn, and a matching page
+  runs the ordinary command set plus the battle-only commands — Change Monster
+  HP / MP / Condition, Show Hidden Monster, Change Battle Background, the battle
+  Show Battle Animation, the battle Conditional Branch and Terminate Battle
 - Message text reveals gradually (a typewriter effect; a button press completes
   it, then dismisses), expands the common control codes (`\v[n]` variable,
   `\n[n]` actor name, `\\`) and draws `\c[n]` colour changes
@@ -70,10 +78,13 @@
 - The engine reads `Game.ini`, shows the **title screen** (the game's title
   graphic behind a New Game / Continue / Shutdown window, with the database's
   title BGM and cursor/decision sound effects) and, on **New Game**, builds the
-  party and enters a walkable **map**: the three XP tile layers are drawn as
-  placeholder colour blocks (real tileset/autotile rendering is planned, as on
-  the RPG2000 side), the party leader walks from its character graphic, and
-  movement uses the tileset's passage flags with a follow camera
+  party and enters a walkable **map**: the three XP tile layers are drawn from
+  the project's real tileset — regular tiles blitted from the tileset graphic,
+  autotiles assembled from their quads and animated, and priority tiles sorted
+  above the characters — with the party leader and every event drawn from their
+  `Graphics/Characters` sheets (or the tile a page uses as its graphic), stacked
+  by screen row the way RMXP sorts them, and movement using the tileset's
+  passage flags with a follow camera
 - Both an **unpacked** project (a loose `Data/` folder) and an **encrypted
   archive** load: a packed release that ships only a `Game.rgssad` (RPG Maker XP;
   RPG Maker VX's same-format `Game.rgss2a` too) or a VX Ace `Game.rgss3a` is

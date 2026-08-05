@@ -23,6 +23,14 @@ extern "C" {
 // Ruby layer (see mruby-rgss/mrblib/lib.rb); volume is 0..100 and pitch is a
 // percentage (100 = normal). Any pointer may be null, in which case that
 // operation is skipped.
+//
+// Each *_play also has a *_play_mem twin taking the encoded bytes directly.
+// That is how a released game's audio plays: it ships one encrypted RGSSAD
+// archive holding its whole Audio/ tree with nothing loose on disk, so there is
+// no path to hand over (see RGSS.asset_archive). `name` is not a file — it is
+// the archive entry name, used as the sample cache key and in diagnostics. The
+// bytes belong to the caller and must be copied by any backend that needs them
+// to outlive the call.
 struct RgssAudioBackend {
   // Background music: a single looping stream. Starting a new one replaces the
   // current music.
@@ -51,6 +59,28 @@ struct RgssAudioBackend {
   // deferred work (e.g. resuming the BGM after a music effect finishes).
   // May be null.
   void (*update)(void);
+
+  // The same four, from encoded bytes rather than a file. See the note above.
+  void (*bgm_play_mem)(const char* name,
+                       const void* data,
+                       int size,
+                       int volume,
+                       int pitch);
+  void (*bgs_play_mem)(const char* name,
+                       const void* data,
+                       int size,
+                       int volume,
+                       int pitch);
+  void (*me_play_mem)(const char* name,
+                      const void* data,
+                      int size,
+                      int volume,
+                      int pitch);
+  void (*se_play_mem)(const char* name,
+                      const void* data,
+                      int size,
+                      int volume,
+                      int pitch);
 
   // Non-zero when the backend resolved a MIDI instrument configuration, i.e.
   // when a .mid BGM/ME is expected to be audible rather than silent. Lets the

@@ -106,6 +106,10 @@ class RPGVX
     # rather than the RGSS default.
     RGSS::Graphics.resize_screen(WIDTH, HEIGHT)
     @db = RGSSData.new(GAME_DIR, @edition) if @edition
+    # A packed release holds its Graphics/ and Audio/ trees in the same archive
+    # as its Data/, and assets are asked for by name from deep inside the game's
+    # own scripts, so the loaders need it globally (see RGSS.asset_archive).
+    RGSS.asset_archive = @db.archive if @db
     @title = read_title
     # A VX/VX Ace project's engine *is* its script bundle, so the script host is
     # the only path that can currently run one. Off by default, like XP's.

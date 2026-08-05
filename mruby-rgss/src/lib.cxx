@@ -528,36 +528,33 @@ static void set_bitmap_load_error(const char* fmt, ...) {
 // (windowskin) or other graphics as .xyz would otherwise fail to load. On
 // success returns a freshly stb-allocated buffer (free with stbi_image_free)
 // of width*height*4 bytes in LVGL's B, G, R, A byte order and sets *w/*h/*c;
-// returns nullptr when `f` is not a readable XYZ file. When `trans` is set the
+// returns nullptr when the bytes are not an XYZ image. When `trans` is set the
 // first palette entry is treated as the transparent colour, matching stb's
 // transparent-palette handling for PNGs.
-static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
-  std::FILE* fp = std::fopen(f, "rb");
-  if (!fp)
-    return nullptr;
-  std::fseek(fp, 0, SEEK_END);
-  const long sz = std::ftell(fp);
-  std::fseek(fp, 0, SEEK_SET);
-  if (sz < 8) {
-    std::fclose(fp);
-    return nullptr;
-  }
-  std::vector<uint8_t> data((size_t)sz);
-  const size_t got = std::fread(data.data(), 1, (size_t)sz, fp);
-  std::fclose(fp);
+//
+// Takes the bytes rather than a path so the same decoder serves a loose file
+// and an entry pulled out of an encrypted RGSSAD archive; `label` only names
+// the source in the diagnostics.
+static uint8_t* load_xyz_mem(const uint8_t* data,
+                             size_t sz,
+                             const char* label,
+                             int* w,
+                             int* h,
+                             int* c,
+                             bool trans) {
   // Not an XYZ file: stay silent and let the caller keep stb_image's own error.
-  if (got != (size_t)sz || std::memcmp(data.data(), "XYZ1", 4) != 0)
+  if (sz < 8 || std::memcmp(data, "XYZ1", 4) != 0)
     return nullptr;
 
   const int width = data[4] | (data[5] << 8);
   const int height = data[6] | (data[7] << 8);
   if (width <= 0 || height <= 0) {
     set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width,
-                          height, f);
+                          height, label);
     return nullptr;
   }
 
-  const char* stream = reinterpret_cast<const char*>(data.data() + 8);
+  const char* stream = reinterpret_cast<const char*>(data + 8);
   const int stream_len = (int)(sz - 8);
   // A 768-byte (256*3) RGB palette followed by one index per pixel.
   const long expected = 768L + (long)width * height;
@@ -576,7 +573,7 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
       set_bitmap_load_error(
           "XYZ %dx%d '%s': zlib inflate failed (%s); zlib header 0x%02x%02x, "
           "%d compressed bytes, expected %ld decompressed",
-          width, height, f, zerr, (unsigned)data[8], (unsigned)data[9],
+          width, height, label, zerr, (unsigned)data[8], (unsigned)data[9],
           stream_len, expected);
       return nullptr;
     }
@@ -586,7 +583,7 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
     set_bitmap_load_error(
         "XYZ %dx%d '%s': short data, got %d bytes, expected %ld (768 palette + "
         "%d pixels)",
-        width, height, f, outlen, expected, width * height);
+        width, height, label, outlen, expected, width * height);
     stbi_image_free(raw);
     return nullptr;
   }
@@ -845,42 +842,35 @@ uint32_t be32(const uint8_t* p) {
 
 }  // namespace png_tol
 
-// Decode `f` as a PNG using the tolerant inflater above. Returns a freshly
+// Decode `d` as a PNG using the tolerant inflater above. Returns a freshly
 // stb-allocated (free with stbi_image_free) width*height*4 B, G, R, A buffer
-// and sets *w/*h/*c, or nullptr when the file is not a PNG this fallback
+// and sets *w/*h/*c, or nullptr when the bytes are not a PNG this fallback
 // handles (non-interlaced; bit depth 8, or indexed 1/2/4). `trans` maps palette
 // index 0 to transparent, matching the primary loader's colour-key handling.
-static uint8_t* load_png_tolerant(const char* f,
-                                  int* wout,
-                                  int* hout,
-                                  int* c,
-                                  bool trans) {
-  std::FILE* fp = std::fopen(f, "rb");
-  if (!fp)
-    return nullptr;
-  std::fseek(fp, 0, SEEK_END);
-  const long sz = std::ftell(fp);
-  std::fseek(fp, 0, SEEK_SET);
+//
+// Takes the bytes rather than a path, like load_xyz_mem above, so an entry read
+// out of an encrypted RGSSAD archive gets the same fallback a loose file does;
+// `label` only names the source in the diagnostics.
+static uint8_t* load_png_tolerant_mem(const uint8_t* d,
+                                      size_t sz,
+                                      const char* label,
+                                      int* wout,
+                                      int* hout,
+                                      int* c,
+                                      bool trans) {
   static const uint8_t sig[8] = {0x89, 0x50, 0x4e, 0x47,
                                  0x0d, 0x0a, 0x1a, 0x0a};
-  if (sz < 8) {
-    std::fclose(fp);
-    return nullptr;
-  }
-  std::vector<uint8_t> d((size_t)sz);
-  const size_t got = std::fread(d.data(), 1, (size_t)sz, fp);
-  std::fclose(fp);
-  if (got != (size_t)sz || std::memcmp(d.data(), sig, 8) != 0)
+  if (sz < 8 || std::memcmp(d, sig, 8) != 0)
     return nullptr;
 
   int w = 0, h = 0, depth = 0, ct = 0, interlace = 0;
   std::vector<uint8_t> idat, plte, trns;
   size_t i = 8;
-  while (i + 8 <= (size_t)sz) {
-    const uint32_t len = png_tol::be32(d.data() + i);
-    const uint8_t* typ = d.data() + i + 4;
-    const uint8_t* body = d.data() + i + 8;
-    if (i + 12 + len > (size_t)sz)
+  while (i + 8 <= sz) {
+    const uint32_t len = png_tol::be32(d + i);
+    const uint8_t* typ = d + i + 4;
+    const uint8_t* body = d + i + 8;
+    if (i + 12 + len > sz)
       break;
     if (!std::memcmp(typ, "IHDR", 4) && len >= 13) {
       w = (int)png_tol::be32(body);
@@ -936,7 +926,7 @@ static uint8_t* load_png_tolerant(const char* f,
     set_bitmap_load_error(
         "PNG %dx%d depth %d colortype %d '%s': tolerant inflate produced too "
         "little data",
-        w, h, depth, ct, f);
+        w, h, depth, ct, label);
     return nullptr;
   }
 
@@ -1046,19 +1036,46 @@ mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   return self;
 }
 
-mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
-  const char* f;
-  mrb_bool trans = false;
-  mrb_get_args(M, "z|b", &f, &trans);
+// Read a whole file. Answers false when it cannot be opened or read fully, so
+// the caller can fall through to the next candidate path in silence.
+static bool slurp_file(const char* f, std::vector<uint8_t>& out) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return false;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz <= 0) {
+    std::fclose(fp);
+    return false;
+  }
+  out.resize((size_t)sz);
+  const size_t got = std::fread(out.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  return got == (size_t)sz;
+}
+
+// Decode image bytes into `self` (a Bitmap). Shared by Bitmap#_init_file and
+// #_init_memory: everything below is format work with no notion of where the
+// bytes came from, which is what lets an entry pulled out of an encrypted
+// RGSSAD archive go through the exact same decoders — stb, then the XYZ and
+// tolerant-PNG fallbacks — as a loose file. `label` only names the source in
+// the diagnostics. Answers false when nothing could decode it.
+static bool bmp_decode_into(mrb_state* M,
+                            mrb_value self,
+                            const uint8_t* data,
+                            size_t size,
+                            const char* label,
+                            bool trans) {
   int w, h, c;
   stbi__png_transparent_palette = trans;
-  // Every loader here hands back LVGL's B, G, R(, A) byte order (see load_xyz
-  // and load_png_tolerant, which build it themselves). stb decodes to
-  // R, G, B(, A), so its output is swapped below instead of relying on the
-  // vendored palette-only BGR hack: that covered indexed PNGs (all an RPG2000
-  // project has) and left every truecolour PNG and every JPEG with red and
-  // blue exchanged -- which is what an RPG Maker XP RTP is full of. Caught by
-  // diffing against the genuine RGSS runtime, see
+  // Every loader here hands back LVGL's B, G, R(, A) byte order (see
+  // load_xyz_mem and load_png_tolerant_mem, which build it themselves). stb
+  // decodes to R, G, B(, A), so its output is swapped below instead of relying
+  // on the vendored palette-only BGR hack: that covered indexed PNGs (all an
+  // RPG2000 project has) and left every truecolour PNG and every JPEG with red
+  // and blue exchanged -- which is what an RPG Maker XP RTP is full of. Caught
+  // by diffing against the genuine RGSS runtime, see
   // docs/adr/0025-rpgxp-cross-runtime-testing.md.
   stbi__png_to_bgr_palette = false;
   // The channel count has to be decided before decoding, because the bitmap's
@@ -1069,38 +1086,27 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   // (truecolour + alpha, loaded opaque) hit exactly that.
   int probe_w = 0, probe_h = 0, probe_c = 0;
   const bool has_alpha =
-      stbi_info(f, &probe_w, &probe_h, &probe_c) && probe_c == 4;
+      stbi_info_from_memory(data, (int)size, &probe_w, &probe_h, &probe_c) &&
+      probe_c == 4;
   const int req = (trans || has_alpha) ? 4 : 3;
   // Whether the pixels came from stb (R, G, B order, so they need the swap) or
   // from one of the fallbacks above, which already emit LVGL's order.
   bool from_stb = true;
-  std::shared_ptr<uint8_t> img(stbi_load(f, &w, &h, &c, req), stbi_image_free);
+  std::shared_ptr<uint8_t> img(
+      stbi_load_from_memory(data, (int)size, &w, &h, &c, req), stbi_image_free);
   if (!img) {
     from_stb = false;
-    img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
+    img.reset(load_xyz_mem(data, size, label, &w, &h, &c, trans),
+              stbi_image_free);
   }
   // stb_image rejects some valid-enough PNGs (e.g. RPG Maker windowskins whose
   // deflate stream references a zero pre-history, giving "bad dist"); retry
   // with the tolerant PNG decoder before giving up.
   if (!img)
-    img.reset(load_png_tolerant(f, &w, &h, &c, trans), stbi_image_free);
-  if (!img) {
-    // Some archives store filenames in NFD form while the game data refers to
-    // them in NFC (or vice versa); retry with the decomposed form before giving
-    // up so accented paths still resolve.
-    const std::string nfd_f = una::norm::to_nfd_utf8(f);
-    from_stb = true;
-    img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c, req), stbi_image_free);
-    if (!img) {
-      from_stb = false;
-      img.reset(load_xyz(nfd_f.c_str(), &w, &h, &c, trans), stbi_image_free);
-    }
-    if (!img)
-      img.reset(load_png_tolerant(nfd_f.c_str(), &w, &h, &c, trans),
-                stbi_image_free);
-    if (!img)
-      return mrb_nil_value();
-  }
+    img.reset(load_png_tolerant_mem(data, size, label, &w, &h, &c, trans),
+              stbi_image_free);
+  if (!img)
+    return false;
   // The fallbacks always produce 4 channels; stb produced exactly what was
   // requested.
   const int channels = from_stb ? req : 4;
@@ -1113,6 +1119,44 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
     for (size_t i = 0; i + 3 <= bmp.buffer.size(); i += (size_t)channels)
       std::swap(p[i], p[i + 2]);
   }
+  return true;
+}
+
+mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
+  const char* f;
+  mrb_bool trans = false;
+  mrb_get_args(M, "z|b", &f, &trans);
+  std::vector<uint8_t> data;
+  if (slurp_file(f, data) &&
+      bmp_decode_into(M, self, data.data(), data.size(), f, trans))
+    return self;
+  // Some archives store filenames in NFD form while the game data refers to
+  // them in NFC (or vice versa); retry with the decomposed form before giving
+  // up so accented paths still resolve.
+  const std::string nfd_f = una::norm::to_nfd_utf8(f);
+  if (nfd_f != f && slurp_file(nfd_f.c_str(), data) &&
+      bmp_decode_into(M, self, data.data(), data.size(), nfd_f.c_str(), trans))
+    return self;
+  return mrb_nil_value();
+}
+
+// Ruby: Bitmap#_init_memory(bytes, transparent = false) -> self or nil.
+//
+// The same decode as #_init_file over bytes already in hand. RGSS's Cache
+// asks for every asset by name (`Bitmap.new("Graphics/Titles/...")`), and a
+// released game packs those names into its encrypted Game.rgssad / .rgss2a /
+// .rgss3a with nothing loose on disk — so the Ruby loader falls back to the
+// archive and hands the decrypted bytes here.
+mrb_value bmp_init_memory(mrb_state* M, mrb_value self) {
+  const char* data;
+  mrb_int size;
+  mrb_bool trans = false;
+  mrb_get_args(M, "s|b", &data, &size, &trans);
+  if (size <= 0)
+    return mrb_nil_value();
+  if (!bmp_decode_into(M, self, reinterpret_cast<const uint8_t*>(data),
+                       (size_t)size, "<archive entry>", trans))
+    return mrb_nil_value();
   return self;
 }
 
@@ -1153,6 +1197,40 @@ void bmp_read(const Bitmap& b,
   g = p[1];
   r = p[2];
   a = bpp >= 4 ? p[3] : 255;
+}
+
+// Source-over composite of one pixel in *straight* (non-premultiplied) alpha.
+//
+// The obvious `src*a + dst*(255-a)` is only right when the destination is
+// opaque. Onto a transparent pixel -- which is transparent *black* -- it drags
+// the colour toward black while recording alpha `a`, so the composite that
+// later draws the bitmap over the screen attenuates the same colour a second
+// time. A window background blitted at RGSS's `back_opacity` 160 came out
+// showing 8% of its skin instead of 63% (measured against the genuine RGSS
+// runtime, which blends at exactly back_opacity/255).
+//
+// Straight alpha keeps the colour and lets the alpha carry the coverage:
+//   out_a   = sa + da*(1 - sa)
+//   out_rgb = (src*sa + dst*da*(1 - sa)) / out_a
+// which reduces to the old formula when da is 255, so blits onto an opaque
+// bitmap are unchanged.
+void blend_over(Bitmap& dst,
+                mrb_int x,
+                mrb_int y,
+                int r,
+                int g,
+                int b,
+                int sa,
+                int dr,
+                int dg,
+                int db,
+                int da) {
+  const int dw = da * (255 - sa) / 255;
+  const int out_a = sa + dw;
+  if (out_a <= 0)
+    return;
+  bmp_put(dst, x, y, (r * sa + dr * dw) / out_a, (g * sa + dg * dw) / out_a,
+          (b * sa + db * dw) / out_a, out_a);
 }
 
 mrb_value bmp_width(mrb_state* M, V self) {
@@ -1420,10 +1498,7 @@ mrb_value bmp_blt(mrb_state* M, V self) {
       }
       int dr, dg, db, da;
       bmp_read(dst, dx, dy, dr, dg, db, da);
-      const int inv = 255 - alpha;
-      bmp_put(dst, dx, dy, (r * alpha + dr * inv) / 255,
-              (g * alpha + dg * inv) / 255, (bl * alpha + db * inv) / 255,
-              std::max(da, alpha));
+      blend_over(dst, dx, dy, r, g, bl, alpha, dr, dg, db, da);
     }
   }
   dst.dirty = true;
@@ -1472,10 +1547,7 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
       }
       int dr2, dg, db, da;
       bmp_read(dst, dx, dy, dr2, dg, db, da);
-      const int inv = 255 - alpha;
-      bmp_put(dst, dx, dy, (r * alpha + dr2 * inv) / 255,
-              (g * alpha + dg * inv) / 255, (bl * alpha + db * inv) / 255,
-              std::max(da, alpha));
+      blend_over(dst, dx, dy, r, g, bl, alpha, dr2, dg, db, da);
     }
   }
   dst.dirty = true;
@@ -2349,6 +2421,55 @@ lv_display_t* get_display(mrb_state* M) {
   return reinterpret_cast<lv_display_t*>(mrb_cptr(v));
 }
 
+// Report an unimplemented path through RGSS.warn_stub, which dedupes by name.
+void RGSS_warn_stub(mrb_state* M, const char* name) {
+  mrb_funcall(M, mrb_obj_value(mrb_module_get(M, "RGSS")), "warn_stub", 1,
+              mrb_str_new_cstr(M, name));
+}
+
+// RGSS Graphics.snap_to_bitmap: the rendered screen as a Bitmap.
+//
+// lv_snapshot_take re-renders the active screen's object tree into a fresh
+// buffer, which is the only capture that works on every backend here -- the SDL
+// window, the terminal framebuffer and the wasm canvas all buffer differently,
+// and two of them render partially. The buffer comes back in LVGL's ARGB8888
+// byte order (B, G, R, A), the same layout Bitmap uses, so the rows copy
+// straight across (honouring the snapshot's stride, which is padded).
+//
+// Answers nil where the module is compiled out (the Wio/PSP builds) rather than
+// pretending, and says so once.
+mrb_value gfx_snap_to_bitmap(mrb_state* M, mrb_value self) {
+#if LV_USE_SNAPSHOT
+  lv_obj_t* screen = lv_display_get_screen_active(get_display(M));
+  if (!screen)
+    return mrb_nil_value();
+  lv_draw_buf_t* snap = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
+  if (!snap) {
+    RGSS_warn_stub(M, "Graphics.snap_to_bitmap (snapshot failed)");
+    return mrb_nil_value();
+  }
+  const mrb_int w = snap->header.w;
+  const mrb_int h = snap->header.h;
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value out =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& b = DataType<Bitmap>::get(M, out);
+  const uint32_t stride = snap->header.stride;
+  for (mrb_int y = 0; y < h; ++y) {
+    const uint8_t* src = snap->data + static_cast<size_t>(y) * stride;
+    uint8_t* dst = b.buffer.data() + static_cast<size_t>(y) * w * 4;
+    std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+  }
+  b.dirty = true;
+  lv_draw_buf_destroy(snap);
+  return out;
+#else
+  RGSS_warn_stub(M, "Graphics.snap_to_bitmap");
+  return mrb_nil_value();
+#endif
+}
+
 const mrb_data_type obj_type = {"lv_obj_t", free_obj};
 
 // LVGL fires LV_EVENT_DELETE when an object is destroyed, including when its
@@ -2418,6 +2539,41 @@ static int clamp_byte(int v) {
   return v < 0 ? 0 : (v > 255 ? 255 : v);
 }
 
+// Apply an RGSS Tone to one pixel: desaturate toward its luminance by `gray`,
+// then offset each channel. Shared by every composite that can be toned (a
+// sprite, a plane, the tilemap), so they cannot drift apart.
+static void apply_tone_px(int& r, int& g, int& b, const Tone& t) {
+  const int gy = static_cast<int>(t.gray);
+  if (gy != 0) {
+    const int lum = (r * 77 + g * 150 + b * 29) / 256;
+    r += (lum - r) * gy / 255;
+    g += (lum - g) * gy / 255;
+    b += (lum - b) * gy / 255;
+  }
+  r = clamp_byte(r + static_cast<int>(t.red));
+  g = clamp_byte(g + static_cast<int>(t.green));
+  b = clamp_byte(b + static_cast<int>(t.blue));
+}
+
+static bool tone_is_set(const Tone& t) {
+  return t.red != 0 || t.green != 0 || t.blue != 0 || t.gray != 0;
+}
+
+// The tone of the viewport an object was created in, or a neutral tone when it
+// has none. RGSS applies this to everything the viewport draws *after* each
+// object's own tone/colour, so each composite folds it in as its last step --
+// which is why a display object reads it here rather than the viewport reaching
+// into the object. See vp_set_tone for how a change is propagated.
+static Tone viewport_tone(mrb_state* M, mrb_value vp) {
+  Tone t{};
+  if (!mrb_test(vp) || !DATA_PTR(vp))
+    return t;
+  const mrb_value tv = mrb_iv_get(M, vp, mrb_intern_lit(M, "@tone"));
+  if (mrb_test(tv) && DATA_PTR(tv))
+    t = DataType<Tone>::get(M, tv);
+  return t;
+}
+
 // Point the sprite's canvas at the bitmap it should display: the assigned
 // bitmap directly, or — when the sprite is mirrored, toned or colour-overlaid —
 // a scratch copy with those effects baked in (LVGL can express none of them, so
@@ -2441,9 +2597,14 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     tn = DataType<Tone>::get(M, tone_v);
   if (mrb_test(color_v) && DATA_PTR(color_v))
     cl = DataType<Color>::get(M, color_v);
-  const bool has_tone =
-      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_tone = tone_is_set(tn);
   const bool has_color = cl.alpha != 0;
+  // The viewport's tone applies to everything it draws, so it is folded into
+  // this composite after the sprite's own tone/colour/flash (RGSS tints the
+  // viewport's contents, not its sources).
+  const Tone vtn =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const bool has_vp_tone = tone_is_set(vtn);
 
   // bush_depth: the bottom N rows are drawn at half opacity, so a character
   // wading through bushes fades out below the waist.
@@ -2492,7 +2653,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     }
   }
 
-  if (cropped || mirror || has_tone || has_color || bush > 0 || flash_on) {
+  if (cropped || mirror || has_tone || has_color || has_vp_tone || bush > 0 ||
+      flash_on) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
     mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
@@ -2518,18 +2680,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
         int r = 0, g = 0, b = 0, a = 0;
         if (srcx >= 0 && srcy >= 0 && srcx < src.width && srcy < src.height)
           bmp_read(src, srcx, srcy, r, g, b, a);
-        if (has_tone) {
-          const int gy = static_cast<int>(tn.gray);
-          if (gy != 0) {
-            const int lum = (r * 77 + g * 150 + b * 29) / 256;
-            r += (lum - r) * gy / 255;
-            g += (lum - g) * gy / 255;
-            b += (lum - b) * gy / 255;
-          }
-          r = clamp_byte(r + static_cast<int>(tn.red));
-          g = clamp_byte(g + static_cast<int>(tn.green));
-          b = clamp_byte(b + static_cast<int>(tn.blue));
-        }
+        if (has_tone)
+          apply_tone_px(r, g, b, tn);
         if (has_color) {
           r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
           g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
@@ -2540,6 +2692,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
           g = clamp_byte(g + (static_cast<int>(fcl.green) - g) * fa / 255);
           b = clamp_byte(b + (static_cast<int>(fcl.blue) - b) * fa / 255);
         }
+        if (has_vp_tone)
+          apply_tone_px(r, g, b, vtn);
         if (flash_empty)
           a = a * (flash_dur - flash_count) / flash_dur;
         if (bush > 0 && y >= ch - bush)
@@ -2880,10 +3034,13 @@ void plane_retile(mrb_state* M, mrb_value self) {
     tn = DataType<Tone>::get(M, tone_v);
   if (mrb_test(color_v) && DATA_PTR(color_v))
     cl = DataType<Color>::get(M, color_v);
-  const bool has_tone =
-      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_tone = tone_is_set(tn);
   const bool has_color = cl.alpha != 0;
   const int ca = static_cast<int>(cl.alpha);
+  // ...and then the viewport's tone over the result, as for a sprite.
+  const Tone vtn =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const bool has_vp_tone = tone_is_set(vtn);
 
   for (int y = 0; y < dst.height; ++y) {
     const int syb = scaled ? static_cast<int>(std::floor((y + oy) / zy))
@@ -2895,23 +3052,15 @@ void plane_retile(mrb_state* M, mrb_value self) {
       const int sx = (sxb % src.width + src.width) % src.width;
       int r, g, b, a;
       bmp_read(src, sx, sy, r, g, b, a);
-      if (has_tone) {
-        const int gy = static_cast<int>(tn.gray);
-        if (gy != 0) {
-          const int lum = (r * 77 + g * 150 + b * 29) / 256;
-          r += (lum - r) * gy / 255;
-          g += (lum - g) * gy / 255;
-          b += (lum - b) * gy / 255;
-        }
-        r = clamp_byte(r + static_cast<int>(tn.red));
-        g = clamp_byte(g + static_cast<int>(tn.green));
-        b = clamp_byte(b + static_cast<int>(tn.blue));
-      }
+      if (has_tone)
+        apply_tone_px(r, g, b, tn);
       if (has_color) {
         r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
         g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
         b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
       }
+      if (has_vp_tone)
+        apply_tone_px(r, g, b, vtn);
       bmp_put(dst, x, y, r, g, b, a);
     }
   }
@@ -3126,6 +3275,212 @@ static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
 // several such frames left to right.
 static const int AUTOTILE_FRAME_W = 96;
 
+// ---- RPG Maker VX / VX Ace tile geometry ----------------------------------
+//
+// VX replaced XP's single tileset + seven autotiles with nine sheets (A1-A5,
+// B-E) and packed everything into one tile id space, which `RPG::Map#data`
+// stores and `RPG::Tileset#flags` describes:
+//
+//   0..255 B, 256..511 C, 512..767 D, 768..1023 E   plain tiles
+//   1536.. A5                                        plain tiles
+//   2048.. A1 (water/waterfall), 2816.. A2 (ground),
+//   4352.. A3 (buildings), 5888.. A4 (walls)         autotiles, 48 shapes each
+//
+// An autotile id encodes both *which* autotile (kind) and *which of the 48
+// edge shapes* it is drawn as; each shape is four 16x16 quarter-tiles taken
+// from the sheet at an offset that depends on the family. The three quad tables
+// and the family offsets below are ported from the MIT-licensed RPG Maker MV
+// corescript (rpgtkoolmv/corescript, js/rpg_core/Tilemap.js), which inherited
+// VX Ace's tile system unchanged -- the same provenance as the RMXP quads
+// above, which came from mkxp.
+//
+// The geometry is pure arithmetic, so it is also exposed to Ruby as
+// Tilemap.vx_tile_quads and pinned by mruby-rgss/test (the drawing itself needs
+// a display the test binary has not got).
+
+// Tile id boundaries (Tilemap.TILE_ID_* in the corescript).
+static const int VX_TILE_ID_A5 = 1536;
+static const int VX_TILE_ID_A1 = 2048;
+static const int VX_TILE_ID_A2 = 2816;
+static const int VX_TILE_ID_A3 = 4352;
+static const int VX_TILE_ID_A4 = 5888;
+static const int VX_TILE_ID_MAX = 8192;
+
+// Quarter-tile (column, row) of each of the four quads (TL, TR, BL, BR) making
+// up one of the 48 floor shapes, in half-tile units from the autotile's origin.
+static const int VX_FLOOR_QUADS[48][4][2] = {
+    {{2, 4}, {1, 4}, {2, 3}, {1, 3}}, {{2, 0}, {1, 4}, {2, 3}, {1, 3}},
+    {{2, 4}, {3, 0}, {2, 3}, {1, 3}}, {{2, 0}, {3, 0}, {2, 3}, {1, 3}},
+    {{2, 4}, {1, 4}, {2, 3}, {3, 1}}, {{2, 0}, {1, 4}, {2, 3}, {3, 1}},
+    {{2, 4}, {3, 0}, {2, 3}, {3, 1}}, {{2, 0}, {3, 0}, {2, 3}, {3, 1}},
+    {{2, 4}, {1, 4}, {2, 1}, {1, 3}}, {{2, 0}, {1, 4}, {2, 1}, {1, 3}},
+    {{2, 4}, {3, 0}, {2, 1}, {1, 3}}, {{2, 0}, {3, 0}, {2, 1}, {1, 3}},
+    {{2, 4}, {1, 4}, {2, 1}, {3, 1}}, {{2, 0}, {1, 4}, {2, 1}, {3, 1}},
+    {{2, 4}, {3, 0}, {2, 1}, {3, 1}}, {{2, 0}, {3, 0}, {2, 1}, {3, 1}},
+    {{0, 4}, {1, 4}, {0, 3}, {1, 3}}, {{0, 4}, {3, 0}, {0, 3}, {1, 3}},
+    {{0, 4}, {1, 4}, {0, 3}, {3, 1}}, {{0, 4}, {3, 0}, {0, 3}, {3, 1}},
+    {{2, 2}, {1, 2}, {2, 3}, {1, 3}}, {{2, 2}, {1, 2}, {2, 3}, {3, 1}},
+    {{2, 2}, {1, 2}, {2, 1}, {1, 3}}, {{2, 2}, {1, 2}, {2, 1}, {3, 1}},
+    {{2, 4}, {3, 4}, {2, 3}, {3, 3}}, {{2, 4}, {3, 4}, {2, 1}, {3, 3}},
+    {{2, 0}, {3, 4}, {2, 3}, {3, 3}}, {{2, 0}, {3, 4}, {2, 1}, {3, 3}},
+    {{2, 4}, {1, 4}, {2, 5}, {1, 5}}, {{2, 0}, {1, 4}, {2, 5}, {1, 5}},
+    {{2, 4}, {3, 0}, {2, 5}, {1, 5}}, {{2, 0}, {3, 0}, {2, 5}, {1, 5}},
+    {{0, 4}, {3, 4}, {0, 3}, {3, 3}}, {{2, 2}, {1, 2}, {2, 5}, {1, 5}},
+    {{0, 2}, {1, 2}, {0, 3}, {1, 3}}, {{0, 2}, {1, 2}, {0, 3}, {3, 1}},
+    {{2, 2}, {3, 2}, {2, 3}, {3, 3}}, {{2, 2}, {3, 2}, {2, 1}, {3, 3}},
+    {{2, 4}, {3, 4}, {2, 5}, {3, 5}}, {{2, 0}, {3, 4}, {2, 5}, {3, 5}},
+    {{0, 4}, {1, 4}, {0, 5}, {1, 5}}, {{0, 4}, {3, 0}, {0, 5}, {1, 5}},
+    {{0, 2}, {3, 2}, {0, 3}, {3, 3}}, {{0, 2}, {1, 2}, {0, 5}, {1, 5}},
+    {{0, 4}, {3, 4}, {0, 5}, {3, 5}}, {{2, 2}, {3, 2}, {2, 5}, {3, 5}},
+    {{0, 2}, {3, 2}, {0, 5}, {3, 5}}, {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+};
+
+// Walls (A3, and the odd rows of A4) have 16 shapes instead of 48.
+static const int VX_WALL_QUADS[16][4][2] = {
+    {{2, 2}, {1, 2}, {2, 1}, {1, 1}}, {{0, 2}, {1, 2}, {0, 1}, {1, 1}},
+    {{2, 0}, {1, 0}, {2, 1}, {1, 1}}, {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+    {{2, 2}, {3, 2}, {2, 1}, {3, 1}}, {{0, 2}, {3, 2}, {0, 1}, {3, 1}},
+    {{2, 0}, {3, 0}, {2, 1}, {3, 1}}, {{0, 0}, {3, 0}, {0, 1}, {3, 1}},
+    {{2, 2}, {1, 2}, {2, 3}, {1, 3}}, {{0, 2}, {1, 2}, {0, 3}, {1, 3}},
+    {{2, 0}, {1, 0}, {2, 3}, {1, 3}}, {{0, 0}, {1, 0}, {0, 3}, {1, 3}},
+    {{2, 2}, {3, 2}, {2, 3}, {3, 3}}, {{0, 2}, {3, 2}, {0, 3}, {3, 3}},
+    {{2, 0}, {3, 0}, {2, 3}, {3, 3}}, {{0, 0}, {3, 0}, {0, 3}, {3, 3}},
+};
+
+// A waterfall (the odd A1 kinds) has 4.
+static const int VX_WATERFALL_QUADS[4][4][2] = {
+    {{2, 0}, {1, 0}, {2, 1}, {1, 1}},
+    {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+    {{2, 0}, {3, 0}, {2, 1}, {3, 1}},
+    {{0, 0}, {3, 0}, {0, 1}, {3, 1}},
+};
+
+// One 16x16 piece (or, for a table tile's split quad, 16x8) of a VX tile: which
+// sheet it comes from, where in that sheet, and where in the 32x32 destination
+// tile it goes.
+struct VXQuad {
+  int sheet, sx, sy, dx, dy, w, h;
+};
+
+// Decode a VX / VX Ace tile id into the pieces that draw it, writing them to
+// `out` (at most 8, for a table tile whose quads are split) and returning how
+// many. `frame` animates A1 (water surface / waterfall); `table` is the A2
+// "table" flag (RPG::Tileset#flags bit 0x80), which redraws the tile's middle
+// rows from the counter row so a table/counter edge shows its side.
+//
+// Mirrors Tilemap#_drawNormalTile / #_drawAutotile in the MV corescript,
+// including its "a shape outside the family's table draws nothing" behaviour
+// (walls have 16 shapes and waterfalls 4, against the floor's 48).
+int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
+  if (tile_id <= 0 || tile_id >= VX_TILE_ID_MAX)
+    return 0;
+  const int half = TILE_SIZE / 2;
+
+  // Plain tiles: A5 is sheet 4, the B/C/D/E pages are sheets 5..8.
+  if (tile_id < VX_TILE_ID_A1) {
+    const int sheet = tile_id >= VX_TILE_ID_A5 ? 4 : 5 + tile_id / 256;
+    // 1024..1535 fall past the E page and short of A5: no sheet holds them, and
+    // the corescript draws nothing for such an id (its bitmaps[9] is
+    // undefined).
+    if (sheet > 8)
+      return 0;
+    const int sx = (tile_id / 128 % 2 * 8 + tile_id % 8) * TILE_SIZE;
+    const int sy = (tile_id % 256 / 8 % 16) * TILE_SIZE;
+    out[0] = VXQuad{sheet, sx, sy, 0, 0, TILE_SIZE, TILE_SIZE};
+    return 1;
+  }
+
+  // Autotiles: the id carries both the autotile (kind) and one of the shapes.
+  const int kind = (tile_id - VX_TILE_ID_A1) / 48;
+  const int shape = (tile_id - VX_TILE_ID_A1) % 48;
+  const int tx = kind % 8;
+  const int ty = kind / 8;
+  int sheet = 0, bx = 0, by = 0;
+  const int (*quad_table)[4][2] = VX_FLOOR_QUADS;
+  int shape_count = 48;
+  bool is_table = false;
+
+  if (tile_id < VX_TILE_ID_A2) {
+    // A1: water surfaces animate over three frames in a 0,1,2,1 cycle, and the
+    // odd kinds are waterfalls with their own three-frame cycle and table.
+    static const int kWaterSurface[4] = {0, 1, 2, 1};
+    const int surface = kWaterSurface[((frame % 4) + 4) % 4];
+    sheet = 0;
+    if (kind == 0) {
+      bx = surface * 2;
+      by = 0;
+    } else if (kind == 1) {
+      bx = surface * 2;
+      by = 3;
+    } else if (kind == 2) {
+      bx = 6;
+      by = 0;
+    } else if (kind == 3) {
+      bx = 6;
+      by = 3;
+    } else {
+      bx = tx / 4 * 8;
+      by = ty * 6 + tx / 2 % 2 * 3;
+      if (kind % 2 == 0) {
+        bx += surface * 2;
+      } else {
+        bx += 6;
+        quad_table = VX_WATERFALL_QUADS;
+        shape_count = 4;
+        by += ((frame % 3) + 3) % 3;
+      }
+    }
+  } else if (tile_id < VX_TILE_ID_A3) {
+    sheet = 1;
+    bx = tx * 2;
+    by = (ty - 2) * 3;
+    is_table = table;
+  } else if (tile_id < VX_TILE_ID_A4) {
+    sheet = 2;
+    bx = tx * 2;
+    by = (ty - 6) * 2;
+    quad_table = VX_WALL_QUADS;
+    shape_count = 16;
+  } else {
+    sheet = 3;
+    bx = tx * 2;
+    // A4 alternates ground rows (three half-tiles tall) and wall rows (two), so
+    // the row offset advances by 2.5 with a half-row shift on the wall rows:
+    // floor((ty - 10) * 2.5 + (ty odd ? 0.5 : 0)).
+    by = ((ty - 10) * 5 + (ty % 2 == 1 ? 1 : 0)) / 2;
+    if (ty % 2 == 1) {
+      quad_table = VX_WALL_QUADS;
+      shape_count = 16;
+    }
+  }
+
+  if (shape >= shape_count)
+    return 0;
+
+  int n = 0;
+  for (int i = 0; i < 4; ++i) {
+    const int qsx = quad_table[shape][i][0];
+    const int qsy = quad_table[shape][i][1];
+    const int sx = (bx * 2 + qsx) * half;
+    const int sy = (by * 2 + qsy) * half;
+    const int dx = (i % 2) * half;
+    const int dy = (i / 2) * half;
+    if (is_table && (qsy == 1 || qsy == 5)) {
+      // A table tile's middle rows come from the counter row, with the original
+      // strip drawn over the bottom half so the edge reads as a side.
+      static const int kTableX[4] = {0, 3, 2, 1};
+      const int qsx2 = qsy == 1 ? kTableX[qsx % 4] : qsx;
+      out[n++] = VXQuad{
+          sheet, (bx * 2 + qsx2) * half, (by * 2 + 3) * half, dx, dy, half,
+          half};
+      out[n++] = VXQuad{sheet, sx, sy, dx, dy + half / 2, half, half / 2};
+    } else {
+      out[n++] = VXQuad{sheet, sx, sy, dx, dy, half, half};
+    }
+  }
+  return n;
+}
+
 // z of the priority "above" layer (see the split in tilemap_refresh). INTERIM:
 // a single flat layer above the characters is only an approximation of RMXP's
 // per-row priority interleaving — it puts *every* priority tile above *every*
@@ -3144,6 +3499,135 @@ static const mrb_int TILEMAP_ABOVE_Z = 900;
 // separate "above" canvas that sorts over the characters (see TILEMAP_ABOVE_Z).
 // Both canvases are invalidated directly (their buffers are not sprite @bitmaps
 // that Graphics.update's dirty sweep watches).
+// Whether a tilemap has been handed any of the nine VX / VX Ace sheets, which
+// is what tells the two tile models apart at draw time.
+bool vx_has_sheets(mrb_state* M, mrb_value bitmaps) {
+  if (!mrb_array_p(bitmaps))
+    return false;
+  for (mrb_int i = 0; i < RARRAY_LEN(bitmaps); ++i) {
+    const mrb_value b = mrb_ary_ref(M, bitmaps, i);
+    if (mrb_test(b) && DATA_PTR(b))
+      return true;
+  }
+  return false;
+}
+
+// Draw a VX / VX Ace map into the ground (and priority "above") canvases.
+// Returns whether the visible area holds an animated tile, so tilemap_update
+// can skip the periodic re-tile on a static map.
+//
+// The three tile layers of `map_data` are drawn bottom-up. `RPG::Tileset#flags`
+// carries the per-tile bits: 0x10 routes a tile to the above layer (MV's
+// `_isHigherTile`) and 0x80 marks an A2 "table" tile, whose middle rows are
+// redrawn from the counter row.
+bool tilemap_refresh_vx(mrb_state* M,
+                        mrb_value self,
+                        Bitmap& dst,
+                        Bitmap* above,
+                        mrb_value bitmaps,
+                        mrb_value md_v,
+                        mrb_int ox,
+                        mrb_int oy,
+                        int anim) {
+  Table& md = DataType<Table>::get(M, md_v);
+  const mrb_value flags_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@flags"));
+  Table* flags = (mrb_test(flags_v) && DATA_PTR(flags_v))
+                     ? &DataType<Table>::get(M, flags_v)
+                     : nullptr;
+
+  const int mapw = md.xsize, maph = md.ysize;
+  // Layer 3 of a VX Ace map holds region ids, which are not drawn.
+  const int layers = md.zsize < 3 ? md.zsize : 3;
+  // MV advances the tile animation every 30 ticks; ours counts frames the same
+  // way the XP path does.
+  const int frame = anim / 30;
+  bool animated = false;
+
+  int tx0 = static_cast<int>(ox) / TILE_SIZE;
+  int ty0 = static_cast<int>(oy) / TILE_SIZE;
+  if (tx0 < 0)
+    tx0 = 0;
+  if (ty0 < 0)
+    ty0 = 0;
+  int tx1 = static_cast<int>(ox + dst.width) / TILE_SIZE + 1;
+  int ty1 = static_cast<int>(oy + dst.height) / TILE_SIZE + 1;
+  if (tx1 > mapw)
+    tx1 = mapw;
+  if (ty1 > maph)
+    ty1 = maph;
+
+  VXQuad quads[8];
+  for (int layer = 0; layer < layers; ++layer) {
+    for (int ty = ty0; ty < ty1; ++ty) {
+      for (int tx = tx0; tx < tx1; ++tx) {
+        const int idx = tx + ty * mapw + layer * mapw * maph;
+        if (idx < 0 || idx >= static_cast<int>(md.data.size()))
+          continue;
+        const int id = md.data[idx];
+        if (id <= 0)
+          continue;
+        const int flag =
+            (flags && id >= 0 && id < static_cast<int>(flags->data.size()))
+                ? flags->data[id]
+                : 0;
+        const bool is_table =
+            id >= VX_TILE_ID_A2 && id < VX_TILE_ID_A3 && (flag & 0x80) != 0;
+        const int n = vx_tile_quads(id, frame, is_table, quads);
+        if (n == 0)
+          continue;
+        // The A1 page (water and waterfalls) is the animated one.
+        if (id >= VX_TILE_ID_A1 && id < VX_TILE_ID_A2)
+          animated = true;
+
+        Bitmap& target = ((flag & 0x10) != 0 && above) ? *above : dst;
+        const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
+        const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        for (int q = 0; q < n; ++q) {
+          const VXQuad& v = quads[q];
+          const mrb_value sheet_v = mrb_ary_ref(M, bitmaps, v.sheet);
+          if (!mrb_test(sheet_v) || !DATA_PTR(sheet_v))
+            continue;
+          Bitmap& sheet = DataType<Bitmap>::get(M, sheet_v);
+          blit_blend(target, dx0 + v.dx, dy0 + v.dy, sheet, v.sx, v.sy, v.w,
+                     v.h);
+        }
+      }
+    }
+  }
+  return animated;
+}
+
+// Tint the tilemap's composed canvases with its viewport's tone. The map has no
+// tone of its own, so this is purely the viewport's -- and it has to happen
+// here rather than per source tile, because a tone rescales the *drawn* result.
+// Both the ground canvas and the priority "above" canvas are covered, so a
+// tinted map tints its roofs too.
+void tilemap_apply_viewport_tone(mrb_state* M,
+                                 mrb_value self,
+                                 Bitmap& dst,
+                                 Bitmap* above) {
+  const Tone tn =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  if (!tone_is_set(tn))
+    return;
+  Bitmap* targets[2] = {&dst, above};
+  for (Bitmap* t : targets) {
+    if (!t)
+      continue;
+    for (int y = 0; y < t->height; ++y) {
+      for (int x = 0; x < t->width; ++x) {
+        int r, g, b, a;
+        bmp_read(*t, x, y, r, g, b, a);
+        if (a == 0)
+          continue;
+        apply_tone_px(r, g, b, tn);
+        bmp_put(*t, x, y, r, g, b, a);
+      }
+    }
+    t->dirty = true;
+  }
+}
+
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -3181,6 +3665,32 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
 
   const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
   const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
+
+  // RPG Maker VX / VX Ace address their nine sheets through `bitmaps` instead
+  // of XP's single `tileset` + `autotiles`, and describe each tile with the
+  // `flags` table rather than `priorities`. A tilemap that has been given any
+  // sheet is drawn the VX way; everything below stays the XP path.
+  const mrb_value bmps_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  if (vx_has_sheets(M, bmps_v) && mrb_test(md_v) && DATA_PTR(md_v)) {
+    const mrb_value anim_v =
+        mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+    const bool animated = tilemap_refresh_vx(
+        M, self, dst, above, bmps_v, md_v,
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"))),
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"))),
+        mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
+               mrb_bool_value(animated));
+    tilemap_apply_viewport_tone(M, self, dst, above);
+    dst.dirty = true;
+    if (above)
+      above->dirty = true;
+    lv_obj_invalidate(obj);
+    if (above_lv)
+      lv_obj_invalidate(above_lv);
+    return;
+  }
+
   if (!mrb_test(ts_v) || !DATA_PTR(ts_v) || !mrb_test(md_v) ||
       !DATA_PTR(md_v)) {
     lv_obj_invalidate(obj);
@@ -3277,6 +3787,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   }
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
              mrb_bool_value(any_anim));
+  tilemap_apply_viewport_tone(M, self, dst, above);
   if (above)
     above->dirty = true;
   lv_obj_invalidate(obj);
@@ -3404,6 +3915,61 @@ mrb_value tilemap_set_priorities(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@priorities"), v);
   tilemap_refresh(M, self);
   return v;
+}
+
+// RGSS2/RGSS3 `Tilemap#bitmaps`: the nine sheets (A1-A5, then B, C, D, E),
+// addressed by index. The scripts assign into it — `@tilemap.bitmaps[i] =
+// Cache.tileset(name)` — so hand back the same Array every time and let the
+// next refresh pick the change up (Spriteset_Map calls #update every frame).
+mrb_value tilemap_bitmaps(mrb_state* M, mrb_value self) {
+  mrb_value a = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  if (!mrb_array_p(a)) {
+    a = mrb_ary_new_capa(M, 9);
+    for (int i = 0; i < 9; ++i)
+      mrb_ary_push(M, a, mrb_nil_value());
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmaps"), a);
+  }
+  return a;
+}
+
+// RGSS2/RGSS3 `Tilemap#flags=`: RPG::Tileset#flags, one word per tile id
+// (0x10 = draw above the characters, 0x80 = an A2 table tile, plus the
+// passage/terrain bits the game logic reads).
+mrb_value tilemap_set_flags(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flags"), v);
+  tilemap_refresh(M, self);
+  return v;
+}
+
+// Tilemap.vx_tile_quads(tile_id, frame = 0, table = false) -> [[sheet, sx, sy,
+// dx, dy, w, h], ...]
+//
+// The VX / VX Ace tile geometry, exposed so it can be pinned by unit tests: the
+// drawing needs a display the headless test binary has not got, but the decode
+// is pure arithmetic. Answers an empty Array for an id that draws nothing.
+mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
+  mrb_int tile_id = 0, frame = 0;
+  mrb_bool table = FALSE;
+  mrb_get_args(M, "i|ib", &tile_id, &frame, &table);
+  VXQuad quads[8];
+  const int n = vx_tile_quads(static_cast<int>(tile_id),
+                              static_cast<int>(frame), table != 0, quads);
+  mrb_value out = mrb_ary_new_capa(M, n);
+  for (int i = 0; i < n; ++i) {
+    const VXQuad& q = quads[i];
+    mrb_value row = mrb_ary_new_capa(M, 7);
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sheet));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sx));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sy));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.dx));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.dy));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.w));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.h));
+    mrb_ary_push(M, out, row);
+  }
+  return out;
 }
 
 // Show/hide the tilemap, propagating to the priority "above" layer so a hidden
@@ -3822,6 +4388,10 @@ mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h) {
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
 }
 
+// Repaint the viewport's colour/flash overlay (defined with the rest of the
+// overlay below; declared here because a rect change has to resize it).
+void vp_refresh_overlay(mrb_state* M, mrb_value self);
+
 // Push the stored @rect / @ox / @oy onto the underlying LVGL objects: the outer
 // frame takes the rect's position and size (and clips to it), while the inner
 // content layer is shifted by (-ox, -oy) to scroll its sprites.
@@ -3842,6 +4412,9 @@ void vp_apply(mrb_state* M, mrb_value self) {
   lv_obj_set_pos(inner, -(mrb_fixnum_p(ox) ? mrb_fixnum(ox) : 0),
                  -(mrb_fixnum_p(oy) ? mrb_fixnum(oy) : 0));
   lv_obj_set_size(inner, w, h);
+
+  // The colour overlay covers the frame, so a resized viewport resizes it.
+  vp_refresh_overlay(M, self);
 }
 
 mrb_value vp_init(mrb_state* M, mrb_value self) {
@@ -3926,9 +4499,278 @@ mrb_value vp_set_oy(mrb_state* M, mrb_value self) {
   return mrb_fixnum_value(v);
 }
 
-// Present so the game loop can drive per-frame behaviour (flash, etc.); no
-// animated viewport effects are modelled yet, so this is a no-op.
+// ---- Viewport colour overlay ----------------------------------------------
+//
+// RGSS's `Viewport#color` is a flat colour laid over everything the viewport
+// draws, and `#flash` is the same thing on a countdown. VX / VX Ace do every
+// screen effect this way — `Spriteset_Map` fades with
+// `@viewport3.color.set(0, 0, 0, 255 - brightness)` and flashes with
+// `@viewport2.color.set(...)` — and the RPG2000 runtime wants the same
+// mechanism for its screen fade/flash.
+//
+// LVGL cannot tint a container, but it can draw one more child on top of one:
+// the overlay is a canvas the size of the viewport, filled with the effective
+// colour, held as the outer frame's last child so it composites above the
+// content layer. The z sweep in gfx_update only reorders *registered* objects,
+// which all live inside that content layer, so the overlay stays on top without
+// taking part in z ordering. This is the same "screen-sized colour at an
+// opacity" ADR 0021 measured working for the RPG2000 fade, moved into the
+// viewport so it clips, scrolls and hides with it.
+//
+// Note the overlay is refreshed from `#update`, not only on assignment: the
+// stock scripts mutate the colour *in place* (`viewport.color.set(...)`) and
+// call `viewport.update` every frame, so re-reading it per frame is what makes
+// an in-place change visible. The fill is skipped unless the effective colour
+// actually changed, so a static viewport costs one comparison a frame.
+
+// The overlay canvas, created on demand. The outer frame's only other child is
+// the content layer built by vp_init (index 0), and lv_obj_move_foreground
+// keeps the overlay last, so index 1 identifies it without keeping a pointer
+// alive across a GC.
+lv_obj_t* vp_overlay(mrb_state* M, mrb_value self, bool create) {
+  lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!outer)
+    return nullptr;
+  if (lv_obj_t* existing = lv_obj_get_child(outer, 1))
+    return existing;
+  if (!create)
+    return nullptr;
+
+  lv_obj_t* ov = lv_canvas_create(outer);
+  lv_obj_remove_style_all(ov);
+  lv_obj_set_pos(ov, 0, 0);
+  // Never take pointer events, and always draw last among the outer frame's
+  // children (the content layer is the only other one).
+  lv_obj_remove_flag(ov, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_move_foreground(ov);
+  return ov;
+}
+
+// The colour the overlay should show: the viewport's `color`, with the flash
+// colour composited over it (src-over) while a flash is running. RGSS fades a
+// flash out linearly over its duration.
+Color vp_effective_color(mrb_state* M, mrb_value self) {
+  Color out{0, 0, 0, 0};
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    out = DataType<Color>::get(M, color_v);
+
+  const mrb_value count_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value flash_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const mrb_int count = mrb_fixnum_p(count_v) ? mrb_fixnum(count_v) : 0;
+  if (count > 0 && mrb_test(flash_v) && DATA_PTR(flash_v)) {
+    const mrb_value dur_v =
+        mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
+    const mrb_int duration = mrb_fixnum_p(dur_v) ? mrb_fixnum(dur_v) : count;
+    const Color f = DataType<Color>::get(M, flash_v);
+    const double fade = duration > 0 ? (double)count / (double)duration : 1.0;
+    const double a = (f.alpha / 255.0) * fade;
+    out.red = f.red * a + out.red * (1.0 - a);
+    out.green = f.green * a + out.green * (1.0 - a);
+    out.blue = f.blue * a + out.blue * (1.0 - a);
+    out.alpha = 255.0 * a + out.alpha * (1.0 - a);
+  }
+  return out;
+}
+
+// Repaint the overlay from the current colour/flash state. Allocates (or
+// resizes) its buffer to the viewport rect, and hides it entirely when the
+// effective colour is transparent so a viewport with no effect draws nothing
+// extra.
+void vp_refresh_overlay(mrb_state* M, mrb_value self) {
+  lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!outer)
+    return;
+  const Color c = vp_effective_color(M, self);
+  const bool visible = c.alpha > 0.0;
+  lv_obj_t* ov = vp_overlay(M, self, visible);
+  if (!ov)
+    return;
+  if (!visible) {
+    lv_obj_add_flag(ov, LV_OBJ_FLAG_HIDDEN);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"), mrb_nil_value());
+    return;
+  }
+
+  Rect& r =
+      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  const mrb_int w = std::max<mrb_int>(r.width, 1);
+  const mrb_int h = std::max<mrb_int>(r.height, 1);
+
+  // Skip the fill when neither the colour nor the size changed since the last
+  // one: #update runs this every frame. The channels are 0..255, so packing
+  // them with the size into two doubles stays exact and allocates nothing.
+  const double color_key =
+      ((std::floor(c.red) * 256.0 + std::floor(c.green)) * 256.0 +
+       std::floor(c.blue)) *
+          256.0 +
+      std::floor(c.alpha);
+  const double size_key = (double)w * 65536.0 + (double)h;
+  const mrb_value prev_color =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_key"));
+  const mrb_value prev_size =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_size"));
+  if (mrb_float_p(prev_color) && mrb_float(prev_color) == color_key &&
+      mrb_float_p(prev_size) && mrb_float(prev_size) == size_key) {
+    lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_bmp"));
+  mrb_value bmp_v = cur;
+  if (mrb_nil_p(cur) || DataType<Bitmap>::get(M, cur).width != w ||
+      DataType<Bitmap>::get(M, cur).height != h) {
+    RClass* bmp_class =
+        mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+    bmp_v =
+        DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_bmp"), bmp_v);
+    Bitmap& nb = DataType<Bitmap>::get(M, bmp_v);
+    lv_canvas_set_buffer(ov, nb.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_set_size(ov, w, h);
+  }
+
+  Bitmap& b = DataType<Bitmap>::get(M, bmp_v);
+  for (mrb_int y = 0; y < h; ++y)
+    for (mrb_int x = 0; x < w; ++x)
+      bmp_put(b, x, y, c.red, c.green, c.blue, c.alpha);
+  b.dirty = true;
+  lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(ov);
+  lv_obj_invalidate(ov);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"),
+             mrb_float_value(M, color_key));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_size"),
+             mrb_float_value(M, size_key));
+}
+
+// Re-composite every display object that lives in this viewport, so a tone
+// change reaches what is already on screen. Each object bakes the viewport's
+// tone into its own buffer when it composites (see viewport_tone), and only
+// re-composites when something it owns changes -- so the viewport has to poke
+// them. The z-order registry is the list of live display objects, and each one
+// records the viewport it was created in.
+void vp_refresh_children(mrb_state* M, mrb_value self) {
+  RClass* rgss = mrb_module_get(M, "RGSS");
+  RClass* spr_class = mrb_class_get_under(M, rgss, "Sprite");
+  RClass* plane_class = mrb_class_get_under(M, rgss, "Plane");
+  RClass* tilemap_class = mrb_class_get_under(M, rgss, "Tilemap");
+  const mrb_value objs = zorder_objs(M);
+  for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
+    const mrb_value v = RARRAY_PTR(objs)[i];
+    if (!DATA_PTR(v))
+      continue;
+    const mrb_value vp = mrb_iv_get(M, v, mrb_intern_lit(M, "@viewport"));
+    if (!mrb_obj_equal(M, vp, self))
+      continue;
+    if (mrb_obj_is_kind_of(M, v, spr_class))
+      spr_bind_display(M, v, reinterpret_cast<lv_obj_t*>(DATA_PTR(v)));
+    else if (mrb_obj_is_kind_of(M, v, plane_class))
+      plane_retile(M, v);
+    else if (mrb_obj_is_kind_of(M, v, tilemap_class))
+      tilemap_refresh(M, v);
+  }
+}
+
+// The tone key the child refresh is gated on: the scripts mutate the Tone in
+// place (`viewport.tone.set(...)`) and call #update every frame, so the value
+// is re-read per frame and the (expensive) re-composite only runs when it
+// actually moved. Channels are -255..255 and gray 0..255, so this packs
+// exactly.
+double vp_tone_key(const Tone& t) {
+  return ((std::floor(t.red) + 255.0) * 512.0 + (std::floor(t.green) + 255.0)) *
+             512.0 * 512.0 +
+         (std::floor(t.blue) + 255.0) * 512.0 + std::floor(t.gray);
+}
+
+// Re-composite this viewport's contents when its tone changed since the last
+// check. Returns whether anything was refreshed.
+bool vp_sync_tone(mrb_state* M, mrb_value self) {
+  const Tone tn = viewport_tone(M, self);
+  const double key = vp_tone_key(tn);
+  const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
+  if (mrb_float_p(prev) && mrb_float(prev) == key)
+    return false;
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), mrb_float_value(M, key));
+  vp_refresh_children(M, self);
+  return true;
+}
+
+// RGSS Viewport#tone: unlike #color (a layer over the viewport's contents), a
+// tone *rescales what is drawn* -- desaturate toward luminance, then offset
+// each channel -- so it cannot be an overlay. Each display object in the
+// viewport folds it into its own composite instead (see viewport_tone), and
+// this side makes sure they redo that when it changes.
+mrb_value vp_tone(mrb_state* M, mrb_value self) {
+  mrb_value t = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  if (mrb_nil_p(t)) {
+    const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
+                              mrb_fixnum_value(0), mrb_fixnum_value(0)};
+    t = mrb_obj_new(
+        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Tone"), 4, args);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  }
+  return t;
+}
+
+mrb_value vp_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value t;
+  mrb_get_args(M, "o", &t);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  vp_sync_tone(M, self);
+  return t;
+}
+
+mrb_value vp_color(mrb_state* M, mrb_value self) {
+  mrb_value c = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  if (mrb_nil_p(c)) {
+    const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
+                              mrb_fixnum_value(0), mrb_fixnum_value(0)};
+    c = mrb_obj_new(
+        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+  }
+  return c;
+}
+
+mrb_value vp_set_color(mrb_state* M, mrb_value self) {
+  mrb_value c;
+  mrb_get_args(M, "o", &c);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+  vp_refresh_overlay(M, self);
+  return c;
+}
+
+// Viewport#flash(color, duration): show `color` over the viewport, fading out
+// over `duration` frames of #update. A nil colour is RGSS's "empty" flash,
+// which for a viewport means no overlay at all.
+mrb_value vp_flash(mrb_state* M, mrb_value self) {
+  mrb_value color;
+  mrb_int duration;
+  mrb_get_args(M, "oi", &color, &duration);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(mrb_nil_p(color) ? 0 : duration));
+  vp_refresh_overlay(M, self);
+  return mrb_nil_value();
+}
+
+// One frame: advance a running flash and repaint the overlay from the current
+// colour (which the scripts mutate in place).
 mrb_value vp_update(mrb_state* M, mrb_value self) {
+  const mrb_value count_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  if (mrb_fixnum_p(count_v) && mrb_fixnum(count_v) > 0)
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+               mrb_fixnum_value(mrb_fixnum(count_v) - 1));
+  vp_refresh_overlay(M, self);
+  // The tone is mutated in place by the scripts, so re-read it per frame; the
+  // re-composite it triggers is skipped unless the value actually moved.
+  vp_sync_tone(M, self);
   return mrb_nil_value();
 }
 
@@ -4166,6 +5008,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, vp, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, vp, "update", vp_update, MRB_ARGS_NONE());
+  // RGSS2/RGSS3 do every screen effect through the viewport: a flat colour over
+  // everything it draws, and a timed flash. See vp_refresh_overlay.
+  mrb_define_method(M, vp, "color", vp_color, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "color=", vp_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "tone", vp_tone, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "tone=", vp_set_tone, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "flash", vp_flash, MRB_ARGS_REQ(2));
   mrb_define_method(M, vp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 
@@ -4221,6 +5070,12 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "priorities=", tilemap_set_priorities,
                     MRB_ARGS_REQ(1));
+  // RGSS2 / RGSS3 (VX, VX Ace): nine sheets addressed by index plus the tileset
+  // flags table, in place of XP's single tileset + autotiles + priorities.
+  mrb_define_method(M, tilemap, "bitmaps", tilemap_bitmaps, MRB_ARGS_NONE());
+  mrb_define_method(M, tilemap, "flags=", tilemap_set_flags, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, tilemap, "vx_tile_quads", tilemap_vx_tile_quads,
+                          MRB_ARGS_ARG(1, 2));
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
@@ -4263,6 +5118,11 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
+  // Decode from bytes already in hand — how an asset packed into an encrypted
+  // RGSSAD archive is loaded (mrblib/lib.rb's Bitmap#initialize falls back to
+  // it when no loose file matches).
+  mrb_define_method(M, bmp, "_init_memory", bmp_init_memory,
+                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
@@ -4390,6 +5250,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
+  // RGSS2+: the rendered screen as a Bitmap. Graphics.freeze/transition are
+  // built on it (mrblib/lib.rb), and RGSS.effect_probe measures with it.
+  mrb_define_module_function(M, gfx, "snap_to_bitmap", gfx_snap_to_bitmap,
+                             MRB_ARGS_NONE());
 
   profiler_init(M);
 
