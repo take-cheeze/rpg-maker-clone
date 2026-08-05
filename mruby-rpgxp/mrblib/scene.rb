@@ -517,7 +517,9 @@ class RPGXP
         return nil unless actor
         name = actor.character_name
         return nil if name.nil? || name.empty?
-        Bitmap.new "Graphics/Characters/#{name}"
+        bmp = Bitmap.new "Graphics/Characters/#{name}"
+        hue_shift bmp, actor.character_hue
+        bmp
       rescue StandardError => e
         $stderr.puts "[RGSS] leader charset load failed, using marker: #{e.message}"
         nil
@@ -565,7 +567,13 @@ class RPGXP
           ch.walk_anime = page.walk_anime.nil? ? true : (page.walk_anime ? true : false)
           ch.step_anime = page.step_anime ? true : false
           g = page.graphic
-          ch.set_graphic(g.character_name, g.character_hue, g.direction, g.pattern) if g
+          if g
+            ch.set_graphic(g.character_name, g.character_hue, g.direction, g.pattern)
+            # RMXP's Game_Event#refresh takes these off the page's graphic too;
+            # a move route's Change Opacity / Change Blending then overrides them.
+            ch.opacity = g.opacity || 255
+            ch.blend_type = g.blend_type || 0
+          end
           move_type = page.move_type || 0
           route = Game::MoveRoute.from_page(page.move_route) if move_type == Game::MoveType::CUSTOM
         end
@@ -1166,6 +1174,9 @@ class RPGXP
         if name && !name.empty?
           charset = load_map_graphic("Characters", name)
           return nil unless charset
+          # RMXP caches character graphics per (name, hue); each event sprite
+          # owns its bitmap here, so rotate that copy in place.
+          hue_shift charset, g.character_hue
           w = Game::CharSet.cell_width(charset)
           h = Game::CharSet.cell_height(charset)
           new_event_sprite(Bitmap.new(w, h), charset, w, h)
@@ -1179,7 +1190,18 @@ class RPGXP
         sprite = Sprite.new
         sprite.bitmap = bitmap
         { sprite: sprite, bitmap: bitmap, charset: charset, w: w, h: h,
-          frame: nil }
+          frame: nil, opacity: nil, blend_type: nil }
+      end
+
+      # Rotate a character graphic's hue in place, as RPG::Cache.character does
+      # for a page (or an actor) that asked for a hue. A zero hue is a no-op,
+      # and a runtime without the operation must not cost us the sprite.
+      def hue_shift(bitmap, hue)
+        hue = hue.to_i
+        return if bitmap.nil? || hue % 360 == 0
+        bitmap.hue_change hue
+      rescue StandardError => e
+        $stderr.puts "[RGSS] hue #{hue} not applied: #{e.message}"
       end
 
       # Character stacking, as RMXP's Sprite_Character#update does it: a
@@ -1330,6 +1352,16 @@ class RPGXP
           s[:sprite].x = ch.pixel_x(TILE) - cam_x - (s[:w] - TILE) / 2
           s[:sprite].y = sy - (s[:h] - TILE)
           s[:sprite].z = character_z(sy, ch.always_on_top)
+          # Page graphic (or move-route) opacity and blending. Written only when
+          # they change: each one reaches into the native sprite.
+          if s[:opacity] != ch.opacity
+            s[:opacity] = ch.opacity
+            s[:sprite].opacity = ch.opacity
+          end
+          if s[:blend_type] != ch.blend_type
+            s[:blend_type] = ch.blend_type
+            s[:sprite].blend_type = ch.blend_type
+          end
           next unless s[:charset]
           frame = [ch.direction, ch.pattern]
           next if frame == s[:frame]
