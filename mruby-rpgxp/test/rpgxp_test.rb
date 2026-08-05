@@ -1388,10 +1388,6 @@ class FakeScriptDB
   def save_object(obj, path); @store[path] = obj; end
 end
 
-assert "ScriptHost.available? is true (eval present)" do
-  assert_true RPGXP::ScriptHost.available?
-end
-
 assert "ScriptHost.run evaluates sections in order and sets $RGSS_SCRIPTS" do
   db = FakeScriptDB.new([
     ["Setup", "$rgss_host_probe = 41"],
@@ -1439,16 +1435,21 @@ assert "Kernel#sprintf / #format / String#% are available for the script host" d
   assert_equal "  hi", ("%4s" % "hi")
 end
 
-# The script-host driver runs the game's blocking Main inside a Fiber (ADR 0023)
-# and ends the game when a script calls `exit` (raised as a catchable
-# SystemExit). Confirm both gems are linked into the build — without invoking
-# `exit`, which would terminate the test runner.
-assert "Fiber and Kernel#exit / SystemExit are available for the script host" do
+# The script host evals the game's scripts, runs their blocking Main inside a
+# Fiber (ADR 0023) and ends the game when one calls `exit` (raised as a catchable
+# SystemExit). Confirm all three gems are linked into the build — without
+# invoking `exit`, which would terminate the test runner.
+assert "eval, Fiber and Kernel#exit / SystemExit are available for the script host" do
+  # mruby-eval is what makes the whole host possible; script_host.rb calls
+  # Kernel#eval unconditionally because this gem is a hard dependency
+  # (mruby-rpgxp/mrbgem.rake), so its absence has to fail here rather than at the
+  # first booted game.
+  assert_true Kernel.method_defined?(:eval), "Kernel#eval missing (mruby-eval)"
   assert_true Object.const_defined?(:Fiber), "Fiber missing (mruby-fiber)"
   # mruby-exit defines Kernel#exit (a private method) alongside SystemExit, so the
   # constant's presence proves the gem is linked. mruby's Module has no
-  # #private_method_defined? (it is CRuby-only, as script_host.rb notes), so we do
-  # not reflect on the private method here.
+  # #private_method_defined? (it is CRuby-only), so we do not reflect on the
+  # private method here.
   assert_true Object.const_defined?(:SystemExit),
               "SystemExit / Kernel#exit missing (mruby-exit)"
   # A Fiber round-trips a value through yield/resume, the mechanism the driver

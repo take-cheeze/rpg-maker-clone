@@ -1,9 +1,10 @@
-# RPG Maker XP scenes: the title screen and the first walkable map scene, plus a
-# small XP-styled window helper. The title reproduces the default RMXP flow
-# (title graphic + New Game / Continue / Shutdown) directly against the database;
-# the map scene renders the three tile layers as placeholder colour blocks (real
-# tileset/autotile blitting is future work, mirroring the RPG2000 side) and lets
-# the party leader walk with tileset collision and a follow camera.
+# RPG Maker XP scenes: the title screen and the walkable map scene, plus a small
+# XP-styled window helper. The title reproduces the default RMXP flow (title
+# graphic + New Game / Continue / Shutdown) directly against the database; the
+# map scene draws the three tile layers through the native RGSS::Tilemap (the
+# project's real tileset and autotiles), the party leader and the events, its
+# pictures and its screen tone, and lets the leader walk with tileset collision
+# and a follow camera.
 
 class RPGXP
   # A compact RMXP-style window: a Viewport that clips a skin layer, a selection

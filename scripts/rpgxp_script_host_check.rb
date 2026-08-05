@@ -94,16 +94,11 @@ class Checker
     end
     puts "  decoded #{sections.size} script sections (e.g. #{sections.first[0].inspect})"
 
-    check_eval_available
     check_driving_flag
     check_kernel_builtins(db)
     check_eval_subset(sections)
   rescue => ex
     fail "#{dir}: #{ex.class}: #{ex.message}"
-  end
-
-  def check_eval_available
-    expect(RPGXP::ScriptHost.available?, "ScriptHost.available? is false (no eval)")
   end
 
   # The per-frame Fiber driver reads ScriptHost.driving? from the wrapped
