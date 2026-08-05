@@ -2491,11 +2491,30 @@ module Game
   # The bit values follow liblcf's `TroopPageCondition::Flags` declaration
   # order (switch_a, switch_b, variable, turn, fatigue, enemy_hp, actor_hp,
   # turn_enemy, turn_actor, command_actor) packed LSB-first — the same
-  # convention Game::EventPage above uses for map pages, which is validated
-  # against real games. Only the sub-conditions the battle context can answer
-  # are tested; one it cannot answer (see `ctx`) is treated as unmet rather
-  # than silently passing, so a page never fires on a condition we did not
-  # actually check.
+  # convention Game::EventPage above uses for map pages.
+  #
+  # Four of those bits are confirmed against real bytes (Nepheshel, 3265 troop
+  # pages, 2819 of them conditional — `ruby scripts/analyze_game.rb --troops`):
+  #
+  #   * bit 0 SWITCH_A (2650 pages) and bit 1 SWITCH_B (468) — bit 1 only ever
+  #     appears together with bit 0, as `flags=0x003`, and those pages carry a
+  #     *pair* of plausible switch ids (11/5, 12/6, 13/7), which is what two
+  #     switch conditions look like and not what any other field would.
+  #   * bit 3 TURN (165) — 156 pages are base 0 / multiple 0 (fire on turn 0,
+  #     the opening page) and 9 are base 0 / multiple 1 (fire every turn),
+  #     exactly the two shapes #check_turns produces.
+  #   * bit 5 ENEMY_HP (4) — every one carries a non-default `0..30%` window
+  #     ("the boss enrages below 30% HP"). A default window would prove nothing;
+  #     a deliberate one could not survive a wrong bit.
+  #
+  # Bits 2 (VARIABLE), 4 (FATIGUE), 6 (ACTOR_HP) and 7-9 (the per-battler turn
+  # and command tests) are unused by that game, so their positions rest on the
+  # liblcf declaration order alone. What the data does establish is that the
+  # order is not shifted: a shift would have moved the confirmed four.
+  #
+  # Only the sub-conditions the battle context can answer are tested; one it
+  # cannot answer (see `ctx`) is treated as unmet rather than silently passing,
+  # so a page never fires on a condition we did not actually check.
   module BattlePage
     SWITCH_A      = 0x001
     SWITCH_B      = 0x002

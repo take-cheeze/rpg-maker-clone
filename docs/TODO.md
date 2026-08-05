@@ -422,7 +422,12 @@ The work below is roughly ordered by the critical path to a walkable game
   (13110 / 13120 / 13130), **Show Hidden Monster** (13150), **Change Battle
   Background** (13210), the battle **Show Battle Animation** (13260),
   **Conditional Branch** (13310 with its `_B` markers) and **Terminate Battle**
-  (13410). Messages from a page are shown in a battle panel. Still TODO here:
+  (13410). Messages from a page are shown in a battle panel. The flag bits are
+  **validated against real bytes** — `ruby scripts/analyze_game.rb --troops
+  <game>` reports a game's troop pages, and Nepheshel's 2819 conditional pages
+  confirm the `switch_a` / `switch_b` / `turn` / `enemy_hp` bits and show that
+  every battle-only command it uses has a handler (see the comment on
+  `Game::BattlePage` for what each bit is confirmed by). Still TODO here:
   the per-battler turn counters and the party-fatigue / chosen-command
   conditions (pages gated on those deliberately do not fire rather than firing
   unchecked), and video playback for Play Movie (no decoder is linked in; the
