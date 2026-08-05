@@ -1271,11 +1271,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         draw a full-screen quad, and assert only the right half survives — which
         is the same shape the window masking uses, and which came out green on
         both halves with the stubs.
+      - ✅ **Audio.** rmmz's `AudioManager` exposes the same high-level surface
+        MV's bridge overrides, so MZ installs `MV::AUDIO_BRIDGE_JS` verbatim and
+        drains the same op queue into `RGSS::Audio` (`MZ#pump_audio`); the whole
+        reason MZ was silent was that nobody installed it. One MZ-only addition
+        was needed on top (`MZ::AUDIO_BRIDGE_EXTRA_JS`): `Scene_Boot.start` calls
+        `SoundManager.preloadImportantSounds`, which loads the system SEs through
+        `AudioManager.loadStaticSe` -> `createBuffer` -> `new WebAudio`, and MZ's
+        `WebAudio` fetches with **`fetch`** (MV used XMLHttpRequest) — a global
+        this host does not provide, so the boot died in `Scene_Boot.start` the
+        moment the bed named a system sound. Both entry points are now inert;
+        playback still rides the bridged `playSe`. The bed ships an authored
+        `audio/se/Beep.wav` wired to the UI sounds, and `--mz_audio_test` plays
+        one SE on the map, which `mz_boot_check.bash` asserts as `[MZ-AUDIO]`.
+        (Worth noting the engine queues its own ops too — New Game's fade-out
+        emits `bgm_fade`/`bgs_fade`/`me_fade` — so the path is exercised even
+        without the probe.)
       - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
         back without it, and `getExtension` returns null so the fallback is what
-        runs);
-        texture Y-flip and uniform-introspection polish as real content exercises
-        them; MZ's audio bridge (MV routes `AudioManager` to `RGSS::Audio`; MZ
-        still runs on the silent Web Audio stub, so the bed ships no sounds), and
-        a `.woff` font path (the canvas text loader finds only `.ttf`/`.otf` in a
-        game's `fonts/`, and MZ games ship `.woff`, so their text draws blank).
+        runs); texture Y-flip and uniform-introspection polish as real content
+        exercises them; and a `.woff` font path — the canvas text loader finds
+        only `.ttf`/`.otf` in a game's `fonts/` and MZ games ship `.woff`, so a
+        real MZ game's text draws blank. That is the biggest visible gap left.
