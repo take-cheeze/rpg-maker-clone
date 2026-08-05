@@ -431,6 +431,31 @@ assert "Kernel#Integer is available for the script host" do
   assert_equal 1, [[Integer(-5), 1].max, 999999].min
 end
 
+# The Math module, from mruby-math. `Game_Character#jump` is stock RMXP and
+# sizes its arc with `Math.sqrt(x_plus * x_plus + y_plus * y_plus).round`, so the
+# first jump in any game — an event's move route, a "Jump" command — needs it.
+# Its absence surfaced only in a booted game (Pray for You's opening jumps an
+# event), which is what this test exists to move forward.
+assert "Math is available for the script host" do
+  assert_true Object.const_defined?(:Math), "Math missing (mruby-math)"
+  # The stock jump, for a two-tile diagonal hop.
+  assert_equal 3, Math.sqrt(2 * 2 + 2 * 2).round
+  assert_equal 1, Math.sqrt(1 * 1 + 0 * 0).round
+  assert_equal 0, Math.sqrt(0).round
+end
+
+# Time, from mruby-time. The stock `Scene_Load` seeds its "newest save" search
+# with `Time.at(0)` and `Window_SaveFile` stamps each slot with `File#mtime`,
+# which answers a Time — so every game's save and load screens need the gem. It
+# is only a *test* dependency of mruby-io, so it does not arrive with it.
+assert "Time is available for the script host" do
+  assert_true Object.const_defined?(:Time), "Time missing (mruby-time)"
+  epoch = Time.at(0)
+  assert_equal 0, epoch.to_i
+  # The comparison Scene_Load makes against each slot's mtime.
+  assert_true Time.at(1) > epoch
+end
+
 assert "eval, Fiber and Kernel#exit / SystemExit are available for the script host" do
   # mruby-eval is what makes the whole host possible; script_host.rb calls
   # Kernel#eval unconditionally because this gem is a hard dependency

@@ -255,6 +255,44 @@ so it stayed green throughout. That harness now loads the real
 effects, the animation, the weather and the cache against fakes for the native
 classes only.
 
+### 0i. `Math` ✅ (the first jump on a game's own map)
+
+With the input path live, both beds walk their own maps — the test bed
+`start=9,7 end=9,8 moved=true`, *Pray for You* `start=1,0 end=12,14` — and the
+released game's opening then stopped here:
+
+```
+[RGSS] script host: section "Main" raised NameError: uninitialized constant Game_Character::Math
+[RGSS] script host:   from Game_Character 3:328:in jump
+[RGSS] script host:   from map_light:752:in move_type_custom
+[RGSS] script host:   from Game_Character 1:117:in force_move_route
+[RGSS] script host:   from Interpreter 5:201:in command_209
+```
+
+`Game_Character#jump` is **stock RMXP** — it sizes its arc with
+`Math.sqrt(x_plus * x_plus + y_plus * y_plus).round` — so this is not a
+*Pray for You* peculiarity: every game reaches it the first time an event, a move
+route or a Set Move Route command jumps. mruby keeps `Math` in its own core gem
+(`mrbgems/math.gembox`), which was not in the build; added to `build_config.rb`
+with the dependency edge in `mrbgem.rake`, and an availability test in
+`mruby-rpgxp/test/rpgxp_test.rb`.
+
+Worth noting *how* it hid: the CRuby harness cannot catch a missing mruby core
+gem, because CRuby has `Math`. Every gap of this family (`sprintf`, `Integer()`,
+`rand`, now `Math`) is only ever found by a booted game, which is the argument
+for the boot check getting a game as far as possible rather than asserting early.
+
+**`Time` was fixed in the same change, without waiting for its report.** Both
+script bundles were then swept for the standard library they call, which turned
+up one more absence: stock `Scene_Load` seeds its newest-save search with
+`Time.at(0)` and `Window_SaveFile` stamps each slot with `File#mtime` — and
+mruby-io's `File#mtime` answers a `Time`, while `mruby-time` is only a *test*
+dependency of mruby-io and so was not linked. Every game's save and load screens
+need it. The rest of the sweep came back clean: `Marshal` (mruby-marshal),
+`File`/`FileTest` (mruby-io) and `Regexp` (mruby-onig-regexp) are all linked, and
+neither bundle touches `Dir`, `Struct`, `Set`, `ObjectSpace` or the metaprogramming
+gems.
+
 ### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,

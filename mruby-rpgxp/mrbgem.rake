@@ -36,6 +36,13 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # the full game build working. See the "mruby stdlib methods live in core
   # *-ext mrbgems" note in AGENTS.md.
   add_dependency 'mruby-numeric-ext'
+  # Math.sqrt, which the *stock* Game_Character#jump measures its jump distance
+  # with — so every RMXP game reaches it the first time an event or a move route
+  # jumps, not just the ones with unusual scripts. Same ordering reason.
+  add_dependency 'mruby-math'
+  # Time, which the stock save/load screens compare slot timestamps with
+  # (`Time.at(0)`, `File#mtime`). Same ordering reason.
+  add_dependency 'mruby-time'
 
   # Load order matters: lib.rb defines the RPGXP class and its WIDTH/HEIGHT/TILE
   # constants and pulls RGSS into Object, which the sources after it read at
