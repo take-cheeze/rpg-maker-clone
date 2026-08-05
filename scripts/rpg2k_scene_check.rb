@@ -503,6 +503,33 @@ check 'player-touch (trigger 1): walking into an event runs it, no move' do
   eq [0, 0], [st.x, st.y], 'player did not step onto the event'
 end
 
+check 'event-touch (trigger 2) also fires when the player walks into it' do
+  # RPG_RT tests both touch triggers as one set on the player's own move — so a
+  # trigger-2 event fires from either side, which is how Nepheshel's roaming
+  # monsters (9,637 trigger-2 pages) start a fight when you walk into them.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 2) # event touch, standing still
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[6], 'walking into an event-touch event ran it'
+  eq [0, 0], [st.x, st.y], 'and the party did not step onto it'
+end
+
+check 'an action event is not set off by walking into it' do
+  # The pairing is only the two touch triggers: trigger 0 still needs the button.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok !st.switches[6], 'an action event ignores being walked into'
+end
+
 check 'event-touch (trigger 2): an event walking into the player runs it' do
   ic = Game::Interpreter::Cmd
   pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8)

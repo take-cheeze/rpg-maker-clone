@@ -200,8 +200,11 @@ The work below is roughly ordered by the critical path to a walkable game
   item menu. Writing a value already held does not count, so a parallel process
   setting the same flag every frame costs a sweep rather than a rebuild.
   All five start triggers run: **action button**
-  (0), **player touch** (1, walking into the event), **event touch** (2, the
-  event walking into the player), **auto-start** (3) and **parallel** (4, a
+  (0), **player touch** (1, the party walking into the event), **event touch**
+  (2, which fires from **either** side — the event walking into the party *or*
+  the party walking into the event, because RPG_RT tests the two touch triggers
+  as one set on every player-side path while the event side tests only trigger 2),
+  **auto-start** (3) and **parallel** (4, a
   background interpreter per event, driven by `Scene::Map#step_parallels`). A
   page's autonomous move type / custom move route also drives the event at
   runtime (see Movement & collision). The interpreter's *Set Move Route* (Move
