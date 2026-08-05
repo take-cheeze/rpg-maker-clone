@@ -178,9 +178,64 @@ class RPGXP
         alias_method :_update_native, :update
         def update
           _update_native
-          Fiber.yield if ::RPGXP::ScriptHost.driving?
+          return unless ::RPGXP::ScriptHost.driving?
+          ::RPGXP::ScriptHost.watch_frame
+          Fiber.yield
         end
       end
+    end
+
+    # Frames the host has driven, and the last scene it reported.
+    @frames = 0
+    @scene_name = nil
+
+    # Called once per driven frame, from the wrapper above. Two jobs, both about
+    # being able to *see* what a game's own engine is doing from a log:
+    #
+    #   * report each scene the game moves to. `$scene` is the game's own global
+    #     (RGSS's Main loops `$scene.main while $scene != nil`), so this reads
+    #     what it already publishes and modifies nothing. The marker is the
+    #     script-host twin of the built-in flow's [RPGXP-MAP].
+    #   * with --rgss_host_new_game, tap the confirm key so a headless run gets
+    #     off the game's title screen without a keyboard — the script-host twin
+    #     of --rpgxp_new_game (which drives the *built-in* title instead).
+    def self.watch_frame
+      @frames += 1
+      report_scene
+      confirm_tap if auto_new_game?
+    end
+
+    def self.report_scene
+      scene = $scene
+      return if scene.nil?
+      name = scene.class.to_s
+      return if name == @scene_name
+      @scene_name = name
+      $stderr.puts "[RPGXP-HOST-SCENE] #{name}"
+    end
+
+    # A tap a second in, repeated every second: pushed through the same buffer
+    # the SDL backend feeds, so the game's own Input.update applies it exactly as
+    # it would a real key. Repeated because a game's first screen is its own
+    # business — a notice, a language picker, a title menu whose first item is
+    # not New Game — and one press cannot know which.
+    CONFIRM_EVERY = 60
+    CONFIRM_HOLD = 4
+
+    def self.confirm_tap
+      phase = @frames % CONFIRM_EVERY
+      return if @frames < CONFIRM_EVERY
+      RGSS::Input._push(RGSS::Input::C, true) if phase == 0
+      RGSS::Input._push(RGSS::Input::C, false) if phase == CONFIRM_HOLD
+    end
+
+    # `--rgss_host_new_game`, published by src/main.cxx as a constant (this mruby
+    # build has no ENV). Read through its own rescue: the constant is absent
+    # under the CRuby harnesses, and an undefined constant raises here.
+    def self.auto_new_game?
+      RGSS_HOST_NEW_GAME
+    rescue StandardError
+      false
     end
   end
 end

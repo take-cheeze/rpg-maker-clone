@@ -138,6 +138,33 @@ those formats reports no other mismatch, and the calls it does resolve include
 the other overloaded ones (`fill_rect`, `gradient_fill_rect`, `blt`,
 `stretch_blt`), which were already right.
 
+### 0d. `Input.trigger?` in a game's own loop ✅ (nothing a game could be *played* with)
+
+An RGSS scene loop reads input right after refreshing it:
+
+```ruby
+loop { Graphics.update; Input.update; update; break if $scene != self }
+```
+
+This engine drained the backends' buffered key transitions inside
+`Graphics.update`, and `Input.update` expires the previous frame's triggers — so
+every key applied on the first line was wiped by the second before the scene read
+it on the third. `Input.trigger?` was **permanently false** for a game running
+its own engine: no New Game on its title screen, no message advance, no menu.
+Only held state (`press?`, and so `dir4`/`dir8` movement) worked.
+
+RGSS's contract is that `Input.update` is what refreshes input, so the drain
+moved there (`RGSS::Input._poll`, native): expire the old triggers, apply this
+frame's transitions, then run the repeat bookkeeping. The built-in RPG2000/XP
+flows and the MV/MZ bridges call `Input.update` once a frame too, so their timing
+is unchanged.
+
+`--rgss_host_new_game` then makes a headless run *play*: it taps confirm through
+the same buffer the SDL backend feeds, and every scene the game reaches is logged
+as `[RPGXP-HOST-SCENE]` (read from the game's own `$scene` global). Reaching a
+second scene is what `scripts/rpgxp_boot_check.bash` now asserts — the proof that
+a game's engine took a keypress and acted on it, rather than merely drawing.
+
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at
 the end of this document), and `scripts/rpgxp_script_host_check.rb` *stubbed*

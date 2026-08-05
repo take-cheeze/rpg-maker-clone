@@ -491,6 +491,61 @@ FakeSE = Struct.new(:name, :volume, :pitch)
 FakeAnimation = Struct.new(:frame_max, :animation_name, :animation_hue,
                            :position, :frames, :timings)
 
+# Project-independent: the per-frame watch the driver installs. It reports each
+# scene a game moves to — read from the game's own `$scene`, which RGSS's Main
+# loops on — as the marker scripts/rpgxp_boot_check.bash asserts a game got past
+# its title with. Reported once per scene, not once per frame.
+def check_scene_reporting
+  errors = 0
+  check = lambda do |cond, msg|
+    next 0 if cond
+    warn "  FAIL #{msg}"
+    1
+  end
+
+  # Stand-ins for a game's own scene classes.
+  Object.const_set(:HostCheckSceneTitle, Class.new) unless Object.const_defined?(:HostCheckSceneTitle)
+  Object.const_set(:HostCheckSceneMap, Class.new) unless Object.const_defined?(:HostCheckSceneMap)
+
+  lines = []
+  previous_scene = $scene
+  captured = $stderr
+  begin
+    $stderr = FakeErr.new(lines)
+    $scene = HostCheckSceneTitle.new
+    3.times { RPGXP::ScriptHost.watch_frame }
+    $scene = HostCheckSceneMap.new
+    RPGXP::ScriptHost.watch_frame
+    $scene = nil
+    RPGXP::ScriptHost.watch_frame
+  ensure
+    $stderr = captured
+    $scene = previous_scene
+  end
+
+  markers = lines.grep(/\[RPGXP-HOST-SCENE\]/)
+  errors += check.call(markers.size == 2,
+                       "expected one marker per scene, got #{markers.inspect}")
+  errors += check.call(markers[0].to_s.include?("HostCheckSceneTitle") &&
+                       markers[1].to_s.include?("HostCheckSceneMap"),
+                       "the markers do not name the scenes (#{markers.inspect})")
+  # Without the native --rgss_host_new_game constant nothing is synthesised: a
+  # normal boot must not press keys at the player.
+  errors += check.call(RPGXP::ScriptHost.auto_new_game? == false,
+                       "auto_new_game? is on without the flag")
+  puts "  [RPGXP-HOST-SCENE] is reported once per scene the game reaches" if errors.zero?
+  errors
+end
+
+# Collects what the host writes to stderr.
+class FakeErr
+  def initialize(lines); @lines = lines; end
+  def puts(*args); args.flatten.each { |a| @lines << a.to_s }; end
+  def write(s); @lines << s.to_s; end
+  def print(*args); args.each { |a| @lines << a.to_s }; end
+  def flush; end
+end
+
 # Project-independent: the host is the default boot path (ADR 0029), and
 # RGSS_SCRIPT_HOST is the opt-out that restores the built-in flow. Guarding it
 # here as well as in mruby-rpgxp/test keeps the two spellings of the rule (the
@@ -553,7 +608,8 @@ games = discover_games(File.expand_path("../data", __dir__)) if games.empty?
 
 # The project-independent checks run first, so they still guard the rules when
 # no test bed has been downloaded.
-errors = check_enabled_default + check_run_defines_top_level + check_rgss_library
+errors = check_enabled_default + check_run_defines_top_level + check_rgss_library +
+         check_scene_reporting
 
 if games.empty?
   warn "no XP test-bed game found (run scripts/download-opengame-xp.bash first)"

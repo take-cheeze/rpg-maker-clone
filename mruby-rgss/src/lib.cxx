@@ -51,6 +51,11 @@ extern "C" void rgss_terminal_poll(mrb_state* M);
 // backend is active and has captured key events; drains them into RGSS::Input.
 extern "C" void rgss_sdl_poll(mrb_state* M);
 
+// Defined in input_bridge.cxx (same gem).  Buffers one already-translated key
+// transition, the way the executable's SDL event watch does; exposed to Ruby as
+// RGSS::Input._push so a headless test can drive an input frame.
+extern "C" void rgss_sdl_input_push(int key, bool press);
+
 // Defined in input_bridge.cxx (same gem).  The latest pointer state captured by
 // the SDL backend (0 / not-pressed under the other backends); exposed to Ruby
 // as RGSS.mouse_x / mouse_y / mouse_pressed? so MV's TouchInput bridge can read
@@ -2449,9 +2454,20 @@ void update_z(mrb_state* M) {
   mrb_iv_set(M, mod, mrb_intern_lit(M, "_z_updated"), mrb_true_value());
 }
 
-mrb_value gfx_update(mrb_state* M, mrb_value self) {
-  const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-
+// Drain every backend's buffered key transitions into RGSS::Input. Called from
+// Input.update (mrblib/lib.rb) — *not* from Graphics.update, which is where
+// this used to live and where it silently broke every game that runs its own
+// engine: an RGSS scene loop is
+//
+//   loop { Graphics.update; Input.update; update; break if $scene != self }
+//
+// so transitions applied during Graphics.update were wiped by the game's own
+// Input.update (which expires the previous frame's triggers) before the scene
+// read them — `Input.trigger?` could never be true under the script host, and
+// no game could be played. RGSS's contract is that Input.update is what
+// refreshes input, so that is where the drain belongs; the built-in flows call
+// it once a frame too, so their timing is unchanged.
+mrb_value input_poll(mrb_state* M, mrb_value self) {
   rgss_terminal_poll(M);
   rgss_sdl_poll(M);
 #if defined(WIO_TERMINAL)
@@ -2460,6 +2476,22 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 #if defined(PSP_BUILD)
   rgss_psp_poll(M);
 #endif
+  return mrb_nil_value();
+}
+
+// Push a key transition into the same buffer the SDL backend feeds, from Ruby.
+// The headless tests use it to drive the loop above without a window.
+mrb_value input_push(mrb_state* M, mrb_value self) {
+  mrb_int key;
+  mrb_bool press;
+  mrb_get_args(M, "ib", &key, &press);
+  rgss_sdl_input_push(static_cast<int>(key), press);
+  return mrb_nil_value();
+}
+
+mrb_value gfx_update(mrb_state* M, mrb_value self) {
+  const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+
   rgss_audio_frame();
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
@@ -5599,6 +5631,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_ARGS_NONE());
   mrb_define_method(M, table, "_dump", table_dump, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, table, "_load", table_load, MRB_ARGS_REQ(1));
+
+  // RGSS::Input is otherwise pure Ruby (mrblib/lib.rb reopens this module); the
+  // two native hooks are the backend drain Input.update calls and the test-side
+  // push that stands in for a keyboard.
+  RClass* input = mrb_define_module_under(M, m, "Input");
+  mrb_define_module_function(M, input, "_poll", input_poll, MRB_ARGS_NONE());
+  mrb_define_module_function(M, input, "_push", input_push, MRB_ARGS_REQ(2));
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());

@@ -78,6 +78,16 @@ DEFINE_bool(
     "out); an explicit --rgss_script_host on the command line wins over it. "
     "See docs/adr/0029-rgss-script-host-by-default.md");
 DEFINE_bool(
+    rgss_host_new_game,
+    false,
+    "For the RGSS makers under the script host: tap the confirm key on the "
+    "game's own title screen once a second, so a headless run gets into the "
+    "game without a keyboard, and log each scene the game reaches as "
+    "[RPGXP-HOST-SCENE]. The script-host twin of --rpgxp_new_game, which "
+    "drives "
+    "the *built-in* title screen (and with it the built-in flow) instead. Used "
+    "by scripts/rpgxp_boot_check.bash");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -783,6 +793,11 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_SCRIPT_HOST"),
                 mrb_bool_value(FLAGS_rgss_script_host));
+  // Whether the script host taps confirm on the game's own title screen (see
+  // RPGXP::ScriptHost.watch_frame).
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_HOST_NEW_GAME"),
+                mrb_bool_value(FLAGS_rgss_host_new_game));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

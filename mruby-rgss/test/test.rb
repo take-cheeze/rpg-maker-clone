@@ -1083,6 +1083,41 @@ assert "RGSS::Input registers a tap that pressed and released in one frame" do
   end
 end
 
+# The order inside Input.update is what makes a game's own engine playable. An
+# RGSS scene loop reads input *after* calling Input.update:
+#
+#   loop { Graphics.update; Input.update; update; break if $scene != self }
+#
+# so a transition applied anywhere before that Input.update — which is where the
+# backends' buffer used to be drained, in Graphics.update — was wiped by it
+# before the scene ever looked. `Input.trigger?` was permanently false for a game
+# running under the script host: no New Game, no message advance, no menu.
+# Input.update now expires the old triggers, *then* drains the buffer.
+assert "RGSS::Input.update applies buffered keys, so a scene loop sees them" do
+  begin
+    RGSS::Input.update
+    # A key arrives between frames, exactly as the SDL event watch buffers it.
+    RGSS::Input._push(RGSS::Input::C, true)
+    # The scene loop's Input.update. (Graphics.update needs a live display the
+    # test binary lacks — and no longer touches input, which is the fix.)
+    RGSS::Input.update
+    assert_true RGSS::Input.trigger?(RGSS::Input::C),
+                "the game's own Input.update swallowed the key"
+    assert_true RGSS::Input.press?(RGSS::Input::C), "the key should read as held"
+    # A trigger still lives exactly one frame; the hold outlasts it.
+    RGSS::Input.update
+    assert_false RGSS::Input.trigger?(RGSS::Input::C)
+    assert_true RGSS::Input.press?(RGSS::Input::C)
+    # And the release arrives the same way.
+    RGSS::Input._push(RGSS::Input::C, false)
+    RGSS::Input.update
+    assert_false RGSS::Input.press?(RGSS::Input::C)
+  ensure
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.update
+  end
+end
+
 assert "RGSS::Input accepts RGSS2/RGSS3 symbol keys" do
   # VX and VX Ace name the keys with symbols (Input.trigger?(:C)); XP and the
   # C++ input bridge use the integer constants. Both must reach the same key.

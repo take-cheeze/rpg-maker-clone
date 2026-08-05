@@ -1161,17 +1161,32 @@ module RGSS
       index
     end
 
+    # RGSS's contract: "updates input data — as a rule, call once per frame",
+    # and every key a game reads afterwards reflects what this call sampled. So
+    # this is where the backends' buffered transitions are applied (`_poll`,
+    # native: the SDL window backend via src/sdl_input.cxx, the terminal
+    # backends, wio/psp), *after* the previous frame's triggers expire and
+    # *before* the repeat bookkeeping runs over the new state.
+    #
+    # The order is what makes a game's own engine playable. An RGSS scene loop is
+    #
+    #   loop { Graphics.update; Input.update; update; break if $scene != self }
+    #
+    # so while the drain lived in Graphics.update, every transition it applied
+    # was wiped by the game's own Input.update on the very next line, before the
+    # scene read it: `Input.trigger?` was permanently false under the script host
+    # and no bundled game could be played. The built-in RPG2000/XP flows and the
+    # MV/MZ bridges all call Input.update once a frame as well, so their timing
+    # is unchanged (they read the state on the following frame either way).
     def self.update
-      # Key transitions are pushed in from C++ via .press / .release: the SDL
-      # window backend (src/sdl_input.cxx -> rgss_sdl_poll) and the terminal
-      # backends (rgss_terminal_poll) both drain their events during
-      # Graphics.update. This method only advances the per-frame trigger/repeat
-      # bookkeeping over that state.
-
-      # Reset triggered state after each frame
+      # Last frame's triggers expire first: a trigger lives exactly one frame.
       @triggered.each_index do |i|
         @triggered[i] = false
       end
+
+      # Then this frame's transitions arrive (.press / .release set pressed and
+      # triggered), so a tap that landed since the last call is visible now.
+      _poll
 
       # Update repeat state
       @pressed.each_index do |i|
