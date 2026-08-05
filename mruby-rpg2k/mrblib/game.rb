@@ -2527,10 +2527,26 @@ module Game
     TURN_ACTOR    = 0x100
     COMMAND_ACTOR = 0x200
 
-    # RPG2000's turn matcher (EasyRPG's `Game_Battle::CheckTurns`): with no
-    # `multiple` the turn must equal `base` exactly; otherwise it must be at or
-    # past `base` and an exact number of `multiple` steps beyond it. So
-    # base 0 / multiple 2 fires on turns 0, 2, 4, ...
+    # RPG2000's turn matcher: with no `multiple` the turn must equal `base`
+    # exactly; otherwise it must be at or past `base` and an exact number of
+    # `multiple` steps beyond it. So base 0 / multiple 2 fires on turns 0, 2,
+    # 4, ...
+    #
+    # Both the body and the argument order are taken from EasyRPG Player, not
+    # from guesswork: `Game_Battle::CheckTurns(int turns, int base, int
+    # multiple)` is `turns >= base && (turns - base) == 0` when multiple is 0
+    # (which is just `turns == base`, written that way below) and
+    # `turns >= base && (turns - base) % multiple == 0` otherwise; and
+    # `Game_Interpreter_Battle::AreConditionsMet` calls it as
+    # `CheckTurns(GetTurn(), condition.turn_b, condition.turn_a)` — so `base` is
+    # the page's `turn_b` and `multiple` its `turn_a`, which reads backwards
+    # from the field names and is exactly why it is worth writing down.
+    #
+    # Real data agrees but cannot by itself pin the order down: every turn-gated
+    # page in the games checked so far has `turn_b == 0` (156 pages at
+    # multiple 0, firing on turn 0; 9 at multiple 1, firing every turn), and a
+    # swapped order would produce the same two behaviours for those values. A
+    # game with a "from turn N, every M" page would settle it independently.
     def self.check_turns(turn, base, multiple)
       return turn == base if multiple.nil? || multiple == 0
       turn >= base && (turn - base) % multiple == 0
