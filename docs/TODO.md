@@ -280,7 +280,8 @@ The work below is roughly ordered by the critical path to a walkable game
   polarity to items); states apply before HP so a revive skill (curing 戦闘不能)
   stands the ally up and its recovery then lands, and a cure skill is usable even
   at full HP. A **party wipe now ends the game** (a game-over-mode battle defeat
-  returns to the title — see the Enemy Encounter entry). Still remaining:
+  puts up the Game Over screen, then the title — see the Enemy Encounter
+  entry). Still remaining:
   inflicting states from **battle** (rolling `state_chance` / to-hit, the
   non-reverse item case, enemy attacks).
   **Show / Move / Erase
@@ -360,8 +361,8 @@ The work below is roughly ordered by the critical path to a walkable game
   on death) over a plain battle field. **Post-battle HP now persists to the
   party** — `Battle#apply_to_party` writes each survivor's final HP back through
   `Game::Actor#set_hp`, so damage sticks and a member reduced to 0 comes out
-  戦闘不能 — and a **defeat ends the game** (return to title via
-  `perform_game_over`) when the encounter's defeat mode is "game over" (no
+  戦闘不能 — and a **defeat ends the game** (the Game Over screen, then the title,
+  via `perform_game_over`) when the encounter's defeat mode is "game over" (no
   `[Defeat]` handler) and the party is wiped (`Game::Party#all_dead?`). **Status
   conditions carry through a battle**: a `Combatant` seeds its state set from its
   actor, a **battle medicine cures** its `state_set` (an antidote used mid-fight),
@@ -413,9 +414,14 @@ The work below is roughly ordered by the critical path to a walkable game
   buffered so the screen animates the volley hit by hit — with attack damage
   still computed per target's defence. **All-party items** (medicine scope 1)
   work the same way through `command_item_all`, healing / curing every living
-  ally and consuming a single item for the whole volley. Still to come:
-  enemy-cast infliction, the per-terrain backdrop and the RPG2000 Game Over
-  graphic.
+  ally and consuming a single item for the whole volley. The **RPG2000 Game Over
+  screen** exists now: `Scene::GameOver` fills the screen with the database's
+  `GameOver/<name>` picture over its game-over music and returns to the title on
+  a button press, reached by both routes RPG_RT uses — the Game Over event
+  command (12420) and a battle defeat whose encounter says "game over" rather
+  than running a `[Defeat]` handler. A game that names no picture (or whose file
+  is missing) still reaches the screen, on plain black, rather than the defeat
+  failing. Still to come: enemy-cast infliction and the per-terrain backdrop.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
@@ -684,8 +690,8 @@ The work below is roughly ordered by the critical path to a walkable game
   **per-actor name/title overrides for non-leader** members (only the leader's
   name is in the title chunk)
 - Battle system — enemy groups, battle scene, actions/damage/states,
-  animations, game-over scene (large; Nepheshel uses the default RPG2000
-  battle). Needs real assets + the native build to develop against
+  animations (large; Nepheshel uses the default RPG2000 battle). Needs real
+  assets + the native build to develop against. The game-over scene is done
 - ✅ Menu screens — the Item, Skill, Equip and Status screens all exist now (see
   Menu scene above). The Skill screen's recovery formula (`power +
   physical_rate*atk/20 + magical_rate*spirit/40`) is the same one the battle

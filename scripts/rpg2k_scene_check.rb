@@ -105,7 +105,11 @@ module RGSS
   end
 
   module Audio
-    def self.bgm_play(*); end
+    # Record bgm_play calls so BGM checks (the vehicle music, the Game Over
+    # screen) can assert which track started.
+    class << self; attr_accessor :bgm_calls; end
+    def self.bgm_play(*a); (@bgm_calls ||= []) << a; end
+    def self.reset_bgm; @bgm_calls = []; end
     def self.bgm_fade(*); end
     # Scriptable playback position, so the "BGM played once" watcher can be
     # driven: a value that jumps backwards is how SDL_mixer reports a loop.
@@ -169,7 +173,9 @@ def fake_db(common = nil, troop_pages = nil)
                            ship_music: OpenStruct.new(file: 'ShipBGM', volume: 80, pitch: 100),
                            airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
                            cursor_se: OpenStruct.new(file: 'Cursor1', volume: 100, pitch: 100),
-                           decision_se: OpenStruct.new(file: 'Decision1', volume: 100, pitch: 100)),
+                           decision_se: OpenStruct.new(file: 'Decision1', volume: 100, pitch: 100),
+                           gameover_name: 'GameOver1',
+                           gameover_music: OpenStruct.new(file: 'GameOverBGM', volume: 90, pitch: 100)),
     # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
     chipset: { 1 => fake_chipset, 2 => fake_chipset('cs2') },
     # Terms the Show Inn window reads; blank greeting fields exercise the
@@ -278,6 +284,10 @@ class FakeParent
   # Return to Title Screen (12510) hands control back here; record that it fired.
   attr_reader :returned_to_title
   def return_to_title; @returned_to_title = true; end
+  # Game Over (12420) and a game-over battle defeat put up Scene::GameOver,
+  # which returns to the title once dismissed. Record that it was reached.
+  attr_reader :game_over_shown
+  def show_game_over; @game_over_shown = true; end
   # Open Save Menu (11910) saves through the app; record the calls.
   def saved; @saved ||= []; end
   def save_game(state); saved << state; true; end
@@ -1497,7 +1507,7 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   # finish_battle wrote the wipe back to the party, then went to the title.
   ok st.party.all_dead?, 'the party was wiped out'
   parent = scene.instance_variable_get(:@parent)
-  ok parent.returned_to_title, 'a game-over defeat returns to the title screen'
+  ok parent.game_over_shown, 'a game-over defeat puts up the Game Over screen'
 end
 
 check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
@@ -1534,11 +1544,11 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   scene.update
   battle_attack_to_end(scene) # the hero is worn down -> the defeat result shows
   parent = scene.instance_variable_get(:@parent)
-  ok !parent.returned_to_title, 'still on the defeat result, not yet game over'
+  ok !parent.game_over_shown, 'still on the defeat result, not yet game over'
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result
   scene.update
   RGSS::Input.triggered = []
-  ok parent.returned_to_title, 'a game-over defeat returned to the title'
+  ok parent.game_over_shown, 'a game-over defeat reached the Game Over screen'
   ok !st.switches[5], 'the rest of the event never ran'
 end
 
@@ -1554,10 +1564,56 @@ check 'Game Over event command returns to the title, abandoning the event' do
   parent = scene.instance_variable_get(:@parent)
   5.times do
     scene.update
-    break if parent.returned_to_title
+    break if parent.game_over_shown
   end
-  ok parent.returned_to_title, 'Game Over returned to the title'
+  ok parent.game_over_shown, 'Game Over put up the Game Over screen'
   ok !st.switches[5], 'the rest of the event never ran'
+end
+
+check 'the Game Over screen shows its picture, plays its BGM and waits' do
+  parent = fake_parent(fake_db)
+  Audio.reset_bgm
+  Input.reset
+  scene = RPG2k::Scene::GameOver.new(parent)
+  eq [['GameOverBGM', 90, 100]], Audio.bgm_calls, 'the database game-over music'
+  ok scene.instance_variable_get(:@picture).bitmap, 'the GameOver/ picture loaded'
+
+  scene.update
+  ok !parent.returned_to_title, 'it waits for a button'
+  Input.triggered = [Input::C]
+  scene.update
+  ok parent.returned_to_title, 'and then hands back to the title'
+  Input.reset
+end
+
+check 'a button still held from the battle does not skip the Game Over screen' do
+  parent = fake_parent(fake_db)
+  Input.reset
+  # The key that dismissed the defeat message is still down as the scene opens.
+  Input.triggered = [Input::C]
+  scene = RPG2k::Scene::GameOver.new(parent)
+  scene.update
+  ok !parent.returned_to_title, 'the held key is ignored'
+  Input.reset
+  scene.update                       # released: the screen arms
+  Input.triggered = [Input::C]
+  scene.update                       # pressed afresh
+  ok parent.returned_to_title, 'a fresh press dismisses it'
+  Input.reset
+end
+
+check 'a game with no game-over picture still reaches the screen' do
+  db = fake_db
+  db.system.gameover_name = ''
+  parent = fake_parent(db)
+  Input.reset
+  scene = RPG2k::Scene::GameOver.new(parent)
+  eq nil, scene.instance_variable_get(:@picture).bitmap, 'nothing to show'
+  scene.update
+  Input.triggered = [Input::B]
+  scene.update
+  ok parent.returned_to_title, 'and it still dismisses to the title'
+  Input.reset
 end
 
 check 'Change System Graphics reloads the windowskin from the override' do
