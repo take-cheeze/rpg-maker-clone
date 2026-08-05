@@ -522,8 +522,9 @@ The work below is roughly ordered by the critical path to a walkable game
   through the message window before the event continues (a small reusable
   pending-message queue on the interpreter); **Change System Graphics** (10680)
   overrides the windowskin / font (save chunks 15 / 17; the scene reloads the
-  skin); **Change Screen Transitions** (10690) records the six teleport / battle
-  transition styles (save chunks 111–116; modelled for save fidelity); and **Game
+  skin); **Change Screen Transitions** (10690) sets the six teleport / battle
+  transition styles (save chunks 111–116), which an Erase / Show Screen's "use
+  the configured transition" now reads; and **Game
   Over** (12520) returns to the title — all handled. **Vehicle locations** (boat /
   ship / airship) also persist in the save (`Game::Vehicle`, `.lsd` chunks
   105–107 / the Marshal save).
@@ -593,13 +594,32 @@ The work below is roughly ordered by the critical path to a walkable game
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
   the view holds where locking began). **Erase Screen** (11010) / **Show Screen**
-  (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) that
-  eases like the tint over a fixed transition and is held erased until a Show,
-  recording the requested transition style (fade / block / stripe / scroll) for
-  fidelity while modelling only the fade — and the fade **is** drawn, by the
-  same screen-sized sprite mechanism as the flash. All share the `:screen` wait,
-  so event timing around them is correct. **Show Picture** now renders (see the
-  interpreter bullet above).
+  (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) held
+  erased until a Show, drawn by the same screen-sized sprite mechanism as the
+  flash. All share the `:screen` wait, so event timing around them is correct.
+  **Show Picture** now renders (see the interpreter bullet above).
+
+  Those two commands now run their **actual transition style** rather than one
+  fixed fade. `Game::Transition` ports EasyRPG's transition model: the two
+  parameter → style tables (the same index means the "out" style to an erase and
+  the "in" style to a show), each style's own length — 35 frames for a fade, 41
+  for the shaped ones, 1 for a cut, 0 for "no transition" — and the frame-by-frame
+  geometry. Parameter **-1**, "use the configured transition", is by far the most
+  common value in real data (2124 of Nepheshel's 2146 Erase Screens) and used to
+  fall through unresolved; it now reads the Change Screen Transitions slot, which
+  `Game::State#seed_screen_transitions` fills in from the database's System
+  settings (chunks 61–66) at New Game and after a load — including a `.lsd` slot
+  the save left un-overridden, which comes back out of range rather than as a
+  setting. `Scene::Map` draws a shaped transition as a **mask**: the erase overlay
+  goes fully opaque and the regions of the map still showing through are punched
+  back out of it with `fill_rect`, which is exactly how RPG_RT composites the
+  screen being left against the screen being arrived at (one of the two is always
+  solid black). That draws the blinds, the vertical / horizontal stripes and the
+  border-to-centre / centre-to-border windows for real. Remaining: the styles a
+  black mask cannot express — the scrolls and the combine / division pairs slide
+  the live scene itself, zoom / mosaic / wave resample it, and random blocks wants
+  thousands of block blits a frame — which run as a fade of the right length and
+  the right end state until the renderer can capture a screen and transform it.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already

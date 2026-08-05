@@ -63,6 +63,13 @@
   cancel setting as well: the cancel key picks the choice the command names, or
   runs its dedicated **[Cancel]** branch, and a block that forbids cancelling
   swallows the key
+- **Erase / Show Screen** run the transition style the command asks for, each at
+  its own RPG2000 length — including "use the configured transition", which
+  reads the Change Screen Transitions setting seeded from the game's database.
+  The blinds, the vertical / horizontal stripes and the border-to-centre /
+  centre-to-border windows are drawn as a mask over the map; the styles that need
+  the scene itself moved or resampled (scrolls, zoom, mosaic, wave, random
+  blocks) still run as a fade of the correct length
 - A troop's **battle-event pages** run during a fight: their conditions (switch,
   variable, turn, enemy/actor HP, plus RPG2003's per-battler turn counters and
   party fatigue) are re-checked each turn, and a matching page runs the ordinary

@@ -2313,13 +2313,39 @@ check 'Erase/Show Screen drives the fade layer opacity' do
   eq 0, fade.opacity, 'nothing erased yet, so the fade layer is invisible'
 
   st = scene.instance_variable_get(:@state)
-  st.screen.erase(0, 1) # fade fully out over one frame
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # fade fully out over one frame
   4.times { scene.update }
   eq 255, fade.opacity, 'a completed Erase Screen leaves the screen black'
 
-  st.screen.show(0, 1)
+  st.screen.show(Game::Transition::FADE_IN, 1)
   4.times { scene.update }
   eq 0, fade.opacity, 'Show Screen brings it back'
+end
+
+check 'a shaped transition paints a mask into the fade layer' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+
+  # Blinds close: the overlay goes fully opaque and the bands still showing the
+  # map are punched back out of it, rather than the whole screen dimming.
+  st.screen.erase(Game::Transition::BLIND_CLOSE)
+  fade.bitmap.fill_calls.clear if fade.bitmap.fill_calls
+  scene.update
+  eq 255, fade.opacity, 'the mask itself carries the shape, not the opacity'
+  fills = fade.bitmap.fill_calls || []
+  eq 31, fills.length, 'one full-screen black fill, then 30 band holes'
+  eq [0, 0, 320, 240], fills.first[0, 4], 'blacked out first'
+  eq [0, 1, 320, 7], fills[1][0, 4], 'then the open part of band 0'
+
+  # Once it finishes the overlay is solid black again, so the next plain fade
+  # does not inherit the holes.
+  st.screen.update until !st.screen.fading?
+  fade.bitmap.fill_calls.clear
+  scene.update
+  eq 1, (fade.bitmap.fill_calls || []).length, 'repainted solid for the fade path'
+  eq 255, fade.opacity, 'and the screen stays erased'
 end
 
 check 'Flash Screen drives the flash layer, and refills only on a colour change' do
