@@ -32,10 +32,10 @@ module Game
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
   # `\n[n]` the name of actor n, `\\` a literal backslash, `\_` a space; `\c[n]`
-  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits) and `\^` (auto-close)
-  # are surfaced by #scan for the typewriter to act on; the remaining display
-  # codes (`\s` speed, `\>`/`\<`, `\$`) are dropped. `names` may be a Hash or any
-  # object responding to `[]`.
+  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits), `\^` (auto-close) and
+  # `\>`/`\<` (instant span) are surfaced by #scan for the typewriter to act on;
+  # the remaining display codes (`\s` speed, `\$`) are dropped. `names` may be a
+  # Hash or any object responding to `[]`.
   module Message
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
@@ -62,10 +62,13 @@ module Game
     #   :pauses  — [{ at:, kind: }] for `\!` (:key, wait for a button), `\.`
     #              (:quarter) and `\|` (:full) timed holds;
     #   :auto_close — `\^` (close the window without a keypress once revealed);
+    #   :instants — [[start, end)] spans that reveal at once (`\>` … `\<`);
     #   :length  — the visible character count (what the reveal counts).
     def self.scan(text, variables, names)
       segs = []
       pauses = []
+      instants = []
+      instant_start = nil # character index where an open `\>` span began
       auto_close = false
       cur = ''
       color = 0
@@ -91,8 +94,14 @@ module Game
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
           when '^'      then auto_close = true
-          # other display codes (`\s` speed, `\>`/`\<`, `\$`) produce no
-          # characters and no pacing here: dropped.
+          when '>'      then instant_start = count if instant_start.nil?
+          when '<'
+            if instant_start
+              instants << [instant_start, count]
+              instant_start = nil
+            end
+          # other display codes (`\s` speed, `\$`) produce no characters and no
+          # pacing here: dropped.
           end
         else
           cur << ch
@@ -101,7 +110,9 @@ module Game
         end
       end
       segs << { text: cur, color: color } unless cur.empty?
-      { segments: segs, pauses: pauses, auto_close: auto_close, length: count }
+      instants << [instant_start, count] if instant_start # unclosed `\>` runs to EOL
+      { segments: segs, pauses: pauses, auto_close: auto_close,
+        instants: instants, length: count }
     end
 
     # Truncate per-line colour segments to the first `revealed` characters
@@ -212,7 +223,9 @@ module Game
     # coordinates, sorted ascending; the reveal will not advance past the next
     # unreleased one until the owner calls #release_pause. `auto_close` is the
     # `\^` flag (close the window without a keypress once fully revealed).
-    def initialize(lines, revealed = 0, pauses = [], auto_close = false)
+    # `instants` are [start, end) spans (`\>` … `\<`) that appear in one frame.
+    def initialize(lines, revealed = 0, pauses = [], auto_close = false,
+                   instants = [])
       @lines = lines || []
       @total = 0
       @lines.each { |l| @total += l.length }
@@ -221,6 +234,7 @@ module Game
       # has no Array#sort_by (the native engine aborts on it).
       @pauses = (pauses || []).sort { |a, b| a[:at] <=> b[:at] }
       @auto_close = auto_close ? true : false
+      @instants = instants || []
       @released = 0 # how many leading pauses the owner has let through
     end
 
@@ -237,12 +251,23 @@ module Game
     end
 
     # Reveal `n` more characters (default 1), never past the total nor past the
-    # next unreleased pause.
+    # next unreleased pause. When the newly revealed position lands inside an
+    # instant (`\>` … `\<`) span, the whole span appears at once (still capped at
+    # the pause limit).
     def advance(n = 1)
       n = 0 if n < 0
       stop = next_pause
       limit = stop ? stop[:at] : @total
-      @revealed = Game.clamp(@revealed + n, 0, limit)
+      pos = Game.clamp(@revealed + n, 0, limit)
+      pos = through_instant(pos) if pos > @revealed
+      @revealed = Game.clamp(pos, 0, limit)
+    end
+
+    # If the next character to reveal (`pos`) falls inside an instant span, jump
+    # to that span's end so it shows in one frame; otherwise return `pos`.
+    def through_instant(pos)
+      @instants.each { |a, b| return b if pos >= a && pos < b }
+      pos
     end
 
     # The next pause that still gates advancement (unreleased), or nil.
