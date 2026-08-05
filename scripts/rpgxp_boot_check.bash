@@ -15,10 +15,13 @@
 # The engine aborts on an uncaught mruby exception, so simply running it is most
 # of the test. Each game is booted twice, once per path into a running game:
 #
-#   1. **The default**: no flags, so the RGSS script host runs the project's own
-#      Data/Scripts.rxdata (ADR 0029) and logs `[RPGXP-SCRIPTS]`. A host that
-#      fails falls back to the built-in flow without changing the exit code, so
-#      the run also fails on a `script host failed` line.
+#   1. **The default**: the RGSS script host runs the project's own
+#      Data/Scripts.rxdata (ADR 0029). `--rgss_host_new_game` taps confirm on the
+#      game's own title screen and each scene the game reaches is logged as
+#      `[RPGXP-HOST-SCENE]`, so reaching a *second* one means the game's engine
+#      took a keypress and started something. A host that fails falls back to the
+#      built-in flow without changing the exit code, so the run also fails on a
+#      `script host failed` line.
 #   2. **The built-in reimplemented flow**: `--rpgxp_new_game` selects New Game
 #      without input (which also pins the boot to that flow) and logs the
 #      `[RPGXP-MAP]` marker, pushing the run past the title screen into the map
@@ -66,13 +69,15 @@ num="${SERVER_NUM}"
 
 # One headless run of the engine.
 #   $1 game dir, $2 display number, $3 what the run is called in the log,
-#   $4 the marker its log must contain, $5 extra engine flags (may be empty)
+#   $4 the marker its log must contain, $5 extra engine flags (may be empty),
+#   $6 how many [RPGXP-HOST-SCENE] lines the game must reach (0 = do not check)
 # A run fails when the engine exits non-zero (any uncaught mruby exception aborts
-# it), when its marker is missing, or when the script host reported a boot
-# failure and quietly fell back to the built-in flow -- that fallback keeps the
-# exit code at zero, so without the third test a broken default would pass.
+# it), when its marker is missing, when the script host reported a boot failure
+# and quietly fell back to the built-in flow -- that fallback keeps the exit code
+# at zero, so without that test a broken default would pass -- or when the game
+# never got past its first scene.
 run_boot() {
-    local game="$1" display="$2" label="$3" marker="$4" flags="$5"
+    local game="$1" display="$2" label="$3" marker="$4" flags="$5" scenes="${6:-0}"
     local log rc=0
     log="$(mktemp)"
     echo "-- ${label}"
@@ -91,6 +96,14 @@ run_boot() {
         echo "FAILED: ${game} (${label}): the script host fell back to the built-in flow" >&2
         grep 'script host failed' "${log}" >&2
         rc=1
+    elif [ "${scenes}" -gt 0 ] &&
+             [ "$(grep -c '\[RPGXP-HOST-SCENE\]' "${log}")" -lt "${scenes}" ] ; then
+        # One scene means the game drew its title and stayed there: the keypress
+        # never reached its own engine, or its first screen could not act on it.
+        echo "FAILED: ${game} (${label}): the game never left its first scene" \
+             "(wanted ${scenes} scenes)" >&2
+        grep '\[RPGXP-HOST-SCENE\]' "${log}" >&2
+        rc=1
     else
         grep "${marker}" "${log}"
     fi
@@ -108,11 +121,14 @@ for game in "${GAMES[@]}" ; do
     checked=$((checked + 1))
     echo "== ${game}"
 
-    # 1. The default boot: no flags, so the RGSS script host runs the game's own
-    #    Data/Scripts.rxdata (ADR 0029) and logs how many sections it evaluated.
-    #    This is the pass that proves the default path works on the real binary.
-    run_boot "${game}" "${num}" "script host (default)" '\[RPGXP-SCRIPTS\]' "" ||
-        failed=$((failed + 1))
+    # 1. The default boot: no flags but `--rgss_host_new_game`, so the RGSS
+    #    script host runs the game's own Data/Scripts.rxdata (ADR 0029), taps
+    #    confirm on the game's own title screen and logs every scene the game
+    #    reaches. Asserting on the *second* scene is what makes this more than a
+    #    "did not crash" check: it means the game's own title screen took a
+    #    keypress and started something.
+    run_boot "${game}" "${num}" "script host (default)" '\[RPGXP-HOST-SCENE\]' \
+        "--rgss_host_new_game" 2 || failed=$((failed + 1))
 
     # 2. The built-in reimplemented flow, which `--rpgxp_new_game` selects (it
     #    drives the built-in title screen, so it also switches the host off --

@@ -131,14 +131,53 @@ class RPGXP
         begin
           rgss_eval_section(source, name)
         rescue StandardError, ScriptError => e
+          # A timeout is how a *headless* run ends, not how it fails: the driver
+          # treats it as a clean end (RPGXP#drive_script_host). Reporting it as
+          # "section Main raised …" with a backtrace made a passing CI run read
+          # like a crashed one.
+          raise e if quiet_end?(e)
           $stderr.puts "[RGSS] script host: section #{name.inspect} raised " \
                        "#{e.class}: #{e.message}"
+          report_backtrace(e)
           # `raise` with no argument loses the exception in this mruby build
           # (the caller saw a bare RuntimeError), so re-raise it explicitly.
           raise e
         end
       end
       true
+    end
+
+    # Whether this exception is the run *ending* rather than the game breaking.
+    # Only the timeout qualifies here: `exit` raises SystemExit, which is not a
+    # StandardError and never reaches the rescue above. Guarded, because the
+    # CRuby harnesses load this file without RGSS::Timeout defined.
+    def self.quiet_end?(e)
+      RGSS.const_defined?(:Timeout) && e.is_a?(RGSS::Timeout)
+    rescue StandardError
+      false
+    end
+
+    # Where in the *game's own scripts* a failure happened. The section name and
+    # exception alone say what is missing but not where — and once a game is past
+    # its title screen, "Main raised NoMethodError" can mean any of a hundred
+    # scripts. Each section is evaluated under its editor name (rgss_eval_section
+    # passes it to eval), so the frames read like `Game_Battler_1:61`, which is
+    # the line to open in the editor. Best effort: an mruby build without
+    # backtraces just prints nothing extra.
+    BACKTRACE_FRAMES = 12
+
+    def self.report_backtrace(e)
+      return unless e.respond_to?(:backtrace)
+      frames = e.backtrace
+      return if frames.nil? || frames.empty?
+      frames.first(BACKTRACE_FRAMES).each do |frame|
+        $stderr.puts "[RGSS] script host:   from #{frame}"
+      end
+      dropped = frames.size - BACKTRACE_FRAMES
+      $stderr.puts "[RGSS] script host:   ... #{dropped} more" if dropped > 0
+    rescue StandardError
+      # A backtrace is a diagnostic, never a second failure.
+      nil
     end
 
     # The database the Kernel built-ins (Object#load_data / #save_data, defined
@@ -178,9 +217,64 @@ class RPGXP
         alias_method :_update_native, :update
         def update
           _update_native
-          Fiber.yield if ::RPGXP::ScriptHost.driving?
+          return unless ::RPGXP::ScriptHost.driving?
+          ::RPGXP::ScriptHost.watch_frame
+          Fiber.yield
         end
       end
+    end
+
+    # Frames the host has driven, and the last scene it reported.
+    @frames = 0
+    @scene_name = nil
+
+    # Called once per driven frame, from the wrapper above. Two jobs, both about
+    # being able to *see* what a game's own engine is doing from a log:
+    #
+    #   * report each scene the game moves to. `$scene` is the game's own global
+    #     (RGSS's Main loops `$scene.main while $scene != nil`), so this reads
+    #     what it already publishes and modifies nothing. The marker is the
+    #     script-host twin of the built-in flow's [RPGXP-MAP].
+    #   * with --rgss_host_new_game, tap the confirm key so a headless run gets
+    #     off the game's title screen without a keyboard — the script-host twin
+    #     of --rpgxp_new_game (which drives the *built-in* title instead).
+    def self.watch_frame
+      @frames += 1
+      report_scene
+      confirm_tap if auto_new_game?
+    end
+
+    def self.report_scene
+      scene = $scene
+      return if scene.nil?
+      name = scene.class.to_s
+      return if name == @scene_name
+      @scene_name = name
+      $stderr.puts "[RPGXP-HOST-SCENE] #{name}"
+    end
+
+    # A tap a second in, repeated every second: pushed through the same buffer
+    # the SDL backend feeds, so the game's own Input.update applies it exactly as
+    # it would a real key. Repeated because a game's first screen is its own
+    # business — a notice, a language picker, a title menu whose first item is
+    # not New Game — and one press cannot know which.
+    CONFIRM_EVERY = 60
+    CONFIRM_HOLD = 4
+
+    def self.confirm_tap
+      phase = @frames % CONFIRM_EVERY
+      return if @frames < CONFIRM_EVERY
+      RGSS::Input._push(RGSS::Input::C, true) if phase == 0
+      RGSS::Input._push(RGSS::Input::C, false) if phase == CONFIRM_HOLD
+    end
+
+    # `--rgss_host_new_game`, published by src/main.cxx as a constant (this mruby
+    # build has no ENV). Read through its own rescue: the constant is absent
+    # under the CRuby harnesses, and an undefined constant raises here.
+    def self.auto_new_game?
+      RGSS_HOST_NEW_GAME
+    rescue StandardError
+      false
     end
   end
 end

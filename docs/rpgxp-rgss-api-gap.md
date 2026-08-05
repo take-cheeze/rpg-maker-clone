@@ -41,7 +41,10 @@ These are complete enough for the stock scripts:
 - **`Viewport`** — `new` (~7), `ox`/`oy`, `rect`, `z`, `visible`, `update`,
   `dispose`.
 - **Kernel** — `load_data` (~27) and `save_data` are supplied by the script host
-  (`Object#load_data`/`#save_data` → the project database); `rand` (~36) is core.
+  (`Object#load_data`/`#save_data` → the project database); `rand` (~36) and
+  `Integer()` come from the `mruby-random` / `mruby-kernel-ext` core gems, which
+  had to be added to the build (see gap 0e — neither is in mruby's default set,
+  and this list called `rand` "core" until a game proved otherwise).
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
@@ -137,6 +140,110 @@ sweep comparing every call site in both beds' bundles (193 sections) against
 those formats reports no other mismatch, and the calls it does resolve include
 the other overloaded ones (`fill_rect`, `gradient_fill_rect`, `blt`,
 `stretch_blt`), which were already right.
+
+### 0d. `Input.trigger?` in a game's own loop ✅ (nothing a game could be *played* with)
+
+An RGSS scene loop reads input right after refreshing it:
+
+```ruby
+loop { Graphics.update; Input.update; update; break if $scene != self }
+```
+
+This engine drained the backends' buffered key transitions inside
+`Graphics.update`, and `Input.update` expires the previous frame's triggers — so
+every key applied on the first line was wiped by the second before the scene read
+it on the third. `Input.trigger?` was **permanently false** for a game running
+its own engine: no New Game on its title screen, no message advance, no menu.
+Only held state (`press?`, and so `dir4`/`dir8` movement) worked.
+
+RGSS's contract is that `Input.update` is what refreshes input, so the drain
+moved there (`RGSS::Input._poll`, native): expire the old triggers, apply this
+frame's transitions, then run the repeat bookkeeping. The built-in RPG2000/XP
+flows and the MV/MZ bridges call `Input.update` once a frame too, so their timing
+is unchanged.
+
+`--rgss_host_new_game` then makes a headless run *play*: it taps confirm through
+the same buffer the SDL backend feeds, and every scene the game reaches is logged
+as `[RPGXP-HOST-SCENE]` (read from the game's own `$scene` global). Reaching a
+second scene is what `scripts/rpgxp_boot_check.bash` now asserts — the proof that
+a game's engine took a keypress and acted on it, rather than merely drawing.
+
+### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
+
+With input working, both beds get *into* the game — and stop where every RGSS
+game builds its party: `Game_Battler_1` clamps each stat through
+`n = [[Integer(n), 1].max, 999999].min`, and mruby's `Kernel#Integer` lives in
+the **mruby-kernel-ext** core gem, which was not in the build. Added to
+`build_config.rb` and depended on in `mruby-rpgxp/mrbgem.rake` (the dependency
+edge orders its initialization, the same reason `mruby-sprintf` is declared
+there), with an availability test so its absence fails in the test binary rather
+than on a player's New Game. The same gem supplies `Float()` / `String()` /
+`Array()`, which neither stock bundle uses but community scripts do.
+
+A failure inside a game's own scripts now also prints **where**: the host reports
+up to a dozen backtrace frames with the section name and line
+(`Game_Battler_1:61`), since each section is evaluated under its editor name.
+Past the title screen, "Main raised NoMethodError" can otherwise mean any of a
+hundred scripts. It paid for itself on the next run, naming both of these:
+
+### 0f. `Kernel#rand` ✅ (the first thing New Game does after building the party)
+
+```
+[RGSS] script host: section "Main" raised NoMethodError: undefined method 'rand' for Game_Player
+[RGSS] script host:   from Game_Player:88:in make_encounter_count
+[RGSS] script host:   from Game_Player:57:in moveto
+[RGSS] script host:   from Scene_Title:134:in command_new_game
+```
+
+`Game_Player#make_encounter_count` rolls `rand(n) + rand(n) + 1` as the party is
+placed. `Kernel#rand` is the **mruby-random** core gem, which was not in the
+build: this engine's own code uses seeded LCGs instead, because its runs are
+diffed frame by frame against the genuine runtimes, so nothing here had ever
+needed it (`RPG::Weather` scatters its drops with `rand` too — that would have
+been the next report). Added to `build_config.rb` with the dependency edge in
+`mrbgem.rake`.
+
+### 0h. `#clone` / `#dup` on the value types ✅ (where a game's screen tone stopped it)
+
+With `rand` and the table write fixed, both beds reach **`Scene_Map`** — the test
+bed goes `Scene_Title → Scene_Map` and runs to the timeout, the released game
+`Scene_logo → Scene_Title → Scene_Map`. The next report:
+
+```
+[RGSS] script host: section "Main" raised TypeError: uninitialized RGSS::Tone
+[RGSS] script host:   from Game_Screen:102:in red
+[RGSS] script host:   from Game_Screen:102:in update
+```
+
+`Game_Screen#start_tone_change` keeps `@tone_target = tone.clone`, and mruby's
+`clone`/`dup` allocate a bare object of the same class and copy only its
+instance variables — so a cloned `Color`/`Tone`/`Rect`/`Table` carried no native
+payload and the first read of it raised. Both call `initialize_copy` on the new
+object, which the four value types now define. Games do this constantly (the
+screen tone, the flash colour, a map's fog tone, a picture's tone), so it is on
+the path of anything that tints the screen.
+
+**Still open in the same family:** `Bitmap#clone` — RGSS's own `RPG::Cache`
+clones bitmaps for hue variants (ours re-loads instead, see gap 0), but a
+community script that clones one will raise the same way. It needs a real pixel
+copy, not a payload copy.
+
+### 0g. `Table#[]=` past the edge ✅ (a write RGSS drops, we raised on)
+
+```
+[RGSS] script host: section "Main" raised TypeError: true cannot be converted to Integer
+[RGSS] script host:   from map_light:265:in []=
+```
+
+*Pray for You*'s `map_light` script walks `for x in 0..(self.width)` — inclusive,
+so one past the edge — and runs `@passages_data[x, y] |= 0x0f`. Out there the
+read answers `nil`, `nil | 0x0f` is `true`, and that `true` arrives as the value
+of a write RGSS was always going to ignore. `Table#[]=` converted its arguments
+before the bounds check, so it raised instead of dropping the write. The bounds
+check now comes first and the value is converted only when it is going to be
+stored; an *in-range* write of a non-Integer still raises. Out-of-range **reads**
+keep answering `nil` — the stock scripts test for exactly that
+(`tile_id = self.data[x,y,i]; if tile_id == nil`).
 
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at

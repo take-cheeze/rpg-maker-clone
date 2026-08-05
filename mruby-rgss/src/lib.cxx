@@ -51,6 +51,11 @@ extern "C" void rgss_terminal_poll(mrb_state* M);
 // backend is active and has captured key events; drains them into RGSS::Input.
 extern "C" void rgss_sdl_poll(mrb_state* M);
 
+// Defined in input_bridge.cxx (same gem).  Buffers one already-translated key
+// transition, the way the executable's SDL event watch does; exposed to Ruby as
+// RGSS::Input._push so a headless test can drive an input frame.
+extern "C" void rgss_sdl_input_push(int key, bool press);
+
 // Defined in input_bridge.cxx (same gem).  The latest pointer state captured by
 // the SDL backend (0 / not-pressed under the other backends); exposed to Ruby
 // as RGSS.mouse_x / mouse_y / mouse_pressed? so MV's TouchInput bridge can read
@@ -408,6 +413,28 @@ mrb_value table_init(mrb_state* M, V self) {
   return self;
 }
 
+// RGSS's value types are copied with #clone / #dup throughout a game's own
+// scripts — `@tone_target = tone.clone` in Game_Screen, `@flash_color =
+// color.clone`, Game_Map's fog tone, Game_Picture's. mruby's clone/dup allocate
+// a bare object of the same class and copy only its instance variables, so the
+// copy came back with no native payload at all and the first read of it raised
+// "uninitialized RGSS::Tone" — which is where Pray for You stopped once it
+// reached its map and the screen tone started moving. Both clone and dup call
+// initialize_copy on the new object, so this is where the payload is copied.
+template <class T>
+mrb_value data_init_copy(mrb_state* M, V self) {
+  V other;
+  mrb_get_args(M, "o", &other);
+  if (mrb_obj_equal(M, self, other))
+    return self;
+  const T& src = DataType<T>::get(M, other);
+  if (DATA_PTR(self))
+    DataType<T>::get(M, self) = src;
+  else
+    DataType<T>::alloc_obj(M, self) = src;
+  return self;
+}
+
 mrb_value table_get(mrb_state* M, V self) {
   mrb_int x, y = 0, z = 0;
   mrb_get_args(M, "i|ii", &x, &y, &z);
@@ -418,26 +445,37 @@ mrb_value table_get(mrb_state* M, V self) {
   return mrb_fixnum_value(t.data[i]);
 }
 
+// A write outside the table is dropped, and the value is only converted once it
+// is going to be stored. The order matters, because a game's own scripts lean
+// on it: Pray for You's `map_light` walks `for x in 0..(self.width)` —
+// inclusive, so one past the edge — and does `@passages_data[x, y] |= 0x0f`. At
+// the edge the read answers nil, `nil | 0x0f` is `true`, and that `true` comes
+// back here as the value of a write RGSS was always going to ignore. Converting
+// the arguments up front (mrb_get_args "ii|ii") raised "TypeError: true cannot
+// be converted to Integer" instead, which killed the game on New Game. An
+// *in-range* write of a non-Integer still raises, as it should.
 mrb_value table_set(mrb_state* M, V self) {
-  mrb_int p0, p1, p2 = 0, p3 = 0;
-  mrb_get_args(M, "ii|ii", &p0, &p1, &p2, &p3);
-  mrb_int argc = mrb_get_argc(M);
-  mrb_int x = p0, y = 0, z = 0, v;
+  mrb_value a0, a1, a2 = mrb_nil_value(), a3 = mrb_nil_value();
+  mrb_get_args(M, "oo|oo", &a0, &a1, &a2, &a3);
+  const mrb_int argc = mrb_get_argc(M);
+  mrb_int x = mrb_as_int(M, a0), y = 0, z = 0;
+  mrb_value v;
   if (argc == 2) {
-    v = p1;
+    v = a1;
   } else if (argc == 3) {
-    y = p1;
-    v = p2;
+    y = mrb_as_int(M, a1);
+    v = a2;
   } else {
-    y = p1;
-    z = p2;
-    v = p3;
+    y = mrb_as_int(M, a1);
+    z = mrb_as_int(M, a2);
+    v = a3;
   }
   Table& t = DataType<Table>::get(M, self);
-  long i = table_index(t, x, y, z);
-  if (i >= 0)
-    t.data[i] = (int16_t)v;
-  return mrb_fixnum_value(v);
+  const long i = table_index(t, x, y, z);
+  if (i < 0)
+    return v;
+  t.data[i] = (int16_t)mrb_as_int(M, v);
+  return v;
 }
 
 mrb_value table_resize(mrb_state* M, V self) {
@@ -2449,9 +2487,20 @@ void update_z(mrb_state* M) {
   mrb_iv_set(M, mod, mrb_intern_lit(M, "_z_updated"), mrb_true_value());
 }
 
-mrb_value gfx_update(mrb_state* M, mrb_value self) {
-  const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
-
+// Drain every backend's buffered key transitions into RGSS::Input. Called from
+// Input.update (mrblib/lib.rb) — *not* from Graphics.update, which is where
+// this used to live and where it silently broke every game that runs its own
+// engine: an RGSS scene loop is
+//
+//   loop { Graphics.update; Input.update; update; break if $scene != self }
+//
+// so transitions applied during Graphics.update were wiped by the game's own
+// Input.update (which expires the previous frame's triggers) before the scene
+// read them — `Input.trigger?` could never be true under the script host, and
+// no game could be played. RGSS's contract is that Input.update is what
+// refreshes input, so that is where the drain belongs; the built-in flows call
+// it once a frame too, so their timing is unchanged.
+mrb_value input_poll(mrb_state* M, mrb_value self) {
   rgss_terminal_poll(M);
   rgss_sdl_poll(M);
 #if defined(WIO_TERMINAL)
@@ -2460,6 +2509,22 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
 #if defined(PSP_BUILD)
   rgss_psp_poll(M);
 #endif
+  return mrb_nil_value();
+}
+
+// Push a key transition into the same buffer the SDL backend feeds, from Ruby.
+// The headless tests use it to drive the loop above without a window.
+mrb_value input_push(mrb_state* M, mrb_value self) {
+  mrb_int key;
+  mrb_bool press;
+  mrb_get_args(M, "ib", &key, &press);
+  rgss_sdl_input_push(static_cast<int>(key), press);
+  return mrb_nil_value();
+}
+
+mrb_value gfx_update(mrb_state* M, mrb_value self) {
+  const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+
   rgss_audio_frame();
 
   if (mrb_const_defined(M, mrb_obj_value(M->object_class),
@@ -5128,6 +5193,8 @@ void define_rect(mrb_state* M, RClass* m) {
         return self;
       },
       MRB_ARGS_OPT(4));
+  mrb_define_method(M, rect, "initialize_copy", data_init_copy<Rect>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(
       M, rect, "set",
       [](mrb_state* M, V self) {
@@ -5508,6 +5575,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(color, MRB_TT_DATA);
   mrb_define_method(M, color, "initialize", color_init,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  // #clone / #dup, which a game's scripts use on these constantly.
+  mrb_define_method(M, color, "initialize_copy", data_init_copy<Color>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, color, "set", color_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_method(M, color, "red", component_get<Color, &Color::red>,
@@ -5538,6 +5608,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
   mrb_define_method(M, tone, "initialize", tone_init,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, tone, "set", tone_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_method(M, tone, "red", component_get<Tone, &Tone::red>,
@@ -5567,6 +5639,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(table, MRB_TT_DATA);
   mrb_define_method(M, table, "initialize", table_init,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
+  mrb_define_method(M, table, "initialize_copy", data_init_copy<Table>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, table, "[]", table_get,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
   mrb_define_method(M, table, "[]=", table_set,
@@ -5599,6 +5673,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_ARGS_NONE());
   mrb_define_method(M, table, "_dump", table_dump, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, table, "_load", table_load, MRB_ARGS_REQ(1));
+
+  // RGSS::Input is otherwise pure Ruby (mrblib/lib.rb reopens this module); the
+  // two native hooks are the backend drain Input.update calls and the test-side
+  // push that stands in for a keyboard.
+  RClass* input = mrb_define_module_under(M, m, "Input");
+  mrb_define_module_function(M, input, "_poll", input_poll, MRB_ARGS_NONE());
+  mrb_define_module_function(M, input, "_push", input_push, MRB_ARGS_REQ(2));
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
   mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());

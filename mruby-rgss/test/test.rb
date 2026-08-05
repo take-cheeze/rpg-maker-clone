@@ -94,6 +94,87 @@ assert "RGSS::Table 3D and resize" do
   assert_equal 99, t[1, 2, 3] # preserved through resize
 end
 
+# A write past the edge is dropped without the value ever being looked at, which
+# a game's own scripts lean on. Pray for You's `map_light` walks
+# `for x in 0..(self.width)` — inclusive, so one past the end — and runs
+# `@passages_data[x, y] |= 0x0f`: out there the read answers nil, `nil | 0x0f` is
+# `true`, and that `true` arrives as the value of a write RGSS was always going
+# to ignore. Converting arguments before the bounds check turned it into
+# "TypeError: true cannot be converted to Integer" and killed the game on New
+# Game.
+# A game's own scripts copy these constantly — `@tone_target = tone.clone` in
+# Game_Screen, `@flash_color = color.clone`, Game_Map's fog tone, Game_Picture's
+# — and mruby's clone/dup allocate a bare object of the same class, copying only
+# instance variables. Without initialize_copy the copy carried no native payload
+# at all and the first read raised "uninitialized RGSS::Tone", which is where a
+# released game stopped once it reached its map and the screen tone moved.
+assert "RGSS value types survive #clone and #dup" do
+  color = RGSS::Color.new(10, 20, 30, 40)
+  [color.clone, color.dup].each do |copy|
+    assert_equal 10.0, copy.red
+    assert_equal 20.0, copy.green
+    assert_equal 30.0, copy.blue
+    assert_equal 40.0, copy.alpha
+    # A copy is its own object: changing it must not move the original.
+    copy.set(1, 2, 3, 4)
+    assert_equal 1.0, copy.red
+    assert_equal 10.0, color.red
+  end
+
+  tone = RGSS::Tone.new(-5, 0, 5, 50)
+  [tone.clone, tone.dup].each do |copy|
+    assert_equal(-5.0, copy.red)
+    assert_equal 5.0, copy.blue
+    assert_equal 50.0, copy.gray
+  end
+  # The shape Game_Screen#update runs every frame while a tone is changing.
+  target = tone.clone
+  moving = RGSS::Tone.new(0, 0, 0, 0)
+  moving.red = (moving.red * 3 + target.red) / 4
+  assert_equal(-1.25, moving.red) # components are floats, as in RGSS
+
+  rect = RGSS::Rect.new(1, 2, 3, 4)
+  copy = rect.clone
+  assert_equal 1, copy.x
+  assert_equal 4, copy.height
+  copy.set(9, 9, 9, 9)
+  assert_equal 1, rect.x, "the original rect moved with its copy"
+
+  table = RGSS::Table.new(2, 2)
+  table[1, 1] = 7
+  tcopy = table.clone
+  assert_equal 7, tcopy[1, 1]
+  assert_equal 2, tcopy.xsize
+  tcopy[1, 1] = 8
+  assert_equal 7, table[1, 1], "the original table shares its copy's storage"
+end
+
+assert "RGSS::Table drops out-of-range writes without reading the value" do
+  t = RGSS::Table.new(2, 2)
+  t[0, 0] = 5
+
+  assert_nil t[2, 0], "a read past the edge is nil"
+  assert_nil t[0, 2]
+  assert_nil t[-1, 0]
+
+  # The exact shape from the game: nil | 0x0f == true, written back past the edge.
+  value = t[2, 0] | 0x0f
+  assert_true value == true, "nil | 0x0f should be true, as in RGSS"
+  t[2, 0] = value
+  t[0, -1] = true
+  assert_equal 5, t[0, 0], "the dropped writes must not disturb the table"
+
+  # In range, a non-Integer is still a TypeError.
+  raised = false
+  begin
+    t[0, 0] = true
+  rescue TypeError
+    raised = true
+  end
+  assert_true raised, "an in-range write of true must still raise"
+  assert_equal 5, t[0, 0]
+end
+
 assert "RGSS::Table marshal round-trip" do
   t = RGSS::Table.new(2, 2)
   t[0, 0] = 1
@@ -1077,6 +1158,41 @@ assert "RGSS::Input registers a tap that pressed and released in one frame" do
     # ... and only for the one frame.
     RGSS::Input.update
     assert_false RGSS::Input.trigger?(RGSS::Input::C)
+  ensure
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.update
+  end
+end
+
+# The order inside Input.update is what makes a game's own engine playable. An
+# RGSS scene loop reads input *after* calling Input.update:
+#
+#   loop { Graphics.update; Input.update; update; break if $scene != self }
+#
+# so a transition applied anywhere before that Input.update — which is where the
+# backends' buffer used to be drained, in Graphics.update — was wiped by it
+# before the scene ever looked. `Input.trigger?` was permanently false for a game
+# running under the script host: no New Game, no message advance, no menu.
+# Input.update now expires the old triggers, *then* drains the buffer.
+assert "RGSS::Input.update applies buffered keys, so a scene loop sees them" do
+  begin
+    RGSS::Input.update
+    # A key arrives between frames, exactly as the SDL event watch buffers it.
+    RGSS::Input._push(RGSS::Input::C, true)
+    # The scene loop's Input.update. (Graphics.update needs a live display the
+    # test binary lacks — and no longer touches input, which is the fix.)
+    RGSS::Input.update
+    assert_true RGSS::Input.trigger?(RGSS::Input::C),
+                "the game's own Input.update swallowed the key"
+    assert_true RGSS::Input.press?(RGSS::Input::C), "the key should read as held"
+    # A trigger still lives exactly one frame; the hold outlasts it.
+    RGSS::Input.update
+    assert_false RGSS::Input.trigger?(RGSS::Input::C)
+    assert_true RGSS::Input.press?(RGSS::Input::C)
+    # And the release arrives the same way.
+    RGSS::Input._push(RGSS::Input::C, false)
+    RGSS::Input.update
+    assert_false RGSS::Input.press?(RGSS::Input::C)
   ensure
     RGSS::Input.release(RGSS::Input::C)
     RGSS::Input.update

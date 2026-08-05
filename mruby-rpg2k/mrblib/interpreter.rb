@@ -200,8 +200,9 @@ module Game
       @battle_background = nil
       @input_variable = nil
       @input_digits = 1
-      # Deterministic RNG for the Control Variables "random" operand (mruby has
-      # no Kernel#rand here); seeded like the map scene's own RNG.
+      # Deterministic RNG for the Control Variables "random" operand (Kernel#rand
+      # exists but is unseeded, and these runs are diffed); seeded like the map
+      # scene's own RNG.
       @rng = Game::Rng.new(0x2000)
       reset_waits
     end
