@@ -35,6 +35,9 @@
 #include <dirent.h>
 #include <stb_truetype.h>
 
+// The engine's fallback font, for projects that ship none (also mruby-rgss).
+#include "default_font.hxx"
+
 namespace {
 
 // The game font, loaded once on first text draw. MV renders all window/menu
@@ -43,6 +46,11 @@ namespace {
 // find the first .ttf/.otf under the game's fonts/ dir and rasterise glyphs
 // with stb_truetype. Loading is lazy and cached; if no font is found, text
 // draws no-op and measureText falls back to a rough advance estimate.
+//
+// A project with no fonts/ of its own (the MZ sample, and anything whose
+// deployment left the RTP font behind) falls back to the engine's default font
+// — every glyph MV draws goes through here, so without one its whole UI is
+// blank rather than merely wrong-looking.
 struct GameFont {
   bool tried = false;
   bool ok = false;
@@ -54,7 +62,7 @@ std::string font_dir_first_ttf() {
   const std::string dir = mv_resolve_path("fonts");
   DIR* d = opendir(dir.c_str());
   if (!d)
-    return std::string();
+    return rgss::default_font_path();
   std::string found;
   while (dirent* e = readdir(d)) {
     const std::string name = e->d_name;
@@ -69,7 +77,7 @@ std::string font_dir_first_ttf() {
     }
   }
   closedir(d);
-  return found;
+  return found.empty() ? rgss::default_font_path() : found;
 }
 
 GameFont& game_font() {

@@ -381,6 +381,54 @@ assert "RGSS::Bitmap#draw_text renders in the font colour" do
   assert_equal 0.0, drawn.blue
 end
 
+# The fallback for projects that ship no font. RGSS.default_font_path finds the
+# bundled default font (assets/fonts) — downloaded rather than committed, so nil
+# is a normal answer here — and Font.default_path is the opt-in switch each
+# maker's boot flips.
+#
+# With it unset, Font#size must not move the measurement at all: the bitmap font
+# has exactly one size, and that is what keeps RPG2000 on RPG_RT's metrics.
+assert "RGSS::Font.default_path is opt-in" do
+  path = RGSS.default_font_path
+  assert_true path.nil? || (path.is_a?(String) && !path.empty?)
+
+  saved = RGSS::Font.default_path
+  begin
+    RGSS::Font.default_path = nil
+    b = RGSS::Bitmap.new(64, 40)
+    b.font.size = 12
+    small = b.text_size("Hi").height
+    b.font.size = 40
+    assert_equal small, b.text_size("Hi").height
+  ensure
+    RGSS::Font.default_path = saved
+  end
+end
+
+# Set, it takes over: the same text at 40px now measures taller than at 12px,
+# because it is being rasterised from real outlines. Skipped when no default
+# font is installed; the check above still covers the plumbing.
+assert "RGSS::Font.default_path drives text_size when set" do
+  path = RGSS.default_font_path
+  if path
+    saved = RGSS::Font.default_path
+    begin
+      RGSS::Font.default_path = path
+      b = RGSS::Bitmap.new(64, 64)
+      b.font.size = 12
+      small = b.text_size("Hi").height
+      b.font.size = 40
+      big = b.text_size("Hi").height
+      assert_true big > small,
+                  "expected the fallback font to scale with Font#size " \
+                  "(40px measured #{big}, 12px measured #{small})"
+    ensure
+      # Leave it as it was: the checks below expect the shinonome path.
+      RGSS::Font.default_path = saved
+    end
+  end
+end
+
 assert "RGSS::Bitmap#draw_text honours every Font attribute without error" do
   b = RGSS::Bitmap.new(80, 24)
   b.font.bold = true

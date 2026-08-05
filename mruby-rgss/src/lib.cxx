@@ -12,6 +12,7 @@
 
 #include <lvgl.h>
 
+#include "default_font.hxx"
 #include "profiler.hxx"
 #include "shinonome.hxx"
 
@@ -79,6 +80,16 @@ extern "C" void rgss_psp_poll(mrb_state* M);
 #endif
 
 namespace {
+// RGSS.default_font_path -> the bundled default UI font, or nil when none is
+// installed (it is downloaded, not committed -- see assets/fonts/README.md).
+// The makers whose text expects a TrueType face point RGSS::Font.default_path
+// at this on boot; see font_default_path below for why that is opt-in.
+mrb_value default_font_path_m(mrb_state* M, mrb_value self) {
+  const std::string& path = rgss::default_font_path();
+  return path.empty() ? mrb_nil_value()
+                      : mrb_str_new(M, path.data(), path.size());
+}
+
 mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
   mrb_int len;
@@ -1792,19 +1803,50 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
   return partial.empty() ? first_any : partial;
 }
 
+// RGSS::Font.default_path, or "" when unset: the font to use for a project that
+// ships none of its own. Opt-in per maker rather than automatic, because
+// "wrong" differs by maker — RPG Maker XP/VX projects want a real TrueType face
+// at the size they asked for (their boot points this at the bundled default
+// font, see assets/fonts/README.md), while RPG2000 wants the shinonome bitmap
+// font, whose metrics match RPG_RT's MS Gothic and which the render-parity
+// comparisons are checked against. RPG2000 therefore leaves this nil.
+std::string font_default_path(mrb_state* M) {
+  const V rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
+  const mrb_sym font_sym = mrb_intern_lit(M, "Font");
+  // Font is defined in this gem's mrblib, which is always loaded alongside the
+  // native half -- but text must draw, not raise, for an embedder that loaded
+  // only the C side.
+  if (!mrb_const_defined(M, rgss_mod, font_sym))
+    return std::string();
+  const V v =
+      mrb_funcall(M, mrb_const_get(M, rgss_mod, font_sym), "default_path", 0);
+  if (!mrb_string_p(v))
+    return std::string();
+  return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
+}
+
 // Loaded fonts cached by requested family name (the search roots are fixed for
 // a run). A cached entry may hold an unloaded font (ok == false), i.e. "no
 // usable font for this name"; that negative result is cached too, so the
 // Fonts/ directory is scanned only once per name.
+//
+// The fallback path is part of the key, not just the name: a game's scripts may
+// set Font.default_path (or the boot may set it after the first text has been
+// drawn), and the entry cached before that must not outlive it.
 std::shared_ptr<TtfFont> ttf_for_name(mrb_state* M, const std::string& name) {
   static std::map<std::string, std::shared_ptr<TtfFont>> cache;
-  const auto it = cache.find(name);
+  const std::string fallback = font_default_path(M);
+  const std::string key = name + '\n' + fallback;
+  const auto it = cache.find(key);
   if (it != cache.end())
     return it->second;
-  const std::string path = find_font_path(M, name);
+  std::string path = find_font_path(M, name);
+  // Nothing under the project's own Fonts/ — fall back to the shared default.
+  if (path.empty())
+    path = fallback;
   std::shared_ptr<TtfFont> f =
       path.empty() ? std::make_shared<TtfFont>() : load_ttf(path);
-  cache[name] = f;
+  cache[key] = f;
   return f;
 }
 
@@ -5258,6 +5300,8 @@ static mrb_value mouse_pressed_m(mrb_state* M, mrb_value) {
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, m, "default_font_path", default_font_path_m,
+                             MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "zlib_inflate", zlib_inflate,
                              MRB_ARGS_REQ(1));
   mrb_define_module_function(M, m, "mouse_x", mouse_x_m, MRB_ARGS_NONE());

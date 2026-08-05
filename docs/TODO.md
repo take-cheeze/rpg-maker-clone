@@ -677,6 +677,16 @@ The work below is roughly ordered by the critical path to a walkable game
 - ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)
+- ✅ Default UI font — `scripts/download-default-font.bash` installs M PLUS 1p
+  Regular into `assets/fonts` (git-ignored, ~1.7 MiB, SIL OFL), which the
+  XP/VX/MV/MZ runtimes fall back to when a project ships no font of its own,
+  instead of drawing every window with the 12px shinonome bitmap font (ADR
+  0028). `RPG_DEFAULT_FONT` overrides it; the `default_font` ctest
+  (`scripts/check_default_font.rb`) validates what was installed and skips when
+  nothing was. RPG2000 deliberately keeps shinonome — its metrics are what the
+  RPG_RT parity comparisons measure — so the fallback is opt-in per maker via
+  `RGSS::Font.default_path`. The browser build mounts the font at `/fonts` with
+  `-DWASM_DEFAULT_FONT=ON`, at ~1.7 MiB of `index.data`
 
 ## RPG Maker with RGSS (XP / VX / VXAce)
 

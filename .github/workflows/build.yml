@@ -139,6 +139,14 @@ jobs:
         background: true
         run: ./scripts/nix-develop.bash ./scripts/download-freepats.bash
 
+      # The fallback UI font for projects that ship none. Not committed
+      # (~1.7 MiB), so fetch it here or the `default_font` check skips and the
+      # XP/VX/MV smoke tests draw their windows with the 12px bitmap font.
+      - name: Download default font
+        id: dl-default-font
+        background: true
+        run: ./scripts/nix-develop.bash ./scripts/download-default-font.bash
+
       - name: pre-commit
         id: pre-commit
         background: true
@@ -185,7 +193,7 @@ jobs:
       - name: Wait for lint and downloads
         wait:
           [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample,
-           dl-freepats]
+           dl-freepats, dl-default-font]
 
       - name: Prepare screenshot dir
         run: mkdir -p ss
@@ -599,6 +607,15 @@ jobs:
         background: true
         run: ./scripts/nix-develop.bash ./scripts/download-freepats.bash
 
+      # The fallback UI font, packaged into index.data at link time by
+      # -DWASM_DEFAULT_FONT=ON below (so the pre-link barrier awaits it, not the
+      # configure). Without it a project loaded into the page that ships no font
+      # of its own renders every window at the bitmap font's fixed 12px.
+      - name: Download default font
+        id: default-font
+        background: true
+        run: ./scripts/nix-develop.bash ./scripts/download-default-font.bash
+
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
@@ -632,7 +649,8 @@ jobs:
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja \
             -DWASM_SAMPLE_DIR=data/mv-sample \
-            -DWASM_MIDI_PATCHES=ON
+            -DWASM_MIDI_PATCHES=ON \
+            -DWASM_DEFAULT_FONT=ON
           # cmake/emscripten-probe-cache.cmake records which branch it took. It
           # falls back to probing whenever the Emscripten version moved, which
           # is correct but costs ~100s, and the only other symptom is a slow
@@ -664,12 +682,12 @@ jobs:
           ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             ./scripts/check_emscripten_probe_cache.bash
 
-      # Barrier: the link step packages data/mv-sample and the MIDI patch set
-      # into index.data, so both must be in place before the build starts. A
-      # failed background fetch surfaces here and fails the job, exactly as it
-      # did when this ran inline.
-      - name: Wait for the MV sample engine and MIDI patches
-        wait: [mv-sample, freepats]
+      # Barrier: the link step packages data/mv-sample, the MIDI patch set and
+      # the default font into index.data, so all three must be in place before
+      # the build starts. A failed background fetch surfaces here and fails the
+      # job, exactly as it did when this ran inline.
+      - name: Wait for the MV sample engine, MIDI patches and default font
+        wait: [mv-sample, freepats, default-font]
 
       - name: build
         run: |

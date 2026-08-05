@@ -18,6 +18,12 @@
 /assets/timidity/*
 !/assets/timidity/README.md
 
+# The default UI font (~1.7 MiB) is fetched by
+# scripts/download-default-font.bash rather than committed, the same way. Keep
+# the checked-in README that explains what belongs there and how to get it.
+/assets/fonts/*
+!/assets/fonts/README.md
+
 # Runtime save artifacts written by the MV/websave (localStorage) shim.
 /save
 

@@ -35,6 +35,12 @@ class RPGXP
 
   def initialize(_args)
     @title = read_ini_title
+    # XP selects its UI font by family name (Font.default_name, "MS PGothic" on
+    # Windows) and expects the file under the project's Fonts/. Projects that
+    # ship none would render every window with the 12px shinonome bitmap font
+    # whatever size they asked for, so fall back to the bundled default font
+    # (assets/fonts) when it is installed. A project font still wins.
+    RGSS::Font.default_path ||= RGSS.default_font_path
     @db = RGSSData.new(GAME_DIR)
     # A packed release holds its Graphics/ and Audio/ trees in the same archive
     # as its Data/, and assets are asked for by name from deep inside the game's

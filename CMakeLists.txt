@@ -307,6 +307,23 @@ target_compile_definitions(
   ${PROJECT_NAME}
   PRIVATE "RGSS_TIMIDITY_CFG_SOURCE=\"${TIMIDITY_ASSET_DIR}/timidity.cfg\"")
 
+# The default UI font, used when a project ships no font of its own -- otherwise
+# its windows draw with the fixed 12px shinonome bitmap font whatever size they
+# asked for. ~1.7 MiB, so it is downloaded by scripts/download-default-font.bash
+# rather than committed.
+#
+# Both paths are baked in unconditionally and probed at run time (src/main.cxx,
+# init_default_font), for the same reason as the patch set above: a
+# configure-time EXISTS check would race the download.
+include(GNUInstallDirs)
+set(DEFAULT_FONT_ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
+target_compile_definitions(
+  ${PROJECT_NAME}
+  PRIVATE
+    "RGSS_DEFAULT_FONT_SOURCE_DIR=\"${DEFAULT_FONT_ASSET_DIR}\""
+    "RGSS_DEFAULT_FONT_INSTALL_DIR=\"${CMAKE_INSTALL_FULL_DATADIR}/rpg-maker-clone/fonts\""
+)
+
 if(EMSCRIPTEN)
   # Emit a runnable page (index.html + .js + .wasm) with a growable heap so the
   # interpreter and game assets fit.
@@ -400,6 +417,22 @@ if(EMSCRIPTEN)
     target_link_options(${PROJECT_NAME} PRIVATE
                         "--preload-file=${TIMIDITY_ASSET_DIR}@/timidity")
   endif()
+
+  # Mount the default UI font at /fonts, where the text renderer looks for it
+  # (mruby-rgss/src/default_font.cxx). Without it, an XP/VX/MV project that
+  # ships no font of its own draws its windows with the 12px bitmap font in the
+  # browser, however large the text was meant to be.
+  #
+  # Off by default, like the patch set: emcc fails the link when the preloaded
+  # directory is missing, and it is missing until the download has been run.
+  # Turn on with -DWASM_DEFAULT_FONT=ON, having run
+  # scripts/download-default-font.bash. Adds ~1.7 MiB to index.data.
+  option(WASM_DEFAULT_FONT "Preload the default UI font into the wasm build"
+         OFF)
+  if(WASM_DEFAULT_FONT)
+    target_link_options(${PROJECT_NAME} PRIVATE
+                        "--preload-file=${DEFAULT_FONT_ASSET_DIR}@/fonts")
+  endif()
 endif()
 
 install(TARGETS ${PROJECT_NAME} RUNTIME)
@@ -410,6 +443,21 @@ if(NOT EMSCRIPTEN AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
   include(GNUInstallDirs)
   install(DIRECTORY ${TIMIDITY_ASSET_DIR}/
           DESTINATION ${CMAKE_INSTALL_DATADIR}/rpg-maker-clone/timidity)
+endif()
+
+# Same for the default UI font, which src/main.cxx probes for at
+# RGSS_DEFAULT_FONT_INSTALL_DIR. OFL.txt sits in the same directory and is
+# installed with it, as the licence requires.
+if(NOT EMSCRIPTEN AND EXISTS ${DEFAULT_FONT_ASSET_DIR})
+  include(GNUInstallDirs)
+  install(
+    DIRECTORY ${DEFAULT_FONT_ASSET_DIR}/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/rpg-maker-clone/fonts
+    FILES_MATCHING
+    PATTERN "*.ttf"
+    PATTERN "*.otf"
+    PATTERN "*.ttc"
+    PATTERN "OFL.txt")
 endif()
 
 enable_testing()
@@ -428,6 +476,16 @@ if(NOT EMSCRIPTEN)
     NAME timidity_patches
     COMMAND ruby ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_timidity_patches.rb
             ${TIMIDITY_ASSET_DIR})
+
+  # A default font that is truncated, or subsetted down to Latin, is silent in
+  # the same way: stb_truetype draws nothing for the glyphs it cannot find, so
+  # the failure arrives as blank window text. Check the file instead. Skips
+  # cleanly when the font was never downloaded, so this too is registered
+  # unconditionally.
+  add_test(
+    NAME default_font
+    COMMAND ruby ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_default_font.rb
+            ${DEFAULT_FONT_ASSET_DIR})
 
   # The Ruby half of the crash report — the $stderr tee whose ring buffer gives
   # a report its "Recent log" section. Plain Ruby with no mruby dependencies, so
