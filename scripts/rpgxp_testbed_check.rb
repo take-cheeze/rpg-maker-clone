@@ -57,8 +57,8 @@ mrblib = File.expand_path("../mruby-rpgxp/mrblib", __dir__)
 load File.join(mrblib, "rgss_data.rb")
 
 # The event interpreter is host-runnable too; load it (with tiny stand-ins for
-# the native Audio/RPGXP shell) so the check can drive real event command lists
-# and catch any parameter-shape surprise the synthetic unit tests can't.
+# the native Audio/RPGXP shell) so the data layer can be loaded and walked
+# without a display.
 module Audio
   def self.bgm_play(*); end
   def self.bgs_play(*); end
@@ -66,22 +66,8 @@ module Audio
   def self.se_play(*); end
 end
 class RPGXP; end
-load File.join(mrblib, "game.rb")
-load File.join(mrblib, "interpreter.rb")
 load File.join(mrblib, "rgssad.rb")
 require "tmpdir"
-
-# Resolver over the database's common events for Call Common Event.
-class CommonResolver
-  def initialize(commons)
-    @commons = commons || []
-  end
-
-  def common_event_list(id)
-    ce = @commons[id]
-    ce && ce.list
-  end
-end
 
 class Checker
   def initialize
@@ -109,9 +95,7 @@ class Checker
 
     check_system(db.system)
     check_actors(db.actors)
-    check_game_actors(db)
     check_tilesets(db.tilesets)
-    @resolver = CommonResolver.new(db.common_events)
     check_maps(db)
     check_archive(dir, db)
   rescue => ex
@@ -148,29 +132,6 @@ class Checker
     puts "  actors: #{actors.compact.size} (e.g. #{actors.compact.first&.name.inspect})"
   end
 
-  # Build the live RPGXP::Game::Actor for every database actor and assert its
-  # derived state resolves: stats read from the parameters table at the actor's
-  # level (so a mis-sized table or bad level surfaces here), HP/SP start full, and
-  # the skills / equipment lists are well-formed. This exercises the actor model
-  # the Change-Actor commands and actor conditionals build on, over real data.
-  def check_game_actors(db)
-    built = 0
-    db.actors.compact.each do |a|
-      ga = RPGXP::Game::Actor.new(db, a.id)
-      expect(ga.max_hp.to_i > 0, "actor #{a.id} Game::Actor max_hp must be positive (got #{ga.max_hp.inspect})")
-      expect(ga.max_sp.to_i >= 0, "actor #{a.id} Game::Actor max_sp must be non-negative")
-      expect(ga.hp == ga.max_hp && ga.sp == ga.max_sp, "actor #{a.id} must start at full HP/SP")
-      expect(ga.skills.is_a?(Array), "actor #{a.id} skills must be an Array")
-      expect([true, false].include?(ga.weapon_equipped?(a.weapon_id.to_i)),
-             "actor #{a.id} weapon_equipped? must be boolean")
-      built += 1
-    end
-    first = db.actors.compact.first
-    sample = first && RPGXP::Game::Actor.new(db, first.id)
-    puts "  game-actors: #{built} built" +
-         (sample ? " (e.g. #{sample.name.inspect} Lv#{sample.level} HP#{sample.max_hp} skills=#{sample.skills.size})" : "")
-  end
-
   def check_tilesets(tilesets)
     tilesets.compact.each do |t|
       expect(t.passages.is_a?(Table), "tileset #{t.id} passages must be a Table")
@@ -199,43 +160,7 @@ class Checker
       end
 
       check_events(id, map)
-      drive_events(id, map)
       @maps += 1
-    end
-  end
-
-  # Drive each event's active page through the real interpreter, auto-answering
-  # messages/choices, so the genuine command lists decode and run end to end
-  # without raising (a battle/other unsupported command is skipped, not fatal).
-  def drive_events(map_id, map)
-    (map.events || {}).each do |eid, ev|
-      page = RPGXP::Game::EventPage.select(ev.pages, Hash.new(false),
-                                           Hash.new(0), ->(_ch) { false })
-      next unless page && page.list && page.list.any? { |c| c.code != 0 }
-      state = RPGXP::Game::State.new(@db, @db.system.party_members, map_id, ev.x, ev.y)
-      it = RPGXP::Game::Interpreter.new(state)
-      it.resolver = @resolver
-      it.start(page.list, map_id, eid)
-      pump(it)
-    end
-  rescue => ex
-    fail "Map#{map_id}: interpreter raised: #{ex.class}: #{ex.message}"
-  end
-
-  def pump(it, limit = 5000)
-    steps = 0
-    while (it.running? || it.waiting?) && steps < limit
-      if it.waiting?
-        case it.wait_kind
-        when :choice then it.choose(0)
-        when :number then it.resume_number(0)
-        when :teleport then break
-        else it.resume
-        end
-      else
-        it.update
-      end
-      steps += 1
     end
   end
 

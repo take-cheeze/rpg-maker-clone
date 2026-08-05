@@ -1,16 +1,24 @@
 # RPG Maker XP runtime.
 #
-# Boots an RMXP project: reads Game.ini, loads the Data/*.rxdata database
-# (see rgss_data.rb) and drives a scene stack, mirroring how the RPG2000 side
-# (mruby-rpg2k) boots from an LCF database. XP games ship their whole engine as
-# Ruby scripts inside Data/Scripts.rxdata; running those unmodified is a large
-# future milestone (see docs/adr/0009-rpgxp-rgss-data-layer.md and docs/TODO.md).
-# This layer instead reimplements the default title/map flow directly against the
-# database, the same staged approach the RPG2000 runtime took.
+# Boots an RMXP project by running **the game's own engine**: it reads Game.ini,
+# loads the Data/*.rxdata database (rgss_data.rb), supplies the RGSS class
+# library a game expects (native `mruby-rgss` plus the Ruby classes the player
+# ships, rgss_library.rb) and hands the project's `Data/Scripts.rxdata` to the
+# script host (script_host.rb), which evaluates them the way RGSS104E.dll does.
+#
+# There is no second engine any more. This runtime used to carry a
+# reimplementation of RMXP's default title/map/event flow (ADR 0010), written
+# before a game's own scripts could run; ADR 0030 removed it once they could,
+# because a reimplementation can only ever reproduce the *default* engine, while
+# every game that matters customises it. A project that ships no scripts now says
+# so rather than being played by a stand-in.
+#
+# The VX / VX Ace shell (mruby-rpgvx) is the same shape and shares the host.
 
-# So the scenes can use the bare RGSS names (Bitmap, Sprite, Viewport, Input,
-# Audio, ...) — and so Marshal resolves the value types Table/Color/Tone/Rect —
-# pull RGSS into the top-level namespace, as the RPG2000 runtime does.
+# So a game's scripts can use the bare RGSS names (Bitmap, Sprite, Viewport,
+# Input, Audio, ...) — and so Marshal resolves the value types
+# Table/Color/Tone/Rect — pull RGSS into the top-level namespace, which is where
+# RGSS itself puts them.
 class Object
   include RGSS
 end
@@ -46,122 +54,30 @@ class RPGXP
     # as its Data/, and assets are asked for by name from deep inside the game's
     # own scripts, so the loaders need it globally (see RGSS.asset_archive).
     RGSS.asset_archive = @db.archive
-    @scenes = []
-    # The default path: when the project ships its scripts, the game's own Ruby
-    # drives everything (see script_host.rb); skip building the built-in title
-    # scene, which #start would otherwise run instead. The built-in flow takes
-    # over for a project that ships no scripts, when the host is switched off
-    # (--norgss_script_host / RGSS_SCRIPT_HOST=0, or --rpgxp_new_game below), and
-    # if the host fails to boot (see #drive_script_host).
-    @use_script_host = ScriptHost.enabled? && @db.scripts? && !builtin_flow_forced?
-    if @use_script_host
-      # The scripts own their whole blocking main loop; drive it one frame at a
-      # time through a Fiber so the web build's per-frame callback still gets
-      # control back each frame (docs/adr/0023-rpgxp-script-host-frame-driver.md).
-      setup_script_host_driver
-    else
-      push Scene::Title.new(self)
-    end
+    # The scripts own their whole blocking main loop; drive it one frame at a
+    # time through a Fiber so the web build's per-frame callback still gets
+    # control back each frame (docs/adr/0023-rpgxp-script-host-frame-driver.md).
+    setup_script_host_driver if ScriptHost.enabled? && @db.scripts?
   end
 
   attr_reader :db, :title
 
-  def push(scene)
-    @scenes.push scene
-  end
-
-  def pop
-    return if @scenes.size <= 1
-    scene = @scenes.pop
-    scene.dispose if scene.respond_to?(:dispose)
-  end
-
-  # Tear everything down and return to a fresh title screen.
-  def return_to_title
-    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
-    @scenes = [Scene::Title.new(self)]
-  end
-
-  # New Game: build the initial party from System.party_members, read the start
-  # position from System and enter the map scene. A data problem is reported and
-  # leaves the title intact rather than crashing to a blank screen.
-  def start_new_game
-    sys = @db.system
-    state = Game::State.new(@db, sys.party_members, sys.start_map_id,
-                            sys.start_x, sys.start_y)
-    state.map = @db.load_map(state.map_id)
-    scene = Scene::Map.new(self, state)
-    @scenes.last.dispose
-    @scenes = [scene]
-    # A machine-readable marker so a headless run (see --rpgxp_new_game,
-    # scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash) can
-    # assert the map scene was really reached, not just the title.
-    $stderr.puts "[RPGXP-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
-  rescue StandardError => e
-    $stderr.puts "[RGSS] Failed to start new game: #{e.message}"
-  end
-
-  # Continue: reload the portable Marshal save (the real RMXP `.rxdata` save
-  # format is a later refinement) and resume on its map.
-  def continue_game
-    unless save_exists?
-      RGSS.warn_stub "Continue (no save data found)"
-      return
-    end
-    data = File.open(save_path, "rb") { |f| f.read }
-    state = Game::State.load(@db, Marshal.load(data))
-    state.map = @db.load_map(state.map_id)
-    scene = Scene::Map.new(self, state)
-    @scenes.last.dispose
-    @scenes = [scene]
-  rescue StandardError => e
-    $stderr.puts "[RGSS] Failed to continue: #{e.message}"
-  end
-
-  def save_path(slot = 1)
-    "#{GAME_DIR}/save#{slot}.mrb"
-  end
-
-  def save_exists?(slot = 1)
-    File.exist? save_path(slot)
-  rescue StandardError => e
-    $stderr.puts "[RGSS] save-slot check failed for slot #{slot}: #{e.message}"
-    false
-  end
-
-  def save_game(state, slot = 1)
-    File.open(save_path(slot), "wb") { |f| f.write Marshal.dump(state.to_h) }
-    true
-  rescue StandardError => e
-    $stderr.puts "[RGSS] Failed to save: #{e.message}"
-    false
-  end
-
-  # One frame of the game. Both the desktop `loop { main_loop }` and the web
-  # per-frame `emscripten_set_main_loop` callback (src/main.cxx) call this. When
-  # the script host is driving, a frame is one resume of its Fiber (which runs
-  # the scripts' loop up to their next Graphics.update); otherwise it is the
-  # built-in scene/input/graphics tick. The `@host_fiber` guard is nil in the
-  # default flow, so that path is unchanged.
+  # One frame of the game: one resume of the host's Fiber, which runs the
+  # scripts' own loop up to their next Graphics.update. Both the desktop
+  # `loop { main_loop }` and the web per-frame `emscripten_set_main_loop`
+  # callback (src/main.cxx) call this.
   def main_loop
     return drive_script_host if @host_fiber
-    # The host game has ended (Main returned, or a script called `exit`); the web
-    # per-frame callback keeps calling this, so idle instead of falling into the
-    # built-in tick with no scenes.
-    return if @host_done
-
-    RGSS::Profiler.frame do
-      RGSS::Profiler.section("scene.update") { @scenes.last.update }
-      RGSS::Profiler.section("input.update") { Input.update }
-      Graphics.update
-    end
+    # The game has ended (its Main returned, or a script called `exit`) or never
+    # started; the web per-frame callback keeps calling this, so idle.
+    nil
   end
 
   def start
-    # The built-in flow needs a scene; a script-host boot builds its Fiber in
-    # #initialize instead. `@host_done` only becomes true once the host's Main
-    # returns, so the built-in flow loops forever exactly as before.
-    push Scene::Title.new(self) if @scenes.empty? && !@host_fiber
+    unless @host_fiber
+      report_nothing_to_run
+      return
+    end
     loop do
       main_loop
       break if @host_done
@@ -171,35 +87,34 @@ class RPGXP
 
   private
 
-  # `--rpgxp_new_game` drives the *built-in* title screen (Scene::Title picks New
-  # Game without input and logs [RPGXP-MAP]) — the game's own scripts show their
-  # own title and cannot be driven that way. The flag therefore means "run the
-  # built-in flow", so the headless render checks that pass it
-  # (scripts/rpgxp_boot_check.bash, scripts/rgssad_asset_check.bash) keep
-  # measuring the reimplementation now that the script host is the default.
-  #
-  # Read through its own begin/rescue like Scene::Title#auto_new_game?: the
-  # constant is defined by the native binary (src/main.cxx) and absent under the
-  # CRuby harnesses, and Module#const_get is not something this mruby build is
-  # known to carry.
-  def builtin_flow_forced?
-    RPGXP_NEW_GAME
-  rescue StandardError
-    false
+  # Why there is nothing to run: either the project ships no script bundle (an
+  # editor project mid-authoring, or a folder that only looks like one), or the
+  # host was switched off with --norgss_script_host. Reported once — the web
+  # callback would otherwise print it every frame.
+  def report_nothing_to_run
+    return if @warned_nothing_to_run
+    @warned_nothing_to_run = true
+    if !ScriptHost.enabled?
+      $stderr.puts "[RGSS] the script host is off (--norgss_script_host), so " \
+                   "the project's own scripts will not run; there is no other " \
+                   "engine to fall back to (docs/adr/0030-rgss-only-the-games-own-engine.md)"
+    else
+      $stderr.puts "[RGSS] #{@title.inspect} ships no Data/Scripts.rxdata: an " \
+                   "RPG Maker XP game *is* its scripts, so there is nothing to run"
+    end
   end
 
   # Build the driver Fiber for the bundled scripts (which installs the per-frame
-  # Graphics.update yield). Only reached when the host is enabled, so the
-  # built-in flow never creates a Fiber nor wraps Graphics.update. The driver
-  # itself lives in ScriptHost so the VX / VX Ace shell (mruby-rpgvx) drives the
-  # bundled scripts through the same code.
+  # Graphics.update yield). The driver itself lives in ScriptHost so the VX /
+  # VX Ace shell (mruby-rpgvx) drives the bundled scripts through the same code.
   def setup_script_host_driver
     @host_fiber = ScriptHost.build_driver(@db)
   end
 
-  # Advance the script host by one frame. When its Main returns the Fiber is
-  # dead and the game is over; a boot failure logs and falls back to the
-  # built-in flow rather than crashing to a blank screen.
+  # Advance the script host by one frame. When its Main returns the Fiber is dead
+  # and the game is over. A failure inside the game's own scripts ends the run and
+  # is reported by the host with the section and line it came from — there is no
+  # fallback engine to hide it behind.
   def drive_script_host
     if @host_fiber.alive?
       @host_fiber.resume
@@ -209,16 +124,13 @@ class RPGXP
     end
   rescue RGSS::Timeout, SystemExit
     # A clean end: the timeout guard fired, or a script called `exit` (RMXP's
-    # Interpreter does this to abort on runaway common-event recursion). End the
-    # game rather than treating it as a boot failure.
+    # Interpreter does this to abort on runaway common-event recursion).
     @host_fiber = nil
     @host_done = true
   rescue StandardError => e
-    $stderr.puts "[RGSS] script host failed (#{e.class}: #{e.message}); " \
-                 "falling back to the built-in flow"
+    $stderr.puts "[RGSS] script host failed (#{e.class}: #{e.message})"
     @host_fiber = nil
-    @use_script_host = false
-    push Scene::Title.new(self) if @scenes.empty?
+    @host_done = true
   end
 
   # The window title from Game.ini's [Game] Title=, falling back to the folder

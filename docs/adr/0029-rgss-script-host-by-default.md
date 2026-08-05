@@ -4,8 +4,10 @@ Date: 2026-08-05
 
 ## Status
 
-Accepted — supersedes the "opt-in for now" clause of
-[ADR 0017](0017-rpgxp-rgss-script-host.md) (the host itself is unchanged).
+Accepted — superseded in one respect by
+[ADR 0030](0030-rgss-only-the-games-own-engine.md): the built-in flow this ADR
+kept as the fallback has been removed, so the host is not merely the default but
+the only path. Everything else here still stands.
 
 ## Context
 

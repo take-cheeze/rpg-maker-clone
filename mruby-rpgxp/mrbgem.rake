@@ -29,23 +29,21 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # Kernel#rand, which a game's scripts roll for encounters and damage variance
   # (and RPG::Weather for its drops). Same ordering reason.
   add_dependency 'mruby-random'
-  # Numeric#zero?, used by the Scroll Map offset and the pause-arrow animation.
-  # Same story as mruby-sprintf above: it is enabled in build_config.rb, but
-  # without the dependency edge to order its initialization before this gem the
-  # method was undefined in the `rake test` binary — `undefined method 'zero?'
-  # for Integer`, in CI only, with the full game build working. See the
-  # "mruby stdlib methods live in core *-ext mrbgems" note in AGENTS.md.
+  # Numeric#zero?, which a game's own scripts use. Same story as mruby-sprintf
+  # above: it is enabled in build_config.rb, but without the dependency edge to
+  # order its initialization before this gem the method was undefined in the
+  # `rake test` binary — `undefined method 'zero?' for Integer`, in CI only, with
+  # the full game build working. See the "mruby stdlib methods live in core
+  # *-ext mrbgems" note in AGENTS.md.
   add_dependency 'mruby-numeric-ext'
 
   # Load order matters: lib.rb defines the RPGXP class and its WIDTH/HEIGHT/TILE
-  # constants (and pulls RGSS into Object), which the scene/game sources read at
-  # class-body evaluation time. Set the order explicitly rather than relying on
-  # the default alphabetical glob.
-  # rgss_library defines RPG::Sprite (a subclass of the native RGSS::Sprite) at
-  # load time, so it comes after lib.rb pulls RGSS in; the script host evaluates
-  # a game's own scripts against it.
-  spec.rbfiles = %w[lib rgss_data rgss_library script_host rgssad game
-                    interpreter scene].map do |name|
+  # constants and pulls RGSS into Object, which the sources after it read at
+  # class-body evaluation time. rgss_library then defines RPG::Sprite (a subclass
+  # of the native RGSS::Sprite), which the script host evaluates a game's own
+  # scripts against. Set the order explicitly rather than relying on the default
+  # alphabetical glob.
+  spec.rbfiles = %w[lib rgss_data rgss_library script_host rgssad].map do |name|
     "#{dir}/mrblib/#{name}.rb"
   end
 end
