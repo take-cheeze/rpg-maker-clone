@@ -166,10 +166,26 @@ start_ours() {
     sleep "${OUR_BOOT_WAIT:-8}"
 }
 
+# Point the display's input focus at the game, before every key. A window
+# manager focuses a window when it maps, and both runtimes map one and then
+# resize it to the game's resolution -- and when the resize wins that race the
+# window ends up unfocused, every synthesised key goes to the root window, and
+# the run looks like an engine that ignored New Game and sat on the title
+# screen. Each display runs exactly one game, so its only visible window is the
+# one that should have the keys.
+focus_window() {
+    local disp="$1" id
+    id=$(DISPLAY="${disp}" xdotool search --onlyvisible --name . 2>/dev/null |
+             tail -1)
+    [ -n "${id}" ] || return 0
+    DISPLAY="${disp}" xdotool windowactivate --sync "${id}" 2>/dev/null || true
+}
+
 # Hold each key for ~120ms: both runtimes poll the keyboard once a frame and
 # drop a key that goes down and up between two polls.
 send_keys() {
     local disp="$1" ; shift
+    focus_window "${disp}"
     for spec in "$@" ; do
         [ "${spec}" = "-" ] && continue
         local k="${spec%%\**}" n=1
