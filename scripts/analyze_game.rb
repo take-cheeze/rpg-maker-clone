@@ -102,18 +102,30 @@ CODE_NAMES = {
   23310 => 'ElseBranch(B)',          23311 => 'EndBranch(B)',
 }.freeze
 
+# Move-route command ids. These match liblcf's MoveCommand::Code and, more to
+# the point, the runtime's own constants in Game::MoveRoute
+# (mruby-rpg2k/mrblib/game.rb) and Game::Interpreter::MoveCmd — which are the
+# numbers real move routes are decoded with, and are exercised every time a
+# Nepheshel map renders identically to RPG_RT.
+#
+# This table used to disagree with them from id 23 onward (it had 23 SwitchOn,
+# 31 Through(on), 35 ChangeGraphic, 37 Wait, 40 LockFacing), so the move
+# histogram mislabelled nine of the twelve most-used commands — a game's 5148
+# `Wait` steps were reported as `SwitchOn`. The runtime was never affected; only
+# this report was.
 MOVE_NAMES = {
   0 => 'MoveUp', 1 => 'MoveRight', 2 => 'MoveDown', 3 => 'MoveLeft',
   4 => 'MoveUpRight', 5 => 'MoveDownRight', 6 => 'MoveDownLeft', 7 => 'MoveUpLeft',
   8 => 'MoveRandom', 9 => 'MoveTowardHero', 10 => 'MoveAwayFromHero', 11 => 'MoveForward',
   12 => 'FaceUp', 13 => 'FaceRight', 14 => 'FaceDown', 15 => 'FaceLeft',
   16 => 'Turn90Right', 17 => 'Turn90Left', 18 => 'Turn180', 19 => 'Turn90RandomLR',
-  20 => 'TurnRandom', 21 => 'TurnTowardHero', 22 => 'TurnAwayFromHero',
-  23 => 'SwitchOn', 24 => 'SwitchOff', 25 => 'ChangeSpeed', 26 => 'ChangeFreq',
-  27 => 'WalkAnimOn', 28 => 'WalkAnimOff', 29 => 'FixDirOn', 30 => 'FixDirOff',
-  31 => 'Through(on)', 32 => 'Through(off)', 33 => 'StopAnimOn', 34 => 'StopAnimOff',
-  35 => 'ChangeGraphic', 36 => 'PlaySoundEffect', 37 => 'Wait',
-  38 => 'BeginJump', 39 => 'EndJump', 40 => 'LockFacing', 41 => 'UnlockFacing',
+  20 => 'FaceRandom', 21 => 'FaceTowardHero', 22 => 'FaceAwayFromHero',
+  23 => 'Wait', 24 => 'BeginJump', 25 => 'EndJump',
+  26 => 'LockFacing', 27 => 'UnlockFacing',
+  28 => 'SpeedUp', 29 => 'SpeedDown', 30 => 'FreqUp', 31 => 'FreqDown',
+  32 => 'SwitchOn', 33 => 'SwitchOff', 34 => 'ChangeGraphic', 35 => 'PlaySoundEffect',
+  36 => 'Through(on)', 37 => 'Through(off)', 38 => 'StopAnim', 39 => 'StartAnim',
+  40 => 'TransparencyUp', 41 => 'TransparencyDown',
 }.freeze
 
 # Event-command opcodes the runtime interpreter implements with a real handler
