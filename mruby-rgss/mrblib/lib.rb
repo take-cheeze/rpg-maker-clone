@@ -200,7 +200,24 @@ module RGSS
     Graphics.update
     drawn = frame_mean
 
-    $stderr.puts "[RGSS-PROBE] window alive=#{alive} drawn=#{drawn.inspect}"
+    # RGSS2/RGSS3 openness: the window unrolls from its centre line, so the area
+    # it covers scales with the value. Half-open must measure about half.
+    win.openness = 128
+    Graphics.update
+    half = frame_mean
+
+    win.openness = 0
+    Graphics.update
+    closed = frame_mean
+
+    win.openness = 255
+    win.tone = Tone.new(255, 0, 0, 0)
+    Graphics.update
+    toned = frame_mean
+
+    $stderr.puts "[RGSS-PROBE] window alive=#{alive} drawn=#{drawn.inspect} " \
+                 "half=#{half.inspect} closed=#{closed.inspect} " \
+                 "toned=#{toned.inspect}"
 
     ok = true
     unless alive
@@ -211,6 +228,25 @@ module RGSS
     unless drawn[2] > 20
       $stderr.puts "[RGSS-PROBE] FAIL the window did not draw"
       ok = false
+    end
+    if ok
+      # Generous bounds: what is checked is that openness *scales the drawn
+      # height*, not the exact ratio.
+      unless half[2] > drawn[2] / 4 && half[2] < drawn[2] * 3 / 4
+        $stderr.puts "[RGSS-PROBE] FAIL openness=128 covered #{half[2]} of " \
+                     "#{drawn[2]}, expected roughly half — the open/close " \
+                     "animation is not drawn"
+        ok = false
+      end
+      unless closed[2].zero?
+        $stderr.puts "[RGSS-PROBE] FAIL openness=0 still drew something"
+        ok = false
+      end
+      # An additive red tone over the blue background lifts red.
+      unless toned[0] > drawn[0] + 20
+        $stderr.puts "[RGSS-PROBE] FAIL Window#tone did not tint the background"
+        ok = false
+      end
     end
     win.dispose
     skin.dispose
@@ -637,20 +673,15 @@ module RGSS
     # scripts: openness x16, open?/close? x15, padding x8, arrows_visible x1 (see
     # docs/rpgvx-rgss-api-gap.md).
     #
-    # These are plain state here: the native window is drawn at full size
-    # whatever `openness` says, so the open/close *animation* is not shown yet —
-    # but because the scripts only ever wait on the value they set, a window
-    # still opens, closes and lays out correctly.
+    # `openness=` and `tone`/`tone=` are native (src/lib.cxx): both have to
+    # redraw, since the frame is drawn at a fraction of its height to animate the
+    # open/close and the tone tints the background. They must NOT be defined here
+    # — mrblib loads after the C init and would shadow them. `padding` and the
+    # rest below really are plain state the scripts drive.
 
     # 0 (fully closed) .. 255 (fully open).
     def openness
       @openness.nil? ? 255 : @openness
-    end
-
-    def openness=(value)
-      value = 0 if value < 0
-      value = 255 if value > 255
-      @openness = value
     end
 
     def open?
@@ -682,12 +713,6 @@ module RGSS
     end
 
     attr_writer :arrows_visible
-
-    def tone
-      @tone ||= Tone.new(0, 0, 0, 0)
-    end
-
-    attr_writer :tone
 
     # RGSS2/RGSS3 construct a window with its geometry — `Window.new(x, y,
     # width, height)` — where RGSS1 (XP) took an optional viewport and had the
