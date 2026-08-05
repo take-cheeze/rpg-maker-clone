@@ -2445,6 +2445,98 @@ module Game
     end
   end
 
+  # Evaluation of RPG2000 *battle*-event page conditions (troop chunk 11). A
+  # page fires when every sub-condition its `flags` bitfield enables holds.
+  #
+  # The bit values follow liblcf's `TroopPageCondition::Flags` declaration
+  # order (switch_a, switch_b, variable, turn, fatigue, enemy_hp, actor_hp,
+  # turn_enemy, turn_actor, command_actor) packed LSB-first — the same
+  # convention Game::EventPage above uses for map pages, which is validated
+  # against real games. Only the sub-conditions the battle context can answer
+  # are tested; one it cannot answer (see `ctx`) is treated as unmet rather
+  # than silently passing, so a page never fires on a condition we did not
+  # actually check.
+  module BattlePage
+    SWITCH_A      = 0x001
+    SWITCH_B      = 0x002
+    VARIABLE      = 0x004
+    TURN          = 0x008
+    FATIGUE       = 0x010
+    ENEMY_HP      = 0x020
+    ACTOR_HP      = 0x040
+    TURN_ENEMY    = 0x080
+    TURN_ACTOR    = 0x100
+    COMMAND_ACTOR = 0x200
+
+    # RPG2000's turn matcher (EasyRPG's `Game_Battle::CheckTurns`): with no
+    # `multiple` the turn must equal `base` exactly; otherwise it must be at or
+    # past `base` and an exact number of `multiple` steps beyond it. So
+    # base 0 / multiple 2 fires on turns 0, 2, 4, ...
+    def self.check_turns(turn, base, multiple)
+      return turn == base if multiple.nil? || multiple == 0
+      turn >= base && (turn - base) % multiple == 0
+    end
+
+    # Whether a battler's HP sits within a percentage window of its maximum
+    # (the enemy-HP / actor-HP conditions are expressed in percent).
+    def self.hp_within?(battler, min, max)
+      return false if battler.nil? || battler.max_hp.nil? || battler.max_hp <= 0
+      pct = battler.hp * 100 / battler.max_hp
+      pct >= min && pct <= max
+    end
+
+    # `ctx` is the battle context the interpreter also runs against; it answers
+    # `turn`, `enemy(index)`, `ally_by_actor_id(id)`, `enemy_turn(index)`,
+    # `actor_turn(id)` and `actor_command(id)`. A context that cannot answer a
+    # tested sub-condition fails the page.
+    def self.active?(cond, switches, variables, ctx)
+      return true if cond.nil?
+      flags = cond.flags || 0
+      return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
+      return false if (flags & SWITCH_B) != 0 && !switches[cond.switch_b_id]
+      if (flags & VARIABLE) != 0
+        return false if variables[cond.variable_id] < cond.variable_value
+      end
+      return false if (flags & TURN) != 0 &&
+                      !check_turns(ctx.turn, cond.turn_b, cond.turn_a)
+      if (flags & ENEMY_HP) != 0
+        return false unless hp_within?(ctx.enemy(cond.enemy_id),
+                                       cond.enemy_hp_min, cond.enemy_hp_max)
+      end
+      if (flags & ACTOR_HP) != 0
+        return false unless hp_within?(ctx.ally_by_actor_id(cond.actor_id),
+                                       cond.actor_hp_min, cond.actor_hp_max)
+      end
+      if (flags & TURN_ENEMY) != 0
+        t = ctx.enemy_turn(cond.turn_enemy_id)
+        return false if t.nil?
+        return false unless check_turns(t, cond.turn_enemy_b, cond.turn_enemy_a)
+      end
+      if (flags & TURN_ACTOR) != 0
+        t = ctx.actor_turn(cond.turn_actor_id)
+        return false if t.nil?
+        return false unless check_turns(t, cond.turn_actor_b, cond.turn_actor_a)
+      end
+      if (flags & COMMAND_ACTOR) != 0
+        return false unless ctx.actor_command(cond.command_actor_id) == cond.command_id
+      end
+      # The party-fatigue condition is an RPG2003 mechanic the runtime does not
+      # model; a page gated on it never fires rather than firing unchecked.
+      return false if (flags & FATIGUE) != 0
+      true
+    end
+
+    # Every [id, page] whose condition currently holds, in page order — unlike
+    # a map event (where the highest active page wins) RPG2000 runs *each*
+    # matching battle page.
+    def self.select_all(pages, switches, variables, ctx)
+      out = []
+      return out if pages.nil?
+      pages.each { |id, page| out << [id, page] if active?(page.condition, switches, variables, ctx) }
+      out
+    end
+  end
+
   # Common events: shared command lists that can auto-start or run in parallel.
   # start_term selects how they run (3 auto-start, 4 parallel, 5 called only);
   # when need_flag is set a common event is gated on switch_id.
@@ -2911,8 +3003,11 @@ module Game
   # not built yet, so for now this backs the Enemy Encounter reward model.
   class Enemy
     attr_reader :id, :name, :battler_name, :max_hp, :max_sp, :atk, :def, :spi,
-                :agi, :exp, :gold, :x, :y, :hidden, :drop_id, :drop_prob
+                :agi, :exp, :gold, :x, :y, :drop_id, :drop_prob
     attr_accessor :hp, :sp
+    # Whether the member starts the fight off-screen. Writable because the Show
+    # Hidden Monster battle-event command (13150) brings one in mid-fight.
+    attr_accessor :hidden
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
       row = db.enemy[id]
@@ -2966,6 +3061,10 @@ module Game
   # simulation itself is still to come.
   class Troop
     attr_reader :id, :name, :members
+    # The troop's battle-event pages (chunk 11), each entry carrying a
+    # `condition` (see Game::BattlePage) and an `event` command list the battle
+    # interpreter runs. nil / empty for a troop that scripts nothing.
+    attr_reader :pages
 
     def initialize(db, id)
       row = db.enemy_group[id]
@@ -2974,6 +3073,7 @@ module Game
       @members = []
       # Array2D#each yields (id, entry); a plain Hash test double does the same.
       row.members.each { |_, m| @members << member(db, m) } if row && row.members
+      @pages = row && row.respond_to?(:pages) ? row.pages : nil
     end
 
     def total_exp;  @members.reduce(0) { |s, e| s + e.exp } end
@@ -3120,6 +3220,44 @@ module Game
 
     # Whether the party successfully escaped this fight.
     def escaped?; @escaped; end
+
+    # -- battle-event context -------------------------------------------------
+    #
+    # The protocol the troop's battle-event pages run against: Game::BattlePage
+    # tests their conditions through it and Game::Interpreter's battle commands
+    # (Change Monster HP / MP / Condition, the battle Conditional Branch, ...)
+    # act on it. Enemies are addressed by their 0-based index within the troop,
+    # the way the editor numbers them.
+
+    # Turns elapsed, counted from 0 before the first round has run — RPG2000's
+    # battle turn number, which the pages' turn conditions are written against.
+    def turn; @rounds; end
+
+    # The live combatant for troop member `index`, or nil when out of range.
+    def enemy(index)
+      return nil unless index.is_a?(Integer) && index >= 0
+      @enemies[index]
+    end
+
+    # The live combatant for the party member whose database actor id is `id`
+    # (nil when that actor is not in this fight).
+    def ally_by_actor_id(id)
+      @allies.find { |a| a.actor && a.actor.respond_to?(:id) && a.actor.id == id }
+    end
+
+    # RPG2000 also counts turns *per battler* and remembers each actor's chosen
+    # battle command; neither is modelled here, so the page conditions that read
+    # them report "unknown" (nil) and Game::BattlePage fails that page rather
+    # than firing it on an unchecked condition.
+    def enemy_turn(_index); nil; end
+    def actor_turn(_id); nil; end
+    def actor_command(_id); nil; end
+
+    # Terminate Battle (13410): abandon the fight outright. Unlike a victory or
+    # defeat this has no outcome to process, so it is kept as its own flag the
+    # scene polls rather than folded into #finished? / #result.
+    def terminate; @terminated = true; end
+    def terminated?; @terminated ? true : false; end
 
     # Persist the fight's outcome onto the real party: write each ally combatant's
     # final status set, HP and SP back to its source actor, so damage taken in

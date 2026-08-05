@@ -398,11 +398,20 @@ The work below is roughly ordered by the critical path to a walkable game
   tests (the decision key started this event; the BGM has played through once).
   Three opcodes that never matched liblcf's `Code` enum were corrected in the
   same pass — Change Equipment is 10450 (10440 is Change Skills) and Game Over is
-  12420 — so those commands are recognised in real game data at all. Still TODO
-  here: **battle-page event commands** (13110–13410 and the `_B` conditional
-  markers), which need a battle-event interpreter the battle scene does not have
-  yet, and video playback for Play Movie (no decoder is linked in; the request is
-  logged). **Show Battle Animation** (11210) now plays on the map — the
+  12420 — so those commands are recognised in real game data at all.
+  **Battle-event pages now run too**: a troop's pages (`enemy_group` chunk 11)
+  are evaluated by `Game::BattlePage` at the start of every turn — switch,
+  variable, turn, enemy-HP and actor-HP conditions — and each matching page runs
+  through a `Game::Interpreter` carrying a `battle` context, so a page has the
+  whole ordinary command set plus **Change Monster HP / MP / Condition**
+  (13110 / 13120 / 13130), **Show Hidden Monster** (13150), **Change Battle
+  Background** (13210), the battle **Show Battle Animation** (13260),
+  **Conditional Branch** (13310 with its `_B` markers) and **Terminate Battle**
+  (13410). Messages from a page are shown in a battle panel. Still TODO here:
+  the per-battler turn counters and the party-fatigue / chosen-command
+  conditions (pages gated on those deliberately do not fire rather than firing
+  unchecked), and video playback for Play Movie (no decoder is linked in; the
+  request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
   wait flag (per-cell zoom / tone and target-only flashes are approximations for

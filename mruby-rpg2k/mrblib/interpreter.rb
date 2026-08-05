@@ -118,6 +118,19 @@ module Game
       CHANGE_MENU_ACCESS = 11960
       GAME_OVER        = 12420
       RETURN_TO_TITLE  = 12510
+      # Battle-only commands. These appear in a troop's battle-event pages
+      # (enemy_group chunk 11), never in a map or common event, and act on the
+      # running fight through Game::Interpreter#battle.
+      CHANGE_MONSTER_HP        = 13110
+      CHANGE_MONSTER_MP        = 13120
+      CHANGE_MONSTER_CONDITION = 13130
+      SHOW_HIDDEN_MONSTER      = 13150
+      CHANGE_BATTLE_BG         = 13210
+      SHOW_BATTLE_ANIM_B       = 13260
+      CONDITIONAL_B            = 13310
+      TERMINATE_BATTLE         = 13410
+      ELSE_BRANCH_B            = 23310
+      END_BRANCH_B             = 23311
     end
 
     # Move-command ids inside a Move Event that carry extra parameters (every
@@ -152,6 +165,8 @@ module Game
       @vehicle_toggle_requested = false
       @movie_request = nil
       @triggered_by_decision_key = false
+      @revealed_monsters = []
+      @battle_background = nil
       @input_variable = nil
       @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
@@ -174,6 +189,11 @@ module Game
     # (12010 type 8). Set by the owning scene when it launches a trigger-0 event;
     # false for auto-start, touch and parallel processes, and for common events.
     attr_accessor :triggered_by_decision_key
+    # The running fight a *battle*-event page acts on (see Game::Battle's
+    # "battle-event context" section). nil for map and common events, which is
+    # what makes the battle-only commands no-ops outside a battle — exactly as
+    # they are in RPG_RT, where the editor cannot even place them there.
+    attr_accessor :battle
     # Answers tile queries for Store Terrain / Event ID: responds to
     # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
     # makes those commands store 0 (the map is not queryable without it).
@@ -196,6 +216,8 @@ module Game
       @tiles_changed = false
       @vehicle_toggle_requested = false
       @movie_request = nil
+      @revealed_monsters = []
+      @battle_background = nil
       # Cleared per run so a reused interpreter (the shared foreground one, or a
       # looping parallel process) never inherits the previous event's trigger;
       # the scene sets it again right after #start for an action-key event.
@@ -328,6 +350,23 @@ module Game
       reqs = @sprite_flash_requests
       @sprite_flash_requests = []
       reqs
+    end
+
+    # Drain the Show Hidden Monster (13150) troop-member indices queued since the
+    # last call. The scene polls this and builds the sprites for the revealed
+    # members. Non-blocking.
+    def take_revealed_monsters
+      ids = @revealed_monsters
+      @revealed_monsters = []
+      ids
+    end
+
+    # Drain the Change Battle Background (13210) name queued since the last call,
+    # or nil. Non-blocking.
+    def take_battle_background
+      name = @battle_background
+      @battle_background = nil
+      name
     end
 
     # Upper bound on commands run in a single update, so a malformed loop cannot
@@ -681,6 +720,16 @@ module Game
       when Cmd::END_EVENT        then @index = @list.size
       when Cmd::LABEL            then nil # jump target only; Jump to Label finds it
       when Cmd::COMMENT, Cmd::COMMENT_2 then nil # developer annotation
+      when Cmd::CHANGE_MONSTER_HP        then do_change_monster_hp cmd
+      when Cmd::CHANGE_MONSTER_MP        then do_change_monster_mp cmd
+      when Cmd::CHANGE_MONSTER_CONDITION then do_change_monster_condition cmd
+      when Cmd::SHOW_HIDDEN_MONSTER      then do_show_hidden_monster cmd
+      when Cmd::CHANGE_BATTLE_BG         then do_change_battle_bg cmd
+      when Cmd::SHOW_BATTLE_ANIM_B       then do_show_battle_animation_b cmd
+      when Cmd::CONDITIONAL_B            then do_conditional_battle cmd
+      when Cmd::ELSE_BRANCH_B    then skip_to([Cmd::END_BRANCH_B], cmd.indent); consume
+      when Cmd::END_BRANCH_B     then nil
+      when Cmd::TERMINATE_BATTLE then do_terminate_battle cmd
       else nil # blank editor lines (codes 0 / 10) and RPG2003-only commands
       end
     end
@@ -1421,6 +1470,160 @@ module Game
         targets.each { |a| a.equip_item(item) }
       else
         targets.each { |a| a.unequip(cmd.param(4)) }
+      end
+    end
+
+    # -- battle-event commands ------------------------------------------------
+    #
+    # These only appear in a troop's battle-event pages and act on the fight the
+    # owning battle scene put in `@battle`. Without one (a stray battle command
+    # in a map event, or a headless check) every one of them is a no-op.
+
+    # The amount a Change Monster HP / MP command applies. param2 selects how
+    # param3 is read: 0 a constant, 1 the value of that variable, 2 (HP only) a
+    # percentage of the target's maximum. Mirrors EasyRPG's
+    # CommandChangeMonsterHP / CommandChangeMonsterMP.
+    def monster_change_amount(cmd, battler)
+      case cmd.param(2)
+      when 1 then variables[cmd.param(3)]
+      when 2 then cmd.param(3) * (battler.max_hp || 0) / 100
+      else cmd.param(3)
+      end
+    end
+
+    # Change Monster HP (13110): heal or hurt troop member param0. param1 is the
+    # direction (non-zero = lose HP), param2/param3 the amount (see above) and
+    # param4 whether the damage may be lethal — when it may not, the monster is
+    # left on 1 HP instead of going down.
+    def do_change_monster_hp(cmd)
+      target = @battle && @battle.enemy(cmd.param(0))
+      return unless target
+      amount = monster_change_amount(cmd, target)
+      amount = -amount if cmd.param(1) != 0
+      hp = target.hp + amount
+      floor = cmd.param(4) != 0 ? 0 : 1
+      hp = floor if hp < floor
+      hp = target.max_hp if target.max_hp && hp > target.max_hp
+      target.hp = hp
+    end
+
+    # Change Monster MP (13120): the SP counterpart. Same operand layout minus
+    # the percentage mode and the lethal flag.
+    def do_change_monster_mp(cmd)
+      target = @battle && @battle.enemy(cmd.param(0))
+      return unless target
+      amount = monster_change_amount(cmd, target)
+      amount = -amount if cmd.param(1) != 0
+      mp = (target.mp || 0) + amount
+      mp = 0 if mp < 0
+      mp = target.max_mp if target.max_mp && mp > target.max_mp
+      target.mp = mp
+    end
+
+    # Change Monster Condition (13130): inflict (param1 == 0) or cure the status
+    # param2 on troop member param0.
+    def do_change_monster_condition(cmd)
+      target = @battle && @battle.enemy(cmd.param(0))
+      return unless target
+      state_id = cmd.param(2)
+      return if state_id.nil? || state_id <= 0
+      states = target.states ||= []
+      if cmd.param(1) != 0
+        states.delete(state_id)
+      elsif !states.include?(state_id)
+        states.push(state_id)
+      end
+    end
+
+    # Show Hidden Monster (13150): bring troop member param0 — placed but held
+    # off-screen by its "invisible" flag — into the fight. Recorded as a one-shot
+    # request so the scene can build the sprite that was never made.
+    def do_show_hidden_monster(cmd)
+      return unless @battle
+      @revealed_monsters.push(cmd.param(0))
+    end
+
+    # Change Battle Background (13210): swap the backdrop to the Backdrop/<name>
+    # image the command string carries. Recorded for the scene to rebuild.
+    def do_change_battle_bg(cmd)
+      return unless @battle
+      @battle_background = (cmd.string || '').to_s
+    end
+
+    # Show Battle Animation (13260), the battle-page form of 11210. param0 is
+    # the animation, param1 the target troop member and param2 the wait flag.
+    # Raised through the same request/wait the map command uses, so the scene
+    # drives one animation player for both.
+    def do_show_battle_animation_b(cmd)
+      @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
+                            wait: cmd.param(2) != 0, battle: true }
+      return unless cmd.param(2) != 0
+      @wait_kind = :animation
+      @waiting = true
+    end
+
+    # Terminate Battle (13410): end the fight immediately, with no victory or
+    # defeat processing. The rest of the page is abandoned, as in RPG_RT.
+    def do_terminate_battle(_cmd)
+      return unless @battle
+      @battle.terminate
+      @index = @list.size
+      @call_stack = []
+    end
+
+    # Conditional Branch (battle form, 13310). param0 selects the test:
+    #   0 switch param1 is on (param2 == 0) / off
+    #   1 variable param1 compared against param2/param3 by param4
+    #   2 actor param1 — sub-test param2: 0 in the party, 1 named param(?),
+    #     2 afflicted by state param3, 3 can use battle command param3
+    #   3 troop member param1 — sub-test param2: 0 present, 1 afflicted by
+    #     state param3
+    #   4 the currently-targeted troop member is param1
+    #   5 actor param1's chosen command is param2
+    # Tests 4 and 5 read live battle-UI state the runtime does not model; they
+    # report false rather than guessing, so the else branch runs.
+    def do_conditional_battle(cmd)
+      return if eval_battle_condition(cmd)
+      skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
+      consume
+    end
+
+    def eval_battle_condition(cmd)
+      case cmd.param(0)
+      when 0
+        on = switches[cmd.param(1)]
+        cmd.param(2) == 0 ? on : !on
+      when 1
+        rhs = cmd.param(2) == 0 ? cmd.param(3) : variables[cmd.param(3)]
+        compare(variables[cmd.param(1)], rhs, cmd.param(4))
+      when 2 then battle_actor_condition(cmd)
+      when 3 then battle_enemy_condition(cmd)
+      else false
+      end
+    end
+
+    # An actor sub-condition: is the actor in this fight, and is it afflicted by
+    # the given status? The name / usable-command tests need data the battle
+    # context does not carry, so they report false.
+    def battle_actor_condition(cmd)
+      ally = @battle && @battle.ally_by_actor_id(cmd.param(1))
+      return false unless ally
+      case cmd.param(2)
+      when 0 then true                       # is in the party
+      when 2 then ally.state?(cmd.param(3))  # is afflicted by a status
+      else false
+      end
+    end
+
+    # A troop-member sub-condition: is the member still standing, and is it
+    # afflicted by the given status?
+    def battle_enemy_condition(cmd)
+      foe = @battle && @battle.enemy(cmd.param(1))
+      return false unless foe
+      case cmd.param(2)
+      when 0 then !foe.dead?
+      when 1 then foe.state?(cmd.param(3))
+      else false
       end
     end
 

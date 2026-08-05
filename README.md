@@ -50,12 +50,16 @@
   decaying colour), Enter/Exit Vehicle, Open Save Menu / Open Main Menu, Fade Out
   BGM, Return to Title and Erase
   Event (remove an event from
-  the map) — **every RPG2000 map / common-event command now has a handler**;
-  only the battle-page commands (13110–13410) are still to come. Events start on the action button, on
+  the map) — **every RPG2000 event command now has a handler**. Events start on the action button, on
   player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
+- A troop's **battle-event pages** run during a fight: their conditions (switch,
+  variable, turn, enemy/actor HP) are re-checked each turn, and a matching page
+  runs the ordinary command set plus the battle-only commands — Change Monster
+  HP / MP / Condition, Show Hidden Monster, Change Battle Background, the battle
+  Show Battle Animation, the battle Conditional Branch and Terminate Battle
 - Message text reveals gradually (a typewriter effect; a button press completes
   it, then dismisses), expands the common control codes (`\v[n]` variable,
   `\n[n]` actor name, `\\`) and draws `\c[n]` colour changes
