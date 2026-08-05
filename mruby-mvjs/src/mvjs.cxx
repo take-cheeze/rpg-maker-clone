@@ -643,12 +643,40 @@ const char* kMainCanvasHandleExpr = R"MVJS(
 })()
 )MVJS";
 
+// Copy a top-down RGBA8 source (`src`, cw x ch) onto an RGSS::Bitmap's LVGL
+// ARGB8888 (B,G,R,A) buffer (`dst`, bw x bh), swapping R/B and clamping to the
+// overlapping region, then mark the Bitmap dirty so the next Graphics.update
+// repaints it. Shared by the MV Canvas2D present and the MZ WebGL present.
+mrb_value present_rgba_onto_bitmap(mrb_state* mrb,
+                                   mrb_value bmp,
+                                   uint8_t* dst,
+                                   int bw,
+                                   int bh,
+                                   const uint8_t* src,
+                                   int cw,
+                                   int ch) {
+  const int w = std::min(bw, cw);
+  const int h = std::min(bh, ch);
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* s = src + static_cast<size_t>(y) * cw * 4;
+    uint8_t* d = dst + static_cast<size_t>(y) * bw * 4;
+    for (int x = 0; x < w; ++x) {
+      d[0] = s[2];  // B
+      d[1] = s[1];  // G
+      d[2] = s[0];  // R
+      d[3] = s[3];  // A
+      s += 4;
+      d += 4;
+    }
+  }
+  rgss::bitmap_mark_dirty(mrb, bmp);
+  return mrb_true_value();
+}
+
 // MV::JS.present(bitmap, handle = nil) -> copy the MV canvas onto `bitmap`.
 // With no handle, the on-screen canvas (Graphics' view) is resolved from the
-// running game; an explicit handle is used as-is (for tests). The canvas is
-// RGBA and the Bitmap is LVGL ARGB8888 (B,G,R,A), so R/B are swapped during the
-// copy, clamped to the overlapping region. Marks the Bitmap dirty so the next
-// Graphics.update repaints it. Returns true if pixels were copied.
+// running game; an explicit handle is used as-is (for tests). Returns true if
+// pixels were copied.
 mrb_value js_present(mrb_state* mrb, mrb_value self) {
   mrb_value bmp;
   mrb_int handle = -1;
@@ -681,22 +709,31 @@ mrb_value js_present(mrb_state* mrb, mrb_value self) {
   if (!src)
     return mrb_false_value();
 
-  const int w = std::min(bw, cw);
-  const int h = std::min(bh, ch);
-  for (int y = 0; y < h; ++y) {
-    const uint8_t* s = src + static_cast<size_t>(y) * cw * 4;
-    uint8_t* d = dst + static_cast<size_t>(y) * bw * 4;
-    for (int x = 0; x < w; ++x) {
-      d[0] = s[2];  // B
-      d[1] = s[1];  // G
-      d[2] = s[0];  // R
-      d[3] = s[3];  // A
-      s += 4;
-      d += 4;
-    }
-  }
-  rgss::bitmap_mark_dirty(mrb, bmp);
-  return mrb_true_value();
+  return present_rgba_onto_bitmap(mrb, bmp, dst, bw, bh, src, cw, ch);
+}
+
+// MV::JS.present_gl(bitmap, handle) -> copy the WebGL context `handle`'s frame
+// (its FBO, read back top-down RGBA8) onto `bitmap`. The MZ path uses this to
+// present PIXI v5's rendered frame on-screen, the way #present uses the
+// Canvas2D canvas for MV. The handle is the WebGLRenderingContext's `.__gl` id.
+mrb_value js_present_gl(mrb_state* mrb, mrb_value self) {
+  mrb_value bmp;
+  mrb_int handle = 0;
+  mrb_get_args(mrb, "oi", &bmp, &handle);
+  if (handle <= 0)
+    return mrb_false_value();
+
+  int bw = 0, bh = 0;
+  uint8_t* dst = rgss::bitmap_pixels(mrb, bmp, &bw, &bh);
+  if (!dst)
+    return mrb_false_value();
+
+  int cw = 0, ch = 0;
+  const uint8_t* src = mv_webgl_pixels(static_cast<int>(handle), &cw, &ch);
+  if (!src)
+    return mrb_false_value();
+
+  return present_rgba_onto_bitmap(mrb, bmp, dst, bw, bh, src, cw, ch);
 }
 
 // Standard base64 of a byte string (used for the log thumbnail below).
@@ -897,6 +934,8 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, js, "base_dir=", js_set_base_dir,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, js, "present", js_present, MRB_ARGS_ARG(1, 1));
+  mrb_define_class_method(mrb, js, "present_gl", js_present_gl,
+                          MRB_ARGS_REQ(2));
   mrb_define_class_method(mrb, js, "screenshot", js_screenshot,
                           MRB_ARGS_REQ(1));
 
