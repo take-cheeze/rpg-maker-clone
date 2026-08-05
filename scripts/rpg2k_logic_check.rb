@@ -4188,6 +4188,95 @@ check 'command_skip forfeits an ally turn while the enemies still act' do
   ok hero.hp < 100, 'but the slime still struck back'
 end
 
+# -- Battle hit / miss (accuracy) ---------------------------------------------
+
+check 'Battle#to_hit uses the base hit rate adjusted by the agility ratio' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 10, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  tgt = b.enemies.first
+  atk.hit_rate = 90
+  eq 90, b.to_hit(atk, tgt), 'equal agility -> the base hit rate'
+  tgt.agi = 30                                       # a 3x faster target dodges more
+  eq 80, b.to_hit(atk, tgt), '100 - 10*(10+30)/(2*10) = 80'
+  tgt.agi = 0                                        # a motionless target
+  eq 95, b.to_hit(atk, tgt), '100 - 10*(10+0)/(2*10) = 95'
+end
+
+check 'Battle#to_hit clamps to 0..100 and a 100% base never misses' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 999, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  atk.hit_rate = 100
+  eq 100, b.to_hit(atk, b.enemies.first), 'a perfect base stays 100 despite fast target'
+end
+
+check 'with accuracy off a basic attack always connects' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.hit_rate = 1                                  # would nearly always miss...
+  slime = combatant('Slime', 0, 0, 20, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # accuracy off (default)
+  b.begin_round
+  e = b.step_action
+  eq 20, e[:damage], '...but accuracy is off, so it lands for full damage'
+  ok !e[:missed]
+end
+
+check 'with accuracy on a sure-miss attack deals no damage' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.hit_rate = 0                                  # 0% base, equal agility -> 0% hit
+  slime = combatant('Slime', 0, 0, 20, 100)
+  # 7-arg: variance off, criticals off, accuracy on.
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, true)
+  b.begin_round
+  e = b.step_action
+  eq 0, e[:damage]
+  ok e[:missed], 'flagged as a miss'
+  eq 100, slime.hp, 'no HP lost'
+end
+
+check 'with accuracy on the to-hit roll both lands and misses over many swings' do
+  hero = combatant('Hero', 40, 0, 10, 1_000_000)
+  hero.hit_rate = 50                                 # equal agility -> 50% to hit
+  slime = combatant('Slime', 0, 0, 10, 1_000_000)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, true)
+  40.times { b.run_round }
+  swings = b.log.select { |e| e[:attacker] == 'Hero' }
+  ok swings.any? { |e| e[:missed] }, 'a 50% attacker whiffs sometimes'
+  ok swings.any? { |e| !e[:missed] }, 'and connects sometimes'
+end
+
+# -- Battle first strike (pre-emptive) ----------------------------------------
+
+check 'battle first strike: the party acts while the enemies skip round 1' do
+  hero = combatant('Hero', 40, 0, 5, 100)            # slower than the slime...
+  slime = combatant('Slime', 40, 0, 50, 100)         # ...which would normally go first
+  # 8-arg: variance / criticals / accuracy off, first_strike on.
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, false, true)
+  entries = b.run_round
+  eq 1, entries.length, 'only the party acts in the opening round'
+  eq 'Hero', entries.first[:attacker], 'the hero strikes first despite lower agility'
+  eq 100, hero.hp, 'the ambushed slime never swung'
+  eq 80, slime.hp, 'but the hero connected'
+end
+
+check 'battle first strike: the enemies rejoin from the second round' do
+  hero = combatant('Hero', 8, 0, 5, 100)
+  slime = combatant('Slime', 40, 0, 50, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false, false, true)
+  b.run_round                                        # round 1: only the hero
+  eq 100, hero.hp, 'no enemy action in the pre-emptive round'
+  b.run_round                                        # round 2: the slime strikes back
+  ok hero.hp < 100, 'the enemy acts normally from round 2'
+end
+
+check 'battle without first strike: both sides act in the opening round' do
+  hero = combatant('Hero', 8, 0, 5, 100)
+  slime = combatant('Slime', 8, 0, 50, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # no first strike
+  eq 2, b.run_round.length, 'both battlers act in round 1'
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }
@@ -4469,6 +4558,53 @@ check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
   hp_before = hero.hp
   bat.run_round                                  # next round: the asleep foe skips
   eq hp_before, hero.hp, 'the sleeping foe did not attack'
+end
+
+# -- Battle state susceptibility (state_ranks) --------------------------------
+
+def poison_cast(foe, seed = 1)
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)    # faster -> acts first
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(seed))
+  b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+  b.begin_round
+  b.step_action
+end
+
+check 'battle: an immune target (state rank E) never catches the status' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 4 }                       # rank E -> 0% susceptibility
+  e = poison_cast(foe)
+  eq [], e[:inflicted], 'immunity blocks a sure-fire status'
+  ok !foe.state?(3)
+end
+
+check 'battle: a susceptible target (state rank A) catches a sure status' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 0 }                       # rank A -> 100%
+  e = poison_cast(foe)
+  eq [3], e[:inflicted]
+  ok foe.state?(3)
+end
+
+check 'battle: infliction is unscaled when the target models no state ranks' do
+  foe = combatant('Foe', 0, 0, 5, 100)               # state_ranks nil (a bare fixture)
+  e = poison_cast(foe)
+  eq [3], e[:inflicted], 'a fixture still catches a 100% status'
+end
+
+check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
+  rng = Game::Rng.new(1)                             # one RNG across many casts
+  results = Array.new(40) do
+    foe = combatant('Foe', 0, 0, 5, 100)
+    foe.state_ranks = { 3 => 2 }                     # rank C -> 60%
+    mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+    b = Game::Battle.new([mage], [foe], rng)
+    b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+    b.begin_round
+    b.step_action[:inflicted]
+  end
+  ok results.any? { |r| r == [3] }, 'a 60% status sometimes lands'
+  ok results.any?(&:empty?), 'and sometimes is resisted'
 end
 
 check 'Battle command_skill resolves an attack skill: damage lands, SP is spent' do

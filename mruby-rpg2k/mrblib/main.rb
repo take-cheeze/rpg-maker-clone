@@ -2351,7 +2351,8 @@ class RPG2k
         situations = db.respond_to?(:situation) ? db.situation : nil
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
-                                                situations, true, true),
+                                                situations, true, true, true,
+                                                req[:first_strike] ? true : false),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
@@ -2987,6 +2988,8 @@ class RPG2k
           parts << "#{e[:recover_mp]} MP" if e[:recover_mp] && e[:recover_mp] > 0
           body = parts.empty? ? 'no effect' : "+#{parts.join(' / ')}"
           "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
+        elsif e[:missed]
+          "#{e[:attacker]} misses #{e[:target]}"
         else
           hits = e[:skill] ? "'s #{e[:skill]} hits" : ' hits'
           line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
