@@ -120,6 +120,13 @@ module RGSS
 
   class Timeout < StandardError; end
 
+  # The packed archive the asset loaders read through. Native Bitmap/Audio
+  # consult this after a loose file misses (mruby-rgss/mrblib/lib.rb); here it
+  # only has to exist so the boot shell's registration can be asserted.
+  class << self
+    attr_accessor :asset_archive
+  end
+
   # Graphics is native. These stand-ins mirror the parts of mruby-rgss's module
   # the VX path touches (the real ones are unit-tested in mruby-rgss/test):
   # counting frames so the per-frame driver can be asserted, RGSS2's frame wait,
@@ -1244,6 +1251,16 @@ class Checker
     files = Dir[File.join(dir, "Data", "*#{ext}")].sort.map do |f|
       ["Data\\#{File.basename(f)}", File.binread(f)]
     end
+    # A released game packs its Graphics/ tree in the same archive as its Data/,
+    # and that is the only copy — nothing is loose on disk. Pack one so the
+    # asset side of the archive is covered too. (A 3x2 XYZ: palette 0 is
+    # (10,20,30), 1 red, 2 green. Decoding it is mruby-rgss's job and is tested
+    # there; what matters here is that a game's own '/'-spelled name resolves.)
+    graphic = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xe3\x12\x91\xfb\xcf\xc0" \
+              "\xc0\x00\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00\xb4" \
+              "\x8b\x02\x41".b
+    graphic_entry = "Graphics\\System\\Window.xyz"
+    files += [[graphic_entry, graphic]]
     archive_name = RPGVX.info(edition)[:archive]
     archive = edition == :vxace ? RPGXP::RGSSAD.pack_v3(files)
                                 : RPGXP::RGSSAD.pack_v1(files)
@@ -1279,9 +1296,29 @@ class Checker
       packed.save_object({ "slot" => 1 }, "Save1#{ext}")
       expect(packed.read_object("Save1#{ext}") == { "slot" => 1 },
              "#{archive_name}: save_object/read_object round-trip failed")
+
+      # The asset half. A game asks for a graphic by its bare, '/'-spelled name
+      # (`Cache.system("Window")` -> `Bitmap.new("Graphics/System/Window")`), so
+      # the archive has to answer that spelling, and the boot shell has to have
+      # registered the archive for the loaders to reach at all — nothing else
+      # threads a handle down to Bitmap.new.
+      expect(packed.archive.read("Graphics/System/Window.xyz") == graphic,
+             "#{archive_name}: a packed graphic did not read back by its " \
+             "'/'-spelled name")
+      RGSS.asset_archive = nil
+      begin
+        with_game_dir(tmp) { RPGVX.new([]) }
+        expect(RGSS.asset_archive.equal?(packed.archive) ||
+               (!RGSS.asset_archive.nil? &&
+                RGSS.asset_archive.read("Graphics/System/Window.xyz") == graphic),
+               "#{archive_name}: booting a packed project did not register the " \
+               "archive with RGSS.asset_archive, so its Graphics/ is unreachable")
+      ensure
+        RGSS.asset_archive = nil
+      end
     end
-    puts "  archive: packed #{files.size} entries; DB loads identically " \
-         "through #{archive_name}"
+    puts "  archive: packed #{files.size} entries (Data/ + a graphic); DB and " \
+         "assets both load through #{archive_name}"
   rescue StandardError => ex
     fail "#{dir}: archive check raised: #{ex.class}: #{ex.message}"
   end

@@ -198,19 +198,44 @@ unrolls. `Window#tone` (the windowskin colour tint) is likewise stored only.
 
 One use each (title background, animation effects). Cosmetic.
 
-### 6. Reading graphics/audio out of the encrypted archive
+### 6. Reading graphics out of the encrypted archive ✅ (audio still to come)
 
-Shared with the XP gap: `RPGVX::RGSSData` resolves `Data/*` through
-`Game.rgss2a`/`Game.rgss3a`, but the native `Bitmap`/`Audio` loaders only read
-loose files, so a packed release boots with no graphics. `Cache.*` (a script
-class) calls `Bitmap.new("Graphics/...")` for every asset, so this is what a
-packed VX Ace game needs next after the tilemap.
+Shared with the XP gap. `RPGVX::RGSSData` has resolved `Data/*` through
+`Game.rgss2a`/`Game.rgss3a` for a while, but the native asset loaders only ever
+opened files, so a packed release booted with no art at all — and `Cache.*` (a
+script class) calls `Bitmap.new("Graphics/...")` for *every* asset.
+
+**Graphics now come out of the archive.** The awkward part is not the decrypting
+— `RPGXP::RGSSAD` already did that — but the plumbing: an asset is asked for by
+name from deep inside a game's own scripts, with no handle to thread down. So
+each boot shell registers its opened archive once as `RGSS.asset_archive`, and
+`Bitmap#initialize` consults it after the loose-file search misses, trying the
+same extension candidates (`.png`, `.jpg`, `.jpeg`, `.xyz`, `.bmp`). Loose files
+still shadow packed ones, which is what RGSS itself does.
+
+The decoding is unchanged, deliberately: `_init_file` and the new `_init_memory`
+share one `bmp_decode_into`, so a packed asset goes through the same stb, XYZ and
+tolerant-PNG path a loose one does — the fallbacks that a real RPG Maker project
+needs are not something the archive path can quietly lack.
+
+Verified end to end in the real binary by `scripts/rgssad_asset_check.bash`: the
+XP test bed is packed twice, differing only in whether its title graphic is
+inside `Game.rgssad`, and the engine must find it in the first and report the
+miss in the second. The A/B is the point — a single run would pass just as well
+if the archive were never consulted.
+
+**Audio is still loose-file only.** `RGSS::Audio` plays through a C function
+table (`include/rgss_audio.hxx`) whose entry points all take a path, so a packed
+BGM needs that interface to grow memory variants (SDL_mixer reads from an
+`SDL_RWops` happily enough). A packed game therefore boots and draws, but stays
+silent.
 
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
 the only route to a real game. A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
-tints, flashes and fades the screen, and dissolves between scenes. The largest
-remaining gap is **reading assets out of an encrypted archive** (item 6), which
-is what a packed release needs; items 4 and 5 are cosmetic.
+tints, flashes and fades the screen, dissolves between scenes, and — packed or
+loose — finds its graphics. What is left is narrow: **packed audio** (the second
+half of item 6, a change to the audio backend's C interface), and the cosmetic
+items 4 and 5.

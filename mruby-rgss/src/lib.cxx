@@ -528,36 +528,33 @@ static void set_bitmap_load_error(const char* fmt, ...) {
 // (windowskin) or other graphics as .xyz would otherwise fail to load. On
 // success returns a freshly stb-allocated buffer (free with stbi_image_free)
 // of width*height*4 bytes in LVGL's B, G, R, A byte order and sets *w/*h/*c;
-// returns nullptr when `f` is not a readable XYZ file. When `trans` is set the
+// returns nullptr when the bytes are not an XYZ image. When `trans` is set the
 // first palette entry is treated as the transparent colour, matching stb's
 // transparent-palette handling for PNGs.
-static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
-  std::FILE* fp = std::fopen(f, "rb");
-  if (!fp)
-    return nullptr;
-  std::fseek(fp, 0, SEEK_END);
-  const long sz = std::ftell(fp);
-  std::fseek(fp, 0, SEEK_SET);
-  if (sz < 8) {
-    std::fclose(fp);
-    return nullptr;
-  }
-  std::vector<uint8_t> data((size_t)sz);
-  const size_t got = std::fread(data.data(), 1, (size_t)sz, fp);
-  std::fclose(fp);
+//
+// Takes the bytes rather than a path so the same decoder serves a loose file
+// and an entry pulled out of an encrypted RGSSAD archive; `label` only names
+// the source in the diagnostics.
+static uint8_t* load_xyz_mem(const uint8_t* data,
+                             size_t sz,
+                             const char* label,
+                             int* w,
+                             int* h,
+                             int* c,
+                             bool trans) {
   // Not an XYZ file: stay silent and let the caller keep stb_image's own error.
-  if (got != (size_t)sz || std::memcmp(data.data(), "XYZ1", 4) != 0)
+  if (sz < 8 || std::memcmp(data, "XYZ1", 4) != 0)
     return nullptr;
 
   const int width = data[4] | (data[5] << 8);
   const int height = data[6] | (data[7] << 8);
   if (width <= 0 || height <= 0) {
     set_bitmap_load_error("XYZ: invalid dimensions %dx%d in '%s'", width,
-                          height, f);
+                          height, label);
     return nullptr;
   }
 
-  const char* stream = reinterpret_cast<const char*>(data.data() + 8);
+  const char* stream = reinterpret_cast<const char*>(data + 8);
   const int stream_len = (int)(sz - 8);
   // A 768-byte (256*3) RGB palette followed by one index per pixel.
   const long expected = 768L + (long)width * height;
@@ -576,7 +573,7 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
       set_bitmap_load_error(
           "XYZ %dx%d '%s': zlib inflate failed (%s); zlib header 0x%02x%02x, "
           "%d compressed bytes, expected %ld decompressed",
-          width, height, f, zerr, (unsigned)data[8], (unsigned)data[9],
+          width, height, label, zerr, (unsigned)data[8], (unsigned)data[9],
           stream_len, expected);
       return nullptr;
     }
@@ -586,7 +583,7 @@ static uint8_t* load_xyz(const char* f, int* w, int* h, int* c, bool trans) {
     set_bitmap_load_error(
         "XYZ %dx%d '%s': short data, got %d bytes, expected %ld (768 palette + "
         "%d pixels)",
-        width, height, f, outlen, expected, width * height);
+        width, height, label, outlen, expected, width * height);
     stbi_image_free(raw);
     return nullptr;
   }
@@ -845,42 +842,35 @@ uint32_t be32(const uint8_t* p) {
 
 }  // namespace png_tol
 
-// Decode `f` as a PNG using the tolerant inflater above. Returns a freshly
+// Decode `d` as a PNG using the tolerant inflater above. Returns a freshly
 // stb-allocated (free with stbi_image_free) width*height*4 B, G, R, A buffer
-// and sets *w/*h/*c, or nullptr when the file is not a PNG this fallback
+// and sets *w/*h/*c, or nullptr when the bytes are not a PNG this fallback
 // handles (non-interlaced; bit depth 8, or indexed 1/2/4). `trans` maps palette
 // index 0 to transparent, matching the primary loader's colour-key handling.
-static uint8_t* load_png_tolerant(const char* f,
-                                  int* wout,
-                                  int* hout,
-                                  int* c,
-                                  bool trans) {
-  std::FILE* fp = std::fopen(f, "rb");
-  if (!fp)
-    return nullptr;
-  std::fseek(fp, 0, SEEK_END);
-  const long sz = std::ftell(fp);
-  std::fseek(fp, 0, SEEK_SET);
+//
+// Takes the bytes rather than a path, like load_xyz_mem above, so an entry read
+// out of an encrypted RGSSAD archive gets the same fallback a loose file does;
+// `label` only names the source in the diagnostics.
+static uint8_t* load_png_tolerant_mem(const uint8_t* d,
+                                      size_t sz,
+                                      const char* label,
+                                      int* wout,
+                                      int* hout,
+                                      int* c,
+                                      bool trans) {
   static const uint8_t sig[8] = {0x89, 0x50, 0x4e, 0x47,
                                  0x0d, 0x0a, 0x1a, 0x0a};
-  if (sz < 8) {
-    std::fclose(fp);
-    return nullptr;
-  }
-  std::vector<uint8_t> d((size_t)sz);
-  const size_t got = std::fread(d.data(), 1, (size_t)sz, fp);
-  std::fclose(fp);
-  if (got != (size_t)sz || std::memcmp(d.data(), sig, 8) != 0)
+  if (sz < 8 || std::memcmp(d, sig, 8) != 0)
     return nullptr;
 
   int w = 0, h = 0, depth = 0, ct = 0, interlace = 0;
   std::vector<uint8_t> idat, plte, trns;
   size_t i = 8;
-  while (i + 8 <= (size_t)sz) {
-    const uint32_t len = png_tol::be32(d.data() + i);
-    const uint8_t* typ = d.data() + i + 4;
-    const uint8_t* body = d.data() + i + 8;
-    if (i + 12 + len > (size_t)sz)
+  while (i + 8 <= sz) {
+    const uint32_t len = png_tol::be32(d + i);
+    const uint8_t* typ = d + i + 4;
+    const uint8_t* body = d + i + 8;
+    if (i + 12 + len > sz)
       break;
     if (!std::memcmp(typ, "IHDR", 4) && len >= 13) {
       w = (int)png_tol::be32(body);
@@ -936,7 +926,7 @@ static uint8_t* load_png_tolerant(const char* f,
     set_bitmap_load_error(
         "PNG %dx%d depth %d colortype %d '%s': tolerant inflate produced too "
         "little data",
-        w, h, depth, ct, f);
+        w, h, depth, ct, label);
     return nullptr;
   }
 
@@ -1046,19 +1036,46 @@ mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
   return self;
 }
 
-mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
-  const char* f;
-  mrb_bool trans = false;
-  mrb_get_args(M, "z|b", &f, &trans);
+// Read a whole file. Answers false when it cannot be opened or read fully, so
+// the caller can fall through to the next candidate path in silence.
+static bool slurp_file(const char* f, std::vector<uint8_t>& out) {
+  std::FILE* fp = std::fopen(f, "rb");
+  if (!fp)
+    return false;
+  std::fseek(fp, 0, SEEK_END);
+  const long sz = std::ftell(fp);
+  std::fseek(fp, 0, SEEK_SET);
+  if (sz <= 0) {
+    std::fclose(fp);
+    return false;
+  }
+  out.resize((size_t)sz);
+  const size_t got = std::fread(out.data(), 1, (size_t)sz, fp);
+  std::fclose(fp);
+  return got == (size_t)sz;
+}
+
+// Decode image bytes into `self` (a Bitmap). Shared by Bitmap#_init_file and
+// #_init_memory: everything below is format work with no notion of where the
+// bytes came from, which is what lets an entry pulled out of an encrypted
+// RGSSAD archive go through the exact same decoders — stb, then the XYZ and
+// tolerant-PNG fallbacks — as a loose file. `label` only names the source in
+// the diagnostics. Answers false when nothing could decode it.
+static bool bmp_decode_into(mrb_state* M,
+                            mrb_value self,
+                            const uint8_t* data,
+                            size_t size,
+                            const char* label,
+                            bool trans) {
   int w, h, c;
   stbi__png_transparent_palette = trans;
-  // Every loader here hands back LVGL's B, G, R(, A) byte order (see load_xyz
-  // and load_png_tolerant, which build it themselves). stb decodes to
-  // R, G, B(, A), so its output is swapped below instead of relying on the
-  // vendored palette-only BGR hack: that covered indexed PNGs (all an RPG2000
-  // project has) and left every truecolour PNG and every JPEG with red and
-  // blue exchanged -- which is what an RPG Maker XP RTP is full of. Caught by
-  // diffing against the genuine RGSS runtime, see
+  // Every loader here hands back LVGL's B, G, R(, A) byte order (see
+  // load_xyz_mem and load_png_tolerant_mem, which build it themselves). stb
+  // decodes to R, G, B(, A), so its output is swapped below instead of relying
+  // on the vendored palette-only BGR hack: that covered indexed PNGs (all an
+  // RPG2000 project has) and left every truecolour PNG and every JPEG with red
+  // and blue exchanged -- which is what an RPG Maker XP RTP is full of. Caught
+  // by diffing against the genuine RGSS runtime, see
   // docs/adr/0025-rpgxp-cross-runtime-testing.md.
   stbi__png_to_bgr_palette = false;
   // The channel count has to be decided before decoding, because the bitmap's
@@ -1069,38 +1086,27 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   // (truecolour + alpha, loaded opaque) hit exactly that.
   int probe_w = 0, probe_h = 0, probe_c = 0;
   const bool has_alpha =
-      stbi_info(f, &probe_w, &probe_h, &probe_c) && probe_c == 4;
+      stbi_info_from_memory(data, (int)size, &probe_w, &probe_h, &probe_c) &&
+      probe_c == 4;
   const int req = (trans || has_alpha) ? 4 : 3;
   // Whether the pixels came from stb (R, G, B order, so they need the swap) or
   // from one of the fallbacks above, which already emit LVGL's order.
   bool from_stb = true;
-  std::shared_ptr<uint8_t> img(stbi_load(f, &w, &h, &c, req), stbi_image_free);
+  std::shared_ptr<uint8_t> img(
+      stbi_load_from_memory(data, (int)size, &w, &h, &c, req), stbi_image_free);
   if (!img) {
     from_stb = false;
-    img.reset(load_xyz(f, &w, &h, &c, trans), stbi_image_free);
+    img.reset(load_xyz_mem(data, size, label, &w, &h, &c, trans),
+              stbi_image_free);
   }
   // stb_image rejects some valid-enough PNGs (e.g. RPG Maker windowskins whose
   // deflate stream references a zero pre-history, giving "bad dist"); retry
   // with the tolerant PNG decoder before giving up.
   if (!img)
-    img.reset(load_png_tolerant(f, &w, &h, &c, trans), stbi_image_free);
-  if (!img) {
-    // Some archives store filenames in NFD form while the game data refers to
-    // them in NFC (or vice versa); retry with the decomposed form before giving
-    // up so accented paths still resolve.
-    const std::string nfd_f = una::norm::to_nfd_utf8(f);
-    from_stb = true;
-    img.reset(stbi_load(nfd_f.c_str(), &w, &h, &c, req), stbi_image_free);
-    if (!img) {
-      from_stb = false;
-      img.reset(load_xyz(nfd_f.c_str(), &w, &h, &c, trans), stbi_image_free);
-    }
-    if (!img)
-      img.reset(load_png_tolerant(nfd_f.c_str(), &w, &h, &c, trans),
-                stbi_image_free);
-    if (!img)
-      return mrb_nil_value();
-  }
+    img.reset(load_png_tolerant_mem(data, size, label, &w, &h, &c, trans),
+              stbi_image_free);
+  if (!img)
+    return false;
   // The fallbacks always produce 4 channels; stb produced exactly what was
   // requested.
   const int channels = from_stb ? req : 4;
@@ -1113,6 +1119,44 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
     for (size_t i = 0; i + 3 <= bmp.buffer.size(); i += (size_t)channels)
       std::swap(p[i], p[i + 2]);
   }
+  return true;
+}
+
+mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
+  const char* f;
+  mrb_bool trans = false;
+  mrb_get_args(M, "z|b", &f, &trans);
+  std::vector<uint8_t> data;
+  if (slurp_file(f, data) &&
+      bmp_decode_into(M, self, data.data(), data.size(), f, trans))
+    return self;
+  // Some archives store filenames in NFD form while the game data refers to
+  // them in NFC (or vice versa); retry with the decomposed form before giving
+  // up so accented paths still resolve.
+  const std::string nfd_f = una::norm::to_nfd_utf8(f);
+  if (nfd_f != f && slurp_file(nfd_f.c_str(), data) &&
+      bmp_decode_into(M, self, data.data(), data.size(), nfd_f.c_str(), trans))
+    return self;
+  return mrb_nil_value();
+}
+
+// Ruby: Bitmap#_init_memory(bytes, transparent = false) -> self or nil.
+//
+// The same decode as #_init_file over bytes already in hand. RGSS's Cache
+// asks for every asset by name (`Bitmap.new("Graphics/Titles/...")`), and a
+// released game packs those names into its encrypted Game.rgssad / .rgss2a /
+// .rgss3a with nothing loose on disk — so the Ruby loader falls back to the
+// archive and hands the decrypted bytes here.
+mrb_value bmp_init_memory(mrb_state* M, mrb_value self) {
+  const char* data;
+  mrb_int size;
+  mrb_bool trans = false;
+  mrb_get_args(M, "s|b", &data, &size, &trans);
+  if (size <= 0)
+    return mrb_nil_value();
+  if (!bmp_decode_into(M, self, reinterpret_cast<const uint8_t*>(data),
+                       (size_t)size, "<archive entry>", trans))
+    return mrb_nil_value();
   return self;
 }
 
@@ -5046,6 +5090,11 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
+  // Decode from bytes already in hand — how an asset packed into an encrypted
+  // RGSSAD archive is loaded (mrblib/lib.rb's Bitmap#initialize falls back to
+  // it when no loose file matches).
+  mrb_define_method(M, bmp, "_init_memory", bmp_init_memory,
+                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
