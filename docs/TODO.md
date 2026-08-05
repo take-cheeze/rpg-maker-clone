@@ -1308,7 +1308,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         without the probe.)
       - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
         back without it, and `getExtension` returns null so the fallback is what
-        runs); texture Y-flip and uniform-introspection polish as real content
-        exercises them; and a `.woff` font path — the canvas text loader finds
-        only `.ttf`/`.otf` in a game's `fonts/` and MZ games ship `.woff`, so a
-        real MZ game's text draws blank. That is the biggest visible gap left.
+        runs); and texture Y-flip and uniform-introspection polish as real
+        content exercises them.
+      - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
+        under a game's `fonts/`, but **MZ projects ship `.woff`**
+        (`mplus-1m-regular.woff` and friends), so it found nothing and every real
+        MZ game drew blank windows — `data/mz-sample` hid this by shipping no
+        font at all and setting `mainFontFilename` to "". `mvcanvas.cxx` now
+        unpacks WOFF 1.0 to the sfnt inside it (a table-by-table container whose
+        tables are stored raw or zlib-deflated; the zlib decoder stb_image
+        already provides does the work, so no new dependency) and hands that to
+        stb_truetype. WOFF2 is a different format (Brotli + a transformed
+        `glyf`) and is reported rather than half-parsed into garbage, as are a
+        malformed WOFF and a font stb_truetype rejects — silent blank text is
+        exactly what let this hide.
+      - 🚧 Remaining for fonts: no CI test covers the unpacker, because it
+        needs a redistributable font and the bed ships none. Verified locally
+        instead, against two real TTFs repacked as WOFF: the unpacked sfnt comes
+        back byte-for-byte the size of the original, stb_truetype accepts it, the
+        vertical metrics and every A-Z advance/lsb match the original exactly,
+        and a glyph rasterises with real ink. Authoring a tiny TTF we own (the
+        way the bed's PNGs are authored) would let the smoke render text and
+        close this.
