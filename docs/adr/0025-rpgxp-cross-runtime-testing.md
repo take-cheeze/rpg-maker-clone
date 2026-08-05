@@ -4,8 +4,17 @@ Date: 2026-08-04
 
 ## Status
 
-Accepted — the native and browser checks run green on the OpenGame.exe XP test
-bed; the wine comparison is a manual/dev script, like its RPG2000 counterpart.
+Accepted — the native check runs green on the OpenGame.exe XP test bed; the wine
+comparison is a manual/dev script, like its RPG2000 counterpart.
+
+**Amended 2026-08-05: the browser check was dropped.** Driving a real browser
+needed a `chromium` in the dev shell, and that one package dominated the
+download of every `nix develop` — on every machine and every CI job, for a
+single non-blocking smoke test. `scripts/rpgxp_browser_check.py` and its `wasm`
+CI steps are gone; the two page-only bugs it found are fixed and stay fixed, and
+the native and wine legs of this ADR are unchanged. The browser build is again
+covered only by "it compiles"; re-testing it needs a browser dependency that
+pays for itself (see Consequences).
 
 ## Context
 
@@ -53,15 +62,16 @@ marker so the three checks assert the same thing.
   test bed under Xvfb and fails unless `[RPGXP-MAP]` shows up. This is the guard
   against mruby/CRuby divergence in the XP runtime, and it runs in CI as a
   blocking check.
-- **Browser: `scripts/rpgxp_browser_check.py`.** Serves the built page, hands it
-  a zip of the XP project through the shell's own loader, presses the decision
-  key, and asserts: the runtime initialises, the project mounts, the game starts
+- **Browser: `scripts/rpgxp_browser_check.py`** (removed — see Status). Served
+  the built page, handed it
+  a zip of the XP project through the shell's own loader, pressed the decision
+  key, and asserted: the runtime initialises, the project mounts, the game starts
   and the loader panel goes away, the display is XP-sized, `[RPGXP-MAP]` appears,
   arrow keys change the frame, the canvas is not blank, and nothing in the page
-  log looks like an mruby exception. Screenshots of every step are written out.
-  It runs in the `wasm` CI job, uploading those frames — non-blocking at first,
-  the way the MV/MZ smokes were staged, since it is the repo's first check to
-  drive a real browser and a flake would block the page deployment.
+  log looks like an mruby exception. Screenshots of every step were written out.
+  It ran in the `wasm` CI job, uploading those frames — non-blocking, the way the
+  MV/MZ smokes were staged, since it was the repo's first check to drive a real
+  browser and a flake there would block the page deployment.
 - **Reference: `scripts/compare-rpgxp-wine.bash`.** Boots the project's own
   `Game.exe`/`RGSS104E.dll` under wine and our engine on two Xvfb displays at
   640x480, feeds both the same key script, and writes per-step ref/ours/diff/cmp
@@ -80,12 +90,19 @@ The repo has no `package.json` and no npm/pip dependencies — deliberately;
 a zip library. A Playwright/Puppeteer dependency for one smoke test would be the
 largest new dependency in the tree.
 
-So `rpgxp_browser_check.py` talks to headless Chromium over the **DevTools
+So `rpgxp_browser_check.py` talked to headless Chromium over the **DevTools
 protocol using the Python standard library alone**: a ~90-line RFC 6455
 WebSocket client, `Runtime.evaluate` / `Input.dispatchKeyEvent` /
 `Page.captureScreenshot`, and a small non-interlaced PNG reader (zlib plus the
-five filter types) for the blank-frame assertion. The only new dependency is the
+five filter types) for the blank-frame assertion. The only new dependency was the
 `chromium` binary, added to the dev shell in `flake.nix`.
+
+That accounting turned out to be the mistake this was amended for. "One binary"
+is cheap to *write* against and expensive to *fetch*: chromium is by far the
+largest closure in the dev shell, and every `nix develop` — every contributor's
+first build, every CI job in every workflow, whether or not it touches the
+browser at all — paid for it. A dependency that only one non-blocking check uses
+does not earn a place in the shell every other check has to realise.
 
 ## Consequences
 
@@ -100,10 +117,13 @@ browser build has, both now fixed here:
   the edge: the title's command window landed past the bottom and its centred
   text past the right. `rpg_start_game()` now resizes the display when it
   detects an XP project, and logs `[RPGXP] display sized to 640x480`, which the
-  check asserts on — the canvas size alone cannot tell the two cases apart.
+  check asserted on — the canvas size alone cannot tell the two cases apart.
 - **The loader panel stayed on screen above the running game.** It is dismissed
   by setting `hidden`, which the page's own `.panel { display: flex }` rule
-  overrode. The check now asserts the *computed* style, not the property.
+  overrode. The fix sets the computed style, not just the property.
+
+Both fixes are in the engine and the page and stay there; what the amendment
+gives up is the *regression* guard, not the fixes.
 
 **Found by the wine comparison, on its first real run** — four bugs that kept an
 XP project from drawing what the genuine runtime draws, all fixed here:
@@ -146,16 +166,17 @@ JPEG decoder.
   comparison's map steps will differ wholesale until real tileset/autotile
   blitting lands; the comparison exists to drive exactly that work, as it did for
   RPG2000 (ADR 0021 / 0016).
-- The browser check drives the reimplemented flow. Running the **script host**
-  (`RGSS_SCRIPT_HOST`, ADR 0017/0023) in the page is the natural next step for it
-  — the frame driver added in ADR 0023 was written for the browser but has never
-  been verified there.
-- The browser check loads an *unpacked* project. A packed release (`Game.ini` +
-  `Game.rgssad`, no loose `Data/`) is the shape most XP games ship in and takes a
-  different path through both the shell's loader and `RGSSData`; packing the test
-  bed into one (as `rpgxp_testbed_check.rb` already does) and loading that too is
-  the obvious next case.
-- The page has no way to pass engine flags, so the browser check reaches the map
-  by pressing keys rather than with `--rpgxp_new_game`. That is the more faithful
-  test (it exercises DOM input), but it means a title-screen regression and an
-  input regression fail the same assertion.
+- **The browser build is untested again.** Nothing now exercises the page's
+  loader, its DOM input path or its frame loop; a green wasm compile is all the
+  coverage there is, exactly as before this ADR. Getting it back means a browser
+  that does not sit in the dev shell — a system chromium the check finds only if
+  present and skips when it is not, or a browser-only CI job whose fetch does not
+  land on every other job. The three things the removed check would want, if it
+  returns: the **script host** (`RGSS_SCRIPT_HOST`, ADR 0017/0023) run in the
+  page (the ADR 0023 frame driver was written for the browser and has never been
+  verified there), a **packed release** (`Game.ini` + `Game.rgssad`, no loose
+  `Data/`) loaded through the shell — the shape most XP games ship in, and a
+  different path through both the loader and `RGSSData` — and a way to **pass
+  engine flags to the page**, since reaching the map by pressed keys is the more
+  faithful test but makes a title-screen regression and an input regression fail
+  the same assertion.

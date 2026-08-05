@@ -99,21 +99,19 @@
   while the RGSS class library is completed; see
   [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
   (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
-- An XP project is exercised in **every runtime it can run in**, all reaching the
-  same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks New Game without input):
-  `scripts/rpgxp_boot_check.bash` boots the native binary headlessly (in CI),
-  `scripts/rpgxp_browser_check.py` plays the project **in the browser build** —
-  it serves the emscripten page, hands the shell's own loader a zip of the
-  project, presses keys through the DevTools protocol and checks the runtime log
-  and the rendered canvas (headless Chromium, Python standard library only, no
-  npm dependency) — and `scripts/compare-rpgxp-wine.bash` diffs our frames
+- An XP project is exercised **against the genuine runtime as well as our own**,
+  both reaching the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks New Game
+  without input): `scripts/rpgxp_boot_check.bash` boots the native binary
+  headlessly (in CI), and `scripts/compare-rpgxp-wine.bash` diffs our frames
   against the **genuine RGSS runtime**, booting the project's own
   `Game.exe`/`RGSS104E.dll` under wine on the same key script (the XP twin of the
   RPG2000 comparison; install the RTP into that wine prefix with
-  `scripts/rtp_xp_install.bash` and both runtimes read the same assets). The
-  browser pass immediately found two page-only bugs — an XP project rendering on
-  a 320x240 screen with its title window off-canvas, and the loader panel staying
-  on top of the running game — and the wine pass found four more that had kept an
+  `scripts/rtp_xp_install.bash` and both runtimes read the same assets). A
+  browser pass ran alongside these for a while and found two page-only bugs — an
+  XP project rendering on a 320x240 screen with its title window off-canvas, and
+  the loader panel staying on top of the running game; it has since been dropped
+  because the headless browser it needed dominated the dev shell's download. The
+  wine pass found four more bugs that had kept an
   XP project from drawing its RTP art at all: the XP RTP registry key was never
   read, `.jpg` was missing from the asset search, truecolour images came out with
   red and blue exchanged, and an RGBA image loaded opaque drew garbage. With those

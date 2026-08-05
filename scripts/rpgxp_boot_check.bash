@@ -9,9 +9,8 @@
 # That cannot see mruby/CRuby divergence -- exactly the gap that had shipped two
 # RPG2000 bugs (a bare `module_function`, `Enumerable#none?`) with every check
 # green, which is why the LCF side grew scripts/rpg2k_boot_check.bash. This is
-# the same guard for the XP side, and it is the native counterpart of
-# scripts/rpgxp_browser_check.py (the same project, the same marker, in the
-# browser build).
+# the same guard for the XP side, on the same project and the same marker as
+# scripts/compare-rpgxp-wine.bash.
 #
 # The engine aborts on an uncaught mruby exception, so simply running it is most
 # of the test; `--rpgxp_new_game` selects New Game without input and logs the
