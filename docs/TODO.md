@@ -1066,8 +1066,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         the old `Utils.canUseWebGL()` wall. `scripts/mz_boot_check.bash` asserts
         the `[MZ-BOOT] booted to <scene>` marker in CI. Discovered/validated by
         booting PIXI v5.2.4 + rmmz under Node against the wrapper's surface.
-      - 🚧 Remaining: present the GL frame on-screen each frame + resize the FBO
-        to the canvas (continuous play, not just the boot probe); optional VAO /
-        `vertexAttribDivisor` fast path (PIXI falls back without it); texture
-        Y-flip + image uploads and uniform-introspection polish as real content
-        (a user-supplied MZ project) exercises them.
+      - ✅ On-screen present: `MZ.runtime_available?` tracks `MV::GL.available?`,
+        so `MZ#start` boots once and then runs a per-frame loop like MV —
+        `SceneManager.update` renders the scene through PIXI into the WebGL
+        canvas, `MZ#present` reads that FBO back (`MV::JS.present_gl` /
+        `mv_webgl_pixels`) onto a full-screen `RGSS::Sprite`/`Bitmap`, and
+        `RGSS::Graphics.update` draws it. `mz_boot_check.bash` runs the loop
+        headless (SDL `dummy` video driver, no X — Mesa rejects a GLX
+        make-current whenever an X server is reachable) and logs `presenting
+        frames on-screen (webgl handle N)`. `MV::JS.present_gl` is covered by
+        `gl_test`.
+      - ✅ Input: `MZ#main_loop` feeds `RGSS::Input`/mouse into rmmz's
+        `Input._currentState` / `TouchInput` each frame (`sync_input` /
+        `sync_touch`), reusing MV's shared key map and touch bridge (rmmz and
+        rmmv share the button names and state shape).
+      - 🚧 Remaining: resize the FBO to the canvas when PIXI resizes it; optional
+        VAO / `vertexAttribDivisor` fast path (PIXI falls back without it);
+        texture Y-flip + image uploads and uniform-introspection polish as real
+        content exercises them. Validation to add: a gameplay input probe (New
+        Game → map → a keypress moves the player, like MV's `mv_move_test`) and a
+        screenshot smoke of a content-bearing scene — the minimal `data/mz-sample`
+        currently rests at `Scene_Boot` (a loading scene), so reaching
+        `Scene_Title`/a map needs a fuller sample database first.
