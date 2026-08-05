@@ -420,6 +420,31 @@ check 'parallel (trigger 4): a background event runs every frame' do
   ok v >= 8, "parallel event should have looped ~10 times, got #{v}"
 end
 
+check 'an auto-start event reads its own position ("this event", ref 10005)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Control Variables: variable 1 = this event's x, variable 2 = its y.
+  auto.event_commands = [ECmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 1]),
+                         ECmd.new(ic::CONTROL_VARS, [0, 2, 2, 0, 6, 10005, 2])]
+  scene = new_scene({ 4 => event(6, 3, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update }
+  eq 6, st.variables[1], 'this event\'s x'
+  eq 3, st.variables[2], 'this event\'s y'
+end
+
+check 'a parallel process keeps its "this event" id across laps' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4)
+  par.event_commands = [ECmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 1])]
+  scene = new_scene({ 9 => event(7, 2, par) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  # Several laps: the interpreter restarts its list each time, which must not
+  # drop the id the reference resolves through.
+  10.times { scene.update }
+  eq 7, st.variables[1], 'the parallel event still knows its own x'
+end
+
 check 'parallel common event runs only while its switch gate is on' do
   ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 2,
                       event: [add_var_cmd(3)])
@@ -850,6 +875,55 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   ok !scene.instance_variable_get(:@message), 'message dismissed'
   5.times { RGSS::Input.reset; scene.update }
   ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
+check 'the cancel key backs out of a Show Choices, per its cancel type' do
+  ic = Game::Interpreter::Cmd
+  # Cancel type 5: the block carries a [Cancel] branch as option index 4 (an
+  # empty label the window must not draw), which the cancel key runs.
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [5], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [4], indent: 0, string: ''),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'the choice window opened'
+  eq 1, msg[:count], 'only the drawn option is listed, not the [Cancel] branch'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'cancel closed the choice window'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[2], 'the [Cancel] branch ran'
+  ok !st.switches[1], 'and the drawn option did not'
+end
+
+check 'a Show Choices that forbids cancelling swallows the cancel key' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0), # cancel type 0
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'the choice window opened'
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message), 'the choice stayed on screen'
+  parent = scene.instance_variable_get(:@parent)
+  ok parent.pushed.empty?, 'and the cancel key did not leak to the main menu'
 end
 
 check 'a \\! pause holds the reveal until a button is pressed' do

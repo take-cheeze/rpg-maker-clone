@@ -1017,6 +1017,7 @@ class RPG2k
           @started_auto[ev[:id]] = true
           @active_event = ev
           @interpreter.start(ev[:commands])
+          @interpreter.event_id = ev[:id]
           return
         end
 
@@ -1062,6 +1063,7 @@ class RPG2k
         it.resolver = @interpreter.resolver
         it.map_info = self
         it.start(commands)
+        it.event_id = event && event[:id]
         { interp: it, commands: commands, gate_switch: gate_switch,
           wait_timer: nil, event: event }
       end
@@ -1086,6 +1088,10 @@ class RPG2k
           it.update
         else
           it.start(p[:commands]) # loop the process
+          # #start clears the "this event" id, so re-attach it on every lap or
+          # the second pass would answer the process's own position queries with
+          # nothing.
+          it.event_id = p[:event] && p[:event][:id]
           it.update
         end
         apply_interpreter_requests(it, p[:event])
@@ -1123,6 +1129,7 @@ class RPG2k
         @active_event = ev
         @interpreter.start(ev[:commands])
         @interpreter.triggered_by_decision_key = by_decision_key
+        @interpreter.event_id = ev[:id]
       end
 
       # On the action button, run the trigger-0 event the player is facing. The
@@ -3889,6 +3896,13 @@ class RPG2k
             index = @choice_index
             close_message
             @interpreter.choose(index)
+          elsif Input.trigger?(Input::B) && @interpreter.choice_cancellable?
+            # The Show Choices block says what cancelling means (pick a given
+            # choice, or run its [Cancel] branch); a block that forbids it
+            # swallows the key, as RPG_RT does.
+            play_system_se(SFX_CANCEL)
+            close_message
+            @interpreter.cancel_choice
           end
         else
           drive_text_message

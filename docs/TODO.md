@@ -425,6 +425,31 @@ The work below is roughly ordered by the critical path to a walkable game
   Three opcodes that never matched liblcf's `Code` enum were corrected in the
   same pass — Change Equipment is 10450 (10440 is Change Skills) and Game Over is
   12420 — so those commands are recognised in real game data at all.
+  **Coverage is measured per opcode, though, not per parameter combination**, and
+  the next pass closed two gaps a dispatched-but-partial handler was hiding —
+  both found by tallying the *parameter* modes the real Nepheshel data uses
+  against what each handler actually branches on:
+  - **"This event" (0 / 10005) now resolves on the read side.** The write-side
+    commands (Move Event, Change Event Location, Flash Sprite) queue their raw
+    target for the scene, which knows which event it is stepping, so those always
+    worked. The commands the interpreter answers itself did not: a **Conditional
+    Branch** orientation test on this event was always false (223 of Nepheshel's
+    233), the **Control Variables** character operand read its position as 0 (239
+    of 246) and a **Call Event** naming another page of this event silently did
+    nothing (17 of 33). `Game::Interpreter#event_id` now carries the running map
+    event's id — set by `Scene::Map` beside `map_info`, and re-attached on every
+    lap of a parallel process — and every character reference goes through
+    `#character_ref`. It is nil for a common event and a battle page, which have
+    no "this event" in RPG_RT either, so such a reference resolves to nothing.
+  - **Show Choices honours its cancel setting.** param0 is the cancel behaviour
+    as a 1-based option index: 0 forbids cancelling, 1..4 makes the cancel key
+    pick that choice, 5 runs a dedicated **[Cancel] branch** — which the editor
+    stores as a *fifth* option (index 4) with an empty label. It was being drawn
+    as a blank extra row that shifted the routing of every option below it. Only
+    options 0..3 are listed now (EasyRPG's `GetChoices(4)`), and `Scene::Map`
+    backs out of a cancellable choice on the cancel key with the system cancel
+    sound. 336 of Nepheshel's 349 choice blocks are cancellable; 27 carry a
+    [Cancel] branch that could not be reached before.
   **The RPG2003-only commands are handled now as well** — the low opcodes the
   2003 editor emits for what RPG2000 never had, none of which had a handler
   while the opcode table stopped at the shared set. **Change Class** (1008)

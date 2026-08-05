@@ -738,6 +738,87 @@ check 'interpreter pauses on a message and resumes' do
   eq true, st.switches[2] # ran the command after the message
 end
 
+# -- Show Choices -------------------------------------------------------------
+
+# A Show Choices block: `cancel` is the command's cancel type, `options` the
+# option indices to emit (the editor writes 0..3 for the drawn choices and 4 for
+# the optional [Cancel] branch). Each branch sets switch `10 + index`, and the
+# command after the block sets switch 1, so a run says which branch was taken
+# and whether control came back.
+def choice_block(cancel, options)
+  cmds = [FakeCmd.new(IC::SHOW_CHOICES, [cancel], indent: 0)]
+  options.each do |i|
+    cmds << FakeCmd.new(IC::CHOICE_OPTION, [i], indent: 0,
+                                                string: i == 4 ? '' : "opt#{i}")
+    cmds << FakeCmd.new(IC::CONTROL_SWITCHES, [0, 10 + i, 10 + i, 0], indent: 1)
+  end
+  cmds << FakeCmd.new(IC::CHOICE_END, [], indent: 0)
+  cmds << FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 0)
+  cmds
+end
+
+def run_choice(cancel, options)
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start(choice_block(cancel, options))
+  it.update
+  [st, it]
+end
+
+check 'Show Choices lists its options and routes the chosen branch' do
+  st, it = run_choice(0, [0, 1, 2])
+  ok it.waiting?, 'Show Choices must pause the interpreter'
+  eq :choice, it.wait_kind
+  eq %w[opt0 opt1 opt2], it.choice_labels
+  it.choose(1)
+  it.update
+  eq true, st.switches[11], 'the second branch ran'
+  eq true, st.switches[1], 'and control returned after the block'
+end
+
+check 'Show Choices hides the [Cancel] branch from the drawn options' do
+  # Cancel type 5 stores the cancel branch as a fifth option (index 4) with an
+  # empty label. It is a jump target only — drawing it would add a blank row and
+  # shift every label after it.
+  _st, it = run_choice(5, [0, 1, 4])
+  eq %w[opt0 opt1], it.choice_labels
+end
+
+check 'Show Choices cancel type picks the option it names' do
+  # 0 = cancelling forbidden: the key is swallowed and the choice stays up.
+  st, it = run_choice(0, [0, 1])
+  eq false, it.choice_cancellable?
+  eq false, it.cancel_choice
+  ok it.waiting?, 'a non-cancellable choice stays on screen'
+  eq false, st.switches[1]
+
+  # 1..4 = cancel picks that choice (1-based), the editor's usual "no thanks".
+  st, it = run_choice(2, [0, 1])
+  ok it.choice_cancellable?
+  ok it.cancel_choice
+  it.update
+  eq true, st.switches[11], 'cancel picked the second choice'
+  eq true, st.switches[1]
+
+  # 5 = cancel runs the dedicated [Cancel] branch, stored at option index 4.
+  st, it = run_choice(5, [0, 1, 4])
+  ok it.cancel_choice
+  it.update
+  eq true, st.switches[14], 'cancel ran the [Cancel] branch'
+  eq false, st.switches[10]
+  eq false, st.switches[11]
+  eq true, st.switches[1]
+end
+
+check 'cancelling is only offered while a choice is on screen' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'hello')])
+  it.update
+  eq false, it.choice_cancellable?, 'a plain message is not a choice'
+  eq false, it.cancel_choice
+end
+
 # -- Message Options / Change Face Graphic ------------------------------------
 
 check 'Message Options sets window position, transparency and continue flag' do
@@ -872,6 +953,33 @@ check 'Call Event with no resolver set is a safe no-op' do
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
   eq true, st.switches[1]
+end
+
+check 'Call Event runs another page of "this event" (map target 10005 / 0)' do
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  [10005, 0].each do |ref|
+    st = new_state
+    it = Game::Interpreter.new(st)
+    it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+    it.start([FakeCmd.new(IC::CALL_EVENT, [1, ref, 2]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+    it.event_id = 7 # the list belongs to map event 7
+    it.update
+    eq true, st.switches[9], "page 2 of this event ran (ref #{ref})"
+    eq true, st.switches[1], 'control returned to the caller'
+  end
+end
+
+check 'Call Event on "this event" from a common event is a no-op' do
+  st = new_state
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [1, 10005, 2]),  # no event is running it
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq false, st.switches[9], 'there is no "this event" to call'
+  eq true, st.switches[1], 'and the caller carries on'
 end
 
 check 'Erase Event sets a one-shot request without pausing the interpreter' do
@@ -2605,6 +2713,35 @@ check 'Control Variables reads a map event position (operand type 6)' do
   eq 0, st.variables[5]                                          # unknown event reads 0
 end
 
+check 'Control Variables reads "this event" (operand 6, ref 10005 / 0)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new                                  # event 7 at (2,3) dir 6
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 1]),  # this x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 10005, 2]),  # this y
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 6, 0, 3]),      # this facing
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 6, 10005, 4])]) # this screen x
+  it.event_id = 7 # the list belongs to map event 7
+  it.update
+  eq 2, st.variables[1]
+  eq 3, st.variables[2]
+  eq 6, st.variables[3]  # a bare 0 names this event too
+  eq 40, st.variables[4] # measured through the same camera hook as any event
+end
+
+check 'Control Variables "this event" reads 0 without a running map event' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 1]),
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 10005, 4])])
+  st.variables[1] = 99
+  st.variables[2] = 99
+  it.update # a common event: no "this event" to resolve
+  eq 0, st.variables[1]
+  eq 0, st.variables[2]
+end
+
 check 'Control Variables reads an actor stat (operand type 5)' do
   st = party_state
   a = st.party.actor_by_id(1) # atk 10, max_hp 100
@@ -2701,8 +2838,9 @@ def run_actor_cond(params, string: '')
 end
 
 # Like run_actor_cond but with a FakeMapInfo hook set (event 7 at (2,3) dir 6),
-# for conditions that read map events.
-def run_cond_with_mapinfo(params)
+# for conditions that read map events. `event_id` says which map event is
+# running the list, which is what a "this event" reference resolves to.
+def run_cond_with_mapinfo(params, event_id: nil)
   st = party_state
   it = Game::Interpreter.new(st)
   it.map_info = FakeMapInfo.new
@@ -2711,6 +2849,7 @@ def run_cond_with_mapinfo(params)
             FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
             FakeCmd.new(IC::END_BRANCH, [], indent: 0)])
+  it.event_id = event_id
   it.update
   st
 end
@@ -2920,6 +3059,15 @@ check 'Conditional Branch: character orientation (type 6)' do
   eq true, run_cond_with_mapinfo([6, 7, 1]).switches[1]  # event faces right
   eq true, run_cond_with_mapinfo([6, 7, 0]).switches[2]  # not facing up -> else
   eq true, run_cond_with_mapinfo([6, 9, 1]).switches[2]  # unknown event -> else
+end
+
+check 'Conditional Branch orientation: "this event" (type 6, ref 10005 / 0)' do
+  # The event running the list is event 7, which FakeMapInfo faces right.
+  eq true, run_cond_with_mapinfo([6, 10005, 1], event_id: 7).switches[1]
+  eq true, run_cond_with_mapinfo([6, 10005, 0], event_id: 7).switches[2] # not up
+  eq true, run_cond_with_mapinfo([6, 0, 1], event_id: 7).switches[1] # 0 is the same ref
+  # A common event has no "this event", so the test cannot hold.
+  eq true, run_cond_with_mapinfo([6, 10005, 1]).switches[2]
 end
 
 # -- Input Number -------------------------------------------------------------
