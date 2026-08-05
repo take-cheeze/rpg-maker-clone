@@ -116,10 +116,43 @@ class MZ
     "onerror: null, onupgradeneeded: null, result: null }; }, " \
     "deleteDatabase: function(){ return {}; } }; })(globalThis);".freeze
 
+  # What MZ needs on top of MV's audio bridge (`MV::AUDIO_BRIDGE_JS`, which
+  # replaces the high-level play/stop/fade methods so ops queue for RGSS::Audio).
+  #
+  # MV's bridge deliberately leaves `loadStaticSe`/`createBuffer` alone, because
+  # on the MV side nothing reaches them once the play methods are replaced. MZ
+  # does reach them: `Scene_Boot.start` calls
+  # `SoundManager.preloadImportantSounds()`, which loads the system SEs eagerly
+  # through `AudioManager.loadStaticSe` -> `createBuffer` -> `new WebAudio`. And
+  # MZ's `WebAudio` fetches with **`fetch`** (MV used XMLHttpRequest), which this
+  # host does not provide — so the moment a game names a system sound, the boot
+  # dies in `Scene_Boot.start` with "ReferenceError: fetch is not defined".
+  #
+  # Preloading is only an optimisation when playback is bridged, so both are
+  # neutralised: `loadStaticSe` becomes a no-op and `createBuffer` returns an
+  # inert object rather than constructing a WebAudio. Playback still goes through
+  # the bridged `playSe`.
+  AUDIO_BRIDGE_EXTRA_JS =
+    "(function(g){ if (typeof AudioManager === 'undefined') return; " \
+    "AudioManager.loadStaticSe = function(){}; " \
+    "AudioManager.isStaticSe = function(){ return false; }; " \
+    "AudioManager.createBuffer = function(){ return { " \
+    "play: function(){}, stop: function(){}, fadeIn: function(){}, " \
+    "fadeOut: function(){}, isPlaying: function(){ return false; }, " \
+    "isReady: function(){ return true; }, isError: function(){ return false; }, " \
+    "addLoadListener: function(){}, volume: 0, pitch: 0, pan: 0, seek: 0 }; }; " \
+    "})(globalThis);".freeze
+
   class << self
     # The canonical MZ script load order (see CORE_SCRIPTS).
     def core_scripts
       CORE_SCRIPTS
+    end
+
+    # The JS that routes MZ's audio through RGSS::Audio: MV's shared bridge plus
+    # the MZ-only overrides above (see AUDIO_BRIDGE_EXTRA_JS).
+    def audio_bridge_js
+      "#{MV::AUDIO_BRIDGE_JS}\n#{AUDIO_BRIDGE_EXTRA_JS}"
     end
 
     # The subset of CORE_SCRIPTS the host reuse (M6.2) actually evaluates to
@@ -225,10 +258,12 @@ class MZ
     sync_input # push RGSS input into MZ's Input before the scene updates
     sync_touch # push RGSS mouse into MZ's TouchInput before the scene update
     pump_frame # advance MZ one frame: its own rAF loop updates and renders
+    pump_audio # drain the ops rmmz's AudioManager queued into RGSS::Audio
     @scene = scene_name # read once a frame; the probes below all consult it
     log_scene_transition # trace progress (Scene_Boot -> Scene_Title -> Map)
     maybe_new_game # CI: auto-advance past the title to the first map
     maybe_move_test # CI: hold a direction on the map and log that the player moved
+    maybe_audio_test # CI: play an SE through the bridge and log it dispatched
     present
     maybe_screenshot # capture the presented frame once, if requested (CI)
     RGSS::Input.update
@@ -276,6 +311,36 @@ class MZ
       $stderr.puts "[MZ-BOOT] booted to #{@boot_scene} through the WebGL renderer"
     end
     create_screen
+  end
+
+  # Drain the audio ops rmmz queued this frame and play them through
+  # RGSS::Audio. rmmz's `AudioManager` exposes the same high-level surface MV's
+  # bridge overrides (playBgm/playSe/fadeOutBgm/stopAll/...), so MZ installs
+  # `MV::AUDIO_BRIDGE_JS` verbatim and drains the identical op queue — the whole
+  # reason MZ had no sound was that nobody installed it, not that MZ differed.
+  # Without the bridge, audio goes to the silent Web Audio stub instead.
+  #
+  # The first dispatched op is logged as `[MZ-AUDIO]` so a headless run can prove
+  # the path end to end (an asset that does not resolve plays nothing silently).
+  def pump_audio
+    data = MV::JS.eval(
+      "(typeof __mv_drainAudio === 'function') ? __mv_drainAudio() : ''"
+    )
+    return unless data.is_a?(String) && !data.empty?
+
+    data.split("\n").each do |line|
+      next if line.empty?
+      call = MV.parse_audio_op(line)
+      next unless call
+
+      unless @audio_logged
+        @audio_logged = true
+        $stderr.puts "[MZ-AUDIO] op=#{call[0]} asset=#{call[1]}"
+      end
+      MV.apply_audio_op(call)
+    end
+  rescue StandardError => e
+    $stderr.puts "[MZ] audio error: #{e.message}"
   end
 
   # The running scene's class name, or "" before the first scene is created.
@@ -369,7 +434,8 @@ class MZ
   # normal play (flags unset). Mirrors MV#maybe_new_game.
   def maybe_new_game
     return if @new_game_done
-    return unless new_game_requested? || move_test_requested?
+    return unless new_game_requested? || move_test_requested? ||
+                  audio_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -439,6 +505,38 @@ class MZ
     $stderr.puts "[MZ-MOVE] end #{player_tile} moved=#{@move_seen ? true : false}"
   rescue StandardError => e
     $stderr.puts "[MZ] move test error: #{e.message}"
+  end
+
+  # Whether --mz_audio_test was requested (a launcher constant set by main.cxx).
+  # Implies New Game, since the probe plays its sound once on the map.
+  def audio_test_requested?
+    (begin
+      MZ_AUDIO_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_audio_test is set (CI), play one SE through rmmz's own
+  # AudioManager once the map is up, so a headless run proves the whole audio
+  # chain — AudioManager -> the bridge's op queue -> #pump_audio -> RGSS::Audio
+  # -> the SDL mixer — rather than only that the bridge is installed. The sample
+  # ships an authored `audio/se/Beep.wav` for exactly this. One-shot; a no-op
+  # during normal play. Mirrors MV#maybe_audio_test.
+  def maybe_audio_test
+    return if @audio_test_done
+    return unless audio_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @audio_test_done = true
+    MV::JS.eval(
+      "(function(){ if (typeof AudioManager !== 'undefined') " \
+      "AudioManager.playSe({ name: 'Beep', volume: 90, pitch: 100, pan: 0 }); " \
+      "})();"
+    )
+    $stderr.puts "[MZ] auto audio test: played SE Beep"
+  rescue StandardError => e
+    $stderr.puts "[MZ] audio test error: #{e.message}"
   end
 
   # If a screenshot path was requested (`--mz_screenshot`), write the presented
@@ -550,6 +648,12 @@ class MZ
         $stderr.puts "[MZ] error loading #{script}: #{e.message}"
       end
     end
+
+    # Route rmmz's AudioManager through RGSS::Audio (see #pump_audio). Installed
+    # after the engine scripts define AudioManager and before the boot runs, so
+    # even the title BGM a game starts with is queued rather than lost to the
+    # silent Web Audio stub.
+    MV::JS.eval(self.class.audio_bridge_js)
 
     # Replace catchException so a boot error is captured (not swallowed) and run
     # the boot. `SceneManager.run` starts PIXI's ticker and returns; the scene is

@@ -141,3 +141,50 @@ assert 'MZ.runtime_available? tracks whether the WebGL backend (MV::GL) is built
   # mirrors MV::GL.available? exactly.
   assert_equal MV::GL.available?, MZ.runtime_available?
 end
+
+assert 'MZ.audio_bridge_js is MVs bridge plus the MZ-only overrides' do
+  js = MZ.audio_bridge_js
+  # The shared bridge (the play/stop/fade replacements) is included verbatim...
+  assert_true js.include?(MV::AUDIO_BRIDGE_JS)
+  # ...and MZ adds the preload neutralisers on top.
+  assert_true js.include?("loadStaticSe")
+  assert_true js.include?("createBuffer")
+end
+
+assert 'the MZ audio bridge queues ops and neutralises the eager preload' do
+  # Exercised against the real host with a stand-in AudioManager, so this checks
+  # the bridge's *effect* rather than its text. A stand-in is used because rmmz
+  # itself is a fetched, CI-only fixture and is not present in this test build.
+  MV::JS.eval(
+    "globalThis.AudioManager = { _seBuffers: [], " \
+    "playSe: function(){ return 'ORIGINAL'; }, " \
+    "loadStaticSe: function(){ throw new Error('would construct WebAudio'); }, " \
+    "createBuffer: function(){ throw new Error('would construct WebAudio'); } };"
+  )
+  MV::JS.eval(MZ.audio_bridge_js)
+
+  # Playing an SE now queues an op instead of touching the engine's audio stack.
+  MV::JS.eval(
+    "AudioManager.playSe({ name: 'Beep', volume: 90, pitch: 100, pan: 0 });"
+  )
+  assert_equal "se_play\tBeep\t90\t100", MV::JS.eval("__mv_drainAudio()")
+  # ...and draining clears the queue.
+  assert_equal "", MV::JS.eval("__mv_drainAudio()")
+
+  # Scene_Boot.start preloads the system sounds through loadStaticSe. MZ's
+  # WebAudio fetches with `fetch`, which this host does not provide, so leaving
+  # it live kills the boot the moment a game names a system sound. Both entry
+  # points must now be inert rather than throwing.
+  assert_equal "ok", MV::JS.eval(
+    "(function(){ try { AudioManager.loadStaticSe({ name: 'Beep' }); " \
+    "return 'ok'; } catch (e) { return 'threw: ' + e.message; } })();"
+  )
+  assert_equal "object", MV::JS.eval(
+    "typeof AudioManager.createBuffer('se/', 'Beep')"
+  )
+
+  # A parsed op maps onto the RGSS::Audio call MZ dispatches, folder and all.
+  call = MV.parse_audio_op("se_play\tBeep\t90\t100")
+  assert_equal :se_play, call[0]
+  assert_equal "audio/se/Beep", call[1]
+end

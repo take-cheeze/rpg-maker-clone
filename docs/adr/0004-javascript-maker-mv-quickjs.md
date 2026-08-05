@@ -278,9 +278,15 @@ JavaScript loads and interprets the JSON.
       `WindowLayer`'s per-window clipping actually clips (the FBO's packed
       DEPTH24_STENCIL8 buffer had been attached since M6.3a and simply never
       programmed); `gl_test` asserts the masking at the pixel level on the real
-      backend. Remaining: an MZ audio bridge (MV's `AudioManager` →
-      `RGSS::Audio` route is not wired for MZ yet) and `.woff` font loading, all
-      verified against a real MZ project.
+      backend. MZ's audio rides the same bridge as MV's
+      (`MV::AUDIO_BRIDGE_JS`, drained by `MZ#pump_audio`), plus one MZ-only
+      override: `Scene_Boot`'s eager `preloadImportantSounds` reaches
+      `AudioManager.loadStaticSe` → `createBuffer` → `new WebAudio`, and MZ's
+      `WebAudio` uses **`fetch`** where MV used `XMLHttpRequest` — a global this
+      host does not provide, so naming a system sound killed the boot until both
+      were neutralised. Remaining: `.woff` font loading (the canvas text loader
+      finds only `.ttf`/`.otf`, and MZ games ship `.woff`, so their text draws
+      blank), verified against a real MZ project.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
