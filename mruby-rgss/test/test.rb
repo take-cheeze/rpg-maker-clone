@@ -130,6 +130,21 @@ assert "RGSS::Bitmap pixel operations" do
   assert_equal 0.0, b.get_pixel(3, 3).alpha
 end
 
+assert "RGSS::Bitmap#disposed? reports the disposed state, not the live one" do
+  # Every display class shares this pair (Viewport/Sprite/Plane/Tilemap/Window
+  # too), but Bitmap is the one that needs no display, so it is where the
+  # behaviour can be pinned. `disposed?` used to answer whether the object was
+  # *alive*, which inverts every `unless x.disposed?` guard the stock scripts
+  # use around cleanup and redraws.
+  b = RGSS::Bitmap.new(2, 2)
+  assert_false b.disposed?, "a fresh bitmap is not disposed"
+  b.dispose
+  assert_true b.disposed?, "a disposed bitmap reports disposed"
+  # Disposing twice is a no-op rather than a double free.
+  b.dispose
+  assert_true b.disposed?
+end
+
 assert "RGSS::Bitmap blt" do
   src = RGSS::Bitmap.new(2, 2)
   src.fill_rect(0, 0, 2, 2, RGSS::Color.new(0, 128, 0, 255))

@@ -2229,8 +2229,14 @@ mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
 }
 
+// RGSS #disposed?: whether #dispose has already run. The data pointer is
+// cleared exactly when it does (see obj_dispose), so a null pointer *is* the
+// disposed state -- this used to answer the other way round, reporting every
+// live object as disposed and every disposed one as live. The stock scripts
+// guard cleanup and redraws with it (`unless bitmap.disposed?`), so inverted it
+// meant skipping work on a live object and touching a freed one.
 mrb_value obj_disposed(mrb_state* M, mrb_value self) {
-  return mrb_bool_value(DATA_PTR(self));
+  return mrb_bool_value(DATA_PTR(self) == nullptr);
 }
 
 mrb_value obj_dispose(mrb_state* M, mrb_value self) {
