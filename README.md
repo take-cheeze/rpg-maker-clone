@@ -247,12 +247,22 @@
   than the MV path and is still being brought up against real games — the
   headless CI smoke is what the claim rests on, and it is not yet a blocking
   check
+- MZ also **shows messages, opens the party menu, saves and fights**, each
+  exercised headlessly the way the MV path is: a message queued through
+  `$gameMessage` opens `Window_Message` over the map, `Scene_Map`'s own
+  `callMenu` reaches `Scene_Menu`, a save round-trips through the real
+  `DataManager` and a Battle Processing command run through the map interpreter
+  lands in `Scene_Battle`. MZ's save path is a **promise chain** (JsonEx → pako
+  → localforage) rather than MV's synchronous call, so the probe starts it and
+  polls until it settles, then re-enters the map the way `Scene_Load` does
 - The MZ engine is not redistributable (unlike MV's MIT corescript), so
   `data/mz-sample` commits only an authored database and art —
   `scripts/gen-mz-sample.py` writes both — and
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
-  `scripts/mz_boot_check.bash` boots that bed headlessly and asserts the game
-  reaches the map and that a held key moves the player; `ruby
+  `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
+  requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
+  key moves the player), `message`, `menu`, `save` or `battle`, each with its own
+  success line so a probe that merely ran cannot pass; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 

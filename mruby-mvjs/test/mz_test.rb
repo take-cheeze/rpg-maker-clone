@@ -189,6 +189,172 @@ assert 'the MZ audio bridge queues ops and neutralises the eager preload' do
   assert_equal "audio/se/Beep", call[1]
 end
 
+assert 'MZ.message_probe_js queues text through $gameMessage' do
+  # Exercised against the real host with a stand-in $gameMessage, so this checks
+  # the injection's *effect*: it must call the engine's own Game_Message#add
+  # (what a Show Text command does) rather than poke at window state.
+  MV::JS.eval(
+    "globalThis.$gameMessage = { texts: [], busy: false, " \
+    "add: function (t) { this.texts.push(t); }, " \
+    "isBusy: function () { return this.busy; } };"
+  )
+  MV::JS.eval(MZ.message_probe_js("hello"))
+  assert_equal "hello", MV::JS.eval("$gameMessage.texts.join('|')")
+
+  # A message already on screen is left alone, so the probe never stacks onto a
+  # game's own dialogue.
+  MV::JS.eval("$gameMessage.busy = true;")
+  MV::JS.eval(MZ.message_probe_js("second"))
+  assert_equal "hello", MV::JS.eval("$gameMessage.texts.join('|')")
+end
+
+assert 'MZ.js_string escapes what it quotes' do
+  # The probe text is interpolated into a JS source string, so a quote or a
+  # backslash in it must not end (or reopen) the literal.
+  assert_equal "'plain'", MZ.js_string("plain")
+  assert_equal "'it\\'s'", MZ.js_string("it's")
+  assert_equal "'a\\\\b'", MZ.js_string("a\\b")
+  # And the result really is one string to the engine.
+  assert_equal "it's", MV::JS.eval("(#{MZ.js_string("it's")})")
+end
+
+assert 'MZ.message_state_js reports both halves of the message state' do
+  MV::JS.eval(
+    "globalThis.$gameMessage = { isBusy: function () { return true; } }; " \
+    "globalThis.SceneManager = { _scene: { _messageWindow: { openness: 255 } } };"
+  )
+  assert_equal "busy=true window_open=true", MV::JS.eval(MZ.message_state_js)
+
+  # A window that has not opened yet is reported as such, which is the whole
+  # point: queued text with a shut window means the message path is broken.
+  MV::JS.eval("SceneManager._scene._messageWindow.openness = 0;")
+  assert_equal "busy=true window_open=false", MV::JS.eval(MZ.message_state_js)
+end
+
+assert 'MZ.menu_probe_js sets the flag Scene_Map acts on, and only there' do
+  # rmmz's keyboard Input.keyMapper has no "menu" binding, so a key press cannot
+  # reach Scene_Map#isMenuCalled; `menuCalling` is exactly what that predicate
+  # sets, and updateCallMenu then runs the real callMenu.
+  MV::JS.eval(
+    "function Scene_Map() {} globalThis.Scene_Map = Scene_Map; " \
+    "globalThis.SceneManager = { _scene: new Scene_Map() };"
+  )
+  MV::JS.eval(MZ.menu_probe_js)
+  assert_equal true, MV::JS.eval("SceneManager._scene.menuCalling === true")
+
+  # Any other scene is left untouched — the menu is only ever called from the
+  # map, and Scene_Menu itself must not be poked while it is up.
+  MV::JS.eval(
+    "function Scene_Menu() {} globalThis.SceneManager._scene = new Scene_Menu();"
+  )
+  MV::JS.eval(MZ.menu_probe_js)
+  assert_equal true, MV::JS.eval("SceneManager._scene.menuCalling === undefined")
+end
+
+assert 'MZ.save_probe_js round-trips through DataManager across frames' do
+  # MZ's save path is a promise chain (unlike MV's synchronous one), so the
+  # probe cannot read a return value: it starts the chain and the result lands
+  # some pumped frames later. Driven here against the real host with a stand-in
+  # DataManager, which is what makes the asynchrony visible.
+  MV::JS.eval(<<~'JS')
+    globalThis.__mzCalls = [];
+    globalThis.DataManager = {
+      saveGame: function (id) { __mzCalls.push('save' + id); return Promise.resolve(0); },
+      loadGame: function (id) { __mzCalls.push('load' + id); return Promise.resolve(0); },
+      savefileExists: function (id) { __mzCalls.push('exists' + id); return true; }
+    };
+    // No scene stack here, so the probe skips the Scene_Map re-entry a real
+    // load ends with (covered separately below).
+    delete globalThis.SceneManager;
+    delete globalThis.Scene_Map;
+  JS
+  MV::JS.eval(MZ.save_probe_js(1))
+  # Nothing yet — every step of the chain settles on a later microtask turn.
+  assert_equal "", MV::JS.eval(MZ.save_result_js)
+
+  5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
+  assert_equal "saved=true exists=true loaded=true",
+               MV::JS.eval(MZ.save_result_js)
+  # The slot is honoured, and `savefileExists` is read *after* the save resolves
+  # — StorageManager only refreshes its key cache at the end of its own chain.
+  assert_equal "save1,exists1,load1", MV::JS.eval("__mzCalls.join(',')")
+end
+
+assert 'MZ.save_probe_js re-enters the map, and keeps its verdict if that fails' do
+  # A real load throws the $game* objects away and rebuilds them, so the probe
+  # finishes the way Scene_Load does — back into Scene_Map — rather than leaving
+  # the running scene holding references the load discarded.
+  MV::JS.eval(<<~'JS')
+    globalThis.DataManager = {
+      saveGame: function () { return Promise.resolve(0); },
+      loadGame: function () { return Promise.resolve(0); },
+      savefileExists: function () { return true; }
+    };
+    function Scene_Map() {}
+    globalThis.Scene_Map = Scene_Map;
+    globalThis.SceneManager = { went: null, goto: function (s) { this.went = s; } };
+  JS
+  MV::JS.eval(MZ.save_probe_js(1))
+  5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
+  assert_equal "saved=true exists=true loaded=true",
+               MV::JS.eval(MZ.save_result_js)
+  assert_equal true, MV::JS.eval("SceneManager.went === Scene_Map")
+
+  # A re-entry that throws must not turn a successful round-trip into a failure
+  # line — nor disappear silently.
+  MV::JS.eval("SceneManager.goto = function () { throw new Error('no stack'); };")
+  MV::JS.eval(MZ.save_probe_js(1))
+  5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
+  assert_equal "saved=true exists=true loaded=true goto_error=no stack",
+               MV::JS.eval(MZ.save_result_js)
+end
+
+assert 'MZ.save_probe_js reports a rejected chain instead of hanging' do
+  MV::JS.eval(
+    "globalThis.DataManager = { saveGame: function () { " \
+    "return Promise.reject(new Error('disk full')); } };"
+  )
+  MV::JS.eval(MZ.save_probe_js(2))
+  5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
+  assert_equal "error: disk full", MV::JS.eval(MZ.save_result_js)
+end
+
+assert 'MZ.battle_probe_js runs Battle Processing through the map interpreter' do
+  # Not a bare SceneManager.push(Scene_Battle): that deadlocks, because
+  # Scene_Map.stop starts the encounter effect and the effect only advances
+  # while the scene is inactive. Command 301 inside the map interpreter is the
+  # path the engine itself takes.
+  MV::JS.eval(
+    "globalThis.$gameMap = { _interpreter: { setup: function (list, id) { " \
+    "this.list = list; this.eventId = id; } } };"
+  )
+  MV::JS.eval(MZ.battle_probe_js(7))
+  assert_equal 301, MV::JS.eval("$gameMap._interpreter.list[0].code")
+  # [type, troopId, canEscape, canLose] — a direct designation of troop 7.
+  assert_equal "0,7,true,false",
+               MV::JS.eval("$gameMap._interpreter.list[0].parameters.join(',')")
+  # ...terminated by the end-of-list command, so the interpreter stops after it.
+  assert_equal 0, MV::JS.eval("$gameMap._interpreter.list[1].code")
+  assert_equal 0, MV::JS.eval("$gameMap._interpreter.eventId")
+end
+
+assert 'the MZ probes are inert before the engine defines their globals' do
+  # Every probe runs each frame from MZ#main_loop, including the frames before
+  # the boot has defined $gameMessage / SceneManager / $gameMap. None may throw.
+  MV::JS.eval(
+    "delete globalThis.$gameMessage; delete globalThis.SceneManager; " \
+    "delete globalThis.$gameMap; delete globalThis.Scene_Map;"
+  )
+  assert_nothing_raised { MV::JS.eval(MZ.message_probe_js("x")) }
+  assert_nothing_raised { MV::JS.eval(MZ.menu_probe_js) }
+  assert_nothing_raised { MV::JS.eval(MZ.battle_probe_js(1)) }
+  assert_equal "busy=false window_open=false", MV::JS.eval(MZ.message_state_js)
+  # ...and a save probe with no DataManager says so rather than never settling.
+  MV::JS.eval("delete globalThis.DataManager;")
+  MV::JS.eval(MZ.save_probe_js(1))
+  assert_equal "error: no DataManager", MV::JS.eval(MZ.save_result_js)
+end
+
 assert 'MZ.host_globals_js provides the FontFace MZ builds when a font is named' do
   MV::JS.eval(MZ.host_globals_js)
 
