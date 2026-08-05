@@ -4078,6 +4078,61 @@ check 'Game::Enemy reads its per-attribute defence ranks' do
   eq({ 1 => 2, 2 => 4, 3 => 0 }, Game::Battle.from_enemy(e).attr_ranks)
 end
 
+# -- Battle escape ------------------------------------------------------------
+
+def escape_battle(party_agi, enemy_agi, seed = 1)
+  Game::Battle.new([combatant('Hero', 0, 0, party_agi, 10)],
+                   [combatant('Slime', 8, 0, enemy_agi, 10)], Game::Rng.new(seed))
+end
+
+check 'Battle#escape_chance scales with the agility ratio, clamped 0..100' do
+  eq 50,  escape_battle(10, 10).escape_chance, 'equal agility -> 150 - 100 = 50'
+  eq 100, escape_battle(20, 5).escape_chance,  'a much faster party clamps at 100'
+  eq 0,   escape_battle(5, 20).escape_chance,  'a much slower party clamps at 0'
+end
+
+check 'Battle#attempt_escape flees the fight when the roll succeeds' do
+  b = escape_battle(20, 5)                            # 100% chance
+  ok b.attempt_escape, 'a 100% chance always flees'
+  ok b.finished?, 'the fight is over'
+  ok b.escaped?, 'flagged as escaped'
+  eq :escaped, b.run, 'and the result stays :escaped'
+end
+
+check 'a failed escape raises the next attempt chance by 10, fight continues' do
+  b = escape_battle(5, 20)                            # 0% chance -> always fails
+  eq 0, b.escape_chance, 'a much slower party starts at 0%'
+  ok !b.attempt_escape, 'and cannot flee'
+  eq 10, b.escape_chance, 'but the next attempt is 10 points likelier'
+  ok !b.finished?, 'the fight is still on'
+  ok !b.escaped?
+end
+
+check 'a preemptive escape always succeeds regardless of the roll' do
+  b = escape_battle(5, 20)                            # 0% by agility...
+  ok b.attempt_escape(true), '...but a first strike guarantees the getaway'
+  eq :escaped, b.result
+end
+
+check 'attempt_escape is a no-op once the battle is already decided' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  downed = combatant('Slime', 0, 0, 5, 0)            # already wiped -> victory
+  b = Game::Battle.new([hero], [downed], Game::Rng.new(1))
+  ok b.finished?, 'enemies already down'
+  ok !b.attempt_escape, 'no escape from a decided fight'
+  ok !b.escaped?
+end
+
+check 'command_skip forfeits an ally turn while the enemies still act' do
+  hero = combatant('Hero', 40, 0, 20, 100)           # faster, acts first
+  slime = combatant('Slime', 20, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  b.command_skip(hero)
+  b.run_round
+  eq 100, slime.hp, 'the hero forfeited its attack'
+  ok hero.hp < 100, 'but the slime still struck back'
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }

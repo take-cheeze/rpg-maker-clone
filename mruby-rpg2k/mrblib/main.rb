@@ -2249,12 +2249,27 @@ class RPG2k
           select_battle_command
         elsif Input.trigger?(Input::B)
           if @battle_ui[:actor_i].zero?
-            finish_battle(:escape) if @battle_ui[:req][:allow_escape]
+            try_battle_escape if @battle_ui[:req][:allow_escape]
           else
             @battle_ui[:actor_i] -= 1 # re-command the previous member
             @battle_ui[:cmd] = 0
             draw_battle_command
           end
+        end
+      end
+
+      # Escape command (cancel on the first actor's menu): roll the party's
+      # agility-based escape chance. On success flee the fight; on a failed roll
+      # the party forfeits the round — every member skips and only the enemies
+      # act — and the next attempt is likelier (Game::Battle#attempt_escape).
+      def try_battle_escape
+        battle = @battle_ui[:battle]
+        if battle.attempt_escape
+          finish_battle(:escape)
+        else
+          $stderr.puts '[RPG2k battle] escape failed'
+          living_allies.each { |a| battle.command_skip(a) }
+          start_round_animation
         end
       end
 

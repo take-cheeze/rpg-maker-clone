@@ -2950,14 +2950,15 @@ module Game
     # Game::Enemy keeps the real party untouched by a resolved battle.
     # `action` is the ally's chosen attack target for the round (nil = none /
     # auto), `defending` halves damage taken that round, and `command` is a
-    # queued Skill / Item action (see Battle#apply_command); all three are
-    # cleared each round. Enemies leave them nil and attack a random party
+    # queued Skill / Item action (see Battle#apply_command); these are
+    # cleared each round. `skip` forfeits the turn outright (a failed escape).
+    # Enemies leave them nil and attack a random party
     # member. `mp` / `max_mp` carry SP (skills spend it) and `spi` is the spirit
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
                            :actor, :states, :state_turns, :crit_denom,
-                           :prevents_crit, :attr_ranks, :atk_attrs) do
+                           :prevents_crit, :attr_ranks, :atk_attrs, :skip) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -3034,6 +3035,8 @@ module Game
       @criticals = criticals
       @rounds = 0
       @result = nil
+      @escaped = false     # set once the party successfully flees (#attempt_escape)
+      @escape_chance = nil # lazily computed from agilities on the first attempt
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
     end
@@ -3048,8 +3051,12 @@ module Game
     RESTRICTION_ATTACK_ENEMY = 2
     RESTRICTION_ATTACK_ALLY  = 3
 
-    # True once one side has been wiped out (the battle is decided).
-    def finished?; !alive?(@allies) || !alive?(@enemies); end
+    # True once one side has been wiped out, or the party has fled — the battle
+    # is decided.
+    def finished?; @escaped || !alive?(@allies) || !alive?(@enemies); end
+
+    # Whether the party successfully escaped this fight.
+    def escaped?; @escaped; end
 
     # Persist the fight's outcome onto the real party: write each ally combatant's
     # final status set, HP and SP back to its source actor, so damage taken in
@@ -3085,10 +3092,11 @@ module Game
       end
     end
 
-    # Step the fight to completion and return :victory or :defeat.
+    # Step the fight to completion and return :victory, :defeat or (if the party
+    # fled via #attempt_escape) :escaped.
     def run
       step until finished? || @rounds > MAX_ROUNDS
-      @result = alive?(@allies) ? :victory : :defeat
+      @result ||= alive?(@allies) ? :victory : :defeat
     end
 
     # Assign an ally's action for the coming round: attack `target`, or defend
@@ -3100,6 +3108,50 @@ module Game
 
     def command_defend(ally)
       ally.action = nil; ally.defending = true; ally.command = nil
+    end
+
+    # Forfeit `ally`'s action for the round — it neither attacks nor gains a
+    # defend's damage cut — used when a failed escape costs the party its turn.
+    # Cleared with the other commands at #end_round.
+    def command_skip(ally)
+      ally.action = nil; ally.defending = false; ally.command = nil; ally.skip = true
+    end
+
+    # Average agility of the living battlers on `side` (0 when the side is wiped).
+    def avg_agi(side)
+      living = side.reject(&:dead?)
+      return 0 if living.empty?
+      living.reduce(0) { |s, b| s + b.agi } / living.size
+    end
+
+    # The party's current escape chance as a percentage (0..100). On the first
+    # attempt it is EasyRPG's InitEscapeChance -- 150 - 100 * enemyAgi / partyAgi,
+    # clamped -- so a nimbler party flees more often and a slower one struggles;
+    # an agility-less party falls back to a coin toss. Each failed attempt adds
+    # 10 (see #attempt_escape).
+    def escape_chance
+      return @escape_chance unless @escape_chance.nil?
+      pa = avg_agi(@allies)
+      ea = avg_agi(@enemies)
+      base = pa > 0 ? 100 * ea / pa : 100
+      @escape_chance = Game.clamp(150 - base, 0, 100)
+    end
+
+    # Attempt to flee the fight. A `preemptive` first strike always succeeds;
+    # otherwise a 0..99 roll under #escape_chance wins. Success ends the battle as
+    # :escaped (#finished? / #escaped?); a failure raises the next attempt's
+    # chance by 10 (per EasyRPG) and returns false, leaving the fight running so
+    # the enemies still take their round.
+    def attempt_escape(preemptive = false)
+      return false if finished?
+      if preemptive || @rng.random(100) < escape_chance
+        @escaped = true
+        @result = :escaped
+        true
+      else
+        @escape_chance = escape_chance + 10
+        false
+      end
     end
 
     # Queue a single-target Skill for `ally`: cast on `target` (an enemy for an
@@ -3173,8 +3225,10 @@ module Game
     # Close a round begun with #begin_round: clear each ally's chosen action (so
     # the next round starts fresh) and settle the result once a side is wiped.
     def end_round
-      @allies.each { |a| a.action = nil; a.defending = false; a.command = nil }
-      @result = alive?(@allies) ? :victory : :defeat if finished?
+      @allies.each do |a|
+        a.action = nil; a.defending = false; a.command = nil; a.skip = false
+      end
+      @result = alive?(@allies) ? :victory : :defeat if finished? && !@escaped
     end
 
     private
@@ -3241,6 +3295,8 @@ module Game
     # has no living target). A defending target takes half damage (min 1). An
     # ally with a queued Skill / Item command resolves that instead.
     def strike(b)
+      # A battler that forfeited its turn (a failed escape) does nothing.
+      return nil if b.skip
       # A "forced action" restriction (berserk / confused) overrides the chosen
       # command / defend with a basic attack on a forced target.
       r = battler_restriction(b)
