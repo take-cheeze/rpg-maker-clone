@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 
-# Boot the built engine on the RPG Maker MZ test-bed (data/mz-sample) and confirm
-# it gets past the old WebGL wall — Graphics creates the PIXI v5 renderer on the
-# native surfaceless-EGL GLES2 backend and SceneManager.run(Scene_Boot) renders.
+# Boot the built engine on the RPG Maker MZ test-bed (data/mz-sample) and drive
+# it into actual play: the rmmz corescript on PIXI v5 renders through the native
+# surfaceless-EGL GLES2 backend, `Scene_Boot` finishes loading and hands over to
+# `Scene_Title`, `--mz_new_game` picks New Game, and `--mz_move_test` then holds
+# a direction on the start map and reports whether the player actually walked.
 #
 # The engine is fetched by scripts/download-mz-corescript.bash; the authored
-# database (data/mz-sample/data) is committed. MZ#start (mruby-mvjs/mrblib/mz.rb)
-# drives the boot on launch and prints "[MZ-BOOT] booted to <scene>" on success
-# or "[MZ] boot stopped at: <error>" otherwise — this asserts on the former.
+# database and art (data/mz-sample/data, data/mz-sample/img — see
+# scripts/gen-mz-sample.py) are committed. MZ#start (mruby-mvjs/mrblib/mz.rb)
+# drives all of this on launch and prints:
+#
+#   [MZ-BOOT] booted to <scene> through the WebGL renderer
+#   [MZ-SCENE] <scene>            (once per scene change)
+#   [MZ-MAP]   reached the map at <x,y>
+#   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
+#
+# or "[MZ] boot stopped at: <error>" when it stops short. This asserts the boot
+# marker, that the boot got past the loading scene, and — since the whole point
+# is proving input moves the player — that the move probe reports moved=true.
 #
 # The MZ engine mirror is a CI-only fixture (© Gotcha Gotcha Games / KADOKAWA);
 # if it has not been fetched the check skips with a message rather than failing,
@@ -22,7 +33,11 @@ cd "$(dirname "$0")/.."
 SERVER_NUM="${1:-111}"
 GAME="${2:-data/mz-sample}"
 ENGINE="${ENGINE:-./build/rpg_maker_clone}"
-TIMEOUT_MS="${MZ_TIMEOUT_MS:-30000}"
+# The run has to reach the title, start a New Game, load the map and then hold a
+# direction for the 80-frame probe, all on software GL — so it is given far more
+# in-game time than the MV smokes, which only need to boot.
+TIMEOUT_MS="${MZ_TIMEOUT_MS:-60000}"
+SHOT="${MZ_SCREENSHOT:-ss/mz_play.png}"
 
 if [ ! -x "${ENGINE}" ] ; then
     echo "error: ${ENGINE} not built; run cmake --build build first" >&2
@@ -38,6 +53,8 @@ if [ ! -f "${GAME}/data/System.json" ] ; then
     exit 1
 fi
 
+mkdir -p "$(dirname "${SHOT}")"
+
 log="$(mktemp)"
 echo "== ${GAME}"
 # Run with NO X server reachable: SDL's headless "dummy" video driver instead of
@@ -49,25 +66,43 @@ echo "== ${GAME}"
 # path and MZ boots. The SERVER_NUM arg is kept for compatibility but unused.
 # (LVGL v9.5 requires a window; the dummy driver provides one without a display.)
 if ! env -u DISPLAY -u XAUTHORITY SDL_VIDEODRIVER=dummy \
-        timeout 180 "${ENGINE}" \
-        --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
+        timeout 300 "${ENGINE}" \
+        --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" \
+        --mz_new_game --mz_move_test --mz_screenshot="${SHOT}" \
+        >"${log}" 2>&1 ; then
     echo "FAILED: ${GAME}: the engine exited non-zero" >&2
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -60 || true
     rm -f "${log}"
     exit 1
 fi
 
-if grep -q '\[MZ-BOOT\] booted to' "${log}" ; then
-    grep '\[MZ-BOOT\]' "${log}"
-    # ALSA has no device under CI and floods stderr; keep the rest for context.
-    grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
+fail() {
+    echo "FAILED: ${GAME}: $1" >&2
+    grep -iE '\[MZ|error|exception|webgl|indexeddb' "${log}" | tail -40 || true
+    grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
     rm -f "${log}"
-    echo "mz boot check: OK"
-    exit 0
+    exit 1
+}
+
+grep -q '\[MZ-BOOT\] booted to' "${log}" ||
+    fail "never booted through the renderer ([MZ-BOOT] missing)"
+
+# Scene_Boot is MZ's *loading* scene, so stopping there means the boot never
+# finished its database/image/font/storage loads — the boot marker alone would
+# happily report it.
+if grep -q '\[MZ-BOOT\] booted to Scene_Boot' "${log}" ; then
+    fail "the boot stopped on the loading scene (Scene_Boot)"
 fi
 
-echo "FAILED: ${GAME}: never booted through the renderer ([MZ-BOOT] missing)" >&2
-grep -iE '\[MZ|error|exception|webgl|indexeddb' "${log}" | tail -40 || true
-grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
+grep -q '\[MZ-MAP\] reached the map' "${log}" ||
+    fail "New Game never reached the map ([MZ-MAP] missing)"
+
+grep -q '\[MZ-MOVE\].*moved=true' "${log}" ||
+    fail "input never moved the player ([MZ-MOVE] moved=true missing)"
+
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ\] screenshot' "${log}"
+# ALSA has no device under CI and floods stderr; keep the rest for context.
+grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
-exit 1
+echo "mz boot check: OK"
+exit 0
