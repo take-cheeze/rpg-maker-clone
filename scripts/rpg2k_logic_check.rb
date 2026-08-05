@@ -1283,14 +1283,16 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :recover_hp, :recover_hp_rate, :recover_sp, :recover_sp_rate,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
-                      :occasion_battle, :state_set, :reverse_state_effect)
+                      :occasion_battle, :state_set, :reverse_state_effect,
+                      :prevent_critical)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
-              state_set: nil, reverse_state: false)
+              state_set: nil, reverse_state: false, prevent_crit: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
-               atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state)
+               atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
+               prevent_crit)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -3766,6 +3768,28 @@ check 'battle: a zero crit_denom never criticals even with criticals on' do
   e = bat.step_action
   eq 20, e[:damage]
   ok !e[:critical]
+end
+
+check 'battle: gear that prevents criticals blocks the 3x hit' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_denom = 1                                # would always crit...
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.prevents_crit = true                         # ...but the target is guarded
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
+  bat.begin_round
+  e = bat.step_action
+  eq 20, e[:damage]                                  # base, crit blocked
+  ok !e[:critical]
+end
+
+check 'Actor#prevents_critical? reads equipped prevent-critical gear' do
+  items = { 8 => fake_item(type: 2, prevent_crit: true) } # a piece of armour
+  st = item_party(items)
+  a = st.party.actor_by_id(1)
+  eq false, a.prevents_critical?                     # nothing equipped yet
+  a.equip([0, 8, 0, 0, 0])                           # equip item 8
+  eq true, a.prevents_critical?
+  eq true, Game::Battle.from_actor(a).prevents_crit  # carried onto the combatant
 end
 
 check 'battle skill damage varies by the skill variance when the fight rolls it' do

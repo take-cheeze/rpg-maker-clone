@@ -1073,6 +1073,18 @@ module Game
       total
     end
 
+    # Whether any equipped item guards against critical hits (the armour
+    # `prevent_critical` flag, item field 25). A database with no item table
+    # (the test fixtures) or an item lacking the flag contributes nothing.
+    def prevents_critical?
+      return false unless @db.respond_to?(:item)
+      @equipment.any? do |iid|
+        next false if iid.nil? || iid == 0
+        it = @db.item[iid]
+        it && it.respond_to?(:prevent_critical) && it.prevent_critical
+      end
+    end
+
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
     def normalize_equipment(spec)
@@ -2793,7 +2805,8 @@ module Game
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor, :states, :state_turns, :crit_denom) do
+                           :actor, :states, :state_turns, :crit_denom,
+                           :prevents_crit) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -2812,10 +2825,13 @@ module Game
     # lacks the field).
     def self.crit_denom_of(b); b.respond_to?(:crit_denominator) ? b.crit_denominator : 0; end
 
+    # Whether a battler's gear guards against critical hits.
+    def self.prevents_crit_of(b); b.respond_to?(:prevents_critical?) && b.prevents_critical?; end
+
     def self.from_actor(a)
       Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
-                    nil, crit_denom_of(a))
+                    nil, crit_denom_of(a), prevents_crit_of(a))
     end
 
     # Enemies have no source actor (that field stays nil), so the post-battle
@@ -2823,7 +2839,7 @@ module Game
     def self.from_enemy(e)
       Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
                     nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
-                    crit_denom_of(e))
+                    crit_denom_of(e), prevents_crit_of(e))
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -3083,9 +3099,9 @@ module Game
     def deal_attack(b, target)
       dmg = Battle.attack_damage(b.atk, target.def)
       dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance
-      # No critical on a same-side hit (e.g. a confused ally striking an ally),
-      # matching EasyRPG.
-      crit = critical?(b) && side_of(b) != side_of(target)
+      # No critical on a same-side hit (e.g. a confused ally striking an ally) or
+      # against a target whose gear prevents criticals, matching EasyRPG.
+      crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
       dmg *= 3 if crit
       dmg = [dmg / 2, 1].max if target.defending
       target.hp -= dmg
