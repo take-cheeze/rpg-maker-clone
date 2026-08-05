@@ -231,6 +231,81 @@ assert "RGSS::Bitmap gradient_fill_rect" do
   assert_equal 255.0, v.get_pixel(1, 8).blue  # bottom row is color2
 end
 
+assert "RGSS::Bitmap#blur softens edges and leaves flat areas alone" do
+  # A flat fill has nothing to average against itself, so a correct box blur is
+  # the identity on it. This is the property that catches a blur which drags in
+  # the transparent border or drifts along the scan order.
+  flat = RGSS::Bitmap.new(4, 4)
+  flat.fill_rect(0, 0, 4, 4, RGSS::Color.new(80, 120, 160, 255))
+  flat.blur
+  px = flat.get_pixel(1, 1)
+  assert_equal 80.0, px.red
+  assert_equal 120.0, px.green
+  assert_equal 160.0, px.blue
+  assert_equal 255.0, px.alpha
+
+  # A hard vertical edge: left half white, right half black. After the blur the
+  # two columns either side of the seam must move toward each other, and the
+  # far columns must not (their 3x3 neighbourhood is still uniform).
+  edge = RGSS::Bitmap.new(6, 3)
+  edge.fill_rect(0, 0, 3, 3, RGSS::Color.new(255, 255, 255, 255))
+  edge.fill_rect(3, 0, 3, 3, RGSS::Color.new(0, 0, 0, 255))
+  edge.blur
+  assert_equal 255.0, edge.get_pixel(0, 1).red, "far side of the edge moved"
+  assert_equal 0.0, edge.get_pixel(5, 1).red, "far side of the edge moved"
+  left = edge.get_pixel(2, 1).red
+  right = edge.get_pixel(3, 1).red
+  assert_true left < 255.0 && left > 0.0, "seam not softened: #{left}"
+  assert_true right < 255.0 && right > 0.0, "seam not softened: #{right}"
+  assert_true left > right, "the gradient runs the wrong way"
+
+  # Blurring reads a snapshot, so it cannot feed its own output back in: the
+  # column left of the seam sees one dark neighbour column out of three.
+  assert_equal 170.0, left   # (255 + 255 + 0) / 3
+  assert_equal 85.0, right   # (255 + 0 + 0) / 3
+end
+
+assert "RGSS::Bitmap#radial_blur spins around the centre" do
+  # Radially symmetric input is a fixed point of a rotation about the centre, so
+  # a flat fill must come back unchanged however hard it is blurred.
+  flat = RGSS::Bitmap.new(9, 9)
+  flat.fill_rect(0, 0, 9, 9, RGSS::Color.new(0, 0, 255, 255))
+  flat.radial_blur(90, 8)
+  assert_equal 255.0, flat.get_pixel(4, 4).blue
+  assert_equal 255.0, flat.get_pixel(0, 4).blue
+
+  # An asymmetric mark must smear along the arc it sweeps. A single bright pixel
+  # directly above the centre of a 9x9 sits at (4, 0), radius 4; blurred over
+  # +/-45 degrees it sweeps row 1 from about x=1 to x=7.
+  #
+  # The arc is *symmetric about the centre column*, and that is what pins the
+  # centre of rotation: a flat fill is invariant under rotation about any point,
+  # and a mark spreads whatever point it turns about, so neither of those alone
+  # would notice the centre being wrong.
+  mark = RGSS::Bitmap.new(9, 9)
+  mark.fill_rect(0, 0, 9, 9, RGSS::Color.new(0, 0, 0, 255))
+  mark.fill_rect(4, 0, 1, 1, RGSS::Color.new(255, 0, 0, 255))
+  mark.radial_blur(90, 9)
+  assert_true mark.get_pixel(4, 0).red < 255.0, "the mark did not spread"
+  swept = (0...9).select { |x| mark.get_pixel(x, 1).red > 0 }
+  assert_true swept.size >= 2, "no arc swept through row 1: #{swept.inspect}"
+  swept.each do |x|
+    mirror = 8 - x
+    assert_equal mark.get_pixel(x, 1).red, mark.get_pixel(mirror, 1).red,
+                 "arc is lopsided at x=#{x} vs #{mirror}: not turning about " \
+                 "the centre"
+  end
+
+  # Degenerate arguments are the identity, not a divide by zero.
+  same = RGSS::Bitmap.new(4, 4)
+  same.fill_rect(0, 0, 4, 4, RGSS::Color.new(10, 20, 30, 255))
+  same.fill_rect(0, 0, 1, 1, RGSS::Color.new(200, 0, 0, 255))
+  same.radial_blur(0, 8)
+  assert_equal 200.0, same.get_pixel(0, 0).red
+  same.radial_blur(90, 1)
+  assert_equal 200.0, same.get_pixel(0, 0).red
+end
+
 assert "RGSS::Bitmap hue_change" do
   # A 120-degree hue rotation maps the primaries exactly: R -> G -> B -> R,
   # preserving saturation, value and alpha.

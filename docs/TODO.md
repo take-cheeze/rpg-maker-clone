@@ -938,10 +938,20 @@ screen (544×416). Full rationale:
     redefined in mrblib (which loads after the C init and would shadow them).
     Measured by `RGSS.window_probe`: `drawn=[0,0,86] half=[0,0,43]
     closed=[0,0,0] toned=[86,0,86]`.
+  - ✅ **`Bitmap#blur` / `#radial_blur`** — the title background and the
+    animation effects. `blur` is a 3x3 box blur over a snapshot of the bitmap,
+    so each output pixel reads the original neighbourhood instead of feeding
+    already-blurred pixels back in; `radial_blur(angle, division)` averages
+    `division` rotated copies spread over `angle` degrees and centred on the
+    original. Both average premultiplied by alpha, so a transparent neighbour
+    contributes weight but no colour. Pure pixel work, so unlike the rest of
+    this section they are pinned in `mruby-rgss/test` rather than measured on a
+    display — down to the exact seam values (170/85 either side of a
+    white/black edge) and the mirror symmetry of the swept arc, which is what
+    actually pins the centre of rotation.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
-    viewport, so a map tint does not tint the message window anyway) and
-    `Bitmap#blur`/`#radial_blur`.
+    viewport, so a map tint does not tint the message window anyway).
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
   without the script host reports that instead of showing a blank window.

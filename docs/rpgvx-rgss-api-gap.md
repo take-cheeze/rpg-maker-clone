@@ -41,8 +41,8 @@ first frame, not what RGSS3 defines.
   records.
 - **`Bitmap`** — `new` (~13), `draw_text` (~55), `fill_rect` (~14), `text_size`
   (~8), `gradient_fill_rect` (~5), `blt` (~3), `clear_rect` (~2), `get_pixel`
-  (~2), `stretch_blt`, `hue_change`, `clear`, `font`, `dispose`. _Complete for
-  the stock scripts bar the two blurs below._
+  (~2), `stretch_blt`, `hue_change`, `clear`, `font`, `dispose`, `blur`,
+  `radial_blur`. _Complete for the stock scripts._
 - **`Font`** — instance attributes plus the class defaults the scripts read
   (`default_size`, `default_bold`, `default_italic`).
 - **`Input`** — **RGSS2/RGSS3 spell keys as symbols** (`Input.trigger?(:C)`), and
@@ -223,9 +223,32 @@ halves were confirmed non-vacuous by breaking them in turn.
 
 ### 5. `Bitmap#blur` / `#radial_blur`
 
-### 5. `Bitmap#blur` / `#radial_blur`
+### 5. `Bitmap#blur` / `#radial_blur` ✅
 
-One use each (title background, animation effects). Cosmetic.
+One use each (title background, animation effects), both native now.
+
+`blur` is a 3×3 box blur run over a snapshot of the bitmap, so every output
+pixel reads the *original* neighbourhood — blurring in place would feed
+already-blurred pixels back in and smear along the scan order instead of evenly.
+Edge pixels average only the neighbours that exist, so the border is not dragged
+toward transparent. RGSS's own blur takes no parameters, so there is nothing to
+tune.
+
+`radial_blur(angle, division)` averages `division` copies of the image spread
+evenly over `angle` degrees and centred on the original, so the result is
+symmetric rather than smeared to one side. Samples that rotate off the bitmap
+contribute nothing, which keeps the corners from pulling in transparent pixels.
+`division < 2` or `angle == 0` is the identity.
+
+Both average the channels **premultiplied by alpha**: a transparent neighbour
+then contributes weight but no colour, instead of dragging colour out of an
+opaque pixel.
+
+Unlike the rest of this document these are pure pixel work, so they are pinned
+properly in `mruby-rgss/test` rather than measured on a display — including the
+exact seam values a box blur produces (170 and 85 either side of a white/black
+edge) and the mirror symmetry of the swept arc, which is what actually pins the
+centre of rotation.
 
 ### 6. Reading graphics and audio out of the encrypted archive ✅
 
@@ -284,5 +307,5 @@ the only route to a real game. A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
 tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music. What is
-left is `Bitmap#blur`/`#radial_blur` (item 5, one use each) and the two tilemap
-polish items in item 1.
+left is the two tilemap polish items in item 1 — the flat "above characters"
+layer and the A2 table edge.
