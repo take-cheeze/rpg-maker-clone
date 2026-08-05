@@ -787,7 +787,7 @@ jobs:
           '
 
       - name: Upload EBOOT
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: psp-eboot
           path: build-psp/EBOOT.PBP
@@ -815,7 +815,7 @@ jobs:
       PPSSPP_TAG: v1.17.1
     steps:
       - name: Download EBOOT
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: psp-eboot
           path: eboot
@@ -896,7 +896,7 @@ jobs:
 
       - name: Upload smoke-test output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: psp-smoke
           path: headless.log
