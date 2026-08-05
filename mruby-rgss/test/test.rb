@@ -683,6 +683,17 @@ assert "RGSS::Window RGSS2/RGSS3 API surface" do
   end
 end
 
+assert "RGSS::Viewport RGSS2/RGSS3 screen-effect surface" do
+  # Viewport.new needs a live display the headless test binary lacks (see the
+  # Tilemap note below), so assert the surface. `color`/`flash` are native and
+  # draw a colour overlay above the viewport's contents; `tone` is Ruby-side and
+  # tracked-but-not-drawn.
+  %i[color color= flash tone tone= update ox oy rect rect= z= visible
+     visible= dispose disposed?].each do |m|
+    assert_true RGSS::Viewport.method_defined?(m), "Viewport##{m} missing"
+  end
+end
+
 assert "RGSS::Tilemap API surface" do
   # Tilemap is now native: Tilemap.new builds an lv_canvas the size of the
   # viewport and blits the visible tiles into it, so construction needs a live

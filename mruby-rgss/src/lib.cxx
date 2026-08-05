@@ -3822,6 +3822,10 @@ mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h) {
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
 }
 
+// Repaint the viewport's colour/flash overlay (defined with the rest of the
+// overlay below; declared here because a rect change has to resize it).
+void vp_refresh_overlay(mrb_state* M, mrb_value self);
+
 // Push the stored @rect / @ox / @oy onto the underlying LVGL objects: the outer
 // frame takes the rect's position and size (and clips to it), while the inner
 // content layer is shifted by (-ox, -oy) to scroll its sprites.
@@ -3842,6 +3846,9 @@ void vp_apply(mrb_state* M, mrb_value self) {
   lv_obj_set_pos(inner, -(mrb_fixnum_p(ox) ? mrb_fixnum(ox) : 0),
                  -(mrb_fixnum_p(oy) ? mrb_fixnum(oy) : 0));
   lv_obj_set_size(inner, w, h);
+
+  // The colour overlay covers the frame, so a resized viewport resizes it.
+  vp_refresh_overlay(M, self);
 }
 
 mrb_value vp_init(mrb_state* M, mrb_value self) {
@@ -3926,9 +3933,198 @@ mrb_value vp_set_oy(mrb_state* M, mrb_value self) {
   return mrb_fixnum_value(v);
 }
 
-// Present so the game loop can drive per-frame behaviour (flash, etc.); no
-// animated viewport effects are modelled yet, so this is a no-op.
+// ---- Viewport colour overlay ----------------------------------------------
+//
+// RGSS's `Viewport#color` is a flat colour laid over everything the viewport
+// draws, and `#flash` is the same thing on a countdown. VX / VX Ace do every
+// screen effect this way — `Spriteset_Map` fades with
+// `@viewport3.color.set(0, 0, 0, 255 - brightness)` and flashes with
+// `@viewport2.color.set(...)` — and the RPG2000 runtime wants the same
+// mechanism for its screen fade/flash.
+//
+// LVGL cannot tint a container, but it can draw one more child on top of one:
+// the overlay is a canvas the size of the viewport, filled with the effective
+// colour, held as the outer frame's last child so it composites above the
+// content layer. The z sweep in gfx_update only reorders *registered* objects,
+// which all live inside that content layer, so the overlay stays on top without
+// taking part in z ordering. This is the same "screen-sized colour at an
+// opacity" ADR 0021 measured working for the RPG2000 fade, moved into the
+// viewport so it clips, scrolls and hides with it.
+//
+// Note the overlay is refreshed from `#update`, not only on assignment: the
+// stock scripts mutate the colour *in place* (`viewport.color.set(...)`) and
+// call `viewport.update` every frame, so re-reading it per frame is what makes
+// an in-place change visible. The fill is skipped unless the effective colour
+// actually changed, so a static viewport costs one comparison a frame.
+
+// The overlay canvas, created on demand. The outer frame's only other child is
+// the content layer built by vp_init (index 0), and lv_obj_move_foreground
+// keeps the overlay last, so index 1 identifies it without keeping a pointer
+// alive across a GC.
+lv_obj_t* vp_overlay(mrb_state* M, mrb_value self, bool create) {
+  lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!outer)
+    return nullptr;
+  if (lv_obj_t* existing = lv_obj_get_child(outer, 1))
+    return existing;
+  if (!create)
+    return nullptr;
+
+  lv_obj_t* ov = lv_canvas_create(outer);
+  lv_obj_remove_style_all(ov);
+  lv_obj_set_pos(ov, 0, 0);
+  // Never take pointer events, and always draw last among the outer frame's
+  // children (the content layer is the only other one).
+  lv_obj_remove_flag(ov, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_move_foreground(ov);
+  return ov;
+}
+
+// The colour the overlay should show: the viewport's `color`, with the flash
+// colour composited over it (src-over) while a flash is running. RGSS fades a
+// flash out linearly over its duration.
+Color vp_effective_color(mrb_state* M, mrb_value self) {
+  Color out{0, 0, 0, 0};
+  const mrb_value color_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  if (mrb_test(color_v) && DATA_PTR(color_v))
+    out = DataType<Color>::get(M, color_v);
+
+  const mrb_value count_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  const mrb_value flash_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_color"));
+  const mrb_int count = mrb_fixnum_p(count_v) ? mrb_fixnum(count_v) : 0;
+  if (count > 0 && mrb_test(flash_v) && DATA_PTR(flash_v)) {
+    const mrb_value dur_v =
+        mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_duration"));
+    const mrb_int duration = mrb_fixnum_p(dur_v) ? mrb_fixnum(dur_v) : count;
+    const Color f = DataType<Color>::get(M, flash_v);
+    const double fade = duration > 0 ? (double)count / (double)duration : 1.0;
+    const double a = (f.alpha / 255.0) * fade;
+    out.red = f.red * a + out.red * (1.0 - a);
+    out.green = f.green * a + out.green * (1.0 - a);
+    out.blue = f.blue * a + out.blue * (1.0 - a);
+    out.alpha = 255.0 * a + out.alpha * (1.0 - a);
+  }
+  return out;
+}
+
+// Repaint the overlay from the current colour/flash state. Allocates (or
+// resizes) its buffer to the viewport rect, and hides it entirely when the
+// effective colour is transparent so a viewport with no effect draws nothing
+// extra.
+void vp_refresh_overlay(mrb_state* M, mrb_value self) {
+  lv_obj_t* outer = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!outer)
+    return;
+  const Color c = vp_effective_color(M, self);
+  const bool visible = c.alpha > 0.0;
+  lv_obj_t* ov = vp_overlay(M, self, visible);
+  if (!ov)
+    return;
+  if (!visible) {
+    lv_obj_add_flag(ov, LV_OBJ_FLAG_HIDDEN);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"), mrb_nil_value());
+    return;
+  }
+
+  Rect& r =
+      DataType<Rect>::get(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@rect")));
+  const mrb_int w = std::max<mrb_int>(r.width, 1);
+  const mrb_int h = std::max<mrb_int>(r.height, 1);
+
+  // Skip the fill when neither the colour nor the size changed since the last
+  // one: #update runs this every frame. The channels are 0..255, so packing
+  // them with the size into two doubles stays exact and allocates nothing.
+  const double color_key =
+      ((std::floor(c.red) * 256.0 + std::floor(c.green)) * 256.0 +
+       std::floor(c.blue)) *
+          256.0 +
+      std::floor(c.alpha);
+  const double size_key = (double)w * 65536.0 + (double)h;
+  const mrb_value prev_color =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_key"));
+  const mrb_value prev_size =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_size"));
+  if (mrb_float_p(prev_color) && mrb_float(prev_color) == color_key &&
+      mrb_float_p(prev_size) && mrb_float(prev_size) == size_key) {
+    lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_overlay_bmp"));
+  mrb_value bmp_v = cur;
+  if (mrb_nil_p(cur) || DataType<Bitmap>::get(M, cur).width != w ||
+      DataType<Bitmap>::get(M, cur).height != h) {
+    RClass* bmp_class =
+        mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+    bmp_v =
+        DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_bmp"), bmp_v);
+    Bitmap& nb = DataType<Bitmap>::get(M, bmp_v);
+    lv_canvas_set_buffer(ov, nb.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_set_size(ov, w, h);
+  }
+
+  Bitmap& b = DataType<Bitmap>::get(M, bmp_v);
+  for (mrb_int y = 0; y < h; ++y)
+    for (mrb_int x = 0; x < w; ++x)
+      bmp_put(b, x, y, c.red, c.green, c.blue, c.alpha);
+  b.dirty = true;
+  lv_obj_remove_flag(ov, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(ov);
+  lv_obj_invalidate(ov);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_key"),
+             mrb_float_value(M, color_key));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_overlay_size"),
+             mrb_float_value(M, size_key));
+}
+
+mrb_value vp_color(mrb_state* M, mrb_value self) {
+  mrb_value c = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
+  if (mrb_nil_p(c)) {
+    const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
+                              mrb_fixnum_value(0), mrb_fixnum_value(0)};
+    c = mrb_obj_new(
+        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+  }
+  return c;
+}
+
+mrb_value vp_set_color(mrb_state* M, mrb_value self) {
+  mrb_value c;
+  mrb_get_args(M, "o", &c);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+  vp_refresh_overlay(M, self);
+  return c;
+}
+
+// Viewport#flash(color, duration): show `color` over the viewport, fading out
+// over `duration` frames of #update. A nil colour is RGSS's "empty" flash,
+// which for a viewport means no overlay at all.
+mrb_value vp_flash(mrb_state* M, mrb_value self) {
+  mrb_value color;
+  mrb_int duration;
+  mrb_get_args(M, "oi", &color, &duration);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(mrb_nil_p(color) ? 0 : duration));
+  vp_refresh_overlay(M, self);
+  return mrb_nil_value();
+}
+
+// One frame: advance a running flash and repaint the overlay from the current
+// colour (which the scripts mutate in place).
 mrb_value vp_update(mrb_state* M, mrb_value self) {
+  const mrb_value count_v =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@flash_count"));
+  if (mrb_fixnum_p(count_v) && mrb_fixnum(count_v) > 0)
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+               mrb_fixnum_value(mrb_fixnum(count_v) - 1));
+  vp_refresh_overlay(M, self);
   return mrb_nil_value();
 }
 
@@ -4166,6 +4362,11 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, vp, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, vp, "update", vp_update, MRB_ARGS_NONE());
+  // RGSS2/RGSS3 do every screen effect through the viewport: a flat colour over
+  // everything it draws, and a timed flash. See vp_refresh_overlay.
+  mrb_define_method(M, vp, "color", vp_color, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "color=", vp_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "flash", vp_flash, MRB_ARGS_REQ(2));
   mrb_define_method(M, vp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "disposed?", obj_disposed, MRB_ARGS_NONE());
 

@@ -359,6 +359,28 @@ module RGSS
     end
   end
 
+  # RGSS Viewport. Native (src/lib.cxx): the clipping frame, its scrolled
+  # content layer, `rect`/`ox`/`oy`/`z`/`visible`, and — for the RGSS2/RGSS3
+  # screen effects — `color`/`color=` and `flash`, drawn as a colour overlay
+  # above the viewport's contents and refreshed from `update`. This reopening
+  # only adds the tone.
+  class Viewport
+    # A viewport `tone` rescales what is already drawn (desaturate toward
+    # luminance, then offset each channel), which — unlike `color` — cannot be
+    # expressed as one more layer on top: it needs the same per-pixel pass the
+    # RPG2000 screen tint is waiting on (docs/TODO.md, docs/rpgvx-rgss-api-gap.md).
+    # The value is kept so a script's bookkeeping is consistent and so the tint
+    # lands the moment that pass exists; it is not drawn, and says so once.
+    def tone
+      @tone ||= Tone.new(0, 0, 0, 0)
+    end
+
+    def tone=(value)
+      RGSS.warn_stub("Viewport#tone= (tracked, not drawn)")
+      @tone = value
+    end
+  end
+
   class RGSSError < StandardError
   end
 
