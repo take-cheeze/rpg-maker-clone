@@ -436,8 +436,24 @@ module LCF
 
     attr_reader :schema
 
+    # Decode a chunk to its Ruby value. Nested tables are decoded once and kept:
+    # a :Array1D / :Array2D chunk re-parses its *whole* table on every read, and
+    # the runtime asks for the same one over and over -- building a party alone
+    # reads `db.item` thirty times (Game::Actor#equip_bonus, six stats over five
+    # equipment slots), which cost 7.7 seconds on Nepheshel's database. Only the
+    # container types are cached: they are read-only to callers (Array1D exposes
+    # no field writers), where a scalar or String decode is cheap and handing out
+    # the same mutable object would change what a caller can do with it. The two
+    # writers below, #[]= and #delete, drop the cached decode with the bytes.
     def [] idx
-      LCF.to_rb @data[idx], @schema[:elements][idx]
+      cached = @decoded && @decoded[idx]
+      return cached if cached
+      value = LCF.to_rb @data[idx], @schema[:elements][idx]
+      if value.is_a?(Array1D) || value.is_a?(Array2D)
+        @decoded ||= {}
+        @decoded[idx] = value
+      end
+      value
     end
 
     # True when a chunk with this id was physically present in the file, before
@@ -466,6 +482,7 @@ module LCF
     def delete idx
       was = @data[idx]
       @data[idx] = nil
+      @decoded.delete(idx) if @decoded
       was
     end
 
@@ -481,6 +498,7 @@ module LCF
       else
         raise "cannot encode chunk #{idx} without a schema"
       end
+      @decoded.delete(idx) if @decoded
       value
     end
 
