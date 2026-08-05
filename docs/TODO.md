@@ -1205,9 +1205,12 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
           only after `update()` returns, so one throw inside the ticker stops the
           game loop for good. It pinned MZ at `Scene_Title` with New Game already
           requested. Added as a no-op beside the existing `stencilFunc`/`Op`/
-          `Mask` stubs (the FBO carries no stencil attachment, so the per-window
-          clipping simply does not clip), together with `polygonOffset` and the
-          `uniform3i`/`uniform4i` setters PIXI generates for `ivec3`/`ivec4`.
+          `Mask` stubs, together with `polygonOffset` and the `uniform3i`/
+          `uniform4i` setters PIXI generates for `ivec3`/`ivec4`. Note the
+          stencil *buffer* is not the gap — the FBO carries a packed
+          DEPTH24_STENCIL8 renderbuffer already; it is the wrapper's
+          `stencilFunc`/`Op`/`Mask` that are still no-ops, so the per-window
+          clipping does not clip.
         - **The render target stayed 1x1.** The WebGL context is taken from a
           canvas that is still 0x0 (clamped to 1x1) and MZ only sizes it later,
           in `Scene_Boot.resizeScreen` → `Graphics.resize` → PIXI's
@@ -1229,8 +1232,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
           even though the job stays green.
       - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
         back without it, and `getExtension` returns null so the fallback is what
-        runs); a real stencil attachment, so `WindowLayer` actually clips each
-        window to its shape instead of the clip being a no-op;
+        runs); real `stencilFunc`/`stencilOp`/`stencilMask` in the wrapper, so
+        `WindowLayer` actually clips each window to its shape instead of the
+        clip being a no-op (the FBO's stencil buffer is already there, only the
+        three entry points are stubbed);
         texture Y-flip and uniform-introspection polish as real content exercises
         them; MZ's audio bridge (MV routes `AudioManager` to `RGSS::Audio`; MZ
         still runs on the silent Web Audio stub, so the bed ships no sounds), and

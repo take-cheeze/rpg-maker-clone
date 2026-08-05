@@ -1231,14 +1231,19 @@ const char* kWebGLPreamble = R"MVJS(
   P.hint = function () {};
   P.lineWidth = function () {};
   P.depthRange = function () {};
-  // Stencil is inert on this backend: the off-screen FBO carries no stencil
-  // attachment, so the masking MZ uses it for (WindowLayer clipping each window
-  // to its own shape) simply does not clip. `clearStencil` must still *exist*,
-  // though — `WindowLayer.render` calls it on every frame that draws a window,
-  // and a missing method throws a TypeError inside PIXI's ticker, which is fatal
-  // rather than transient: PIXI v5 re-arms its requestAnimationFrame only after
-  // `update()` returns, so one throw stops the game loop for good. That is what
-  // pinned MZ at Scene_Title with a bare "TypeError: not a function".
+  // Stencil state is accepted and ignored *for now*. Note this is a wrapper
+  // gap, not a backend one: the off-screen FBO does carry a packed
+  // DEPTH24_STENCIL8 renderbuffer (mvgl::create/resize), so the buffer is there
+  // and only these entry points have to be mapped onto glStencilFunc/Op/Mask to
+  // make the masking MZ uses work — WindowLayer clips each window to its own
+  // shape this way, and today that clip is simply a no-op.
+  //
+  // `clearStencil` must *exist* regardless: `WindowLayer.render` calls it on
+  // every frame that draws a window, and a missing method throws a TypeError
+  // inside PIXI's ticker, which is fatal rather than transient — PIXI v5
+  // re-arms its requestAnimationFrame only after `update()` returns, so one
+  // throw stops the game loop for good. That is what pinned MZ at Scene_Title
+  // with a bare "TypeError: not a function".
   P.stencilFunc = function () {};
   P.stencilOp = function () {};
   P.stencilMask = function () {};

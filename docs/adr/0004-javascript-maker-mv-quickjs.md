@@ -250,10 +250,12 @@ JavaScript loads and interprets the JSON.
          PIXI v5 re-arms its `requestAnimationFrame` only after `update()`
          returns, so a single throw inside the ticker stops the game loop
          permanently — which is why the log showed one error and a scene that
-         never changed again. Added as a no-op beside the existing stencil stubs
-         (the FBO has no stencil attachment, so `WindowLayer`'s per-window
-         clipping does not clip), with `polygonOffset` and `uniform3i`/`uniform4i`
-         alongside.
+         never changed again. Added as a no-op beside the existing stencil
+         stubs, with `polygonOffset` and `uniform3i`/`uniform4i` alongside. The
+         FBO does carry a packed DEPTH24_STENCIL8 renderbuffer, so what keeps
+         `WindowLayer`'s per-window clipping from clipping is only that
+         `stencilFunc`/`Op`/`Mask` are still no-ops in the wrapper — mapping
+         those three onto GL is all the feature needs.
       6. **The render target was never resized past 1x1.** The context is created
          from a canvas that is still 0x0 and MZ sizes it only in
          `Scene_Boot.resizeScreen` → `Graphics.resize` → PIXI's
@@ -272,8 +274,9 @@ JavaScript loads and interprets the JSON.
       With all of it, `--mz_new_game`/`--mz_move_test` boot the bed to
       `Scene_Title`, start a New Game and walk the player on the start map, and
       `--mz_screenshot` captures the frame (`MV::JS.screenshot_gl`, the FBO
-      counterpart of MV's canvas capture). Remaining: a real stencil attachment
-      so window clipping works, an MZ audio bridge (MV's `AudioManager` →
+      counterpart of MV's canvas capture). Remaining: mapping the wrapper's
+      stubbed `stencilFunc`/`Op`/`Mask` onto GL so window clipping works (the
+      FBO's stencil buffer already exists), an MZ audio bridge (MV's `AudioManager` →
       `RGSS::Audio` route is not wired for MZ yet) and `.woff` font loading, all
       verified against a real MZ project.
 
