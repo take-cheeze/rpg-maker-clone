@@ -544,9 +544,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `can_cast?` / `skill_effect` / `cast_skill` for skills) and `Game::Actor`
   (`next_level_exp` / `exp_to_next` for status), covered by
   `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
-  Switch (type 9) item use, teleport/escape/switch skill types, the battle-time
-  skill variance, the item usable-occasion gate, and two-handed / dual-wield
-  equipping are later refinements.
+  A **switch item** (type 9) is field-usable too: `Game::Party#use_switch_item`
+  consumes one and returns the game switch it turns on, which the item menu then
+  sets (matching EasyRPG, where the scene owns the switch table).
+  Teleport/escape/switch skill types, the battle-time skill variance, the item
+  usable-occasion gate, and two-handed / dual-wield equipping are later
+  refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default

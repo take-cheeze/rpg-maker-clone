@@ -1493,11 +1493,12 @@ module Game
 
     # RPG2000 database item types. Types 1..5 are the equipment slots (see
     # Actor::EQUIP_ORDER); 6 is a healing medicine (薬); 7 is a skill book (本)
-    # that teaches a skill; 8 is a seed (種) that permanently raises a stat.
-    # Switch (9) menu use is a later refinement.
+    # that teaches a skill; 8 is a seed (種) that permanently raises a stat;
+    # 9 is a switch item (スイッチ) that turns on a game switch when used.
     ITEM_MEDICINE = 6
     ITEM_SKILL_BOOK = 7
     ITEM_SEED = 8
+    ITEM_SWITCH = 9
 
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
@@ -1511,7 +1512,24 @@ module Game
     def field_usable?(id)
       it = db_item(id)
       return false unless it && item_count(id) > 0
-      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK || it.type == ITEM_SEED
+      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK ||
+        it.type == ITEM_SEED || it.type == ITEM_SWITCH
+    end
+
+    # Whether item `id` is a switch item (turns on a game switch when used).
+    def switch_item?(id)
+      it = db_item(id)
+      !it.nil? && it.type == ITEM_SWITCH
+    end
+
+    # Use a switch item from the field menu: consume one and return the id of the
+    # switch to turn on (the caller owns the switch table). nil when `id` is not a
+    # switch item the party holds, so nothing is consumed. Matches EasyRPG, where
+    # UseItem consumes and the scene flips the switch.
+    def use_switch_item(id)
+      return nil unless switch_item?(id) && item_count(id) > 0
+      lose_item(id, 1)
+      db_item(id).switch_id
     end
 
     # The bag's field-usable items as `[id, count]` pairs in ascending id order,
@@ -1562,6 +1580,8 @@ module Game
         !s.nil? && s != 0 && !actor.knows_skill?(s)
       when ITEM_SEED
         seed_boosts(it).any? { |b| b != 0 }
+      when ITEM_SWITCH
+        true # a switch item always flips its switch
       else
         false
       end
