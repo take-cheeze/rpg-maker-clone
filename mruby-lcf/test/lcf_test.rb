@@ -489,6 +489,27 @@ assert 'Array1D#[]= re-encodes int and string fields through the schema' do
   assert_equal "newchr", reread.charset_name
 end
 
+assert 'Array1D hands out one decoded nested table, and re-decodes after a write' do
+  # Decoding a nested table re-parses the whole thing, and the runtime asks for
+  # the same one over and over (Game::Actor#equip_bonus reads db.item thirty
+  # times to build a party), so a container decode is kept. It must still be
+  # dropped when the chunk underneath is rewritten or removed.
+  learning = lcf_array2d([[1, lcf_array1d([lcf_int_field(1, 3)])]])
+  schema = { elements: LCF::Schema::DATABASE[:elements][11][:elements] }
+  a = LCF::Array1D.new(lcf_array1d([lcf_field(63, learning)]), schema)
+  first = a[63]
+  assert_true first.is_a?(LCF::Array2D)
+  assert_true first.equal?(a[63]), "a nested table must be decoded once"
+  # A scalar is cheap to decode and is not cached, so callers still get their
+  # own object to do as they like with.
+  a[63] = LCF::Array2D.new(lcf_array2d([[2, lcf_array1d([lcf_int_field(1, 9)])]]),
+                           schema[:elements][63])
+  assert_false first.equal?(a[63]), "a rewritten chunk must decode afresh"
+  assert_nil a[63][1]
+  a.delete 63
+  assert_nil a[63]
+end
+
 assert 'Array2D#to_lcf reproduces its source bytes' do
   e1 = lcf_array1d([lcf_int_field(31, 1)])
   e3 = lcf_array1d([lcf_int_field(31, 5), lcf_int_field(32, 307)])
