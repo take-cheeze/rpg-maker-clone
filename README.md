@@ -118,6 +118,23 @@
   fixed (RPG2000 rendering byte-identical) the title screen went from 74% of its
   pixels differing from the genuine runtime to 15%; see
   [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](docs/adr/0025-rpgxp-cross-runtime-testing.md)
+- Those checks run against a **released game**, not only an editor project:
+  *Pray for You* (`scripts/download-prayforyou.bash`) ships as `Game.ini` +
+  `Game.rgssad` with nothing loose on disk — the shape most XP games are
+  distributed in — with 69 maps, 1107 event pages, 15,797 event commands and a
+  Japanese `RGSS103J.dll` to compare against. It boots in CI beside the editor
+  bed, and driving it exposed three things a one-map project cannot: a
+  **Transfer Player** left the previous map's ground on screen (the `Tilemap`
+  was never rebuilt), **Change Screen Color Tone** was ignored (now applied to
+  the screen-sized viewport that holds the map, like RMXP's `Spriteset_Map`),
+  and the message box was full-width at the bottom instead of RMXP's inset
+  480×160. On the same map frame that took the difference from 97% of pixels to
+  25%, the rest being the reference's own missing font. Playing it further added
+  **Wait for Move's Completion** (210), **Set Event Location** (202) and
+  **Change Transparent Flag** (208), and turned up ten unplayable music tracks —
+  its `Audio/BGM` mixes `.MID` with `.mid`, which only a case-sensitive
+  filesystem tells apart. See
+  [`docs/adr/0027-rpgxp-released-game-parity.md`](docs/adr/0027-rpgxp-released-game-parity.md)
 
 ### RPG Maker VX / VX Ace
 

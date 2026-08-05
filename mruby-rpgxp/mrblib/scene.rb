@@ -426,6 +426,19 @@ class RPGXP
       # the tileset graphic in reading order.
       TILE_ID_BASE = 384
       MSG_LINE_H = 32
+      # The message box, laid out as RMXP's Window_Message does it:
+      # `super(80, 304, 480, 160)` on a 640x480 screen — an inset 480x160 box
+      # sixteen pixels off the bottom, four 32px lines inside its 16px border,
+      # with the text at x=4 of the contents. Ours used to span the whole screen
+      # width at the very bottom (the RPG2000 layout), which the wine comparison
+      # against the genuine RGSS runtime showed as a differently sized and
+      # placed box on every message. Derived from the screen size so the
+      # constants hold if it ever changes.
+      MSG_W = 480
+      MSG_H = MSG_LINE_H * 4 + Panel::BORDER * 2
+      MSG_X = (SCREEN_W - MSG_W) / 2
+      MSG_MARGIN = 16 # gap between the box's bottom edge and the screen's
+      MSG_TEXT_X = 4
 
       # Event-page start triggers (RPG::Event::Page#trigger).
       TRIGGER_ACTION       = 0 # player presses the action button facing it
@@ -484,7 +497,7 @@ class RPGXP
         close_message
         close_number_input
         @event_sprites.each_value { |s| s[:sprite].dispose } if @event_sprites
-        [@tilemap, @player_sprite].each { |s| s.dispose if s }
+        [@tilemap, @player_sprite, @screen_viewport].each { |s| s.dispose if s }
       end
 
       def update
@@ -506,6 +519,7 @@ class RPGXP
           end
         end
         animate_player
+        step_tone_change
         render
       end
 
@@ -730,6 +744,118 @@ class RPGXP
         $stderr.puts "[RGSS] Set Move Route apply failed: #{e.message}"
       end
 
+      # Apply the Set Event Location (202) requests an interpreter queued this
+      # frame. A character is *snapped* to its tile, as RMXP's
+      # `Game_Character#moveto` does: no walking, no passability test.
+      def apply_location_requests(interp)
+        reqs = interp.take_location_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_location_request(r) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Set Event Location apply failed: #{e.message}"
+      end
+
+      def apply_location_request(r)
+        unless r[:swap_with]
+          place_character(r[:target], r[:x], r[:y], r[:direction])
+          return
+        end
+        # "Exchange with another event": each ends up where the other was.
+        here = character_tile(r[:target])
+        there = character_tile(r[:swap_with])
+        return if here.nil? || there.nil?
+        place_character(r[:target], there[0], there[1], r[:direction])
+        place_character(r[:swap_with], here[0], here[1], 0)
+      end
+
+      # The tile a Set Event Location target stands on, or nil when it is not on
+      # this map.
+      def character_tile(target)
+        return [@state.x, @state.y] if target == :player
+        e = @events[target]
+        e && e[:char] ? [e[:char].x, e[:char].y] : nil
+      end
+
+      def place_character(target, x, y, direction)
+        return if x.nil? || y.nil?
+        if target == :player
+          @state.x = x
+          @state.y = y
+          @state.direction = direction if direction && direction > 0
+          # Mid-step bookkeeping has to go with it, or the leader glides back to
+          # where it was walking.
+          @moving = false
+          @move_count = 0
+          @dest_x = x
+          @dest_y = y
+          @player_route = nil
+          @player_char = nil
+          @last_frame = nil
+        else
+          e = @events[target]
+          return unless e && e[:char]
+          ox = e[:char].x
+          oy = e[:char].y
+          e[:char].x = x
+          e[:char].y = y
+          e[:char].direction = direction if direction && direction > 0
+          reoccupy(e, ox, oy)
+        end
+      end
+
+      # Apply the Change Screen Color Tone (223) requests an interpreter queued
+      # this frame. Like a Set Move Route it does not suspend the interpreter, so
+      # it is polled the same way.
+      def apply_tint_requests(interp)
+        reqs = interp.take_tint_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| start_tone_change(r[:tone], r[:duration]) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] screen tone apply failed: #{e.message}"
+      end
+
+      # Begin easing the screen viewport's tone toward `tone` over `duration`
+      # frames, as RMXP's Game_Screen#start_tone_change does. A zero duration
+      # snaps. The tone lives on the viewport that holds the map (see
+      # setup_sprites), so windows drawn above it keep their own colours.
+      def start_tone_change(tone, duration)
+        return unless @screen_viewport && tone
+        target = [tone.red, tone.green, tone.blue, tone.gray]
+        frames = duration.to_i
+        if frames <= 0
+          @tone_change = nil
+          set_screen_tone(target)
+          return
+        end
+        cur = @screen_viewport.tone
+        @tone_change = { from: [cur.red, cur.green, cur.blue, cur.gray],
+                         to: target, frames: frames, step: 0 }
+      end
+
+      # One frame of the running tone ease (no-op when none is running).
+      def step_tone_change
+        c = @tone_change
+        return unless c
+        c[:step] += 1
+        if c[:step] >= c[:frames]
+          set_screen_tone(c[:to])
+          @tone_change = nil
+          return
+        end
+        t = c[:step]
+        n = c[:frames]
+        set_screen_tone((0..3).map { |i| c[:from][i] + (c[:to][i] - c[:from][i]) * t / n })
+      rescue StandardError => e
+        $stderr.puts "[RGSS] screen tone step failed: #{e.message}"
+        @tone_change = nil
+      end
+
+      def set_screen_tone(v)
+        return unless @screen_viewport
+        @screen_viewport.tone = Tone.new(v[0], v[1], v[2], v[3])
+        @screen_viewport.update
+      end
+
       def apply_move_request(r)
         route = Game::MoveRoute.from_page(r[:route])
         return unless route
@@ -824,10 +950,13 @@ class RPGXP
           when :number   then open_number_input(@interpreter.input_digits)
           when :wait     then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
+          when :move_completion then drive_move_completion
           end
         else
           @interpreter.update
           apply_move_requests(@interpreter)
+          apply_tint_requests(@interpreter)
+          apply_location_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -875,6 +1004,51 @@ class RPGXP
         end
       end
 
+      # Wait for Move's Completion (210): hold the interpreter until no forced
+      # route is walking any more. `step_events` refuses to move anything while
+      # an event process is running (that is what keeps the map still during a
+      # message), so the routes have to be driven here -- the interpreter is
+      # suspended *on* them, which is the one case RMXP keeps forcing characters
+      # along for too.
+      #
+      # A *repeating* forced route never completes, so a game that waits on one
+      # would hang here (it hangs in RMXP too). Rather than freeze -- headlessly,
+      # with no way to tell -- the wait is bounded and says why it gave up.
+      MOVE_COMPLETION_TIMEOUT = 600 # frames
+
+      def drive_move_completion
+        step_forced_routes
+        if forced_routes_running?
+          @move_wait_frames = (@move_wait_frames || 0) + 1
+          return if @move_wait_frames <= MOVE_COMPLETION_TIMEOUT
+          $stderr.puts "[RGSS] Wait for Move's Completion gave up after " \
+                       "#{MOVE_COMPLETION_TIMEOUT} frames; a forced route is " \
+                       "still running (a repeating route never completes)"
+        end
+        @move_wait_frames = nil
+        @interpreter.resume
+      end
+
+      def forced_routes_running?
+        return true if @player_route
+        !(@forced_routes.nil? || @forced_routes.empty?)
+      end
+
+      # Advance only the forced routes, past the "an event is running" hold.
+      def step_forced_routes
+        step_player_route
+        @events.each do |_id, e|
+          ch = e[:char]
+          next unless ch
+          ch.update
+          forced = @forced_routes[e[:id]]
+          next if forced.nil? || ch.moving?
+          step_forced_event(e, ch, forced)
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] forced route step failed: #{e.message}"
+      end
+
       # Advance every background parallel process one frame. They honour Wait but
       # do not drive the message/choice/teleport UI (those requests are resumed
       # so the loop keeps running). Only stepped while the foreground is idle.
@@ -899,11 +1073,15 @@ class RPGXP
         elsif it.running?
           it.update
           apply_move_requests(it)
+          apply_tint_requests(it)
+          apply_location_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
           it.update
           apply_move_requests(it)
+          apply_tint_requests(it)
+          apply_location_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError
@@ -920,6 +1098,16 @@ class RPGXP
         @state.y = y
         @state.direction = dir if dir && dir > 0
         @tileset = Game::TileSet.new(@db, @map.tileset_id)
+        # The ground is a Tilemap built from the *map's* data/priorities and its
+        # tileset's graphics, so a map change has to build a new one -- RMXP
+        # disposes the whole Spriteset_Map and makes another in
+        # Scene_Map#transfer_player. Keeping the old one left the new map drawn
+        # with the previous map's tiles (black, when the previous map was the
+        # empty opening map Pray for You starts on) while its events and the
+        # party walked on top.
+        @tilemap.dispose if @tilemap
+        @tilemap = nil
+        setup_tilemap
         @moving = false
         @move_count = 0
         @dest_x = x
@@ -932,6 +1120,7 @@ class RPGXP
         @erased = {} # erased events reappear on a fresh map
         @player_route = nil
         @player_char = nil
+        @move_wait_frames = nil
         build_events
         build_parallels
       rescue StandardError => e
@@ -957,13 +1146,18 @@ class RPGXP
           Game::Message.expand(l.to_s, @state.variables, names)
         end
         lines = [""] if lines.empty?
-        h = lines.length * MSG_LINE_H + Panel::BORDER * 2
-        win = Panel.new(0, SCREEN_H - h - 8, SCREEN_W, h, load_windowskin)
+        # RMXP's box is a fixed four-line 480x160; a longer list (a Show Choices
+        # appended under the text) grows it upward from the same bottom edge
+        # rather than clipping.
+        h = [lines.length * MSG_LINE_H + Panel::BORDER * 2, MSG_H].max
+        win = Panel.new(MSG_X, SCREEN_H - MSG_MARGIN - h, MSG_W, h,
+                        load_windowskin)
         win.z = 300
         contents = Bitmap.new(win.inner_width, win.inner_height)
         contents.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
-          contents.draw_text 8, i * MSG_LINE_H + 2, contents.width - 16, MSG_LINE_H, line
+          contents.draw_text MSG_TEXT_X, i * MSG_LINE_H,
+                             contents.width - MSG_TEXT_X, MSG_LINE_H, line
         end
         win.contents = contents
         @message = { window: win, choice: choice, count: lines.length }
@@ -1085,9 +1279,17 @@ class RPGXP
       end
 
       def setup_sprites
+        # RMXP's Spriteset_Map puts the ground, the characters and the weather
+        # into one screen-sized viewport (its @viewport1) and leaves the windows
+        # outside it -- which is exactly what makes Change Screen Color Tone
+        # (223) tint the map and not the message box. Ours is built the same
+        # way, so the tone has one place to live. Panels sit at z 100, above
+        # this.
+        @screen_viewport = Viewport.new(0, 0, SCREEN_W, SCREEN_H)
+        @screen_viewport.z = 0
         setup_tilemap
 
-        @player_sprite = Sprite.new
+        @player_sprite = Sprite.new(@screen_viewport)
         # z is set per frame from the screen row the leader stands on, so
         # characters overlap in the right order (see character_z).
         pw = @charset ? Game::CharSet.cell_width(@charset) : TILE
@@ -1114,7 +1316,7 @@ class RPGXP
       # A missing tileset graphic must not take the map down: the Tilemap simply
       # draws nothing, and the scene stays walkable.
       def setup_tilemap
-        @tilemap = Tilemap.new
+        @tilemap = Tilemap.new(@screen_viewport)
         @tilemap.map_data = @map.data
         ts = @db.tilesets[@map.tileset_id]
         unless ts
@@ -1192,7 +1394,7 @@ class RPGXP
       end
 
       def new_event_sprite(bitmap, charset, w, h)
-        sprite = Sprite.new
+        sprite = Sprite.new(@screen_viewport)
         sprite.bitmap = bitmap
         { sprite: sprite, bitmap: bitmap, charset: charset, w: w, h: h,
           frame: nil, opacity: nil, blend_type: nil }
@@ -1322,6 +1524,8 @@ class RPGXP
         @player_sprite.x = px - cam_x - (pw - TILE) / 2
         @player_sprite.y = sy - (ph - TILE)
         @player_sprite.z = character_z(sy, false)
+        # Change Transparent Flag (208) simply stops the leader being drawn.
+        @player_sprite.visible = !@state.player_transparent
         draw_player_frame
       end
 

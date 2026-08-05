@@ -114,6 +114,7 @@ jobs:
           ./scripts/nix-develop.bash ./scripts/download-nepheshel.bash
           ./scripts/nix-develop.bash ./scripts/download-mtf-meido-action.bash
           ./scripts/nix-develop.bash ./scripts/download-opengame-xp.bash
+          ./scripts/nix-develop.bash ./scripts/download-prayforyou.bash
 
       - name: Download MV test game
         id: dl-mv
@@ -205,7 +206,8 @@ jobs:
       # CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
       # the RPG2k
       # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
-      # real-game boot smoke=112 and the RGSSAD packed-asset smoke=113..114
+      # real-game boot smoke=112..113 (one per game) and the RGSSAD
+      # packed-asset smoke=114..115
       # (two runs, one per arm of its A/B) below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
@@ -269,9 +271,11 @@ jobs:
 
           # The same guard for the RPG Maker XP runtime: the XP checks above run
           # mruby-rpgxp's sources under CRuby, so only booting the real binary
-          # catches mruby/CRuby divergence. `--rpgxp_new_game` drives the test
-          # bed past its title into the start map and logs `[RPGXP-MAP]`, which
-          # the script asserts on. Display 112 (see the reserved server-num map
+          # catches mruby/CRuby divergence. `--rpgxp_new_game` drives each bed
+          # past its title into the start map and logs `[RPGXP-MAP]`, which the
+          # script asserts on. Two beds: the editor-shaped OpenGame test bed and
+          # the *released* Pray for You (Game.rgssad only, several maps), on
+          # displays 112 and 113 — one per game (see the reserved server-num map
           # above). See docs/adr/0025-rpgxp-cross-runtime-testing.md.
           - name: RPG XP real-game boot smoke test
             run: ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112
@@ -280,9 +284,9 @@ jobs:
           # nothing loose, so the native asset loaders have to read through it.
           # Packs the same real test bed twice — with and without a title graphic
           # in the archive — and asserts the engine finds it only when it is
-          # there, which is what makes the check non-vacuous. Displays 113-114.
+          # there, which is what makes the check non-vacuous. Displays 114-115.
           - name: RGSSAD packed-asset smoke test
-            run: ./scripts/nix-develop.bash -c ./scripts/rgssad_asset_check.bash 113
+            run: ./scripts/nix-develop.bash ./scripts/rgssad_asset_check.bash 114
 
           - name: MV boot smoke test
             continue-on-error: true

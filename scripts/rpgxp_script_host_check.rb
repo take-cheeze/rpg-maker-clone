@@ -188,10 +188,16 @@ def check_run_defines_top_level
   0
 end
 
+# Every XP project under `root` that carries scripts: an editor project (a loose
+# Data/Scripts.rxdata) or a *released* one, which keeps Scripts.rxdata inside its
+# encrypted Game.rgssad with no loose Data/ to glob for.
 def discover_games(root)
   return [] unless Dir.exist?(root)
-  Dir.glob(File.join(root, "**", "Data", "Scripts.rxdata"))
-     .map { |f| File.dirname(File.dirname(f)) }.sort.uniq
+  loose = Dir.glob(File.join(root, "**", "Data", "Scripts.rxdata"))
+              .map { |f| File.dirname(File.dirname(f)) }
+  packed = Dir.glob(File.join(root, "**", "Game.rgssad"))
+              .map { |f| File.dirname(f) }
+  (loose + packed).sort.uniq
 end
 
 games = ARGV.dup

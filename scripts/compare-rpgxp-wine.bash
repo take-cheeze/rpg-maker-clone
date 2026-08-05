@@ -59,6 +59,16 @@
 #   * Keys must be *held* (keydown, pause, keyup): a tap is often missed between
 #     two of the runtime's polls.
 #
+# The other bed worth pointing this at is a *released* game, which is where the
+# interesting differences are -- a real game has several maps, an opening that
+# tints the screen and message boxes on every step, none of which an editor-fresh
+# project exercises:
+#     ./scripts/download-prayforyou.bash
+#     ./scripts/compare-rpgxp-wine.bash data/PrayforYou ss/pfy
+# It ships its own Game.exe + RGSS103J.dll (the Japanese RGSS 1.03), so the same
+# wine prefix runs it. See docs/adr/0026-rpgxp-released-game-parity.md for what
+# that found.
+#
 # Usage: ./scripts/compare-rpgxp-wine.bash [game_dir] [out_dir]
 
 set -eu -o pipefail

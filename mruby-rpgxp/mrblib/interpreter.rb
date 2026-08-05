@@ -96,7 +96,11 @@ class RPGXP
       CHANGE_SKILLS   = 318
       CHANGE_EQUIP    = 319
       TRANSFER_PLAYER = 201
+      EVENT_LOCATION  = 202
+      TRANSPARENT     = 208
       MOVE_ROUTE      = 209
+      WAIT_FOR_MOVE   = 210
+      TINT_SCREEN     = 223
       PLAY_BGM        = 241
       PLAY_BGS        = 245
       PLAY_ME         = 249
@@ -148,6 +152,8 @@ class RPGXP
         @event_id = event_id
         @call_stack = []
         @move_route_requests = []
+        @tint_requests = []
+        @location_requests = []
         @erase_requested = false
         @running = true
         reset_waits
@@ -159,6 +165,8 @@ class RPGXP
         @index = 0
         @call_stack = []
         @move_route_requests = []
+        @tint_requests = []
+        @location_requests = []
         @running = false
         reset_waits
       end
@@ -182,6 +190,22 @@ class RPGXP
       def take_move_route_requests
         reqs = @move_route_requests || []
         @move_route_requests = []
+        reqs
+      end
+
+      # Drain the Change Screen Color Tone (223) requests queued since the last
+      # call, newest last, and clear the queue — the counterpart of
+      # #take_move_route_requests for the screen tone.
+      def take_tint_requests
+        reqs = @tint_requests || []
+        @tint_requests = []
+        reqs
+      end
+
+      # Drain the Set Event Location (202) requests queued since the last call.
+      def take_location_requests
+        reqs = @location_requests || []
+        @location_requests = []
         reqs
       end
 
@@ -239,6 +263,8 @@ class RPGXP
         @running = false
         @call_stack = []
         @move_route_requests = []
+        @tint_requests = []
+        @location_requests = []
         @erase_requested = false
         reset_waits
       end
@@ -293,7 +319,11 @@ class RPGXP
         when CHANGE_SKILLS   then do_change_skills(cmd)
         when CHANGE_EQUIP    then do_change_equipment(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
+        when EVENT_LOCATION  then do_event_location(cmd)
+        when TRANSPARENT     then do_transparent(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
+        when WAIT_FOR_MOVE   then do_wait_for_move(cmd)
+        when TINT_SCREEN     then do_tint_screen(cmd)
         when BATTLE_PROCESS  then do_battle_process(cmd)
         when IF_WIN, IF_ESCAPE, IF_LOSE then skip_past_battle(cmd) # fell through a branch
         when BATTLE_END      then consume
@@ -800,6 +830,66 @@ class RPGXP
           end
         return if resolved.nil?
         @move_route_requests << { target: resolved, route: route }
+      end
+
+      # Set Event Location (202): [target, appoint_type, x/var/other_event, y/var,
+      # direction]. Snaps a character to a tile without walking it there. The
+      # target is RMXP's character code (-1 the player, 0 this event, a positive
+      # map event id) and `appoint_type` is 0 direct, 1 "read the two variables",
+      # 2 "swap places with that other event". Queued for the scene, which owns
+      # the characters; nothing pauses.
+      def do_event_location(cmd)
+        target = param(cmd, 0)
+        @index += 1
+        resolved =
+          case target
+          when MOVE_TARGET_PLAYER then :player
+          when MOVE_TARGET_THIS   then @event_id
+          else target
+          end
+        return if resolved.nil?
+        kind = param(cmd, 1, 0)
+        a = param(cmd, 2, 0)
+        b = param(cmd, 3, 0)
+        req = { target: resolved, direction: param(cmd, 4, 0).to_i }
+        case kind
+        when 1 then req[:x] = variables[a]; req[:y] = variables[b]
+        when 2 then req[:swap_with] = a
+        else        req[:x] = a; req[:y] = b
+        end
+        @location_requests << req
+      end
+
+      # Change Transparent Flag (208): [0 transparent / 1 normal]. RMXP's
+      # `$game_player.transparent = (@parameters[0] == 0)`; the party leader
+      # simply stops being drawn, which is how a cutscene hands the hero's tile
+      # to an event that looks like him.
+      def do_transparent(cmd)
+        @state.player_transparent = param(cmd, 0, 1).to_i == 0
+        @index += 1
+      end
+
+      # Wait for Move's Completion (210): suspend until every forced route this
+      # event queued has finished walking. RMXP's `command_210` spins while any
+      # character still has `move_route_forcing` set; the scene owns the routes,
+      # so it is the one that answers and calls `resume`. Without this the list
+      # ran straight on -- an event said its line before it had walked over.
+      def do_wait_for_move(_cmd)
+        @wait_kind = :move_completion
+        @waiting = true
+        @index += 1
+      end
+
+      # Change Screen Color Tone (223): [RPG::Tone, duration in frames]. Like
+      # RMXP's `$game_screen.start_tone_change`, this does *not* suspend the
+      # interpreter — the tone eases over `duration` frames while the list keeps
+      # running (games follow it with their own Wait when they want to hold).
+      # The scene drains the request and drives the interpolation.
+      def do_tint_screen(cmd)
+        tone = param(cmd, 0)
+        @index += 1
+        return unless tone
+        @tint_requests << { tone: tone, duration: param(cmd, 1, 0).to_i }
       end
 
       def do_play(cmd, kind)
