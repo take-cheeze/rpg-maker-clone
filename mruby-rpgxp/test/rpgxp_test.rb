@@ -891,6 +891,77 @@ assert "Game::Animation maps a pattern onto the sheet grid" do
   assert_equal [384, 384, 192, 192], RPGXP::Game::Animation.cell_rect(12)
 end
 
+assert "Interpreter: script joins its continuation lines and queues them" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(355, ["$a = 1"], 0),
+    cmd(655, ["$b = 2"], 0),
+    cmd(655, ["$c = 3"], 0),
+    cmd(121, [5, 5, 0], 0)     # the 655s must not be re-run as commands
+  ], 1, 7)
+  it.update
+  assert_false it.waiting?
+  assert_true s.switches[5]
+  reqs = it.take_script_requests
+  assert_equal 1, reqs.size
+  assert_equal "$a = 1\n$b = 2\n$c = 3", reqs[0][:source]
+  assert_equal 7, reqs[0][:event_id]
+  assert_equal 1, reqs[0][:map_id]
+  assert_true it.take_script_requests.empty?
+
+  # An empty script is not queued at all.
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(355, [""], 0)], 1, 7)
+  it2.update
+  assert_true it2.take_script_requests.empty?
+end
+
+assert "Interpreter: Exit Event Processing keeps the effects already queued" do
+  # `stop` used to clear every request queue, so a list that ended with Exit
+  # Event Processing (115) -- or was stopped by a teleport -- silently dropped
+  # the move routes, tints, pictures, screen effects, animations and scripts the
+  # commands before it had produced. They already ran; ending the list does not
+  # un-run them, and the scene has not drained them yet at that point.
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(209, [-1, move_route([mv(1)])], 0),   # Set Move Route
+    cmd(355, ["$probe = 1"], 0),              # Script
+    cmd(115, [], 0)                           # Exit Event Processing
+  ], 1, 7)
+  it.update
+  assert_false it.running?
+  assert_equal 1, it.take_move_route_requests.size
+  assert_equal 1, it.take_script_requests.size
+
+  # A fresh run does start from an empty queue.
+  it.start([cmd(121, [5, 5, 0], 0)], 1, 7)
+  assert_true it.take_move_route_requests.empty?
+  assert_true it.take_script_requests.empty?
+end
+
+assert "Game::SwitchStore and VariableStore reach the runtime state" do
+  s = new_state
+  sw = RPGXP::Game::SwitchStore.new(s)
+  va = RPGXP::Game::VariableStore.new(s)
+  # What a Script command sees is what Control Switches / Control Variables
+  # wrote, and the other way round.
+  s.switches[4] = true
+  assert_true sw[4]
+  assert_false sw[9]
+  sw[9] = true
+  assert_true s.switches[9]
+  sw[9] = nil          # any falsy value clears it
+  assert_false s.switches[9]
+
+  s.variables[2] = 11
+  assert_equal 11, va[2]
+  va[3] = 7
+  assert_equal 7, s.variables[3]
+  assert_equal 0, va[99]
+end
+
 assert "Interpreter: show animation queues without pausing" do
   s = new_state
   it = RPGXP::Game::Interpreter.new(s)

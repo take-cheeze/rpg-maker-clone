@@ -859,6 +859,50 @@ class RPGXP
         @screen_dirty = false
       end
 
+      # Run the Script (355) sources an interpreter queued this frame.
+      #
+      # What a game's inline Ruby is evaluated *against* is the question this
+      # command really poses, and a real game answers it: of Pray for You's 23
+      # script blocks, 22 assign globals of the game's own invention
+      # (`$subtitle`, `$extra_cg[n]`, `$extra_flag`) that its bundled scripts
+      # read, and one reads `$game_variables[1]` before dumping a save. So the
+      # contract here is:
+      #
+      #   * the source is evaluated at the top level, as RGSS does, so a plain
+      #     global assignment behaves exactly as the game expects;
+      #   * the RMXP globals this runtime can honestly back are bound to it --
+      #     `$game_switches` and `$game_variables` reach the same switches and
+      #     variables the Control Switches / Control Variables commands write;
+      #   * anything else a script reaches for is simply not there. The built-in
+      #     flow is a reimplementation, not RGSS; a game that needs the rest of
+      #     RMXP's object graph wants RGSS_SCRIPT_HOST, which exists to give it
+      #     all of them.
+      #
+      # A script that raises must not take the map down with it: the failure is
+      # reported (never swallowed) and the event carries on.
+      def apply_script_requests(interp)
+        reqs = interp.take_script_requests
+        return if reqs.nil? || reqs.empty?
+        bind_script_globals
+        reqs.each { |r| run_event_script(r) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Script command failed: #{e.message}"
+      end
+
+      # Point the RMXP globals at this scene's state. Re-bound per batch rather
+      # than once, because a Transfer Player or a load swaps the State object.
+      def bind_script_globals
+        $game_switches = Game::SwitchStore.new(@state)
+        $game_variables = Game::VariableStore.new(@state)
+      end
+
+      def run_event_script(r)
+        where = "Map#{r[:map_id]} event #{r[:event_id]}"
+        rgss_eval_section(r[:source], "Script (#{where})")
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Script in #{where} raised #{e.class}: #{e.message}"
+      end
+
       # Apply the Show Animation (207) requests an interpreter queued this frame.
       # A second animation on the same character replaces the first, as RMXP's
       # single `animation_id` slot does.
@@ -1437,6 +1481,7 @@ class RPGXP
           apply_freeze_request(@interpreter)
           apply_screen_requests(@interpreter)
           apply_animation_requests(@interpreter)
+          apply_script_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -1558,6 +1603,7 @@ class RPGXP
           apply_picture_requests(it)
           apply_screen_requests(it)
           apply_animation_requests(it)
+          apply_script_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
@@ -1568,6 +1614,7 @@ class RPGXP
           apply_picture_requests(it)
           apply_screen_requests(it)
           apply_animation_requests(it)
+          apply_script_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError

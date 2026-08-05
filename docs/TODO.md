@@ -904,10 +904,13 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   followed — Prepare / Execute Transition (221/222) and Screen Flash / Shake
   (224/225), 871 uses — with 222 suspending the interpreter and the scene fading
   the frozen still per frame rather than calling the blocking
-  `Graphics.transition`. **Scroll Map (203)** and **Show Animation
-  (207)** followed, leaving the map scene with a handler for every command a real
-  XP game uses except `355` (script) — which is a design question (what a game's
-  inline Ruby should be evaluated against) rather than a missing feature.
+  `Graphics.transition`. **Scroll Map (203)**, **Show Animation
+  (207)** and **Script (355)** followed, leaving the map scene with a handler for
+  **every** event command a real XP game uses. The script design question — what
+  a game's inline Ruby is evaluated against — the game answered itself: 22 of its
+  23 blocks assign globals of its own invention, one reads `$game_variables[1]`,
+  so scripts evaluate at the top level with `$game_switches` / `$game_variables`
+  bound to the runtime state and nothing else provided.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

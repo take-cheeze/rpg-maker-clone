@@ -438,6 +438,38 @@ class RPGXP
       end
     end
 
+    # The two RMXP globals a game's inline Ruby (Script, command 355) is most
+    # likely to reach for, backed by this runtime's State.
+    #
+    # RMXP's `$game_switches` and `$game_variables` are whole classes; all a
+    # script ever uses of them is `[]` and `[]=`, which is all these expose. They
+    # are how a Script command talks to the same switches and variables the
+    # Control Switches / Control Variables commands write, instead of to a
+    # parallel set of its own.
+    class SwitchStore
+      def initialize(state)
+        @state = state
+      end
+
+      def [](id); @state.switches[id]; end
+
+      def []=(id, value)
+        @state.switches[id] = value ? true : false
+      end
+    end
+
+    class VariableStore
+      def initialize(state)
+        @state = state
+      end
+
+      def [](id); @state.variables[id]; end
+
+      def []=(id, value)
+        @state.variables[id] = value.to_i
+      end
+    end
+
     # Playback state for one Show Animation (207): which frame of an
     # `RPG::Animation` is on screen and what its cells say to draw. Pure logic —
     # the scene turns each cell into a sprite.

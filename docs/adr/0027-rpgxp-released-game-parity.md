@@ -173,12 +173,28 @@ screen). The rest is the windowskin background's shading.
   there, so the genuine runtime shows the *last* frame for one game frame before
   the animation starts — clamping to the first frame instead holds that one for
   five ticks.
-- **`355` (script) is the last one, and it is a design question rather than a
-  gap.** `mruby-eval` makes evaluating a game's inline Ruby mechanically
-  possible; what it should be evaluated *against* — which of RMXP's globals and
-  objects a script may reasonably expect to find in the built-in flow, when the
-  script host exists precisely to give it all of them — is the part to settle
-  first.
+- **`355` (script) is done, and the game itself settled the design question.**
+  What a script should be evaluated *against* looked open until the 23 blocks in
+  Pray for You were read: 22 assign globals of the game's own invention
+  (`$subtitle`, `$extra_cg[n]`, `$extra_flag`) that its bundled scripts read, and
+  one reads `$game_variables[1]` before dumping a save. So the source is
+  evaluated at the top level as RGSS does, `$game_switches` and
+  `$game_variables` are bound to the same state Control Switches / Control
+  Variables write, and nothing else is provided — a game needing the rest of
+  RMXP's object graph wants `RGSS_SCRIPT_HOST`, which exists to give it all of
+  them. The interpreter *queues* the source rather than evaluating it, for the
+  same reason the other effect commands are queued and one specific to this one:
+  `rpgxp_testbed_check.rb` drives the interpreter over real event lists under
+  CRuby, and a data check must not run a game's scripts — one of Pray for You's
+  writes a save file.
+- **That work turned up a bug in every effect command, not just this one.**
+  `Interpreter#stop` cleared each queued request, and it runs inside the same
+  `update` the scene drains afterwards — so a list ending in Exit Event
+  Processing (115), or stopped by a teleport, silently dropped the move routes,
+  tints, event locations, pictures, screen effects, animations and scripts the
+  commands before it had produced. They had already run; ending the list does
+  not un-run them. Only the Script command made it obvious, because its effect
+  is all-or-nothing.
 - **Driving the reference past the opening needs 32-bit GStreamer.** Pray for
   You's opening plays MP3 BGM, and `RGSS103J.dll` decodes it through
   winegstreamer; without `gstreamer1.0-plugins-base:i386` (and friends) in the
