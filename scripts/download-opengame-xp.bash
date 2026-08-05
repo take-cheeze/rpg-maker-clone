@@ -13,7 +13,7 @@ mkdir -p $(dirname $0)/../data
 cd $(dirname $0)/../data
 
 if [ ! -d OpenGame.exe ] ; then
-    git clone --depth 1 --filter=blob:none --sparse \
+    git clone --quiet --depth 1 --filter=blob:none --sparse \
         https://github.com/aphadeon/OpenGame.exe.git
     git -C OpenGame.exe sparse-checkout set Testbed/XP
 fi

@@ -18,7 +18,7 @@ sample="$here/data/mv-sample"
 cache="$here/data/.mv-corescript"
 
 if [ ! -d "$cache" ]; then
-    git clone --depth 1 https://github.com/rpgtkoolmv/corescript.git "$cache"
+    git clone --quiet --depth 1 https://github.com/rpgtkoolmv/corescript.git "$cache"
 fi
 
 mkdir -p "$sample/js/libs"
