@@ -217,7 +217,9 @@ module Game
       @total = 0
       @lines.each { |l| @total += l.length }
       @revealed = Game.clamp(revealed, 0, @total)
-      @pauses = (pauses || []).sort_by { |p| p[:at] }
+      # Sort with an explicit block, not sort_by: this mruby build's gembox
+      # has no Array#sort_by (the native engine aborts on it).
+      @pauses = (pauses || []).sort { |a, b| a[:at] <=> b[:at] }
       @auto_close = auto_close ? true : false
       @released = 0 # how many leading pauses the owner has let through
     end
