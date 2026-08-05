@@ -634,9 +634,17 @@ The work below is roughly ordered by the critical path to a walkable game
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
-  `Music/`/`Sound/`/`Audio/*`. Remaining polish: pitch/tempo control (SDL_mixer
-  exposes none) and guaranteeing a MIDI synth in the build (depends on the
-  SDL_mixer build's MIDI support; WAV/OGG work everywhere)
+  `Music/`/`Sound/`/`Audio/*`
+- ✅ MIDI music — `scripts/download-freepats.bash` installs the FreePats patch
+  set into `assets/timidity` (git-ignored, ~32 MiB), which drives SDL_mixer's
+  built-in TiMidity synthesiser, so the `.mid` BGM that RPG2000 projects ship is
+  audible (ADR 0026). `TIMIDITY_CFG` overrides the patch set;
+  `Audio.midi_available?` reports whether one was found. Remaining polish:
+  pitch/tempo control (SDL_mixer exposes none), MIDI for SE/BGS (they play as
+  samples, which are never synthesised). The browser build plays MIDI too: the
+  Emscripten SDL2_mixer port is asked for `-sSDL2_MIXER_FORMATS=ogg,mid` (it
+  defaults to OGG-only, so it had no MIDI decoder at all) and CI mounts the
+  patch set with `-DWASM_MIDI_PATCHES=ON`, at ~32 MiB of `index.data`
 - ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)

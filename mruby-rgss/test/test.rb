@@ -951,8 +951,54 @@ end
 
 assert "RGSS::Audio.setup_midi is a safe no-op" do
   # RGSS2+; the VX/VX Ace scripts call it at boot when the project asks for
-  # MIDI. SDL_mixer picks its own synth, so there is nothing to configure.
+  # MIDI. The synth is configured when the audio device opens (src/sdl_audio.cxx
+  # resolves assets/timidity or TIMIDITY_CFG), so there is nothing left to do.
   assert_nil RGSS::Audio.setup_midi
+end
+
+assert "RGSS::Audio.midi_available? is false without a backend" do
+  # This binary installs no audio backend, so nothing can synthesise MIDI. The
+  # query must say so rather than claim MIDI works and play silence.
+  assert_false RGSS::Audio.midi_available?
+end
+
+# Minimal $stderr stand-in for the warn_once test below. It collects whole
+# lines rather than capturing text and re-parsing it: mruby's String#scan comes
+# from mruby-onig-regexp and takes a Regexp, not the String a literal search
+# would want, so counting occurrences in captured output is a trap.
+class WarnOnceSink
+  attr_reader :lines
+
+  def initialize
+    @lines = []
+  end
+
+  def puts(message)
+    @lines << message
+  end
+
+  # Not used by warn_once, but an object standing in for $stderr is expected to
+  # be writable, and some runtimes reject one that is not.
+  def write(text)
+    @lines << text
+    text.to_s.size
+  end
+end
+
+assert "RGSS.warn_once reports each message only once" do
+  # warn_stub is built on warn_once; both must stay quiet after the first call
+  # so a per-frame caller cannot flood the log.
+  sink = WarnOnceSink.new
+  original = $stderr
+  begin
+    $stderr = sink
+    RGSS.warn_once("warn-once-test-message")
+    RGSS.warn_once("warn-once-test-message")
+  ensure
+    $stderr = original
+  end
+  assert_equal 1, sink.lines.size
+  assert_equal "[RGSS] warn-once-test-message", sink.lines[0]
 end
 
 assert "RGSS::Window RGSS2/RGSS3 API surface" do

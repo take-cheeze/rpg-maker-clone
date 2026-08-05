@@ -68,6 +68,14 @@ for game in "${GAMES[@]}" ; do
     elif ! grep -q '\[RPG2k-MAP\]' "${log}" ; then
         echo "FAILED: ${game}: never reached the map scene ([RPG2k-MAP] missing)" >&2
         failed=$((failed + 1))
+    elif grep -q 'title BGM playback failed' "${log}" ; then
+        # The title screen plays System > title music, reading the record off
+        # the database. That runs on real data only here, and it is rescued so
+        # a schema mismatch would degrade to silence instead of failing --
+        # which is why the log is checked rather than the exit status.
+        echo "FAILED: ${game}: title BGM raised" >&2
+        grep 'title BGM playback failed' "${log}" >&2
+        failed=$((failed + 1))
     else
         grep '\[RPG2k-MAP\]' "${log}"
     fi
