@@ -45,7 +45,11 @@ parts that need the native build + real game assets to develop and verify**:
 authentic chipset/charset rendering, audio, and the battle system. Everything
 landed so far is exercised by unit tests (`mruby-lcf/test`) and by host harnesses
 that load the pure-Ruby sources under CRuby, since the full SDL/mruby binary
-can't be built or run in this environment. The LCF loaders are smoke-tested
+can't be built or run in this environment. `scripts/rpg2k_command_soak.rb` adds
+the other half of that coverage: it runs **every event command of every
+downloaded test-bed** (371,762 of them) through the interpreter and fails if one
+raises or reaches a handler's "I do not know this" arm, which is the parameter
+shapes real games ship rather than the ones fixtures reach. The LCF loaders are smoke-tested
 against real downloaded test-bed projects (`scripts/lcf_testbed_check.rb`, run in
 CI after the download step), which parses a genuine game's
 `RPG_RT.ldb`/`.lmt`/`Map*.lmu` end to end and catches format surprises the
