@@ -13,7 +13,7 @@ mkdir -p $(dirname $0)/../data
 cd $(dirname $0)/../data
 
 if [ ! -d mtf-meido-action ] ; then
-    git clone --depth 1 --filter=blob:none --sparse \
+    git clone --quiet --depth 1 --filter=blob:none --sparse \
         https://github.com/lychees/mtf-meido-action.git
     git -C mtf-meido-action sparse-checkout set Debug
 fi
