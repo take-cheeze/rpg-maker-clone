@@ -142,6 +142,30 @@ SUPPORTED = Game::Interpreter::Cmd.constants
                                   .map { |c| Game::Interpreter::Cmd.const_get(c) }
                                   .to_set
 
+# Guard MOVE_NAMES against the runtime.
+#
+# This table has drifted from the ids it describes before, and a drifted label
+# table is worse than no table: the report keeps working and quietly attributes
+# a game's commands to the wrong ones. Names cannot be machine-checked in
+# general — nothing in the runtime spells out the string "MoveTowardHero" — but
+# the interpreter *does* pin four ids by name in Game::Interpreter::MoveCmd,
+# because those four carry extra parameters it has to decode. They sit right in
+# the 32..35 span where the last drift landed (the table had 32 Through(off),
+# 34 StopAnimOff, 35 ChangeGraphic), so checking them catches that whole class.
+#
+# Fail loudly rather than mislabelling: whichever side moved, the person who
+# moved it is the one who should hear about it.
+MC = Game::Interpreter::MoveCmd
+{ MC::SWITCH_ON => 'SwitchOn', MC::SWITCH_OFF => 'SwitchOff',
+  MC::CHANGE_GRAPHIC => 'ChangeGraphic',
+  MC::PLAY_SOUND => 'PlaySoundEffect' }.each do |id, name|
+  next if MOVE_NAMES[id] == name
+  abort "analyze_game.rb: MOVE_NAMES[#{id}] is #{MOVE_NAMES[id].inspect}, but " \
+        "Game::Interpreter::MoveCmd calls #{id} #{name}. One of them has " \
+        "drifted -- check both against liblcf's MoveCommand::Code before the " \
+        "move histogram is trusted again."
+end
+
 # Opcodes that do nothing at run time by design: developer comments and blank /
 # block-structure lines. The interpreter no-ops them, which is the correct
 # behaviour, so they count as "handled" and must not be reported as missing
