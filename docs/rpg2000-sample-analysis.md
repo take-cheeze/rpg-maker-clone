@@ -87,14 +87,33 @@ exercises the commands its author reached for — `ChangeMonsterHP` (13110) and
 `TerminateBattle` (13410) never appear in Nepheshel, so they remain
 fixture-tested only.
 
-The first caveat is not hypothetical: tallying the *parameter* signatures behind
-each opcode (the same walk, grouped by `param(0..n)` instead of by code) turned
-up two commands that dispatched to a handler and still did the wrong thing —
-a "this event" (10005) character reference the read-side handlers could not
-resolve, and Show Choices ignoring its cancel setting, including the [Cancel]
-branch the editor stores as a fifth, blank-labelled option. Both are fixed; see
-the event-command interpreter entry in `docs/TODO.md`. A per-opcode 100 % is
-where that audit *starts*, not where it ends.
+The first caveat is not hypothetical, and `--params` is the view that answers
+it:
+
+```bash
+ruby scripts/analyze_game.rb --params <game-dir>              # every opcode
+ruby scripts/analyze_game.rb --params --code 10140 <game-dir> # just one
+```
+
+For each opcode it lists, per parameter index, how many distinct values the game
+supplies and — when there are few enough to be a *mode selector* rather than an
+id or a coordinate — which ones. Read next to a handler's `case` arms, a value
+the game uses and the handler has no branch for is the bug. It reports rather
+than judging: nothing here can tell whether a handler covers a mode, only which
+modes are there to cover.
+
+That view found every event-command bug of the 2026-08 audit, none of which the
+per-opcode figure could see:
+
+| Command | What the handler ignored |
+| --- | --- |
+| Conditional Branch / Control Variables / Call Event | a "this event" (0 / 10005) reference the read side could not resolve |
+| Show Choices | the cancel setting, including the [Cancel] branch stored as a fifth, blank-labelled option |
+| Erase / Show Screen | the transition style, and the -1 that means "use the configured one" |
+| Move Event | Begin Jump / End Jump, which walked instead of hopping |
+| the twelve stat commands | the party-wipe re-check that ends the game |
+
+A per-opcode 100 % is where an audit *starts*, not where it ends.
 
 ## The collection
 
