@@ -2,6 +2,12 @@
 def rpg_maker_gems(conf)
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
+  # Enumerable#sort_by / min_by / max_by / group_by etc. mruby-array-ext does not
+  # supply these — they live in mruby-enum-ext and are absent from the default
+  # gem set, so calling e.g. Array#sort_by raises NoMethodError in the built
+  # engine (the RPG2000 battle turn-order and message-pacing code both use it),
+  # while the CRuby host checks pass. See scripts/rpg2k_boot_check.bash.
+  conf.gem core: 'mruby-enum-ext'
   conf.gem core: 'mruby-io'
   conf.gem core: 'mruby-numeric-ext'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
