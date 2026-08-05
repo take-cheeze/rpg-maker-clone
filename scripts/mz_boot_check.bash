@@ -175,5 +175,20 @@ grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
+
+# Everything above read the *log*. The captured frame is the other half of the
+# claim, and the two can disagree: with the M6.3e fix reverted every assertion
+# above still passes while the map is missing from the picture. Check what this
+# run actually drew; the cross-mode comparisons (a message window that changed
+# the frame, a menu that replaced it) need more than one mode's frame and run
+# from scripts/mz_frame_check.rb once they have all been captured.
+if command -v ruby >/dev/null 2>&1 ; then
+    ruby "$(dirname "$0")/mz_frame_check.rb" --frame "${SHOT}" ||
+        { echo "FAILED: ${GAME} (mode ${MODE}): the captured frame does not" \
+               "show what the log claims" >&2 ; exit 1 ; }
+else
+    echo "note: no ruby, so ${SHOT} was not checked"
+fi
+
 echo "mz boot check (${MODE}): OK"
 exit 0

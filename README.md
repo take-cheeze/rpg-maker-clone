@@ -308,6 +308,16 @@
   success line so a probe that merely ran cannot pass; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
+- Those assertions all read the engine's **log**, which is how the empty frames
+  above went unnoticed for a milestone. `scripts/mz_frame_check.rb` reads the
+  **captured PNGs** instead: that each frame kept its art (a map frame that lost
+  its tiles is 99.5% a single colour; a message window whose contents never
+  uploaded has 18 distinct colours in its band where text puts 105), and that
+  each mode's frame differs from the plain map frame the way that mode claims —
+  the message window changes the bottom band and nothing above it, the menu and
+  battle scenes replace the screen, and the save round-trip lands back on the
+  map. Reverting the `texSubImage2D` fix leaves every boot-check mode reporting
+  OK and fails the frame check, which is the point of it
 
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
