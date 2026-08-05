@@ -291,7 +291,11 @@
   redrawn after its first upload was lost: window contents, text, the tile
   atlas) and `bufferData` with a bare `ArrayBuffer`, which is what PIXI's sprite
   batcher uploads, so every batched sprite drew from an empty vertex buffer.
-  Both are covered at the pixel level on the real EGL backend by
+  Overlapping **windows clip each other** properly too: MZ draws every scene
+  inside a filter render texture (each scene carries a `ColorFilter`), and the
+  wrapper's renderbuffer calls were stubs, so the stencil `WindowLayer` masks
+  with had nothing to write to and every window overpainted its neighbours. All
+  three are covered at the pixel level on the real EGL backend by
   `mruby-mvjs/test/gl_test.rb`
 - The MZ engine is not redistributable (unlike MV's MIT corescript), so
   `data/mz-sample` commits only an authored database and art —

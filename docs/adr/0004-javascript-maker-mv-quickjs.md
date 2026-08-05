@@ -374,6 +374,33 @@ JavaScript loads and interprets the JSON.
       `Scene_Battle`'s fade-in before capturing; the bed's own battle frame stays
       near-black because the authored sample ships no battler art or battleback,
       the same reason MV runs its battle smoke against a real downloaded game.
+    - **M6.3f — the stencil never reached the surface MZ draws on (landed).**
+      M6.3c mapped `stencilFunc`/`Op`/`Mask` onto GL so `WindowLayer`'s
+      per-window clipping would clip, and proved it on the main FBO — which
+      `mvgl.cxx` builds with a packed DEPTH24_STENCIL8 buffer. But **MZ never
+      draws a scene into that FBO**: `Scene_Base` puts a `ColorFilter` on every
+      scene, so the scene renders into a filter *render texture* and only the
+      filter's output quad reaches the main FBO. rmmz's `WindowLayer.render`
+      calls `renderer.framebuffer.forceStencil()`, which has PIXI attach a
+      stencil renderbuffer to whatever framebuffer is current — and the
+      wrapper's five renderbuffer entry points were stubs
+      (`createRenderbuffer` returned 0, the rest were no-ops), on the assumption
+      that only the main FBO ever needed one. With no attachment the stencil
+      test always passes, so every window overpainted its neighbours.
+
+      All five now map onto GL, translating the two WebGL1 enums GLES2 has no
+      equivalent for: the combined `DEPTH_STENCIL` internal format becomes
+      `DEPTH24_STENCIL8` (the OES_packed_depth_stencil value `mvgl.cxx` already
+      uses), and the combined `DEPTH_STENCIL_ATTACHMENT` point becomes an attach
+      to *both* `DEPTH_ATTACHMENT` and `STENCIL_ATTACHMENT`, which is what a
+      packed buffer feeds. `gl_test` gains a masking case bound to a
+      framebuffer whose colour target is a texture and whose depth/stencil is a
+      renderbuffer — the arrangement PIXI builds — and it fails with the stubs
+      restored.
+
+      The pattern is worth naming, because it is the third time in this
+      milestone: **a capability proved on the wrong surface is not proved.** The
+      stencil worked where nothing was drawn and was absent where everything is.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

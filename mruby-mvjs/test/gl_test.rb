@@ -441,3 +441,106 @@ assert 'texSubImage2D updates a texture after its first upload' do
   assert_true rgb[1] > 200
   assert_true rgb[0] < 60
 end
+
+assert 'the stencil test masks inside a render texture, where MZ actually draws' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # The masking test above works on the main FBO, which mvgl.cxx builds with its
+  # own packed DEPTH24_STENCIL8 buffer. MZ never draws a scene there: every
+  # `Scene_Base` carries a `ColorFilter`, so the scene renders into a *filter
+  # render texture* and only the filter's output quad reaches the main FBO.
+  # rmmz's `WindowLayer.render` asks PIXI for a stencil on whatever framebuffer
+  # is current (`renderer.framebuffer.forceStencil()` -> createRenderbuffer +
+  # renderbufferStorage(DEPTH_STENCIL) + framebufferRenderbuffer) and masks each
+  # window against the ones in front of it. While those three were stubs no
+  # attachment existed, the stencil test always passed, and every window
+  # overpainted its neighbours.
+  #
+  # Same shape as the FBO test, but bound to a framebuffer whose colour target
+  # is a texture and whose depth/stencil is a renderbuffer. Returns
+  # "status,left,right".
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 64, H = 64;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvoid main(){ gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nuniform vec4 uCol;\nvoid main(){ gl_FragColor = uCol; }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      var uCol = gl.getUniformLocation(p, 'uCol');
+
+      // A render texture, the way PIXI builds one for a filter pass...
+      var tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      var fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      // ...plus the stencil forceStencil() attaches. The combined WebGL1 enums
+      // (DEPTH_STENCIL / DEPTH_STENCIL_ATTACHMENT) are what PIXI passes.
+      var rb = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_STENCIL, W, H);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, rb);
+      var status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      if (status !== gl.FRAMEBUFFER_COMPLETE) return 'fbo-' + status;
+
+      gl.viewport(0, 0, W, H);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      function quad(x0, x1) {
+        gl.bufferData(gl.ARRAY_BUFFER,
+          new Float32Array([x0,-1, x1,-1, x0,1, x1,-1, x1,1, x0,1]), gl.STATIC_DRAW);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clearStencil(0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+      gl.enable(gl.STENCIL_TEST);
+      gl.stencilMask(0xff);
+      gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+      gl.uniform4f(uCol, 0.0, 0.0, 0.0, 1.0);
+      quad(-1.0, 0.0);                       // stamp the left half
+      gl.stencilFunc(gl.EQUAL, 0, 0xff);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+      gl.uniform4f(uCol, 0.0, 1.0, 0.0, 1.0);
+      quad(-1.0, 1.0);                       // green, only where unstamped
+      gl.finish();
+
+      var l = new Uint8Array(4), r = new Uint8Array(4);
+      gl.readPixels(W / 4, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, l);
+      gl.readPixels(W * 3 / 4, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, r);
+      gl.disable(gl.STENCIL_TEST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return 'ok,' + l[1] + ',' + r[1];
+    })()
+  JS
+
+  parts = out.split(",")
+  # A framebuffer that never got its renderbuffer reports itself here rather
+  # than as a confusing colour comparison.
+  assert_equal "ok", parts[0]
+  assert_equal 3, parts.size
+  assert_true parts[2].to_i > 200 # right: drawn
+  assert_true parts[1].to_i < 60  # left: masked out
+end
