@@ -1856,6 +1856,22 @@ end
 # Fiber (ADR 0023) and ends the game when one calls `exit` (raised as a catchable
 # SystemExit). Confirm all three gems are linked into the build — without
 # invoking `exit`, which would terminate the test runner.
+# Kernel#Integer(), from mruby-kernel-ext. Every RGSS game clamps its battler
+# stats through it — `n = [[Integer(n), 1].max, 999999].min` in Game_Battler_1,
+# which runs the moment a party member is built — so a missing one does not
+# surface until a player presses New Game. The gem is declared in
+# build_config.rb and depended on in mrbgem.rake; this is what makes its absence
+# fail here instead of in a booted game.
+assert "Kernel#Integer is available for the script host" do
+  assert_equal 7, Integer(7)
+  assert_equal 7, Integer("7")
+  assert_equal 0, Integer(0)
+  # The stock clamp is `[[Integer(n), 1].max, 999999].min`, which is what a
+  # game's maxhp= setter runs.
+  assert_equal 999999, [[Integer(1_000_000), 1].max, 999999].min
+  assert_equal 1, [[Integer(-5), 1].max, 999999].min
+end
+
 assert "eval, Fiber and Kernel#exit / SystemExit are available for the script host" do
   # mruby-eval is what makes the whole host possible; script_host.rb calls
   # Kernel#eval unconditionally because this gem is a hard dependency

@@ -133,12 +133,36 @@ class RPGXP
         rescue StandardError, ScriptError => e
           $stderr.puts "[RGSS] script host: section #{name.inspect} raised " \
                        "#{e.class}: #{e.message}"
+          report_backtrace(e)
           # `raise` with no argument loses the exception in this mruby build
           # (the caller saw a bare RuntimeError), so re-raise it explicitly.
           raise e
         end
       end
       true
+    end
+
+    # Where in the *game's own scripts* a failure happened. The section name and
+    # exception alone say what is missing but not where — and once a game is past
+    # its title screen, "Main raised NoMethodError" can mean any of a hundred
+    # scripts. Each section is evaluated under its editor name (rgss_eval_section
+    # passes it to eval), so the frames read like `Game_Battler_1:61`, which is
+    # the line to open in the editor. Best effort: an mruby build without
+    # backtraces just prints nothing extra.
+    BACKTRACE_FRAMES = 12
+
+    def self.report_backtrace(e)
+      return unless e.respond_to?(:backtrace)
+      frames = e.backtrace
+      return if frames.nil? || frames.empty?
+      frames.first(BACKTRACE_FRAMES).each do |frame|
+        $stderr.puts "[RGSS] script host:   from #{frame}"
+      end
+      dropped = frames.size - BACKTRACE_FRAMES
+      $stderr.puts "[RGSS] script host:   ... #{dropped} more" if dropped > 0
+    rescue StandardError
+      # A backtrace is a diagnostic, never a second failure.
+      nil
     end
 
     # The database the Kernel built-ins (Object#load_data / #save_data, defined

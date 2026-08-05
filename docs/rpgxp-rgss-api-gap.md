@@ -165,6 +165,24 @@ as `[RPGXP-HOST-SCENE]` (read from the game's own `$scene` global). Reaching a
 second scene is what `scripts/rpgxp_boot_check.bash` now asserts — the proof that
 a game's engine took a keypress and acted on it, rather than merely drawing.
 
+### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
+
+With input working, both beds get *into* the game — and stop where every RGSS
+game builds its party: `Game_Battler_1` clamps each stat through
+`n = [[Integer(n), 1].max, 999999].min`, and mruby's `Kernel#Integer` lives in
+the **mruby-kernel-ext** core gem, which was not in the build. Added to
+`build_config.rb` and depended on in `mruby-rpgxp/mrbgem.rake` (the dependency
+edge orders its initialization, the same reason `mruby-sprintf` is declared
+there), with an availability test so its absence fails in the test binary rather
+than on a player's New Game. The same gem supplies `Float()` / `String()` /
+`Array()`, which neither stock bundle uses but community scripts do.
+
+A failure inside a game's own scripts now also prints **where**: the host reports
+up to a dozen backtrace frames with the section name and line
+(`Game_Battler_1:61`), since each section is evaluated under its editor name.
+Past the title screen, "Main raised NoMethodError" can otherwise mean any of a
+hundred scripts.
+
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at
 the end of this document), and `scripts/rpgxp_script_host_check.rb` *stubbed*

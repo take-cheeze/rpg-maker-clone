@@ -22,6 +22,10 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # gem: without the edge, gem init order left Kernel#sprintf undefined when the
   # host loaded, so the scripts' "%02d"/"%04d" formatting raised NoMethodError.
   add_dependency 'mruby-sprintf'
+  # Kernel#Integer(), which every game's Game_Battler_1 clamps its stats with.
+  # Declared here for the same reason as mruby-sprintf above: the dependency edge
+  # is what orders its initialization before this gem.
+  add_dependency 'mruby-kernel-ext'
   # Numeric#zero?, used by the Scroll Map offset and the pause-arrow animation.
   # Same story as mruby-sprintf above: it is enabled in build_config.rb, but
   # without the dependency edge to order its initialization before this gem the
