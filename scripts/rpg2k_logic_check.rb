@@ -4529,6 +4529,53 @@ check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
   eq hp_before, hero.hp, 'the sleeping foe did not attack'
 end
 
+# -- Battle state susceptibility (state_ranks) --------------------------------
+
+def poison_cast(foe, seed = 1)
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)    # faster -> acts first
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(seed))
+  b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+  b.begin_round
+  b.step_action
+end
+
+check 'battle: an immune target (state rank E) never catches the status' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 4 }                       # rank E -> 0% susceptibility
+  e = poison_cast(foe)
+  eq [], e[:inflicted], 'immunity blocks a sure-fire status'
+  ok !foe.state?(3)
+end
+
+check 'battle: a susceptible target (state rank A) catches a sure status' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 0 }                       # rank A -> 100%
+  e = poison_cast(foe)
+  eq [3], e[:inflicted]
+  ok foe.state?(3)
+end
+
+check 'battle: infliction is unscaled when the target models no state ranks' do
+  foe = combatant('Foe', 0, 0, 5, 100)               # state_ranks nil (a bare fixture)
+  e = poison_cast(foe)
+  eq [3], e[:inflicted], 'a fixture still catches a 100% status'
+end
+
+check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
+  rng = Game::Rng.new(1)                             # one RNG across many casts
+  results = Array.new(40) do
+    foe = combatant('Foe', 0, 0, 5, 100)
+    foe.state_ranks = { 3 => 2 }                     # rank C -> 60%
+    mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+    b = Game::Battle.new([mage], [foe], rng)
+    b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+    b.begin_round
+    b.step_action[:inflicted]
+  end
+  ok results.any? { |r| r == [3] }, 'a 60% status sometimes lands'
+  ok results.any?(&:empty?), 'and sometimes is resisted'
+end
+
 check 'Battle command_skill resolves an attack skill: damage lands, SP is spent' do
   mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
   foe  = combatant('Foe', 0, 0, 5, 100)

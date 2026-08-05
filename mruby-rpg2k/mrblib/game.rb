@@ -1191,6 +1191,18 @@ module Game
       ranks
     end
 
+    # The actor's per-state susceptibility ranks as `{ state_id => rank }`, read
+    # from the database row's `state_ranks` byte array (rank 0 = A, most
+    # susceptible .. 4 = E, immune). Scales how often a status effect lands on
+    # this actor. A fixture row without the field yields {}.
+    def state_ranks
+      ranks = {}
+      arr = @db_row.respond_to?(:state_ranks) ? @db_row.state_ranks : nil
+      return ranks unless arr
+      arr.each_with_index { |v, i| ranks[i + 1] = v }
+      ranks
+    end
+
     # The elemental attribute ids carried by the equipped weapon(s) — the item's
     # `attribute_set` bool array (field 66), a flag per attribute — used to scale
     # a basic attack's damage by the target's resistance. No item table (a
@@ -2970,12 +2982,17 @@ module Game
       @attribute_ranks = {}
       arr = row && row.respond_to?(:attribute_ranks) ? row.attribute_ranks : nil
       arr.each_with_index { |v, i| @attribute_ranks[i + 1] = v } if arr
+      # Per-state susceptibility ranks ({ state_id => rank 0..4 }) from the
+      # enemy's state_ranks byte array, scaling how often a status lands on it.
+      @state_ranks = {}
+      sr = row && row.respond_to?(:state_ranks) ? row.state_ranks : nil
+      sr.each_with_index { |v, i| @state_ranks[i + 1] = v } if sr
       # The "miss" flag (field 26): a flagged enemy is clumsier and attacks at a
       # 70% base hit rate rather than the usual 90% (EasyRPG's GetHitChance).
       @miss = row && row.respond_to?(:miss) ? (row.miss ? true : false) : false
     end
 
-    attr_reader :crit_denom, :attribute_ranks
+    attr_reader :crit_denom, :attribute_ranks, :state_ranks
     def crit_denominator; @crit_denom; end
 
     # Base to-hit percentage for this enemy's normal attack (70 when the "miss"
@@ -3047,7 +3064,7 @@ module Game
                            :action, :defending, :mp, :max_mp, :spi, :command,
                            :actor, :states, :state_turns, :crit_denom,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
-                           :hit_rate) do
+                           :hit_rate, :state_ranks) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -3081,11 +3098,16 @@ module Game
     # default) when the source (a bare fixture) doesn't model one.
     def self.hit_rate_of(b); b.respond_to?(:attack_hit_rate) ? b.attack_hit_rate : 90; end
 
+    # A battler's per-state susceptibility ranks ({ state_id => rank 0..4 }), or
+    # {} when the source (a bare fixture) doesn't model them.
+    def self.state_ranks_of(b); b.respond_to?(:state_ranks) ? b.state_ranks : {}; end
+
     def self.from_actor(a)
       Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
                     nil, crit_denom_of(a), prevents_crit_of(a),
-                    attr_ranks_of(a), atk_attrs_of(a), nil, hit_rate_of(a))
+                    attr_ranks_of(a), atk_attrs_of(a), nil, hit_rate_of(a),
+                    state_ranks_of(a))
     end
 
     # Enemies have no source actor (that field stays nil), so the post-battle
@@ -3094,7 +3116,8 @@ module Game
       Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
                     nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
                     crit_denom_of(e), prevents_crit_of(e),
-                    attr_ranks_of(e), atk_attrs_of(e), nil, hit_rate_of(e))
+                    attr_ranks_of(e), atk_attrs_of(e), nil, hit_rate_of(e),
+                    state_ranks_of(e))
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -3576,15 +3599,35 @@ module Game
       end
     end
 
+    # RPG2000's default state rate table: a susceptibility rank of A..E (index
+    # 0..4) scales an infliction chance to 100 / 80 / 60 / 30 / 0 percent.
+    # (Per-state overrides from the database's State table aren't modelled yet.)
+    STATE_RATE_PCT = [100, 80, 60, 30, 0].freeze
+
+    # The percentage a target's susceptibility scales an infliction of `sid`: its
+    # rank in the target's `state_ranks` (default C / 60% for a listed-but-absent
+    # state, EasyRPG's GetStateProbability). 100 (unscaled) when the target (a
+    # bare fixture) models no ranks, so a plain sim keeps landing every status.
+    def state_susceptibility(target, sid)
+      ranks = target.state_ranks
+      return 100 if ranks.nil? || ranks.empty?
+      rank = ranks[sid] || 2
+      rank = 0 if rank < 0
+      rank = 4 if rank > 4
+      STATE_RATE_PCT[rank]
+    end
+
     # Inflict a skill command's `inflict` states on `target`, each landing only if
-    # a 0..99 roll comes in under the skill's `chance` (its accuracy). Skips a
-    # state the target already carries. Returns the states actually inflicted.
+    # a 0..99 roll comes in under the skill's `chance` (its accuracy) scaled by
+    # the target's per-state susceptibility. Skips a state the target already
+    # carries. Returns the states actually inflicted.
     def roll_inflict(target, cmd)
       chance = cmd[:chance] || 100
       inflicted = []
       (cmd[:inflict] || []).each do |sid|
         next if target.state?(sid)
-        next unless @rng.random(100) < chance
+        prob = chance * state_susceptibility(target, sid) / 100
+        next unless @rng.random(100) < prob
         target.states = (target.states || []) + [sid]
         inflicted << sid
       end
