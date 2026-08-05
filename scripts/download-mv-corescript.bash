@@ -2,6 +2,9 @@
 
 set -eux -o pipefail
 
+# Retried because these external clones fail intermittently in CI.
+. "$(dirname "$0")/git-clone-retry.bash"
+
 # Fetch the MIT-licensed community RPG Maker MV corescript and build the engine
 # files into the committed sample project (data/mv-sample). The sample commits
 # only our authored data + shell; the engine (js/rpg_core.js ... and js/libs/*)
@@ -18,7 +21,7 @@ sample="$here/data/mv-sample"
 cache="$here/data/.mv-corescript"
 
 if [ ! -d "$cache" ]; then
-    git clone --quiet --depth 1 https://github.com/rpgtkoolmv/corescript.git "$cache"
+    clone_retry --quiet --depth 1 https://github.com/rpgtkoolmv/corescript.git "$cache"
 fi
 
 mkdir -p "$sample/js/libs"
