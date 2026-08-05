@@ -4979,6 +4979,7 @@ class RPG2k
   # State#to_lsd, so the slot is readable by real RPG_RT/EasyRPG tooling. The
   # export is best-effort: a failure there is logged but never fails the save.
   def save_game state, slot = 1
+    state.save_count += 1 # RPG2000 counts each save; persisted in the dump below
     data = Marshal.dump state.to_h
     File.open(save_path(slot), "wb") { |f| f.write data }
     export_lsd(state, slot)

@@ -1439,6 +1439,22 @@ check 'State save round-trips the message configuration' do
   legacy_loaded = Game::State.load(db, legacy)
   eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
   eq true, legacy_loaded.save_access, 'absent save access defaults on'
+
+  # The save / battle tallies round-trip, and default to 0 in a legacy save.
+  st.save_count = 4
+  st.battle_count = 7
+  st.win_count = 5
+  st.defeat_count = 1
+  st.escape_count = 1
+  counted = Game::State.load(db, st.to_h)
+  eq 4, counted.save_count, 'save count round-trips'
+  eq 7, counted.battle_count, 'battle count round-trips'
+  eq 5, counted.win_count
+  eq 1, counted.defeat_count
+  eq 1, counted.escape_count
+  legacy2 = st.to_h
+  legacy2.delete(:battle_count)
+  eq 0, Game::State.load(db, legacy2).battle_count, 'absent battle count defaults 0'
 end
 
 check 'Vehicle: unplaced by default, placed once positioned' do
@@ -2237,6 +2253,41 @@ check 'Control Variables reads the party size (operand type 7, selector 2)' do
   it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 2])]) # var1 = party size
   it.update
   eq 2, st.variables[1]
+end
+
+check 'Control Variables reads the save / battle / win / defeat / escape counts' do
+  st = new_state
+  st.save_count = 3
+  st.battle_count = 9
+  st.win_count = 6
+  st.defeat_count = 1
+  st.escape_count = 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 3]),   # save count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 7, 4]),   # battle count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 7, 5]),   # win count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 7, 6]),   # defeat count
+            FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 7, 7])])  # escape count
+  it.update
+  eq 3, st.variables[1]
+  eq 9, st.variables[2]
+  eq 6, st.variables[3]
+  eq 1, st.variables[4]
+  eq 2, st.variables[5]
+end
+
+check 'battle counters advance: Enemy Encounter and its outcome' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Enemy Encounter (troop 1, no handlers): suspends on a :battle wait.
+  it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0])])
+  it.update
+  eq 1, st.battle_count, 'entering a battle bumps the battle count'
+  eq 0, st.win_count
+  it.resume_battle(:victory)
+  eq 1, st.win_count, 'a victory bumps the win count'
+  eq 0, st.defeat_count
+  eq 0, st.escape_count
 end
 
 check 'Control Variables reads item count and equipped count (operand type 4)' do
