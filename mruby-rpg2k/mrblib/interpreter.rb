@@ -425,6 +425,12 @@ module Game
     # command carries [Victory] / [Escape] / [Defeat] handler branches, jump into
     # the matching one. A game-over on defeat is the scene's concern.
     def resume_battle(result)
+      # Tally the outcome for the Control Variables "Other" operand.
+      case result
+      when :victory then @state.win_count += 1
+      when :defeat  then @state.defeat_count += 1
+      when :escape  then @state.escape_count += 1
+      end
       if result == :escape && @battle_escape_aborts
         @index = @list.size
         @call_stack = []
@@ -890,6 +896,7 @@ module Game
         allow_escape: escape_mode != 0, first_strike: cmd.param(5) != 0,
         defeat_game_over: cmd.param(4) == 0
       }
+      @state.battle_count += 1 # a battle was entered (Control Variables "Other")
       @wait_kind = :battle
       @waiting = true
     end
@@ -1012,13 +1019,19 @@ module Game
     end
 
     # Operand type 7: a miscellaneous game quantity selected by param5 (0 party
-    # gold, 1 timer seconds, 2 the number of party members). Other selectors
-    # (steps, play time, save / battle counts) are not modelled and read as 0.
+    # gold, 1 timer seconds, 2 party members, 3 save count, 4 battle count,
+    # 5 win count, 6 defeat count, 7 escape/run count). Remaining RPG2003-only
+    # selectors are not modelled and read as 0.
     def other_operand(cmd)
       case cmd.param(5)
       when 0 then party.gold
       when 1 then @state.timer_seconds
       when 2 then party.actors.size
+      when 3 then @state.save_count
+      when 4 then @state.battle_count
+      when 5 then @state.win_count
+      when 6 then @state.defeat_count
+      when 7 then @state.escape_count
       else 0
       end
     end

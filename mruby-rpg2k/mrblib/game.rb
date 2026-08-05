@@ -3506,6 +3506,11 @@ module Game
     # a command overrides it (the map's own rate then applies). No encounter
     # subsystem consumes it yet — kept for save fidelity.
     attr_accessor :encounter_rate
+    # Running tallies RPG2000 keeps and exposes through the Control Variables
+    # "Other" operand: how many times the game was saved, and how many battles
+    # were fought / won / lost / escaped. All persist in the save.
+    attr_accessor :save_count, :battle_count, :win_count, :defeat_count,
+                  :escape_count
     # Teleport / Escape skill destinations registered by Set Teleport Target
     # (11810) and Set Escape Target (11830). `teleport_targets` is a hash keyed
     # by map id → `{ x:, y:, switch_id: }`; `escape_target` is nil or one such
@@ -3553,6 +3558,11 @@ module Game
       @memorized_bgm = nil
       @player_transparent = false
       @encounter_rate = nil
+      @save_count = 0
+      @battle_count = 0
+      @win_count = 0
+      @defeat_count = 0
+      @escape_count = 0
       @teleport_targets = {}
       @escape_target = nil
       @system_bgm = {}
@@ -3682,6 +3692,9 @@ module Game
         player_transparent: @player_transparent, weather: @weather.to_h,
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
+        save_count: @save_count, battle_count: @battle_count,
+        win_count: @win_count, defeat_count: @defeat_count,
+        escape_count: @escape_count,
         escape_target: @escape_target, system_bgm: @system_bgm,
         system_sfx: @system_sfx, screen_transitions: @screen_transitions,
         system_graphic: @system_graphic, font_id: @font_id,
@@ -4040,6 +4053,11 @@ module Game
       # Registries default empty / unset; a save written before these existed
       # simply restores nothing.
       state.encounter_rate = h[:encounter_rate]
+      state.save_count = h[:save_count] || 0
+      state.battle_count = h[:battle_count] || 0
+      state.win_count = h[:win_count] || 0
+      state.defeat_count = h[:defeat_count] || 0
+      state.escape_count = h[:escape_count] || 0
       state.teleport_targets = h[:teleport_targets] || {}
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}

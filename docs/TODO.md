@@ -240,7 +240,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility), an **item** count (number held, or number equipped across the
-  party), **game quantities** (party gold, timer seconds, party size) and a
+  party), **game quantities** (party gold, timer seconds, party size, and the
+  **save / battle / win / defeat / escape counts** — running tallies bumped by
+  Save and by each Enemy Encounter and its outcome, persisted in the save) and a
   **character position** (the hero's or a map event's map id / x / y / facing —
   an event's map id reads 0, matching an RPG_RT 2000 quirk; screen coordinates
   are not modelled).
