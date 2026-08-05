@@ -887,10 +887,24 @@ class MZ
     $stderr.puts "[MZ] audio test error: #{e.message}"
   end
 
+  # Frames to let run before capturing — a couple of seconds, enough for the
+  # boot to reach a scene and its images to load and draw.
+  SHOT_DELAY_FRAMES = 120
+
+  # Extra frames to run after the battle probe reports, before capturing. The
+  # probe fires the moment `Scene_Battle` exists, and the scene starts faded
+  # out (`startFadeIn`), so shooting on arrival photographs a black screen.
+  BATTLE_SHOT_GRACE_FRAMES = 90
+
   # If a screenshot path was requested (`--mz_screenshot`), write the presented
-  # WebGL frame to it once, a couple of seconds in — enough for the boot to
-  # reach a scene and its images to load and draw. Used to capture the visual
+  # WebGL frame to it once, a couple of seconds in. Used to capture the visual
   # output in CI; a no-op during normal play (no path configured).
+  #
+  # A battle probe also has to have finished, plus its fade-in: the encounter
+  # effect, its flash and `Scene_Battle`'s own fade take longer than the fixed
+  # delay, so capturing on frame count alone photographs the fade — a black
+  # frame — rather than the battle the run is about. Both waits are bounded (the
+  # probe gives up after BATTLE_PROBE_FRAMES), so this cannot wait forever.
   def maybe_screenshot
     return if @shot_taken
 
@@ -902,7 +916,8 @@ class MZ
     return if path.nil? || path.empty?
 
     @frames = (@frames || 0) + 1
-    return if @frames < 120
+    return if @frames < SHOT_DELAY_FRAMES
+    return if battle_test_troop > 0 && !battle_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -910,6 +925,15 @@ class MZ
     $stderr.puts "[MZ] screenshot #{ok ? "saved" : "failed"}: #{path}"
   rescue StandardError => e
     $stderr.puts "[MZ] screenshot error: #{e.message}"
+  end
+
+  # Has the battle probe reported *and* had BATTLE_SHOT_GRACE_FRAMES to fade in?
+  # Latches the frame the probe finished on, so the grace period is counted from
+  # there rather than from the start of the run.
+  def battle_shot_ready?
+    return false unless @battle_test_done
+    @battle_done_frame ||= @frames
+    @frames - @battle_done_frame >= BATTLE_SHOT_GRACE_FRAMES
   end
 
   # The on-screen surface MZ's WebGL frame is presented onto: one full-screen

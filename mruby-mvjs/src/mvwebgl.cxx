@@ -88,10 +88,20 @@ std::vector<double> num_array(JSContext* ctx, JSValueConst v) {
   return out;
 }
 
-// Raw bytes of a TypedArray/ArrayBuffer view, for bufferData / texImage2D /
+// Raw bytes of a WebGL `BufferSource`, for bufferData / texImage2D /
 // readPixels where the byte layout (Float32, Uint16, ...) must be preserved
 // rather than coerced through double. `*hold` keeps the backing ArrayBuffer
-// alive; the caller frees it after the GL call. Returns nullptr for non-views.
+// alive; the caller frees it after the GL call. Returns nullptr for anything
+// that is neither a view nor a buffer.
+//
+// **A bare `ArrayBuffer` counts.** WebGL's `BufferSource` is
+// `ArrayBufferView | ArrayBuffer`, and PIXI v5 uploads the sprite batcher's
+// whole vertex block as the raw `ArrayBuffer` behind its interleaved views
+// (`ViewableBuffer.rawBinaryData`). Handling only views made that upload
+// silently zero-length, so every batched sprite drew from an empty vertex
+// buffer — degenerate triangles, no fragments — which is why MZ rendered its
+// tilemap (a separate rmmz renderer with its own geometry) and nothing else:
+// no characters, no windows, no text.
 uint8_t* view_bytes(JSContext* ctx,
                     JSValueConst v,
                     size_t* out_len,
@@ -100,12 +110,23 @@ uint8_t* view_bytes(JSContext* ctx,
   JSValue ab = JS_GetTypedArrayBuffer(ctx, v, &off, &len, &bpe);
   if (JS_IsException(ab)) {
     JS_FreeValue(ctx, ab);
-    // A non-view argument set a TypeError; clear it so it can't contaminate the
-    // next eval (the WebGL callers only ever pass views or null).
+    // Not a view. Clear the TypeError it set so it cannot contaminate the next
+    // eval, then try the value itself as an ArrayBuffer.
     JS_FreeValue(ctx, JS_GetException(ctx));
-    *hold = JS_UNDEFINED;
-    *out_len = 0;
-    return nullptr;
+    size_t raw = 0;
+    uint8_t* p = JS_GetArrayBuffer(ctx, &raw, v);
+    if (!p) {
+      // Neither view nor buffer (e.g. null): clear again and report nothing.
+      JS_FreeValue(ctx, JS_GetException(ctx));
+      *hold = JS_UNDEFINED;
+      *out_len = 0;
+      return nullptr;
+    }
+    // JS_GetArrayBuffer borrows; the caller frees `*hold`, so dup to keep the
+    // buffer alive across the GL call exactly as the view path does.
+    *hold = JS_DupValue(ctx, v);
+    *out_len = raw;
+    return p;
   }
   size_t sz = 0;
   uint8_t* p = JS_GetArrayBuffer(ctx, &sz, ab);
@@ -929,6 +950,57 @@ JSValue js_gl_tex_image_2d_canvas(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// texSubImage2D(target, level, xoffset, yoffset, w, h, format, type,
+//               ArrayBufferView|null) — the sized/typed-array overload, the
+// counterpart of js_gl_tex_image_2d. A null view is a no-op rather than a GL
+// call: unlike texImage2D (where null *allocates* storage) a null sub-upload
+// has no meaning, and GLES2 would reject it.
+JSValue js_gl_tex_sub_image_2d(JSContext* ctx,
+                               JSValueConst,
+                               int argc,
+                               JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_UNDEFINED;
+  if (argc <= 9 || JS_IsNull(argv[9]) || JS_IsUndefined(argv[9]))
+    return JS_UNDEFINED;
+  JSValue hold;
+  size_t len = 0;
+  uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
+  if (p)
+    glTexSubImage2D(
+        static_cast<GLenum>(gi(ctx, argc, argv, 1)), gi(ctx, argc, argv, 2),
+        gi(ctx, argc, argv, 3), gi(ctx, argc, argv, 4), gi(ctx, argc, argv, 5),
+        gi(ctx, argc, argv, 6), static_cast<GLenum>(gi(ctx, argc, argv, 7)),
+        static_cast<GLenum>(gi(ctx, argc, argv, 8)), p);
+  JS_FreeValue(ctx, hold);
+  return JS_UNDEFINED;
+}
+
+// texSubImage2D from a 2D canvas/image source: write the source's RGBA buffer
+// into an already-allocated texture at (xoffset, yoffset). This is the call
+// that carries most of MZ's actual pixels: PIXI re-uploads a texture whose
+// dimensions have not changed with texSubImage2D rather than texImage2D, so
+// every bitmap redrawn after its first upload — window contents, rendered text,
+// a Bitmap the game paints into — arrives here, and rmmz's Tilemap fills its
+// 2048x2048 tile atlas by sub-uploading each tileset page into a quadrant of
+// it.
+JSValue js_gl_tex_sub_image_2d_canvas(JSContext* ctx,
+                                      JSValueConst,
+                                      int argc,
+                                      JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_UNDEFINED;
+  int cw = 0, ch = 0;
+  const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 7), &cw, &ch);
+  if (px)
+    glTexSubImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                    gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
+                    gi(ctx, argc, argv, 4), cw, ch,
+                    static_cast<GLenum>(gi(ctx, argc, argv, 5)),
+                    static_cast<GLenum>(gi(ctx, argc, argv, 6)), px);
+  return JS_UNDEFINED;
+}
+
 JSValue js_gl_generate_mipmap(JSContext* ctx,
                               JSValueConst,
                               int argc,
@@ -1380,7 +1452,25 @@ const char* kWebGLPreamble = R"MVJS(
       // Image-element uploads and Y-flip handling: M6.3c.
     }
   };
-  P.texSubImage2D = function () {};  // M6.3c
+  // texSubImage2D has the same two overloads as texImage2D, one argument
+  // shorter (there is no internalformat or border): the 9-argument sized form
+  // with a typed array, and the 7-argument form taking a canvas/image source.
+  // Both matter — see the native side; a no-op here loses every texture update
+  // that follows the first upload, which is most of what MZ draws.
+  P.texSubImage2D = function (target, level, xoff, yoff, a, b, c, d, e) {
+    if (arguments.length >= 9) {
+      // (target, level, xoffset, yoffset, w, h, format, type, pixels)
+      g.__mv_glTexSubImage2D(this.__gl, target, level, xoff, yoff, a, b, c, d, e);
+    } else {
+      // (target, level, xoffset, yoffset, format, type, source)
+      var src = c;
+      if (src && src.__h !== undefined) {
+        g.__mv_glTexSubImage2DCanvas(this.__gl, target, level, xoff, yoff, a, b, src.__h);
+      } else if (src && src.canvas && src.canvas.__h !== undefined) {
+        g.__mv_glTexSubImage2DCanvas(this.__gl, target, level, xoff, yoff, a, b, src.canvas.__h);
+      }
+    }
+  };
   P.generateMipmap = function (t) { g.__mv_glGenerateMipmap(this.__gl, t); };
   P.deleteTexture = function (t) { g.__mv_glDeleteTexture(this.__gl, t); };
 
@@ -1513,6 +1603,8 @@ void mv_install_webgl(JSContext* ctx) {
   reg(ctx, g, "__mv_glTexParameteri", js_gl_tex_parameteri, 4);
   reg(ctx, g, "__mv_glTexImage2D", js_gl_tex_image_2d, 10);
   reg(ctx, g, "__mv_glTexImage2DCanvas", js_gl_tex_image_2d_canvas, 7);
+  reg(ctx, g, "__mv_glTexSubImage2D", js_gl_tex_sub_image_2d, 10);
+  reg(ctx, g, "__mv_glTexSubImage2DCanvas", js_gl_tex_sub_image_2d_canvas, 8);
   reg(ctx, g, "__mv_glGenerateMipmap", js_gl_generate_mipmap, 2);
   reg(ctx, g, "__mv_glDeleteTexture", js_gl_delete_texture, 2);
   reg(ctx, g, "__mv_glCreateFramebuffer", js_gl_create_framebuffer, 1);

@@ -325,11 +325,55 @@ JavaScript loads and interprets the JSON.
          advances while the scene is inactive. rmmz's `command301` takes the same
          `[type, troopId, canEscape, canLose]` parameters as rmmv's, so the
          injected command list is shared in shape with the MV probe.
-      No native gap turned up this time: the battle's encounter effect snapshots
-      the screen through `Bitmap.snap` → PIXI's `extract.canvas`, which reads the
-      FBO back with `gl.readPixels` and writes it through the canvas bridge's
-      `getImageData`/`putImageData` — a path the boot already exercised, since
-      `Scene_Title.terminate` snaps for the menu background on every New Game.
+      No native gap turned up in the *probes*: the battle's encounter effect
+      snapshots the screen through `Bitmap.snap` → PIXI's `extract.canvas`, which
+      reads the FBO back with `gl.readPixels` and writes it through the canvas
+      bridge's `getImageData`/`putImageData` — a path the boot already exercised,
+      since `Scene_Title.terminate` snaps for the menu background on every New
+      Game. Reading the frames those probes captured is what found the next two.
+    - **M6.3e — the frames were empty (landed).** Every probe above passed while
+      the captured PNGs were **blank**: the scene graph was right and nothing but
+      the tilemap reached the framebuffer. Two calls in the wrapper accepted
+      their arguments and threw the pixels away:
+      1. **`texSubImage2D` was a no-op.** PIXI re-uploads a texture whose
+         dimensions have not changed with `texSubImage2D` rather than
+         `texImage2D`, so the *first* upload of a `Bitmap` (usually while it is
+         still blank) was the only one that ever reached GL. Everything a game
+         paints after that — window contents, rendered text, the tileset pages
+         rmmz's `Tilemap` sub-uploads into its 2048×2048 atlas — was dropped.
+         Both overloads are implemented now, the sized/typed-array one and the
+         canvas/image-source one.
+      2. **`bufferData` rejected a bare `ArrayBuffer`.** WebGL's `BufferSource`
+         is `ArrayBufferView | ArrayBuffer`; the byte extractor (`view_bytes`)
+         handled only views, and PIXI v5's sprite batcher uploads its whole
+         interleaved vertex block as the raw `ArrayBuffer` behind its views
+         (`ViewableBuffer.rawBinaryData`). The upload silently became
+         **zero-length**, so every batched sprite drew from an empty vertex
+         buffer: degenerate triangles, no fragments, no GL error. That is
+         precisely why the tilemap was the only visible thing — rmmz's `Tilemap`
+         is a separate `ObjectRenderer` with its own geometry, uploaded from a
+         `Float32Array` view.
+
+      How it was found is worth keeping, because both failures are invisible to
+      every check that stops at "did it run": the probes reported success, the
+      draws were issued, `glGetError` stayed 0, the shaders compiled and PIXI's
+      own attribute wiring (locations, strides, offsets, normalisation) read back
+      correct. Forcing the batch fragment shader to emit solid red and seeing
+      *nothing* was what proved the fragments never existed, which pointed at the
+      vertex stage; logging the actual byte counts at every `bufferData` /
+      `bufferSubData` then showed the batcher's vertex uploads going in at
+      **0 bytes** while its index uploads went in at 48. The lesson is the same
+      one M6.3c drew about stubs, one level further out: **a screenshot nobody
+      reads is not evidence.** `mruby-mvjs/test/gl_test.rb` now asserts both at
+      the pixel level on the real EGL backend, and each test was checked to fail
+      with the fix reverted.
+
+      With both fixed, MZ draws its title screen and command window, the map with
+      the player sprite and touch UI, message windows with their text, and the
+      party menu over a blurred map background. The battle screenshot waits for
+      `Scene_Battle`'s fade-in before capturing; the bed's own battle frame stays
+      near-black because the authored sample ships no battler art or battleback,
+      the same reason MV runs its battle smoke against a real downloaded game.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

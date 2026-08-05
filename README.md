@@ -283,6 +283,16 @@
   lands in `Scene_Battle`. MZ's save path is a **promise chain** (JsonEx → pako
   → localforage) rather than MV's synchronous call, so the probe starts it and
   polls until it settles, then re-enters the map the way `Scene_Load` does
+- All of that is **on screen**, not just in the scene graph: the title and its
+  command window, the map with the player sprite and the touch UI, message
+  windows with their text, and the party menu over a blurred map background. It
+  used to draw only the tilemap, because two calls in the native WebGL wrapper
+  quietly dropped their data — `texSubImage2D` (a no-op, so every bitmap
+  redrawn after its first upload was lost: window contents, text, the tile
+  atlas) and `bufferData` with a bare `ArrayBuffer`, which is what PIXI's sprite
+  batcher uploads, so every batched sprite drew from an empty vertex buffer.
+  Both are covered at the pixel level on the real EGL backend by
+  `mruby-mvjs/test/gl_test.rb`
 - The MZ engine is not redistributable (unlike MV's MIT corescript), so
   `data/mz-sample` commits only an authored database and art —
   `scripts/gen-mz-sample.py` writes both — and
