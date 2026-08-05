@@ -106,7 +106,7 @@ class Checker
     mapinfos = load_json(dir, "MapInfos.json")
 
     check_system(system, actors)
-    check_advanced(system)
+    check_advanced(system, dir)
     check_terms(system)
     check_actors(dir, actors, classes, system)
     check_system_images(dir)
@@ -153,7 +153,7 @@ class Checker
   # MZ's `advanced` block is read during the boot itself: Scene_Boot.resizeScreen
   # takes the screen/UI sizes from it and Scene_Boot.loadGameFonts the font
   # filenames — a missing block throws before the title is ever reached.
-  def check_advanced(system)
+  def check_advanced(system, dir)
     adv = system["advanced"]
     unless adv.is_a?(Hash)
       fail("System.advanced must be a Hash (Scene_Boot reads the screen size " \
@@ -168,6 +168,13 @@ class Checker
     %w[mainFontFilename numberFontFilename].each do |k|
       expect(adv[k].is_a?(String),
              "System.advanced.#{k} must be a String (\"\" for none)")
+      # A named font must be on disk: MZ's FontManager loads it during
+      # Scene_Boot and the native text path rasterises it from fonts/, so a
+      # dangling name means either a stalled boot or blank text everywhere.
+      next unless adv[k].is_a?(String) && !adv[k].empty?
+      expect(File.file?(File.join(dir, "fonts", adv[k])),
+             "System.advanced.#{k} names #{adv[k].inspect} but " \
+             "fonts/#{adv[k]} is missing")
     end
     puts "  advanced: #{adv['screenWidth']}x#{adv['screenHeight']} " \
          "ui=#{adv['uiAreaWidth']}x#{adv['uiAreaHeight']} " \

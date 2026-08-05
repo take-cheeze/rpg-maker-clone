@@ -188,3 +188,20 @@ assert 'the MZ audio bridge queues ops and neutralises the eager preload' do
   assert_equal :se_play, call[0]
   assert_equal "audio/se/Beep", call[1]
 end
+
+assert 'MZ.host_globals_js provides the FontFace MZ builds when a font is named' do
+  MV::JS.eval(MZ.host_globals_js)
+
+  # FontManager.startLoading does `new FontFace(family, url)` and waits on its
+  # load() promise. Without the constructor that throws inside
+  # Scene_Boot.onDatabaseLoaded, so naming a font in System.advanced kills the
+  # boot outright — the glyphs themselves are rasterised natively from the
+  # game's fonts/ dir, so the shim only has to satisfy the bookkeeping.
+  assert_equal 'function', MV::JS.eval("typeof FontFace")
+  assert_equal 'rmmz-mainfont',
+               MV::JS.eval("new FontFace('rmmz-mainfont', 'url(x)').family")
+  assert_equal true,
+               MV::JS.eval("typeof (new FontFace('f','url(x)').load().then) === 'function'")
+  # document.fonts.add is what the resolved load() calls; it must exist too.
+  assert_equal 'function', MV::JS.eval("typeof document.fonts.add")
+end
