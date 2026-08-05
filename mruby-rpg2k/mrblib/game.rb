@@ -4280,13 +4280,101 @@ module Game
     end
   end
 
+  # One of RPG_RT's countdown timers, driven by the Timer Operation command
+  # (10230). RPG2000 has a single one; RPG2003 adds a second, selected by that
+  # command's sixth parameter. Ported from EasyRPG's Game_Party timer block,
+  # which is where the two details this used to get wrong come from:
+  #
+  # * **Set** seeds `seconds * 60 + 59`, not `seconds * 60`. The display shows
+  #   `frames / 60`, so the extra 59 makes a freshly-set timer hold the number it
+  #   was given for a whole second before ticking down — seeded exactly, it would
+  #   drop a second after a single frame.
+  # * **Stop hides it.** `StopTimer` clears the visible flag as well as the
+  #   running one, and the countdown reaching zero goes through that same stop —
+  #   which is how a timer that runs out disappears rather than sitting at 0:00.
+  class Timer
+    FPS = 60
+
+    # Remaining time in frames; whether it is counting; whether it is drawn; and
+    # whether it keeps counting (and drawing) during a battle — the Timer
+    # Operation start command's second flag.
+    attr_accessor :frames, :running, :visible, :in_battle
+
+    def initialize
+      @frames = 0
+      @running = false
+      @visible = false
+      @in_battle = false
+    end
+
+    # Timer Operation, "set": load the timer with `seconds` (see the note above
+    # about the extra 59 frames).
+    def set(seconds)
+      @frames = seconds * FPS + (FPS - 1)
+    end
+
+    # Timer Operation, "start": begin counting, drawn or not, and in battle or
+    # not.
+    def start(visible, in_battle = false)
+      @running = true
+      @visible = visible
+      @in_battle = in_battle
+    end
+
+    # Timer Operation, "stop" — and where a finished countdown ends up.
+    def stop
+      @running = false
+      @visible = false
+    end
+
+    # Advance one frame, `battle` telling it whether a fight is running. Returns
+    # true on the frame the countdown reaches zero (RPG_RT counts that as the
+    # displayed seconds hitting 0, not the frame counter, so the last 59 frames
+    # of 0:00 never show).
+    def tick(battle = false)
+      return false unless @running && @frames > 0
+      return false if battle && !@in_battle
+      @frames -= 1
+      return false if seconds > 0
+      stop
+      true
+    end
+
+    # Remaining whole seconds — what every read of the timer reports.
+    def seconds; @frames / FPS; end
+
+    # Whether the timer should be drawn right now; a timer without the battle
+    # flag is hidden for the duration of a fight rather than stopped.
+    def drawn?(battle = false)
+      @visible && (!battle || @in_battle)
+    end
+
+    # The timer as RPG2000 draws it: whole minutes, a colon, then zero-padded
+    # seconds (e.g. 90 s -> "1:30"). Minutes are not capped at two digits. The
+    # seconds are padded by hand: this mruby build bundles no sprintf.
+    def display_text
+      s = seconds
+      secs = s % 60
+      "#{s / 60}:#{secs < 10 ? "0#{secs}" : secs}"
+    end
+
+    def to_h
+      { frames: @frames, running: @running, visible: @visible,
+        in_battle: @in_battle }
+    end
+
+    def load_h(h)
+      return unless h
+      @frames = h[:frames] || 0
+      @running = h[:running] || false
+      @visible = h[:visible] || false
+      @in_battle = h[:in_battle] || false
+    end
+  end
+
   class State
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
-    attr_accessor :map, :map_id, :x, :y, :direction, :timer_frames, :timer_running
-    # Whether the timer is shown on the map, set by the Timer Operation's start
-    # (the RPG2000 "show timer" flag). Counting (timer_running) and being drawn
-    # (timer_visible) are independent: a stopped timer stays on screen, frozen.
-    attr_accessor :timer_visible
+    attr_accessor :map, :map_id, :x, :y, :direction
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
@@ -4354,9 +4442,7 @@ module Game
       @map = nil
       @switches = Switches.new
       @variables = Variables.new
-      @timer_frames = 0
-      @timer_running = false
-      @timer_visible = false
+      @timers = [Timer.new, Timer.new]
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
@@ -4449,26 +4535,34 @@ module Game
     # "wait until done" flag).
     def pictures_moving?; @pictures.values.any?(&:moving?); end
 
-    # Advance the countdown timer one frame (call once per frame). Returns true
-    # on the frame the timer reaches zero.
-    def tick_timer
-      return false unless @timer_running && @timer_frames > 0
-      @timer_frames -= 1
-      @timer_running = false if @timer_frames <= 0
-      @timer_frames <= 0
+    # Advance both countdown timers one frame (call once per frame), `battle`
+    # telling them whether a fight is running. Returns true when either reached
+    # zero on this frame.
+    def tick_timer(battle = false)
+      finished = false
+      @timers.each { |t| finished = true if t.tick(battle) }
+      finished
     end
 
-    # Remaining timer seconds (assuming 60 fps).
-    def timer_seconds; @timer_frames / 60; end
-
-    # The timer as RPG2000 draws it: whole minutes, a colon, then zero-padded
-    # seconds (e.g. 90 s -> "1:30"). Minutes are not capped at two digits. The
-    # seconds are padded by hand: this mruby build bundles no sprintf.
-    def timer_display_text
-      s = timer_seconds
-      secs = s % 60
-      "#{s / 60}:#{secs < 10 ? "0#{secs}" : secs}"
+    # The Game::Timer for slot `id` — 0 the RPG2000 timer, 1 the second one
+    # RPG2003 adds. Any other id falls back to the first, so malformed data can
+    # never address a timer that does not exist.
+    def timer(id = 0)
+      @timers[id] || @timers[0]
     end
+
+    # -- single-timer shorthands ---------------------------------------------
+    #
+    # Everything written before the second timer existed talks to the first one,
+    # so these keep reading and writing it by name.
+    def timer_seconds; timer(0).seconds; end
+    def timer_display_text; timer(0).display_text; end
+    def timer_frames; timer(0).frames; end
+    def timer_frames=(v); timer(0).frames = v; end
+    def timer_running; timer(0).running; end
+    def timer_running=(v); timer(0).running = v; end
+    def timer_visible; timer(0).visible; end
+    def timer_visible=(v); timer(0).visible = v; end
 
     # The six Change Screen Transitions (10690) slots (see #screen_transitions).
     SCREEN_TRANSITION_SLOTS = 6
@@ -4493,8 +4587,13 @@ module Game
     def to_h
       { map_id: @map_id, x: @x, y: @y, direction: @direction,
         switches: @switches.to_h, variables: @variables.to_h,
-        party: @party.to_h, timer_frames: @timer_frames,
-        timer_running: @timer_running, timer_visible: @timer_visible,
+        party: @party.to_h,
+        # Both timers, plus the first one's fields under their old names so a
+        # save this build writes still loads in one that predates the second
+        # timer.
+        timers: @timers.map { |t| t.to_h },
+        timer_frames: timer_frames,
+        timer_running: timer_running, timer_visible: timer_visible,
         message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
@@ -4845,9 +4944,15 @@ module Game
       state.direction = h[:direction] || 2
       state.switches.replace(h[:switches] || {})
       state.variables.replace(h[:variables] || {})
-      state.timer_frames = h[:timer_frames] || 0
-      state.timer_running = h[:timer_running] || false
-      state.timer_visible = h[:timer_visible] || false
+      # A save written since the second timer landed carries both; an older one
+      # only has the first timer's three fields.
+      if h[:timers]
+        h[:timers].each_with_index { |th, i| state.timer(i).load_h(th) }
+      else
+        state.timer_frames = h[:timer_frames] || 0
+        state.timer_running = h[:timer_running] || false
+        state.timer_visible = h[:timer_visible] || false
+      end
       state.message_config.load_h(h[:message_config])
       # Access flags default on; only an explicit stored value overrides them
       # (so a save written before these existed keeps the menu/save enabled).

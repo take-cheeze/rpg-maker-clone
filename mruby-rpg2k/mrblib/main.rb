@@ -482,8 +482,9 @@ class RPG2k
         @wait_timer = nil
         @anim_wait = nil
         @map_animation = nil
-        @timer_window = nil
-        @timer_text = nil
+        # One window per timer (RPG2003 has two); built lazily when first shown.
+        @timer_windows = [nil, nil]
+        @timer_texts = [nil, nil]
         @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -523,7 +524,7 @@ class RPG2k
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
-        @timer_window.dispose if @timer_window
+        (@timer_windows || []).each { |w| w.dispose if w }
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
         @flash_buffer.dispose if @flash_buffer
@@ -533,7 +534,10 @@ class RPG2k
       end
 
       def update
-        @state.tick_timer # the timer keeps counting during events too
+        # The timers keep counting during events too. A fight is running when the
+        # battle UI is up, and a timer without the "run in battle" flag pauses
+        # (and hides) for its duration rather than being stopped.
+        @state.tick_timer(!@battle_ui.nil?)
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
@@ -3076,10 +3080,13 @@ class RPG2k
       # defeat (also the target of the Game Over event command). Stop the event
       # and return to the title screen — the faithful end state. (RPG2000 shows a
       # Game Over graphic first; that screen is native renderer work still to come.)
+      # Game Over (12420), and a battle defeat the encounter marked "game over":
+      # show the Game Over screen, which returns to the title once dismissed.
+      # Nothing resumes, so the event is stopped rather than released.
       def perform_game_over
         $stderr.puts '[RPG2k] game over'
         @interpreter.stop
-        @parent.return_to_title
+        @parent.show_game_over
       rescue StandardError => e
         $stderr.puts "[RPG2k] Game over failed: #{e.message}"
         @interpreter.stop
@@ -4223,32 +4230,48 @@ class RPG2k
       TIMER_INNER_W = 40
       TIMER_INNER_H = 16
 
+      # Both timers are drawn the same way; RPG_RT puts the first at the screen's
+      # left edge and the second at its right, so the two are laid out that way
+      # here too (drawing them as digit sprites off the System graphic, the way
+      # RPG_RT actually does, is a rendering-parity job of its own).
       def draw_timer
-        unless @state.timer_visible
-          @timer_window.visible = false if @timer_window
+        battle = !@battle_ui.nil?
+        @timer_windows ||= [nil, nil]
+        @timer_texts ||= [nil, nil]
+        2.times { |id| draw_one_timer(id, battle) }
+      end
+
+      def draw_one_timer(id, battle)
+        timer = @state.timer(id)
+        unless timer.drawn?(battle)
+          w = @timer_windows[id]
+          w.visible = false if w
           return
         end
-        build_timer_window unless @timer_window
-        @timer_window.visible = true
-        text = @state.timer_display_text
-        return if text == @timer_text
+        @timer_windows[id] ||= build_timer_window(id)
+        win = @timer_windows[id]
+        win.visible = true
+        text = timer.display_text
+        return if text == @timer_texts[id]
 
-        @timer_text = text
-        c = @timer_window.contents
+        @timer_texts[id] = text
+        c = win.contents
         c.clear
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, c.height, text, 1 # centre-aligned
       end
 
-      def build_timer_window
+      def build_timer_window(id)
         ow = TIMER_INNER_W + Window::BORDER * 2
         oh = TIMER_INNER_H + Window::BORDER * 2
-        win = Window.new((SCREEN_W - ow) / 2, 4, ow, oh)
+        # Timer 1 sits left of centre and timer 2 right of it, mirroring the
+        # edges RPG_RT parks them at while keeping this build's centred window.
+        x = id == 0 ? (SCREEN_W - ow) / 2 : SCREEN_W - ow - 4
+        win = Window.new(x, 4, ow, oh)
         win.z = 250 # above the map, below the message / menu windows (z 300+)
         win.windowskin = @windowskin
         win.contents = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H)
-        @timer_window = win
-        @timer_text = nil
+        win
       end
 
       # Position and draw each vehicle placed on the current map. A parked vehicle
@@ -5390,6 +5413,66 @@ class RPG2k
       end
     end
 
+    # The RPG2000 Game Over screen: the database's `GameOver/<name>` picture
+    # filling the screen with its game-over music playing, dismissed by a button
+    # press, which returns to a fresh title.
+    #
+    # RPG_RT reaches this the same two ways this build does — the Game Over event
+    # command (12420) and a battle defeat whose encounter says "game over" rather
+    # than running a [Defeat] handler — so both go through Scene::GameOver rather
+    # than dropping straight back to the title as they used to.
+    class GameOver < Base
+      def initialize(parent)
+        super parent
+
+        @picture = Sprite.new
+        bmp = gameover_bitmap
+        @picture.bitmap = bmp if bmp
+        play_gameover_bgm
+        # RPG_RT ignores whatever key ended the fight; requiring a *fresh* press
+        # stops the button that closed the battle result from skipping the
+        # screen in the same frame.
+        @armed = false
+      end
+
+      def update
+        unless @armed
+          @armed = true unless Input.press?(Input::C) || Input.press?(Input::B)
+          return
+        end
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        parent.return_to_title
+      end
+
+      def dispose
+        @picture.dispose if @picture
+      end
+
+      private
+
+      # The database's game-over picture, or nil when the game names none (or the
+      # file is missing) — the screen then shows plain black, which is better
+      # than refusing to reach it at all.
+      def gameover_bitmap
+        name = db.system.gameover_name.to_s
+        return nil if name.empty?
+        Bitmap.new "GameOver/#{name}"
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] game over picture '#{name}' failed to load: #{e.message}"
+        nil
+      end
+
+      def play_gameover_bgm
+        bgm = db.system.gameover_music
+        return unless bgm
+        name = bgm.file
+        return if name.nil? || name.empty?
+        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] game over BGM playback failed: #{e.message}"
+      end
+    end
+
     class Title < Base
       # Height of one selectable line. The shinonome font is 12px tall; the
       # extra space gives a little breathing room between entries.
@@ -5592,6 +5675,14 @@ class RPG2k
   def return_to_title
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [Scene::Title.new(self)]
+  end
+
+  # Tear down all scenes and show the Game Over screen; dismissing it returns to
+  # the title. Replaces the stack the way return_to_title does rather than
+  # pushing, so the map underneath is gone for good — the run is over.
+  def show_game_over
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
+    @scenes = [Scene::GameOver.new(self)]
   end
 
   # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...

@@ -1287,24 +1287,111 @@ check 'Timer Operation start carries the show-timer flag; text is M:SS' do
     FakeCmd.new(IC::TIMER_OPERATION, [1, 0, 0, 1, 0]),   # start, visible
   ])
   it.update
-  eq 90 * 60, st.timer_frames
+  # RPG_RT seeds seconds*60 + 59 so the display holds 1:30 for a whole second
+  # instead of dropping to 1:29 after one frame.
+  eq 90 * 60 + 59, st.timer_frames
   eq true, st.timer_running
   eq true, st.timer_visible, 'the show-timer flag turns the display on'
   eq '1:30', st.timer_display_text, '90 s reads as 1:30'
-  # Stopping freezes the count but leaves the display shown.
+  # Stopping clears the display too, which is how a countdown that runs out
+  # disappears rather than sitting at 0:00 (EasyRPG's Game_Party::StopTimer).
   it.start([FakeCmd.new(IC::TIMER_OPERATION, [2])])
   it.update
   eq false, st.timer_running
-  eq true, st.timer_visible, 'a stopped timer stays on screen'
-  # A start with the flag clear hides it again.
+  eq false, st.timer_visible, 'stopping hides the timer'
+  # A start with the flag clear leaves it hidden.
   it.start([FakeCmd.new(IC::TIMER_OPERATION, [1, 0, 0, 0, 0])])
   it.update
+  eq true, st.timer_running
   eq false, st.timer_visible, 'starting without the flag hides the timer'
   # Padding: seconds below ten keep a leading zero, minutes are uncapped.
   st.timer_frames = 5 * 60
   eq '0:05', st.timer_display_text
   st.timer_frames = 605 * 60 # 10 min 5 s
   eq '10:05', st.timer_display_text
+end
+
+check 'a countdown reaches zero on the displayed second, then stops and hides' do
+  t = Game::Timer.new
+  t.set(1)
+  t.start(true)
+  eq 119, t.frames, '1 s is 60 frames of countdown plus the 59-frame lead-in'
+  eq 1, t.seconds
+  59.times { ok !t.tick, 'still reads 0:01' }
+  eq 1, t.seconds, 'the full second is held, not lost on the first frame'
+  # RPG_RT ends the countdown the moment the *displayed* seconds hit zero, so
+  # the 59 frames that would still read 0:00 never run.
+  ok t.tick, 'the sixtieth tick empties it and reports the finish'
+  eq 0, t.seconds
+  eq false, t.running
+  eq false, t.visible, 'and it leaves the screen'
+  ok !t.tick, 'a stopped timer does not keep reporting'
+end
+
+check 'a timer only counts in battle when it carries the battle flag' do
+  t = Game::Timer.new
+  t.set(10)
+  t.start(true, false)
+  frames = t.frames
+  t.tick(true)
+  eq frames, t.frames, 'no battle flag: paused for the fight'
+  ok !t.drawn?(true), 'and hidden while it lasts'
+  ok t.drawn?(false), 'but shown again on the map'
+
+  t.in_battle = true
+  t.tick(true)
+  eq frames - 1, t.frames, 'with the flag it keeps counting'
+  ok t.drawn?(true), 'and keeps drawing'
+end
+
+check "Timer Operation addresses RPG2003's second timer through param5" do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::TIMER_OPERATION, [0, 0, 30]),           # timer 1 = 30 s
+    FakeCmd.new(IC::TIMER_OPERATION, [0, 0, 90, 0, 0, 1]),  # timer 2 = 90 s
+    FakeCmd.new(IC::TIMER_OPERATION, [1, 0, 0, 1, 1, 1]),   # start timer 2
+  ])
+  it.update
+  eq 30, st.timer(0).seconds
+  eq 90, st.timer(1).seconds
+  eq false, st.timer(0).running, 'the first timer was set but never started'
+  eq true, st.timer(1).running
+  eq true, st.timer(1).visible
+  eq true, st.timer(1).in_battle, 'param4 is the run-in-battle flag'
+  # RPG2000 data carries no sixth parameter, so it reads 0 and addresses the
+  # only timer that edition has.
+  eq 30, st.timer_seconds, 'the shorthand still means timer 1'
+end
+
+check 'Control Variables and Conditional Branch read the second timer' do
+  st = new_state
+  st.timer(0).set(10)
+  st.timer(1).set(50)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 1]),   # timer 1 secs
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 7, 9])])  # timer 2 secs
+  it.update
+  eq 10, st.variables[1]
+  eq 50, st.variables[2]
+
+  # Conditional type 10 is the second timer, laid out like type 2.
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH, [], indent: 0)]
+  end
+  it.start(branch.call([10, 40, 0])) # timer 2 at least 40 s
+  it.update
+  eq 1, st.variables[3]
+  it.start(branch.call([10, 40, 1])) # timer 2 at most 40 s
+  it.update
+  eq 2, st.variables[3]
+  it.start(branch.call([2, 40, 0]))  # timer 1 at least 40 s -> no
+  it.update
+  eq 2, st.variables[3], 'type 2 still reads the first timer'
 end
 
 # -- Memorize / Recall Location ----------------------------------------------
@@ -1574,6 +1661,25 @@ def party_state
                            max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
   Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2])), 1, 0, 0)
+end
+
+check 'both timers round-trip through the save; an old save still loads' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.timer(0).set(30); st.timer(0).start(true, true)
+  st.timer(1).set(90); st.timer(1).start(false, false)
+  loaded = Game::State.load(db, st.to_h)
+  eq 30, loaded.timer(0).seconds
+  eq true, loaded.timer(0).in_battle
+  eq 90, loaded.timer(1).seconds
+  eq false, loaded.timer(1).visible
+
+  # A save from before the second timer existed carries only the flat fields.
+  legacy = st.to_h
+  legacy.delete(:timers)
+  old = Game::State.load(db, legacy)
+  eq 30, old.timer(0).seconds, 'the first timer comes back from the old keys'
+  eq 0, old.timer(1).seconds, 'and the second starts empty'
 end
 
 check 'State save round-trips the message configuration' do

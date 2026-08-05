@@ -48,7 +48,8 @@
   and strength), Set
   Transparent Flag (hide/show the hero), Flash Sprite (pulse a character with a
   decaying colour), Enter/Exit Vehicle, Open Save Menu / Open Main Menu, Fade Out
-  BGM, Return to Title and Erase
+  BGM, Return to Title, Game Over (the database's `GameOver/` picture over its
+  game-over music, dismissed back to the title) and Erase
   Event (remove an event from
   the map) — **every RPG2000 event command now has a handler**. Events start on the action button, on
   player touch (walking into them),
@@ -82,7 +83,10 @@
 - Message text reveals gradually (a typewriter effect; a button press completes
   it, then dismisses), expands the common control codes (`\v[n]` variable,
   `\n[n]` actor name, `\\`) and draws `\c[n]` colour changes
-- A countdown timer can be set/started/stopped from events
+- Countdown timers can be set/started/stopped from events — RPG2000's one and
+  RPG2003's second, each with its own on-screen window, read back by Control
+  Variables and Conditional Branch, and pausing for a battle unless the start
+  command said otherwise
 - Press the cancel button to open a menu (party status, Save, End Game); "New
   Game" state can be saved and reloaded from the title's "Continue"
 
