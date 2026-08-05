@@ -21,6 +21,8 @@
 #   [MZ-ANIM]  data=<bool> mv=<bool> sprites=<n> cells=<n> played=<bool>
 #   [MZ-SAVE]  saved=<bool> exists=<bool> loaded=<bool>
 #   [MZ-BTL]   reached_battle=<bool>
+#   [MZ-BTLPLAY] hp_before=<n> hp_after=<n> alive=<n> damaged=<bool>
+#              ended=<bool> scene=<scene>
 #
 # or "[MZ] boot stopped at: <error>" when it stops short. Every mode asserts the
 # boot marker and that the boot got past the loading scene; each then asserts
@@ -34,6 +36,7 @@
 #   animation New Game -> map, play an animation on the player
 #   save      New Game -> map, save + load round-trip
 #   battle    New Game -> map, start a battle against MZ_TROOP (default 1)
+#   battle_play  ... and then *play that battle out* to its end
 #
 # The MZ engine mirror is a CI-only fixture (© Gotcha Gotcha Games / KADOKAWA);
 # if it has not been fetched the check skips with a message rather than failing,
@@ -76,9 +79,12 @@ case "${MODE}" in
     battle)
         FLAGS=("--mz_battle_test=${TROOP}")
         DEFAULT_SHOT="ss/mz_battle.png" ;;
+    battle_play)
+        FLAGS=("--mz_battle_test=${TROOP}" --mz_battle_play)
+        DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|menu|animation|save|battle)" >&2
+             "(play|message|menu|animation|save|battle|battle_play)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
@@ -188,9 +194,24 @@ case "${MODE}" in
         grep -q '\[MZ-BTL\] reached_battle=true' "${log}" ||
             fail "the battle never started ([MZ-BTL] reached_battle=true)"
         ;;
+    battle_play)
+        grep -q '\[MZ-BTL\] reached_battle=true' "${log}" ||
+            fail "the battle never started ([MZ-BTL] reached_battle=true)"
+        # Reaching Scene_Battle is the *small* claim; these two are the fight.
+        # `damaged=true` means an action resolved onto an enemy's HP, which
+        # takes the party command window, the actor command window, the target
+        # window, BattleManager's turn order and the damage formula all working.
+        # `ended=true` means the victory sequence ran and handed the scene back
+        # to the map, rather than the fight stalling — which is exactly how this
+        # mode found the bed's battles frozen (see ADR 0004 M6.3i).
+        grep -q '\[MZ-BTLPLAY\].*damaged=true' "${log}" ||
+            fail "no attack ever damaged an enemy ([MZ-BTLPLAY] damaged=true)"
+        grep -q '\[MZ-BTLPLAY\].*ended=true' "${log}" ||
+            fail "the battle never finished ([MZ-BTLPLAY] ended=true)"
+        ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-MENU\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-MENU\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"

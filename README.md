@@ -236,7 +236,16 @@
   `$gameMessage` opens `Window_Message` over the map, `Scene_Map`'s own
   `callMenu` reaches `Scene_Menu`, a save round-trips through the real
   `DataManager` and a Battle Processing command run through the map interpreter
-  lands in `Scene_Battle`. MZ's save path is a **promise chain** (JsonEx → pako
+  lands in `Scene_Battle` — and, in `battle_play` mode, that fight is **played
+  out**: confirm is tapped through the party, actor and target windows until the
+  enemy's HP reaches zero and the victory sequence hands back to the map. That
+  mode was written because reaching `Scene_Battle` is true the moment the scene
+  is pushed, before its first update, and it immediately showed that MZ's
+  battles had never actually run — the test bed's enemy had an empty
+  `battlerName`, which is the one value `Sprite_Enemy` treats as "nothing
+  changed", so its bitmap stayed undefined and `updateFrame` threw on every
+  frame inside `Scene_Battle.update`, freezing the fight before the first
+  window opened. MZ's save path is a **promise chain** (JsonEx → pako
   → localforage) rather than MV's synchronous call, so the probe starts it and
   polls until it settles, then re-enters the map the way `Scene_Load` does
 - All of that is **on screen**, not just in the scene graph: the title and its
@@ -259,8 +268,9 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `menu`, `animation`, `save` or `battle`, each
-  with its own success line so a probe that merely ran cannot pass; `ruby
+  key moves the player), `message`, `menu`, `animation`, `save`, `battle` or
+  `battle_play`, each with its own success line so a probe that merely ran
+  cannot pass; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 - Those assertions all read the engine's **log**, which is how the empty frames

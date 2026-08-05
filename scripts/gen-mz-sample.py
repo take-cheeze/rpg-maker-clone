@@ -484,6 +484,15 @@ write("Classes.json", [None, {
     "traits": [
         {"code": 51, "dataId": 1, "value": 0},   # add weapon type: Dagger
         {"code": 41, "dataId": 1, "value": 0},   # add skill type: Magic
+        # Hit rate, and it is load-bearing rather than flavour. A physical
+        # action's chance to connect is `successRate * 0.01 * subject.hit`
+        # (Game_Action.itemHit), and `hit` is xparam 0, which is **0 unless a
+        # trait grants it**. A class without this trait misses every physical
+        # attack it ever makes, so a battle runs turn after turn with nothing
+        # taking damage and no side able to win. Every class the editor creates
+        # carries it at 95%; a hand-authored one has to say so.
+        {"code": 22, "dataId": 0, "value": 0.95},  # xparam HIT 95%
+        {"code": 22, "dataId": 1, "value": 0.05},  # xparam EVA 5%
     ],
 }])
 
@@ -518,15 +527,64 @@ write("States.json", [None, {
 }])
 
 # --- Enemies / Troops (valid battle data; no encounter is set on the map) --
+#
+# The battler image is **not** cosmetic, which is not obvious. `Sprite_Enemy`
+# only loads a bitmap when the name it reads differs from the one it is holding:
+#
+#     Sprite_Enemy.prototype.initMembers = function() { ... this._battlerName = ""; ... }
+#     Sprite_Enemy.prototype.updateBitmap = function() {
+#         const name = this._enemy.battlerName();
+#         if (this._battlerName !== name || ...) { ... this.loadBitmap(name); }
+#     };
+#
+# An enemy whose `battlerName` is the empty string therefore matches the
+# sprite's initial value, never loads anything, and leaves `this.bitmap`
+# undefined — and the very next line of `Sprite_Enemy.updateFrame` reads
+# `this.bitmap.width`. That throws on the first frame of every battle and every
+# frame after it, taking out the rest of `Scene_Battle.update` (the window layer
+# stops updating, so no message is dismissed and `BattleManager` never leaves
+# the "start" phase). The fight is frozen before it begins. This is rmmz's own
+# behaviour, not something our host introduces — a browser breaks identically —
+# and the editor never writes an empty battlerName, so only a hand-authored bed
+# like this one can hit it. See ADR 0004 M6.3i.
+ENEMY_NAME = "Slime"
+
+
+def gen_enemy():
+    """A front-view battler: a blob with a highlight, on transparent ground."""
+    w = h = 144
+    c = Canvas(w, h)
+    cx, cy = w // 2, h // 2 + 16
+    for y in range(h):
+        for x in range(w):
+            # A squashed ellipse — wider than it is tall, flat on the bottom.
+            dx = (x - cx) / 62.0
+            dy = (y - cy) / 44.0
+            if dx * dx + dy * dy <= 1.0:
+                shade = 120 + int(70 * (1.0 - (y - (cy - 44)) / 88.0))
+                c.set(x, y, (60, min(255, shade + 40), 110, 235))
+    # A highlight, so the sprite is not one flat colour and a frame check can
+    # tell it apart from a filled rectangle.
+    for y in range(cy - 34, cy - 14):
+        for x in range(cx - 24, cx - 4):
+            if (x - (cx - 14)) ** 2 + (y - (cy - 24)) ** 2 <= 100:
+                c.set(x, y, (230, 255, 240, 235))
+    write_png("img/enemies/%s.png" % ENEMY_NAME, w, h, c.bytes())
+
+
+gen_enemy()
+
 write("Enemies.json", [None, {
     "id": 1, "name": "Slime", "note": "",
-    "battlerName": "", "battlerHue": 0,
+    "battlerName": ENEMY_NAME, "battlerHue": 0,
     "params": [100, 0, 20, 20, 20, 20, 20, 20],
     "exp": 10, "gold": 5,
     "actions": [{"conditionParam1": 0, "conditionParam2": 0,
                  "conditionType": 0, "rating": 5, "skillId": 1}],
     "dropItems": [{"dataId": 0, "denominator": 1, "kind": 0}],
-    "traits": [],
+    # The same hit trait the class needs, for the same reason: without it the
+    # slime swings and misses forever too, so neither side can end the fight.
+    "traits": [{"code": 22, "dataId": 0, "value": 0.95}],
 }])
 write("Troops.json", [None, {
     "id": 1, "name": "Slime", "members": [

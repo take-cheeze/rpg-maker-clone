@@ -28,7 +28,10 @@
 #   message  the bottom band changed a lot and the top band barely at all
 #            (a message window drew over the map, and only there)
 #   menu     nearly the whole screen changed (Scene_Menu replaced the map)
-#   battle   nearly the whole screen changed (Scene_Battle replaced the map)
+#   battle   nearly the whole screen changed (Scene_Battle replaced the map),
+#   battle_play  and the same for the fight that gets played out
+#   animation  the middle of the frame changed and its edges did not (the burst
+#            drew on the player, and only there)
 #   save     almost nothing changed (the round-trip landed back on an intact
 #            map — a save that returns to a wrecked or empty scene fails here)
 #
@@ -42,13 +45,19 @@
 #
 # The thresholds come from measured runs of data/mz-sample and sit an order of
 # magnitude clear of the values they reject, so they are bounds on a nearly
-# binary signal rather than tuned tolerances. Two assumptions are specific to
-# that bed, and both are noted at the constants: its map is one screen wide (so
-# it does not scroll between captures), and its battle frame is legitimately
-# near-black because the sample ships no battler art.
+# binary signal rather than tuned tolerances. One assumption is specific to that
+# bed and is noted at the constant: its map is one screen wide, so it does not
+# scroll between captures.
+#
+# This file used to carry a second bed-specific assumption — that the battle
+# frame is legitimately near-black, the sample shipping no battler art — and it
+# was wrong. The battle scene was throwing an exception every frame (ADR 0004
+# M6.3i), and the exemption written around the symptom was what let it keep
+# doing so. Its removal is the general lesson: an exemption written to
+# accommodate a frame nobody understood is a place for a bug to live.
 #
 # Modes whose frame is absent are skipped, so this is useful after a single
-# mode's run as well as after all five. With no frames at all it skips rather
+# mode's run as well as after all of them. With no frames at all it skips rather
 # than fails, the way the boot check skips a missing engine.
 #
 # Usage: ruby scripts/mz_frame_check.rb [ss_dir]        (default: ss)
@@ -197,11 +206,18 @@ end
 # the M6.3e frames had a sprite and a button in them and clear it easily.
 MIN_COLOURS = 2
 
-# A frame that still has its map is a mix of tiles; one that lost them is the
+# A frame that still has its scene is a mix of art; one that lost it is the
 # clear colour with a few sprites on top. Measured: 68.5% for the fixed play
-# frame, 99.5% with the M6.3e fix reverted. Not applied to `battle`, whose frame
-# is legitimately 82.1% near-black — the sample ships no battler art or
-# battleback, the same reason MV runs its battle smoke against a real game.
+# frame, 99.5% with the M6.3e fix reverted.
+#
+# This used to exempt `battle`, on the reading that its 82.1% near-black frame
+# was what a bed shipping no battler art looks like. That reading was wrong:
+# the scene was throwing every frame (ADR 0004 M6.3i — an enemy with an empty
+# `battlerName` leaves `Sprite_Enemy`'s bitmap undefined and `updateFrame`
+# reads `.width` off it), so the frame was dark because nothing after the
+# exception ran. With the bed fixed the battle frame is 57.7% dominant across
+# 101 colours, and it takes the same check as every other mode. An exemption
+# written to accommodate a broken frame is an exemption that hides it.
 MAP_DOMINANT_MAX = 90.0
 
 # The message window covers roughly the bottom quarter of the screen: four lines
@@ -240,10 +256,11 @@ ANIM_OUTSIDE_MAX = 5.0
 # map again. Measured: 0.2% (the player stands where the move probe left it).
 SAVE_CHANGE_MAX = 15.0
 
-# Modes whose frame still has the map in it, so MAP_DOMINANT_MAX applies —
-# including `menu`, which draws its windows over a blurred snapshot of it.
-MAP_MODES = %w[play message menu save animation].freeze
-MODES = %w[play message menu save battle animation].freeze
+# Every mode's frame must carry its scene's art, so MAP_DOMINANT_MAX applies to
+# all of them — `menu` included, which draws its windows over a blurred
+# snapshot of the map, and both battle modes, which draw a battler and the
+# status window over the battleback.
+MODES = %w[play message menu save battle battle_play animation].freeze
 
 $failures = 0
 $checks = 0
@@ -308,9 +325,8 @@ if ARGV.first == '--frame'
 
   puts "== #{path}"
   name = File.basename(path, '.png')
-  mode = name.sub(/\Amz_/, '')
   frame = load_frame(path)
-  check_frame(frame, name, frame.size, MAP_MODES.include?(mode))
+  check_frame(frame, name, frame.size, true)
   puts format('%d checks, %d failures', $checks, $failures)
   exit($failures.zero? ? 0 : 1)
 end
@@ -340,9 +356,7 @@ rescue StandardError => e
 end
 
 reference_size = loaded.values.first&.size
-loaded.each do |mode, frame|
-  check_frame(frame, mode, reference_size, MAP_MODES.include?(mode))
-end
+loaded.each { |mode, frame| check_frame(frame, mode, reference_size, true) }
 
 if (message = loaded['message'])
   band_top = (message.height * MESSAGE_BAND_TOP).to_i
@@ -379,7 +393,8 @@ else
     end
   end
 
-  { 'menu' => 'Scene_Menu', 'battle' => 'Scene_Battle' }.each do |mode, scene|
+  { 'menu' => 'Scene_Menu', 'battle' => 'Scene_Battle',
+    'battle_play' => 'Scene_Battle' }.each do |mode, scene|
     next unless (frame = loaded[mode])
 
     check "#{mode}: #{scene} repainted the screen" do
