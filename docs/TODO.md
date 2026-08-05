@@ -722,14 +722,31 @@ screen (544×416). Full rationale:
   boots with no loose files. Same remaining gap as XP: graphics/audio are still
   read from loose files only.
 - 🚧 **Run the bundled scripts** — a VX/VX Ace game's engine is its script
-  bundle, so this is *the* path rather than a later refinement. The host already
-  runs (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver now
-  shared by both shells (`ScriptHost.build_driver`, ADR 0023); what is missing is
-  the RGSS2/RGSS3 halves of the `mruby-rgss` class library the stock scripts call
-  (the RGSS1 gap is tracked in
-  [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md); RGSS2 added
-  `Graphics.wait/fadeout`, `Window#openness`, `Cache`, and RGSS3 the `rgss_main`
-  wrapper and `Bitmap#draw_text` sizing the VX windows rely on).
+  bundle, so this is *the* path rather than a later refinement. The host runs
+  (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver shared by both
+  shells (`ScriptHost.build_driver`, ADR 0023), and the RGSS2/RGSS3 class
+  library is now measured, not guessed: the gap is tracked in
+  [`docs/rpgvx-rgss-api-gap.md`](rpgvx-rgss-api-gap.md), counted across the
+  stock VX Ace script set (109 sections, ~19.9k lines).
+  - ✅ The built-ins a bundle needs before it can draw anything: **symbol input
+    keys** (`Input.trigger?(:C)` — VX/VX Ace use nothing else, and the same key
+    table now serves all three makers), **`Graphics.width`/`height`** (declared
+    per maker via `resize_screen`; ~82 uses), **`Graphics.wait`/`fadeout`/
+    `fadein`/`brightness`**, **`Audio.setup_midi`**, the **`Window` RGSS2/RGSS3
+    surface** (`openness` + `open?`/`close?`, `padding`/`padding_bottom`,
+    `arrows_visible`, `tone`, and the `Window.new(x, y, w, h)` constructor),
+    **`RPG::BGM`/`BGS`/`ME`/`SE` playing themselves** (`#play`/`#replay`/
+    `#fade`, the class-side `last`/`stop`/`fade`), and the RGSS3 Kernel methods
+    **`rgss_main`** (the whole `Main` section of every VX Ace project),
+    `rgss_stop`, `msgbox`/`msgbox_p`.
+  - Remaining, all native `mruby-rgss` work and ordered by what blocks a
+    playable game: the **VX/VX Ace `Tilemap`** (nine `bitmaps` sheets + the
+    `flags` table instead of XP's single tileset/autotiles — without it a game
+    boots but no map draws), **`Viewport#tone`/`#color`/`#flash`** (VX does
+    every tint / flash / fade through the viewport, so all screen effects are
+    inert — the same native tone work the RPG2000 tint needs),
+    **`Graphics.freeze`/`transition`/`snap_to_bitmap`** (scene transitions),
+    the window open/close animation, and `Bitmap#blur`/`#radial_blur`.
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
   without the script host reports that instead of showing a blank window.

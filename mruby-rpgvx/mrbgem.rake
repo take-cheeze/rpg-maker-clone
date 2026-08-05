@@ -20,7 +20,7 @@ MRuby::Gem::Specification.new('mruby-rpgvx') do |spec|
   # Load order matters: lib.rb defines the RPGVX class and its WIDTH/HEIGHT/TILE
   # constants, which the data sources read at class-body evaluation time. Set the
   # order explicitly rather than relying on the default alphabetical glob.
-  spec.rbfiles = %w[lib rgss2_data rgss_data].map do |name|
+  spec.rbfiles = %w[lib rgss2_data rgss2_runtime rgss_data].map do |name|
     "#{dir}/mrblib/#{name}.rb"
   end
 end

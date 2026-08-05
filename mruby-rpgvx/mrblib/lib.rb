@@ -100,6 +100,11 @@ class RPGVX
 
   def initialize(_args)
     @edition = self.class.detect(GAME_DIR)
+    # Declare the screen the window was opened at (src/main.cxx sizes it to the
+    # same numbers), so the scripts' `Graphics.width`/`height` — which VX's
+    # camera and every window layout are computed from — report VX's resolution
+    # rather than the RGSS default.
+    RGSS::Graphics.resize_screen(WIDTH, HEIGHT)
     @db = RGSSData.new(GAME_DIR, @edition) if @edition
     @title = read_title
     # A VX/VX Ace project's engine *is* its script bundle, so the script host is
@@ -140,6 +145,10 @@ class RPGVX
   # (src/main.cxx) call this.
   def main_loop
     return drive_script_host if @host_fiber
+    # The host game has ended (its Main returned, or a script stopped it); the
+    # web per-frame callback keeps calling this, so idle rather than reporting
+    # the pending built-in flow for a game that just ran.
+    return if @host_done
     warn_runtime_pending
   end
 
@@ -187,7 +196,9 @@ class RPGVX
       @host_fiber = nil
       @host_done = true
     end
-  rescue RGSS::Timeout
+  rescue RGSS::Timeout, SystemExit
+    # A clean end: the timeout guard fired, a script called `rgss_stop`, or one
+    # called `exit`. End the game rather than treating it as a boot failure.
     @host_fiber = nil
     @host_done = true
   rescue StandardError => e

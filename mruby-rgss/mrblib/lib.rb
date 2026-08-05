@@ -268,6 +268,89 @@ module RGSS
     def stretch
       @stretch.nil? ? true : @stretch
     end
+
+    # ---- RGSS2 / RGSS3 (VX, VX Ace) additions ------------------------------
+    #
+    # The VX and VX Ace window model adds an open/close animation and a content
+    # padding the scripts drive themselves: `Window_Base#open`/`#close` step
+    # `openness` by 48 a frame and wait on `open?`/`close?`, and every VX window
+    # lays its contents out relative to `padding`. Measured in the stock VX Ace
+    # scripts: openness x16, open?/close? x15, padding x8, arrows_visible x1 (see
+    # docs/rpgvx-rgss-api-gap.md).
+    #
+    # These are plain state here: the native window is drawn at full size
+    # whatever `openness` says, so the open/close *animation* is not shown yet —
+    # but because the scripts only ever wait on the value they set, a window
+    # still opens, closes and lays out correctly.
+
+    # 0 (fully closed) .. 255 (fully open).
+    def openness
+      @openness.nil? ? 255 : @openness
+    end
+
+    def openness=(value)
+      value = 0 if value < 0
+      value = 255 if value > 255
+      @openness = value
+    end
+
+    def open?
+      openness == 255
+    end
+
+    def close?
+      openness.zero?
+    end
+
+    # The margin between the window frame and its contents. RGSS3's default is
+    # 12; the native drawing still insets contents by its own border, so this is
+    # the value the scripts compute layouts with.
+    def padding
+      @padding.nil? ? 12 : @padding
+    end
+
+    attr_writer :padding
+
+    def padding_bottom
+      @padding_bottom.nil? ? padding : @padding_bottom
+    end
+
+    attr_writer :padding_bottom
+
+    # Whether the scroll arrows are drawn on a window whose contents overflow.
+    def arrows_visible
+      @arrows_visible.nil? ? true : @arrows_visible
+    end
+
+    attr_writer :arrows_visible
+
+    def tone
+      @tone ||= Tone.new(0, 0, 0, 0)
+    end
+
+    attr_writer :tone
+
+    # RGSS2/RGSS3 construct a window with its geometry — `Window.new(x, y,
+    # width, height)` — where RGSS1 (XP) took an optional viewport and had the
+    # geometry assigned afterwards. Every VX/VX Ace window does the former
+    # (`Window_Base#initialize` calls `super(x, y, width, height)`), so accept
+    # both forms: four numbers are the VX shape, anything else goes to the
+    # native initializer unchanged.
+    alias_method :_rgss1_initialize, :initialize
+
+    def initialize(x = nil, y = nil, width = nil, height = nil)
+      if x.is_a?(Integer) && y.is_a?(Integer)
+        _rgss1_initialize
+        self.x = x
+        self.y = y
+        self.width = width.to_i
+        self.height = height.to_i
+      elsif x.nil?
+        _rgss1_initialize
+      else
+        _rgss1_initialize(x)
+      end
+    end
   end
 
   class RGSSError < StandardError
@@ -345,6 +428,13 @@ module RGSS
         _se_stop
       end
 
+      # RGSS2+. The VX/VX Ace scripts call it once at boot when the project asks
+      # for MIDI playback; SDL_mixer picks its own synth, so there is nothing to
+      # set up here.
+      def setup_midi
+        RGSS.warn_stub("Audio.setup_midi")
+      end
+
       private
 
       # First existing file for +filename+ under any (root, dir, extension)
@@ -384,9 +474,54 @@ module RGSS
   module Graphics
     @frame_count = 0
     @frame_rate = 40
+    # The game screen, in pixels. RGSS2 added Graphics.width/height, and the
+    # stock VX Ace scripts lean on them heavily (measured: width x50, height
+    # x32) for camera and window-layout maths, so a boot shell declares its
+    # resolution here with resize_screen — the VX/VX Ace one does (544x416,
+    # matching the window src/main.cxx opens). RGSS1 has no such method, so the
+    # XP resolution is the default and the XP/RPG2000 shells leave it alone.
+    @width = 640
+    @height = 480
+    @brightness = 255
 
     class << self
       attr_accessor :frame_count, :frame_rate
+      attr_reader :width, :height, :brightness
+
+      # RGSS2+. Also what the boot shells call to declare the screen size.
+      def resize_screen(width, height)
+        @width = width
+        @height = height
+      end
+
+      # Run `duration` frames. Real behaviour, not a stub: the scripts use it to
+      # hold a scene (fade-ins, message waits), and each update is a real frame.
+      def wait(duration)
+        duration.to_i.times { update }
+      end
+
+      # 0 (black) .. 255 (normal). Stored so a script's fade bookkeeping is
+      # consistent; the value is not applied to what is drawn yet — that needs
+      # the same native screen-tone support the RPG2000 tint is waiting on, so
+      # say so once rather than pretending the screen darkened.
+      def brightness=(value)
+        value = 0 if value < 0
+        value = 255 if value > 255
+        RGSS.warn_stub("Graphics.brightness= (tracked, not drawn)") unless value == 255
+        @brightness = value
+      end
+
+      # RGSS2+ fades: run the frames the fade would take (so the game's timing
+      # is right) and leave the brightness at its end value.
+      def fadeout(duration)
+        wait(duration)
+        self.brightness = 0
+      end
+
+      def fadein(duration)
+        wait(duration)
+        self.brightness = 255
+      end
 
       def freeze
         RGSS.warn_stub("Graphics.freeze")
@@ -394,6 +529,8 @@ module RGSS
 
       def transition(duration = 8, filename = nil, vague = 40)
         RGSS.warn_stub("Graphics.transition")
+        wait(duration)
+        @brightness = 255
       end
 
       def frame_reset
@@ -425,10 +562,34 @@ module RGSS
     F8 = 18
     F9 = 19
 
+    # RGSS2 (VX) and RGSS3 (VX Ace) name the keys with **symbols** —
+    # `Input.trigger?(:C)` — where RGSS1 (XP) used the integer constants above.
+    # The stock VX Ace scripts use symbols exclusively (measured: :C, :UP/:DOWN/
+    # :LEFT/:RIGHT, :B, :A, :L, :R, :CTRL, :F9 — see docs/rpgvx-rgss-api-gap.md),
+    # so map them onto the same key indices instead of keeping two key tables.
+    # An Integer is passed through untouched, so every XP / RPG2000 caller and
+    # the C++ input bridge are unaffected.
+    SYMBOL_KEYS = {
+      UP: UP, DOWN: DOWN, LEFT: LEFT, RIGHT: RIGHT,
+      A: A, B: B, C: C, X: X, Y: Y, Z: Z, L: L, R: R,
+      SHIFT: SHIFT, CTRL: CTRL, ALT: ALT,
+      F5: F5, F6: F6, F7: F7, F8: F8, F9: F9
+    }.freeze
+
     @pressed = Array.new(20, false)
     @triggered = Array.new(20, false)
     @repeated = Array.new(20, false)
     @count = Array.new(20, 0)
+
+    # Key index for either spelling. An unrecognised key reads as unpressed
+    # rather than raising (a script may probe a key this build has no name for),
+    # but it is reported once so the omission is visible in the log.
+    def self.key_index(key)
+      return key if key.is_a?(Integer)
+      index = SYMBOL_KEYS[key]
+      RGSS.warn_stub("Input key #{key.inspect}") if index.nil?
+      index
+    end
 
     def self.update
       # Key transitions are pushed in from C++ via .press / .release: the SDL
@@ -459,27 +620,34 @@ module RGSS
     end
 
     def self.press(key)
-      @pressed[key] = true
-      @triggered[key] = true
-      @count[key] = 0
+      index = key_index(key)
+      return if index.nil?
+      @pressed[index] = true
+      @triggered[index] = true
+      @count[index] = 0
     end
 
     def self.release(key)
-      @pressed[key] = false
-      @triggered[key] = false
-      @count[key] = 0
+      index = key_index(key)
+      return if index.nil?
+      @pressed[index] = false
+      @triggered[index] = false
+      @count[index] = 0
     end
 
     def self.press?(key)
-      @pressed[key]
+      index = key_index(key)
+      index.nil? ? false : @pressed[index]
     end
 
     def self.trigger?(key)
-      @triggered[key]
+      index = key_index(key)
+      index.nil? ? false : @triggered[index]
     end
 
     def self.repeat?(key)
-      @repeated[key]
+      index = key_index(key)
+      index.nil? ? false : @repeated[index]
     end
 
     def self.dir4

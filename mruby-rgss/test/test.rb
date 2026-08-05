@@ -585,6 +585,104 @@ assert "RGSS::Window API surface" do
   end
 end
 
+assert "RGSS::Input accepts RGSS2/RGSS3 symbol keys" do
+  # VX and VX Ace name the keys with symbols (Input.trigger?(:C)); XP and the
+  # C++ input bridge use the integer constants. Both must reach the same key.
+  begin
+    RGSS::Input.press(RGSS::Input::C)
+    assert_true RGSS::Input.press?(:C), "a symbol must read the integer press"
+    assert_true RGSS::Input.trigger?(:C)
+    RGSS::Input.release(:C)
+    assert_false RGSS::Input.press?(RGSS::Input::C), "a symbol release must clear it"
+
+    RGSS::Input.press(:UP)
+    assert_true RGSS::Input.press?(RGSS::Input::UP), "a symbol press must set the key"
+    assert_equal 8, RGSS::Input.dir4
+
+    # Every RGSS3 key name maps, and an unknown one reads as unpressed instead
+    # of raising out of the game loop.
+    assert_equal 20, RGSS::Input::SYMBOL_KEYS.size
+    RGSS::Input::SYMBOL_KEYS.each do |name, index|
+      assert_equal index, RGSS::Input.key_index(name), "key #{name} maps wrong"
+    end
+    assert_false RGSS::Input.press?(:NO_SUCH_KEY)
+    assert_nil RGSS::Input.release(:NO_SUCH_KEY)
+  ensure
+    RGSS::Input.release(:UP)
+    RGSS::Input.release(:C)
+  end
+end
+
+assert "RGSS::Graphics reports and resizes the screen" do
+  # RGSS2 added Graphics.width/height; each maker's boot shell declares its own
+  # resolution, and the stock VX Ace scripts compute camera and window layouts
+  # from them.
+  begin
+    RGSS::Graphics.resize_screen(544, 416)
+    assert_equal 544, RGSS::Graphics.width
+    assert_equal 416, RGSS::Graphics.height
+
+    assert_equal 255, RGSS::Graphics.brightness
+    RGSS::Graphics.brightness = -5
+    assert_equal 0, RGSS::Graphics.brightness
+    RGSS::Graphics.brightness = 999
+    assert_equal 255, RGSS::Graphics.brightness
+  ensure
+    RGSS::Graphics.resize_screen(640, 480)
+    RGSS::Graphics.brightness = 255
+  end
+end
+
+assert "RGSS::Graphics.wait / fadeout drive real frames" do
+  # Graphics.update is native and needs a live display the headless test binary
+  # lacks, so count the frames through a stand-in — what is under test is that
+  # the RGSS2 waits run the frames the game's timing depends on.
+  class << RGSS::Graphics
+    alias _update_orig update
+    def update
+      $graphics_frames = ($graphics_frames || 0) + 1
+      nil
+    end
+  end
+  begin
+    $graphics_frames = 0
+    RGSS::Graphics.wait(3)
+    assert_equal 3, $graphics_frames
+
+    RGSS::Graphics.fadeout(2)
+    assert_equal 5, $graphics_frames
+    assert_equal 0, RGSS::Graphics.brightness
+
+    RGSS::Graphics.fadein(1)
+    assert_equal 6, $graphics_frames
+    assert_equal 255, RGSS::Graphics.brightness
+  ensure
+    class << RGSS::Graphics
+      alias update _update_orig
+    end
+    RGSS::Graphics.brightness = 255
+  end
+end
+
+assert "RGSS::Audio.setup_midi is a safe no-op" do
+  # RGSS2+; the VX/VX Ace scripts call it at boot when the project asks for
+  # MIDI. SDL_mixer picks its own synth, so there is nothing to configure.
+  assert_nil RGSS::Audio.setup_midi
+end
+
+assert "RGSS::Window RGSS2/RGSS3 API surface" do
+  # Window.new needs a live display (see the Tilemap note below), so assert the
+  # VX/VX Ace surface is defined; the behaviour of these accessors is exercised
+  # by the VX runtime checks (scripts/rpgvx_testbed_check.rb). The dual-form
+  # constructor (RGSS1's optional viewport / RGSS2's x, y, width, height) needs
+  # no assertion here: it aliases the native initialize at load, so a broken
+  # alias would fail the whole gem, not one test.
+  %i[openness openness= open? close? padding padding= padding_bottom
+     padding_bottom= arrows_visible arrows_visible= tone tone=].each do |m|
+    assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
+  end
+end
+
 assert "RGSS::Tilemap API surface" do
   # Tilemap is now native: Tilemap.new builds an lv_canvas the size of the
   # viewport and blits the visible tiles into it, so construction needs a live
