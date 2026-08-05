@@ -52,7 +52,11 @@ CI after the download step), which parses a genuine game's
 synthetic unit tests can't; the gameplay logic (`game.rb`/`interpreter.rb`) is
 checked by `scripts/rpg2k_logic_check.rb` (pure move-route / interpreter logic)
 and `scripts/rpg2k_scene_check.rb` (the map scene driving event movement behind
-RGSS stubs).
+RGSS stubs). `scripts/rpg2k_testbed_logic_check.rb` is the join of the two
+kinds — a *real* game's `RPG_RT.ldb` driven through the *real*
+`Game::Interpreter` — for rules that only genuine data violates: its first
+subject is Nepheshel's companion swaps, where the party-roster bug of ADR 0030
+passed every fixture check while breaking the actual game.
 
 The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
@@ -287,7 +291,24 @@ The work below is roughly ordered by the critical path to a walkable game
   row's exp_basic/increase/correction) and **Change Level** rescales base stats
   through the per-level growth curve, both keeping EXP and level consistent
   without refilling current HP/MP, matching RPG_RT; Change Equipment folds an
-  equipped item's bonuses into the effective stats). **Control
+  equipped item's bonuses into the effective stats). **Change Party Member**
+  moves actors in and out of the party, and what it moves is an entry in a
+  **permanent roster** (`Game::Actors`, RPG_RT's `Game_Actors`): one
+  `Game::Actor` exists per database row for the whole session and the party is
+  only an ordered list of ids into it. That is the difference between a
+  companion who rejoins with the level, EXP, learned skills, equipment, statuses
+  and renamed name they left with and one rebuilt from the database row — which
+  is what used to happen, resetting a level-21 companion with 16682 EXP and nine
+  skills back to level 1 with one. Nepheshel's entire companion mechanic runs on
+  this command (**5205** of them: 2835 adds, 2370 removes, mostly the three
+  summonable party members and their alternates), and driving its real 召還 /
+  帰す common events through the interpreter is how both the break and the fix
+  were measured; the other test bed issues the command zero times, which is why
+  it hid for so long. The roster is what the **save** carries as well — the
+  Marshal save and `Save<N>.lsd` chunk 108 both hold every actor the party has
+  ever held, matching a genuine RPG_RT save, so a companion who is away when the
+  game is saved comes back intact instead of being dropped on load. See ADR
+  0030. **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility, and the **id of the item in each of the five equipment
@@ -679,7 +700,13 @@ The work below is roughly ordered by the critical path to a walkable game
   105–107 / the Marshal save).
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`,
-  `\_` space). Text now **reveals gradually** (a `Game::TextReveal` typewriter
+  `\_` space). `\n[n]` names the **live** actor out of the roster rather than the
+  database row, so a hero the player named through Enter Hero Name is called what
+  they chose — Nepheshel renames actor 1 and then writes `\N[1]` in 34 messages —
+  and `\n[0]` is the **party leader** (actor ids are 1-based, so it used to
+  expand to nothing and left the boss line `\n[0]よ…` without its subject). An
+  actor the game has never instantiated still falls back to the database name.
+  Text now **reveals gradually** (a `Game::TextReveal` typewriter
   driven by `Scene::Map`, with a button press completing the reveal before
   dismissing), and the **pacing codes act**: `Game::Message.scan` surfaces
   `\!` (wait for a button), `\.` / `\|` (¼ / 1-second holds), `\^` (close the
@@ -876,7 +903,12 @@ The work below is roughly ordered by the critical path to a walkable game
   prefers it) are two fields the `.lsd` cannot yet carry: the **game timer**
   (liblcf's SaveSystem has no field for it — needs a documented chunk id) and
   **per-actor name/title overrides for non-leader** members (only the leader's
-  name is in the title chunk)
+  name is in the title chunk). Both save paths carry the **whole actor roster**,
+  not just the current party: chunk 108 holds one entry per actor the party has
+  ever held (which is what a genuine RPG_RT save holds), so a companion who is
+  out of the party when the game is saved is written out and read back rather
+  than being silently dropped — `.from_lsd` used to skip exactly those rows. See
+  ADR 0030
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done

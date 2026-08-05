@@ -1643,21 +1643,69 @@ module Game
     end
   end
 
-  # The active party. On a new game it is seeded from the database's initial
-  # party list (System.party).
+  # Every actor the game has instantiated, keyed by database id — RPG_RT's
+  # `Game_Actors`. One `Game::Actor` exists per database row for the whole
+  # session and the party is only a list of ids into this table, which is why
+  # taking a member out of the party and putting them back keeps their level,
+  # EXP, equipment, learned skills, statuses and renamed name instead of
+  # rebuilding them from the database row.
+  #
+  # The save format says the same thing: `Save<N>.lsd`'s chunk 108
+  # (`SAVE_PARTY_ACTOR`) holds one entry per actor the party has *ever* held,
+  # not one per current member, so a roster is what that table serialises.
+  # See ADR 0030.
+  class Actors
+    def initialize(db)
+      @db = db
+      @all = {}
+    end
+
+    # The actor for `id`, built from the database on first request and cached
+    # from then on (RPG_RT's `Game_Actors::GetActor`). nil for a non-positive id
+    # or a row the database does not have — the miss is logged rather than
+    # raised, so a game that references a missing actor keeps running.
+    def [](id)
+      return nil if id.nil? || id <= 0
+      a = @all[id]
+      return a if a
+      @all[id] = Actor.new(@db, id)
+    rescue RuntimeError => e
+      $stderr.puts "[RPG2k] actor ##{id} could not be built: #{e.message}"
+      nil
+    end
+
+    # The actor for `id` only if it has already been instantiated, without
+    # creating one. Read paths (a `\N[n]` message code) use this so merely
+    # naming an actor does not enrol them in the roster the save writes out.
+    def existing(id); id.nil? ? nil : @all[id]; end
+
+    # Every instantiated actor, in ascending database id order.
+    def all; @all.keys.sort.map { |i| @all[i] }; end
+
+    def each(&blk); all.each(&blk); end
+  end
+
+  # The active party: an ordered subset of the `Actors` roster. On a new game it
+  # is seeded from the database's initial party list (System.party).
   class Party
     include Enumerable
 
     attr_reader :actors, :items, :gold
 
-    # Bumped whenever the roster or the bag changes — the two halves of the party
-    # an event page's conditions can test (see Switches#revision).
+    # The permanent actor roster this party draws from (see Game::Actors). The
+    # party owns it, so `State#party.roster` reaches every actor the game has
+    # met, including ones who have since left.
+    attr_reader :roster
+
+    # Bumped whenever the membership or the bag changes — the two halves of the
+    # party an event page's conditions can test (see Switches#revision).
     attr_reader :revision
 
-    def initialize(db, ids = nil)
+    def initialize(db, ids = nil, roster = nil)
       @db = db
+      @roster = roster || Actors.new(db)
       ids ||= db.system.party || []
-      @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| Actor.new(db, i) }
+      @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| @roster[i] }.compact
       @items = {}  # item id => count
       @gold = 0
       @revision = 0
@@ -1666,12 +1714,17 @@ module Game
     # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
     # the fields the Change Actor Name / Title / Sprite commands mutate, so those
     # edits survive a Save / Continue instead of reverting to the database row.
+    #
+    # The per-actor tables cover the whole **roster**, not just the current
+    # members: an actor the game has taken out of the party keeps their level,
+    # gear and name for when they rejoin, so the save has to carry them too.
+    # `actor_ids` is the party proper, in order.
     def to_h
       hp = {}
       mp = {}
       exp = {}
       meta = {}
-      @actors.each do |a|
+      @roster.each do |a|
         hp[a.id] = a.hp
         mp[a.id] = a.mp
         exp[a.id] = a.exp
@@ -1693,6 +1746,11 @@ module Game
     # from a saved party hash. EXP is restored first (it re-derives the level and
     # its base stats), then the saved HP/MP are laid over the recomputed maxima.
     # A save written before actor_meta existed simply keeps the database defaults.
+    #
+    # Every id the saved tables mention is restored, not just the current
+    # members, so an actor waiting out of the party comes back as they left
+    # (#to_h writes the whole roster). Actors are pulled through the roster, so
+    # restoring one that is not in the party enrols them there.
     def load_state(data)
       @revision += 1
       @items = data[:items] || {}
@@ -1701,14 +1759,20 @@ module Game
       hp = data[:hp] || {}
       mp = data[:mp] || {}
       meta = data[:actor_meta] || {}
-      @actors.each do |a|
+      ids = @actors.map { |a| a.id }
+      [exp, hp, mp, meta].each do |table|
+        table.keys.each { |id| ids.push(id) unless ids.include?(id) }
+      end
+      ids.each do |id|
+        a = @roster[id]
+        next unless a
         # The class comes back first: it decides which growth and EXP curves the
         # restored EXP is then read against.
-        m = meta[a.id]
+        m = meta[id]
         a.restore_class(m[:class_id]) if m && m[:class_id]
-        a.set_exp(exp[a.id]) if exp[a.id]
-        a.hp = hp[a.id] if hp[a.id]
-        a.mp = mp[a.id] if mp[a.id]
+        a.set_exp(exp[id]) if exp[id]
+        a.hp = hp[id] if hp[id]
+        a.mp = mp[id] if mp[id]
         apply_actor_meta(a, m)
       end
     end
@@ -1740,12 +1804,19 @@ module Game
     # Whether the whole party is knocked out (戦闘不能) -- the game-over condition.
     def all_dead?; !any_alive?; end
 
+    # Put an actor in the party. The actor comes from the roster, so one who has
+    # been in the party before rejoins with the level, EXP, gear, skills, statuses
+    # and name they left with rather than a fresh database row.
     def add_actor(id)
       return if include_actor?(id)
-      @actors.push Actor.new(@db, id)
+      a = @roster[id]
+      return unless a
+      @actors.push a
       @revision += 1
     end
 
+    # Take an actor out of the party. They stay in the roster (and in the save),
+    # which is what lets #add_actor give them back unchanged.
     def remove_actor(id)
       before = @actors.size
       @actors.reject! { |a| a.id == id }
@@ -5818,8 +5889,11 @@ module Game
       sys[132] = 1
       save[101] = sys
 
+      # Chunk 108 is the whole roster, one entry per actor the party has ever
+      # held — that is what a genuine RPG_RT save carries, and it is what lets an
+      # actor who is currently out of the party come back as they left.
       actors = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
-      @party.actors.each do |a|
+      @party.roster.each do |a|
         e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
         e[31] = a.level
         e[32] = a.exp
@@ -5875,21 +5949,25 @@ module Game
     def self.from_lsd(db, save)
       hero = save.hero
       inv = save.inventory
-      roster = inv.party || []
-      party = Party.new(db, roster)
+      member_ids = inv.party || []
+      party = Party.new(db, member_ids)
       items = {}
       ids = inv.item_ids || []
       counts = inv.item_counts || []
       ids.each_index { |i| items[ids[i]] = counts[i] || 0 }
       # Per-actor state comes from the SAVE_PARTY_ACTOR table (chunk 108), keyed
-      # by actor id. Restore each roster member's saved level (which rescales its
-      # base stats) and exp first, then its current HP/SP, so Continue resumes a
+      # by actor id. Restore each actor's saved level (which rescales its base
+      # stats) and exp first, then its current HP/SP, so Continue resumes a
       # levelled, wounded party rather than a fresh full-health one.
+      #
+      # Every entry is restored, not only the current members: the chunk is the
+      # roster (one row per actor the party has ever held), so an actor waiting
+      # out of the party is rebuilt here and rejoins as they left. Reading them
+      # through the roster is what enrols them.
       hp = {}
       mp = {}
       (save[108] || []).each do |aid, sa|
-        next unless roster.include?(aid)
-        actor = party.actor_by_id(aid)
+        actor = party.roster[aid]
         if actor
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp

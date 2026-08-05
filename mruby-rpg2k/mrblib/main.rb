@@ -4065,12 +4065,38 @@ class RPG2k
       FACE_MARGIN = 4
 
       # Look up an actor name by id for the \n[] message control code.
+      #
+      # The **live** actor is what RPG_RT names here, not the database row: a
+      # hero the player named through Enter Hero Name (Nepheshel does exactly
+      # that, then refers to them as \N[1] in 34 messages) or renamed by a Change
+      # Actor Name has to be called what they are called now. Index **0** is the
+      # party leader — the hero — which is how a boss addresses the player
+      # character without knowing which actor id they are (`\n[0]よ…`).
+      #
+      # The roster is read without creating: naming an actor the game has never
+      # met falls through to the database row instead of enrolling them in the
+      # roster the save writes out.
       def actor_name(id)
-        a = @db.player[id]
-        a ? a.name.to_s : ''
+        a = id.to_i.zero? ? party_leader : roster_actor(id)
+        return a.name.to_s if a
+        row = @db.player[id]
+        row ? row.name.to_s : ''
       rescue StandardError => e
         $stderr.puts "[RPG2k] actor name ##{id} lookup failed: #{e.message}"
         ''
+      end
+
+      # The live actor `id`, if the game has one. nil for a scene fixture whose
+      # party is a stub without a roster.
+      def roster_actor(id)
+        party = @state.party
+        return nil unless party.respond_to?(:roster)
+        party.roster.existing(id)
+      end
+
+      def party_leader
+        party = @state.party
+        party.respond_to?(:leader) ? party.leader : nil
       end
 
       def open_message(lines, choice)

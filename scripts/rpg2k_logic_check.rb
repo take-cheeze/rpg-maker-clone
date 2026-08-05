@@ -1927,6 +1927,74 @@ check 'both timers round-trip through the save; an old save still loads' do
   eq 0, old.timer(1).seconds, 'and the second starts empty'
 end
 
+# -- the permanent actor roster (Game::Actors) --------------------------------
+#
+# Nepheshel drives its whole party mechanic through Change Party Member: it adds
+# and removes actors 2/3/4 and 5/6/7 thousands of times (630 adds + 471 removes
+# for actor 2 alone). Rebuilding the actor from the database on every add threw
+# away everything the player had earned, which is what these pin down.
+def roster_db
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  FakeActorDB.new(players, [1])
+end
+
+check 'an actor who leaves and rejoins the party keeps their state' do
+  db = roster_db
+  party = Game::Party.new(db)
+  party.add_actor(2)
+  ally = party.actor_by_id(2)
+  eq 3, ally.level, 'joins at the database initial level'
+  ally.set_level(9)
+  ally.name = 'Renamed'
+  ally.hp = 7
+  levelled_hp = ally.max_hp
+
+  party.remove_actor(2)
+  eq nil, party.actor_by_id(2), 'out of the party'
+  ok party.roster.existing(2), 'but still in the roster'
+
+  party.add_actor(2)
+  back = party.actor_by_id(2)
+  ok back.equal?(ally), 'the very same actor object rejoins'
+  eq 9, back.level, 'keeps the level they left with'
+  eq 'Renamed', back.name, 'keeps a renamed name'
+  eq 7, back.hp, 'keeps current HP'
+  eq levelled_hp, back.max_hp
+end
+
+check 'Actors builds each id once and reports a missing row as nil' do
+  roster = Game::Actors.new(roster_db)
+  a = roster[1]
+  ok a.equal?(roster[1]), 'the same instance comes back'
+  eq nil, roster.existing(2), 'existing() does not create'
+  ok roster[2], 'and [] does'
+  eq [1, 2], roster.all.map { |x| x.id }, 'all() is in id order'
+  eq nil, roster[0], 'a non-positive id has no actor'
+  eq nil, roster[99], 'nor does a row the database lacks'
+end
+
+check 'the save carries actors who are out of the party' do
+  db = roster_db
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.add_actor(2)
+  away = st.party.actor_by_id(2)
+  away.change_level_by(6)           # 3 -> 9, the Change Level command's path
+  away.name = 'Renamed'
+  st.party.remove_actor(2)          # leaves the party *before* the save
+
+  loaded = Game::State.load(db, st.to_h)
+  eq [1], loaded.party.actors.map { |a| a.id }, 'the party is just the leader'
+  restored = loaded.party.roster.existing(2)
+  ok restored, 'the absent member is still in the restored roster'
+  eq 9, restored.level
+  eq 'Renamed', restored.name
+  loaded.party.add_actor(2)
+  eq 9, loaded.party.actor_by_id(2).level, 'and rejoins at that level'
+end
+
 check 'State save round-trips the message configuration' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
