@@ -346,6 +346,52 @@ def gen_iconset():
 gen_iconset()
 
 
+# --- Animation sheet -------------------------------------------------------
+# MZ ships two animation systems, and only one of them is reachable here.
+# `Spriteset_Base.isMVAnimation` picks by data shape: an animation object that
+# has a `frames` array is drawn by `Sprite_AnimationMV` out of a plain sprite
+# sheet, while everything else goes to `Sprite_Animation`, which needs an
+# Effekseer runtime. That runtime is a WASM module `main.js` initialises, and
+# our host bypasses `main.js` (ADR 0004 M6.2), so `Graphics.effekseer` stays
+# null and an Effekseer animation degrades to its timings alone — no visuals.
+# The MV-format path needs nothing but sprites and blend modes, so that is what
+# the bed authors and what the animation smoke exercises.
+#
+# The sheet is the MV layout `Sprite_AnimationMV.updateCellSprite` indexes:
+# 192x192 cells, five per row, pattern p at (p % 5, (p % 100) / 5).
+#
+# Each pattern is a *filled* disc of the same radius, differing in colour
+# (cyan through magenta) rather than in size. That is deliberate and not the
+# obvious choice: expanding rings look more like an animation, but a smoke test
+# captures one frame at a moment it does not control, and rings make the number
+# of pixels the burst covers depend on which frame it caught — a 7x spread
+# between the first and last. Equal-area cells mean any captured frame is the
+# same size of evidence, so the check can demand a lot of it. Consecutive frames
+# still differ visibly, by colour.
+ANIM_NAME = "Burst"
+ANIM_CELL = 192
+ANIM_PATTERNS = 5
+ANIM_RADIUS = 72
+
+
+def gen_animation():
+    c = Canvas(ANIM_CELL * ANIM_PATTERNS, ANIM_CELL)
+    for p in range(ANIM_PATTERNS):
+        ox = p * ANIM_CELL
+        cx = cy = ANIM_CELL // 2
+        # Cyan fading to magenta across the burst, at full alpha: the map under
+        # it is green, so any pixel of this on screen is unmistakable.
+        col = (60 + p * 48, 230 - p * 40, 255, 255)
+        for y in range(ANIM_CELL):
+            for x in range(ANIM_CELL):
+                if math.hypot(x - cx, y - cy) <= ANIM_RADIUS:
+                    c.set(ox + x, y, col)
+    write_png("img/animations/%s.png" % ANIM_NAME, c.w, c.h, c.bytes())
+
+
+gen_animation()
+
+
 # --- Character sprite ------------------------------------------------------
 # A tiny authored walk sheet so the player is visible on the map (exercising
 # Sprite_Character's frame selection). The "$" prefix marks a single-character
@@ -498,7 +544,32 @@ write("Troops.json", [None, {
 write("Items.json", [None])
 write("Weapons.json", [None])
 write("Armors.json", [None])
-write("Animations.json", [None])
+
+# --- Animations ------------------------------------------------------------
+# One MV-format animation (see gen_animation above for why the format matters).
+# Four frames, one cell each, walking patterns 0..3 of the sheet so consecutive
+# frames differ; each cell is [pattern, x, y, scale%, rotation, mirror, opacity,
+# blendMode]. Frame 3 is additive (blendMode 1) on purpose — the animation path
+# is the only thing in this bed that asks the renderer to blend anything other
+# than normal alpha, so leaving it out would let a broken blend mode pass.
+# `position: 1` centres the burst on the target; `timings` is empty so the frame
+# diff a smoke test measures is the animation itself and not a screen flash.
+write("Animations.json", [None, {
+    "id": 1, "name": ANIM_NAME,
+    "displayType": 0, "effectName": "", "flashTimings": [], "soundTimings": [],
+    "offsetX": 0, "offsetY": 0, "rotation": {"x": 0, "y": 0, "z": 0},
+    "scale": 100, "speed": 100, "alignBottom": False,
+    "animation1Name": ANIM_NAME, "animation1Hue": 0,
+    "animation2Name": "", "animation2Hue": 0,
+    "position": 1,
+    "frames": [
+        [[0, 0, 0, 100, 0, 0, 255, 0]],
+        [[1, 0, 0, 100, 0, 0, 255, 0]],
+        [[2, 0, 0, 100, 0, 0, 255, 0]],
+        [[3, 0, 0, 100, 0, 0, 255, 1]],
+    ],
+    "timings": [],
+}])
 write("CommonEvents.json", [None])
 
 # --- MapInfos + Map001 -----------------------------------------------------

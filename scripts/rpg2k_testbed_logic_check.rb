@@ -69,6 +69,9 @@ DB_SYSTEM = 22
 SYS_PARTY = 22
 DB_COMMON_EVENT = 25
 CE_COMMANDS = 22
+DB_SKILL = 12
+DB_ITEM = 13
+DB_STATE = 18
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -294,14 +297,92 @@ if dirs.empty?
   exit 0
 end
 
+# What the menus offer a party that knows everything and carries one of each.
+#
+# A real game's skills and items have to reach its menus, and "reaches nothing"
+# is the failure this catches: gating every skill on `occasion_battle` (a flag
+# RPG2000 only writes for switch skills) left the battle skill menu **empty in
+# both test beds** — 306 skills and 134 skills, none of them offered — while
+# every fixture check passed.
+def check_menus(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+  leader = party.leader
+  unless leader
+    puts "   (no party leader — menus skipped)"
+    return
+  end
+  skill_ids = []
+  db[DB_SKILL]&.each { |id, _| skill_ids << id }
+  skill_ids.each { |id| leader.learn_skill(id) }
+  leader.mp = 99_999                     # affordability is not what is under test
+  db[DB_ITEM]&.each { |id, _| party.gain_item(id, 1) }
+
+  field_skills = party.field_skills(leader)
+  battle_skills = party.battle_skills(leader, leader)
+  field_items = party.field_items
+  battle_items = party.battle_items
+  puts format('   menus: %d/%d skills field/battle, %d/%d items field/battle ' \
+              '(of %d skills, %d items)',
+              field_skills.size, battle_skills.size, field_items.size,
+              battle_items.size, skill_ids.size, party.items.size)
+
+  check "#{name}: the battle skill menu is not empty" do
+    ok battle_skills.size > 0, "#{skill_ids.size} skills, none offered in battle"
+  end
+  check "#{name}: the field skill menu is not empty" do
+    ok field_skills.size > 0, "#{skill_ids.size} skills, none offered in the field"
+  end
+  check "#{name}: the field item menu is not empty" do
+    ok field_items.size > 0, 'the bag holds one of everything and offers nothing'
+  end
+
+  # Every skill kind the game actually uses has to be reachable somewhere: a
+  # skill offered in neither menu is one no player can ever cast. Escape and
+  # teleport skills are the known exception (see Party#unsupported_field_skill?).
+  check "#{name}: no skill is unreachable from both menus" do
+    unreachable = skill_ids.reject do |id|
+      sk = party.db_skill(id)
+      next true if party.unsupported_field_skill?(sk)
+      party.field_skill?(sk) || party.battle_skill?(sk)
+    end
+    eq [], unreachable.first(8), "#{unreachable.size} skill(s) castable nowhere"
+  end
+
+  # Special items (type 9) invoke a skill; switch items (type 10) flip a switch.
+  # Reading those two the other way round put the special items on the switch
+  # branch, where they flipped the switch id they never set — the default, 1.
+  special = []
+  switch = []
+  db[DB_ITEM]&.each do |id, it|
+    special << id if it.type == Game::Party::ITEM_SPECIAL
+    switch << id if it.type == Game::Party::ITEM_SWITCH
+  end
+  return if special.empty? && switch.empty?
+  puts "   #{special.size} special item(s), #{switch.size} switch item(s)"
+
+  check "#{name}: special items invoke a real skill, switch items a real switch" do
+    special.each do |id|
+      sk = party.db_skill(party.db_item(id).skill_id)
+      ok sk, "special item ##{id} names a skill that exists"
+      ok party.field_usable?(id) || party.battle_usable?(id),
+         "special item ##{id} (#{sk.name}) is usable somewhere"
+    end
+    switch.each do |id|
+      sid = party.db_item(id).switch_id
+      ok sid && sid > 1,
+         "switch item ##{id} names a switch of its own, not the default 1"
+      ok party.switch_item?(id), "switch item ##{id} is recognised as one"
+    end
+  end
+end
+
 # The status effects a real game's 状態 table asks for, exercised against that
 # table. A state whose numbers the runtime never reads is a status that does
 # nothing — Blind not blinding, a blow never waking a sleeper, Silence not
 # silencing — and that is invisible to any fixture built from the same
 # assumption. See docs/adr/0032-state-effects.md.
-DB_STATE = 18
-DB_SKILL = 12 unless defined?(DB_SKILL)
-
 def combatant(name, atk, dfn, agi, hp, states = [])
   c = Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
   c.states = states
@@ -390,7 +471,7 @@ def check_states(dir)
   end
 end
 
-dirs.each { |d| check_game(d); check_states(d) }
+dirs.each { |d| check_game(d); check_menus(d); check_states(d) }
 
 if $failures.zero?
   puts "rpg2k test-bed logic check: #{$checks} checks passed"

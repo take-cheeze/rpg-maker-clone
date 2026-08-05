@@ -441,6 +441,51 @@ JavaScript loads and interprets the JSON.
       Which is the fourth instance of the milestone's pattern, one level up: **a
       test written from a theory of the bug is not a test until the bug is put
       back.**
+    - **M6.3h — animations (landed).** The last in-game system with no coverage,
+      and MZ has two of them. `Spriteset_Base.isMVAnimation` routes purely by
+      data shape:
+
+      ```js
+      Spriteset_Base.prototype.isMVAnimation = function(animation) {
+          return !!animation.frames;
+      };
+      ```
+
+      An animation carrying a `frames` array is drawn by `Sprite_AnimationMV` —
+      sixteen plain `Sprite` cells indexed out of a 192x192-cell sheet, with
+      per-cell position, rotation, scale, opacity and **blend mode**. Everything
+      else goes to `Sprite_Animation`, which plays through Effekseer:
+      `Graphics._createEffekseerContext` needs `effekseer.createContext()`, and
+      the WASM runtime behind it is initialised by `main.js`, which M6.2
+      deliberately bypasses. So `Graphics.effekseer` stays null,
+      `EffectManager.load` returns nothing, and `Sprite_Animation.update` takes
+      its `else` branch — the animation "plays" its sound and flash timings on
+      schedule and draws no visuals. That degradation is graceful (nothing
+      hangs; `_started` is set so the sprite still ends), and it is *silent*,
+      which is the part worth writing down: an MZ project whose animations are
+      all Effekseer will look like it is running fine.
+
+      The MV-format path needs nothing we do not already have, and it works:
+      `data/mz-sample` gains an authored burst, `--mz_animation_test` requests
+      it on the player through `$gameTemp.requestAnimation` (the call Show
+      Animation makes), and it draws — including the additive blend the bed's
+      last frame asks for, which nothing else in this project exercises. The
+      probe re-requests while the map is up so a burst is always on screen, and
+      the screenshot waits for a frame with visible cells rather than firing on
+      a frame count, or it would photograph the gaps between bursts.
+
+      The animation's cells are all the *same area*, differing only in colour.
+      That is not the obvious choice — expanding rings look more like an
+      animation — but a smoke test captures one frame at a moment it does not
+      control, and rings made the evidence depend on which frame it caught (a
+      7x spread between first and last). Equal-area cells make the measurement
+      the same 36.2% of the centre box every run.
+
+      It also shows why M6.3g's frame check is not redundant with the log: with
+      the animation's sheet renamed away, `[MZ-ANIM]` still reports
+      `played=true`, because the cell sprite is visible and carries the host's
+      1x1 placeholder bitmap. The log cannot tell a drawn burst from a drawn
+      nothing. The frame check fails on it.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

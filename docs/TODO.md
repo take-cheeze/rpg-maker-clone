@@ -60,7 +60,10 @@ RGSS stubs). `scripts/rpg2k_testbed_logic_check.rb` is the join of the two
 kinds — a *real* game's `RPG_RT.ldb` driven through the *real*
 `Game::Interpreter` — for rules that only genuine data violates: its first
 subject is Nepheshel's companion swaps, where the party-roster bug of ADR 0030
-passed every fixture check while breaking the actual game.
+passed every fixture check while breaking the actual game. It also asks the real
+databases what the menus offer, which is how the empty battle skill menus of ADR
+0031 were found — 306 and 134 skills, none of them reachable, with every fixture
+check green.
 
 The work below is roughly ordered by the critical path to a walkable game
 (1 → 2 → 3 → 4/5/6 → 7/8/9); battle and full menus can follow.
@@ -947,14 +950,30 @@ The work below is roughly ordered by the critical path to a walkable game
   `can_cast?` / `skill_effect` / `cast_skill` for skills) and `Game::Actor`
   (`next_level_exp` / `exp_to_next` for status), covered by
   `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
-  A **switch item** (type 9) is field-usable too: `Game::Party#use_switch_item`
-  consumes one and returns the game switch it turns on, which the item menu then
-  sets (matching EasyRPG, where the scene owns the switch table). The **usable
-  occasion** is honoured on both sides: a medicine / switch item flagged
-  battle-only (`occasion_field` off) is hidden from the field menu, and one
-  flagged field-only is hidden from the battle item list (books / seeds stay
-  field-only). Teleport/escape/switch skill types, the battle-time skill
-  variance, and two-handed / dual-wield equipping are later refinements.
+  A **switch item** (type **10**, not 9 — see below) is field-usable too:
+  `Game::Party#use_switch_item` consumes one and returns the game switch it turns
+  on, which the item menu then sets (matching EasyRPG, where the scene owns the
+  switch table). A **special item** (type 9, 特殊) invokes the skill named in its
+  `skill_id`, with the item standing in for the SP cost — the user pays nothing
+  and need not have learnt it, which is what Nepheshel's whole thrown-bomb line
+  is. **Switch skills** (type 3) flip their switch: that is how a Nepheshel
+  player summons and dismisses a companion.
+
+  What decides usability is the **type**, not the occasion flags, and getting
+  that wrong used to leave the battle skill menu **empty in both test beds** —
+  306 skills and 134 skills, none offered. `occasion_field` / `occasion_battle`
+  gate **switch skills only** (RPG_RT reads them in one arm of
+  `Algo::IsSkillUsable`, and the editor only offers the checkboxes there); an
+  RPG2003 **subskill category** (type >= 4) is an ordinary skill filed under a
+  custom battle command, which is 57 of mtf-meido-action's 134 including all its
+  healing; and an item's occasion flags are `occasion_field1` (bars battle use),
+  `occasion_field2` and `occasion_battle` (a switch item's own pair) — this build
+  asked for `occasion_field`, a name no real row carries, so the gate silently
+  never fired. An earlier version of this list claimed that gate worked; it did
+  not, on any genuine item. See ADR 0031. Remaining: **teleport / escape** skill
+  types (one of each across both test beds; teleport wants a destination picker
+  this build has no screen for, so `Party#unsupported_field_skill?` declares the
+  gap), the battle-time skill variance, and two-handed / dual-wield equipping.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default

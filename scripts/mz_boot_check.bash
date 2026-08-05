@@ -18,6 +18,7 @@
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
 #   [MZ-MENU]  reached_menu=<bool>
+#   [MZ-ANIM]  data=<bool> mv=<bool> sprites=<n> cells=<n> played=<bool>
 #   [MZ-SAVE]  saved=<bool> exists=<bool> loaded=<bool>
 #   [MZ-BTL]   reached_battle=<bool>
 #
@@ -30,6 +31,7 @@
 #   play      New Game -> map, hold a direction, play an SE  (the default smoke)
 #   message   New Game -> map, show a message
 #   menu      New Game -> map, open the party menu
+#   animation New Game -> map, play an animation on the player
 #   save      New Game -> map, save + load round-trip
 #   battle    New Game -> map, start a battle against MZ_TROOP (default 1)
 #
@@ -63,6 +65,9 @@ case "${MODE}" in
     menu)
         FLAGS=(--mz_menu_test)
         DEFAULT_SHOT="ss/mz_menu.png" ;;
+    animation)
+        FLAGS=(--mz_animation_test)
+        DEFAULT_SHOT="ss/mz_animation.png" ;;
     save)
         # Non-visual, but a frame is still captured: a save that leaves the
         # scene broken shows up in the picture.
@@ -72,7 +77,8 @@ case "${MODE}" in
         FLAGS=("--mz_battle_test=${TROOP}")
         DEFAULT_SHOT="ss/mz_battle.png" ;;
     *)
-        echo "error: unknown MZ_MODE '${MODE}' (play|message|menu|save|battle)" >&2
+        echo "error: unknown MZ_MODE '${MODE}'" \
+             "(play|message|menu|animation|save|battle)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
@@ -161,6 +167,19 @@ case "${MODE}" in
         grep -q '\[MZ-MENU\] reached_menu=true' "${log}" ||
             fail "the party menu never opened ([MZ-MENU] reached_menu=true)"
         ;;
+    animation)
+        # Three separate claims, and the last is the one that matters. `mv=true`
+        # says the data picked the sprite-sheet animation system rather than
+        # Effekseer (whose WASM runtime this host does not start, so an
+        # Effekseer animation would silently play no visuals); `cells=` counts
+        # cell sprites visible with a bitmap, so `played=true` means the burst
+        # actually reached the screen rather than merely existing in the scene
+        # graph.
+        grep -q '\[MZ-ANIM\].*mv=true' "${log}" ||
+            fail "animation 1 is not an MV-format animation ([MZ-ANIM] mv=true)"
+        grep -q '\[MZ-ANIM\].*played=true' "${log}" ||
+            fail "the animation never drew a cell ([MZ-ANIM] played=true)"
+        ;;
     save)
         grep -q '\[MZ-SAVE\] saved=true exists=true loaded=true' "${log}" ||
             fail "the save/load round-trip failed ([MZ-SAVE] line)"
@@ -171,7 +190,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-MENU\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-MENU\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
