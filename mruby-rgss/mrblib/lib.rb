@@ -877,11 +877,17 @@ module RGSS
       @count[index] = 0
     end
 
+    # A release clears the held state but deliberately leaves `triggered` alone.
+    # Transitions arrive in a buffer that is drained once a frame (the SDL key
+    # watch, the browser's on-screen keypad, the terminal backends), so a quick
+    # tap can deliver its press *and* its release into the same drain. Clearing
+    # the trigger here swallowed that tap completely -- the game saw a key that
+    # was never pressed. `update` clears every trigger at the end of the frame,
+    # so nothing can outlive the frame it arrived in either way.
     def self.release(key)
       index = key_index(key)
       return if index.nil?
       @pressed[index] = false
-      @triggered[index] = false
       @count[index] = 0
     end
 

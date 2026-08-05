@@ -722,6 +722,26 @@ assert "RGSS::Window API surface" do
   end
 end
 
+assert "RGSS::Input registers a tap that pressed and released in one frame" do
+  # Key transitions reach Input through a buffer drained once a frame, so a
+  # quick tap -- a browser keypad button, a synthesised key -- can deliver both
+  # its press and its release before the game looks. The trigger must survive
+  # to that look, and the key must read as no longer held.
+  begin
+    RGSS::Input.update
+    RGSS::Input.press(RGSS::Input::C)
+    RGSS::Input.release(RGSS::Input::C)
+    assert_true RGSS::Input.trigger?(RGSS::Input::C), "the tap must register"
+    assert_false RGSS::Input.press?(RGSS::Input::C), "and must not read as held"
+    # ... and only for the one frame.
+    RGSS::Input.update
+    assert_false RGSS::Input.trigger?(RGSS::Input::C)
+  ensure
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.update
+  end
+end
+
 assert "RGSS::Input accepts RGSS2/RGSS3 symbol keys" do
   # VX and VX Ace name the keys with symbols (Input.trigger?(:C)); XP and the
   # C++ input bridge use the integer constants. Both must reach the same key.
