@@ -5444,6 +5444,7 @@ def battle_cond(flags, opts = {})
   c = FakeBattleCond.new(flags)
   c.variable_value = 0
   c.turn_a = 0; c.turn_b = 0
+  c.fatigue_min = 0; c.fatigue_max = 100
   c.enemy_hp_min = 0; c.enemy_hp_max = 100
   c.actor_hp_min = 0; c.actor_hp_max = 100
   c.turn_enemy_a = 0; c.turn_enemy_b = 0
@@ -5512,7 +5513,9 @@ check 'BattlePage.active? tests switch, variable and turn conditions' do
   st = new_state
   sw = st.switches
   vars = st.variables
-  eq true, BP.active?(nil, sw, vars, b), 'a page with no condition always fires'
+  # RPG_RT reads an entirely unticked condition box as "never", not "always".
+  eq false, BP.active?(nil, sw, vars, b), 'a page with no condition never fires'
+  eq false, BP.active?(battle_cond(0), sw, vars, b), 'nor one with no flags set'
 
   cond = battle_cond(BP::SWITCH_A, switch_a_id: 7)
   eq false, BP.active?(cond, sw, vars, b)
@@ -5548,13 +5551,92 @@ end
 check 'BattlePage.active? fails a condition the runtime cannot answer' do
   b = battle_with
   st = new_state
-  # Party fatigue is an RPG2003 mechanic that is not modelled, and the per-
-  # battler turn counters are not either: such a page must not fire unchecked.
-  eq false, BP.active?(battle_cond(BP::FATIGUE), st.switches, st.variables, b)
-  eq false, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0),
-                       st.switches, st.variables, b)
+  # The chosen-command test needs the battler whose action triggered the check,
+  # which a once-per-turn evaluation has no equivalent of (RPG_RT bails on a
+  # null source too), so such a page must not fire unchecked.
   eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
                                    command_id: 1), st.switches, st.variables, b)
+  # Nor may one keyed to a battler that is not in this fight.
+  eq false, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 9),
+                       st.switches, st.variables, b)
+  eq false, BP.active?(battle_cond(BP::TURN_ACTOR, turn_actor_id: 99),
+                       st.switches, st.variables, b)
+end
+
+# -- RPG2003 per-battler turn counters and party fatigue ----------------------
+
+check 'a battler counts its own turns as it takes them' do
+  hero = combatant('Hero', 40, 0, 20, 100)   # faster: acts first each round
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 5, 0, 5, 999)   # tanky, so the fight runs on
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  eq 0, b.enemy_turn(0), 'nobody has acted yet'
+  eq 0, b.actor_turn(1)
+
+  b.step                                     # the faster hero acts
+  eq 1, b.actor_turn(1)
+  eq 0, b.enemy_turn(0), 'the slower enemy has not had its turn yet'
+
+  b.step                                     # now the enemy
+  eq 1, b.enemy_turn(0)
+  b.step; b.step                             # a second round for both
+  eq 2, b.actor_turn(1)
+  eq 2, b.enemy_turn(0)
+
+  eq nil, b.enemy_turn(5), 'a member that is not in this fight is unknown'
+  eq nil, b.actor_turn(99)
+end
+
+check 'turn_enemy / turn_actor read the per-battler counters' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 5, 0, 5, 999)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  st = new_state
+  # Turn 0 for everyone before anyone has acted.
+  eq true, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0,
+                                  turn_enemy_b: 0, turn_enemy_a: 0),
+                      st.switches, st.variables, b)
+  eq false, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0,
+                                   turn_enemy_b: 1, turn_enemy_a: 0),
+                       st.switches, st.variables, b)
+  b.step; b.step # both battlers have now had a turn
+  eq 1, b.actor_turn(1)
+  eq true, BP.active?(battle_cond(BP::TURN_ACTOR, turn_actor_id: 1,
+                                  turn_actor_b: 1, turn_actor_a: 0),
+                      st.switches, st.variables, b)
+end
+
+check 'Battle#fatigue weights HP two thirds and SP one third' do
+  full = combatant_mp('Hero', 10, 0, 10, 100, 50)
+  b = Game::Battle.new([full], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
+  eq 0, b.fatigue, 'a party at full HP and SP is not tired at all'
+
+  full.hp = 0
+  eq 67, b.fatigue, 'no HP but full SP: HP is two thirds of the weight'
+  full.hp = 100
+  full.mp = 0
+  eq 33, b.fatigue, 'no SP but full HP: SP is the other third'
+  full.hp = 0
+  eq 100, b.fatigue, 'wiped out'
+
+  # An SP-less party divides by 1 rather than 0, so it never passes 66.
+  nosp = combatant('Hero', 10, 0, 10, 100)
+  b2 = Game::Battle.new([nosp], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
+  eq 33, b2.fatigue
+  nosp.hp = 0
+  eq 100, b2.fatigue
+end
+
+check 'the fatigue page condition tests the window' do
+  hero = combatant_mp('Hero', 10, 0, 10, 100, 50)
+  b = Game::Battle.new([hero], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
+  st = new_state
+  # "at least half worn down" fires only once the party is.
+  cond = battle_cond(BP::FATIGUE, fatigue_min: 50, fatigue_max: 100)
+  eq false, BP.active?(cond, st.switches, st.variables, b)
+  hero.hp = 0
+  eq true, BP.active?(cond, st.switches, st.variables, b)
 end
 
 check 'BattlePage.select_all returns every matching page in order' do
@@ -5565,9 +5647,10 @@ check 'BattlePage.select_all returns every matching page in order' do
     1 => FakePage.new(battle_cond(0), []),
     2 => FakePage.new(battle_cond(BP::SWITCH_A, switch_a_id: 2), []),
     3 => FakePage.new(battle_cond(BP::SWITCH_A, switch_a_id: 1), []),
+    4 => FakePage.new(battle_cond(BP::TURN, turn_b: 0, turn_a: 0), []),
   }
   got = BP.select_all(pages, st.switches, st.variables, b).map { |(id, _)| id }
-  eq [1, 3], got, 'unlike a map event, every matching battle page runs'
+  eq [3, 4], got, 'unlike a map event, every matching battle page runs'
 end
 
 check 'Change Monster HP damages a troop member, honouring the lethal flag' do

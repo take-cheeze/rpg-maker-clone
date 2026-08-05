@@ -2368,12 +2368,15 @@ end
 
 # -- battle-event pages --------------------------------------------------------
 
-# A troop battle-event page: `flags` 0 means "no condition", so it fires on turn
-# 0 as soon as the fight opens.
-def troop_page(cmds, flags = 0, opts = {})
+# A troop battle-event page. The default condition is the turn test at base 0 /
+# multiple 0, so the page fires on turn 0 as the fight opens -- an entirely
+# unticked condition box would never fire at all, which is how RPG_RT reads it
+# (see Game::BattlePage.active?).
+def troop_page(cmds, flags = Game::BattlePage::TURN, opts = {})
   cond = OpenStruct.new({ flags: flags, switch_a_id: 1, switch_b_id: 1,
                           variable_id: 1, variable_value: 0, turn_a: 0,
-                          turn_b: 0, enemy_id: 0, enemy_hp_min: 0,
+                          turn_b: 0, fatigue_min: 0, fatigue_max: 100,
+                          enemy_id: 0, enemy_hp_min: 0,
                           enemy_hp_max: 100, actor_id: 1, actor_hp_min: 0,
                           actor_hp_max: 100 }.merge(opts))
   OpenStruct.new(condition: cond, event: cmds)
@@ -2414,6 +2417,14 @@ check 'a battle page gated on an unmet condition does not fire' do
   scene, st = battle_scene_with_pages(pages)
   10.times { scene.update }
   ok !st.switches[14], 'the gated page stayed put'
+end
+
+check 'a battle page with no condition ticked at all never fires' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 15, 15, 0])], 0) }
+  scene, st = battle_scene_with_pages(pages)
+  10.times { scene.update }
+  ok !st.switches[15], 'RPG_RT reads an unticked condition box as never, not always'
 end
 
 check 'Terminate Battle from a page ends the fight and resumes the event' do

@@ -456,11 +456,22 @@ The work below is roughly ordered by the critical path to a walkable game
   <game>` reports a game's troop pages, and Nepheshel's 2819 conditional pages
   confirm the `switch_a` / `switch_b` / `turn` / `enemy_hp` bits and show that
   every battle-only command it uses has a handler (see the comment on
-  `Game::BattlePage` for what each bit is confirmed by). Still TODO here:
-  the per-battler turn counters and the party-fatigue / chosen-command
-  conditions (pages gated on those deliberately do not fire rather than firing
-  unchecked), and video playback for Play Movie (no decoder is linked in; the
-  request is logged). **Show Battle Animation** (11210) now plays on the map — the
+  `Game::BattlePage` for what each bit is confirmed by). The **RPG2003
+  conditions resolve now too**: each `Combatant` carries its own `battle_turn`,
+  bumped as that battler's turn begins (EasyRPG's `Scene_Battle::NextTurn`), so
+  `turn_enemy` / `turn_actor` read real per-battler counters through the same
+  base/multiple arithmetic; and `fatigue` is `Game_Party::GetFatigue`'s formula —
+  HP two thirds of the weight, SP the other third, an SP-less party dividing by
+  1 rather than 0. A page whose condition box is **entirely unticked never runs**,
+  which is RPG_RT's reading of "no trigger" and the opposite of how every other
+  RPG2000 page kind treats vacuous conditions; both test beds carry such pages
+  (446 of Nepheshel's 3265, all 88 of mtf-meido-action's) and every one is empty,
+  so no real game changes behaviour. Still TODO here: the `command_actor`
+  (chosen battle command) condition, which RPG_RT only answers for the battler
+  whose action triggered the check — this runtime evaluates pages once per turn
+  with no acting battler, the same null-`source` case EasyRPG bails on, so such a
+  page deliberately does not fire rather than firing unchecked; and video
+  playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
   wait flag (per-cell zoom / tone and target-only flashes are approximations for

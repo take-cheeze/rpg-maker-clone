@@ -56,10 +56,12 @@
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
 - A troop's **battle-event pages** run during a fight: their conditions (switch,
-  variable, turn, enemy/actor HP) are re-checked each turn, and a matching page
-  runs the ordinary command set plus the battle-only commands — Change Monster
-  HP / MP / Condition, Show Hidden Monster, Change Battle Background, the battle
-  Show Battle Animation, the battle Conditional Branch and Terminate Battle
+  variable, turn, enemy/actor HP, plus RPG2003's per-battler turn counters and
+  party fatigue) are re-checked each turn, and a matching page runs the ordinary
+  command set plus the battle-only commands — Change Monster HP / MP / Condition,
+  Show Hidden Monster, Change Battle Background, the battle Show Battle
+  Animation, the battle Conditional Branch and Terminate Battle. A page whose
+  condition box is entirely unticked never fires, which is how RPG_RT reads it
 - The **RPG2003-only event commands** run too — the low opcodes the 2003 editor
   emits for the features RPG2000 never had. **Change Class** (1008) moves an
   actor to a database class, re-reading its growth curve, learn table and EXP
