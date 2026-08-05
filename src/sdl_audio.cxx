@@ -62,6 +62,19 @@ std::string g_bgm_bytes;
 // music is freed.
 std::string g_music_bytes;
 
+// Playback position of the music stream, tracked from the clock rather than
+// asked of the decoder. Mix_GetMusicPosition is not a cheap getter: on the MIDI
+// decoder it costs *hundreds of milliseconds* a call, and the RPG2000 runtime
+// polls the position every frame to answer the "BGM played once" branch, which
+// dragged Nepheshel's opening (135 .mid tracks) from 60 frames a second to
+// under two. The only consumer is that loop detection, which needs no more than
+// a value that wraps when the track restarts -- so the start time plus the
+// track's duration answers it for free. Zero duration (an unknown-length
+// stream) reports position 0 throughout, exactly as a backend that cannot
+// report a position does.
+Uint64 g_music_start_ms = 0;
+int g_music_duration_ms = 0;
+
 // Loaded SE / BGS samples, keyed by path -- or, for archived audio, by the
 // archive entry name -- so repeated plays don't re-decode.
 std::unordered_map<std::string, Mix_Chunk*> g_chunks;
@@ -132,6 +145,15 @@ bool start_music(const std::string& what, int volume, int loops) {
                  << "': " << Mix_GetError();
     return false;
   }
+  // Start the clock this stream's position is read off (see g_music_start_ms).
+  // The duration is asked for once per track here, not once per frame.
+  g_music_start_ms = SDL_GetTicks64();
+  g_music_duration_ms = 0;
+#if defined(SDL_MIXER_VERSION_ATLEAST) && SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+  const double seconds = Mix_MusicDuration(g_music);
+  if (seconds > 0.0)
+    g_music_duration_ms = (int)(seconds * 1000.0);
+#endif
   return true;
 }
 
@@ -229,21 +251,19 @@ void bgm_fade(int ms) {
     Mix_FadeOutMusic(ms);
 }
 
+// Milliseconds into the current BGM, wrapping every time the loop restarts.
+// Read from the clock, not from the decoder -- see g_music_start_ms.
 int bgm_pos(void) {
-#if defined(SDL_MIXER_VERSION_ATLEAST) && SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
   // Mix_PlayingMusic() matters as much as g_music: halting the music does not
-  // free the stream, and Mix_GetMusicPosition happily keeps reporting where a
-  // stopped one had got to. Without this, Audio.bgm_pos answers a stale
-  // position after Audio.bgm_stop -- and a game that saves bgm_pos to resume
-  // the track later (which is what RGSS2's `$game_system.bgm_pos` is for)
-  // would write down a position for music that is not playing.
-  if (g_music && !g_me_active && Mix_PlayingMusic()) {
-    double sec = Mix_GetMusicPosition(g_music);
-    if (sec >= 0.0)
-      return (int)(sec * 1000.0);
-  }
-#endif
-  return 0;
+  // free the stream, and the position must not keep advancing for music that
+  // is not playing -- a game that saves bgm_pos to resume the track later
+  // (which is what RGSS2's `$game_system.bgm_pos` is for) would otherwise
+  // write down a position for music that is stopped.
+  if (!g_music || g_me_active || !g_bgm_valid || g_music_duration_ms <= 0 ||
+      !Mix_PlayingMusic())
+    return 0;
+  const Uint64 elapsed = SDL_GetTicks64() - g_music_start_ms;
+  return (int)(elapsed % (Uint64)g_music_duration_ms);
 }
 
 // -- BGS --------------------------------------------------------------------
