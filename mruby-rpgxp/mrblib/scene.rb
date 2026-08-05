@@ -427,10 +427,6 @@ class RPGXP
       TILE_ID_BASE = 384
       MSG_LINE_H = 32
 
-      # Frames between autonomous event steps, keyed by RMXP move frequency
-      # (1 slowest .. 6 fastest). Placeholder pacing while events draw as markers.
-      EVENT_MOVE_DELAY = { 1 => 120, 2 => 60, 3 => 30, 4 => 15, 5 => 8, 6 => 4 }.freeze
-
       # Event-page start triggers (RPG::Event::Page#trigger).
       TRIGGER_ACTION       = 0 # player presses the action button facing it
       TRIGGER_PLAYER_TOUCH = 1 # player walks into it
@@ -471,7 +467,6 @@ class RPGXP
         @forced_routes = {}
         @player_route = nil
         @player_char = nil
-        @player_route_timer = 0
         # Event ids erased by an Erase Event (116) command: skipped when the event
         # list is rebuilt so they stay gone until the map is (re)loaded.
         @erased = {}
@@ -575,12 +570,11 @@ class RPGXP
           route = Game::MoveRoute.from_page(page.move_route) if move_type == Game::MoveType::CUSTOM
         end
         { id: id, ev: ev, page: page, char: ch, trigger: page && page.trigger,
-          move_type: move_type, route: route,
-          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 30 }
+          move_type: move_type, route: route }
       rescue StandardError => e
         $stderr.puts "[RGSS] event ##{id} setup failed: #{e.message}"
         { id: id, ev: ev, page: nil, char: (@characters[id] ||= Game::Character.new(ev.x, ev.y)),
-          trigger: nil, move_type: 0, route: nil, move_timer: 30 }
+          trigger: nil, move_type: 0, route: nil }
       end
 
       def ev_direction(page)
@@ -641,13 +635,15 @@ class RPGXP
         drive_interpreter
       end
 
-      # Advance each event's autonomous / custom-route movement one frame, paced
-      # by move frequency. Skipped once any event process is running this frame,
-      # so the map holds still during messages.
+      # Advance each event one frame: its walk animation and the glide toward
+      # the tile it stepped onto, then -- once it has stood still long enough --
+      # its next autonomous or custom-route step. Skipped once any event process
+      # is running this frame, so the map holds still during messages.
       def step_events
         @events.each do |_id, e|
+          ch = e[:char]
+          ch.update if ch
           step_event(e)
-          step_idle_animation(e)
         end
       end
 
@@ -655,73 +651,58 @@ class RPGXP
         return if event_busy?
         ch = e[:char]
         return unless ch
+        # Still crossing a tile: nothing new starts until it arrives.
+        return if ch.moving?
         # A forced route (Set Move Route) overrides page movement until it is done.
         forced = @forced_routes[e[:id]]
         return step_forced_event(e, ch, forced) if forced
         return unless e[:page]
-        e[:move_timer] -= 1
-        return if e[:move_timer] > 0
-        e[:move_timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
+        return if ch.stop_count <= move_wait(ch)
         ox = ch.x
         oy = ch.y
         if e[:route]
-          e[:route].step(ch, @world) unless e[:route].done?
+          run_route(e[:route], ch)
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir) if dir
         end
-        if ch.x != ox || ch.y != oy
-          reoccupy(e, ox, oy)
-          animate_step e, ch
-        end
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
       rescue StandardError => ex
         $stderr.puts "[RGSS] event ##{e[:id]} movement failed: #{ex.message}"
       end
 
-      # One frame of a character's walk cycle. RMXP animates a character that
-      # moved unless its page turned `walk_anime` off; a page with `step_anime`
-      # keeps animating while it stands still (handled in step_idle_animation).
-      def animate_step(e, ch)
-        e[:idle_anime] = 0
-        ch.advance_pattern if ch.walk_anime || ch.step_anime
+      # Frames an event stands still between steps, as RMXP paces autonomous
+      # movement: `(40 - frequency * 2) * (6 - frequency)`, so frequency 1 waits
+      # 190 frames and frequency 6 never waits at all. The glide itself is timed
+      # separately, by move speed.
+      def move_wait(ch)
+        f = ch.move_frequency || 3
+        (40 - f * 2) * (6 - f)
       end
 
-      # Pages with `step_anime` animate on the spot. Paced off the same frame
-      # counter as the walk cycle so a standing animation runs at a steady rate
-      # rather than at the event's move frequency.
-      IDLE_ANIME_FRAMES = 8
+      # One turn of a move route. A movement command ends the turn (the walk
+      # takes time); the commands that only have an effect -- turns, switches,
+      # a graphic change -- run straight away and the route carries on, as
+      # RMXP's move_type_custom does, so a route of them does not spend a whole
+      # wait period per command. Bounded so a route made only of effects cannot
+      # spin.
+      ROUTE_EFFECTS_PER_TURN = 64
 
-      # RMXP's Game_Character#update_stop: a standing character with
-      # `step_anime` keeps cycling, and one without it falls back to the pose
-      # its page asked for once it has stopped walking. We step tile-to-tile
-      # rather than pixel-by-pixel, so "stopped" is a frame count instead of
-      # the end of an interpolation.
-      def step_idle_animation(e)
-        ch = e[:char]
-        return unless ch
-        e[:idle_anime] = (e[:idle_anime] || 0) + 1
-        if ch.step_anime
-          return if e[:idle_anime] < IDLE_ANIME_FRAMES
-          e[:idle_anime] = 0
-          ch.advance_pattern
-        elsif e[:idle_anime] >= (EVENT_MOVE_DELAY[ch.move_frequency] || 30)
-          ch.rest_pattern
+      def run_route(route, ch)
+        ROUTE_EFFECTS_PER_TURN.times do
+          break if route.done?
+          break unless route.step(ch, @world) == :effect
         end
       end
 
       # Advance an event's forced route one paced step, updating its occupied
       # tile, and drop the route once a non-repeating one is exhausted.
       def step_forced_event(e, ch, forced)
-        forced[:timer] -= 1
-        return if forced[:timer] > 0
-        forced[:timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
+        return if ch.stop_count <= move_wait(ch)
         ox = ch.x
         oy = ch.y
-        forced[:route].step(ch, @world) unless forced[:route].done?
-        if ch.x != ox || ch.y != oy
-          reoccupy(e, ox, oy)
-          animate_step e, ch
-        end
+        run_route(forced[:route], ch)
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
         @forced_routes.delete(e[:id]) if forced[:route].done?
       rescue StandardError => ex
         $stderr.puts "[RGSS] event ##{e[:id]} forced move failed: #{ex.message}"
@@ -763,15 +744,13 @@ class RPGXP
       def start_player_route(route)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
         @player_route = route
-        @player_route_timer = 0
       end
 
       def step_player_route
         return unless @player_route
-        @player_route_timer -= 1
-        return if @player_route_timer > 0
-        @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 30
-        @player_route.step(@player_char, @world) unless @player_route.done?
+        @player_char.update
+        return if @player_char.moving? || @player_char.stop_count <= move_wait(@player_char)
+        run_route(@player_route, @player_char)
         @state.x = @player_char.x
         @state.y = @player_char.y
         @state.direction = @player_char.direction
@@ -793,7 +772,12 @@ class RPGXP
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
           ch.face(dir)
-          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && list_nonempty?(page_list(e))
+          if e[:trigger] == TRIGGER_EVENT_TOUCH && list_nonempty?(page_list(e))
+            # Bumping into the player runs the event; wait a full move period
+            # before bumping again rather than re-running it every frame.
+            ch.hold_still
+            start_event(e)
+          end
         elsif @world.passable?(ch, dir)
           ch.move(dir)
         else
@@ -1342,8 +1326,8 @@ class RPGXP
           s[:sprite].visible = true
           # Character sheets are wider/taller than a tile: RMXP centres them on
           # the tile and stands them on its bottom edge, as the player is drawn.
-          sy = ch.y * TILE - cam_y
-          s[:sprite].x = ch.x * TILE - cam_x - (s[:w] - TILE) / 2
+          sy = ch.pixel_y(TILE) - cam_y
+          s[:sprite].x = ch.pixel_x(TILE) - cam_x - (s[:w] - TILE) / 2
           s[:sprite].y = sy - (s[:h] - TILE)
           s[:sprite].z = character_z(sy, ch.always_on_top)
           next unless s[:charset]

@@ -973,19 +973,41 @@ assert "Game::Character move / face / turns / toward" do
   assert_equal 4, RPGXP::Game::Character.new(4, 4).direction_away(10, 4)
 end
 
+assert "Game::Character glides to the tile it stepped onto" do
+  c = RPGXP::Game::Character.new(1, 1)
+  c.move_speed = 4 # 2**4 of 128 units a frame: eight frames a tile
+  c.move(6)
+  # The tile is taken at once (that is what collision sees) but the character
+  # is still drawn on the one it left.
+  assert_equal 2, c.x
+  assert_equal 32, c.pixel_x(32)
+  assert_true c.moving?
+  7.times { c.update }
+  assert_true c.moving?
+  c.update
+  assert_false c.moving?
+  assert_equal 64, c.pixel_x(32)
+  # Placing a character (a spawn or a teleport) is not a step: it does not glide.
+  c.x = 9
+  assert_false c.moving?
+  assert_equal 288, c.pixel_x(32)
+end
+
 assert "Game::Character cycles its walk pattern and rests on the page's frame" do
   c = RPGXP::Game::Character.new(0, 0)
   # A page that stands on frame 1 (RMXP's Graphic#pattern).
   c.set_graphic("hero", 0, 2, 1)
+  c.move_speed = 4 # animation ticks 1.5 a frame, cycling every 18 - 4 * 2
   assert_equal 1, c.pattern
-  c.advance_pattern
-  assert_equal 2, c.pattern
-  3.times { c.advance_pattern } # 3, 0, 1 -- wraps at four frames
+  c.move(2)
+  6.times { c.update } # 9.0 ticks: not there yet
   assert_equal 1, c.pattern
-  c.advance_pattern
+  c.update # 10.5 ticks
   assert_equal 2, c.pattern
-  # Standing still returns to the page's own frame, not to 0.
-  c.rest_pattern
+  # Once it has arrived and stood still a moment it falls back to the page's
+  # own frame, not to frame 0.
+  20.times { c.update }
+  assert_false c.moving?
   assert_equal 1, c.pattern
 end
 

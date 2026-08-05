@@ -660,7 +660,13 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `Game::MoveRoute` drive an event's page move type (fixed / random / approach)
   or custom move route (the full XP move-command set), paced by move frequency
   and blocked by terrain / the player / other events, and the **event-touch**
-  trigger fires when an event walks into the player. The interpreter's *Set Move
+  trigger fires when an event walks into the player. An event **glides** between
+  tiles the way RGSS moves a character: taking a step claims the destination
+  tile at once (that is what collision sees) and the drawn position closes the
+  128-unit gap at `2 ** move_speed` a frame, while the walk row cycles off the
+  same animation counter and falls back to the page's own frame once the event
+  comes to rest. The wait between autonomous steps is RMXP's
+  `(40 - frequency * 2) * (6 - frequency)` frames. The interpreter's *Set Move
   Route* (209) command is now wired up: it queues the `RPG::MoveRoute` packed
   into the command for its target — the player, "this event" or a map event id —
   and `Scene::Map` drains the queue and drives the target along the route in the
