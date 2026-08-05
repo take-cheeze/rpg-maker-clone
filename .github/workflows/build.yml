@@ -600,6 +600,12 @@ jobs:
       # configured against a different toolchain must miss rather than be
       # half-reused. flake.* covers the emscripten version, and the workflow
       # file covers the configure flags set in the `cmake` step below.
+      #
+      # The save step below repeats this key verbatim rather than reading it
+      # back from `steps.cmake-cache.outputs.cache-primary-key`. The two must be
+      # kept in sync by hand, which is the same trade the `psp-smoke` job makes
+      # for its PPSSPP cache — and that one demonstrably persists across runs,
+      # which the output-reference form did not.
       - name: Restore the CMake configure cache
         id: cmake-cache
         uses: actions/cache/restore@v6
@@ -647,12 +653,15 @@ jobs:
 
       # Saved here, before `build`, so the cache holds the configure output
       # alone — running it after the build would upload every object file too.
+      # Key repeated verbatim from the restore step above; keep the two in sync.
       - name: Save the CMake configure cache
         if: steps.cmake-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: wasm-build
-          key: ${{ steps.cmake-cache.outputs.cache-primary-key }}
+          key: >-
+            wasm-cmake-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix',
+            '.github/workflows/build.yml') }}
 
       # Barrier: the link step packages data/mv-sample into index.data, so the
       # engine files must be in place before the build starts. A failed
@@ -673,11 +682,20 @@ jobs:
         if: always()
         # As in the `build` job: the test-bed download may still be in flight,
         # and this captures stdout into the step summary.
+        #
+        # Also report whether the CMake configure cache was reused. Whether that
+        # cache hits is only visible as a `cmake` step that took seconds instead
+        # of minutes, which is easy to misread as noise; stating it outright
+        # means a cache that silently stops persisting shows up as a run-over-run
+        # change in the summary rather than as an unexplained slowdown.
         env:
           NIX_DEVELOP_SEPARATE_STREAMS: 1
+          CMAKE_CACHE_HIT: ${{ steps.cmake-cache.outputs.cache-hit }}
         run: |
           {
             echo "## ccache stats — wasm"
+            echo ""
+            echo "CMake configure cache hit: \`${CMAKE_CACHE_HIT:-<unset>}\`"
             echo ""
             echo '```'
             ./scripts/nix-develop.bash ccache --show-stats
