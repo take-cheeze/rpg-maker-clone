@@ -4277,6 +4277,75 @@ check 'battle without first strike: both sides act in the opening round' do
   eq 2, b.run_round.length, 'both battlers act in round 1'
 end
 
+# -- Battle all-target skill scopes -------------------------------------------
+
+check 'battle: an all-enemy skill strikes every living foe, spending SP once' do
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)    # fast: acts first
+  s1 = combatant('S1', 0, 0, 5, 100)
+  s2 = combatant('S2', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [s1, s2], Game::Rng.new(1))
+  b.command_skill_all(mage, [{ target: s1, hp: -20 }, { target: s2, hp: -20 }],
+                      name: 'Blizzard', cost: 6)
+  b.begin_round
+  e1 = b.step_action                                 # first hit surfaced now...
+  e2 = b.step_action                                 # ...second from the buffer
+  eq ['S1', 'S2'], [e1[:target], e2[:target]]
+  eq [20, 20], [e1[:damage], e2[:damage]]
+  eq [80, 80], [s1.hp, s2.hp]
+  eq 24, mage.mp, 'the SP cost is charged once for the whole volley'
+end
+
+check 'battle: an all-ally heal restores every living member' do
+  healer = combatant_mp('Healer', 10, 0, 20, 100, 30)
+  a1 = combatant('A1', 0, 0, 5, 100); a1.hp = 40
+  a2 = combatant('A2', 0, 0, 5, 100); a2.hp = 30
+  b = Game::Battle.new([healer, a1, a2], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  b.command_skill_all(healer, [{ target: a1, hp: 30 }, { target: a2, hp: 30 }],
+                      name: 'Heal All', cost: 8)
+  b.begin_round
+  e1 = b.step_action
+  b.step_action
+  ok e1[:recover], 'reads as a recovery'
+  eq [70, 60], [a1.hp, a2.hp]
+  eq 22, healer.mp
+end
+
+check 'battle: an all-enemy skill skips foes already down' do
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+  downed = combatant('Downed', 0, 0, 5, 0)           # already KO'd
+  alive = combatant('Alive', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [downed, alive], Game::Rng.new(1))
+  b.command_skill_all(mage, [{ target: downed, hp: -20 }, { target: alive, hp: -20 }],
+                      name: 'Blizzard', cost: 6)
+  b.begin_round
+  e = b.step_action
+  eq 'Alive', e[:target], 'only the living foe is struck'
+  ok b.log.none? { |x| x[:target] == 'Downed' }, 'the downed foe is skipped'
+  eq 80, alive.hp
+  eq 24, mage.mp
+end
+
+check 'battle: an all-ally skill fizzles and spares SP when every target is down' do
+  healer = combatant_mp('Healer', 10, 0, 20, 100, 30)
+  downed = combatant('Downed', 0, 0, 5, 0)           # the only target, already KO'd
+  b = Game::Battle.new([healer, downed], [combatant('Foe', 0, 0, 1, 100)], Game::Rng.new(1))
+  b.command_skill_all(healer, [{ target: downed, hp: 30 }], name: 'Heal', cost: 8)
+  b.run_round
+  eq 30, healer.mp, 'a fizzled all-ally heal spends no SP'
+  ok b.log.none? { |x| x[:recover] }, 'nothing was healed'
+end
+
+check 'battle: run_round surfaces every hit of an all-enemy volley' do
+  mage = combatant_mp('Mage', 10, 0, 50, 100, 30)    # fastest: acts first
+  s1 = combatant('S1', 0, 0, 5, 100)
+  s2 = combatant('S2', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [s1, s2], Game::Rng.new(1))
+  b.command_skill_all(mage, [{ target: s1, hp: -20 }, { target: s2, hp: -20 }],
+                      name: 'Blizzard', cost: 6)
+  hits = b.run_round.select { |e| e[:skill] == 'Blizzard' }
+  eq 2, hits.length, 'both foes appear in the round log'
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }
@@ -4476,17 +4545,20 @@ check 'battle_skills lists the caster\'s battle-usable skills with SP cost' do
     8  => fake_skill(name: 'Heal', scope: 3, sp_cost: 5, power: 20, mrate: 40, hp: true),
     9  => fake_skill(name: 'Guard', scope: 2, sp_cost: 3, power: 10, hp: true),
     10 => fake_skill(name: 'FieldOnly', scope: 3, sp_cost: 4, hp: true, occ_battle: false),
-    11 => fake_skill(name: 'AllFoes', scope: 1, sp_cost: 8, power: 20) # scope 1 deferred
+    11 => fake_skill(name: 'AllFoes', scope: 1, sp_cost: 8, power: 20),  # all enemies
+    12 => fake_skill(name: 'AllHeal', scope: 4, sp_cost: 7, power: 20, hp: true) # all allies
   }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
-  [7, 8, 9, 10, 11].each { |s| hero.learn_skill(s) }
+  [7, 8, 9, 10, 11, 12].each { |s| hero.learn_skill(s) }
   caster = Game::Battle.from_actor(hero)
-  eq [[7, 6], [8, 5], [9, 3]], st.party.battle_skills(hero, caster),
-     'single-target battle skills only, in id order'
-  eq :enemy, st.party.battle_skill_target(st.party.db_skill(7))
-  eq :ally,  st.party.battle_skill_target(st.party.db_skill(8))
-  eq :self,  st.party.battle_skill_target(st.party.db_skill(9))
+  eq [[7, 6], [8, 5], [9, 3], [11, 8], [12, 7]], st.party.battle_skills(hero, caster),
+     'single- and all-target battle skills, in id order (field-only excluded)'
+  eq :enemy,     st.party.battle_skill_target(st.party.db_skill(7))
+  eq :ally,      st.party.battle_skill_target(st.party.db_skill(8))
+  eq :self,      st.party.battle_skill_target(st.party.db_skill(9))
+  eq :all_enemy, st.party.battle_skill_target(st.party.db_skill(11))
+  eq :all_ally,  st.party.battle_skill_target(st.party.db_skill(12))
 end
 
 check 'battle_skill_command yields attack damage, ally heal and self recovery' do
