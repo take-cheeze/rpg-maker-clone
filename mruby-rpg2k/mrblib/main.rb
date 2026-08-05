@@ -2392,7 +2392,11 @@ class RPG2k
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
                                                 situations, true, true, true,
                                                 req[:first_strike] ? true : false,
-                                                properties),
+                                                properties,
+                                                # Lets the troop run its 行動パターン:
+                                                # skills, transformations and the
+                                                # switch / party-level conditions.
+                                                Game::EnemyAi.new(db, @state)),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
@@ -2504,7 +2508,11 @@ class RPG2k
         return unless sprites
         @battle_ui[:foes].each_with_index do |foe, i|
           spr = sprites[i]
-          spr.visible = !foe.dead? if spr
+          # Out of play, not merely dead: a monster that has fled (its own Escape
+          # action, or a page's Force Flee) or one still flagged invisible is off
+          # the field and must not be drawn — the same test #living_foes uses to
+          # keep it out of the target cursor.
+          spr.visible = !foe.out_of_play? if spr
         end
       end
 
@@ -3108,9 +3116,26 @@ class RPG2k
           "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
         elsif e[:missed]
           "#{e[:attacker]} misses #{e[:target]}"
+        elsif e[:transform]
+          "#{e[:attacker]} transforms!"
+        elsif e[:defend]
+          "#{e[:attacker]} defends"
+        elsif e[:observe]
+          "#{e[:attacker]} watches closely"
+        elsif e[:charge]
+          "#{e[:attacker]} gathers strength"
+        elsif e[:fled]
+          "#{e[:attacker]} flees!"
+        elsif e[:nothing]
+          "#{e[:attacker]} does nothing"
         else
-          hits = e[:skill] ? "'s #{e[:skill]} hits" : ' hits'
+          hits = if e[:autodestruct] then ' blows itself up on'
+                 elsif e[:skill] then "'s #{e[:skill]} hits"
+                 else ' hits'
+                 end
           line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
+          line += ' (critical!)' if e[:critical]
+          line += ' (charged)' if e[:charged]
           line += ' — defeated!' if e[:defeated]
           line
         end

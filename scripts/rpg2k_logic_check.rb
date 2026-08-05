@@ -6347,6 +6347,415 @@ check 'Show Hidden Monster reveals through the interpreter and the battle' do
   ok !b.enemy(0).out_of_play?
 end
 
+# -- enemy action patterns (行動パターン) --------------------------------------
+
+# A stand-in for one row of an enemy's action table; EnemyAction reads whichever
+# fields are present, so a test only names the ones it cares about.
+class FakeAction
+  attr_accessor :kind, :basic, :skill_id, :enemy_id, :condition_type,
+                :condition_param1, :condition_param2, :switch_id, :switch_on,
+                :switch_on_id, :switch_off, :switch_off_id, :rating
+
+  def initialize(h = {})
+    h.each { |k, v| send("#{k}=", v) }
+    @rating ||= 50
+  end
+end
+
+def enemy_action(h = {})
+  Game::EnemyAction.new(FakeAction.new(h))
+end
+
+# A battle whose single monster runs `actions`, against one hero.
+def ai_battle(actions, ai = nil, foe: nil, hero: nil, seed: 1)
+  hero ||= combatant('Hero', 40, 0, 20, 500)
+  foe ||= combatant('Slime', 40, 0, 5, 500)
+  foe.actions = actions
+  # The skill formulas read the caster's spirit; a bare Combatant leaves it nil.
+  hero.spi ||= 0
+  foe.spi ||= 0
+  Game::Battle.new([hero], [foe], Game::Rng.new(seed), nil, false, false, false,
+                   false, nil, ai)
+end
+
+# One enemy action resolved: the log entry its turn produced.
+def enemy_entry(actions, ai = nil, foe: nil, hero: nil, seed: 1)
+  b = ai_battle(actions, ai, foe: foe, hero: hero, seed: seed)
+  b.begin_round
+  # The hero is faster (agi 20 vs 5), so drain its action first.
+  b.step_action
+  b.step_action
+end
+
+check 'EnemyAction decodes a database action row' do
+  a = enemy_action(kind: 1, skill_id: 7, condition_type: 4,
+                   condition_param1: 0, condition_param2: 50, rating: 80)
+  ok a.skill?, 'kind 1 is a skill'
+  eq 7, a.skill_id
+  eq 4, a.condition_type
+  eq 50, a.condition_param2
+  eq 80, a.rating
+end
+
+check 'EnemyAction defaults the rating to the editor default of 50' do
+  eq 50, enemy_action(kind: 0).rating
+end
+
+check 'an enemy with no action pattern still attacks (unchanged behaviour)' do
+  e = enemy_entry([])
+  eq 'Slime', e[:attacker]
+  eq 20, e[:damage], 'a plain attack, exactly as before'
+end
+
+check 'an enemy defends instead of attacking when its pattern says so' do
+  e = enemy_entry([enemy_action(kind: 0, basic: 2)])
+  eq true, e[:defend]
+  ok e[:damage].nil?, 'a guard deals no damage'
+end
+
+check 'a defending enemy takes half damage from the next blow' do
+  hero = combatant('Hero', 40, 0, 5, 500)     # slower, so the foe guards first
+  foe = combatant('Slime', 40, 0, 20, 500)
+  b = ai_battle([enemy_action(kind: 0, basic: 2)], nil, foe: foe, hero: hero)
+  b.begin_round
+  eq true, b.step_action[:defend], 'the faster monster guards'
+  eq 10, b.step_action[:damage], 'base 20 halved by the guard'
+end
+
+check "an enemy's guard expires on its next turn" do
+  hero = combatant('Hero', 40, 0, 5, 500)
+  foe = combatant('Slime', 40, 0, 20, 500)
+  # Round 1 guards; round 2 attacks (and so drops the guard).
+  b = ai_battle([enemy_action(kind: 0, basic: 2)], nil, foe: foe, hero: hero)
+  b.begin_round; b.step_action; b.step_action; b.end_round
+  b.begin_round
+  b.step_action                               # the monster guards again
+  eq 10, b.step_action[:damage], 'still guarding within the round'
+  ok foe.defending, 'the guard is up'
+  b.end_round
+  b.begin_round
+  b.step_action
+  ok foe.defending, 're-raised by the same pattern'
+end
+
+check 'a charge doubles the enemy next attack, then is spent' do
+  # Two entries: charge (rating 50) then attack. Charge first via a turn gate.
+  foe = combatant('Slime', 40, 0, 5, 500)
+  charge = enemy_action(kind: 0, basic: 4)
+  b = ai_battle([charge], nil, foe: foe)
+  b.begin_round; b.step_action
+  eq true, b.step_action[:charge], 'the monster gathers strength'
+  ok foe.charged, 'the charge is held'
+  # Swap in a plain attack for the next turn and check it lands doubled.
+  foe.actions = [enemy_action(kind: 0, basic: 0)]
+  b.end_round; b.begin_round; b.step_action
+  e = b.step_action
+  eq 40, e[:damage], 'base 20 doubled by the charge'
+  eq true, e[:charged]
+  ok !foe.charged, 'and the charge is spent'
+end
+
+check 'a dual attack strikes twice in one turn' do
+  b = ai_battle([enemy_action(kind: 0, basic: 1)])
+  b.begin_round
+  b.step_action                                # the hero
+  first = b.step_action
+  second = b.step_action
+  eq 'Slime', first[:attacker]
+  eq 'Slime', second[:attacker], 'the same monster swings again'
+  eq 20, first[:damage]
+  eq 20, second[:damage]
+end
+
+check 'an observing / idle enemy does nothing but still reads on the log' do
+  eq true, enemy_entry([enemy_action(kind: 0, basic: 3)])[:observe]
+  eq true, enemy_entry([enemy_action(kind: 0, basic: 7)])[:nothing]
+end
+
+check 'an escaping enemy leaves the fight without counting as a kill' do
+  hero = combatant('Hero', 40, 0, 20, 500)
+  foe = combatant('Slime', 40, 0, 5, 500)
+  b = ai_battle([enemy_action(kind: 0, basic: 6)], nil, foe: foe, hero: hero)
+  b.begin_round
+  b.step_action
+  eq true, b.step_action[:fled]
+  ok foe.hidden, 'out of play'
+  ok !foe.dead?, 'but not defeated'
+  eq :victory, b.run, 'the fight is over with the troop gone'
+end
+
+check 'self-destruction hits the party for atk - def/2 and kills the caster' do
+  hero = combatant('Hero', 40, 10, 20, 500)
+  foe = combatant('Bomb', 60, 0, 5, 500)
+  b = ai_battle([enemy_action(kind: 0, basic: 5)], nil, foe: foe, hero: hero)
+  b.begin_round
+  b.step_action
+  e = b.step_action
+  eq true, e[:autodestruct]
+  eq 55, e[:damage], '60 - 10/2'
+  ok foe.dead?, 'the bomb dies doing it'
+end
+
+# -- the rating-weighted choice ------------------------------------------------
+
+check 'an action more than 10 below the best rating is never chosen' do
+  # rating 50 vs 39: 39 - 50 + 10 = -1 -> floored to 0, so it never comes up.
+  acts = [enemy_action(kind: 0, basic: 0, rating: 50),
+          enemy_action(kind: 0, basic: 2, rating: 39)]
+  20.times do |i|
+    e = enemy_entry(acts, nil, seed: i + 1)
+    ok e[:defend].nil?, "the rating-39 guard stays out (seed #{i + 1})"
+  end
+end
+
+check 'an action within 10 of the best rating does come up' do
+  # Drawn from one continuously advancing RNG rather than 30 fresh seeds: this
+  # engine's LCG is seeded as `seed + 1` and reseeding it that narrowly gives a
+  # badly clustered first draw, which would test the RNG rather than the choice.
+  acts = [enemy_action(kind: 0, basic: 0, rating: 50),
+          enemy_action(kind: 0, basic: 2, rating: 45)]
+  b = ai_battle(acts)
+  seen = {}
+  40.times do
+    b.begin_round
+    b.step_action                              # the hero
+    e = b.step_action                          # the monster
+    seen[e && e[:defend] ? :defend : :attack] = true
+    b.end_round
+  end
+  ok seen[:attack], 'the attack comes up'
+  ok seen[:defend], 'and so does the rating-45 guard'
+end
+
+# -- the action conditions -----------------------------------------------------
+
+check 'an HP-range action only fires inside its window' do
+  # Only valid below 50% HP; with no other valid action the enemy falls back to
+  # a plain attack, so the guard appearing is the signal.
+  act = enemy_action(kind: 0, basic: 2, condition_type: 4,
+                     condition_param1: 0, condition_param2: 50)
+  healthy = combatant('Slime', 40, 0, 5, 500)
+  ok enemy_entry([act], nil, foe: healthy)[:defend].nil?, 'at full HP it does not fire'
+  hurt = combatant('Slime', 40, 0, 5, 500)
+  hurt.hp = 100                                # 20% of 500
+  eq true, enemy_entry([act], nil, foe: hurt)[:defend], 'below 50% it fires'
+end
+
+check 'a switch-gated action reads the live switch through the AI env' do
+  st = new_state
+  ai = Game::EnemyAi.new(nil, st)
+  act = enemy_action(kind: 0, basic: 2, condition_type: 1, switch_id: 3)
+  ok enemy_entry([act], ai)[:defend].nil?, 'switch off: not valid'
+  st.switches[3] = true
+  eq true, enemy_entry([act], ai)[:defend], 'switch on: fires'
+end
+
+check 'a switch-gated action is invalid with no AI env to ask' do
+  act = enemy_action(kind: 0, basic: 2, condition_type: 1, switch_id: 3)
+  ok enemy_entry([act], nil)[:defend].nil?, 'falls back to attacking'
+end
+
+check 'an actor-count action ranges over the living party' do
+  act = enemy_action(kind: 0, basic: 2, condition_type: 3,
+                     condition_param1: 2, condition_param2: 4)
+  ok enemy_entry([act], nil)[:defend].nil?, 'a party of one is below the range'
+end
+
+check 'a turn-gated action uses the battle turn clock' do
+  # base 0 / multiple 2 -> turns 0, 2, 4 ... (Game::BattlePage.check_turns)
+  act = enemy_action(kind: 0, basic: 2, condition_type: 2,
+                     condition_param1: 2, condition_param2: 0)
+  b = ai_battle([act])
+  b.begin_round                                # turn 1: no match
+  b.step_action
+  ok b.step_action[:defend].nil?, 'turn 1 does not match'
+  b.end_round
+  b.begin_round                                # turn 2: matches
+  b.step_action
+  eq true, b.step_action[:defend], 'turn 2 matches'
+end
+
+check 'a party-level action reads the average level through the AI env' do
+  st = party_state
+  ai = Game::EnemyAi.new(nil, st)
+  # Two actors at levels 5 and 3, so the party average is 4 — not the leader's.
+  lvl = ai.party_level
+  eq 4, lvl, 'the average, not the leader'
+  hit = enemy_action(kind: 0, basic: 2, condition_type: 6,
+                     condition_param1: lvl, condition_param2: lvl + 10)
+  miss = enemy_action(kind: 0, basic: 2, condition_type: 6,
+                      condition_param1: lvl + 5, condition_param2: lvl + 10)
+  eq true, enemy_entry([hit], ai)[:defend], 'inside the level range'
+  ok enemy_entry([miss], ai)[:defend].nil?, 'outside it'
+end
+
+check 'an unknown condition type keeps the action out of the running' do
+  act = enemy_action(kind: 0, basic: 2, condition_type: 99)
+  ok enemy_entry([act], nil)[:defend].nil?, 'not fired unchecked'
+end
+
+# -- post-action switches ------------------------------------------------------
+
+check 'an action flips its switches once it has run' do
+  st = new_state
+  ai = Game::EnemyAi.new(nil, st)
+  st.switches[9] = true
+  act = enemy_action(kind: 0, basic: 0, switch_on: true, switch_on_id: 8,
+                     switch_off: true, switch_off_id: 9)
+  enemy_entry([act], ai)
+  eq true, st.switches[8], 'switched on'
+  eq false, st.switches[9], 'and off'
+end
+
+# -- skill actions -------------------------------------------------------------
+
+# A minimal skill row for the AI env to resolve.
+class FakeAiSkill
+  attr_accessor :name, :scope, :sp_type, :sp_cost, :sp_percent, :power,
+                :physical_rate, :magical_rate, :hit, :variance, :state_effects,
+                :attribute_effects, :affect_hp, :affect_sp
+
+  def initialize(h = {})
+    @name = 'Spell'; @scope = 0; @sp_type = 0; @sp_cost = 0; @power = 0
+    @physical_rate = 0; @magical_rate = 0; @hit = 100; @variance = 0
+    @affect_hp = true; @affect_sp = false
+    h.each { |k, v| send("#{k}=", v) }
+  end
+end
+
+# An AI env whose skill table is a fixed hash, casting through a real party.
+class FakeAiEnv < Game::EnemyAi
+  def initialize(skills, state)
+    super(nil, state)
+    @skills = skills
+  end
+
+  def skill(id); @skills[id]; end
+end
+
+def skill_ai(skills)
+  FakeAiEnv.new(skills, party_state)
+end
+
+check 'an enemy casts an attack skill from its pattern' do
+  ai = skill_ai(1 => FakeAiSkill.new(name: 'Fire', scope: 0, power: 30))
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe)
+  eq 'Fire', e[:skill], 'the skill is named on the log'
+  ok e[:damage] > 0, 'and it hurt'
+end
+
+check "an enemy's attack skill inflicts its states — enemy-cast infliction" do
+  # state_effects marks state 2; scope 0 makes it an attack skill, whose states
+  # roll against the skill's accuracy (100 here, so it always lands).
+  sk = FakeAiSkill.new(name: 'Poison Sting', scope: 0, power: 20, hit: 100,
+                       state_effects: [0, 1])
+  ai = skill_ai(1 => sk)
+  hero = combatant('Hero', 40, 0, 20, 500)
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe, hero: hero)
+  eq [2], e[:inflicted], 'the party member is poisoned by the monster'
+  ok hero.state?(2), 'and carries the state'
+end
+
+check 'an enemy heals a fellow monster with an ally-scoped skill' do
+  ai = skill_ai(1 => FakeAiSkill.new(name: 'Heal', scope: 3, power: 50,
+                                     affect_hp: true))
+  hero = combatant('Hero', 40, 0, 30, 500)
+  medic = combatant_mp('Medic', 10, 0, 5, 500, 100)
+  medic.actions = [enemy_action(kind: 1, skill_id: 1)]
+  hurt = combatant('Brute', 10, 0, 1, 500)
+  hurt.hp = 100
+  [hero, medic, hurt].each { |c| c.spi ||= 0 }
+  b = Game::Battle.new([hero], [medic, hurt], Game::Rng.new(1), nil, false,
+                       false, false, false, nil, ai)
+  b.begin_round
+  b.step_action                                # the hero swings
+  e = b.step_action                            # the medic casts
+  eq true, e[:recover], 'a recovery, not an attack'
+  ok e[:recover_hp] > 0, 'HP restored to a monster'
+end
+
+check 'an all-enemies skill hits every party member at once' do
+  ai = skill_ai(1 => FakeAiSkill.new(name: 'Blast', scope: 1, power: 30))
+  a = combatant('A', 10, 0, 30, 500)
+  bb = combatant('B', 10, 0, 29, 500)
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  foe.actions = [enemy_action(kind: 1, skill_id: 1)]
+  [a, bb, foe].each { |c| c.spi ||= 0 }
+  bat = Game::Battle.new([a, bb], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, nil, ai)
+  bat.begin_round
+  bat.step_action; bat.step_action             # both heroes
+  hits = [bat.step_action, bat.step_action]
+  eq %w[A B], hits.map { |h| h[:target] }.sort, 'both members are hit'
+  eq 1, hits.map { |h| h[:attacker] }.uniq.size, 'by the one monster'
+end
+
+check 'an enemy that cannot pay a skill SP cost falls back to attacking' do
+  ai = skill_ai(1 => FakeAiSkill.new(name: 'Fire', scope: 0, power: 30,
+                                     sp_cost: 50))
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 10)   # only 10 SP
+  e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe)
+  ok e[:skill].nil?, 'no spell'
+  eq 20, e[:damage], 'a plain attack instead'
+end
+
+check 'a skill action with no AI env to resolve it degrades to an attack' do
+  e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], nil)
+  ok e[:skill].nil?
+  eq 20, e[:damage]
+end
+
+check 'casting spends the enemy SP' do
+  ai = skill_ai(1 => FakeAiSkill.new(name: 'Fire', scope: 0, power: 30,
+                                     sp_cost: 12))
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe)
+  eq 88, foe.mp, '100 - 12'
+end
+
+# -- transformation ------------------------------------------------------------
+
+check 'a transformation re-points the monster at another database enemy' do
+  # A tiny stand-in database exposing one enemy row.
+  row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                   :agility, :exp, :gold).new('Dragon', 900, 50, 90, 40, 30,
+                                              25, 0, 0)
+  db = Struct.new(:enemy).new({ 1 => row })
+  ai = Game::EnemyAi.new(db, new_state)
+  foe = combatant('Slime', 40, 0, 5, 500)
+  e = enemy_entry([enemy_action(kind: 2, enemy_id: 1)], ai, foe: foe)
+  eq true, e[:transform]
+  eq 'Dragon', foe.name, 'the monster is now a Dragon'
+  eq 90, foe.atk, 'with its stats'
+  eq 900, foe.max_hp
+end
+
+check 'a transformation into an unknown enemy degrades to an attack' do
+  ai = Game::EnemyAi.new(nil, new_state)
+  e = enemy_entry([enemy_action(kind: 2, enemy_id: 99)], ai)
+  ok e[:transform].nil?
+  eq 20, e[:damage]
+end
+
+# -- the database path ---------------------------------------------------------
+
+check 'Game::Enemy decodes its action pattern off the database row' do
+  arow = FakeAction.new(kind: 1, skill_id: 4, rating: 60)
+  erow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                    :agility, :exp, :gold, :actions)
+             .new('Imp', 30, 5, 12, 4, 3, 8, 7, 3, { 1 => arow })
+  db = Struct.new(:enemy).new({ 1 => erow })
+  e = Game::Enemy.new(db, 1)
+  eq 1, e.actions.size
+  ok e.actions.first.skill?
+  eq 4, e.actions.first.skill_id
+  eq 60, e.actions.first.rating
+  eq e.actions, Game::Battle.from_enemy(e).actions,
+     'and the combatant carries it into the fight'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

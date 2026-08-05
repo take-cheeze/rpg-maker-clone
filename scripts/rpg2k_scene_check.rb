@@ -2327,6 +2327,26 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
   ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
 end
 
+check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  sprites = ui[:enemy_sprites]
+  ok sprites[0].visible, 'drawn to begin with'
+  # Out of play without being dead — an enemy that ran (its own Escape action or
+  # a page's Force Flee), which used to stay on screen because visibility keyed
+  # off `dead?` alone.
+  ui[:foes][0].hidden = true
+  scene.send(:refresh_battle_sprites)
+  ok !sprites[0].visible, 'a monster that fled is taken off the field'
+  ok !ui[:foes][0].dead?, 'without counting as a kill'
+  ok sprites[1].visible, 'its companion is untouched'
+end
+
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
 #
 # Both flags exist so a headless run can leave the title screen without input:

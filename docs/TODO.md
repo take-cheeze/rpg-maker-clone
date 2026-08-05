@@ -281,9 +281,9 @@ The work below is roughly ordered by the critical path to a walkable game
   stands the ally up and its recovery then lands, and a cure skill is usable even
   at full HP. A **party wipe now ends the game** (a game-over-mode battle defeat
   puts up the Game Over screen, then the title — see the Enemy Encounter
-  entry). Still remaining:
-  inflicting states from **battle** (rolling `state_chance` / to-hit, the
-  non-reverse item case, enemy attacks).
+  entry). Enemies inflict states too now, by casting the status skills in their
+  action pattern (see the 行動パターン entry below). Still remaining here: the
+  non-reverse item case.
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
@@ -421,7 +421,51 @@ The work below is roughly ordered by the critical path to a walkable game
   command (12420) and a battle defeat whose encounter says "game over" rather
   than running a `[Defeat]` handler. A game that names no picture (or whose file
   is missing) still reaches the screen, on plain black, rather than the defeat
-  failing. Still to come: enemy-cast infliction and the per-terrain backdrop.
+  failing. Still to come: the per-terrain backdrop.
+  **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
+  than only ever attacking — the single biggest silent gap left in the battle
+  system, since **510 of the 959 enemy actions across the two test beds are
+  skills** that could never fire. `Game::EnemyAction` decodes the table and
+  `Game::Battle#choose_enemy_action` picks from it each turn: a port of EasyRPG's
+  rating-based algorithm, which keeps the entries whose condition currently
+  holds, finds the highest `rating`, drops everything more than 10 below it
+  (`rating - max + 10`, floored at 0) and picks from the rest weighted by that
+  adjusted rating — so a monster's behaviour shifts through a fight as its
+  preferred moves stop being valid. All eight condition types resolve (always,
+  switch, turn, party size, own HP %, own SP %, party average level and party
+  fatigue), the turn condition reusing `Game::BattlePage.check_turns` with the
+  same base / multiple argument order, and an unknown type keeps the action out
+  of the running rather than firing it unchecked. Every kind executes: a
+  **skill** goes through the same command pipeline the party casts with (so an
+  enemy's spell is costed against its SP, scaled by the target's elemental
+  resistance, rolled for accuracy and **inflicts its states** — which is what
+  finally lets a monster poison or sleep the party, the last enemy-cast gap), an
+  ally-scoped skill **heals a fellow monster**, an all-scope skill hits every
+  living target in one action; a **transformation** re-points the combatant at
+  another database enemy (name, stats, ranks and its new pattern, HP/SP clamped
+  to the new maxima); and the basic actions cover attack, **dual attack** (two
+  swings, the second skipped if the first felled the target), **defend** (the
+  guard halves the next blow and expires at that enemy's next turn), observe,
+  **charge** (the next attack lands doubled — a critical takes precedence, per
+  EasyRPG's `CalcNormalAttackEffect` — then the charge is spent),
+  **self-destruction** (`atk - def/2` across the living party, killing the
+  caster, per `CalcSelfDestructEffect`), **escape** (out of play without counting
+  as a kill, like a page's Force Flee) and do-nothing. An action's post-run
+  switch on / off is applied, so a monster's move can drive the troop's
+  battle-event pages. `Game::Battle` stays database-free: it reaches the skill /
+  enemy tables, the switches and the party's average level through a new
+  `Game::EnemyAi` collaborator, and without one (the seeded harness fixtures) an
+  enemy falls back to plain attacking exactly as before, so every existing
+  result is unchanged. Exercised over real data: all 300 Nepheshel enemies and
+  all 115 of mtf-meido-action's decode a pattern, and running every troop in both
+  games (157 and 88 fights) completes without error with 1980 and 1193 skill
+  casts landing where there were none. `ruby scripts/analyze_game.rb --enemies
+  <game>` reports a game's patterns the way `--troops` reports its battle pages.
+  One presentation gap remains: a transformed monster fights with its new stats
+  and pattern but keeps its original battler sprite, because the battle screen
+  builds each sprite once from the troop member's `battler_name` — reloading it
+  mid-fight is a scene-side change left for the same pass that gives the battle
+  screen its per-terrain backdrop.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
