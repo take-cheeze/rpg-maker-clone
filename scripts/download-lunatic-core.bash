@@ -2,6 +2,9 @@
 
 set -eux -o pipefail
 
+# Retried because these external clones fail intermittently in CI.
+. "$(dirname "$0")/git-clone-retry.bash"
+
 # Fetch a small, complete RPG Maker MV project to use as a test bed for the
 # JavaScript-maker (MV) support. KinoAR/Lunatic-Core ships the full MV
 # corescript (js/rpg_*.js + js/libs/pixi.js), a data/*.json database and img/
@@ -15,6 +18,6 @@ mkdir -p "$(dirname "$0")/../data"
 cd "$(dirname "$0")/../data"
 
 if [ ! -d Lunatic-Core ]; then
-    git clone --quiet --depth 1 https://github.com/KinoAR/Lunatic-Core.git \
+    clone_retry --quiet --depth 1 https://github.com/KinoAR/Lunatic-Core.git \
         Lunatic-Core
 fi
