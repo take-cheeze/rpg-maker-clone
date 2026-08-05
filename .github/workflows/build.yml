@@ -94,35 +94,41 @@ jobs:
       # so the wait always has a real step to join). Every write lands on a
       # git-ignored path (build/, data/*, scripts/*.zip, the fetched MV engine
       # files), so nothing here can race pre-commit's tracked-file `git diff`.
+      #
+      # Every step that can overlap another one enters the dev shell through
+      # scripts/nix-develop.bash rather than `nix develop` directly: CI has no
+      # nix-daemon, so concurrent nix processes contend for the store database
+      # lock and the loser aborts with "SQLite database ... is busy". The
+      # wrapper retries just that error; see the script for the details.
       - name: Download RTP
         id: dl-rtp
         background: true
         run: |
-          nix develop -c ./scripts/rtp_install.bash
-          nix develop -c ./scripts/rtp_xp_install.bash
+          ./scripts/nix-develop.bash ./scripts/rtp_install.bash
+          ./scripts/nix-develop.bash ./scripts/rtp_xp_install.bash
 
       - name: Download game
         id: dl-game
         background: true
         run: |
-          nix develop -c ./scripts/download-nepheshel.bash
-          nix develop -c ./scripts/download-mtf-meido-action.bash
-          nix develop -c ./scripts/download-opengame-xp.bash
+          ./scripts/nix-develop.bash ./scripts/download-nepheshel.bash
+          ./scripts/nix-develop.bash ./scripts/download-mtf-meido-action.bash
+          ./scripts/nix-develop.bash ./scripts/download-opengame-xp.bash
 
       - name: Download MV test game
         id: dl-mv
         background: true
-        run: nix develop -c ./scripts/download-lunatic-core.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-lunatic-core.bash
 
       - name: Build MV sample engine
         id: dl-mv-sample
         background: true
-        run: nix develop -c ./scripts/download-mv-corescript.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-mv-corescript.bash
 
       - name: Fetch MZ corescript
         id: dl-mz-sample
         background: true
-        run: nix develop -c ./scripts/download-mz-corescript.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-mz-corescript.bash
 
       - name: pre-commit
         id: pre-commit
@@ -130,7 +136,7 @@ jobs:
         env:
           SKIP: nixfmt
         run: |
-          nix develop -c pre-commit run -a || (
+          ./scripts/nix-develop.bash pre-commit run -a || (
             git diff --exit-code ;
             false
           )
@@ -138,22 +144,29 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
 
+      # Runs while the background steps above are still in flight, so it takes
+      # the retrying wrapper too.
       - name: cmake
         run: |
-          nix develop -c cmake -S . -B build -GNinja
+          ./scripts/nix-develop.bash cmake -S . -B build -GNinja
 
       - name: build
         run: |
-          nix develop -c cmake --build build
+          ./scripts/nix-develop.bash cmake --build build
 
       - name: sccache stats
         if: always()
+        # The background downloads can still be running here, so this needs the
+        # retrying wrapper too — in the mode that keeps nix's own stderr out of
+        # the captured stdout, which is going into the step summary verbatim.
+        env:
+          NIX_DEVELOP_SEPARATE_STREAMS: 1
         run: |
           {
             echo "## sccache stats"
             echo ""
             echo '```'
-            nix develop -c sccache --show-stats
+            ./scripts/nix-develop.bash sccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -194,13 +207,13 @@ jobs:
       # `[MV-*]` markers.
       - parallel:
           - name: LCF test-bed smoke check
-            run: nix develop -c ruby scripts/lcf_testbed_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/lcf_testbed_check.rb
 
           - name: RPG XP test-bed smoke check
-            run: nix develop -c ruby scripts/rpgxp_testbed_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_testbed_check.rb
 
           - name: RPG XP script-host smoke check
-            run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_script_host_check.rb
 
           # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
           # open-source test bed (the editors and their RTPs are commercial), so
@@ -210,7 +223,7 @@ jobs:
           # in the schema. It also picks up any real VX/VX Ace project that a
           # future download step unpacks under data/.
           - name: RPG VX / VX Ace data check
-            run: nix develop -c ruby scripts/rpgvx_testbed_check.rb
+            run: ./scripts/nix-develop.bash ruby scripts/rpgvx_testbed_check.rb
 
           # Validate the committed MV test-bed database (data/mv-sample) before
           # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
@@ -219,17 +232,17 @@ jobs:
           # committed bed so it stays deterministic even though this parallel
           # group may run alongside the MV game download.
           - name: MV test-bed data check
-            run: nix develop -c ruby scripts/mv_testbed_check.rb data/mv-sample
+            run: ./scripts/nix-develop.bash ruby scripts/mv_testbed_check.rb data/mv-sample
 
           - name: RPG2k game-logic checks
             run: |
-              nix develop -c ruby scripts/rpg2k_logic_check.rb
-              nix develop -c ruby scripts/rpg2k_scene_check.rb
-              nix develop -c ruby scripts/rpg2k_render_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_logic_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_scene_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_render_check.rb
 
           - name: test
             run: |
-              nix develop -c cmake --build build -t test
+              ./scripts/nix-develop.bash cmake --build build -t test
 
           # Boot the built engine on the real RPG2000/2003 test-beds and drive
           # it past the title into the map with --rpg2k_new_game. The CRuby host
@@ -241,7 +254,7 @@ jobs:
           # [RPG2k-MAP] marker fails this step. It uses display 109 and up, one
           # per game. See ADR 0021.
           - name: RPG2k real-game boot smoke test
-            run: nix develop -c ./scripts/rpg2k_boot_check.bash 109
+            run: ./scripts/nix-develop.bash ./scripts/rpg2k_boot_check.bash 109
 
           # The same guard for the RPG Maker XP runtime: the XP checks above run
           # mruby-rpgxp's sources under CRuby, so only booting the real binary
@@ -250,7 +263,7 @@ jobs:
           # the script asserts on. Display 112 (see the reserved server-num map
           # above). See docs/adr/0025-rpgxp-cross-runtime-testing.md.
           - name: RPG XP real-game boot smoke test
-            run: nix develop -c ./scripts/rpgxp_boot_check.bash 112
+            run: ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112
 
           # A released game keeps its Graphics/ inside the encrypted archive with
           # nothing loose, so the native asset loaders have to read through it.
@@ -263,7 +276,7 @@ jobs:
           - name: MV boot smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=100 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=5000 --game_dir data/Lunatic-Core \
                 --mv_screenshot=ss/mv_title.png
@@ -278,7 +291,7 @@ jobs:
           - name: MV real-game play smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=105 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/Lunatic-Core \
                 --mv_new_game --mv_move_test --mv_screenshot=ss/mv_play.png
@@ -286,7 +299,7 @@ jobs:
           - name: MV sample smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=101 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=5000 --game_dir data/mv-sample \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
@@ -300,7 +313,7 @@ jobs:
           # reserved server-num map above).
           - name: MZ boot smoke test
             continue-on-error: true
-            run: nix develop -c ./scripts/mz_boot_check.bash 111
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
           # Run the battle smoke against the real bed (Lunatic-Core): it ships
           # battlers and a battleback, so the captured Scene_Battle frame shows
@@ -311,7 +324,7 @@ jobs:
           - name: MV battle smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=8000 --game_dir data/Lunatic-Core \
                 --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
@@ -319,7 +332,7 @@ jobs:
           - name: MV movement smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=103 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_move_test
@@ -327,7 +340,7 @@ jobs:
           - name: MV message smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=104 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
@@ -339,7 +352,7 @@ jobs:
           - name: MV menu smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=106 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_menu_test --mv_screenshot=ss/mv_menu.png
@@ -350,7 +363,7 @@ jobs:
           - name: MV save smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=107 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_save_test
@@ -363,7 +376,7 @@ jobs:
           - name: MV audio smoke test
             continue-on-error: true
             run: |
-              nix develop -c ./scripts/quiet_alsa.bash \
+              ./scripts/nix-develop.bash ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=108 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_audio_test
@@ -518,6 +531,15 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
+      # Realise the dev shell up front, exactly as the `build` job does. This
+      # job fans out into concurrent `nix develop` steps below, and building the
+      # shell is the one part of them that writes to the Nix store database in
+      # bulk (registering every path it substitutes). Doing it once here, with
+      # no other nix process running, keeps those steps from racing each other
+      # for the store lock; it costs nothing overall because each of them would
+      # otherwise pay for the same realisation anyway.
+      - run: nix develop -c echo test
+
       # Fetch + build the MIT MV engine into the committed sample so it can be
       # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
       # Like the `build` job's downloads, this is network-bound work that feeds
@@ -532,7 +554,7 @@ jobs:
       - name: Build MV sample engine
         id: mv-sample
         background: true
-        run: nix develop -c ./scripts/download-mv-corescript.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-mv-corescript.bash
 
       # The project the browser smoke test below plays. Network-bound and
       # unrelated to the compile, so it overlaps the build like the MV fetch
@@ -540,7 +562,7 @@ jobs:
       - name: Download the RPG XP test bed
         id: xp-testbed
         background: true
-        run: nix develop -c ./scripts/download-opengame-xp.bash
+        run: ./scripts/nix-develop.bash ./scripts/download-opengame-xp.bash
 
       - uses: actions/cache@v6
         with:
@@ -570,7 +592,7 @@ jobs:
         # the sccache launcher the devShell exports (sccache cannot cache emcc).
         # WASM_SAMPLE_DIR bakes the MV sample into the page at /game_sample.
         run: |
-          nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+          ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             CMAKE_C_COMPILER_LAUNCHER=ccache \
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja \
@@ -583,20 +605,26 @@ jobs:
       - name: Wait for the MV sample engine
         wait: [mv-sample]
 
+      # The RPG XP test bed is still downloading in the background here (its own
+      # barrier is further down), so this overlaps a second nix process.
       - name: build
         run: |
-          nix develop -c ccache --zero-stats
-          nix develop -c env EM_CACHE="$HOME/.emscripten_cache" \
+          ./scripts/nix-develop.bash ccache --zero-stats
+          ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
 
       - name: ccache stats
         if: always()
+        # As in the `build` job: the test-bed download may still be in flight,
+        # and this captures stdout into the step summary.
+        env:
+          NIX_DEVELOP_SEPARATE_STREAMS: 1
         run: |
           {
             echo "## ccache stats — wasm"
             echo ""
             echo '```'
-            nix develop -c ccache --show-stats
+            ./scripts/nix-develop.bash ccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
