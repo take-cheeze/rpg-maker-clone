@@ -3171,15 +3171,39 @@ class RPG2k
       end
 
       # Vertical position of a `win_h`-tall message window for the configured
-      # display position (top / middle / bottom). Auto-positioning away from the
-      # hero (when `position_fixed` is off) is a later refinement; the window is
-      # placed at the requested position for now.
+      # display position (top / middle / bottom). When the message is not pinned
+      # (`position_fixed` off, RPG2000's default), the window relocates so it does
+      # not cover the hero: if the hero is standing in the lower half of the
+      # screen the window jumps to the top, and vice-versa (so talking to
+      # something at the bottom edge of a map shows the text up top). The exact
+      # zone boundary is approximate pending a wine diff; the direction matches
+      # RPG_RT.
       def message_window_y(win_h, cfg)
-        case cfg.position
+        pos = cfg.position
+        pos = auto_message_position(win_h) unless cfg.position_fixed
+        case pos
         when Game::MessageConfig::POS_TOP    then 0
         when Game::MessageConfig::POS_MIDDLE then (SCREEN_H - win_h) / 2
         else SCREEN_H - win_h
         end
+      end
+
+      # Pick the message position that keeps clear of the hero: top when the hero
+      # is in the lower half of the screen, bottom otherwise.
+      def auto_message_position(_win_h)
+        if hero_screen_y >= SCREEN_H / 2
+          Game::MessageConfig::POS_TOP
+        else
+          Game::MessageConfig::POS_BOTTOM
+        end
+      end
+
+      # The hero tile's centre in screen pixels, from the edge-clamped follow
+      # camera (ignoring transient pan / shake offsets).
+      def hero_screen_y
+        _px, py = player_pixel
+        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        (py + TILE / 2) - cam_y
       end
 
       # Load the FaceSet graphic named by the message config, or nil when no face
