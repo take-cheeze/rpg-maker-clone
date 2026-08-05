@@ -102,6 +102,12 @@
   invented English string. And a battle page's **Change Monster Condition** now
   redraws the panel: it writes straight to the live combatant, so nothing had
   told the screen it was out of date
+- The **field windows show a condition too** — the menu party list, the item and
+  skill target lists, and the status screen, which are the three RPG_RT draws one
+  in. The target lists are the point: they are where you pick who to use an
+  antidote on, and a downed actor used to read only as `HP 0/120`. All of them
+  and the battle panel resolve it through one place, so the menu and the fight
+  cannot disagree about which state a battler is showing
 - The **RPG2003-only event commands** run too — the low opcodes the 2003 editor
   emits for the features RPG2000 never had. **Change Class** (1008) moves an
   actor to a database class, re-reading its growth curve, learn table and EXP

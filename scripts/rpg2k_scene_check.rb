@@ -3394,6 +3394,98 @@ check 'a state the database gives no sentence still gets announced' do
       .include?('Hero is state 99'), 'falling back to the id'
 end
 
+# -- conditions on the field windows ------------------------------------------
+# RPG_RT shows an actor's condition in three field windows as well as in battle
+# (its Window_MenuStatus, Window_ActorTarget and Window_ActorInfo), which is
+# where a player finds out who needs the antidote.
+
+# A party the field menus can render: one actor exposing everything the menu
+# party list, the item / skill target list and the status screen read. The item
+# and skill lists are empty — what these checks are about is the condition,
+# not the lists.
+class MenuStubActor
+  attr_reader :name, :title, :level, :hp, :max_hp, :mp, :max_mp,
+              :atk, :def, :int, :agi, :exp, :states, :equipment
+  def initialize
+    @name = 'Hero'; @title = 'Wanderer'; @level = 5
+    @hp = 80; @max_hp = 120; @mp = 10; @max_mp = 30
+    @atk = 20; @def = 12; @int = 9; @agi = 14; @exp = 300
+    @states = []
+    @equipment = [0, 0, 0, 0, 0]
+  end
+  def exp_to_next; 120; end
+  def add_state(id); @states.push(id) unless @states.include?(id); end
+end
+
+class MenuStubParty
+  attr_reader :actors, :gold, :revision
+  attr_accessor :leader
+  def initialize
+    @actors = [MenuStubActor.new]; @gold = 0; @leader = nil; @revision = 0
+  end
+  def field_items; []; end
+  def field_skills(_actor); []; end
+end
+
+def menu_scene(klass, state)
+  klass.new(fake_parent(fake_db), state)
+end
+
+def menu_state
+  Game::State.new(MenuStubParty.new, 1, 0, 0)
+end
+
+check 'the menu party list shows each member condition' do
+  st = menu_state
+  hero = st.party.actors.first
+  win = menu_scene(RPG2k::Scene::Menu, st).instance_variable_get(:@status)
+  ok window_texts(win).include?('Normal'),
+     'a clear member shows the database normal term'
+
+  hero.add_state(3)                                     # Poison
+  texts = window_texts(menu_scene(RPG2k::Scene::Menu, st)
+                         .instance_variable_get(:@status))
+  ok texts.include?('Poison'), 'and an afflicted one shows the state'
+  ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
+end
+
+check 'the item / skill target list shows who is afflicted' do
+  st = menu_state
+  st.party.actors.first.add_state(4)                    # Sleep
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, st)
+    scene.send(:build_target_window)
+    texts = window_texts(scene.instance_variable_get(:@target_window))
+    ok texts.include?('Sleep'), "the #{klass} target list shows the condition"
+  end
+end
+
+check 'the status screen gives the condition a labelled row' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('State'), 'the row is labelled'
+  ok texts.include?('Normal'), 'and reads normal for a clear actor'
+
+  st.party.actors.first.add_state(1)                    # the death state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
+end
+
+check 'the field windows resolve the same condition the battle panel does' do
+  # Both go through Scene::Base#state_display, so a state that outranks another
+  # in battle outranks it in the menu too.
+  st = menu_state
+  hero = st.party.actors.first
+  hero.add_state(5)                                     # Silence, priority 10
+  hero.add_state(4)                                     # Sleep, priority 80
+  texts = window_texts(menu_scene(RPG2k::Scene::Menu, st)
+                         .instance_variable_get(:@status))
+  ok texts.include?('Sleep'), 'the significant state wins here as well'
+  ok !texts.include?('Silence'), 'and the outranked one is not shown'
+end
+
 check 'a transformed monster is redrawn with its new battler graphic' do
   scene, _st = battle_scene_with_pages(nil)
   10.times do

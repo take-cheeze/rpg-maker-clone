@@ -344,6 +344,40 @@ class RPG2k
         sx, sy = Game::MessagePalette.cell_origin(idx)
         bmp.blend_text x, y, w, h, text, skin, sx, sy, cell, cell, align
       end
+
+      # The condition a battler carrying `states` shows, as [text, palette colour
+      # index]: the significant state's name in its own colour, or the database's
+      # "normal" term when there is none. A state the database does not name
+      # falls back to its id, so an unnamed one still reads as *something* rather
+      # than silently as normal.
+      #
+      # The single place the state table's display side is read, so the battle
+      # status panel (which lays its own columns out and needs the pieces) and
+      # the field windows (which draw straight) cannot drift apart.
+      def state_display(states)
+        table = db.respond_to?(:situation) ? db.situation : nil
+        id = Game::States.significant(states, table)
+        return [normal_status_term, 0] unless id
+        [Game::States.name(id, table) || "state #{id}",
+         Game::States.color(id, table)]
+      end
+
+      # Draw an actor's condition, as RPG_RT does in every field window that
+      # shows one — the menu party list, the item / skill target list and the
+      # status screen (EasyRPG's Window_Base#DrawActorState).
+      def draw_actor_state(bmp, actor, x, y, w, h, skin, align = 0)
+        text, color = state_display(actor.states)
+        draw_system_text bmp, x, y, w, h, text, skin, color, align
+      end
+
+      # The database's word for "no condition" (RPG_RT shows it rather than
+      # leaving the column blank), or a plain English stand-in for a database
+      # that leaves the term unset.
+      def normal_status_term
+        t = db.respond_to?(:term) ? db.term : nil
+        s = t && t.respond_to?(:normal_status) ? t.normal_status : nil
+        s.nil? || s.to_s.empty? ? 'Normal' : s
+      end
     end
 
     # Adapter that exposes the running map to the movement engine
@@ -3564,16 +3598,11 @@ class RPG2k
                ["MP #{b.mp}/#{b.max_mp}", STATUS_MP_X, 0]]
       end
 
-      # The condition column: the significant state's name in the state's own
-      # colour, or the database's normal-status term in the default colour. A
-      # state the database does not name falls back to the id, so an unnamed one
-      # still reads as *something* rather than silently as "normal".
+      # The condition column, as a status-panel segment: the same reading the
+      # field windows draw (Scene::Base#state_display), placed in its column.
       def battle_state_segment(b)
-        table = db.respond_to?(:situation) ? db.situation : nil
-        id = Game::States.significant(b.states, table)
-        return [nonblank(db.term.normal_status, 'Normal'), STATUS_STATE_X, 0] unless id
-        [Game::States.name(id, table) || "state #{id}", STATUS_STATE_X,
-         Game::States.color(id, table)]
+        text, color = state_display(b.states)
+        [text, STATUS_STATE_X, color]
       end
 
       # The current actor's command menu — their name as a header, then Attack /
@@ -5225,6 +5254,10 @@ class RPG2k
         @state.party.actors.each_with_index do |a, i|
           y = i * 40
           sc.draw_text 0, y, sc.width, 14, a.name.to_s
+          # The condition rides on the name row, right-aligned. RPG_RT sits it
+          # beside the level, but that row already carries HP and MP here and
+          # this panel is only 196px wide, so it goes where there is room.
+          draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
           sc.draw_text 0, y + 16, sc.width, 14,
                        "Lv #{a.level}  HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end
@@ -5478,6 +5511,10 @@ class RPG2k
         party.each_with_index do |a, i|
           y = i * LINE_H * 2
           c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          # RPG_RT's target list shows each member's condition (its
+          # Window_ActorTarget draws one) -- which is most of the point of the
+          # list, since it is where you pick who to use an antidote on.
+          draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
                       "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end
@@ -5721,6 +5758,11 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
       SLOTS = ["Weapon", "Shield", "Armor", "Helmet", "Accessory"].freeze
+      # The condition row: which line of the panel it is, its label, and where
+      # the state itself starts (clear of the label).
+      STATE_ROW = 4
+      STATE_LABEL = "State".freeze
+      STATE_VALUE_X = 48
 
       def initialize parent, state
         super parent
@@ -5773,6 +5815,11 @@ class RPG2k
           "Lv #{a.level}    EXP #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
           "HP #{a.hp}/#{a.max_hp}    MP #{a.mp}/#{a.max_mp}",
           "Atk #{a.atk}   Def #{a.def}   Int #{a.int}   Agi #{a.agi}",
+          # The condition gets a labelled row of its own, as on RPG_RT's status
+          # screen (its Window_ActorInfo draws the label then the state). Only
+          # the label goes through the flat pass below; the state itself is drawn
+          # after it so it can take its own palette colour.
+          STATE_LABEL,
           "",
         ]
         eqp = a.equipment
@@ -5780,6 +5827,8 @@ class RPG2k
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end
+        draw_actor_state c, a, STATE_VALUE_X, STATE_ROW * LINE_H,
+                         inner_w - STATE_VALUE_X, LINE_H, @skin
         @window.contents = c
       end
     end
@@ -5983,6 +6032,10 @@ class RPG2k
         party.each_with_index do |a, i|
           y = i * LINE_H * 2
           c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          # RPG_RT's target list shows each member's condition (its
+          # Window_ActorTarget draws one) -- which is most of the point of the
+          # list, since it is where you pick who to use an antidote on.
+          draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
                       "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
         end

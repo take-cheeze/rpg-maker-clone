@@ -580,6 +580,14 @@ The work below is roughly ordered by the critical path to a walkable game
   combatant instead of queueing a request, so nothing told the panel it was
   stale — `apply_battle_event_requests` now rebuilds it, and a page that poisons
   the boss changes the screen as well as the fight.
+  The **field windows show a condition too** — the menu party list, the item and
+  skill target lists and the status screen (a labelled row of its own), which are
+  the three RPG_RT draws one in (`Window_MenuStatus`, `Window_ActorTarget`,
+  `Window_ActorInfo`). The target lists matter most: they are where a player
+  picks who to use an antidote on, and until now a downed actor read only as
+  `HP 0/120`. All four windows and the battle panel go through one
+  `Scene::Base#state_display`, so the menu and the fight cannot disagree about
+  which state a battler is showing.
   A **pre-emptive first strike** (the
   Enemy Encounter's first-strike flag) gives the party a free opening round —
   the ambushed enemies skip their turn in round 1 and rejoin from round 2.
