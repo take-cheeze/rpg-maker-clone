@@ -230,6 +230,14 @@ jobs:
           - name: LCF test-bed smoke check
             run: ./scripts/nix-develop.bash ruby scripts/lcf_testbed_check.rb
 
+          # The interpreter against every event command the downloaded games
+          # ship (371k of them), asserting that none raises and none reaches a
+          # handler's "I do not know this" arm. The unit checks pin the
+          # semantics against hand-written commands; this covers the parameter
+          # shapes real games use, which no fixture set reaches.
+          - name: RPG2k event-command soak
+            run: ./scripts/nix-develop.bash ruby scripts/rpg2k_command_soak.rb
+
           - name: RPG XP test-bed smoke check
             run: ./scripts/nix-develop.bash ruby scripts/rpgxp_testbed_check.rb
 
