@@ -370,10 +370,43 @@ class MZ
       "SceneManager._scene && SceneManager._scene.constructor) ? " \
       "SceneManager._scene.constructor.name : ''; })();"
     )
+    log_boot_readiness
     MV::JS.eval(
       "(function(){ return (typeof SceneManager !== 'undefined' && " \
       "SceneManager.__mzErr) ? SceneManager.__mzErr : ''; })();"
     )
+  end
+
+  # Log what the current scene (normally Scene_Boot) is waiting on, so the piece
+  # keeping MZ from advancing to a real scene — a missing sample asset (system
+  # images) or an unresolved host shim (fonts, localforage/StorageManager) — can
+  # be identified from CI. Emitted as `[MZ-DIAG]`; diagnostics only.
+  def log_boot_readiness
+    report = MV::JS.eval(<<~'JS')
+      (function () {
+        function safe(f) { try { return f(); } catch (e) { return "err:" + ((e && e.message) || e); } }
+        var s = (typeof SceneManager !== "undefined") ? SceneManager._scene : null;
+        var out = {
+          scene: (s && s.constructor) ? s.constructor.name : null,
+          dbLoaded: (typeof DataManager !== "undefined" && DataManager.isDatabaseLoaded) ?
+            safe(function () { return DataManager.isDatabaseLoaded(); }) : "n/a",
+          forageKeys: (typeof StorageManager !== "undefined" && StorageManager.forageKeysUpdated) ?
+            safe(function () { return StorageManager.forageKeysUpdated(); }) : "n/a",
+          imgReady: (typeof ImageManager !== "undefined" && ImageManager.isReady) ?
+            safe(function () { return ImageManager.isReady(); }) : "n/a",
+          fontReady: (typeof FontManager !== "undefined" && FontManager.isReady) ?
+            safe(function () { return FontManager.isReady(); }) :
+            ((typeof document !== "undefined" && document.fonts) ? ("fonts." + document.fonts.status) : "n/a"),
+          sceneReady: (s && s.isReady) ? safe(function () { return s.isReady(); }) : "n/a",
+          dbLoadedFlag: s ? s._databaseLoaded : "n/a",
+          playerData: (s && s.isPlayerDataLoaded) ? safe(function () { return s.isPlayerDataLoaded(); }) : "n/a"
+        };
+        return JSON.stringify(out);
+      })();
+    JS
+    $stderr.puts "[MZ-DIAG] boot readiness: #{report}"
+  rescue StandardError => e
+    $stderr.puts "[MZ-DIAG] readiness probe error: #{e.message}"
   end
 
   attr_reader :boot_scene
