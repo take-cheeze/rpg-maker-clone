@@ -693,9 +693,21 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `RPGXP::RGSSData` falls back to whichever archive is present when a `.rxdata` is
   not loose on disk. Covered by `mruby-rpgxp/test` (v1 and v3 round-trips) and by
   `scripts/rpgxp_testbed_check.rb` (packs the real test bed as both `.rgssad` and
-  `.rgss3a` and reloads the whole DB through each). Remaining: reading
-  **graphics/audio** out of the archive (only the Ruby `Data/` path is wired; the
-  native `Bitmap`/`Audio` loaders still read loose files).
+  `.rgss3a` and reloads the whole DB through each). **Graphics come out of the
+  archive too**: the boot shell registers its opened archive as
+  `RGSS.asset_archive`, and `Bitmap#initialize` consults it after the loose-file
+  search misses, trying the same extension candidates — an asset is asked for by
+  name from deep inside a game's own scripts, so there is no handle to thread
+  down and the registry is what closes that. The bytes go through the same
+  decoder a loose file does (`_init_file` and `_init_memory` share
+  `bmp_decode_into`), so the stb / XYZ / tolerant-PNG fallbacks a real project
+  needs are not quietly missing from the packed path. Checked end to end in the
+  real binary by `scripts/rgssad_asset_check.bash`, which packs the test bed
+  twice — with and without a title graphic in the archive — and asserts the
+  engine finds it only when it is there; a single run would pass just as well if
+  the archive were never consulted. Remaining: **audio**, which plays through a C
+  function table (`include/rgss_audio.hxx`) whose entry points all take a path,
+  so a packed BGM needs that interface to grow memory variants.
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
@@ -719,8 +731,8 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
   the native `Graphics.snap_to_bitmap` — see the VX section below.)
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
-  (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
-  archive.
+  (Asyncify or a per-frame driver), and read **audio** out of the encrypted
+  archive (graphics already come out of it — see Encrypted archives above).
 - ✅ **Cross-runtime testing** — an XP project is booted in every runtime it can
   run in, all asserting the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks
   New Game without input): `scripts/rpgxp_boot_check.bash` (the native binary,
@@ -773,8 +785,9 @@ screen (544×416). Full rationale:
   `Data/System.rxdata` — and sizes the window to 544×416.
 - ✅ **Encrypted archives** — `Game.rgss2a` (v1) and `Game.rgss3a` (v3) load
   through the XP reader (`RPGXP::RGSSAD`) unchanged, so a single-archive release
-  boots with no loose files. Same remaining gap as XP: graphics/audio are still
-  read from loose files only.
+  boots with no loose files, and — like XP, through the same shared
+  `RGSS.asset_archive` the VX boot shell registers — finds its **graphics** in
+  there as well. Same remaining gap as XP: **audio** is still loose-file only.
 - 🚧 **Run the bundled scripts** — a VX/VX Ace game's engine is its script
   bundle, so this is *the* path rather than a later refinement. The host runs
   (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver shared by both

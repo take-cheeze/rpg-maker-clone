@@ -180,8 +180,9 @@ jobs:
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99 and
       # render_probe=98 (see those ctest tests in CMakeLists.txt, both run by
       # the `test` step below); MV runs=100..108, the RPG2k
-      # real-game boot smoke=109..110, the MZ boot smoke=111, and the RPG XP
-      # real-game boot smoke=112 below. Every
+      # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
+      # real-game boot smoke=112 and the RGSSAD packed-asset smoke=113..114
+      # (two runs, one per arm of its A/B) below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -250,6 +251,14 @@ jobs:
           # above). See docs/adr/0025-rpgxp-cross-runtime-testing.md.
           - name: RPG XP real-game boot smoke test
             run: nix develop -c ./scripts/rpgxp_boot_check.bash 112
+
+          # A released game keeps its Graphics/ inside the encrypted archive with
+          # nothing loose, so the native asset loaders have to read through it.
+          # Packs the same real test bed twice — with and without a title graphic
+          # in the archive — and asserts the engine finds it only when it is
+          # there, which is what makes the check non-vacuous. Displays 113-114.
+          - name: RGSSAD packed-asset smoke test
+            run: nix develop -c ./scripts/rgssad_asset_check.bash 113
 
           - name: MV boot smoke test
             continue-on-error: true

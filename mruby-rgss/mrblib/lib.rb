@@ -13,6 +13,22 @@ module RGSS
 
   # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
 
+  # The game's encrypted archive, for assets that are not on disk.
+  #
+  # A released RPG Maker game ships one Game.rgssad / .rgss2a / .rgss3a holding
+  # its whole tree — Data/ *and* Graphics/ and Audio/ — with nothing loose. The
+  # data layers open the archive themselves to read Data/, but assets are asked
+  # for by name from anywhere (`Cache.tileset(n)` -> `Bitmap.new("Graphics/...")`
+  # deep inside a game's own scripts), with no handle to thread through. So each
+  # maker's boot shell registers its archive here once and the loaders consult
+  # it after a loose file misses — loose shadows packed, as in RGSS.
+  #
+  # Anything answering `read(name) -> String or nil` will do; in practice it is
+  # an RPGXP::RGSSAD. nil means an unpacked project.
+  class << self
+    attr_accessor :asset_archive
+  end
+
   # The mean R/G/B of the rendered frame, sampled on an 8px grid (a full
   # per-pixel walk through get_pixel would take seconds). nil when the backend
   # cannot snapshot. This is the measurement ADR 0021 used to prove the RPG2000
@@ -158,22 +174,28 @@ module RGSS
   end
 
   class Bitmap
+    # RGSS resolves a bare asset name against several image formats, and the RPG
+    # Maker XP RTP genuinely mixes them: its windowskins and charsets are .png
+    # while its title backgrounds are .jpg, so a png-only search left every XP
+    # title screen on the fallback background (found by
+    # scripts/compare-rpgxp-wine.bash). stb decodes JPEG, so both spellings of
+    # the extension are just more candidates.
+    EXTENSIONS = [:png, :jpg, :jpeg, :xyz, :bmp].freeze
+
     def initialize f, s = nil
       if f.kind_of? String
         i = self._init_file(f, s)
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
           i = self._init_file("#{d}/#{f}", s) unless i
-          # RGSS resolves a bare asset name against several image formats, and
-          # the RPG Maker XP RTP genuinely mixes them: its windowskins and
-          # charsets are .png while its title backgrounds are .jpg, so a
-          # png-only search left every XP title screen on the fallback
-          # background (found by scripts/compare-rpgxp-wine.bash). stb decodes
-          # JPEG, so both spellings of the extension are just more candidates.
-          [:png, :jpg, :jpeg, :xyz, :bmp].each do |ext|
+          EXTENSIONS.each do |ext|
             i = self._init_file("#{d}/#{f}.#{ext}", s) unless i
           end
         end
+        # A released game packs its whole Graphics/ tree into the encrypted
+        # archive with nothing loose on disk, so try that last — loose files
+        # shadow the archive, which is what RGSS itself does.
+        i = init_from_archive(f, s) unless i
         # Surface the decoder's own reason (e.g. an XYZ "bad dist" zlib error)
         # so failures are diagnosable instead of a bare "Failed to init bitmap".
         unless i
@@ -194,6 +216,33 @@ module RGSS
 
     def font=(f)
       @font = f
+    end
+
+    private
+
+    # Decode `f` out of the game's encrypted archive, if one is registered (see
+    # RGSS.asset_archive). Entry names are project-relative with the extension
+    # spelled out, so the same candidate list the loose-file search uses applies
+    # here — the archive itself normalises the '/' separators.
+    #
+    # Best effort: a broken archive must not take down a Bitmap.new that would
+    # otherwise raise its own diagnostic, so the read failure is logged and
+    # treated as a miss.
+    def init_from_archive(f, s)
+      archive = RGSS.asset_archive
+      return nil if archive.nil?
+      bytes = archive.read(f)
+      if bytes.nil?
+        EXTENSIONS.each do |ext|
+          bytes = archive.read("#{f}.#{ext}")
+          break if bytes
+        end
+      end
+      return nil if bytes.nil?
+      self._init_memory(bytes, s)
+    rescue StandardError => e
+      $stderr.puts "[RGSS] archive read failed for #{f}: #{e.message}"
+      nil
     end
   end
 

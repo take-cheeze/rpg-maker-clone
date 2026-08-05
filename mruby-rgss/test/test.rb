@@ -395,6 +395,143 @@ assert "RGSS::Bitmap reports a detailed reason when an XYZ fails to decode" do
   end
 end
 
+# ---- Loading assets out of an encrypted archive ---------------------------
+#
+# A released RPG Maker game packs its whole Graphics/ tree into Game.rgssad /
+# .rgss2a / .rgss3a with nothing loose on disk, so the loose-file search finds
+# nothing and every asset has to come out of the archive. The reader itself is
+# RPGXP::RGSSAD (tested in mruby-rpgxp, which also covers the end-to-end path);
+# what is checked here is mruby-rgss's half — that Bitmap consults whatever is
+# registered as RGSS.asset_archive, tries the same extension candidates the
+# loose search does, and decodes the bytes through the same decoders.
+#
+# The fixture is the 3x2 XYZ picture used above: palette 0 = (10,20,30),
+# 1 = red, 2 = green.
+XYZ_3X2 = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\xe3\x12\x91\xfb\xcf\xc0" \
+          "\xc0\x00\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00\xb4" \
+          "\x8b\x02\x41"
+
+# Stands in for an RPGXP::RGSSAD: anything answering read(name) -> String or
+# nil will do. Records its lookups so the candidate order can be asserted.
+class FakeArchive
+  def initialize(entries)
+    @entries = entries
+    @asked = []
+  end
+
+  attr_reader :asked
+
+  def read(name)
+    @asked << name
+    @entries[name]
+  end
+end
+
+assert "RGSS::Bitmap decodes packed bytes exactly as it decodes a file" do
+  # Same picture, same expectations as the loose-file XYZ tests above — the two
+  # paths share one decoder (bmp_decode_into), and this is what pins that.
+  archive = FakeArchive.new({ "Graphics/System/Window" => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    b = RGSS::Bitmap.new("Graphics/System/Window")
+    assert_equal 3, b.width
+    assert_equal 2, b.height
+    px = b.get_pixel(0, 0)
+    assert_equal 10.0, px.red
+    assert_equal 20.0, px.green
+    assert_equal 30.0, px.blue
+    assert_equal 255.0, px.alpha
+    assert_equal 255.0, b.get_pixel(1, 0).red
+    assert_equal 255.0, b.get_pixel(2, 0).green
+    # The transparent-colour flag reaches the packed path too.
+    t = RGSS::Bitmap.new("Graphics/System/Window", true)
+    assert_equal 0.0, t.get_pixel(0, 0).alpha
+    assert_equal 255.0, t.get_pixel(1, 0).alpha
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap reports undecodable packed bytes instead of crashing" do
+  archive = FakeArchive.new({ "Graphics/System/Junk" => "not an image at all" })
+  RGSS.asset_archive = archive
+  begin
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("Graphics/System/Junk") }
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap loads a packed asset through RGSS.asset_archive" do
+  archive = FakeArchive.new({ "Graphics/System/Window.xyz" => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    b = RGSS::Bitmap.new("Graphics/System/Window")
+    assert_equal 3, b.width
+    assert_equal 255.0, b.get_pixel(2, 0).green
+    # The bare name is tried before the extension candidates, exactly as the
+    # loose-file search does it.
+    assert_equal "Graphics/System/Window", archive.asked.first
+    assert_true archive.asked.include?("Graphics/System/Window.xyz")
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap prefers a loose file over the archive" do
+  # RGSS lets a loose file shadow the packed entry; the archive must not even be
+  # consulted when one is found. The loose copy here is the raw-DEFLATE spelling
+  # of the same picture, so a wrong pick still decodes and only `asked` tells
+  # them apart.
+  loose = "\x58\x59\x5a\x31\x03\x00\x02\x00\xe3\x12\x91\xfb\xcf\xc0\xc0\x00" \
+          "\xc2\xa3\x60\x14\x8c\x3c\xc0\xc8\xc4\xc4\xc8\x00\x00"
+  path = "test-packed-shadow.xyz"
+  File.open(path, "wb") { |io| io.write(loose) }
+  archive = FakeArchive.new({ path => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    b = RGSS::Bitmap.new(path)
+    assert_equal 3, b.width
+    assert_true archive.asked.empty?, "archive was consulted: #{archive.asked}"
+  ensure
+    RGSS.asset_archive = nil
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap still raises its own diagnostic when the archive misses" do
+  archive = FakeArchive.new({})
+  RGSS.asset_archive = archive
+  begin
+    err = nil
+    begin
+      RGSS::Bitmap.new("Graphics/System/Missing")
+    rescue => e
+      err = e.message
+    end
+    assert_true !err.nil?, "expected a load failure"
+    assert_true err.include?("Graphics/System/Missing"), "message: #{err}"
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
+assert "RGSS::Bitmap survives an archive that raises" do
+  # A corrupt archive must not turn a missing-asset error into a crash: the read
+  # failure is reported and treated as a miss, so the loader's own diagnostic is
+  # what reaches the caller.
+  broken = Object.new
+  def broken.read(_name)
+    raise "archive is corrupt"
+  end
+  RGSS.asset_archive = broken
+  begin
+    assert_raise(RuntimeError) { RGSS::Bitmap.new("Graphics/System/Window") }
+  ensure
+    RGSS.asset_archive = nil
+  end
+end
+
 assert "RGSS::Profiler is inert until enabled" do
   # The standalone test binary never calls profiler_configure, so profiling is
   # off by default: query methods report the disabled state and the block-timing
