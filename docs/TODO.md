@@ -380,9 +380,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
   the **`prevent_critical`** flag can never be crit. **Elemental attributes**
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
-  are matched against the target's per-attribute defence ranks (A..E → 200 / 150
-  / 100 / 50 / 0 percent, strongest element winning), so a foe is hurt more by a
-  weakness and can fully nullify an element it is immune to. The party can also
+  are matched against the target's per-attribute defence ranks (A..E, strongest
+  element winning) — the rates come from each attribute's own `a_rate` .. `e_rate`
+  in the database `property` table (RPG2000 defaults 300 / 200 / 100 / 50 / 0),
+  and a status infliction likewise reads the `situation` table's per-state rates
+  — so a foe is hurt more by a weakness and can fully nullify an element it is
+  immune to. The party can also
   **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
   (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
   gets away, and a failed attempt forfeits the party's round (every member
@@ -403,8 +406,8 @@ The work below is roughly ordered by the critical path to a walkable game
   still computed per target's defence. **All-party items** (medicine scope 1)
   work the same way through `command_item_all`, healing / curing every living
   ally and consuming a single item for the whole volley. Still to come:
-  enemy-cast infliction, per-attribute rate overrides from the Attribute table,
-  the per-terrain backdrop and the RPG2000 Game Over graphic.
+  enemy-cast infliction, the per-terrain backdrop and the RPG2000 Game Over
+  graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM

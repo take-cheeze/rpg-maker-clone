@@ -4040,14 +4040,14 @@ end
 # A weapon / skill carries a set of elements; the target's per-element rank
 # (0=A weakest .. 4=E immune) scales the damage 200/150/100/50/0 percent.
 
-check 'battle: an element the target is weak to amplifies the damage (rank A = 200%)' do
+check 'battle: an element the target is weak to amplifies the damage (rank A = 300%)' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.atk_attrs = [1]                               # weapon carries element 1
   slime = combatant('Slime', 0, 0, 5, 100_000)
-  slime.attr_ranks = { 1 => 0 }                      # rank A -> 200%
+  slime.attr_ranks = { 1 => 0 }                      # rank A -> 300% (RPG2000 default)
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1)) # variance off
   bat.begin_round
-  eq 40, bat.step_action[:damage]                    # base 20 * 200%
+  eq 60, bat.step_action[:damage]                    # base 20 * 300%
 end
 
 check 'battle: an element the target resists halves the damage (rank D = 50%)' do
@@ -4077,10 +4077,10 @@ check 'battle: the attribute multiplier takes the strongest matching element' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.atk_attrs = [1, 2]                             # two elements
   slime = combatant('Slime', 0, 0, 5, 100_000)
-  slime.attr_ranks = { 1 => 3, 2 => 0 }              # resists 1 (50%), weak to 2 (200%)
+  slime.attr_ranks = { 1 => 3, 2 => 0 }              # resists 1 (50%), weak to 2 (300%)
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
   bat.begin_round
-  eq 40, bat.step_action[:damage]                    # max(50%, 200%) -> 40
+  eq 60, bat.step_action[:damage]                    # max(50%, 300%) -> 60
 end
 
 check 'battle: an unlisted element deals full (C = 100%) damage' do
@@ -4096,11 +4096,42 @@ end
 check 'battle: an elemental skill scales its damage by the target resistance' do
   mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
   slime = combatant('Slime', 0, 0, 5, 100_000)
-  slime.attr_ranks = { 3 => 0 }                      # weak to element 3 (200%)
+  slime.attr_ranks = { 3 => 0 }                      # weak to element 3 (300%)
   bat = Game::Battle.new([mage], [slime], Game::Rng.new(1)) # variance off
   bat.command_skill(mage, slime, name: 'Flame', cost: 0, hp: -30, attributes: [3])
   bat.begin_round
-  eq 60, bat.step_action[:damage]                    # 30 * 200%
+  eq 90, bat.step_action[:damage]                    # 30 * 300%
+end
+
+# A property/state row carrying the RPG2000 A..E rank rates (property table).
+RateRow = Struct.new(:a_rate, :b_rate, :c_rate, :d_rate, :e_rate)
+
+check "battle: a database attribute's own rank rates override the defaults" do
+  props = { 1 => RateRow.new(250, 180, 100, 40, 0) } # element 1: rank A = 250%
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0 }                      # rank A
+  # 9-arg: the attribute (property) table is the last arg.
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.begin_round
+  eq 50, bat.step_action[:damage]                    # 20 * 250% (its own rate, not 300)
+end
+
+check "battle: a database state's own rank rate gates the infliction" do
+  # A hardy status: state 3 is 0% at *every* rank, so even a fully-susceptible
+  # (rank A) target never catches it — the DB rate overrides the 100% default.
+  states = { 3 => RateRow.new(0, 0, 0, 0, 0) }
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 0 }                       # nominally fully susceptible
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1), states)
+  b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+  b.begin_round
+  e = b.step_action
+  eq [], e[:inflicted], "the database rate (0%) overrides the rank-A default"
+  ok !foe.state?(3)
 end
 
 check 'Party#battle_skill_command carries the skill elemental attributes' do
