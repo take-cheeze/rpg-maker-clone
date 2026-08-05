@@ -44,6 +44,36 @@ These are complete enough for the stock scripts:
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
+### 0. `RPG::Sprite` and `RPG::Weather` ❌ (the first thing that stops a boot)
+
+Measured, not counted: with `--rgss_script_host` the test bed now gets 21
+sections in before
+
+```
+[RGSS] script host: section "Sprite_Character" raised NameError: uninitialized constant RPG::Sprite
+```
+
+`RPG::Sprite` is **not in the script bundle** — the 90 sections of the
+`OpenGame.exe` bed define no such section, because `RGSS104E.dll` supplies it,
+along with `RPG::Weather`. `Sprite_Character < RPG::Sprite` is therefore the
+first line of the game's own engine that cannot run, and everything downstream
+(`Spriteset_Map`, `Scene_Map`, `Main`) is behind it.
+
+What RGSS's `RPG::Sprite` is: a `Sprite` subclass adding the battle/animation
+behaviour — `damage(value, critical)` (the floating damage number),
+`animation(animation, hit)` and `loop_animation` (playing an `RPG::Animation`
+over the sprite), `blink_on`/`blink_off`/`blink?`, `effect?`, and the battler
+transitions `whiten`/`black_out`/`appear`/`escape`/`collapse`, all advanced by
+its own `update`.
+
+Most of the animation half already exists in this tree, written for the
+built-in flow's Show Animation (207): `RPGXP::Game::Animation` decodes the frame
+timing and cell rows, and the map scene blits the cells. Lifting that into an
+`RPG::Sprite` the scripts can subclass is the next concrete step for the host.
+
+**This gap was invisible until now**, because the switch that turns the host on
+could not work in a built engine — see the note at the end of this document.
+
 ### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
@@ -190,3 +220,18 @@ driver ends the game on (see item 3 above / ADR 0023).
 - None of the above can be built or run in the current CI sandbox; each item is
   verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
   `scripts/rpgxp_script_host_check.rb`.
+
+## Why this list was never measured in the engine
+
+Until now the host could only be turned on by the `RGSS_SCRIPT_HOST` environment
+variable, and **this mruby build has no `ENV`** — no `mruby-env` gem is in
+`build_config.rb`, and none is vendored. `ScriptHost.enabled?` therefore returned
+false in every built engine, on every target, and the host never ran. Only the
+CRuby harnesses, where `ENV` does exist, ever exercised the switch, which is why
+the dead opt-in went unnoticed while the documents kept naming it.
+
+`--rgss_script_host` (published to the Ruby side as the `RGSS_SCRIPT_HOST`
+constant, the way `--rpgxp_new_game` is published as `RPGXP_NEW_GAME`) is the
+switch that works. The environment variable is still honoured for the harnesses.
+With it, the gaps above stop being static call counts and become what actually
+stops a boot — the section name is now reported with the failure.

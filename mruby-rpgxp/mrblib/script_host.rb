@@ -59,27 +59,42 @@ class RPGXP
     # Whether to run the bundled scripts instead of the built-in flow. **On by
     # default**: an RGSS project's scripts *are* its engine, so running them is
     # the faithful boot; the built-in reimplementation is the fallback for a
-    # project that ships none. Only an explicit opt-out turns it off.
+    # project that ships none, and for a host that cannot get the game's own
+    # engine up. Only an explicit opt-out turns it off, from either of two
+    # places, because the two runtimes read their settings differently:
     #
-    # Two ways in, because the two runtimes read their settings differently:
+    # **The `--rgss_script_host` flag** is the switch that works in a built
+    # engine. src/main.cxx publishes it as the RGSS_SCRIPT_HOST constant, the way
+    # it publishes `--rpgxp_new_game` as RPGXP_NEW_GAME, and it is read through
+    # its own rescue because an undefined constant raises here (this mruby has no
+    # `defined?(CONST)`). It also folds in the environment variable below, which
+    # a booted game cannot read for itself.
     #
-    #   * the native binary resolves --rgss_script_host and the
-    #     RGSS_SCRIPT_HOST environment variable itself and sets the
-    #     RGSS_SCRIPT_HOST *constant* (src/main.cxx) — this build's mruby has no
-    #     ENV, so that is the only channel that reaches a booted game;
-    #   * the CRuby harnesses (scripts/*_check.rb) have no such constant and set
-    #     the environment variable directly, so ENV is read when it exists.
+    # **The RGSS_SCRIPT_HOST environment variable** is what every document used
+    # to name, and on its own it could never have switched the host: this mruby
+    # build has no ENV at all, so the check below was simply never reached in the
+    # engine. Only the CRuby harnesses — where ENV does exist — ever saw it work,
+    # which is why the dead switch went unnoticed. It is still honoured, for them.
     #
     # With neither present — an embedded target, or a host-side unit test — the
-    # default stands. const_defined? rather than defined?(CONST), which raises on
-    # an undefined constant in this mruby build.
+    # default stands.
     def self.enabled?
-      return RGSS_SCRIPT_HOST if Object.const_defined?(:RGSS_SCRIPT_HOST)
+      setting = flag_setting
+      return setting unless setting.nil?
       return true unless Object.const_defined?(:ENV)
       flag = ENV[ENABLED_ENV]
       # Unset or empty is "not asked for either way" — the default wins.
       return true if flag.nil? || flag.empty?
       !DISABLED_VALUES.include?(flag)
+    end
+
+    # The RGSS_SCRIPT_HOST constant the native binary publishes, or nil where
+    # there is none (the CRuby harnesses, mrbtest, an embedded build) — nil is
+    # "nothing said", which is why this cannot just answer true/false.
+    def self.flag_setting
+      RGSS_SCRIPT_HOST
+    rescue StandardError
+      nil
     end
 
     # Run the project's bundled scripts to completion. `db` answers #scripts
@@ -106,7 +121,22 @@ class RPGXP
       sections.each do |name, source|
         # Evaluate through the top-level helper so a section's `class Scene_Title`
         # etc. define global (::) constants, as under RGSS — see rgss_eval_section.
-        rgss_eval_section(source, name)
+        #
+        # Name the section in the failure. The host is how a game's own engine
+        # runs, so a boot failure is a report about which part of the RGSS class
+        # library is still missing (docs/rpgxp-rgss-api-gap.md) — and "NameError:
+        # uninitialized constant RPG::Sprite" says nothing about *where* to look
+        # without it. Re-raised, so the caller still falls back to the built-in
+        # flow.
+        begin
+          rgss_eval_section(source, name)
+        rescue StandardError, ScriptError => e
+          $stderr.puts "[RGSS] script host: section #{name.inspect} raised " \
+                       "#{e.class}: #{e.message}"
+          # `raise` with no argument loses the exception in this mruby build
+          # (the caller saw a bare RuntimeError), so re-raise it explicitly.
+          raise e
+        end
       end
       true
     end

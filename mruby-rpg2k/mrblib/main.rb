@@ -646,6 +646,9 @@ class RPG2k
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
         @fade_sprite.bitmap = @fade_bmp
         @fade_sprite.opacity = 0
+        # Whether the overlay currently holds a transition mask rather than the
+        # solid black the opacity-only fade needs (see #draw_transition_mask).
+        @fade_masked = false
 
         @flash_sprite = Sprite.new
         @flash_sprite.z = 450
@@ -679,7 +682,7 @@ class RPG2k
       # over the command's duration.
       def update_screen_overlay
         screen = @state.screen
-        @fade_sprite.opacity = screen.fade_level
+        draw_transition_mask screen
         @tint_sprite.opacity = tint_overlay_opacity(screen.tint)
 
         r, g, b, strength = screen.flash_color
@@ -695,6 +698,44 @@ class RPG2k
         end
 
         draw_weather
+      end
+
+      # Fully opaque and fully clear black, for painting the erase overlay.
+      OPAQUE_BLACK = Color.new(0, 0, 0, 255)
+      CLEAR = Color.new(0, 0, 0, 0)
+
+      # Paint the screen-erasure overlay for this frame.
+      #
+      # A plain fade is just the overlay's opacity, and the bitmap stays the
+      # solid black it was built as — the cheap path, which is also every frame
+      # on which no transition is running. A *shaped* transition (blinds,
+      # stripes, a closing window) instead paints the bitmap: opaque black
+      # everywhere, then the regions of the live scene still showing through
+      # punched back out to fully transparent. `fill_rect` overwrites alpha, so
+      # the holes really are holes.
+      def draw_transition_mask(screen)
+        tr = screen.transition
+        if tr.nil? || tr.uniform?
+          reset_fade_bitmap if @fade_masked
+          @fade_sprite.opacity = screen.fade_level
+          return
+        end
+        @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        tr.visible_rects.each { |x, y, w, h| @fade_bmp.fill_rect x, y, w, h, CLEAR }
+        @fade_masked = true
+        @fade_sprite.opacity = 255
+      rescue StandardError => e
+        # A drawing failure must not strand the screen mid-transition: fall back
+        # to the plain fade level, which still lands on the right end state.
+        $stderr.puts "[RPG2k] screen transition draw failed: #{e.message}"
+        @fade_sprite.opacity = screen.fade_level
+      end
+
+      # Restore the overlay to solid black after a shaped transition, so the
+      # opacity-only path draws a full-screen fade again.
+      def reset_fade_bitmap
+        @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        @fade_masked = false
       end
 
       WEATHER_RAIN = 1
@@ -5701,6 +5742,9 @@ class RPG2k
     init = map_tree.initial
     state = Game::State.new Game::Party.new(@db), init.initial_map_id,
                             init.initial_x, init.initial_y
+    # The database's System tab configures the six screen transitions a
+    # "use the configured transition" (-1) Erase / Show Screen resolves against.
+    state.seed_screen_transitions @db
     state.map = load_map state.map_id
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
