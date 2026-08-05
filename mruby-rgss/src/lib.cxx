@@ -1376,6 +1376,126 @@ mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
 // RGSS Bitmap#hue_change(hue): rotate every pixel's hue by `hue` degrees,
 // preserving saturation, value and alpha (an RGB -> HSV -> RGB pass, matching
 // RMXP's hue rotation). A hue of 0 (mod 360) is a no-op.
+// RGSS Bitmap#blur: soften the whole bitmap in place.
+//
+// A 3x3 box blur, run over a copy so every output pixel reads the *original*
+// neighbourhood -- blurring in place would feed already-blurred pixels back in
+// and smear along the scan order rather than evenly. Edge pixels average only
+// the neighbours that exist, so the border is not darkened toward transparent.
+//
+// The channels are averaged premultiplied by alpha, which is what stops a
+// transparent neighbour dragging colour out of an opaque pixel: a transparent
+// pixel has no colour to contribute, only weight. RGSS's own blur is a
+// fixed, mild one with no parameters, so there is nothing here to tune.
+mrb_value bmp_blur(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  if (b.width < 1 || b.height < 1)
+    return self;
+  const std::vector<uint8_t> src = b.buffer;
+  // Read through the untouched copy, not the bitmap being written.
+  auto read_src = [&](int32_t x, int32_t y, int& r, int& g, int& bl, int& a) {
+    const unsigned bpp = lv_color_format_get_size(b.format);
+    const uint8_t* p = src.data() + ((size_t)y * b.width + x) * bpp;
+    bl = p[0];
+    g = p[1];
+    r = p[2];
+    a = bpp >= 4 ? p[3] : 255;
+  };
+  for (int32_t y = 0; y < b.height; ++y) {
+    for (int32_t x = 0; x < b.width; ++x) {
+      int rs = 0, gs = 0, bs = 0, as = 0, n = 0;
+      for (int32_t dy = -1; dy <= 1; ++dy) {
+        for (int32_t dx = -1; dx <= 1; ++dx) {
+          const int32_t sx = x + dx, sy = y + dy;
+          if (sx < 0 || sy < 0 || sx >= b.width || sy >= b.height)
+            continue;
+          int r, g, bl, a;
+          read_src(sx, sy, r, g, bl, a);
+          rs += r * a / 255;
+          gs += g * a / 255;
+          bs += bl * a / 255;
+          as += a;
+          ++n;
+        }
+      }
+      if (n == 0)
+        continue;
+      const int a = as / n;
+      // Undo the premultiply. A fully transparent result has no colour to
+      // recover, so leave it black rather than dividing by zero.
+      const int r = a > 0 ? std::min(255, rs * 255 / n / a) : 0;
+      const int g = a > 0 ? std::min(255, gs * 255 / n / a) : 0;
+      const int bl = a > 0 ? std::min(255, bs * 255 / n / a) : 0;
+      bmp_put(b, x, y, r, g, bl, a);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
+// RGSS Bitmap#radial_blur(angle, division): a rotational blur about the centre.
+//
+// `division` copies of the image, spread evenly over `angle` degrees and
+// centred on the original (so the result is symmetric rather than smeared to
+// one side), averaged together. Sampling is nearest-neighbour; samples that
+// rotate off the bitmap contribute nothing, which keeps the corners from
+// pulling in transparent pixels and going dark. As in #blur the average is
+// taken premultiplied.
+//
+// division < 2 or angle == 0 is the identity, matching "no rotation to spread
+// over" rather than dividing by zero.
+mrb_value bmp_radial_blur(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  mrb_int angle, division;
+  mrb_get_args(M, "ii", &angle, &division);
+  if (division < 2 || angle == 0 || b.width < 1 || b.height < 1)
+    return self;
+  const std::vector<uint8_t> src = b.buffer;
+  const unsigned bpp = lv_color_format_get_size(b.format);
+  auto read_src = [&](int32_t x, int32_t y, int& r, int& g, int& bl, int& a) {
+    const uint8_t* p = src.data() + ((size_t)y * b.width + x) * bpp;
+    bl = p[0];
+    g = p[1];
+    r = p[2];
+    a = bpp >= 4 ? p[3] : 255;
+  };
+  const double cx = (b.width - 1) / 2.0;
+  const double cy = (b.height - 1) / 2.0;
+  const double span = angle * 3.14159265358979323846 / 180.0;
+  for (int32_t y = 0; y < b.height; ++y) {
+    for (int32_t x = 0; x < b.width; ++x) {
+      int rs = 0, gs = 0, bs = 0, as = 0, n = 0;
+      for (mrb_int k = 0; k < division; ++k) {
+        // -span/2 .. +span/2, so the unrotated image sits in the middle.
+        const double t = (double)k / (double)(division - 1) - 0.5;
+        const double th = span * t;
+        const double s = std::sin(th), c = std::cos(th);
+        const double dx = x - cx, dy = y - cy;
+        const int32_t sx = (int32_t)std::lround(cx + dx * c - dy * s);
+        const int32_t sy = (int32_t)std::lround(cy + dx * s + dy * c);
+        if (sx < 0 || sy < 0 || sx >= b.width || sy >= b.height)
+          continue;
+        int r, g, bl, a;
+        read_src(sx, sy, r, g, bl, a);
+        rs += r * a / 255;
+        gs += g * a / 255;
+        bs += bl * a / 255;
+        as += a;
+        ++n;
+      }
+      if (n == 0)
+        continue;
+      const int a = as / n;
+      const int r = a > 0 ? std::min(255, rs * 255 / n / a) : 0;
+      const int g = a > 0 ? std::min(255, gs * 255 / n / a) : 0;
+      const int bl = a > 0 ? std::min(255, bs * 255 / n / a) : 0;
+      bmp_put(b, x, y, r, g, bl, a);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
 mrb_value bmp_hue_change(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int hue;
@@ -5300,6 +5420,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
+  // RGSS2/RGSS3 blurs: one use each in the stock scripts (the title background
+  // and the animation effects).
+  mrb_define_method(M, bmp, "blur", bmp_blur, MRB_ARGS_NONE());
+  mrb_define_method(M, bmp, "radial_blur", bmp_radial_blur, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
