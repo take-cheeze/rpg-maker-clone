@@ -401,6 +401,46 @@ JavaScript loads and interprets the JSON.
       The pattern is worth naming, because it is the third time in this
       milestone: **a capability proved on the wrong surface is not proved.** The
       stencil worked where nothing was drawn and was absent where everything is.
+    - **M6.3g — the smokes now read the frames (landed).** M6.3e and M6.3f were
+      both found by a human looking at pictures, because every automated
+      assertion in `scripts/mz_boot_check.bash` reads the engine's *log*:
+      `Scene_Map` was reached, `$gameMessage` is busy with `Window_Message`
+      open, the save chain settled. A frame can be empty while all of that is
+      true. `scripts/mz_frame_check.rb` closes that gap by decoding the captured
+      PNGs — a small pure-Ruby reader for the subset `stb_image_write` emits
+      (8-bit RGB/RGBA, non-interlaced, all five row filters).
+
+      It asks two kinds of question, because measuring showed that neither kind
+      alone is enough:
+
+      * **Per frame, absolute.** The M6.3e frames were not blank — the player
+        sprite and the touch-UI button still drew — so a "not a flat fill" floor
+        passes on them. What they had lost was the map: 99.5% of the play frame
+        was one colour against 68.5% intact. And the message band carries 105
+        distinct colours when the window's contents upload against 18 when only
+        its skin draws, because antialiased glyphs scatter intermediate colours
+        through it.
+      * **Across frames, relational.** Each mode's frame against the plain map
+        frame from `play`: the message frame differs in the bottom band (93.0%)
+        and barely outside it (0.3%), so the change is provably *the window*;
+        the menu and battle frames replace the screen (100.0%); the post-save
+        frame is the map again (0.2%), so a round-trip that returns to a wrecked
+        scene fails.
+
+      The relational half alone would **not** have caught M6.3e — that bug
+      degraded every frame identically, so the differences between modes
+      survived it intact (the window skin still drew, over a black map). This is
+      worth recording because the first draft of the check was relational only,
+      and rebuilding with the fix reverted disproved it: every mode still passed.
+      The absolute half was added from what that experiment measured, and the
+      same experiment is the check's non-vacuity proof — with `texSubImage2D`
+      reverted to a no-op, all five `mz_boot_check.bash` modes still report OK
+      while the frame check fails on the play frame's dominant colour and the
+      message band's colour count.
+
+      Which is the fourth instance of the milestone's pattern, one level up: **a
+      test written from a theory of the bug is not a test until the bug is put
+      back.**
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

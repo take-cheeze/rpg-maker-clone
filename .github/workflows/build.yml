@@ -452,6 +452,19 @@ jobs:
                 --timeout_ms=6000 --game_dir data/mv-sample \
                 --mv_new_game --mv_audio_test
 
+      # The five MZ smokes above each assert their own frame in isolation (the
+      # boot check runs scripts/mz_frame_check.rb --frame on what it captured).
+      # The comparisons between modes need all five frames, so they run here,
+      # after the parallel group's implicit wait: the message frame against the
+      # plain map frame, the menu and battle frames against it, and the
+      # post-save frame back on it. Reads only ss/mz_*.png, and skips cleanly
+      # when the MZ engine was not fetched and the smokes wrote nothing.
+      # Non-blocking, like the MZ smokes it reads.
+      - name: MZ frame check
+        continue-on-error: true
+        if: always()
+        run: ./scripts/nix-develop.bash ruby scripts/mz_frame_check.rb ss
+
       - name: Upload MV screenshot
         continue-on-error: true
         uses: actions/upload-artifact@v7
