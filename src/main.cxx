@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <regex>
+#include <string>
 
 #include <lvgl.h>
 #include <mruby.h>
@@ -16,6 +17,7 @@
 #include <ng-log/logging.h>
 #include <inicpp.hpp>
 
+#include "error_dump.hxx"
 #include "iterm.hxx"
 #include "log_console.hxx"
 #include "profiler.hxx"
@@ -121,6 +123,15 @@ DEFINE_bool(
     "(RGSS.audio_probe). Exits 0 only if the archived one played too. Needs no "
     "game; run with SDL_AUDIODRIVER=dummy in CI as the audio_probe ctest, "
     "which decodes and mixes with no sound card");
+DEFINE_bool(
+    error_dump_probe,
+    false,
+    "Raise a real Ruby exception through the crash-report path and read the "
+    "report back (error_dump_run_probe): it must carry the exception, its "
+    "backtrace and the runtime log captured before the raise, and the "
+    "--error_dump file must hold the same text that was printed. Exits 0 only "
+    "then. Needs no game; run as the error_dump ctest — a report that silently "
+    "lost half its content is worse than no report at all");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -362,27 +373,25 @@ extern "C" void rgss_sdl_input_init(void);
 extern "C" void rgss_audio_init(void);
 extern "C" void rgss_audio_shutdown(void);
 
-// Report an mruby exception (class, message, and Ruby backtrace) and bail out
-// of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
-// detail, and under Emscripten ng-log's fatal path traps anyway (it formats
-// through std::ios callbacks that don't survive the wasm function-pointer
-// table), so we use mruby's own stdio-based printer, which also reaches the
-// browser console.
-#define CHECK_NO_EXC(M)                                                        \
-  do {                                                                         \
-    if ((M)->exc) {                                                            \
-      mrb_value exc__ = mrb_obj_value((M)->exc);                               \
-      (M)->exc = nullptr;                                                      \
-      mrb_value msg__ = mrb_funcall(M, exc__, "message", 0);                   \
-      std::fprintf(stderr, "mruby error: %s: %s\n",                            \
-                   mrb_obj_classname(M, exc__),                                \
-                   mrb_string_value_cstr(M, &msg__));                          \
-      /* mrb_print_backtrace reads mrb->exc, so restore it around the call. */ \
-      (M)->exc = mrb_obj_ptr(exc__);                                           \
-      mrb_print_backtrace(M);                                                  \
-      (M)->exc = nullptr;                                                      \
-      return EXIT_FAILURE;                                                     \
-    }                                                                          \
+// Report an mruby exception and bail out of main(). Preferred over ng-log's
+// CHECK: it reports the actual mruby error detail, and under Emscripten
+// ng-log's fatal path traps anyway (it formats through std::ios callbacks that
+// don't survive the wasm function-pointer table), while error_dump_report goes
+// through plain stdio, which also reaches the browser console.
+//
+// The report is the copy-pasteable block described in include/error_dump.hxx --
+// the exception, its backtrace, this build and the runtime log leading up to it
+// -- so a player can hand a bug report over without a terminal. `where` is
+// stringised from the failing line, since these sites are otherwise
+// indistinguishable in a report.
+#define CHECK_NO_EXC_STR2(x) #x
+#define CHECK_NO_EXC_STR(x) CHECK_NO_EXC_STR2(x)
+#define CHECK_NO_EXC(M)                                                 \
+  do {                                                                  \
+    if ((M)->exc) {                                                     \
+      error_dump_report(M, "src/main.cxx:" CHECK_NO_EXC_STR(__LINE__)); \
+      return EXIT_FAILURE;                                              \
+    }                                                                   \
   } while (0)
 
 #ifdef __EMSCRIPTEN__
@@ -399,11 +408,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
 
   const fs::path game_dir_path = "/game";
   mrb_value game_obj;
+  // Which maker was detected is recorded for the crash report before the
+  // runtime is built, so a report from a failed construction still says what
+  // the engine thought it was loading.
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
+    error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
   } else if (is_rpgvx_game(game_dir_path)) {
     // RPG Maker VX / VX Ace: checked before the XP branch below, which only
     // looks for Game.ini — a VX project has one too. See mruby-rpgvx.
+    error_dump_set_context("project", "RPG Maker VX / VX Ace");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     // RPG Maker XP renders at 640x480. Native main() sizes the display from
@@ -420,6 +434,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
       std::fprintf(stderr, "[RPGXP] display sized to %dx%d\n", RPGXP_WIDTH,
                    RPGXP_HEIGHT);
     }
+    error_dump_set_context("project", "RPG Maker XP (Game.ini)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
@@ -428,12 +443,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     // PIXI v5 (WebGL-only); the WebGL backend it needs is not built yet, so
     // this reports the pending state instead of the "no project found" error
     // below (see mruby-mvjs/mrblib/mz.rb, docs/adr/0004 M6).
+    error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
     // RPG Maker MV: a JavaScript project (js/rpg_core.js + data/System.json).
     // Mirrors MV::REQUIRED_MARKERS; the embedded JS host runs the game's own
     // scripts (see mruby-mvjs). Lets the shell loader run MV projects too.
+    error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
   } else {
     std::fprintf(stderr,
@@ -445,8 +462,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     return 1;
   }
   if (M->exc) {
-    mrb_print_backtrace(M);
-    M->exc = nullptr;
+    error_dump_report(M, "loading the project");
     return 1;
   }
 
@@ -457,7 +473,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
   main_loop_ = [M, game_obj]() {
     mrb_funcall(M, game_obj, "main_loop", 0);
     if (M->exc) {
-      mrb_print_backtrace(M);
+      error_dump_report(M, "the frame loop");
       emscripten_cancel_main_loop();
     }
   };
@@ -502,6 +518,16 @@ int main(int argc, char** argv) {
       }
     }
   }
+
+  // Everything a crash report should say about this run but cannot work out
+  // for itself. Recorded before anything can fail, so even a failure during
+  // start-up carries it (see include/error_dump.hxx).
+  error_dump_set_context("game dir", FLAGS_game_dir);
+  error_dump_set_context("screen", std::to_string(FLAGS_width) + "x" +
+                                       std::to_string(FLAGS_height));
+  error_dump_set_context("display backend", FLAGS_sixel   ? "sixel terminal"
+                                            : FLAGS_iterm ? "iTerm2 terminal"
+                                                          : "SDL window");
 
   // Configure profiling before mruby is opened so the allocator hook, if it is
   // installed below, sees the right enabled state from its first call. A
@@ -583,6 +609,10 @@ int main(int argc, char** argv) {
 #endif
   mrb_state* M = mrb.get();
   CHECK_NO_EXC(M);
+
+  // Start tailing the runtime log now, so anything the game reports on its way
+  // down is in the crash report — including whatever the boot itself logs.
+  error_dump_install(M);
 
   rgss_set_display(M, display.get());
 
@@ -690,6 +720,16 @@ int main(int argc, char** argv) {
   }
   return EXIT_SUCCESS;
 #else
+  // The crash-report probe is the odd one out: it *wants* an exception, so it
+  // cannot go through the "call it and CHECK_NO_EXC" shape below. It raises
+  // through the real reporting path and reads the report back itself.
+  if (FLAGS_error_dump_probe) {
+    const int rc = error_dump_run_probe(M);
+    rgss_audio_shutdown();
+    gflags::ShutDownCommandLineFlags();
+    return rc;
+  }
+
   // The probes need the display, the audio backend and mruby, but no game: each
   // builds what it measures. Run them here, before the game-class dispatch, and
   // report through the exit code.
@@ -706,18 +746,23 @@ int main(int argc, char** argv) {
   }
 
   mrb_value game_obj;
+  // Record the detected maker for the crash report before the runtime is built
+  // (see the same dispatch in rpg_start_game above).
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
+    error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
   } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
     // RPG Maker MZ: a JavaScript game (js/rmmz_core.js) with a JSON database.
     // Shares MV's JS host but needs a WebGL backend (not built yet), so it
     // reports the pending state. See mruby-mvjs/mrblib/mz.rb, docs/adr/0004 M6.
+    error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &args);
   } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
     // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
     // See docs/adr/0004-javascript-maker-mv-quickjs.md.
+    error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
   } else if (is_rpgvx_game(game_dir_path)) {
     // RPG Maker VX / VX Ace: a Marshal database like XP's under a different
@@ -726,8 +771,10 @@ int main(int argc, char** argv) {
     // loads; the built-in title/map flow is still to come, so an unpacked
     // project reports that unless the RGSS script host is enabled. See
     // mruby-rpgvx and docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
+    error_dump_set_context("project", "RPG Maker VX / VX Ace");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
+    error_dump_set_context("project", "RPG Maker XP (Game.ini)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
   } else {
     CHECK(false) << "Unknown game directory: " << game_dir_path;
@@ -735,10 +782,15 @@ int main(int argc, char** argv) {
   CHECK_NO_EXC(M);
 
   mrb_funcall(M, game_obj, "start", 0);
+  // The game ran to its end or died in it; either way this is the last chance
+  // to report, so the exception goes out as a full report rather than as a
+  // backtrace plus an ng-log abort.
   if (M->exc) {
-    mrb_print_backtrace(M);
+    error_dump_report(M, "the running game");
+    rgss_audio_shutdown();
+    gflags::ShutDownCommandLineFlags();
+    return EXIT_FAILURE;
   }
-  CHECK(!M->exc);
 
   rgss_audio_shutdown();
   gflags::ShutDownCommandLineFlags();

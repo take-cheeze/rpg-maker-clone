@@ -20,3 +20,8 @@
 
 # Runtime save artifacts written by the MV/websave (localStorage) shim.
 /save
+
+# The crash report the engine writes beside itself when it dies (--error_dump,
+# see src/error_dump.cxx). Running the engine from the source tree drops one
+# here; it belongs in a bug report, not in the repository.
+/error-report.md

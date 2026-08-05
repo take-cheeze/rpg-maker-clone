@@ -257,7 +257,7 @@ if(EMSCRIPTEN)
 endif()
 
 add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
-                               src/log_console.cxx)
+                               src/log_console.cxx src/error_dump.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
@@ -271,6 +271,27 @@ target_link_libraries(
   ${GL_LIBS})
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
+
+# Stamp the build into the binary so a crash report says which build produced it
+# (src/error_dump.cxx). Read at configure time, not build time: a report that
+# names the commit the tree was configured at is enough to place a failure, and
+# re-running git on every build would rebuild the world on every commit. CI
+# configures a fresh checkout per run, so its reports name the exact commit.
+find_package(Git QUIET)
+set(RPG_BUILD_REVISION "unknown")
+if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} describe --always --dirty --abbrev=12
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE RPG_GIT_DESCRIBE
+    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(RPG_GIT_DESCRIBE)
+    set(RPG_BUILD_REVISION "${RPG_GIT_DESCRIBE}")
+  endif()
+endif()
+target_compile_definitions(
+  ${PROJECT_NAME} PRIVATE "RPG_BUILD_REVISION=\"${RPG_BUILD_REVISION}\""
+                          "RPG_BUILD_TYPE=\"${CMAKE_BUILD_TYPE}\"")
 
 # MIDI instruments for SDL_mixer's built-in TiMidity synthesiser. A .mid holds
 # note events only, so without a GUS patch set MIDI music loads and then plays
@@ -408,6 +429,14 @@ if(NOT EMSCRIPTEN)
     COMMAND ruby ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_timidity_patches.rb
             ${TIMIDITY_ASSET_DIR})
 
+  # The Ruby half of the crash report — the $stderr tee whose ring buffer gives
+  # a report its "Recent log" section. Plain Ruby with no mruby dependencies, so
+  # it is checked on CRuby here as well as inside the built interpreter by
+  # mruby_test, and needs no display.
+  add_test(NAME error_report_capture
+           COMMAND ruby
+                   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/error_report_check.rb)
+
   set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
                    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)
   # The SDL window backend needs a real display. Linux CI runners are headless,
@@ -470,4 +499,22 @@ if(NOT EMSCRIPTEN)
   # failing. It writes its own fixture into the working directory.
   set_tests_properties(audio_probe PROPERTIES ENVIRONMENT
                                               "SDL_AUDIODRIVER=dummy")
+
+  # The crash report end to end, in the real binary: raise a Ruby exception and
+  # check the report that comes out still carries the exception, its backtrace,
+  # the log captured before it and the run context, and that the file a reporter
+  # would attach holds the same text. Nothing else can catch a report that
+  # quietly lost a section — by the time one is wanted, the crash has happened.
+  # Runs in the build directory, where the probe writes and then removes its
+  # report file. Reserved display 96 (see the exe_open note above).
+  set(error_dump_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
+                     --error_dump_probe --error_dump=error-report-probe.md)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(error_dump_cmd xvfb-run --server-num=96
+                       "--server-args=-screen 0 640x480x24" ${error_dump_cmd})
+  endif()
+  add_test(
+    NAME error_dump
+    COMMAND ${error_dump_cmd}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif()
