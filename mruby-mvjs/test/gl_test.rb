@@ -296,3 +296,148 @@ assert 'the stencil test masks a draw, the way MZ clips its windows' do
   assert_true parts[1].to_i > 200 # right: drawn
   assert_true parts[0].to_i < 60  # left: masked out
 end
+
+assert 'bufferData accepts a bare ArrayBuffer, the way PIXI uploads a sprite batch' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # WebGL's `BufferSource` is `ArrayBufferView | ArrayBuffer`, and PIXI v5's
+  # sprite batcher uploads its whole interleaved vertex block as the raw
+  # ArrayBuffer behind its views (`ViewableBuffer.rawBinaryData`). The wrapper
+  # used to read bytes only out of a *view*, so that upload silently became
+  # zero-length and every batched sprite drew from an empty vertex buffer —
+  # degenerate triangles, no fragments. That is why MZ drew its tilemap (rmmz's
+  # own renderer, with its own geometry) and nothing else: no characters, no
+  # windows, no text.
+  #
+  # Reproduce it at the pixel level: write a full-viewport quad through a
+  # Float32Array view but hand `bufferData` the *buffer*, then draw green.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 32, H = 32;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvoid main(){ gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvoid main(){ gl_FragColor = vec4(0.0,1.0,0.0,1.0); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // The data is written through a view; the *buffer* is what is uploaded.
+      var view = new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, view.buffer, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.finish();
+
+      var px = new Uint8Array(4);
+      gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return px[0] + ',' + px[1] + ',' + px[2];
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  rgb = out.split(",").map { |v| v.to_i }
+  assert_equal 3, rgb.size
+  assert_true rgb[1] > 200 # green: the quad drew, so the buffer carried data
+  assert_true rgb[0] < 60
+end
+
+assert 'texSubImage2D updates a texture after its first upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # PIXI re-uploads a texture whose dimensions have not changed with
+  # texSubImage2D rather than texImage2D, so every bitmap redrawn after its
+  # first upload arrives there — window contents, rendered text, a Bitmap the
+  # game paints into — and rmmz's Tilemap fills its tile atlas by sub-uploading
+  # each tileset page into a quadrant. The wrapper used to accept the call and
+  # throw it away, which left all of those showing whatever the texture held on
+  # its first upload (usually nothing).
+  #
+  # Upload a red 2x2 texture, overwrite it with green through texSubImage2D,
+  # then sample it onto a full-viewport quad.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 32, H = 32;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+
+      var red = new Uint8Array(2 * 2 * 4);
+      var green = new Uint8Array(2 * 2 * 4);
+      for (var i = 0; i < 4; i++) {
+        red[i * 4] = 255; red[i * 4 + 3] = 255;
+        green[i * 4 + 1] = 255; green[i * 4 + 3] = 255;
+      }
+      var tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, red);
+      // The update under test: same size, so this is the call PIXI makes.
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, green);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      var view = new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, view, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.finish();
+
+      var px = new Uint8Array(4);
+      gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return px[0] + ',' + px[1] + ',' + px[2];
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  rgb = out.split(",").map { |v| v.to_i }
+  assert_equal 3, rgb.size
+  # Green means the sub-upload landed; red means it was dropped and the first
+  # upload is all the texture ever got.
+  assert_true rgb[1] > 200
+  assert_true rgb[0] < 60
+end
