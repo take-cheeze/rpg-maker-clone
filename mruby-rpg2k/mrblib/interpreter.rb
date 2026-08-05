@@ -1284,11 +1284,31 @@ module Game
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
+      when 6 # orientation: is character param1 (10001 the hero, a positive id a
+             # map event) facing direction param2 (0 up / 1 right / 2 down / 3 left)?
+        facing = character_facing(cmd.param(1))
+        !facing.nil? && facing == FACING_NUMPAD[cmd.param(2)]
       when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
              # 1 ship / 2 airship)
         v = cmd.param(1)
         v >= 0 && v < Vehicle::TYPES.size && @state.boarded == Vehicle::TYPES[v]
       else true
+      end
+    end
+
+    # Orientation directions (0 up / 1 right / 2 down / 3 left) mapped to the
+    # runtime's 2/4/6/8 numpad facing, matching EasyRPG's facing enum.
+    FACING_NUMPAD = [8, 6, 2, 4].freeze
+
+    # The numpad facing (2/4/6/8) of the character referenced by `ref` (10001 the
+    # hero, a positive id a map event), or nil when it can't be resolved (no
+    # map_info, an unknown event, or a still-unmodelled this-event / vehicle ref).
+    def character_facing(ref)
+      if ref == 10001
+        @state.direction
+      elsif ref > 0 && ref < 10000 && @map_info.respond_to?(:event_position)
+        pos = @map_info.event_position(ref)
+        pos && pos[:direction]
       end
     end
 

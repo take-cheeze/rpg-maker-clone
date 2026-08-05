@@ -98,6 +98,38 @@ class RPGXP
     def self.install_kernel(db)
       @db = db
     end
+
+    # Build the per-frame driver Fiber for a project's bundled scripts. The
+    # scripts own their whole blocking main loop, so it runs inside a Fiber that
+    # the wrapped Graphics.update below yields once per frame — the caller then
+    # resumes it once per frame (see RPGXP#drive_script_host / RPGVX). Shared by
+    # every RGSS maker's boot shell; see
+    # docs/adr/0023-rpgxp-script-host-frame-driver.md.
+    def self.build_driver(db)
+      install_graphics_yield
+      Fiber.new do
+        self.driving = true
+        begin
+          run(db)
+        ensure
+          self.driving = false
+        end
+      end
+    end
+
+    # Wrap the native Graphics.update so a scene's `loop { Graphics.update; ... }`
+    # yields the driver Fiber once per frame. Idempotent, and installed only on
+    # the script-host path — a built-in flow keeps the pristine native method.
+    def self.install_graphics_yield
+      return if RGSS::Graphics.respond_to?(:_update_native)
+      RGSS::Graphics.singleton_class.class_eval do
+        alias_method :_update_native, :update
+        def update
+          _update_native
+          Fiber.yield if ::RPGXP::ScriptHost.driving?
+        end
+      end
+    end
   end
 end
 

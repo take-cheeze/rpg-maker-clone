@@ -159,6 +159,10 @@ namespace fs = std::filesystem;
 constexpr int RPGXP_WIDTH = 640;
 constexpr int RPGXP_HEIGHT = 480;
 
+// RPG Maker VX / VX Ace's native screen size (mruby-rpgvx).
+constexpr int RPGVX_WIDTH = 544;
+constexpr int RPGVX_HEIGHT = 416;
+
 #ifndef __EMSCRIPTEN__
 // mruby's heap is routed through lvgl's memory pool so both are accounted under
 // one allocator. mruby 4.0 removed per-state allocators (mrb_open_allocf); a
@@ -216,15 +220,29 @@ fs::path xp_rtp_path() {
   return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
 }
 
+// RPG Maker VX / VX Ace projects look like XP ones from the outside — a
+// Game.ini beside a Data/ folder — so they have to be recognised before the XP
+// check below, which keys on Game.ini alone. Mirrors RPGVX::EDITIONS
+// (mruby-rpgvx/mrblib/lib.rb): an unpacked project is identified by
+// Data/System.rvdata(2), a packed release by its encrypted archive
+// (Game.rgss2a / Game.rgss3a), since such a release ships no loose Data/ at
+// all. The Ruby side re-detects which of the two editions it is.
+bool is_rpgvx_game(const fs::path& gd) {
+  return fs::exists(gd / "Data" / "System.rvdata2") ||
+         fs::exists(gd / "Data" / "System.rvdata") ||
+         fs::exists(gd / "Game.rgss3a") || fs::exists(gd / "Game.rgss2a");
+}
+
 // An RPG Maker XP project: Game.ini plus either a loose Data/System.rxdata or
-// an encrypted archive (a packed release ships no loose Data/ folder). Mirrors
-// the game-class dispatch in main(), and decides both the screen size and which
-// RTP registry key the assets are looked up under.
+// XP's own encrypted archive (a packed release ships no loose Data/ folder),
+// and not a VX / VX Ace project, whose archives are its own. Mirrors the
+// game-class dispatch in main(), and decides both the screen size and which RTP
+// registry key the assets are looked up under.
 bool is_xp_game(const fs::path& game_dir) {
+  if (is_rpgvx_game(game_dir))
+    return false;
   const bool xp_data = fs::exists(game_dir / "Data" / "System.rxdata") ||
-                       fs::exists(game_dir / "Game.rgssad") ||
-                       fs::exists(game_dir / "Game.rgss2a") ||
-                       fs::exists(game_dir / "Game.rgss3a");
+                       fs::exists(game_dir / "Game.rgssad");
   return fs::exists(game_dir / "Game.ini") && xp_data;
 }
 
@@ -325,6 +343,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
   mrb_value game_obj;
   if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
+  } else if (is_rpgvx_game(game_dir_path)) {
+    // RPG Maker VX / VX Ace: checked before the XP branch below, which only
+    // looks for Game.ini — a VX project has one too. See mruby-rpgvx.
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     // RPG Maker XP renders at 640x480. Native main() sizes the display from
     // --game_dir before creating it, but in the browser no project exists yet
@@ -333,7 +355,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     // runtime builds any screen-sized object: with a 320x240 canvas the XP
     // scenes draw off the edge -- the title's command window lands past the
     // bottom and its centred text past the right (found by
-    // scripts/rpgxp_browser_check.py; see docs/adr/0024).
+    // scripts/rpgxp_browser_check.py; see docs/adr/0025).
     if (em_display) {
       lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
       lv_sdl_window_set_zoom(em_display.get(), 1.f);
@@ -357,7 +379,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
   } else {
     std::fprintf(stderr,
-                 "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker MV "
+                 "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker VX / VX "
+                 "Ace (Data/System.rvdata[2]), RPG Maker MV "
                  "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
                  "(js/rmmz_core.js + data/System.json) project found under "
                  "/game\n");
@@ -398,20 +421,27 @@ int main(int argc, char** argv) {
   }
   nglog::InitializeLogging(argv[0]);
 
-  // RPG Maker XP projects render at 640x480 (RPG2000/MV use 320x240). When the
-  // window size was not overridden on the command line, size the canvas to the
-  // XP resolution so an XP game's title and maps fill the screen. Detection
-  // mirrors the game-class dispatch below: Game.ini plus either a loose
-  // Data/System.rxdata or an encrypted archive (Game.rgssad / .rgss2a /
-  // .rgss3a), since a packed release ships no loose Data/ folder.
+  // RPG Maker XP projects render at 640x480 and VX / VX Ace ones at 544x416
+  // (RPG2000/MV use 320x240). When the window size was not overridden on the
+  // command line, size the canvas to the detected maker's resolution so its
+  // title and maps fill the screen. Detection mirrors the game-class dispatch
+  // below: VX first (its archives, .rgss2a / .rgss3a, are *not* XP markers),
+  // then Game.ini plus either a loose Data/System.rxdata or an XP archive,
+  // since a packed release ships no loose Data/ folder.
   {
     const bool xp_game = is_xp_game(FLAGS_game_dir);
+    const bool vx_game = is_rpgvx_game(FLAGS_game_dir);
     gflags::CommandLineFlagInfo w_info, h_info;
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);
-    if (xp_game && w_info.is_default && h_info.is_default) {
-      FLAGS_width = RPGXP_WIDTH;
-      FLAGS_height = RPGXP_HEIGHT;
+    if (w_info.is_default && h_info.is_default) {
+      if (xp_game) {
+        FLAGS_width = RPGXP_WIDTH;
+        FLAGS_height = RPGXP_HEIGHT;
+      } else if (vx_game) {
+        FLAGS_width = RPGVX_WIDTH;
+        FLAGS_height = RPGVX_HEIGHT;
+      }
     }
   }
 
@@ -585,7 +615,7 @@ int main(int argc, char** argv) {
   em_args = args;
   mrb_gc_register(M, em_args);
   if (fs::exists(game_dir_path / "RPG_RT.ldb") ||
-      fs::exists(game_dir_path / "Game.ini") ||
+      fs::exists(game_dir_path / "Game.ini") || is_rpgvx_game(game_dir_path) ||
       (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
        fs::exists(game_dir_path / "data" / "System.json")) ||
       (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
@@ -612,6 +642,14 @@ int main(int argc, char** argv) {
     // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
     // See docs/adr/0004-javascript-maker-mv-quickjs.md.
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
+  } else if (is_rpgvx_game(game_dir_path)) {
+    // RPG Maker VX / VX Ace: a Marshal database like XP's under a different
+    // extension (Data/*.rvdata[2]) and schema. Checked before the XP branch,
+    // which only looks for Game.ini — a VX project has one too. The database
+    // loads; the built-in title/map flow is still to come, so an unpacked
+    // project reports that unless the RGSS script host is enabled. See
+    // mruby-rpgvx and docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
+    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
   } else {

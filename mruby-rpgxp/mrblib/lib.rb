@@ -81,7 +81,7 @@ class RPGXP
     @scenes.last.dispose
     @scenes = [scene]
     # A machine-readable marker so a headless run (see --rpgxp_new_game,
-    # scripts/rpgxp_boot_check.bash, scripts/rpgxp_browser_check.mjs and
+    # scripts/rpgxp_boot_check.bash, scripts/rpgxp_browser_check.py and
     # scripts/compare-rpgxp-wine.bash) can assert the map scene was really
     # reached, not just the title.
     $stderr.puts "[RPGXP-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
@@ -159,20 +159,13 @@ class RPGXP
 
   private
 
-  # Build the driver Fiber for the bundled scripts and install the per-frame
-  # yield. Only reached when the host is enabled, so the built-in flow never
-  # creates a Fiber nor wraps Graphics.update.
+  # Build the driver Fiber for the bundled scripts (which installs the per-frame
+  # Graphics.update yield). Only reached when the host is enabled, so the
+  # built-in flow never creates a Fiber nor wraps Graphics.update. The driver
+  # itself lives in ScriptHost so the VX / VX Ace shell (mruby-rpgvx) drives the
+  # bundled scripts through the same code.
   def setup_script_host_driver
-    install_graphics_yield
-    db = @db
-    @host_fiber = Fiber.new do
-      ScriptHost.driving = true
-      begin
-        ScriptHost.run(db)
-      ensure
-        ScriptHost.driving = false
-      end
-    end
+    @host_fiber = ScriptHost.build_driver(@db)
   end
 
   # Advance the script host by one frame. When its Main returns the Fiber is
@@ -197,20 +190,6 @@ class RPGXP
     @host_fiber = nil
     @use_script_host = false
     push Scene::Title.new(self) if @scenes.empty?
-  end
-
-  # Wrap the native Graphics.update so a scene's `loop { Graphics.update; ... }`
-  # yields the driver Fiber once per frame. Idempotent, and installed only on
-  # the script-host path — the built-in flow keeps the pristine native method.
-  def install_graphics_yield
-    return if RGSS::Graphics.respond_to?(:_update_native)
-    RGSS::Graphics.singleton_class.class_eval do
-      alias_method :_update_native, :update
-      def update
-        _update_native
-        Fiber.yield if ::RPGXP::ScriptHost.driving?
-      end
-    end
   end
 
   # The window title from Game.ini's [Game] Title=, falling back to the folder

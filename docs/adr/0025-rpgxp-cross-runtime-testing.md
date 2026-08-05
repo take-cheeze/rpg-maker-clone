@@ -1,4 +1,4 @@
-# 24. Testing RPG Maker XP against the browser build and the genuine RGSS runtime
+# 25. Testing RPG Maker XP against the browser build and the genuine RGSS runtime
 
 Date: 2026-08-04
 

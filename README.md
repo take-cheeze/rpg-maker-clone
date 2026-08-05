@@ -76,10 +76,9 @@
   movement uses the tileset's passage flags with a follow camera
 - Both an **unpacked** project (a loose `Data/` folder) and an **encrypted
   archive** load: a packed release that ships only a `Game.rgssad` (RPG Maker XP;
-  RPG Maker VX's same-format `Game.rgss2a` too) is decrypted transparently, so
-  the database loads with no loose files present. Loose files, when present,
-  shadow the archive (as in RGSS). VX Ace's `Game.rgss3a` is detected but not yet
-  decoded
+  RPG Maker VX's same-format `Game.rgss2a` too) or a VX Ace `Game.rgss3a` is
+  decrypted transparently, so the database loads with no loose files present.
+  Loose files, when present, shadow the archive (as in RGSS)
 - The window is sized to XP's native 640×480 automatically.
 - An experimental **RGSS script host** can run the game's own bundled scripts
   (`Data/Scripts.rxdata`) unmodified — the way `RGSS104E.dll` does — instead of
@@ -109,7 +108,31 @@
   red and blue exchanged, and an RGBA image loaded opaque drew garbage. With those
   fixed (RPG2000 rendering byte-identical) the title screen went from 74% of its
   pixels differing from the genuine runtime to 15%; see
-  [`docs/adr/0024-rpgxp-cross-runtime-testing.md`](docs/adr/0024-rpgxp-cross-runtime-testing.md)
+  [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](docs/adr/0025-rpgxp-cross-runtime-testing.md)
+
+### RPG Maker VX / VX Ace
+
+- An **RPG Maker VX** (RGSS2) or **VX Ace** (RGSS3) project is recognised as
+  itself instead of being mistaken for XP, and its whole **database loads**: the
+  `Data/*.rvdata` / `*.rvdata2` files are Ruby `Marshal` dumps like XP's, read
+  through a typed RGSS2/RGSS3 `RPG::*` schema (`mruby-rpgvx`) — VX Ace's feature
+  system, `damage`/`effects` usables, per-map tilesets and region layer; VX's
+  per-actor `parameters` tables, areas and game-wide `System#passages`
+- Which edition a folder holds is detected from `Data/System.rvdata[2]` or, for
+  a **packed release** (which ships no loose `Data/` at all), from its encrypted
+  archive: VX's `Game.rgss2a` and VX Ace's `Game.rgss3a` both decrypt through the
+  same reader the XP side uses, so a single-archive release loads too
+- The window is sized to VX's native 544×416 automatically
+- A VX/VX Ace game's engine *is* its script bundle, so a project that ships
+  `Data/Scripts.rvdata[2]` can be driven by the same experimental **RGSS script
+  host** as XP (`RGSS_SCRIPT_HOST`); the built-in title/map flow is not written
+  yet, and a boot without the host says so rather than opening a blank window.
+  See
+  [`docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md`](docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md)
+- Have a VX / VX Ace project? `ruby scripts/rpgvx_testbed_check.rb path/to/Game`
+  loads its whole database and reports any field the schema is missing — the
+  editors are commercial and no open-source test bed exists, so that check is
+  how the schema gets validated against genuine editor output
 
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC

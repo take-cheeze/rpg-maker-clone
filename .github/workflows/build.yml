@@ -183,6 +183,16 @@ jobs:
           - name: RPG XP script-host smoke check
             run: nix develop -c ruby scripts/rpgxp_script_host_check.rb
 
+          # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
+          # open-source test bed (the editors and their RTPs are commercial), so
+          # this check builds a full project per edition and drives the loader
+          # over it — loose on disk and repacked into the edition's encrypted
+          # archive — plus an audit that every field in the data has an accessor
+          # in the schema. It also picks up any real VX/VX Ace project that a
+          # future download step unpacks under data/.
+          - name: RPG VX / VX Ace data check
+            run: nix develop -c ruby scripts/rpgvx_testbed_check.rb
+
           # Validate the committed MV test-bed database (data/mv-sample) before
           # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
           # a blocking guard against a sample-data regression that would
@@ -219,7 +229,7 @@ jobs:
           # catches mruby/CRuby divergence. `--rpgxp_new_game` drives the test
           # bed past its title into the start map and logs `[RPGXP-MAP]`, which
           # the script asserts on. Display 112 (see the reserved server-num map
-          # above). See docs/adr/0024-rpgxp-cross-runtime-testing.md.
+          # above). See docs/adr/0025-rpgxp-cross-runtime-testing.md.
           - name: RPG XP real-game boot smoke test
             run: nix develop -c ./scripts/rpgxp_boot_check.bash 112
 
@@ -553,7 +563,7 @@ jobs:
       # the DevTools protocol with the Python standard library alone, so the
       # `chromium` in the dev shell is the whole dependency. Screenshots of every
       # step are uploaded below. See
-      # docs/adr/0024-rpgxp-cross-runtime-testing.md.
+      # docs/adr/0025-rpgxp-cross-runtime-testing.md.
       - name: Wait for the RPG XP test bed
         wait: [xp-testbed]
 

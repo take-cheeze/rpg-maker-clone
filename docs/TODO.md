@@ -239,10 +239,10 @@ The work below is roughly ordered by the critical path to a walkable game
   an event's map id reads 0, matching an RPG_RT 2000 quirk; screen coordinates
   are not modelled).
   Conditional Branch covers switch / variable / **timer** / gold / item /
-  **vehicle** (is the party aboard the boat / ship / airship) conditions and
-  **all** the **actor** sub-conditions (in party, name, level ≥, HP ≥, item
-  equipped, skill known, and **afflicted by a state**); the event-facing
-  condition (type 6) is still TODO. Actors now
+  **vehicle** (is the party aboard the boat / ship / airship) / **orientation**
+  (is the hero or a map event facing a given direction) conditions and **all**
+  the **actor** sub-conditions (in party, name, level ≥, HP ≥, item equipped,
+  skill known, and **afflicted by a state**). Actors now
   carry a **status-condition (状態) set** (`Game::Actor#states` with
   `add_state` / `remove_state` / `state?`; **Full Recovery clears it**), which
   persists in both the Marshal save and the `.lsd` (chunk 108 fields 81/82,
@@ -689,7 +689,7 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   render work below is meant to be driven by: the tile layers are still
   placeholder colour blocks, so its map steps differ wholesale until real
   tileset/autotile blitting lands. See
-  [`docs/adr/0024-rpgxp-cross-runtime-testing.md`](adr/0024-rpgxp-cross-runtime-testing.md);
+  [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](adr/0025-rpgxp-cross-runtime-testing.md);
   the browser pass already found (and this fixed) an XP project rendering on a
   320x240 screen in the page and the loader panel covering the running game, and
   the wine pass found four more (the XP RTP key was never read, `.jpg` was
@@ -703,6 +703,55 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   instead of pressing keys.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
+
+### VX (RGSS2) and VX Ace (RGSS3)
+
+The two makers between XP and MV keep XP's shape — `Game.ini`, a `Data/` folder
+of Ruby `Marshal` dumps, a bundled script bundle that *is* the engine — and
+change the data extension (`.rvdata` / `.rvdata2`), the record schema and the
+screen (544×416). Full rationale:
+[`docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md`](adr/0024-rpgvx-rgss2-rgss3-data-layer.md).
+
+- ✅ **Data layer** — `mruby-rpgvx/mrblib/rgss2_data.rb` declares the RGSS2 and
+  RGSS3 `RPG::*` schema (VX Ace's `BaseItem#features`, `damage`/`effects`
+  usables, `Class#params`, per-map `Tilesets` and the fourth region layer; VX's
+  `Actor#parameters`, `Areas` and game-wide `System#passages`) so every
+  `Data/*.rvdata(2)` loads through `Marshal.load`, and `RPGVX::RGSSData` exposes
+  them as an edition-aware database (extension, table set, maps on demand,
+  script-bundle decoding). Both editions share the one `RPG::` namespace with
+  the XP schema, which is why the RGSS3 superclass chain is carried by
+  `*Fields` modules rather than real superclasses — see the ADR.
+- ✅ **Detection & dispatch** — VX Ace is `Data/System.rvdata2` or
+  `Game.rgss3a`, VX is `Data/System.rvdata` or `Game.rgss2a` (a packed release
+  ships no loose `Data/`, so the archive is the only marker). `src/main.cxx`
+  checks this **before** the XP branch — a VX project has a `Game.ini` too, so
+  it used to be handed to the XP runtime and fail on the missing
+  `Data/System.rxdata` — and sizes the window to 544×416.
+- ✅ **Encrypted archives** — `Game.rgss2a` (v1) and `Game.rgss3a` (v3) load
+  through the XP reader (`RPGXP::RGSSAD`) unchanged, so a single-archive release
+  boots with no loose files. Same remaining gap as XP: graphics/audio are still
+  read from loose files only.
+- 🚧 **Run the bundled scripts** — a VX/VX Ace game's engine is its script
+  bundle, so this is *the* path rather than a later refinement. The host already
+  runs (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver now
+  shared by both shells (`ScriptHost.build_driver`, ADR 0023); what is missing is
+  the RGSS2/RGSS3 halves of the `mruby-rgss` class library the stock scripts call
+  (the RGSS1 gap is tracked in
+  [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md); RGSS2 added
+  `Graphics.wait/fadeout`, `Window#openness`, `Cache`, and RGSS3 the `rgss_main`
+  wrapper and `Bitmap#draw_text` sizing the VX windows rely on).
+- **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
+  runtimes have (title → New Game → walkable map). Not written yet; a boot
+  without the script host reports that instead of showing a blank window.
+- **A real test bed.** Neither editor nor its RTP is redistributable and no
+  open-source VX/VX Ace project ships a genuine `Data/*.rvdata(2)` tree, so
+  `scripts/rpgvx_testbed_check.rb` builds a full project per edition instead and
+  drives the loader over it (loose, then repacked into the real archive
+  formats). A generated bed cannot prove a *field name* — the names are
+  transcribed from the RGSS2/RGSS3 references — so the check also audits that
+  every field in the data has an accessor, which is what makes running it
+  against a user's real game (`ruby scripts/rpgvx_testbed_check.rb path/to/Game`)
+  worthwhile. Finding a redistributable bed for CI remains open.
 
 ## RPG Maker with JavaScript
 

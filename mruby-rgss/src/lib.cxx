@@ -1059,7 +1059,7 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   // project has) and left every truecolour PNG and every JPEG with red and
   // blue exchanged -- which is what an RPG Maker XP RTP is full of. Caught by
   // diffing against the genuine RGSS runtime, see
-  // docs/adr/0024-rpgxp-cross-runtime-testing.md.
+  // docs/adr/0025-rpgxp-cross-runtime-testing.md.
   stbi__png_to_bgr_palette = false;
   // The channel count has to be decided before decoding, because the bitmap's
   // pixel format must follow what we *ask* stb for. It used to follow the
