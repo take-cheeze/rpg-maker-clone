@@ -1155,6 +1155,40 @@ void bmp_read(const Bitmap& b,
   a = bpp >= 4 ? p[3] : 255;
 }
 
+// Source-over composite of one pixel in *straight* (non-premultiplied) alpha.
+//
+// The obvious `src*a + dst*(255-a)` is only right when the destination is
+// opaque. Onto a transparent pixel -- which is transparent *black* -- it drags
+// the colour toward black while recording alpha `a`, so the composite that
+// later draws the bitmap over the screen attenuates the same colour a second
+// time. A window background blitted at RGSS's `back_opacity` 160 came out
+// showing 8% of its skin instead of 63% (measured against the genuine RGSS
+// runtime, which blends at exactly back_opacity/255).
+//
+// Straight alpha keeps the colour and lets the alpha carry the coverage:
+//   out_a   = sa + da*(1 - sa)
+//   out_rgb = (src*sa + dst*da*(1 - sa)) / out_a
+// which reduces to the old formula when da is 255, so blits onto an opaque
+// bitmap are unchanged.
+void blend_over(Bitmap& dst,
+                mrb_int x,
+                mrb_int y,
+                int r,
+                int g,
+                int b,
+                int sa,
+                int dr,
+                int dg,
+                int db,
+                int da) {
+  const int dw = da * (255 - sa) / 255;
+  const int out_a = sa + dw;
+  if (out_a <= 0)
+    return;
+  bmp_put(dst, x, y, (r * sa + dr * dw) / out_a, (g * sa + dg * dw) / out_a,
+          (b * sa + db * dw) / out_a, out_a);
+}
+
 mrb_value bmp_width(mrb_state* M, V self) {
   return mrb_fixnum_value(bmp_self(M, self).width);
 }
@@ -1420,10 +1454,7 @@ mrb_value bmp_blt(mrb_state* M, V self) {
       }
       int dr, dg, db, da;
       bmp_read(dst, dx, dy, dr, dg, db, da);
-      const int inv = 255 - alpha;
-      bmp_put(dst, dx, dy, (r * alpha + dr * inv) / 255,
-              (g * alpha + dg * inv) / 255, (bl * alpha + db * inv) / 255,
-              std::max(da, alpha));
+      blend_over(dst, dx, dy, r, g, bl, alpha, dr, dg, db, da);
     }
   }
   dst.dirty = true;
@@ -1472,10 +1503,7 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
       }
       int dr2, dg, db, da;
       bmp_read(dst, dx, dy, dr2, dg, db, da);
-      const int inv = 255 - alpha;
-      bmp_put(dst, dx, dy, (r * alpha + dr2 * inv) / 255,
-              (g * alpha + dg * inv) / 255, (bl * alpha + db * inv) / 255,
-              std::max(da, alpha));
+      blend_over(dst, dx, dy, r, g, bl, alpha, dr2, dg, db, da);
     }
   }
   dst.dirty = true;

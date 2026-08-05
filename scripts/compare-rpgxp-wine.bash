@@ -213,20 +213,23 @@ capture() {
 # so a different window manager just yields a different (or no) trim, and only
 # ever shrinks the compared area.
 compare_height() {
-    local img="$1" bbox h y
-    bbox=$(identify -format '%@' "${img}" 2>/dev/null) || bbox=""
-    # "WxH+X+Y" of the non-border content; only trust it when it starts at the
-    # top-left, i.e. the frame is aligned and only the bottom is missing.
-    case "${bbox}" in
-        *+0+0)
-            h="${bbox#*x}"
-            h="${h%%+*}"
-            ;;
-        *) h=480 ;;
-    esac
-    y="${h:-480}"
-    if [ "${y}" -lt 400 ] || [ "${y}" -gt 480 ] ; then y=480 ; fi
-    echo "${y}"
+    local img="$1" y mean
+    # Walk up from the bottom for the first row the runtime drew anything on.
+    # Deliberately not ImageMagick's -trim: that keys on the *corner* colour, so
+    # on a dark title screen it finds no border and reports the full height,
+    # silently putting the artifact back into the count. Never trims more than
+    # MAX_TRIM rows, so a genuinely black-bottomed frame cannot shrink the
+    # comparison away.
+    local max_trim=80
+    for y in $(seq 479 -1 $((480 - max_trim))) ; do
+        mean=$(convert "${img}[640x1+0+${y}]" -format '%[fx:mean>0.004]' info: \
+                   2>/dev/null || echo 1)
+        if [ "${mean}" = "1" ] ; then
+            echo $((y + 1))
+            return
+        fi
+    done
+    echo 480
 }
 
 start_ref

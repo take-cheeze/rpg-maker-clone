@@ -22,6 +22,10 @@ class RPGXP
       @skin = skin
       @active = true
       @cursor_rect = nil
+      # RGSS draws a window's background at `back_opacity` and leaves the frame
+      # opaque. 255 is the class default; the scenes that want to see through a
+      # window (RMXP's Scene_Title uses 160) set it themselves.
+      @back_opacity = 255
 
       @viewport = Viewport.new(x, y, [width, 1].max, [height, 1].max)
       @viewport.z = 100
@@ -61,6 +65,13 @@ class RPGXP
       draw_cursor
     end
 
+    attr_reader :back_opacity
+
+    def back_opacity=(v)
+      @back_opacity = v
+      draw_skin
+    end
+
     # Selection highlight, in contents coordinates (offset by the border).
     def cursor_rect=(rect)
       @cursor_rect = rect
@@ -86,7 +97,7 @@ class RPGXP
 
     def draw_skin_background
       @skin_bmp.stretch_blt Rect.new(2, 2, @width - 4, @height - 4), @skin,
-                            Rect.new(0, 0, 128, 128)
+                            Rect.new(0, 0, 128, 128), @back_opacity
     rescue StandardError
       draw_fallback
     end
@@ -122,6 +133,18 @@ class RPGXP
       @skin_bmp.fill_rect @width - 2, 0, 2, @height, edge
     end
 
+    # The selection highlight comes out of the windowskin, like everything else
+    # about a window: RGSS keeps a 32x32 cursor block at (128, 64) and
+    # nine-slices it over the cursor rect (CURSOR_EDGE-wide corners and edges,
+    # the middle stretched). Drawing a flat blue bar instead was the single
+    # biggest difference left on the title screen against the genuine runtime --
+    # its cursor is a thin outline over a nearly clear interior, ours was a solid
+    # slab. Falls back to the old hand-drawn bar when the project has no skin.
+    CURSOR_SRC_X = 128
+    CURSOR_SRC_Y = 64
+    CURSOR_SRC_SIZE = 32
+    CURSOR_EDGE = 4
+
     def draw_cursor
       @cursor_bmp.clear
       return unless @active && @cursor_rect
@@ -129,12 +152,52 @@ class RPGXP
       return if r.width <= 0 || r.height <= 0
       x = BORDER + r.x
       y = BORDER + r.y
-      @cursor_bmp.fill_rect x, y, r.width, r.height, Color.new(40, 72, 200, 160)
+      if @skin
+        draw_skin_cursor x, y, r.width, r.height
+      else
+        draw_fallback_cursor x, y, r.width, r.height
+      end
+    end
+
+    def draw_skin_cursor(x, y, w, h)
+      e = CURSOR_EDGE
+      sx = CURSOR_SRC_X
+      sy = CURSOR_SRC_Y
+      # The source block's middle span, between its corners.
+      m = CURSOR_SRC_SIZE - e * 2
+      iw = w - e * 2
+      ih = h - e * 2
+      s = @skin
+      # Corners.
+      @cursor_bmp.blt x, y, s, Rect.new(sx, sy, e, e)
+      @cursor_bmp.blt x + w - e, y, s, Rect.new(sx + e + m, sy, e, e)
+      @cursor_bmp.blt x, y + h - e, s, Rect.new(sx, sy + e + m, e, e)
+      @cursor_bmp.blt x + w - e, y + h - e, s,
+                      Rect.new(sx + e + m, sy + e + m, e, e)
+      return if iw <= 0 || ih <= 0
+      # Edges and the stretched middle.
+      @cursor_bmp.stretch_blt Rect.new(x + e, y, iw, e), s,
+                              Rect.new(sx + e, sy, m, e)
+      @cursor_bmp.stretch_blt Rect.new(x + e, y + h - e, iw, e), s,
+                              Rect.new(sx + e, sy + e + m, m, e)
+      @cursor_bmp.stretch_blt Rect.new(x, y + e, e, ih), s,
+                              Rect.new(sx, sy + e, e, m)
+      @cursor_bmp.stretch_blt Rect.new(x + w - e, y + e, e, ih), s,
+                              Rect.new(sx + e + m, sy + e, e, m)
+      @cursor_bmp.stretch_blt Rect.new(x + e, y + e, iw, ih), s,
+                              Rect.new(sx + e, sy + e, m, m)
+    rescue StandardError => e
+      $stderr.puts "[RGSS] windowskin cursor failed, using a plain bar: #{e.message}"
+      draw_fallback_cursor x, y, w, h
+    end
+
+    def draw_fallback_cursor(x, y, w, h)
+      @cursor_bmp.fill_rect x, y, w, h, Color.new(40, 72, 200, 160)
       border = Color.new(200, 216, 255, 255)
-      @cursor_bmp.fill_rect x, y, r.width, 2, border
-      @cursor_bmp.fill_rect x, y + r.height - 2, r.width, 2, border
-      @cursor_bmp.fill_rect x, y, 2, r.height, border
-      @cursor_bmp.fill_rect x + r.width - 2, y, 2, r.height, border
+      @cursor_bmp.fill_rect x, y, w, 2, border
+      @cursor_bmp.fill_rect x, y + h - 2, w, 2, border
+      @cursor_bmp.fill_rect x, y, 2, h, border
+      @cursor_bmp.fill_rect x + w - 2, y, 2, h, border
     end
   end
 
@@ -267,6 +330,9 @@ class RPGXP
         h = COMMANDS.size * LINE_H + Panel::BORDER * 2
         @command = Panel.new((WIDTH - w) / 2, HEIGHT - h - 64, w, h, @skin)
         @command.z = 200
+        # RMXP's Scene_Title: `@command_window.back_opacity = 160`, so the title
+        # graphic shows through the menu.
+        @command.back_opacity = 160
         contents = Bitmap.new(@command.inner_width, @command.inner_height)
         contents.font.color = Color.new(255, 255, 255, 255)
         COMMANDS.each_with_index do |c, i|
