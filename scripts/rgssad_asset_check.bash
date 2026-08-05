@@ -22,6 +22,20 @@
 # A change that quietly stopped consulting the archive turns the first run into
 # the second, and this fails.
 #
+# The archive has to be the *only* possible source for that graphic, or the two
+# runs are indistinguishable and neither proves anything. Two things could
+# otherwise supply it, and both are shut off below:
+#
+#   * the RTP. `Bitmap#initialize` searches RTP_DIR after GAME_DIR, and CI
+#     installs the real RPG Maker XP RTP -- which ships 001-Title01, the very
+#     graphic the test bed asks for. The engine finds the RTP through a wine
+#     registry under $WINEPREFIX, so pointing that at an empty directory leaves
+#     RTP_DIR empty. (This is what the "without" guard caught the first time
+#     this check ran in CI: it passed locally, where no wine prefix exists, and
+#     failed there.)
+#   * a loose file next to the working directory, since a bare relative name is
+#     tried first. Both runs use an absolute --game_dir and a scratch cwd.
+#
 # The engine also aborts on an uncaught mruby exception, so both runs reaching
 # [RPGXP-MAP] is part of the test.
 #
@@ -49,8 +63,17 @@ if [ ! -f "${GAME}/Data/System.rxdata" ] ; then
     exit 1
 fi
 
+ENGINE="$(readlink -f "${ENGINE}")"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
+
+# Shut the RTP off: an empty prefix has no wine registry, so xp_rtp_path() finds
+# nothing and the engine sets RTP_DIR to "" (see src/main.cxx). Without this the
+# CI runner's installed XP RTP supplies 001-Title01 to both runs and the A/B
+# below measures nothing.
+export WINEPREFIX="${WORK}/empty-wineprefix"
+mkdir -p "${WINEPREFIX}"
 
 # Pack the bed's real Data/ into two archives. `with` also carries a title
 # graphic named after the project's own System.title_name, which is the file the
@@ -105,10 +128,13 @@ for which in with without ; do
     log="${WORK}/${which}.log"
     echo "== packed ${which} the title graphic"
     # Each run gets its own display: xvfb-run -a's probe is not atomic and can
-    # steal a display from a concurrent run (see build.yml).
-    if ! xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
+    # steal a display from a concurrent run (see build.yml). Run from the packed
+    # directory so the loader's bare-relative first candidate cannot pick up a
+    # loose file from the repo either.
+    if ! (cd "${WORK}/${which}" && \
+          xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
             --game_dir "${WORK}/${which}" --rpgxp_new_game \
-            --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
+            --timeout_ms="${TIMEOUT_MS}") >"${log}" 2>&1 ; then
         echo "FAILED: packed ${which}: the engine exited non-zero" >&2
         fail=1
     elif ! grep -q '\[RPGXP-MAP\]' "${log}" ; then
