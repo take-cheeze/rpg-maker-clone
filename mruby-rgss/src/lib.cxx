@@ -3126,6 +3126,212 @@ static const int AUTOTILE_QUAD_OFF[4][2] = {{0, 0}, {16, 0}, {0, 16}, {16, 16}};
 // several such frames left to right.
 static const int AUTOTILE_FRAME_W = 96;
 
+// ---- RPG Maker VX / VX Ace tile geometry ----------------------------------
+//
+// VX replaced XP's single tileset + seven autotiles with nine sheets (A1-A5,
+// B-E) and packed everything into one tile id space, which `RPG::Map#data`
+// stores and `RPG::Tileset#flags` describes:
+//
+//   0..255 B, 256..511 C, 512..767 D, 768..1023 E   plain tiles
+//   1536.. A5                                        plain tiles
+//   2048.. A1 (water/waterfall), 2816.. A2 (ground),
+//   4352.. A3 (buildings), 5888.. A4 (walls)         autotiles, 48 shapes each
+//
+// An autotile id encodes both *which* autotile (kind) and *which of the 48
+// edge shapes* it is drawn as; each shape is four 16x16 quarter-tiles taken
+// from the sheet at an offset that depends on the family. The three quad tables
+// and the family offsets below are ported from the MIT-licensed RPG Maker MV
+// corescript (rpgtkoolmv/corescript, js/rpg_core/Tilemap.js), which inherited
+// VX Ace's tile system unchanged -- the same provenance as the RMXP quads
+// above, which came from mkxp.
+//
+// The geometry is pure arithmetic, so it is also exposed to Ruby as
+// Tilemap.vx_tile_quads and pinned by mruby-rgss/test (the drawing itself needs
+// a display the test binary has not got).
+
+// Tile id boundaries (Tilemap.TILE_ID_* in the corescript).
+static const int VX_TILE_ID_A5 = 1536;
+static const int VX_TILE_ID_A1 = 2048;
+static const int VX_TILE_ID_A2 = 2816;
+static const int VX_TILE_ID_A3 = 4352;
+static const int VX_TILE_ID_A4 = 5888;
+static const int VX_TILE_ID_MAX = 8192;
+
+// Quarter-tile (column, row) of each of the four quads (TL, TR, BL, BR) making
+// up one of the 48 floor shapes, in half-tile units from the autotile's origin.
+static const int VX_FLOOR_QUADS[48][4][2] = {
+    {{2, 4}, {1, 4}, {2, 3}, {1, 3}}, {{2, 0}, {1, 4}, {2, 3}, {1, 3}},
+    {{2, 4}, {3, 0}, {2, 3}, {1, 3}}, {{2, 0}, {3, 0}, {2, 3}, {1, 3}},
+    {{2, 4}, {1, 4}, {2, 3}, {3, 1}}, {{2, 0}, {1, 4}, {2, 3}, {3, 1}},
+    {{2, 4}, {3, 0}, {2, 3}, {3, 1}}, {{2, 0}, {3, 0}, {2, 3}, {3, 1}},
+    {{2, 4}, {1, 4}, {2, 1}, {1, 3}}, {{2, 0}, {1, 4}, {2, 1}, {1, 3}},
+    {{2, 4}, {3, 0}, {2, 1}, {1, 3}}, {{2, 0}, {3, 0}, {2, 1}, {1, 3}},
+    {{2, 4}, {1, 4}, {2, 1}, {3, 1}}, {{2, 0}, {1, 4}, {2, 1}, {3, 1}},
+    {{2, 4}, {3, 0}, {2, 1}, {3, 1}}, {{2, 0}, {3, 0}, {2, 1}, {3, 1}},
+    {{0, 4}, {1, 4}, {0, 3}, {1, 3}}, {{0, 4}, {3, 0}, {0, 3}, {1, 3}},
+    {{0, 4}, {1, 4}, {0, 3}, {3, 1}}, {{0, 4}, {3, 0}, {0, 3}, {3, 1}},
+    {{2, 2}, {1, 2}, {2, 3}, {1, 3}}, {{2, 2}, {1, 2}, {2, 3}, {3, 1}},
+    {{2, 2}, {1, 2}, {2, 1}, {1, 3}}, {{2, 2}, {1, 2}, {2, 1}, {3, 1}},
+    {{2, 4}, {3, 4}, {2, 3}, {3, 3}}, {{2, 4}, {3, 4}, {2, 1}, {3, 3}},
+    {{2, 0}, {3, 4}, {2, 3}, {3, 3}}, {{2, 0}, {3, 4}, {2, 1}, {3, 3}},
+    {{2, 4}, {1, 4}, {2, 5}, {1, 5}}, {{2, 0}, {1, 4}, {2, 5}, {1, 5}},
+    {{2, 4}, {3, 0}, {2, 5}, {1, 5}}, {{2, 0}, {3, 0}, {2, 5}, {1, 5}},
+    {{0, 4}, {3, 4}, {0, 3}, {3, 3}}, {{2, 2}, {1, 2}, {2, 5}, {1, 5}},
+    {{0, 2}, {1, 2}, {0, 3}, {1, 3}}, {{0, 2}, {1, 2}, {0, 3}, {3, 1}},
+    {{2, 2}, {3, 2}, {2, 3}, {3, 3}}, {{2, 2}, {3, 2}, {2, 1}, {3, 3}},
+    {{2, 4}, {3, 4}, {2, 5}, {3, 5}}, {{2, 0}, {3, 4}, {2, 5}, {3, 5}},
+    {{0, 4}, {1, 4}, {0, 5}, {1, 5}}, {{0, 4}, {3, 0}, {0, 5}, {1, 5}},
+    {{0, 2}, {3, 2}, {0, 3}, {3, 3}}, {{0, 2}, {1, 2}, {0, 5}, {1, 5}},
+    {{0, 4}, {3, 4}, {0, 5}, {3, 5}}, {{2, 2}, {3, 2}, {2, 5}, {3, 5}},
+    {{0, 2}, {3, 2}, {0, 5}, {3, 5}}, {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+};
+
+// Walls (A3, and the odd rows of A4) have 16 shapes instead of 48.
+static const int VX_WALL_QUADS[16][4][2] = {
+    {{2, 2}, {1, 2}, {2, 1}, {1, 1}}, {{0, 2}, {1, 2}, {0, 1}, {1, 1}},
+    {{2, 0}, {1, 0}, {2, 1}, {1, 1}}, {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+    {{2, 2}, {3, 2}, {2, 1}, {3, 1}}, {{0, 2}, {3, 2}, {0, 1}, {3, 1}},
+    {{2, 0}, {3, 0}, {2, 1}, {3, 1}}, {{0, 0}, {3, 0}, {0, 1}, {3, 1}},
+    {{2, 2}, {1, 2}, {2, 3}, {1, 3}}, {{0, 2}, {1, 2}, {0, 3}, {1, 3}},
+    {{2, 0}, {1, 0}, {2, 3}, {1, 3}}, {{0, 0}, {1, 0}, {0, 3}, {1, 3}},
+    {{2, 2}, {3, 2}, {2, 3}, {3, 3}}, {{0, 2}, {3, 2}, {0, 3}, {3, 3}},
+    {{2, 0}, {3, 0}, {2, 3}, {3, 3}}, {{0, 0}, {3, 0}, {0, 3}, {3, 3}},
+};
+
+// A waterfall (the odd A1 kinds) has 4.
+static const int VX_WATERFALL_QUADS[4][4][2] = {
+    {{2, 0}, {1, 0}, {2, 1}, {1, 1}},
+    {{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+    {{2, 0}, {3, 0}, {2, 1}, {3, 1}},
+    {{0, 0}, {3, 0}, {0, 1}, {3, 1}},
+};
+
+// One 16x16 piece (or, for a table tile's split quad, 16x8) of a VX tile: which
+// sheet it comes from, where in that sheet, and where in the 32x32 destination
+// tile it goes.
+struct VXQuad {
+  int sheet, sx, sy, dx, dy, w, h;
+};
+
+// Decode a VX / VX Ace tile id into the pieces that draw it, writing them to
+// `out` (at most 8, for a table tile whose quads are split) and returning how
+// many. `frame` animates A1 (water surface / waterfall); `table` is the A2
+// "table" flag (RPG::Tileset#flags bit 0x80), which redraws the tile's middle
+// rows from the counter row so a table/counter edge shows its side.
+//
+// Mirrors Tilemap#_drawNormalTile / #_drawAutotile in the MV corescript,
+// including its "a shape outside the family's table draws nothing" behaviour
+// (walls have 16 shapes and waterfalls 4, against the floor's 48).
+int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
+  if (tile_id <= 0 || tile_id >= VX_TILE_ID_MAX)
+    return 0;
+  const int half = TILE_SIZE / 2;
+
+  // Plain tiles: A5 is sheet 4, the B/C/D/E pages are sheets 5..8.
+  if (tile_id < VX_TILE_ID_A1) {
+    const int sheet = tile_id >= VX_TILE_ID_A5 ? 4 : 5 + tile_id / 256;
+    // 1024..1535 fall past the E page and short of A5: no sheet holds them, and
+    // the corescript draws nothing for such an id (its bitmaps[9] is
+    // undefined).
+    if (sheet > 8)
+      return 0;
+    const int sx = (tile_id / 128 % 2 * 8 + tile_id % 8) * TILE_SIZE;
+    const int sy = (tile_id % 256 / 8 % 16) * TILE_SIZE;
+    out[0] = VXQuad{sheet, sx, sy, 0, 0, TILE_SIZE, TILE_SIZE};
+    return 1;
+  }
+
+  // Autotiles: the id carries both the autotile (kind) and one of the shapes.
+  const int kind = (tile_id - VX_TILE_ID_A1) / 48;
+  const int shape = (tile_id - VX_TILE_ID_A1) % 48;
+  const int tx = kind % 8;
+  const int ty = kind / 8;
+  int sheet = 0, bx = 0, by = 0;
+  const int (*quad_table)[4][2] = VX_FLOOR_QUADS;
+  int shape_count = 48;
+  bool is_table = false;
+
+  if (tile_id < VX_TILE_ID_A2) {
+    // A1: water surfaces animate over three frames in a 0,1,2,1 cycle, and the
+    // odd kinds are waterfalls with their own three-frame cycle and table.
+    static const int kWaterSurface[4] = {0, 1, 2, 1};
+    const int surface = kWaterSurface[((frame % 4) + 4) % 4];
+    sheet = 0;
+    if (kind == 0) {
+      bx = surface * 2;
+      by = 0;
+    } else if (kind == 1) {
+      bx = surface * 2;
+      by = 3;
+    } else if (kind == 2) {
+      bx = 6;
+      by = 0;
+    } else if (kind == 3) {
+      bx = 6;
+      by = 3;
+    } else {
+      bx = tx / 4 * 8;
+      by = ty * 6 + tx / 2 % 2 * 3;
+      if (kind % 2 == 0) {
+        bx += surface * 2;
+      } else {
+        bx += 6;
+        quad_table = VX_WATERFALL_QUADS;
+        shape_count = 4;
+        by += ((frame % 3) + 3) % 3;
+      }
+    }
+  } else if (tile_id < VX_TILE_ID_A3) {
+    sheet = 1;
+    bx = tx * 2;
+    by = (ty - 2) * 3;
+    is_table = table;
+  } else if (tile_id < VX_TILE_ID_A4) {
+    sheet = 2;
+    bx = tx * 2;
+    by = (ty - 6) * 2;
+    quad_table = VX_WALL_QUADS;
+    shape_count = 16;
+  } else {
+    sheet = 3;
+    bx = tx * 2;
+    // A4 alternates ground rows (three half-tiles tall) and wall rows (two), so
+    // the row offset advances by 2.5 with a half-row shift on the wall rows:
+    // floor((ty - 10) * 2.5 + (ty odd ? 0.5 : 0)).
+    by = ((ty - 10) * 5 + (ty % 2 == 1 ? 1 : 0)) / 2;
+    if (ty % 2 == 1) {
+      quad_table = VX_WALL_QUADS;
+      shape_count = 16;
+    }
+  }
+
+  if (shape >= shape_count)
+    return 0;
+
+  int n = 0;
+  for (int i = 0; i < 4; ++i) {
+    const int qsx = quad_table[shape][i][0];
+    const int qsy = quad_table[shape][i][1];
+    const int sx = (bx * 2 + qsx) * half;
+    const int sy = (by * 2 + qsy) * half;
+    const int dx = (i % 2) * half;
+    const int dy = (i / 2) * half;
+    if (is_table && (qsy == 1 || qsy == 5)) {
+      // A table tile's middle rows come from the counter row, with the original
+      // strip drawn over the bottom half so the edge reads as a side.
+      static const int kTableX[4] = {0, 3, 2, 1};
+      const int qsx2 = qsy == 1 ? kTableX[qsx % 4] : qsx;
+      out[n++] = VXQuad{
+          sheet, (bx * 2 + qsx2) * half, (by * 2 + 3) * half, dx, dy, half,
+          half};
+      out[n++] = VXQuad{sheet, sx, sy, dx, dy + half / 2, half, half / 2};
+    } else {
+      out[n++] = VXQuad{sheet, sx, sy, dx, dy, half, half};
+    }
+  }
+  return n;
+}
+
 // z of the priority "above" layer (see the split in tilemap_refresh). INTERIM:
 // a single flat layer above the characters is only an approximation of RMXP's
 // per-row priority interleaving — it puts *every* priority tile above *every*
@@ -3144,6 +3350,104 @@ static const mrb_int TILEMAP_ABOVE_Z = 900;
 // separate "above" canvas that sorts over the characters (see TILEMAP_ABOVE_Z).
 // Both canvases are invalidated directly (their buffers are not sprite @bitmaps
 // that Graphics.update's dirty sweep watches).
+// Whether a tilemap has been handed any of the nine VX / VX Ace sheets, which
+// is what tells the two tile models apart at draw time.
+bool vx_has_sheets(mrb_state* M, mrb_value bitmaps) {
+  if (!mrb_array_p(bitmaps))
+    return false;
+  for (mrb_int i = 0; i < RARRAY_LEN(bitmaps); ++i) {
+    const mrb_value b = mrb_ary_ref(M, bitmaps, i);
+    if (mrb_test(b) && DATA_PTR(b))
+      return true;
+  }
+  return false;
+}
+
+// Draw a VX / VX Ace map into the ground (and priority "above") canvases.
+// Returns whether the visible area holds an animated tile, so tilemap_update
+// can skip the periodic re-tile on a static map.
+//
+// The three tile layers of `map_data` are drawn bottom-up. `RPG::Tileset#flags`
+// carries the per-tile bits: 0x10 routes a tile to the above layer (MV's
+// `_isHigherTile`) and 0x80 marks an A2 "table" tile, whose middle rows are
+// redrawn from the counter row.
+bool tilemap_refresh_vx(mrb_state* M,
+                        mrb_value self,
+                        Bitmap& dst,
+                        Bitmap* above,
+                        mrb_value bitmaps,
+                        mrb_value md_v,
+                        mrb_int ox,
+                        mrb_int oy,
+                        int anim) {
+  Table& md = DataType<Table>::get(M, md_v);
+  const mrb_value flags_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@flags"));
+  Table* flags = (mrb_test(flags_v) && DATA_PTR(flags_v))
+                     ? &DataType<Table>::get(M, flags_v)
+                     : nullptr;
+
+  const int mapw = md.xsize, maph = md.ysize;
+  // Layer 3 of a VX Ace map holds region ids, which are not drawn.
+  const int layers = md.zsize < 3 ? md.zsize : 3;
+  // MV advances the tile animation every 30 ticks; ours counts frames the same
+  // way the XP path does.
+  const int frame = anim / 30;
+  bool animated = false;
+
+  int tx0 = static_cast<int>(ox) / TILE_SIZE;
+  int ty0 = static_cast<int>(oy) / TILE_SIZE;
+  if (tx0 < 0)
+    tx0 = 0;
+  if (ty0 < 0)
+    ty0 = 0;
+  int tx1 = static_cast<int>(ox + dst.width) / TILE_SIZE + 1;
+  int ty1 = static_cast<int>(oy + dst.height) / TILE_SIZE + 1;
+  if (tx1 > mapw)
+    tx1 = mapw;
+  if (ty1 > maph)
+    ty1 = maph;
+
+  VXQuad quads[8];
+  for (int layer = 0; layer < layers; ++layer) {
+    for (int ty = ty0; ty < ty1; ++ty) {
+      for (int tx = tx0; tx < tx1; ++tx) {
+        const int idx = tx + ty * mapw + layer * mapw * maph;
+        if (idx < 0 || idx >= static_cast<int>(md.data.size()))
+          continue;
+        const int id = md.data[idx];
+        if (id <= 0)
+          continue;
+        const int flag =
+            (flags && id >= 0 && id < static_cast<int>(flags->data.size()))
+                ? flags->data[id]
+                : 0;
+        const bool is_table =
+            id >= VX_TILE_ID_A2 && id < VX_TILE_ID_A3 && (flag & 0x80) != 0;
+        const int n = vx_tile_quads(id, frame, is_table, quads);
+        if (n == 0)
+          continue;
+        // The A1 page (water and waterfalls) is the animated one.
+        if (id >= VX_TILE_ID_A1 && id < VX_TILE_ID_A2)
+          animated = true;
+
+        Bitmap& target = ((flag & 0x10) != 0 && above) ? *above : dst;
+        const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
+        const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        for (int q = 0; q < n; ++q) {
+          const VXQuad& v = quads[q];
+          const mrb_value sheet_v = mrb_ary_ref(M, bitmaps, v.sheet);
+          if (!mrb_test(sheet_v) || !DATA_PTR(sheet_v))
+            continue;
+          Bitmap& sheet = DataType<Bitmap>::get(M, sheet_v);
+          blit_blend(target, dx0 + v.dx, dy0 + v.dy, sheet, v.sx, v.sy, v.w,
+                     v.h);
+        }
+      }
+    }
+  }
+  return animated;
+}
+
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -3181,6 +3485,31 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
 
   const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
   const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
+
+  // RPG Maker VX / VX Ace address their nine sheets through `bitmaps` instead
+  // of XP's single `tileset` + `autotiles`, and describe each tile with the
+  // `flags` table rather than `priorities`. A tilemap that has been given any
+  // sheet is drawn the VX way; everything below stays the XP path.
+  const mrb_value bmps_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  if (vx_has_sheets(M, bmps_v) && mrb_test(md_v) && DATA_PTR(md_v)) {
+    const mrb_value anim_v =
+        mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
+    const bool animated = tilemap_refresh_vx(
+        M, self, dst, above, bmps_v, md_v,
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"))),
+        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"))),
+        mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
+               mrb_bool_value(animated));
+    dst.dirty = true;
+    if (above)
+      above->dirty = true;
+    lv_obj_invalidate(obj);
+    if (above_lv)
+      lv_obj_invalidate(above_lv);
+    return;
+  }
+
   if (!mrb_test(ts_v) || !DATA_PTR(ts_v) || !mrb_test(md_v) ||
       !DATA_PTR(md_v)) {
     lv_obj_invalidate(obj);
@@ -3404,6 +3733,61 @@ mrb_value tilemap_set_priorities(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@priorities"), v);
   tilemap_refresh(M, self);
   return v;
+}
+
+// RGSS2/RGSS3 `Tilemap#bitmaps`: the nine sheets (A1-A5, then B, C, D, E),
+// addressed by index. The scripts assign into it — `@tilemap.bitmaps[i] =
+// Cache.tileset(name)` — so hand back the same Array every time and let the
+// next refresh pick the change up (Spriteset_Map calls #update every frame).
+mrb_value tilemap_bitmaps(mrb_state* M, mrb_value self) {
+  mrb_value a = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  if (!mrb_array_p(a)) {
+    a = mrb_ary_new_capa(M, 9);
+    for (int i = 0; i < 9; ++i)
+      mrb_ary_push(M, a, mrb_nil_value());
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmaps"), a);
+  }
+  return a;
+}
+
+// RGSS2/RGSS3 `Tilemap#flags=`: RPG::Tileset#flags, one word per tile id
+// (0x10 = draw above the characters, 0x80 = an A2 table tile, plus the
+// passage/terrain bits the game logic reads).
+mrb_value tilemap_set_flags(mrb_state* M, mrb_value self) {
+  mrb_value v;
+  mrb_get_args(M, "o", &v);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flags"), v);
+  tilemap_refresh(M, self);
+  return v;
+}
+
+// Tilemap.vx_tile_quads(tile_id, frame = 0, table = false) -> [[sheet, sx, sy,
+// dx, dy, w, h], ...]
+//
+// The VX / VX Ace tile geometry, exposed so it can be pinned by unit tests: the
+// drawing needs a display the headless test binary has not got, but the decode
+// is pure arithmetic. Answers an empty Array for an id that draws nothing.
+mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
+  mrb_int tile_id = 0, frame = 0;
+  mrb_bool table = FALSE;
+  mrb_get_args(M, "i|ib", &tile_id, &frame, &table);
+  VXQuad quads[8];
+  const int n = vx_tile_quads(static_cast<int>(tile_id),
+                              static_cast<int>(frame), table != 0, quads);
+  mrb_value out = mrb_ary_new_capa(M, n);
+  for (int i = 0; i < n; ++i) {
+    const VXQuad& q = quads[i];
+    mrb_value row = mrb_ary_new_capa(M, 7);
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sheet));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sx));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sy));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.dx));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.dy));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.w));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.h));
+    mrb_ary_push(M, out, row);
+  }
+  return out;
 }
 
 // Show/hide the tilemap, propagating to the priority "above" layer so a hidden
@@ -4422,6 +4806,12 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "priorities=", tilemap_set_priorities,
                     MRB_ARGS_REQ(1));
+  // RGSS2 / RGSS3 (VX, VX Ace): nine sheets addressed by index plus the tileset
+  // flags table, in place of XP's single tileset + autotiles + priorities.
+  mrb_define_method(M, tilemap, "bitmaps", tilemap_bitmaps, MRB_ARGS_NONE());
+  mrb_define_method(M, tilemap, "flags=", tilemap_set_flags, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, tilemap, "vx_tile_quads", tilemap_vx_tile_quads,
+                          MRB_ARGS_ARG(1, 2));
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());

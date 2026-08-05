@@ -79,9 +79,9 @@ first frame, not what RGSS3 defines.
   (~37) from the core, and the RGSS2/RGSS3-only `rgss_main`, `rgss_stop`,
   `msgbox` (~2) and `msgbox_p`.
 
-## Gaps ❌ (ordered by how much they block a playable VX game)
+## Gaps (ordered by how much they block a playable VX game)
 
-### 1. `Tilemap` is XP-shaped — the map cannot draw
+### 1. `Tilemap` — the VX map now draws ✅
 
 `Spriteset_Map` builds the map with the RGSS2/RGSS3 tilemap:
 
@@ -92,12 +92,28 @@ first frame, not what RGSS3 defines.
 @tilemap.flags     = @tileset.flags         # the 8192-entry Table
 ```
 
-`mruby-rgss`'s `Tilemap` is the XP one: `tileset=` (one sheet), `autotiles`
-(seven) and `priorities`. VX/VX Ace need the **nine-sheet `bitmaps` array**, the
-**`flags` table** (passage/priority/counter/terrain bits packed per tile id) and
-the different **autotile geometry** (A1 water/A2 ground/A3 buildings/A4 walls
-and the direct B–E pages). Native work in `mruby-rgss/src/lib.cxx`, and the
-single biggest item here: without it a VX game boots but shows no map.
+`mruby-rgss`'s `Tilemap` was the XP one — `tileset=` (one sheet), `autotiles`
+(seven), `priorities`. It now also speaks VX: `bitmaps` (the nine sheets,
+assigned by index the way the scripts do it), `flags=`, and the VX tile-id
+decode. A tilemap handed any sheet is drawn the VX way; the XP path is
+untouched.
+
+The decode is the interesting half. A VX tile id carries both *which* autotile
+and *which of its edge shapes* to assemble from four quarter-tiles, with a
+different sheet layout per family (A1 water/waterfall with its animation cycles,
+A2 ground with the "table" split, A3 buildings and the A4 wall rows on 16 shapes
+instead of 48, A5 and the B–E pages as plain tiles). It is ported from the
+MIT-licensed MV corescript, which inherited VX Ace's tile system unchanged, and
+**differentially tested against it**: all 8300 tile ids × a full animation cycle
+× the table flag — 66,400 cases — produce byte-identical geometry.
+`Tilemap.vx_tile_quads` exposes the decode so `mruby-rgss/test` pins it without
+needing a display, both as representative cases and as a checksum over the whole
+sweep.
+
+Remaining polish: `flags` bit 0x10 routes a tile to the existing "above the
+characters" layer, which is the same flat approximation ADR 0022 describes for
+XP, and the A2 table-edge tile drawn *below* its neighbour
+(`Tilemap#_drawTableEdge`) is not done.
 
 ### 2. `Viewport#tone` — no screen tint (`#color` / `#flash` now draw ✅)
 
@@ -158,6 +174,7 @@ packed VX Ace game needs next after the tilemap.
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
 the only route to a real game. A bundle now **runs**: it loads its database,
-plays its music, reads input, drives frames, lays out its windows, and fades and
-flashes the screen. What it cannot yet do is **draw the map** (item 1) or tint it
-(item 2's remaining half), both native `mruby-rgss` work.
+plays its music, reads input, drives frames, lays out its windows, draws its map
+and fades and flashes the screen. The largest remaining gaps are the screen
+**tint** (item 2's second half) and **scene transitions** (item 3), both native
+`mruby-rgss` work, plus reading assets out of an encrypted archive (item 6).
