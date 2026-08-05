@@ -149,6 +149,16 @@ DEFINE_bool(
     "opened, so a headless run confirms the message/window path renders. "
     "Used in CI");
 DEFINE_bool(
+    mz_animation_test,
+    false,
+    "For RPG Maker MZ: once on the map, play an animation on the player "
+    "(implies --mz_new_game to reach the map) and log whether its cells "
+    "actually drew, so a headless run confirms the animation path renders. MZ "
+    "picks between two animation systems by data shape: an animation carrying "
+    "a `frames` array draws as sprites (Sprite_AnimationMV), anything else "
+    "goes to Effekseer, whose WASM runtime this host does not start. Used in "
+    "CI");
+DEFINE_bool(
     mz_menu_test,
     false,
     "For RPG Maker MZ: once on the map, open the party menu (implies "
@@ -819,6 +829,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_MESSAGE_TEST"),
                 mrb_bool_value(FLAGS_mz_message_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
+                mrb_bool_value(FLAGS_mz_animation_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_MENU_TEST"),
                 mrb_bool_value(FLAGS_mz_menu_test));

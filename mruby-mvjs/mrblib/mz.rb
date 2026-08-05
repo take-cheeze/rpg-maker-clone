@@ -58,6 +58,13 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The animation the animation probe plays, and how long it keeps replaying it
+  # (see #maybe_animation_test). The test bed authors animation 1 as an
+  # MV-format burst centred on its target; a project without it logs
+  # `cells=0 played=false` rather than pretending.
+  ANIM_PROBE_ID = 1
+  ANIM_PROBE_FRAMES = 120
+
   # Frames the save probe waits for its promise chain to settle. MZ's save path
   # is asynchronous end to end (`DataManager.saveGame` -> `StorageManager`'s
   # JSON/deflate/localforage promises), so the result only lands some frames
@@ -263,6 +270,43 @@ class MZ
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
     end
 
+    # JS that asks for an animation on the player through `$gameTemp`, exactly
+    # as an event's Show Animation command does — `Spriteset_Map` drains the
+    # queue on its next update and builds the sprite. Re-requested only while
+    # nothing is playing, so the probe keeps one burst on screen continuously
+    # rather than stacking a fresh sprite every frame (the screenshot has to
+    # land during one; see #maybe_animation_test).
+    def animation_probe_js(id)
+      "(function(){ if (typeof $gameTemp === 'undefined' || !$gameTemp) " \
+      "return; if (typeof $gamePlayer === 'undefined' || !$gamePlayer) " \
+      "return; var s = (typeof SceneManager !== 'undefined') ? " \
+      "SceneManager._scene : null; var ss = s ? s._spriteset : null; " \
+      "if (!ss || ss.isAnimationPlaying()) return; " \
+      "$gameTemp.requestAnimation([$gamePlayer], #{id.to_i}); })();"
+    end
+
+    # JS that reads the animation back as
+    # "data=<bool> mv=<bool> sprites=<n> cells=<n>". `cells` is the one that
+    # matters: it counts `Sprite_AnimationMV` cell sprites that are visible and
+    # carry a bitmap this frame, so it is the difference between a sprite that
+    # exists in the scene graph and one that is actually drawing. `mv` reports
+    # which of MZ's two animation systems the data selected —
+    # `Spriteset_Base.isMVAnimation` picks the sprite-sheet path when the
+    # animation has `frames`, and the Effekseer path otherwise, which needs a
+    # WASM runtime our host does not start (ADR 0004 M6.3h).
+    def animation_state_js(id)
+      "(function(){ var a = (typeof $dataAnimations !== 'undefined' && " \
+      "$dataAnimations) ? $dataAnimations[#{id.to_i}] : null; " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; var ss = s ? s._spriteset : null; " \
+      "var list = (ss && ss._animationSprites) ? ss._animationSprites : []; " \
+      "var cells = 0; for (var i = 0; i < list.length; i++) { " \
+      "var cs = list[i]._cellSprites || []; for (var j = 0; j < cs.length; " \
+      "j++) { if (cs[j].visible && cs[j].bitmap) cells++; } } " \
+      "return 'data=' + (a ? true : false) + ' mv=' + ((a && a.frames) ? " \
+      "true : false) + ' sprites=' + list.length + ' cells=' + cells; })();"
+    end
+
     # JS that starts a save + load round-trip through the real `DataManager` and
     # parks the outcome on `__mzSaveResult` for #maybe_save_test to read back.
     #
@@ -424,6 +468,7 @@ class MZ
     maybe_battle_test # CI: start a battle from the map and log Scene_Battle
     maybe_move_test # CI: hold a direction on the map and log that the player moved
     maybe_message_test # CI: show a message on the map and log the window opened
+    maybe_animation_test # CI: play an animation on the player and log it drew
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_save_test # CI: save+load round-trip on the map and log the result
     maybe_audio_test # CI: play an SE through the bridge and log it dispatched
@@ -600,7 +645,7 @@ class MZ
     return unless new_game_requested? || move_test_requested? ||
                   audio_test_requested? || message_test_requested? ||
                   menu_test_requested? || save_test_requested? ||
-                  battle_test_troop > 0
+                  animation_test_requested? || battle_test_troop > 0
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -707,6 +752,58 @@ class MZ
     $stderr.puts "[MZ-MSG] #{state.is_a?(String) ? state : ""}"
   rescue StandardError => e
     $stderr.puts "[MZ] message test error: #{e.message}"
+  end
+
+  # Whether --mz_animation_test was requested (a launcher constant set by
+  # main.cxx). Implies New Game, since the probe plays on the map.
+  def animation_test_requested?
+    (begin
+      MZ_ANIMATION_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_animation_test is set (CI), once on the map play an animation on
+  # the player through `$gameTemp.requestAnimation` — the same call an event's
+  # Show Animation command makes — and log whether cells actually drew.
+  #
+  # This is the one in-game system the other probes never touch, and MZ has two
+  # of them. `Spriteset_Base.isMVAnimation` routes by data shape: an animation
+  # carrying a `frames` array is drawn by `Sprite_AnimationMV` out of a sprite
+  # sheet, anything else by `Sprite_Animation`, which plays through an Effekseer
+  # WASM runtime `main.js` starts and our host does not (ADR 0004 M6.2). So the
+  # reachable path is the MV-format one, and what it exercises that nothing else
+  # here does is per-sprite blend modes — the bed's animation ends on an
+  # additive frame for exactly that reason.
+  #
+  # The animation is re-requested whenever none is playing, so a burst is on
+  # screen continuously for the ~2 seconds the probe runs. That is deliberate:
+  # the run captures a single frame, and an animation that played once early
+  # would be long over by then, leaving a screenshot that proves nothing. The
+  # report is one-shot; `@anim_cells_seen` also gates the screenshot, so the
+  # capture lands on a frame with cells in it.
+  def maybe_animation_test
+    return if @anim_test_done
+    return unless animation_test_requested?
+    return unless current_scene == "Scene_Map"
+
+    @anim_frame ||= 0
+    $stderr.puts "[MZ] auto animation test" if @anim_frame.zero?
+    @anim_frame += 1
+    MV::JS.eval(self.class.animation_probe_js(ANIM_PROBE_ID))
+    state = MV::JS.eval(self.class.animation_state_js(ANIM_PROBE_ID))
+    @anim_state = state if state.is_a?(String)
+    # Cells drawing *this* frame gates the screenshot; cells drawing at any
+    # point is what gets reported.
+    @anim_cells_now = @anim_state.to_s.split("cells=").last.to_i.positive?
+    @anim_cells_seen ||= @anim_cells_now
+    return if @anim_frame < ANIM_PROBE_FRAMES
+
+    @anim_test_done = true
+    $stderr.puts "[MZ-ANIM] #{@anim_state} played=#{@anim_cells_seen ? true : false}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] animation test error: #{e.message}"
   end
 
   # Whether --mz_menu_test was requested (a launcher constant set by main.cxx).
@@ -918,6 +1015,7 @@ class MZ
     @frames = (@frames || 0) + 1
     return if @frames < SHOT_DELAY_FRAMES
     return if battle_test_troop > 0 && !battle_shot_ready?
+    return if animation_test_requested? && !animation_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -934,6 +1032,17 @@ class MZ
     return false unless @battle_test_done
     @battle_done_frame ||= @frames
     @frames - @battle_done_frame >= BATTLE_SHOT_GRACE_FRAMES
+  end
+
+  # Is this a frame worth photographing for the animation probe? A burst lasts
+  # about a fifth of a second and the probe leaves a gap before re-requesting
+  # the next one, so the fixed delay on its own photographs the map *between*
+  # bursts as often as not. Waiting for cells that are drawing right now puts
+  # the animation in the picture. Bounded: once the probe has given up
+  # (@anim_test_done) the frame is captured anyway, so a run where nothing ever
+  # drew still produces the screenshot that shows it.
+  def animation_shot_ready?
+    @anim_cells_now || @anim_test_done
   end
 
   # The on-screen surface MZ's WebGL frame is presented onto: one full-screen

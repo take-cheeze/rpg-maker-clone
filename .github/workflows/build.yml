@@ -374,6 +374,24 @@ jobs:
               MZ_MODE: menu
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # The animation path, which nothing else here touches. MZ picks
+          # between two animation systems by data shape: an animation carrying
+          # a `frames` array draws as sprites (Sprite_AnimationMV), anything
+          # else goes to Effekseer, whose WASM runtime this host never starts
+          # (ADR 0004 M6.2) — so an Effekseer animation would play its timings
+          # and no visuals at all. The bed authors an MV-format burst, and the
+          # check asserts `mv=true` (the reachable system was selected) and
+          # `played=true` (cell sprites were visible with a bitmap). It is also
+          # the only thing in this bed that asks the renderer for a blend mode
+          # other than normal alpha; the frame check below is what proves the
+          # burst reached the picture, since the log says `played=true` even
+          # when the art fails to resolve.
+          - name: MZ animation smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: animation
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           - name: MZ save smoke test
             continue-on-error: true
             env:

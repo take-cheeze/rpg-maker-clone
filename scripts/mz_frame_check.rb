@@ -125,10 +125,16 @@ class Frame
 
   # Percentage of pixels in rows [y0, y1) whose colour differs from `other`'s.
   def band_change(other, y0, y1)
+    box_change(other, 0, y0, @width, y1)
+  end
+
+  # The same, over an arbitrary rectangle — for things that occupy a part of the
+  # screen rather than a full-width strip.
+  def box_change(other, x0, y0, x1, y1)
     changed = 0
     total = 0
     (y0...y1).each do |y|
-      (0...@width).each do |x|
+      (x0...x1).each do |x|
         total += 1
         changed += 1 if rgb(x, y) != other.rgb(x, y)
       end
@@ -218,14 +224,26 @@ MESSAGE_OUTSIDE_MAX = 25.0
 # A scene change repaints everything. Measured: 100.0% for both menu and battle.
 SCENE_CHANGE_MIN = 50.0
 
+# The animation plays centred on the player, who stands mid-screen, so the burst
+# lands inside the middle 30% of each axis. Measured: 36.2% of that box changes
+# (a disc of radius 72 in it), and it is the same 36.2% run after run because
+# the bed's cells are equal-area — see gen-mz-sample.py's gen_animation.
+ANIM_BOX_MIN_F = 0.35
+ANIM_BOX_MAX_F = 0.65
+ANIM_BOX_MIN = 15.0
+# Nothing the animation does may reach the left quarter of the screen. Measured:
+# 0.0%. This is what separates "the burst drew" from "the frame changed" — a
+# screen flash, a scrolled map or a scene swap would move this too.
+ANIM_OUTSIDE_MAX = 5.0
+
 # The save probe re-enters the map the way Scene_Load does, so its frame is the
 # map again. Measured: 0.2% (the player stands where the move probe left it).
 SAVE_CHANGE_MAX = 15.0
 
 # Modes whose frame still has the map in it, so MAP_DOMINANT_MAX applies —
 # including `menu`, which draws its windows over a blurred snapshot of it.
-MAP_MODES = %w[play message menu save].freeze
-MODES = %w[play message menu save battle].freeze
+MAP_MODES = %w[play message menu save animation].freeze
+MODES = %w[play message menu save battle animation].freeze
 
 $failures = 0
 $checks = 0
@@ -371,6 +389,27 @@ else
                     '(need >= %.1f%%) — %s was entered but the map is still ' \
                     'what is on screen', changed, SCENE_CHANGE_MIN, scene))
       puts format('       %.1f%% changed', changed)
+    end
+  end
+
+  if (anim = loaded['animation'])
+    check 'animation: the burst drew on the player, and nowhere else' do
+      x0 = (anim.width * ANIM_BOX_MIN_F).to_i
+      x1 = (anim.width * ANIM_BOX_MAX_F).to_i
+      y0 = (height * ANIM_BOX_MIN_F).to_i
+      y1 = (height * ANIM_BOX_MAX_F).to_i
+      inside = anim.box_change(play, x0, y0, x1, y1)
+      outside = anim.box_change(play, 0, 0, anim.width / 4, height)
+      expect(inside >= ANIM_BOX_MIN,
+             format('the middle of the frame is %.1f%% different from the ' \
+                    'plain map (need >= %.1f%%) — the animation reported its ' \
+                    'cells drawing but they are not in the picture',
+                    inside, ANIM_BOX_MIN))
+      expect(outside <= ANIM_OUTSIDE_MAX,
+             format('the left quarter changed %.1f%% too (allow <= %.1f%%) — ' \
+                    'something moved the whole frame, so the middle proves ' \
+                    'nothing about the animation', outside, ANIM_OUTSIDE_MAX))
+      puts format('       centre %.1f%% changed, outside %.1f%%', inside, outside)
     end
   end
 

@@ -1,1 +1,1 @@
-[null]
+[null,{"id":1,"name":"Burst","displayType":0,"effectName":"","flashTimings":[],"soundTimings":[],"offsetX":0,"offsetY":0,"rotation":{"x":0,"y":0,"z":0},"scale":100,"speed":100,"alignBottom":false,"animation1Name":"Burst","animation1Hue":0,"animation2Name":"","animation2Hue":0,"position":1,"frames":[[[0,0,0,100,0,0,255,0]],[[1,0,0,100,0,0,255,0]],[[2,0,0,100,0,0,255,0]],[[3,0,0,100,0,0,255,1]]],"timings":[]}]
