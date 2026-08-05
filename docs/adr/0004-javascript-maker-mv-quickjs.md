@@ -241,13 +241,41 @@ JavaScript loads and interprets the JSON.
          first. `scripts/gen-mz-sample.py` authors both (plus a windowskin, icon
          sheet, tileset, party sprite, a walled room and real terms), and
          `scripts/mz_testbed_check.rb` is the blocking CRuby guard for them.
-      With those, `--mz_new_game`/`--mz_move_test` boot the bed to `Scene_Title`,
-      start a New Game and walk the player on the start map headlessly in CI,
-      and `--mz_screenshot` captures the frame (`MV::JS.screenshot_gl`, the FBO
-      counterpart of MV's canvas capture). Remaining: FBO resize on a PIXI canvas
-      resize, an MZ audio bridge (MV's `AudioManager` → `RGSS::Audio` route is
-      not wired for MZ yet) and `.woff` font loading, all verified against a real
-      MZ project.
+      Two further gaps showed up only once the real engine ran in CI, both of
+      them invisible to the Node harness because it stubbed every method PIXI
+      asked for:
+      5. **`gl.clearStencil` was missing from the WebGL wrapper.**
+         `WindowLayer.render` calls it on every frame that draws a window. The
+         resulting `TypeError: not a function` is *fatal* rather than transient:
+         PIXI v5 re-arms its `requestAnimationFrame` only after `update()`
+         returns, so a single throw inside the ticker stops the game loop
+         permanently — which is why the log showed one error and a scene that
+         never changed again. Added as a no-op beside the existing stencil stubs
+         (the FBO has no stencil attachment, so `WindowLayer`'s per-window
+         clipping does not clip), with `polygonOffset` and `uniform3i`/`uniform4i`
+         alongside.
+      6. **The render target was never resized past 1x1.** The context is created
+         from a canvas that is still 0x0 and MZ sizes it only in
+         `Scene_Boot.resizeScreen` → `Graphics.resize` → PIXI's
+         `renderer.resize`. `mvgl::resize` re-specifies both renderbuffers,
+         `__mv_glResize` exposes it, and the canvas' width/height setters drive
+         it — so the game renders at its real resolution instead of into one
+         pixel.
+
+      The lesson worth keeping: **a harness is only as good as its narrowest
+      stub.** Both of these, and the `strokeRect` gap above, were bugs in the
+      *native* surface that a permissive JS double could never reproduce. The
+      harness now mirrors `Ctx.prototype` and `mvwebgl.cxx`'s `P.*` list exactly,
+      and reproduces each failure verbatim when the corresponding entry is
+      removed.
+
+      With all of it, `--mz_new_game`/`--mz_move_test` boot the bed to
+      `Scene_Title`, start a New Game and walk the player on the start map, and
+      `--mz_screenshot` captures the frame (`MV::JS.screenshot_gl`, the FBO
+      counterpart of MV's canvas capture). Remaining: a real stencil attachment
+      so window clipping works, an MZ audio bridge (MV's `AudioManager` →
+      `RGSS::Audio` route is not wired for MZ yet) and `.woff` font loading, all
+      verified against a real MZ project.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

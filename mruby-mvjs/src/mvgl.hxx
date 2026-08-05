@@ -43,6 +43,17 @@ void destroy(Context* ctx);
 // can exist; GL calls act on whichever is current). Returns false on failure.
 bool make_current(Context* ctx);
 
+// Re-specify the context's render target at `width` x `height`, keeping the
+// same FBO and attachment points. The JS makers create their WebGL context from
+// a canvas that is still 0x0 (clamped to 1x1 here) and only size it once the
+// engine knows its screen resolution — MZ does exactly that, in
+// Scene_Boot.resizeScreen -> Graphics.resize -> the canvas' width/height
+// setters — so without this the whole game renders into a 1x1 target and both
+// the on-screen present and the screenshot read back a single pixel. A no-op
+// (returning true) when the size is unchanged; false on failure or a stub
+// context.
+bool resize(Context* ctx, int width, int height);
+
 // The context's colour buffer as top-down RGBA8 (GL renders bottom-up; this
 // returns it flipped so it drops straight into the present path, matching the
 // MV canvas). `*out_w`/`*out_h` receive the dimensions. The pointer is owned by

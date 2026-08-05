@@ -430,6 +430,35 @@ void destroy(Context* ctx) {
   delete ctx;
 }
 
+bool resize(Context* ctx, int width, int height) {
+  if (!ctx || width <= 0 || height <= 0)
+    return false;
+  if (ctx->w == width && ctx->h == height)
+    return true;
+  if (!make_current(ctx))
+    return false;
+
+  // Reallocate both attachments at the new size. glRenderbufferStorage
+  // re-specifies the existing renderbuffer, so the FBO's attachment points stay
+  // valid and only the storage changes.
+  glBindRenderbuffer(GL_RENDERBUFFER, ctx->color_rb);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+  glBindRenderbuffer(GL_RENDERBUFFER, ctx->ds_rb);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    warn("resize: framebuffer incomplete", nullptr);
+    return false;
+  }
+
+  ctx->w = width;
+  ctx->h = height;
+  const size_t bytes = static_cast<size_t>(width) * height * 4;
+  ctx->buffer.assign(bytes, 0);
+  ctx->flipped.assign(bytes, 0);
+  glViewport(0, 0, width, height);
+  return true;
+}
+
 bool make_current(Context* ctx) {
   if (!ctx || ctx->dpy == EGL_NO_DISPLAY || ctx->egl == EGL_NO_CONTEXT)
     return false;
@@ -567,6 +596,9 @@ Context* create(int, int) {
 }
 void destroy(Context*) {}
 bool make_current(Context*) {
+  return false;
+}
+bool resize(Context*, int, int) {
   return false;
 }
 const std::uint8_t* pixels(Context*, int*, int*) {

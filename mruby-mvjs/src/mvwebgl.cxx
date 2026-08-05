@@ -130,6 +130,22 @@ JSValue js_gl_create(JSContext* ctx,
   return JS_NewInt32(ctx, g_current);
 }
 
+// __mv_glResize(handle, w, h) -> bool: re-specify the context's render target.
+// The game's canvas is still 0x0 when `getContext("webgl")` first runs (clamped
+// to 1x1 by the shim), and MZ only sizes it later, in Scene_Boot.resizeScreen
+// -> Graphics.resize; without following that, everything renders into a 1x1
+// target and both the present and the screenshot read back a single pixel.
+JSValue js_gl_resize(JSContext* ctx,
+                     JSValueConst,
+                     int argc,
+                     JSValueConst* argv) {
+  mvgl::Context* c = bind(gi(ctx, argc, argv, 0));
+  if (!c)
+    return JS_NewBool(ctx, 0);
+  return JS_NewBool(
+      ctx, mvgl::resize(c, gi(ctx, argc, argv, 1), gi(ctx, argc, argv, 2)));
+}
+
 // -- whole-context state -----------------------------------------------------
 
 JSValue js_gl_viewport(JSContext* ctx,
@@ -1170,6 +1186,18 @@ const char* kWebGLPreamble = R"MVJS(
     this.__gl = g.__mv_glCreate(w, h);
     this._ext = {};
   }
+  // Follow the canvas' size. The canvas' width/height setters call this (see
+  // mvcanvas.cxx) so the native render target tracks the game's screen
+  // resolution instead of staying at the 1x1 it was created with.
+  WebGLRenderingContext.prototype.__mv_resize = function (w, h) {
+    w = w | 0; h = h | 0;
+    if (w <= 0 || h <= 0 || !this.__gl) return;
+    if (w === this.drawingBufferWidth && h === this.drawingBufferHeight) return;
+    if (g.__mv_glResize(this.__gl, w, h)) {
+      this.drawingBufferWidth = w;
+      this.drawingBufferHeight = h;
+    }
+  };
   var P = WebGLRenderingContext.prototype;
   // The GL enums live both on the prototype (read as `gl.RGBA`) and as static
   // properties on the constructor (`WebGLRenderingContext.RGBA`). PIXI v5's
@@ -1203,9 +1231,21 @@ const char* kWebGLPreamble = R"MVJS(
   P.hint = function () {};
   P.lineWidth = function () {};
   P.depthRange = function () {};
+  // Stencil is inert on this backend: the off-screen FBO carries no stencil
+  // attachment, so the masking MZ uses it for (WindowLayer clipping each window
+  // to its own shape) simply does not clip. `clearStencil` must still *exist*,
+  // though — `WindowLayer.render` calls it on every frame that draws a window,
+  // and a missing method throws a TypeError inside PIXI's ticker, which is fatal
+  // rather than transient: PIXI v5 re-arms its requestAnimationFrame only after
+  // `update()` returns, so one throw stops the game loop for good. That is what
+  // pinned MZ at Scene_Title with a bare "TypeError: not a function".
   P.stencilFunc = function () {};
   P.stencilOp = function () {};
   P.stencilMask = function () {};
+  P.clearStencil = function () {};
+  // Depth-offset state PIXI's State manager applies; no effect on a 2D scene
+  // drawn without a depth buffer.
+  P.polygonOffset = function () {};
 
   // Shaders & programs.
   P.createShader = function (t) { return g.__mv_glCreateShader(this.__gl, t); };
@@ -1258,6 +1298,12 @@ const char* kWebGLPreamble = R"MVJS(
   P.uniform3fv = function (l, v) { if (l !== null) g.__mv_glUniformfv(this.__gl, 3, l, v); };
   P.uniform4fv = function (l, v) { if (l !== null) g.__mv_glUniformfv(this.__gl, 4, l, v); };
   P.uniform1iv = function (l, v) { if (l !== null) g.__mv_glUniformiv(this.__gl, 1, l, v); };
+  // ivec3/ivec4 scalars. PIXI generates these setters for `ivec3`/`ivec4` (and
+  // `bvec3`/`bvec4`) uniforms, so a shader declaring one would otherwise throw
+  // mid-render. Routed through the vector upload rather than stubbed, since a
+  // silently-unset uniform is a wrong picture, not a missing feature.
+  P.uniform3i = function (l, x, y, z) { if (l !== null) g.__mv_glUniformiv(this.__gl, 3, l, [x, y, z]); };
+  P.uniform4i = function (l, x, y, z, w) { if (l !== null) g.__mv_glUniformiv(this.__gl, 4, l, [x, y, z, w]); };
   P.uniform2iv = function (l, v) { if (l !== null) g.__mv_glUniformiv(this.__gl, 2, l, v); };
   P.uniform3iv = function (l, v) { if (l !== null) g.__mv_glUniformiv(this.__gl, 3, l, v); };
   P.uniform4iv = function (l, v) { if (l !== null) g.__mv_glUniformiv(this.__gl, 4, l, v); };
@@ -1354,6 +1400,7 @@ const uint8_t* mv_webgl_pixels(int handle, int* w, int* h) {
 void mv_install_webgl(JSContext* ctx) {
   JSValue g = JS_GetGlobalObject(ctx);
   reg(ctx, g, "__mv_glCreate", js_gl_create, 2);
+  reg(ctx, g, "__mv_glResize", js_gl_resize, 3);
   reg(ctx, g, "__mv_glViewport", js_gl_viewport, 5);
   reg(ctx, g, "__mv_glScissor", js_gl_scissor, 5);
   reg(ctx, g, "__mv_glClearColor", js_gl_clear_color, 5);
