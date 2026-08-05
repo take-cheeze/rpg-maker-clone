@@ -400,9 +400,11 @@ The work below is roughly ordered by the critical path to a walkable game
   skill resolves against every living target in one action — `command_skill_all`
   spends the SP once and `apply_command` produces one log entry per target,
   buffered so the screen animates the volley hit by hit — with attack damage
-  still computed per target's defence. Still to come: enemy-cast infliction,
-  all-target *items*, per-attribute rate overrides from the Attribute table, the
-  per-terrain backdrop and the RPG2000 Game Over graphic.
+  still computed per target's defence. **All-party items** (medicine scope 1)
+  work the same way through `command_item_all`, healing / curing every living
+  ally and consuming a single item for the whole volley. Still to come:
+  enemy-cast infliction, per-attribute rate overrides from the Attribute table,
+  the per-terrain backdrop and the RPG2000 Game Over graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM

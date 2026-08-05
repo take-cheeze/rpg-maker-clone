@@ -2022,6 +2022,13 @@ module Game
       hp, mp = item_recovery(it, target)
       { hp: hp, mp: mp, cured: item_cured_states(it) }
     end
+
+    # Whether medicine `it` targets the whole party (item scope 1) rather than a
+    # single ally (scope 0). The battle menu casts an all-party item on every
+    # living member at once, skipping target selection.
+    def item_all_allies?(it)
+      it.respond_to?(:scope) && it.scope == 1
+    end
   end
 
   # A loaded map (.lmu) plus convenience accessors for the two tile layers.
@@ -3484,6 +3491,17 @@ module Game
       ally.action = nil; ally.defending = false
     end
 
+    # Queue an all-ally Item for `ally` (an item scope 1, the whole party):
+    # `targets` is a list of per-member `{ target:, hp:, mp: }` recoveries. The
+    # shared `cured` states apply to each. One item is consumed for the volley
+    # (only the first produced entry carries `item_id`, so the scene's per-entry
+    # bag deduction fires once).
+    def command_item_all(ally, targets, item_id:, name:, cured: nil)
+      ally.command = { kind: :item, all: true, item_id: item_id, targets: targets,
+                       name: name, cured: cured || [] }
+      ally.action = nil; ally.defending = false
+    end
+
     # Execute one full round — living battlers act in agility order, allies using
     # their assigned action, enemies attacking a random party member — and return
     # the round's log entries. Ally commands are cleared afterwards for the next
@@ -3758,7 +3776,11 @@ module Game
       live = (cmd[:targets] || []).select { |t| t[:target] && !t[:target].dead? }
       return nil if live.empty?
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
-      live.map { |t| apply_skill_hit(b, t[:target], t[:hp] || 0, t[:mp] || 0, cmd) }
+      entries = live.map { |t| apply_skill_hit(b, t[:target], t[:hp] || 0, t[:mp] || 0, cmd) }
+      # An all-ally item is consumed once for the whole volley: keep item_id on
+      # the first hit only, so the scene's per-entry bag deduction fires once.
+      entries.each_with_index { |e, i| e[:item_id] = nil unless i.zero? } if cmd[:item_id]
+      entries
     end
 
     # Apply one skill / item effect from `b` to `target`: a negative `hp` is an

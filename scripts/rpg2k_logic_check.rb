@@ -4346,6 +4346,45 @@ check 'battle: run_round surfaces every hit of an all-enemy volley' do
   eq 2, hits.length, 'both foes appear in the round log'
 end
 
+# -- Battle all-party items ---------------------------------------------------
+
+check 'battle: an all-party item heals every ally and is consumed once' do
+  healer = combatant('Healer', 0, 0, 20, 100)        # acts first
+  a1 = combatant('A1', 0, 0, 5, 100); a1.hp = 40
+  a2 = combatant('A2', 0, 0, 5, 100); a2.hp = 50
+  b = Game::Battle.new([healer, a1, a2], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  b.command_item_all(healer, [{ target: a1, hp: 30 }, { target: a2, hp: 30 }],
+                     item_id: 5, name: 'Party Potion')
+  b.begin_round
+  e1 = b.step_action
+  e2 = b.step_action
+  eq 5, e1[:item_id], 'the first hit consumes the item'
+  eq nil, e2[:item_id], 'the rest do not — one item for the whole volley'
+  eq [70, 80], [a1.hp, a2.hp]
+  ok e1[:recover] && e2[:recover]
+end
+
+check 'battle: an all-party antidote cures the status from each afflicted ally' do
+  healer = combatant('Healer', 0, 0, 20, 100)
+  a1 = combatant('A1', 0, 0, 5, 100); a1.states = [3]
+  a2 = combatant('A2', 0, 0, 5, 100); a2.states = [3, 4]
+  b = Game::Battle.new([healer, a1, a2], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  b.command_item_all(healer, [{ target: a1, hp: 0 }, { target: a2, hp: 0 }],
+                     item_id: 6, name: 'Party Antidote', cured: [3])
+  b.begin_round
+  b.step_action; b.step_action
+  ok !a1.state?(3), 'a1 is cured'
+  ok !a2.state?(3), 'a2 is cured'
+  ok a2.state?(4), 'a2 keeps its other status'
+end
+
+check 'Party#item_all_allies? flags a whole-party item (scope 1)' do
+  st = item_party({ 5 => fake_item(type: 6, scope: 1, rhp: 20),
+                    6 => fake_item(type: 6, scope: 0, rhp: 20) })
+  ok st.party.item_all_allies?(st.party.db_item(5)), 'scope 1 -> all allies'
+  ok !st.party.item_all_allies?(st.party.db_item(6)), 'scope 0 -> single ally'
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }
