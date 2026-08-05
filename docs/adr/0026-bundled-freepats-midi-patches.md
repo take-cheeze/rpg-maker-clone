@@ -29,10 +29,11 @@ Options for supplying a synth:
 
 - **Configure SDL_mixer's built-in TiMidity** — no new linking; needs a patch
   set and a config path.
-- **Build the vendored `3rd/timidity`** (TiMidity++ 2.15.0) — 85 `.c` files of
-  autoconf-driven *application*, not a library: it would need a hand-written
-  `config.h`, a `Mix_HookMusic` bridge, and it is GPL, which would place the
-  engine binary under GPL terms. It would still need the same patch data.
+- **Build the vendored `3rd/timidity`** (TiMidity++ 2.15.0, a submodule at the
+  time of this decision and since removed) — 85 `.c` files of autoconf-driven
+  *application*, not a library: it would need a hand-written `config.h`, a
+  `Mix_HookMusic` bridge, and it is GPL, which would place the engine binary
+  under GPL terms. It would still need the same patch data.
 - **FluidSynth + a SoundFont** — a new link dependency and an equally large
   asset, for a synth SDL_mixer only reaches through a second code path.
 
@@ -85,8 +86,10 @@ gated by the existing download barrier.
   `RGSS_TIMIDITY_CFG_SOURCE` is baked in unconditionally and probed at run time,
   so configuring before fetching does not require a re-configure, and the two
   steps stay order-independent in CI.
-- The vendored `3rd/timidity` submodule stays unbuilt; it is now documented as
-  the rejected option rather than an implied future direction.
+- The vendored `3rd/timidity` submodule is not built. Recording it here as a
+  rejected option rather than an implied future direction is what made it
+  removable, and it was subsequently deleted (PR #312) — it had never been
+  referenced by any build.
 
 ## Consequences
 
