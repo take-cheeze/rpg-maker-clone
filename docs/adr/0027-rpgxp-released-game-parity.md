@@ -181,8 +181,9 @@ screen). The rest is the windowskin background's shading.
   evaluated at the top level as RGSS does, `$game_switches` and
   `$game_variables` are bound to the same state Control Switches / Control
   Variables write, and nothing else is provided — a game needing the rest of
-  RMXP's object graph wants `RGSS_SCRIPT_HOST`, which exists to give it all of
-  them. The interpreter *queues* the source rather than evaluating it, for the
+  RMXP's object graph wants the script host, which exists to give it all of them
+  (and is the default boot path since [ADR 0029](0029-rgss-script-host-by-default.md),
+  so this flow runs only as its fallback). The interpreter *queues* the source rather than evaluating it, for the
   same reason the other effect commands are queued and one specific to this one:
   `rpgxp_testbed_check.rb` drives the interpreter over real event lists under
   CRuby, and a data check must not run a game's scripts — one of Pray for You's

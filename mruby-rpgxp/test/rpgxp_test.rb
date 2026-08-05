@@ -1728,6 +1728,38 @@ assert "ScriptHost.run returns false when the project ships no scripts" do
   assert_false RPGXP::ScriptHost.run(FakeScriptDB.new([]))
 end
 
+# The host is the default boot path (ADR 0029): with neither the native binary's
+# RGSS_SCRIPT_HOST constant nor an opt-out in the environment, enabled? is true.
+# This runs in the *built* engine, which is where a divergence between the CRuby
+# harness and mruby would show — including ENV being absent here, which must
+# still leave the host on rather than raise.
+assert "ScriptHost.enabled? defaults on" do
+  assert_true RPGXP::ScriptHost.enabled?
+  # The opt-out list the native runtime mirrors (src/main.cxx) — kept in the
+  # test so a spelling cannot silently drop out of one side.
+  assert_equal ["0", "false", "off", "no"], RPGXP::ScriptHost::DISABLED_VALUES
+  assert_equal "RGSS_SCRIPT_HOST", RPGXP::ScriptHost::ENABLED_ENV
+end
+
+# The environment channel, when this build has an ENV to read (the native binary
+# resolves the variable in C++ instead — see enabled?).
+assert "ScriptHost.enabled? honours the RGSS_SCRIPT_HOST opt-out in ENV" do
+  skip "no ENV in this build" unless Object.const_defined?(:ENV)
+  previous = ENV[RPGXP::ScriptHost::ENABLED_ENV]
+  begin
+    ENV[RPGXP::ScriptHost::ENABLED_ENV] = ""      # unset, as a plain boot is
+    assert_true RPGXP::ScriptHost.enabled?
+    RPGXP::ScriptHost::DISABLED_VALUES.each do |off|
+      ENV[RPGXP::ScriptHost::ENABLED_ENV] = off
+      assert_false RPGXP::ScriptHost.enabled?, "#{off.inspect} should disable the host"
+    end
+    ENV[RPGXP::ScriptHost::ENABLED_ENV] = "1"
+    assert_true RPGXP::ScriptHost.enabled?
+  ensure
+    ENV[RPGXP::ScriptHost::ENABLED_ENV] = previous.nil? ? "" : previous
+  end
+end
+
 assert "ScriptHost.install_kernel wires load_data / save_data round-trip" do
   db = FakeScriptDB.new([["x", "0"]])
   RPGXP::ScriptHost.install_kernel(db)

@@ -883,33 +883,38 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
 - **Menus / save / battle** — the default menu screens, saving in the real
   `.rxdata` save format (a portable Marshal save is used for now), and the
   battle system.
-- 🚧 **Run the bundled RGSS scripts** — the largest direction: an `eval`-based
+- ✅ **Run the bundled RGSS scripts** — the largest direction: an `eval`-based
   host that runs `Data/Scripts.rxdata` unmodified against the RGSS class library
-  (the equivalent of the MV "embed the real engine" choice), which would also
-  run community scripts. The **host plumbing now exists** (ADR 0017): a native
-  `RGSS.zlib_inflate` decompresses the script sections, `RPGXP::RGSSData`
-  exposes `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost`
-  installs the Kernel `load_data`/`save_data` built-ins and evaluates every
-  section at the top level (mruby-eval) so "Main" drives the game. Boot runs the
-  host when it is enabled (`RGSS_SCRIPT_HOST`, off by default) and the project
-  ships scripts, falling back to the built-in flow otherwise. Decoding, the
-  built-ins and top-level evaluation of real script source are covered by
-  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. Remaining before
-  it can be the default: complete the `mruby-rgss` class library the stock
-  scripts call — the precise gap (measured against the real test-bed scripts) is
-  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
-  `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
-  `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
-  widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
-  the native `Graphics.snap_to_bitmap` — see the VX section below.)
-  Also reconcile the scripts' blocking main loop with the emscripten frame loop
-  (Asyncify or a per-frame driver). (Graphics and audio both come out of the
-  encrypted archive now — see Encrypted archives above.)
+  (the equivalent of the MV "embed the real engine" choice), which also runs
+  community scripts. Built by ADR 0017: a native `RGSS.zlib_inflate` decompresses
+  the script sections, `RPGXP::RGSSData` exposes
+  `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost` installs the
+  Kernel `load_data`/`save_data` built-ins and evaluates every section at the top
+  level (mruby-eval) so "Main" drives the game. **It is now the default boot
+  path** (ADR 0029): a project that ships scripts runs its own engine, and the
+  built-in flow is the fallback for a script-less project, a host that fails to
+  boot, and the `RGSS_SCRIPT_HOST=0` opt-out (which `--rpgxp_new_game` implies,
+  since it drives the built-in title screen). What made the flip possible: the
+  `mruby-rgss` class library the stock scripts call is complete enough — `Font`,
+  `Graphics` timing, `Input`, `Audio`, `Sprite`'s extended properties and the
+  `Window`/`Tilemap`/`Plane` widgets all render, plus `Kernel#sprintf` and
+  `exit` — and the scripts' blocking main loop is reconciled with the emscripten
+  frame loop by the per-frame Fiber driver (ADR 0023), rather than Asyncify. The
+  remaining polish is tracked in
+  [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). Decoding, the built-ins
+  and top-level evaluation of real script source are covered by
+  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`; CI also boots both
+  XP beds under the host natively (`scripts/rpgxp_boot_check.bash`, asserting the
+  `[RPGXP-SCRIPTS]` marker and no fallback). Still unverified: the frame driver
+  in a real **browser**. (Graphics and audio both come out of the encrypted
+  archive now — see Encrypted archives above.)
 - ✅ **Cross-runtime testing** — an XP project is booted natively and against the
   genuine runtime, both asserting the same `[RPGXP-MAP]` marker
-  (`--rpgxp_new_game` picks New Game without input):
-  `scripts/rpgxp_boot_check.bash` (the native binary, in CI — the guard against
-  mruby/CRuby divergence the CRuby-hosted checks cannot see) and
+  (`--rpgxp_new_game` picks New Game without input, and with it the built-in
+  flow): `scripts/rpgxp_boot_check.bash` (the native binary, in CI — the guard
+  against mruby/CRuby divergence the CRuby-hosted checks cannot see; it boots
+  each bed a second time with no flags, where the script host runs the game's own
+  scripts) and
   `scripts/compare-rpgxp-wine.bash`, which diffs our frames against the genuine
   `Game.exe` + `RGSS104E.dll` under wine, the XP twin of
   `compare-nepheshel-wine.bash`. That comparison is the harness the remaining
@@ -1089,8 +1094,10 @@ screen (544×416). Full rationale:
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
-  runtimes have (title → New Game → walkable map). Not written yet; a boot
-  without the script host reports that instead of showing a blank window.
+  runtimes have (title → New Game → walkable map). Not written yet; the script
+  host (on by default) runs a project that ships scripts, and a boot without it —
+  no script bundle, or `RGSS_SCRIPT_HOST=0` — reports that instead of showing a
+  blank window.
 - **A real test bed.** Neither editor nor its RTP is redistributable and no
   open-source VX/VX Ace project ships a genuine `Data/*.rvdata(2)` tree, so
   `scripts/rpgvx_testbed_check.rb` builds a full project per edition instead and

@@ -76,11 +76,13 @@ mirroring how the XP layer was staged (ADR 0010).
   the window to 544x416.
 - **Booting.** A VX/VX Ace game's engine *is* its script bundle, so rather than
   reimplementing a title/map flow first (the RPG2000/XP staging), the boot shell
-  runs the project's own scripts through the existing RGSS script host when it is
-  enabled (`RGSS_SCRIPT_HOST`, ADR 0017), driven by the same per-frame Fiber as
+  runs the project's own scripts through the existing RGSS script host (ADR 0017;
+  on by default since [ADR 0029](0029-rgss-script-host-by-default.md), with
+  `RGSS_SCRIPT_HOST=0` as the opt-out), driven by the same per-frame Fiber as
   XP (ADR 0023 — its construction moved into `RPGXP::ScriptHost.build_driver` so
-  both shells share one driver). Without the host the shell reports the pending
-  runtime instead of opening a blank window, as the MZ shell does.
+  both shells share one driver). Without the host — a project that ships no
+  scripts, or that opt-out — the shell reports the pending runtime instead of
+  opening a blank window, as the MZ shell does.
 - **Validation** (`scripts/rpgvx_testbed_check.rb`). Since no real bed can be
   downloaded, the check *builds* a complete project per edition — every `Data/`
   table, a map with an event, a common event, a script bundle — and drives the

@@ -183,6 +183,51 @@ def check_run_defines_top_level
   0
 end
 
+# Project-independent: the host is the default boot path (ADR 0029), and
+# RGSS_SCRIPT_HOST is the opt-out that restores the built-in flow. Guarding it
+# here as well as in mruby-rpgxp/test keeps the two spellings of the rule (the
+# CRuby harness and the built engine) from drifting apart.
+def check_enabled_default
+  previous = ENV["RGSS_SCRIPT_HOST"]
+  errors = 0
+  check = lambda do |want, msg|
+    next 0 if RPGXP::ScriptHost.enabled? == want
+    warn "  FAIL #{msg}"
+    1
+  end
+
+  ENV.delete("RGSS_SCRIPT_HOST")
+  errors += check.call(true, "ScriptHost.enabled? is false with RGSS_SCRIPT_HOST unset")
+  ENV["RGSS_SCRIPT_HOST"] = ""
+  errors += check.call(true, "an empty RGSS_SCRIPT_HOST should leave the default (on)")
+  RPGXP::ScriptHost::DISABLED_VALUES.each do |off|
+    ENV["RGSS_SCRIPT_HOST"] = off
+    errors += check.call(false, "RGSS_SCRIPT_HOST=#{off} did not switch the host off")
+  end
+  ENV["RGSS_SCRIPT_HOST"] = "1"
+  errors += check.call(true, "RGSS_SCRIPT_HOST=1 did not keep the host on")
+
+  # The native binary has no ENV to offer the Ruby side, so it resolves
+  # --rgss_script_host / RGSS_SCRIPT_HOST itself and passes the answer down as a
+  # constant (src/main.cxx). That channel wins over the environment.
+  begin
+    Object.const_set(:RGSS_SCRIPT_HOST, false)
+    errors += check.call(false, "the RGSS_SCRIPT_HOST constant did not switch the host off")
+    Object.send(:remove_const, :RGSS_SCRIPT_HOST)
+    Object.const_set(:RGSS_SCRIPT_HOST, true)
+    ENV["RGSS_SCRIPT_HOST"] = "0"
+    errors += check.call(true, "the RGSS_SCRIPT_HOST constant should win over the environment")
+  ensure
+    Object.send(:remove_const, :RGSS_SCRIPT_HOST) if Object.const_defined?(:RGSS_SCRIPT_HOST)
+  end
+
+  puts "  ScriptHost.enabled? defaults on; #{RPGXP::ScriptHost::DISABLED_VALUES.join('/')} opt out " \
+       "(env or the native RGSS_SCRIPT_HOST constant)" if errors.zero?
+  errors
+ensure
+  previous.nil? ? ENV.delete("RGSS_SCRIPT_HOST") : ENV["RGSS_SCRIPT_HOST"] = previous
+end
+
 # Every XP project under `root` that carries scripts: an editor project (a loose
 # Data/Scripts.rxdata) or a *released* one, which keeps Scripts.rxdata inside its
 # encrypted Game.rgssad with no loose Data/ to glob for.
@@ -198,14 +243,18 @@ end
 games = ARGV.dup
 games = discover_games(File.expand_path("../data", __dir__)) if games.empty?
 
+# The project-independent checks run first, so they still guard the rules when
+# no test bed has been downloaded.
+errors = check_enabled_default + check_run_defines_top_level
+
 if games.empty?
   warn "no XP test-bed game found (run scripts/download-opengame-xp.bash first)"
-  exit 0
+  exit(errors.zero? ? 0 : 1)
 end
 
 checker = Checker.new
 games.each { |g| checker.check_game(g) }
-errors = checker.errors + check_run_defines_top_level
+errors += checker.errors
 if errors.zero?
   puts "OK: XP script host decodes, installs built-ins and evaluates real scripts"
 else

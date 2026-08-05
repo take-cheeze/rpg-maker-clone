@@ -4,7 +4,10 @@ Date: 2026-08-04
 
 ## Status
 
-Accepted
+Accepted. The "opt-in for now" clause below is superseded by
+[ADR 0029](0029-rgss-script-host-by-default.md): the host is the default boot
+path and `RGSS_SCRIPT_HOST` is now the opt-out. Everything else here still
+describes the host as built.
 
 ## Context
 

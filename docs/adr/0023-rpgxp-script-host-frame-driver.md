@@ -4,8 +4,10 @@ Date: 2026-08-04
 
 ## Status
 
-Accepted — driver implemented (gated behind `RGSS_SCRIPT_HOST`); needs a real
-project booted under the web build to verify end to end.
+Accepted — driver implemented. No longer gated: the host it drives is the
+default boot path ([ADR 0029](0029-rgss-script-host-by-default.md)), verified by
+booting both XP beds natively in CI. A real project under the *web* build is
+still the open verification.
 
 ## Context
 

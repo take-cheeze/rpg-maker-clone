@@ -4,8 +4,11 @@ The [RGSS script host](adr/0017-rpgxp-rgss-script-host.md) runs an RPG Maker XP
 project's own `Data/Scripts.rxdata` unmodified. The scripts assume the engine
 (normally `RGSS104E.dll`) supplies the RGSS class library; this project supplies
 it as `mruby-rgss`. This document tracks **what the stock scripts call** versus
-**what `mruby-rgss` provides**, so the host can be turned on by default once the
-gaps close.
+**what `mruby-rgss` provides**. The gaps that blocked a default-on host have
+closed and it is now the default boot path
+([ADR 0029](adr/0029-rgss-script-host-by-default.md)); what remains here is the
+polish list, and the measure of how far a game gets before it needs the
+built-in flow as a fallback.
 
 The "needed" column is derived from the real `data/OpenGame.exe/Testbed/XP`
 scripts (all 90 sections), by counting method/`.new`/constant usage — see the
@@ -167,19 +170,23 @@ driver ends the game on (see item 3 above / ADR 0023).
 
 ## Notes
 
-- With the display classes now rendering, the remaining blocker to turning the
-  host on by default is reconciling the scripts' blocking `$scene.main while
-  $scene` loop with the web build's per-frame `emscripten_set_main_loop` callback
+- **The host is now on by default** ([ADR 0029](adr/0029-rgss-script-host-by-default.md));
+  `RGSS_SCRIPT_HOST=0` is the opt-out that restores the built-in flow, which also
+  remains the automatic fallback for a script-less project or a host that fails to
+  boot. The last blocker before that flip was reconciling the scripts' blocking
+  `$scene.main while $scene` loop with the web build's per-frame
+  `emscripten_set_main_loop` callback
   (the desktop build blocks fine; the web build calls `RPGXP#main_loop` once per
   browser frame, so an unmodified blocking script loop would hang the tab). This
   is now **implemented** ([ADR 0023](adr/0023-rpgxp-script-host-frame-driver.md)):
   when the host is enabled, `RPGXP` runs `Main` inside an mruby `Fiber` and the
   wrapped `Graphics.update` yields it once per frame, so `main_loop` drives one
-  game frame per browser callback. It is gated behind `RGSS_SCRIPT_HOST` (off by
-  default), so the built-in flow is unchanged. `exit` (used by the `Interpreter`)
-  is now wired too — it raises a `SystemExit` the driver ends the game on. The
-  remaining step is to boot a real project under the web build with the flag on and
-  confirm it end to end.
+  game frame per browser callback. `exit` (used by the `Interpreter`) is now
+  wired too — it raises a `SystemExit` the driver ends the game on. The remaining
+  step is to boot a real project under the **web** build and confirm it end to
+  end; the native beds are booted under the host by
+  `scripts/rpgxp_boot_check.bash` in CI, which asserts the host's
+  `[RPGXP-SCRIPTS]` marker and fails if it fell back to the built-in flow.
 - None of the above can be built or run in the current CI sandbox; each item is
   verified by `mruby-rgss/test` (compiled and run in CI) plus the host-side
   `scripts/rpgxp_script_host_check.rb`.

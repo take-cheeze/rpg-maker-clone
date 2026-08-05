@@ -13,21 +13,34 @@
 # section against the top level using its editor name — so the game's own logic
 # runs unmodified, rather than the reimplemented default flow in game.rb/scene.rb.
 #
-# It is the alternative to that reimplementation (see
-# docs/adr/0017-rpgxp-rgss-script-host.md). Because the scripts drive their own
-# blocking main loop and lean on the full RGSS class library, the host is an
-# opt-in path for now (RPGXP::ScriptHost.enabled?), with the built-in flow as the
-# default and the fallback. `Kernel#eval` comes from the core mruby-eval gem,
-# a hard dependency of this gem (mruby-rpgxp/mrbgem.rake).
+# It was built as the alternative to that reimplementation (see
+# docs/adr/0017-rpgxp-rgss-script-host.md) and is now the **default** path
+# (docs/adr/0029-rgss-script-host-by-default.md): a project that ships scripts
+# ships its own engine, so running them is what running the game means. The
+# built-in flow stays as the fallback — for a project that ships no scripts, when
+# the host fails to boot, and whenever the opt-out (RGSS_SCRIPT_HOST=0) is set.
+# `Kernel#eval` comes from the core mruby-eval gem, a hard dependency of this gem
+# (mruby-rpgxp/mrbgem.rake).
 class RPGXP
   # Defined with explicit `def self.` singleton methods (not a bare
   # `module_function`, which this mruby build does not apply to later defs) so
   # the host is callable as RPGXP::ScriptHost.<method>.
   module ScriptHost
-    # Environment variable / constant that turns the script host on. Off by
-    # default: the built-in flow is the verified path, and running the bundled
-    # scripts needs both eval and a complete-enough RGSS class library.
+    # Environment variable that switches the script host off. The host is on by
+    # default, so this is an *opt-out*: set RGSS_SCRIPT_HOST to one of
+    # DISABLED_VALUES to boot the built-in reimplemented flow instead (what the
+    # headless render checks compare against, and the escape hatch for a project
+    # whose scripts the host cannot yet run). The native binary spells the same
+    # switch --norgss_script_host.
     ENABLED_ENV = "RGSS_SCRIPT_HOST".freeze
+
+    # The values that turn the host *off*, compared literally in lower case (no
+    # String#downcase, which this mruby build is not known to carry — the same
+    # reason the rest of this gem sticks to the common subset). Anything else —
+    # including "1" — leaves the host on. src/main.cxx carries the same list for
+    # the environment variable it reads on the Ruby side's behalf; keep them
+    # together.
+    DISABLED_VALUES = ["0", "false", "off", "no"].freeze
 
     # True while the host's blocking `Main` runs inside the driver Fiber (see
     # RPGXP#setup_script_host_driver). The wrapped Graphics.update reads this to
@@ -43,14 +56,30 @@ class RPGXP
       @driving = v
     end
 
-    # Whether to run the bundled scripts instead of the built-in flow: an
-    # explicit opt-in via the RGSS_SCRIPT_HOST env var (when the runtime exposes
-    # ENV). Off by default. Uses const_defined? rather than defined?(CONST),
-    # which raises on an undefined constant in this mruby build.
+    # Whether to run the bundled scripts instead of the built-in flow. **On by
+    # default**: an RGSS project's scripts *are* its engine, so running them is
+    # the faithful boot; the built-in reimplementation is the fallback for a
+    # project that ships none. Only an explicit opt-out turns it off.
+    #
+    # Two ways in, because the two runtimes read their settings differently:
+    #
+    #   * the native binary resolves --rgss_script_host and the
+    #     RGSS_SCRIPT_HOST environment variable itself and sets the
+    #     RGSS_SCRIPT_HOST *constant* (src/main.cxx) — this build's mruby has no
+    #     ENV, so that is the only channel that reaches a booted game;
+    #   * the CRuby harnesses (scripts/*_check.rb) have no such constant and set
+    #     the environment variable directly, so ENV is read when it exists.
+    #
+    # With neither present — an embedded target, or a host-side unit test — the
+    # default stands. const_defined? rather than defined?(CONST), which raises on
+    # an undefined constant in this mruby build.
     def self.enabled?
-      return false unless Object.const_defined?(:ENV)
+      return RGSS_SCRIPT_HOST if Object.const_defined?(:RGSS_SCRIPT_HOST)
+      return true unless Object.const_defined?(:ENV)
       flag = ENV[ENABLED_ENV]
-      !(flag.nil? || flag.empty? || flag == "0" || flag == "false")
+      # Unset or empty is "not asked for either way" — the default wins.
+      return true if flag.nil? || flag.empty?
+      !DISABLED_VALUES.include?(flag)
     end
 
     # Run the project's bundled scripts to completion. `db` answers #scripts
@@ -70,6 +99,10 @@ class RPGXP
       # some scripts read it (e.g. to hot-reload). Mirror that shape.
       idx = -1
       $RGSS_SCRIPTS = sections.map { |name, source| [idx += 1, name, source] }
+      # A machine-readable marker, the script-host twin of the built-in flow's
+      # [RPGXP-MAP]: it is what a headless run (scripts/rpgxp_boot_check.bash)
+      # asserts on to prove the host — not the built-in flow — booted the game.
+      $stderr.puts "[RPGXP-SCRIPTS] running #{sections.size} script sections"
       sections.each do |name, source|
         # Evaluate through the top-level helper so a section's `class Scene_Title`
         # etc. define global (::) constants, as under RGSS — see rgss_eval_section.

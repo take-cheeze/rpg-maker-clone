@@ -303,7 +303,10 @@ a position for music that was not playing. Fixed while building the probe.
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
-the only route to a real game. A bundle now **runs**: it loads its database,
+the only route to a real game, which is why it now runs **by default** here as on
+the XP side ([ADR 0029](adr/0029-rgss-script-host-by-default.md); the pending
+notice is what a project without scripts, or a boot with `RGSS_SCRIPT_HOST=0`,
+gets instead). A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
 tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music. What is
