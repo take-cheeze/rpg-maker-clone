@@ -2418,6 +2418,41 @@ static int clamp_byte(int v) {
   return v < 0 ? 0 : (v > 255 ? 255 : v);
 }
 
+// Apply an RGSS Tone to one pixel: desaturate toward its luminance by `gray`,
+// then offset each channel. Shared by every composite that can be toned (a
+// sprite, a plane, the tilemap), so they cannot drift apart.
+static void apply_tone_px(int& r, int& g, int& b, const Tone& t) {
+  const int gy = static_cast<int>(t.gray);
+  if (gy != 0) {
+    const int lum = (r * 77 + g * 150 + b * 29) / 256;
+    r += (lum - r) * gy / 255;
+    g += (lum - g) * gy / 255;
+    b += (lum - b) * gy / 255;
+  }
+  r = clamp_byte(r + static_cast<int>(t.red));
+  g = clamp_byte(g + static_cast<int>(t.green));
+  b = clamp_byte(b + static_cast<int>(t.blue));
+}
+
+static bool tone_is_set(const Tone& t) {
+  return t.red != 0 || t.green != 0 || t.blue != 0 || t.gray != 0;
+}
+
+// The tone of the viewport an object was created in, or a neutral tone when it
+// has none. RGSS applies this to everything the viewport draws *after* each
+// object's own tone/colour, so each composite folds it in as its last step --
+// which is why a display object reads it here rather than the viewport reaching
+// into the object. See vp_set_tone for how a change is propagated.
+static Tone viewport_tone(mrb_state* M, mrb_value vp) {
+  Tone t{};
+  if (!mrb_test(vp) || !DATA_PTR(vp))
+    return t;
+  const mrb_value tv = mrb_iv_get(M, vp, mrb_intern_lit(M, "@tone"));
+  if (mrb_test(tv) && DATA_PTR(tv))
+    t = DataType<Tone>::get(M, tv);
+  return t;
+}
+
 // Point the sprite's canvas at the bitmap it should display: the assigned
 // bitmap directly, or — when the sprite is mirrored, toned or colour-overlaid —
 // a scratch copy with those effects baked in (LVGL can express none of them, so
@@ -2441,9 +2476,14 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     tn = DataType<Tone>::get(M, tone_v);
   if (mrb_test(color_v) && DATA_PTR(color_v))
     cl = DataType<Color>::get(M, color_v);
-  const bool has_tone =
-      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_tone = tone_is_set(tn);
   const bool has_color = cl.alpha != 0;
+  // The viewport's tone applies to everything it draws, so it is folded into
+  // this composite after the sprite's own tone/colour/flash (RGSS tints the
+  // viewport's contents, not its sources).
+  const Tone vtn =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const bool has_vp_tone = tone_is_set(vtn);
 
   // bush_depth: the bottom N rows are drawn at half opacity, so a character
   // wading through bushes fades out below the waist.
@@ -2492,7 +2532,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
     }
   }
 
-  if (cropped || mirror || has_tone || has_color || bush > 0 || flash_on) {
+  if (cropped || mirror || has_tone || has_color || has_vp_tone || bush > 0 ||
+      flash_on) {
     // Reuse the scratch bitmap when its size still matches (src_rect changes
     // every frame, so re-allocating here would churn the GC).
     mrb_value fx_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@_fx_bitmap"));
@@ -2518,18 +2559,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
         int r = 0, g = 0, b = 0, a = 0;
         if (srcx >= 0 && srcy >= 0 && srcx < src.width && srcy < src.height)
           bmp_read(src, srcx, srcy, r, g, b, a);
-        if (has_tone) {
-          const int gy = static_cast<int>(tn.gray);
-          if (gy != 0) {
-            const int lum = (r * 77 + g * 150 + b * 29) / 256;
-            r += (lum - r) * gy / 255;
-            g += (lum - g) * gy / 255;
-            b += (lum - b) * gy / 255;
-          }
-          r = clamp_byte(r + static_cast<int>(tn.red));
-          g = clamp_byte(g + static_cast<int>(tn.green));
-          b = clamp_byte(b + static_cast<int>(tn.blue));
-        }
+        if (has_tone)
+          apply_tone_px(r, g, b, tn);
         if (has_color) {
           r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
           g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
@@ -2540,6 +2571,8 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
           g = clamp_byte(g + (static_cast<int>(fcl.green) - g) * fa / 255);
           b = clamp_byte(b + (static_cast<int>(fcl.blue) - b) * fa / 255);
         }
+        if (has_vp_tone)
+          apply_tone_px(r, g, b, vtn);
         if (flash_empty)
           a = a * (flash_dur - flash_count) / flash_dur;
         if (bush > 0 && y >= ch - bush)
@@ -2880,10 +2913,13 @@ void plane_retile(mrb_state* M, mrb_value self) {
     tn = DataType<Tone>::get(M, tone_v);
   if (mrb_test(color_v) && DATA_PTR(color_v))
     cl = DataType<Color>::get(M, color_v);
-  const bool has_tone =
-      tn.red != 0 || tn.green != 0 || tn.blue != 0 || tn.gray != 0;
+  const bool has_tone = tone_is_set(tn);
   const bool has_color = cl.alpha != 0;
   const int ca = static_cast<int>(cl.alpha);
+  // ...and then the viewport's tone over the result, as for a sprite.
+  const Tone vtn =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  const bool has_vp_tone = tone_is_set(vtn);
 
   for (int y = 0; y < dst.height; ++y) {
     const int syb = scaled ? static_cast<int>(std::floor((y + oy) / zy))
@@ -2895,23 +2931,15 @@ void plane_retile(mrb_state* M, mrb_value self) {
       const int sx = (sxb % src.width + src.width) % src.width;
       int r, g, b, a;
       bmp_read(src, sx, sy, r, g, b, a);
-      if (has_tone) {
-        const int gy = static_cast<int>(tn.gray);
-        if (gy != 0) {
-          const int lum = (r * 77 + g * 150 + b * 29) / 256;
-          r += (lum - r) * gy / 255;
-          g += (lum - g) * gy / 255;
-          b += (lum - b) * gy / 255;
-        }
-        r = clamp_byte(r + static_cast<int>(tn.red));
-        g = clamp_byte(g + static_cast<int>(tn.green));
-        b = clamp_byte(b + static_cast<int>(tn.blue));
-      }
+      if (has_tone)
+        apply_tone_px(r, g, b, tn);
       if (has_color) {
         r = clamp_byte(r + (static_cast<int>(cl.red) - r) * ca / 255);
         g = clamp_byte(g + (static_cast<int>(cl.green) - g) * ca / 255);
         b = clamp_byte(b + (static_cast<int>(cl.blue) - b) * ca / 255);
       }
+      if (has_vp_tone)
+        apply_tone_px(r, g, b, vtn);
       bmp_put(dst, x, y, r, g, b, a);
     }
   }
@@ -3448,6 +3476,37 @@ bool tilemap_refresh_vx(mrb_state* M,
   return animated;
 }
 
+// Tint the tilemap's composed canvases with its viewport's tone. The map has no
+// tone of its own, so this is purely the viewport's -- and it has to happen
+// here rather than per source tile, because a tone rescales the *drawn* result.
+// Both the ground canvas and the priority "above" canvas are covered, so a
+// tinted map tints its roofs too.
+void tilemap_apply_viewport_tone(mrb_state* M,
+                                 mrb_value self,
+                                 Bitmap& dst,
+                                 Bitmap* above) {
+  const Tone tn =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  if (!tone_is_set(tn))
+    return;
+  Bitmap* targets[2] = {&dst, above};
+  for (Bitmap* t : targets) {
+    if (!t)
+      continue;
+    for (int y = 0; y < t->height; ++y) {
+      for (int x = 0; x < t->width; ++x) {
+        int r, g, b, a;
+        bmp_read(*t, x, y, r, g, b, a);
+        if (a == 0)
+          continue;
+        apply_tone_px(r, g, b, tn);
+        bmp_put(*t, x, y, r, g, b, a);
+      }
+    }
+    t->dirty = true;
+  }
+}
+
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -3501,6 +3560,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
         mrb_test(anim_v) ? mrb_as_int(M, anim_v) : 0);
     mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
                mrb_bool_value(animated));
+    tilemap_apply_viewport_tone(M, self, dst, above);
     dst.dirty = true;
     if (above)
       above->dirty = true;
@@ -3606,6 +3666,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   }
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
              mrb_bool_value(any_anim));
+  tilemap_apply_viewport_tone(M, self, dst, above);
   if (above)
     above->dirty = true;
   lv_obj_invalidate(obj);
@@ -4464,6 +4525,83 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
              mrb_float_value(M, size_key));
 }
 
+// Re-composite every display object that lives in this viewport, so a tone
+// change reaches what is already on screen. Each object bakes the viewport's
+// tone into its own buffer when it composites (see viewport_tone), and only
+// re-composites when something it owns changes -- so the viewport has to poke
+// them. The z-order registry is the list of live display objects, and each one
+// records the viewport it was created in.
+void vp_refresh_children(mrb_state* M, mrb_value self) {
+  RClass* rgss = mrb_module_get(M, "RGSS");
+  RClass* spr_class = mrb_class_get_under(M, rgss, "Sprite");
+  RClass* plane_class = mrb_class_get_under(M, rgss, "Plane");
+  RClass* tilemap_class = mrb_class_get_under(M, rgss, "Tilemap");
+  const mrb_value objs = zorder_objs(M);
+  for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
+    const mrb_value v = RARRAY_PTR(objs)[i];
+    if (!DATA_PTR(v))
+      continue;
+    const mrb_value vp = mrb_iv_get(M, v, mrb_intern_lit(M, "@viewport"));
+    if (!mrb_obj_equal(M, vp, self))
+      continue;
+    if (mrb_obj_is_kind_of(M, v, spr_class))
+      spr_bind_display(M, v, reinterpret_cast<lv_obj_t*>(DATA_PTR(v)));
+    else if (mrb_obj_is_kind_of(M, v, plane_class))
+      plane_retile(M, v);
+    else if (mrb_obj_is_kind_of(M, v, tilemap_class))
+      tilemap_refresh(M, v);
+  }
+}
+
+// The tone key the child refresh is gated on: the scripts mutate the Tone in
+// place (`viewport.tone.set(...)`) and call #update every frame, so the value
+// is re-read per frame and the (expensive) re-composite only runs when it
+// actually moved. Channels are -255..255 and gray 0..255, so this packs
+// exactly.
+double vp_tone_key(const Tone& t) {
+  return ((std::floor(t.red) + 255.0) * 512.0 + (std::floor(t.green) + 255.0)) *
+             512.0 * 512.0 +
+         (std::floor(t.blue) + 255.0) * 512.0 + std::floor(t.gray);
+}
+
+// Re-composite this viewport's contents when its tone changed since the last
+// check. Returns whether anything was refreshed.
+bool vp_sync_tone(mrb_state* M, mrb_value self) {
+  const Tone tn = viewport_tone(M, self);
+  const double key = vp_tone_key(tn);
+  const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
+  if (mrb_float_p(prev) && mrb_float(prev) == key)
+    return false;
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), mrb_float_value(M, key));
+  vp_refresh_children(M, self);
+  return true;
+}
+
+// RGSS Viewport#tone: unlike #color (a layer over the viewport's contents), a
+// tone *rescales what is drawn* -- desaturate toward luminance, then offset
+// each channel -- so it cannot be an overlay. Each display object in the
+// viewport folds it into its own composite instead (see viewport_tone), and
+// this side makes sure they redo that when it changes.
+mrb_value vp_tone(mrb_state* M, mrb_value self) {
+  mrb_value t = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  if (mrb_nil_p(t)) {
+    const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
+                              mrb_fixnum_value(0), mrb_fixnum_value(0)};
+    t = mrb_obj_new(
+        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Tone"), 4, args);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  }
+  return t;
+}
+
+mrb_value vp_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value t;
+  mrb_get_args(M, "o", &t);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  vp_sync_tone(M, self);
+  return t;
+}
+
 mrb_value vp_color(mrb_state* M, mrb_value self) {
   mrb_value c = mrb_iv_get(M, self, mrb_intern_lit(M, "@color"));
   if (mrb_nil_p(c)) {
@@ -4509,6 +4647,9 @@ mrb_value vp_update(mrb_state* M, mrb_value self) {
     mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
                mrb_fixnum_value(mrb_fixnum(count_v) - 1));
   vp_refresh_overlay(M, self);
+  // The tone is mutated in place by the scripts, so re-read it per frame; the
+  // re-composite it triggers is skipped unless the value actually moved.
+  vp_sync_tone(M, self);
   return mrb_nil_value();
 }
 
@@ -4750,6 +4891,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // everything it draws, and a timed flash. See vp_refresh_overlay.
   mrb_define_method(M, vp, "color", vp_color, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "color=", vp_set_color, MRB_ARGS_REQ(1));
+  mrb_define_method(M, vp, "tone", vp_tone, MRB_ARGS_NONE());
+  mrb_define_method(M, vp, "tone=", vp_set_tone, MRB_ARGS_REQ(1));
   mrb_define_method(M, vp, "flash", vp_flash, MRB_ARGS_REQ(2));
   mrb_define_method(M, vp, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "disposed?", obj_disposed, MRB_ARGS_NONE());

@@ -371,20 +371,13 @@ module RGSS
   # above the viewport's contents and refreshed from `update`. This reopening
   # only adds the tone.
   class Viewport
-    # A viewport `tone` rescales what is already drawn (desaturate toward
-    # luminance, then offset each channel), which — unlike `color` — cannot be
-    # expressed as one more layer on top: it needs the same per-pixel pass the
-    # RPG2000 screen tint is waiting on (docs/TODO.md, docs/rpgvx-rgss-api-gap.md).
-    # The value is kept so a script's bookkeeping is consistent and so the tint
-    # lands the moment that pass exists; it is not drawn, and says so once.
-    def tone
-      @tone ||= Tone.new(0, 0, 0, 0)
-    end
-
-    def tone=(value)
-      RGSS.warn_stub("Viewport#tone= (tracked, not drawn)")
-      @tone = value
-    end
+    # `tone`/`tone=` are native now too (src/lib.cxx). Unlike `color` — one more
+    # layer over the viewport's contents — a tone *rescales what is drawn*
+    # (desaturate toward luminance, then offset each channel), so it cannot be an
+    # overlay: every display object in the viewport folds the tone into its own
+    # composite, and the viewport re-composites them when the value changes
+    # (including the in-place `viewport.tone.set(...)` the scripts use, which
+    # #update re-reads each frame). Nothing to add here.
   end
 
   class RGSSError < StandardError
