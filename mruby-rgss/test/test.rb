@@ -1001,6 +1001,69 @@ assert "RGSS.warn_once reports each message only once" do
   assert_equal "[RGSS] warn-once-test-message", sink.lines[0]
 end
 
+# RGSS::ErrorReport keeps the tail of the runtime log so a crash report can
+# carry the messages that led up to the failure (src/error_dump.cxx). The same
+# behaviour is checked on CRuby by scripts/error_report_check.rb, which can
+# cover more of it; these assert it inside the built interpreter, where the
+# String and Array methods the buffer leans on are the mruby ones.
+assert "RGSS::ErrorReport records whole lines and bounds the buffer" do
+  RGSS::ErrorReport.clear
+  RGSS::ErrorReport.record("[RPG2k] split ")
+  RGSS::ErrorReport.record("across writes\n")
+  assert_equal ["[RPG2k] split across writes"], RGSS::ErrorReport.lines
+
+  RGSS::ErrorReport.clear
+  (RGSS::ErrorReport::MAX_LINES + 10).times { |i| RGSS::ErrorReport.record("line #{i}\n") }
+  assert_equal RGSS::ErrorReport::MAX_LINES, RGSS::ErrorReport.lines.size
+  assert_equal "line 10", RGSS::ErrorReport.lines[0]
+  RGSS::ErrorReport.clear
+end
+
+assert "RGSS::ErrorReport.log_tail keeps an unterminated last line" do
+  # The last thing a dying runtime logs is often the interesting line, and it
+  # may never get its newline.
+  RGSS::ErrorReport.clear
+  RGSS::ErrorReport.record("[RPG2k] done\n")
+  RGSS::ErrorReport.record("[RPG2k] mid-write")
+  assert_equal "[RPG2k] done\n[RPG2k] mid-write\n", RGSS::ErrorReport.log_tail
+  RGSS::ErrorReport.clear
+end
+
+assert "RGSS::ErrorReport::Tee forwards every write and records it" do
+  RGSS::ErrorReport.clear
+  sink = WarnOnceSink.new
+  tee = RGSS::ErrorReport::Tee.new(sink)
+  tee.puts "[RPG2k] through the tee"
+  tee.write "[RPG2k] written\n"
+  assert_equal ["[RPG2k] through the tee", "[RPG2k] written\n"], sink.lines
+  assert_equal "[RPG2k] through the tee\n[RPG2k] written\n",
+               RGSS::ErrorReport.log_tail
+  RGSS::ErrorReport.clear
+end
+
+assert "RGSS::ErrorReport.probe! raises after logging its marker line" do
+  # The engine's --error_dump_probe drives this to check a real report keeps the
+  # exception, its backtrace and the captured log; assert here that the probe
+  # itself does what that check assumes.
+  RGSS::ErrorReport.clear
+  original = $stderr
+  sink = WarnOnceSink.new
+  raised = nil
+  begin
+    $stderr = RGSS::ErrorReport::Tee.new(sink)
+    begin
+      RGSS::ErrorReport.probe!
+    rescue RuntimeError => e
+      raised = e
+    end
+  ensure
+    $stderr = original
+  end
+  assert_equal RGSS::ErrorReport::PROBE_MESSAGE, raised.message
+  assert_equal [RGSS::ErrorReport::PROBE_LOG_LINE], RGSS::ErrorReport.lines
+  RGSS::ErrorReport.clear
+end
+
 assert "RGSS::Window RGSS2/RGSS3 API surface" do
   # Window.new needs a live display (see the Tilemap note below), so assert the
   # VX/VX Ace surface is defined; what these accessors actually *draw* is

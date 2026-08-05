@@ -126,7 +126,7 @@
       #status.busy { color: var(--accent); }
       details { width: min(560px, 100%); }
       summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-      #log {
+      #log, #crashText {
         margin-top: 8px;
         max-height: 180px;
         overflow: auto;
@@ -139,6 +139,22 @@
         white-space: pre-wrap;
         word-break: break-word;
       }
+
+      /* --- Crash report ------------------------------------------------- */
+      /* Shown when the engine (or the page) hits an error, holding the report
+         the buttons copy. Bordered in the error colour so it is unmistakably
+         not part of the normal loader chrome. */
+      #crash { border-color: var(--error); }
+      #crash h2 { font-size: 15px; margin: 0; color: var(--error); }
+      #crash .hint { text-align: left; margin: 0; }
+      #crash a { color: var(--accent); font-size: 12px; text-decoration: none; }
+      #crash a:hover { text-decoration: underline; }
+      button.secondary {
+        background: transparent;
+        color: var(--fg);
+        border: 1px solid var(--border);
+      }
+      .copied { color: var(--accent); font-size: 12px; }
 
       /* --- On-screen keypad -------------------------------------------- */
       #keypad {
@@ -293,9 +309,34 @@
       <p class="hint">Arrows / WASD to move · Z / Enter confirm · X / Esc cancel · click the canvas to give it focus</p>
     </div>
 
+    <!-- Unhidden by showCrash() when the engine dies or the page throws. The
+         report inside is what a bug report needs, ready to copy in one click. -->
+    <div class="panel" id="crash" hidden>
+      <h2>The game hit an error</h2>
+      <p class="hint">
+        Copy the report below into a bug report — it carries the error and its
+        backtrace, which build this is, which project was loaded and the log
+        leading up to the failure. Nothing else is collected.
+      </p>
+      <div class="row">
+        <button type="button" id="copyReport">Copy error report</button>
+        <button type="button" id="downloadReport" class="secondary">Download</button>
+        <a href="https://github.com/take-cheeze/rpg-maker-clone/issues/new" target="_blank" rel="noopener" id="issueLink">Open an issue ↗</a>
+        <span class="copied" id="copyNote"></span>
+      </div>
+      <pre id="crashText"></pre>
+    </div>
+
     <details>
       <summary>Runtime log</summary>
       <pre id="log"></pre>
+      <!-- The same report, for a problem that did not crash the engine (a wrong
+           picture, silence where there should be music): there is nothing to
+           paste from a browser console most players never open. -->
+      <div class="row" style="margin-top:8px">
+        <button type="button" id="copyDiagnostics" class="secondary">Copy diagnostics</button>
+        <span class="copied" id="diagNote"></span>
+      </div>
     </details>
 
     <script type="text/javascript">
@@ -336,14 +377,149 @@
         try { history.replaceState(null, '', s ? '?' + s : location.pathname); } catch (e) {}
       }
 
-      function log(text) {
-        logEl.textContent += text + '\n';
-        logEl.scrollTop = logEl.scrollHeight;
-      }
       function setStatus(text, kind) {
         statusEl.textContent = text;
         statusEl.className = kind || '';
       }
+
+      // --- Error reporting ---------------------------------------------------
+      // A crash in the browser leaves a frozen canvas and, at best, a wall of
+      // text in a panel nobody opens — so nothing useful ever reaches a bug
+      // report. The engine prints one self-contained report (the error, its
+      // backtrace, the build, the project, the runtime log tail) between the
+      // markers below; the page watches its log for them, adds what only the
+      // browser knows, and offers the result as one click of "Copy error
+      // report". Keep the markers in sync with include/error_dump.hxx.
+      var ERROR_DUMP_BEGIN = '----- BEGIN RPG MAKER CLONE ERROR REPORT -----';
+      var ERROR_DUMP_END = '----- END RPG MAKER CLONE ERROR REPORT -----';
+      var LOG_TAIL_LINES = 200;
+
+      var crashEl = document.getElementById('crash');
+      var crashTextEl = document.getElementById('crashText');
+      var copyNoteEl = document.getElementById('copyNote');
+      var diagNoteEl = document.getElementById('diagNote');
+
+      var logLines = [];      // the page's own bounded log tail
+      var engineReport = '';  // the last report the engine printed, if any
+      var dumpLines = null;   // non-null while one is being read off the log
+      var lastReport = '';    // what the buttons copy
+      var currentProject = '';
+
+      function noteLogLine(text) {
+        var line = text.replace(/\s+$/, '');
+        if (line === ERROR_DUMP_BEGIN) { dumpLines = []; return; }
+        if (dumpLines) {
+          if (line !== ERROR_DUMP_END) { dumpLines.push(text); return; }
+          engineReport = dumpLines.join('\n');
+          dumpLines = null;
+          showCrash();
+          return;
+        }
+        // The report's own lines are kept out of the tail below: they are
+        // already in engineReport, and repeating them would bury the log.
+        logLines.push(text);
+        if (logLines.length > LOG_TAIL_LINES) logLines.shift();
+      }
+
+      function log(text) {
+        logEl.textContent += text + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+        String(text).split('\n').forEach(noteLogLine);
+      }
+
+      function fenced(text) {
+        return '```\n' + text + '\n```\n\n';
+      }
+
+      // The whole report: whatever the engine produced (absent when the failure
+      // was in the page itself), then the browser side of the story.
+      function buildReport(kind, detail) {
+        var out = engineReport
+          ? engineReport.replace(/\s*$/, '') + '\n\n'
+          : '# RPG Maker Clone error report\n\n';
+        out += '## Browser\n\n';
+        out += '- page: ' + location.href + '\n';
+        out += '- user agent: ' + navigator.userAgent + '\n';
+        out += '- project: ' + (currentProject || '(none loaded)') + '\n';
+        out += '- when: ' + new Date().toISOString() + '\n\n';
+        if (detail) {
+          out += '### ' + kind + '\n\n' + fenced(detail);
+        }
+        if (logLines.length) {
+          out += '## Page log (last ' + logLines.length + ' lines)\n\n';
+          out += fenced(logLines.join('\n'));
+        }
+        return out;
+      }
+
+      function showCrash(kind, detail) {
+        lastReport = buildReport(kind, detail);
+        crashTextEl.textContent = lastReport;
+        crashEl.hidden = false;
+        setStatus('The game hit an error — copy the report below.', 'error');
+        crashEl.scrollIntoView({ block: 'nearest' });
+      }
+
+      async function copyText(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (e) {
+          // Blocked (an insecure origin, or a browser that wants the older
+          // API); fall through to the selection-based copy, which works there.
+        }
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        return ok;
+      }
+
+      function note(el, ok) {
+        el.textContent = ok
+          ? 'Copied.'
+          : 'Could not reach the clipboard — select the report and copy it.';
+        setTimeout(function () { el.textContent = ''; }, 5000);
+      }
+
+      document.getElementById('copyReport').addEventListener('click', async function () {
+        note(copyNoteEl, await copyText(lastReport || buildReport()));
+      });
+
+      document.getElementById('downloadReport').addEventListener('click', function () {
+        var blob = new Blob([lastReport || buildReport()], { type: 'text/markdown' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'rpg-maker-clone-error-report.md';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+      });
+
+      // Not everything worth reporting kills the engine: a wrong picture or a
+      // silent BGM leaves the game running with the reason sitting in the log.
+      document.getElementById('copyDiagnostics').addEventListener('click', async function () {
+        note(diagNoteEl, await copyText(buildReport()));
+      });
+
+      // A wasm trap, or a bug in this page, never reaches the engine's report
+      // path — it surfaces as a JS error. Report those the same way.
+      window.addEventListener('error', function (e) {
+        var err = e.error;
+        showCrash('Page error', err && err.stack ? err.stack : (e.message || String(e)));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        showCrash('Unhandled promise rejection', r && r.stack ? r.stack : String(r));
+      });
 
       // --- Emscripten module wiring -----------------------------------------
       var runtimeReady = false;
@@ -360,6 +536,9 @@
         })(),
         print: function (t) { log(t); },
         printErr: function (t) { log(t); },
+        // The runtime gave up (an assertion, an out-of-memory, a trap). It
+        // prints no report of its own from here, so build one from the page.
+        onAbort: function (what) { showCrash('Runtime abort', String(what)); },
         onRuntimeInitialized: function () {
           runtimeReady = true;
           loadBtn.disabled = false;
@@ -528,6 +707,7 @@
         }
         try {
           setStatus('Starting the bundled sample…');
+          currentProject = 'the bundled sample';
           copyTree('/game_sample', '/game');
           var rc = Module.ccall('rpg_start_game', 'number', [], []);
           if (rc !== 0) throw new Error('runtime returned ' + rc);
@@ -630,6 +810,7 @@
         if (!runtimeReady) return;
         loadBtn.disabled = true;
         fileInput.disabled = true;
+        currentProject = label;
         try {
           setStatus('Loading ' + label + '…', 'busy');
           var buf = await getBuffer();

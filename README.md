@@ -283,6 +283,37 @@
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
 
+### Reporting an error
+
+When the engine dies on a Ruby exception it no longer just prints a backtrace
+and quits — it assembles **one copy-pasteable report** so a bug can be reported
+without a terminal, a build tree or a rebuild. The report holds the exception
+and its backtrace, the revision and build type it came from, the platform, the
+project that was loaded, where the engine caught the failure, and the tail of
+the runtime log (the `[RPG2k]` / `[RGSS]` lines that led up to it — usually the
+part that explains it). Nothing else is collected.
+
+- **In the browser**, a crash replaces the frozen canvas with an error panel
+  holding the report and a **Copy error report** button (or **Download** for a
+  `.md` file). The page adds what only it knows: the address, the browser, which
+  project was loaded and its own log tail. A problem that does *not* crash the
+  game — a wrong picture, silence where there should be music — has the same
+  report a click away under *Runtime log → Copy diagnostics*. Errors thrown by
+  the page or the wasm runtime itself are reported the same way.
+- **On the desktop**, the report is printed to stderr between
+  `----- BEGIN RPG MAKER CLONE ERROR REPORT -----` / `----- END ... -----`
+  markers and written to `error-report.md` in the working directory. Point it
+  somewhere else with `--error_dump=path/to/report.md`, or pass an empty value
+  to write no file.
+- The log tail comes from `RGSS::ErrorReport`, which tees `$stderr` through a
+  bounded ring buffer (`mruby-rgss/mrblib/error_report.rb`); nothing about the
+  existing logging changes. The report path is itself tested end to end —
+  `--error_dump_probe` raises a real exception and checks the resulting report
+  still carries the exception, the backtrace, the captured log and the run
+  context (the `error_dump` ctest), and `scripts/error_report_check.rb` checks
+  the capture on CRuby. See
+  [`docs/adr/0027-copyable-error-report.md`](docs/adr/0027-copyable-error-report.md).
+
 ### Audio
 
 - `RGSS::Audio` plays real music and sound through an

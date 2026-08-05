@@ -201,8 +201,8 @@ jobs:
       # avoided: its server-number probe is not atomic, so concurrent -a runs
       # can grab the same display, killing one Xvfb out from under its client
       # ("XIO: fatal IO error"). Reserved numbers: exe_open=99,
-      # render_probe=98 and audio_probe=97 (see those ctest tests in
-      # CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
+      # render_probe=98, audio_probe=97 and error_dump=96 (see those ctest
+      # tests in CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
       # the RPG2k
       # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
       # real-game boot smoke=112 and the RGSSAD packed-asset smoke=113..114
