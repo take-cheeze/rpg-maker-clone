@@ -50,6 +50,17 @@ bool g_bgm_valid = false;      // a BGM is set and should resume after an ME
 std::string g_bgm_path;
 int g_bgm_volume = 100;
 bool g_me_active = false;  // an ME is playing over the (suspended) BGM
+// The BGM's encoded bytes when it came out of an encrypted archive rather than
+// a file (empty otherwise). update() replays the BGM after a music effect
+// finishes, and there is no path to replay from in that case, so the bytes have
+// to be kept for as long as the BGM is the one to return to.
+std::string g_bgm_bytes;
+// Backing store for the currently loaded Mix_Music when it was loaded from
+// memory. Mix_LoadMUS_RW *streams* from the SDL_RWops, so both it and the bytes
+// under it must outlive the music -- Mix_FreeMusic releases the RWops (loaded
+// with freesrc=1) but knows nothing about this buffer. Replaced only where the
+// music is freed.
+std::string g_music_bytes;
 
 // Playback position of the music stream, tracked from the clock rather than
 // asked of the decoder. Mix_GetMusicPosition is not a cheap getter: on the MIDI
@@ -64,7 +75,8 @@ bool g_me_active = false;  // an ME is playing over the (suspended) BGM
 Uint64 g_music_start_ms = 0;
 int g_music_duration_ms = 0;
 
-// Loaded SE / BGS samples, keyed by path so repeated plays don't re-decode.
+// Loaded SE / BGS samples, keyed by path -- or, for archived audio, by the
+// archive entry name -- so repeated plays don't re-decode.
 std::unordered_map<std::string, Mix_Chunk*> g_chunks;
 
 int to_mix_volume(int rpg_volume) {
@@ -89,25 +101,47 @@ Mix_Chunk* load_chunk(const std::string& path) {
   return chunk;
 }
 
-// Free and replace the current music with a freshly loaded stream, then play it
-// (loops = -1 loops forever, 1 plays once). Returns false on load failure.
-// Note: for music, 1 (not 0) is the portable "play once" value — some decoders
-// treat 0 as "loop forever".
-bool play_music(const std::string& path, int volume, int loops) {
+// Load a sample from encoded bytes, caching it under `name` (an archive entry
+// name, not a path). Mix_LoadWAV_RW decodes the whole sample up front, so the
+// caller's bytes are not needed once this returns.
+Mix_Chunk* load_chunk_mem(const std::string& name, const void* data, int size) {
+  auto it = g_chunks.find(name);
+  if (it != g_chunks.end())
+    return it->second;
+  Mix_Chunk* chunk = nullptr;
+  SDL_RWops* rw = SDL_RWFromConstMem(data, size);
+  if (rw) {
+    chunk = Mix_LoadWAV_RW(rw, 1);  // 1: SDL_mixer closes the RWops
+    if (!chunk)
+      LOG(WARNING) << "Audio: failed to decode archived sample '" << name
+                   << "' (" << size << " bytes): " << Mix_GetError();
+  } else {
+    LOG(WARNING) << "Audio: SDL_RWFromConstMem failed for '" << name
+                 << "': " << SDL_GetError();
+  }
+  // Cache even a null result so an undecodable entry is not retried every
+  // frame.
+  g_chunks[name] = chunk;
+  return chunk;
+}
+
+// Free the current music stream and the buffer it was streaming from.
+void free_music(void) {
   if (g_music) {
     Mix_HaltMusic();
     Mix_FreeMusic(g_music);
     g_music = nullptr;
   }
-  g_music = Mix_LoadMUS(path.c_str());
-  if (!g_music) {
-    LOG(WARNING) << "Audio: failed to load music '" << path
-                 << "': " << Mix_GetError();
-    return false;
-  }
+  g_music_bytes.clear();
+}
+
+// Start `music`, which has just been loaded. Shared tail of the two loaders
+// below. Note: for music, 1 (not 0) is the portable "play once" value — some
+// decoders treat 0 as "loop forever".
+bool start_music(const std::string& what, int volume, int loops) {
   Mix_VolumeMusic(to_mix_volume(volume));
   if (Mix_PlayMusic(g_music, loops) < 0) {
-    LOG(WARNING) << "Audio: failed to play music '" << path
+    LOG(WARNING) << "Audio: failed to play music '" << what
                  << "': " << Mix_GetError();
     return false;
   }
@@ -123,14 +157,81 @@ bool play_music(const std::string& path, int volume, int loops) {
   return true;
 }
 
+// Free and replace the current music with a freshly loaded stream, then play it
+// (loops = -1 loops forever, 1 plays once). Returns false on load failure.
+bool play_music(const std::string& path, int volume, int loops) {
+  free_music();
+  g_music = Mix_LoadMUS(path.c_str());
+  if (!g_music) {
+    LOG(WARNING) << "Audio: failed to load music '" << path
+                 << "': " << Mix_GetError();
+    return false;
+  }
+  return start_music(path, volume, loops);
+}
+
+// The same, from encoded bytes. The bytes are copied into g_music_bytes first:
+// Mix_LoadMUS_RW streams from the RWops for the life of the music, so the
+// buffer has to stay put and stay ours (the caller's may be a temporary).
+bool play_music_mem(const std::string& name,
+                    const void* data,
+                    int size,
+                    int volume,
+                    int loops) {
+  free_music();
+  g_music_bytes.assign(static_cast<const char*>(data),
+                       static_cast<size_t>(size));
+  SDL_RWops* rw =
+      SDL_RWFromConstMem(g_music_bytes.data(), (int)g_music_bytes.size());
+  if (!rw) {
+    LOG(WARNING) << "Audio: SDL_RWFromConstMem failed for '" << name
+                 << "': " << SDL_GetError();
+    g_music_bytes.clear();
+    return false;
+  }
+  g_music = Mix_LoadMUS_RW(rw, 1);  // 1: SDL_mixer closes the RWops
+  if (!g_music) {
+    LOG(WARNING) << "Audio: failed to load archived music '" << name << "' ("
+                 << size << " bytes): " << Mix_GetError();
+    g_music_bytes.clear();
+    return false;
+  }
+  return start_music(name, volume, loops);
+}
+
+// Replay the BGM, from wherever it came from. Used to resume after a music
+// effect ends; an archived BGM has no path, only the bytes kept in g_bgm_bytes.
+bool replay_bgm(void) {
+  if (!g_bgm_bytes.empty())
+    return play_music_mem(g_bgm_path, g_bgm_bytes.data(),
+                          (int)g_bgm_bytes.size(), g_bgm_volume, -1);
+  return play_music(g_bgm_path, g_bgm_volume, -1);
+}
+
 // -- BGM --------------------------------------------------------------------
 
 void bgm_play(const char* path, int volume, int /*pitch*/) {
   g_me_active = false;
   g_bgm_valid = true;
   g_bgm_path = path;
+  g_bgm_bytes.clear();  // a file now, not archived bytes
   g_bgm_volume = volume;
   play_music(g_bgm_path, volume, -1);
+}
+
+void bgm_play_mem(const char* name,
+                  const void* data,
+                  int size,
+                  int volume,
+                  int /*pitch*/) {
+  g_me_active = false;
+  g_bgm_valid = true;
+  g_bgm_path = name;  // for diagnostics only; there is no file
+  g_bgm_bytes.assign(static_cast<const char*>(data), static_cast<size_t>(size));
+  g_bgm_volume = volume;
+  if (!play_music_mem(g_bgm_path, g_bgm_bytes.data(), (int)g_bgm_bytes.size(),
+                      volume, -1))
+    g_bgm_bytes.clear();
 }
 
 void bgm_stop(void) {
@@ -153,7 +254,13 @@ void bgm_fade(int ms) {
 // Milliseconds into the current BGM, wrapping every time the loop restarts.
 // Read from the clock, not from the decoder -- see g_music_start_ms.
 int bgm_pos(void) {
-  if (!g_music || g_me_active || !g_bgm_valid || g_music_duration_ms <= 0)
+  // Mix_PlayingMusic() matters as much as g_music: halting the music does not
+  // free the stream, and the position must not keep advancing for music that
+  // is not playing -- a game that saves bgm_pos to resume the track later
+  // (which is what RGSS2's `$game_system.bgm_pos` is for) would otherwise
+  // write down a position for music that is stopped.
+  if (!g_music || g_me_active || !g_bgm_valid || g_music_duration_ms <= 0 ||
+      !Mix_PlayingMusic())
     return 0;
   const Uint64 elapsed = SDL_GetTicks64() - g_music_start_ms;
   return (int)(elapsed % (Uint64)g_music_duration_ms);
@@ -161,13 +268,24 @@ int bgm_pos(void) {
 
 // -- BGS --------------------------------------------------------------------
 
-void bgs_play(const char* path, int volume, int /*pitch*/) {
-  Mix_Chunk* chunk = load_chunk(path);
+void start_bgs(Mix_Chunk* chunk, int volume) {
   if (!chunk)
     return;
   Mix_HaltChannel(kBgsChannel);
   Mix_Volume(kBgsChannel, to_mix_volume(volume));
   Mix_PlayChannel(kBgsChannel, chunk, -1);
+}
+
+void bgs_play(const char* path, int volume, int /*pitch*/) {
+  start_bgs(load_chunk(path), volume);
+}
+
+void bgs_play_mem(const char* name,
+                  const void* data,
+                  int size,
+                  int volume,
+                  int /*pitch*/) {
+  start_bgs(load_chunk_mem(name, data, size), volume);
 }
 
 void bgs_stop(void) {
@@ -194,13 +312,23 @@ void me_play(const char* path, int volume, int /*pitch*/) {
     g_me_active = false;  // load failed: nothing to wait for.
 }
 
+void me_play_mem(const char* name,
+                 const void* data,
+                 int size,
+                 int volume,
+                 int /*pitch*/) {
+  g_me_active = true;
+  if (!play_music_mem(name, data, size, volume, 1))
+    g_me_active = false;
+}
+
 void me_stop(void) {
   if (!g_me_active)
     return;
   g_me_active = false;
   Mix_HaltMusic();
   if (g_bgm_valid)
-    play_music(g_bgm_path, g_bgm_volume, -1);
+    replay_bgm();
 }
 
 void me_fade(int ms) {
@@ -217,13 +345,24 @@ void me_fade(int ms) {
 
 // -- SE ---------------------------------------------------------------------
 
-void se_play(const char* path, int volume, int /*pitch*/) {
-  Mix_Chunk* chunk = load_chunk(path);
+void start_se(Mix_Chunk* chunk, int volume) {
   if (!chunk)
     return;
   int ch = Mix_PlayChannel(-1, chunk, 0);
   if (ch >= 0)
     Mix_Volume(ch, to_mix_volume(volume));
+}
+
+void se_play(const char* path, int volume, int /*pitch*/) {
+  start_se(load_chunk(path), volume);
+}
+
+void se_play_mem(const char* name,
+                 const void* data,
+                 int size,
+                 int volume,
+                 int /*pitch*/) {
+  start_se(load_chunk_mem(name, data, size), volume);
 }
 
 void se_stop(void) {
@@ -240,13 +379,14 @@ void update(void) {
   if (g_me_active && !Mix_PlayingMusic()) {
     g_me_active = false;
     if (g_bgm_valid)
-      play_music(g_bgm_path, g_bgm_volume, -1);
+      replay_bgm();
   }
 }
 
 const RgssAudioBackend kBackend = {
-    bgm_play, bgm_stop, bgm_fade, bgm_pos, bgs_play, bgs_stop, bgs_fade,
-    bgs_pos,  me_play,  me_stop,  me_fade, se_play,  se_stop,  update,
+    bgm_play, bgm_stop, bgm_fade,     bgm_pos,      bgs_play,    bgs_stop,
+    bgs_fade, bgs_pos,  me_play,      me_stop,      me_fade,     se_play,
+    se_stop,  update,   bgm_play_mem, bgs_play_mem, me_play_mem, se_play_mem,
 };
 
 }  // namespace
@@ -285,11 +425,10 @@ extern "C" void rgss_audio_shutdown(void) {
     return;
   rgss_audio_install_backend(nullptr);
   Mix_HaltChannel(-1);
-  Mix_HaltMusic();
-  if (g_music) {
-    Mix_FreeMusic(g_music);
-    g_music = nullptr;
-  }
+  // Frees the stream and, with it, the buffer an archived BGM streams from --
+  // which must not be released before Mix_FreeMusic has run.
+  free_music();
+  g_bgm_bytes.clear();
   for (auto& kv : g_chunks) {
     if (kv.second)
       Mix_FreeChunk(kv.second);

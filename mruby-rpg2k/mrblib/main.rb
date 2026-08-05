@@ -2334,6 +2334,7 @@ class RPG2k
         when :ally_target then drive_battle_ally_target
         when :animate     then drive_battle_animate
         when :result      then drive_battle_result
+        when :event       then drive_battle_event
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
@@ -2350,7 +2351,8 @@ class RPG2k
         situations = db.respond_to?(:situation) ? db.situation : nil
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
-                                                situations, true, true),
+                                                situations, true, true, true,
+                                                req[:first_strike] ? true : false),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
@@ -2358,10 +2360,19 @@ class RPG2k
                        skill_win: nil, item_win: nil, ally_win: nil,
                        action_win: nil, anim_timer: 0,
                        back_sprite: nil, enemy_sprites: nil,
-                       result_win: nil, result: nil }
+                       result_win: nil, result: nil,
+                       # The troop's battle-event pages: their own interpreter,
+                       # the message window they draw into, and which pages have
+                       # already fired this turn (RPG2000 runs a page once per
+                       # turn its condition holds, so this resets each round).
+                       events: Game::Interpreter.new(@state), event_win: nil,
+                       pages_run: {} }
+        @battle_ui[:events].battle = @battle_ui[:battle]
         build_battle_sprites
         refresh_battle_status
-        draw_battle_command
+        # Turn-0 pages fire before the party is asked for its first command —
+        # this is where a troop's opening dialogue lives.
+        draw_battle_command unless run_battle_events
       end
 
       # RPG2000 is a front-view battle: the enemy troop is drawn as sprites over a
@@ -2387,13 +2398,42 @@ class RPG2k
       # A plain dark battle field behind the enemies. The real per-terrain
       # backdrop (Backdrop/<name>, chosen by the tile the encounter started on) is
       # still to come — the encounter request does not carry that terrain yet.
-      def build_battle_back
-        bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+      # Where a battle-event page's message panel sits — above the action banner,
+      # so a page talking mid-round does not fight it for the same row.
+      BATTLE_EVENT_MSG_Y = 8
+
+      def build_battle_back(name = nil)
+        bmp = battle_back_bitmap(name)
         spr = Sprite.new
         spr.bitmap = bmp
         spr.z = 5
         @battle_ui[:back_sprite] = spr
+      end
+
+      # The battle backdrop: the Backdrop/<name> image a Change Battle Background
+      # command (or the encounter) named, falling back to the flat colour field
+      # when there is no name or the file is missing — the same fallback the map
+      # uses for a missing chipset.
+      def battle_back_bitmap(name)
+        return Bitmap.new("Backdrop/#{name}") if name && !name.empty?
+        flat_battle_back
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle backdrop '#{name}' failed to load: #{e.message}"
+        flat_battle_back
+      end
+
+      def flat_battle_back
+        bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+        bmp
+      end
+
+      # Change Battle Background (13210): swap the backdrop mid-fight, releasing
+      # the sprite and bitmap the old one held.
+      def rebuild_battle_back(name)
+        dispose_battle_sprite(@battle_ui[:back_sprite])
+        @battle_ui[:back_sprite] = nil
+        build_battle_back(name)
       end
 
       # The battler graphic for `enemy` (Monster/<battler_name>, colour-keyed), or
@@ -2743,6 +2783,145 @@ class RPG2k
           @battle_ui[:actor_i] = 0
           @battle_ui[:cmd] = 0
           @battle_ui[:phase] = :command
+          # A new turn re-arms every page: RPG2000 fires a battle page once per
+          # turn in which its condition holds, not once per battle.
+          @battle_ui[:pages_run] = {}
+          draw_battle_command unless run_battle_events
+        end
+      end
+
+      # -- battle-event pages --------------------------------------------------
+
+      # Start the next troop battle-event page whose condition holds and that has
+      # not yet fired this turn, switching to the :event phase. Returns whether a
+      # page was started, so the caller knows whether to draw the command window
+      # or hand the frame to the event. A troop that scripts nothing, or whose
+      # pages have all fired, simply returns false.
+      def run_battle_events
+        ui = @battle_ui
+        return false unless ui && ui[:troop].pages
+        matched = Game::BattlePage.select_all(ui[:troop].pages, @state.switches,
+                                              @state.variables, ui[:battle])
+        entry = matched.find { |(id, _)| !ui[:pages_run][id] }
+        return false unless entry
+        ui[:pages_run][entry[0]] = true
+        cmds = entry[1].event
+        return run_battle_events if cmds.nil? || cmds.empty? # empty page: try the next
+        ui[:events].battle = ui[:battle]
+        ui[:events].start(cmds)
+        ui[:phase] = :event
+        true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle event page failed: #{e.message}"
+        false
+      end
+
+      # Advance the running battle-event page one frame. Battle pages use the
+      # ordinary command set (messages, switches, variables, audio) on top of the
+      # battle-only commands, so the interpreter is driven the same way the map
+      # drives an event — only the UI it may reach for is narrower.
+      def drive_battle_event
+        it = @battle_ui[:events]
+        apply_battle_event_requests(it)
+        return if finish_terminated_battle
+        if it.waiting?
+          drive_battle_event_wait(it)
+        elsif it.running?
+          it.update
+        else
+          leave_battle_event_phase
+        end
+      end
+
+      def drive_battle_event_wait(it)
+        case it.wait_kind
+        when :message, :choice then drive_battle_event_message(it)
+        when :wait
+          @battle_ui[:event_timer] ||= frames_from_tenths(it.wait_frames)
+          if @battle_ui[:event_timer] <= 0
+            @battle_ui[:event_timer] = nil
+            it.resume
+          else
+            @battle_ui[:event_timer] -= 1
+          end
+        else
+          # A battle page cannot open the map's teleport / shop / menu UI; those
+          # requests are released so the page runs on rather than wedging here.
+          it.resume
+        end
+      end
+
+      # Show the page's message lines in a battle text panel and dismiss it on a
+      # button press. A [Show Choices] in a battle page is displayed the same way
+      # and takes the first option, which is what the runtime can answer without
+      # a battle choice widget.
+      def drive_battle_event_message(it)
+        unless @battle_ui[:event_win]
+          lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
+          @battle_ui[:event_win] =
+            battle_text_window(lines || [], BATTLE_EVENT_MSG_Y, 340)
+          return # shown this frame; take the button from the next one
+        end
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        choice = it.wait_kind == :choice
+        close_battle_event_window
+        choice ? it.choose(0) : it.resume
+      end
+
+      def close_battle_event_window
+        return unless @battle_ui && @battle_ui[:event_win]
+        @battle_ui[:event_win].dispose
+        @battle_ui[:event_win] = nil
+      end
+
+      # Apply the requests a battle page queued: revealed troop members get the
+      # sprite they never had, and a Change Battle Background rebuilds the
+      # backdrop.
+      def apply_battle_event_requests(it)
+        it.take_revealed_monsters.each { |i| reveal_battle_monster(i) }
+        name = it.take_battle_background
+        rebuild_battle_back(name) unless name.nil?
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle event request failed: #{e.message}"
+        nil
+      end
+
+      # Show Hidden Monster: clear the member's hidden flag and build the sprite
+      # build_battle_sprites skipped, so it appears mid-fight.
+      def reveal_battle_monster(index)
+        member = @battle_ui[:troop].members[index]
+        return unless member && member.hidden
+        member.hidden = false
+        bmp = battler_bitmap(member)
+        spr = Sprite.new
+        spr.bitmap = bmp
+        spr.x = member.x - bmp.width / 2
+        spr.y = member.y - bmp.height / 2
+        spr.z = 100 + index
+        dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
+        @battle_ui[:enemy_sprites][index] = spr
+      end
+
+      # Terminate Battle: leave the fight with no victory / defeat processing.
+      # Returns whether the battle was ended, so the caller stops driving it.
+      def finish_terminated_battle
+        return false unless @battle_ui[:battle].terminated?
+        close_battle_event_window
+        finish_battle(:abort)
+        true
+      end
+
+      # The running page finished: fire the next matching page, or hand the turn
+      # back — to the result window when the page decided the fight, otherwise to
+      # the party's command phase.
+      def leave_battle_event_phase
+        close_battle_event_window
+        return if run_battle_events
+        battle = @battle_ui[:battle]
+        if battle.finished?
+          enter_battle_result(battle.result)
+        else
+          @battle_ui[:phase] = :command
           draw_battle_command
         end
       end
@@ -2809,6 +2988,8 @@ class RPG2k
           parts << "#{e[:recover_mp]} MP" if e[:recover_mp] && e[:recover_mp] > 0
           body = parts.empty? ? 'no effect' : "+#{parts.join(' / ')}"
           "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
+        elsif e[:missed]
+          "#{e[:attacker]} misses #{e[:target]}"
         else
           hits = e[:skill] ? "'s #{e[:skill]} hits" : ' hits'
           line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
@@ -3019,7 +3200,8 @@ class RPG2k
         [@battle_ui[:status_win], @battle_ui[:cmd_win],
          @battle_ui[:target_win], @battle_ui[:skill_win],
          @battle_ui[:item_win], @battle_ui[:ally_win],
-         @battle_ui[:action_win], @battle_ui[:result_win]].each { |w| w.dispose if w }
+         @battle_ui[:action_win], @battle_ui[:result_win],
+         @battle_ui[:event_win]].each { |w| w.dispose if w }
         dispose_battle_sprite(@battle_ui[:back_sprite])
         (@battle_ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
         @battle_ui = nil

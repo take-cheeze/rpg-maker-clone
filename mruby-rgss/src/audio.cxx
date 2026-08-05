@@ -36,6 +36,21 @@ void get_play_args(mrb_state* M,
   mrb_get_args(M, "z|ii", path, volume, pitch);
 }
 
+// The *_play_mem twins take (name, bytes, volume=100, pitch=100). `name` is an
+// archive entry name rather than a path -- see include/rgss_audio.hxx.
+using PlayMemFn = void (*)(const char*, const void*, int, int, int);
+
+mrb_value play_mem(mrb_state* M, PlayMemFn fn) {
+  const char* name;
+  const char* data;
+  mrb_int size;
+  mrb_int volume = 100, pitch = 100;
+  mrb_get_args(M, "zs|ii", &name, &data, &size, &volume, &pitch);
+  if (fn && size > 0)
+    fn(name, data, (int)size, (int)volume, (int)pitch);
+  return mrb_nil_value();
+}
+
 mrb_value bgm_play(mrb_state* M, mrb_value self) {
   const char* path;
   mrb_int volume, pitch;
@@ -136,6 +151,30 @@ mrb_value audio_update(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
+mrb_value bgm_play_mem(mrb_state* M, mrb_value self) {
+  return play_mem(M, g_backend.bgm_play_mem);
+}
+
+mrb_value bgs_play_mem(mrb_state* M, mrb_value self) {
+  return play_mem(M, g_backend.bgs_play_mem);
+}
+
+mrb_value me_play_mem(mrb_state* M, mrb_value self) {
+  return play_mem(M, g_backend.me_play_mem);
+}
+
+mrb_value se_play_mem(mrb_state* M, mrb_value self) {
+  return play_mem(M, g_backend.se_play_mem);
+}
+
+// Whether this build can play audio it did not read from a file. False with no
+// backend installed (the `rake test` binary, a build with no audio library), so
+// the Ruby layer can say once that a packed game will be silent instead of
+// dropping every play on the floor without a word.
+mrb_value can_play_mem(mrb_state* M, mrb_value self) {
+  return mrb_bool_value(g_backend.bgm_play_mem != nullptr);
+}
+
 }  // namespace
 
 // Install (copy) the backend table, or clear it when passed null.
@@ -175,5 +214,17 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   mrb_define_module_function(M, audio, "_se_play", se_play, MRB_ARGS_ARG(1, 2));
   mrb_define_module_function(M, audio, "_se_stop", se_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_update", audio_update,
+                             MRB_ARGS_NONE());
+  // Play from encoded bytes: how a release that packs its Audio/ tree into an
+  // encrypted RGSSAD archive is heard at all (see RGSS.asset_archive).
+  mrb_define_module_function(M, audio, "_bgm_play_mem", bgm_play_mem,
+                             MRB_ARGS_ARG(2, 2));
+  mrb_define_module_function(M, audio, "_bgs_play_mem", bgs_play_mem,
+                             MRB_ARGS_ARG(2, 2));
+  mrb_define_module_function(M, audio, "_me_play_mem", me_play_mem,
+                             MRB_ARGS_ARG(2, 2));
+  mrb_define_module_function(M, audio, "_se_play_mem", se_play_mem,
+                             MRB_ARGS_ARG(2, 2));
+  mrb_define_module_function(M, audio, "_can_play_mem?", can_play_mem,
                              MRB_ARGS_NONE());
 }

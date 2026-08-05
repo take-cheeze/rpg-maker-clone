@@ -173,6 +173,116 @@ module RGSS
     ok
   end
 
+  # A 16-bit mono PCM WAV of `ms` milliseconds of a quiet square wave, built
+  # here so the audio probe below needs no fixture on disk. Long enough that a
+  # few frames of playback land inside it.
+  def self.probe_wav(ms = 2000)
+    rate = 11025
+    samples = rate * ms / 1000
+    pcm = []
+    i = 0
+    while i < samples
+      # ~440Hz at a low amplitude; the dummy audio driver discards it anyway,
+      # but a real device should not be handed a full-scale tone.
+      pcm << (((i * 2 / (rate / 440)) % 2).zero? ? 2000 : -2000)
+      i += 1
+    end
+    data = pcm.pack("s<*")
+    header = ["RIFF"].pack("a4") + [36 + data.bytesize].pack("V") +
+             ["WAVEfmt "].pack("a8") + [16].pack("V") +
+             [1, 1].pack("v2") + [rate, rate * 2].pack("V2") +
+             [2, 16].pack("v2") + ["data"].pack("a4") + [data.bytesize].pack("V")
+    header + data
+  end
+
+  # Prove audio packed into an encrypted archive actually reaches the mixer.
+  #
+  # Like the render probe above, this exists because the interesting half is
+  # native and invisible to `mruby-rgss/test`: that binary installs no audio
+  # backend, so every Audio call there is a no-op and a broken memory path would
+  # look exactly like a working one. Here the real SDL_mixer backend runs (under
+  # SDL_AUDIODRIVER=dummy in CI, which decodes and mixes with no sound card).
+  #
+  # It is an A/B/A. The same sound is played first from a loose file, then
+  # stopped, then played out of an archive:
+  #
+  #   loose   > 0   the observable works at all (an SDL_mixer older than 2.6
+  #                 cannot report a position, and would make everything below
+  #                 look like a failure to play rather than passing vacuously)
+  #   stopped = 0   nothing is playing between the arms
+  #   packed  > 0   the archived sound really started
+  #
+  # The middle step is the one that earns the others. Without it the packed arm
+  # passes against an *empty* archive, because the position it reads is the
+  # loose track's — measured, not assumed: that is exactly what this probe did
+  # before Audio.bgm_pos learned to check Mix_PlayingMusic().
+  #
+  # Run by `rpg_maker_clone --rgss_audio_probe`. Returns true when both play.
+  def self.audio_probe
+    wav = probe_wav
+    ok = true
+
+    path = "rgss-audio-probe.wav"
+    File.open(path, "wb") { |io| io.write(wav) }
+    Audio.bgm_play(path)
+    loose = wait_for_bgm_pos
+    Audio.bgm_stop
+    Graphics.update
+    stopped = Audio.bgm_pos
+    File.delete(path) if File.exist?(path)
+
+    archive = Object.new
+    entries = { "Audio/BGM/Probe.wav" => wav, "Audio/SE/Beep.wav" => wav }
+    archive.instance_variable_set(:@entries, entries)
+    def archive.read(name)
+      @entries[name]
+    end
+    previous = asset_archive
+    self.asset_archive = archive
+    begin
+      # The name a game uses: no folder, no extension. Finding it means the
+      # candidate crossing in Audio.play_packed works, not just the decoder.
+      Audio.bgm_play("Probe")
+      packed = wait_for_bgm_pos
+      Audio.se_play("Beep")
+      Audio.bgm_stop
+    ensure
+      self.asset_archive = previous
+    end
+
+    $stderr.puts "[RGSS-AUDIO] loose=#{loose} stopped=#{stopped} " \
+                 "packed=#{packed}"
+    if loose.zero?
+      $stderr.puts "[RGSS-AUDIO] FAIL a loose file did not play (no audio " \
+                   "device, or this SDL_mixer cannot report a position) — the " \
+                   "packed result proves nothing either way"
+      ok = false
+    elsif !stopped.zero?
+      $stderr.puts "[RGSS-AUDIO] FAIL bgm_pos still reports #{stopped} after " \
+                   "bgm_stop, so it cannot tell the two arms apart"
+      ok = false
+    elsif packed.zero?
+      $stderr.puts "[RGSS-AUDIO] FAIL archived BGM did not reach the mixer"
+      ok = false
+    end
+    $stderr.puts "[RGSS-AUDIO] #{ok ? "ok" : "failed"}"
+    ok
+  end
+
+  # Run frames until the BGM reports a position, and answer it (0 if it never
+  # does). Frames, not sleeps: Graphics.update is what drives the audio
+  # backend's per-frame work.
+  def self.wait_for_bgm_pos(frames = 120)
+    n = 0
+    while n < frames
+      Graphics.update
+      pos = Audio.bgm_pos
+      return pos if pos > 0
+      n += 1
+    end
+    0
+  end
+
   class Bitmap
     # RGSS resolves a bare asset name against several image formats, and the RPG
     # Maker XP RTP genuinely mixes them: its windowskins and charsets are .png
@@ -591,10 +701,22 @@ module RGSS
     # Tried in order after the name as-is; the data usually omits the extension.
     EXTS = ["", ".ogg", ".wav", ".mid", ".midi", ".mp3", ".flac"].freeze
 
+    # The archive sub-folders each kind of audio lives in, for a packed release.
+    # Unlike the disk search these are exact: an archive entry name is whatever
+    # the editor wrote, and RGSS2/RGSS3 projects keep the four kinds apart.
+    # Ordered so the usual home of each kind is tried first.
+    ARCHIVE_DIRS = {
+      bgm: ["Audio/BGM", "Audio/ME", "Audio/BGS", "Music", ""],
+      bgs: ["Audio/BGS", "Audio/BGM", "Music", ""],
+      me: ["Audio/ME", "Audio/BGM", "Music", ""],
+      se: ["Audio/SE", "Sound", ""]
+    }.freeze
+
     class << self
       def bgm_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, MUSIC_DIRS)
-        _bgm_play(path, volume, pitch) if path
+        return _bgm_play(path, volume, pitch) if path
+        play_packed(:bgm, filename, volume, pitch)
       end
 
       def bgm_stop
@@ -611,7 +733,8 @@ module RGSS
 
       def bgs_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, MUSIC_DIRS)
-        _bgs_play(path, volume, pitch) if path
+        return _bgs_play(path, volume, pitch) if path
+        play_packed(:bgs, filename, volume, pitch)
       end
 
       def bgs_stop
@@ -628,7 +751,8 @@ module RGSS
 
       def me_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, MUSIC_DIRS)
-        _me_play(path, volume, pitch) if path
+        return _me_play(path, volume, pitch) if path
+        play_packed(:me, filename, volume, pitch)
       end
 
       def me_stop
@@ -641,7 +765,8 @@ module RGSS
 
       def se_play(filename, volume = 100, pitch = 100)
         path = resolve(filename, SOUND_DIRS)
-        _se_play(path, volume, pitch) if path
+        return _se_play(path, volume, pitch) if path
+        play_packed(:se, filename, volume, pitch)
       end
 
       def se_stop
@@ -656,6 +781,55 @@ module RGSS
       end
 
       private
+
+      # Play +filename+ out of the game's encrypted archive, if one is
+      # registered (see RGSS.asset_archive). A released game packs its whole
+      # Audio/ tree in there with nothing loose, so this is the only route to
+      # its music; it runs after the disk search misses, so loose files still
+      # shadow packed ones as in RGSS.
+      #
+      # Returns nil either way — RGSS's Audio.*_play has no return value, and a
+      # miss here is the same "asset not found" silence the disk path gives.
+      def play_packed(kind, filename, volume, pitch)
+        archive = RGSS.asset_archive
+        return nil if archive.nil? || filename.nil? || filename.empty?
+        name, bytes = find_packed(archive, kind, filename)
+        return nil if bytes.nil?
+        # Say so once rather than dropping every play silently: on a build with
+        # no audio backend (or one predating the memory entry points) a packed
+        # game would otherwise be mysteriously mute.
+        unless _can_play_mem?
+          RGSS.warn_stub("Audio: playing from an encrypted archive")
+          return nil
+        end
+        case kind
+        when :bgm then _bgm_play_mem(name, bytes, volume, pitch)
+        when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
+        when :me then _me_play_mem(name, bytes, volume, pitch)
+        else _se_play_mem(name, bytes, volume, pitch)
+        end
+        nil
+      end
+
+      # The first archive entry matching +filename+ for +kind+, as
+      # [entry name, bytes], or nil. Crosses the kind's folders with the same
+      # extensions the disk search uses, because the data usually names a track
+      # without either.
+      def find_packed(archive, kind, filename)
+        ARCHIVE_DIRS[kind].each do |dir|
+          base = dir.empty? ? filename : "#{dir}/#{filename}"
+          EXTS.each do |ext|
+            cand = "#{base}#{ext}"
+            bytes = archive.read(cand)
+            return [cand, bytes] if bytes
+          end
+        end
+        nil
+      rescue StandardError => e
+        # A broken archive must not take down a play call; report and stay quiet.
+        $stderr.puts "[RGSS] archive read failed for #{filename}: #{e.message}"
+        nil
+      end
 
       # First existing file for +filename+ under any (root, dir, extension)
       # combination, or nil. The name is first tried as given (an absolute path

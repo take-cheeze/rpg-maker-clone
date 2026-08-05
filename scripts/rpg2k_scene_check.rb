@@ -162,7 +162,7 @@ def fake_chipset(name = 'cs')
                  terrain_data: td)
 end
 
-def fake_db(common = nil)
+def fake_db(common = nil, troop_pages = nil)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
@@ -185,7 +185,8 @@ def fake_db(common = nil)
                                  gold: 10) },
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
       1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
-      2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) }) },
+      2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) },
+      pages: troop_pages) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
     # timed-wait fallback.)
@@ -290,8 +291,8 @@ def fake_party
   OpenStruct.new(leader: nil, actors: [])
 end
 
-def new_scene(events, player: [0, 0], common: nil, parallax: nil)
-  db = fake_db(common)
+def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil)
+  db = fake_db(common, troop_pages)
   state = Game::State.new(fake_party, 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
@@ -2362,6 +2363,120 @@ check 'the action key marks the event it started for the type-8 branch' do
   RGSS::Input.triggered = []
   3.times { scene.update }
   ok st.switches[9], 'the decision-key branch ran'
+end
+
+# -- battle-event pages --------------------------------------------------------
+
+# A troop battle-event page: `flags` 0 means "no condition", so it fires on turn
+# 0 as soon as the fight opens.
+def troop_page(cmds, flags = 0, opts = {})
+  cond = OpenStruct.new({ flags: flags, switch_a_id: 1, switch_b_id: 1,
+                          variable_id: 1, variable_value: 0, turn_a: 0,
+                          turn_b: 0, enemy_id: 0, enemy_hp_min: 0,
+                          enemy_hp_max: 100, actor_id: 1, actor_hp_min: 0,
+                          actor_hp_max: 100 }.merge(opts))
+  OpenStruct.new(condition: cond, event: cmds)
+end
+
+# Open a battle whose troop carries `pages`, running frames until the fight is
+# up. Returns [scene, state].
+def battle_scene_with_pages(pages)
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages)
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  [scene, st]
+end
+
+check 'a turn-0 battle-event page runs as the fight opens' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 12, 12, 0])]) }
+  scene, st = battle_scene_with_pages(pages)
+  10.times do
+    scene.update
+    break if st.switches[12]
+  end
+  ok st.switches[12], 'the page ran before the command phase'
+  scene.update # the exhausted page hands the turn back
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'the battle is still open'
+  eq :command, ui[:phase], 'and control returned to the party'
+end
+
+check 'a battle page gated on an unmet condition does not fire' do
+  ic = Game::Interpreter::Cmd
+  # Gated on switch 13, which is never set.
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 14, 14, 0])],
+                            Game::BattlePage::SWITCH_A, switch_a_id: 13) }
+  scene, st = battle_scene_with_pages(pages)
+  10.times { scene.update }
+  ok !st.switches[14], 'the gated page stayed put'
+end
+
+check 'Terminate Battle from a page ends the fight and resumes the event' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  12.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui).nil?
+  end
+  eq nil, scene.instance_variable_get(:@battle_ui),
+     'the battle closed without a result window'
+end
+
+check 'a page can wound a monster through Change Monster HP' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 7, 1])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  foe = ui[:battle].enemy(0)
+  eq foe.max_hp - 7, foe.hp, 'the page took 7 HP off the first troop member'
+end
+
+check 'Change Battle Background from a page rebuilds the backdrop sprite' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_BATTLE_BG, [], string: 'Cave')]) }
+  scene, _st = battle_scene_with_pages(pages)
+  before = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    before ||= ui && ui[:back_sprite]
+    break if ui && ui[:phase] == :command
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui[:back_sprite], 'a backdrop is still in place'
+  ok !ui[:back_sprite].equal?(before), 'and it was rebuilt for the new name'
+end
+
+check 'a battle page shows its message in a battle panel and waits for a key' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'It appears!'),
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 15, 15, 0])]) }
+  scene, st = battle_scene_with_pages(pages)
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:event_win]
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui[:event_win], 'the message panel is up'
+  ok !st.switches[15], 'the page is held at the message'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  3.times { scene.update }
+  ok st.switches[15], 'the button dismissed it and the page ran on'
+  eq nil, scene.instance_variable_get(:@battle_ui)[:event_win],
+     'the panel closed with the message'
 end
 
 # -- summary ------------------------------------------------------------------
