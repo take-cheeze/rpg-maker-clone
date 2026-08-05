@@ -239,13 +239,21 @@ The work below is roughly ordered by the critical path to a walkable game
   equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
-  spirit / agility), an **item** count (number held, or number equipped across the
+  spirit / agility, and the **id of the item in each of the five equipment
+  slots**), an **item** count (number held, or number equipped across the
   party), **game quantities** (party gold, timer seconds, party size, and the
   **save / battle / win / defeat / escape counts** — running tallies bumped by
-  Save and by each Enemy Encounter and its outcome, persisted in the save) and a
-  **character position** (the hero's or a map event's map id / x / y / facing —
-  an event's map id reads 0, matching an RPG_RT 2000 quirk; screen coordinates
-  are not modelled).
+  Save and by each Enemy Encounter and its outcome, persisted in the save), a
+  **character position** (the hero's or a map event's map id / x / y / facing /
+  **screen x / y** — an event's map id reads 0, matching an RPG_RT 2000 quirk;
+  the screen coordinates are measured against the live camera, which
+  `Scene::Map#camera_position` now exposes, with RPG_RT's own asymmetric offsets:
+  X from the tile's centre, Y from its bottom) and, in a fight, a **monster
+  stat** (RPG2003's battle operand — HP / SP / max HP-SP / attack / defence /
+  spirit / agility of a troop member). An operand this build does not know (the
+  Maniac patch adds nine more) now reads **0 and logs**, where it used to return
+  the operand's own *selector* — so a 2003 game's battle operand wrote the troop
+  member index into the variable and looked like a plausible number.
   Conditional Branch covers switch / variable / **timer** / gold / item /
   **vehicle** (is the party aboard the boat / ship / airship) / **orientation**
   (is the hero or a map event facing a given direction) conditions and **all**

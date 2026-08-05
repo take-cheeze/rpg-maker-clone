@@ -1874,6 +1874,44 @@ check 'the choice window plays the cursor and decision system sounds' do
   ok !scene.instance_variable_get(:@message), 'the choice window closed on confirm'
 end
 
+check 'character_screen_position measures against the live camera' do
+  # A map small enough that the camera cannot scroll, so screen position is just
+  # the map position: the offsets RPG_RT applies are then visible on their own.
+  scene = new_scene({ 1 => event(3, 4, page) }, player: [1, 2])
+  tile = RPG2k::Scene::Map::TILE
+  eq [0, 0], scene.camera_position, 'a map smaller than the view cannot scroll'
+
+  hero = scene.character_screen_position(10001)
+  # X is measured from the tile's centre, Y from its bottom — RPG_RT's own
+  # asymmetry, which is the whole reason this is worth pinning down.
+  eq 1 * tile + tile / 2, hero[:x]
+  eq 2 * tile + tile, hero[:y]
+
+  ev = scene.character_screen_position(1)
+  eq 3 * tile + tile / 2, ev[:x]
+  eq 4 * tile + tile, ev[:y]
+
+  eq nil, scene.character_screen_position(99), 'no such event on this map'
+end
+
+check 'a scrolled camera shifts the screen position it reports' do
+  # A tall map so the follow camera actually scrolls, and the hero's screen
+  # position stops tracking its map position.
+  scene = new_scene({}, player: [1, 20])
+  w = 6; h = 40
+  tall = Game::Map.new(1, OpenStruct.new(
+    width: w, height: h, chipset_id: 1,
+    lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+    events: {}))
+  scene.instance_variable_set(:@map, tall)
+  scene.instance_variable_get(:@state).map = tall
+
+  cam_y = scene.camera_position[1]
+  ok cam_y > 0, 'the camera scrolled down to follow the hero'
+  tile = RPG2k::Scene::Map::TILE
+  eq 20 * tile + tile - cam_y, scene.character_screen_position(10001)[:y]
+end
+
 check 'the message window moves away from the hero when not position-fixed' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)

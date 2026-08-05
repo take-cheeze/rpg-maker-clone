@@ -1235,6 +1235,17 @@ class FakeMapInfo
   def terrain_id(x, y); x * 10 + y; end
   def event_id_at(x, y); (x == 2 && y == 3) ? 7 : 0; end
   def event_position(id); id == 7 ? { x: 2, y: 3, direction: 6 } : nil; end
+  # The hero sits mid-screen; event 7 is up and to the left of it. Anything else
+  # is not on this map.
+  def character_screen_position(ref)
+    return { x: 160, y: 120 } if ref == 10001
+    ref == 7 ? { x: 40, y: 72 } : nil
+  end
+end
+
+# The same map without the camera hook, for the headless case.
+class FakeMapInfoNoCamera
+  def event_position(id); id == 7 ? { x: 2, y: 3, direction: 6 } : nil; end
 end
 
 check 'Store Terrain ID reads a constant tile and a variable-addressed tile' do
@@ -2608,6 +2619,59 @@ check 'Control Variables reads an actor stat (operand type 5)' do
   eq 42, st.variables[2]
   eq 100, st.variables[3]
   eq 8, st.variables[4]
+end
+
+check 'Control Variables reads a character screen position (operand 6, attr 4/5)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10001, 4]),  # hero screen x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 10001, 5]),  # hero screen y
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 6, 7, 4]),      # event 7 screen x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 6, 9, 4])])     # not on this map
+  it.update
+  eq 160, st.variables[1]
+  eq 120, st.variables[2]
+  eq 40, st.variables[3]
+  eq 0, st.variables[4]
+end
+
+check 'a screen position with no camera to measure against reads 0' do
+  st = new_state
+  st.variables[1] = 99
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfoNoCamera.new   # answers positions, but owns no view
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10001, 4])])
+  it.update
+  eq 0, st.variables[1]
+end
+
+check 'Control Variables reads an equipped item id (operand 5, attr 10..14)' do
+  st = party_state
+  a = st.party.actor_by_id(1)
+  a.equip([11, 0, 13, 0, 15])
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 5, 1, 10]),   # weapon
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 5, 1, 11]),   # shield (empty)
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 5, 1, 12]),   # armour
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 5, 1, 14]),   # accessory
+            FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 5, 1, 15])])  # unknown -> 0
+  it.update
+  eq 11, st.variables[1]
+  eq 0, st.variables[2]
+  eq 13, st.variables[3]
+  eq 15, st.variables[4]
+  eq 0, st.variables[5]
+end
+
+check 'the battle operand reads 0 outside a fight, not the member index' do
+  st = new_state
+  st.variables[1] = 99
+  it = Game::Interpreter.new(st) # no #battle set: a map / common event
+  # param5 is the troop member index; returning it would look like a real stat.
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 8, 3, 0])])
+  it.update
+  eq 0, st.variables[1]
 end
 
 check 'Control Variables actor operand reads 0 for an absent actor' do
@@ -5812,6 +5876,24 @@ check 'battle-only commands are no-ops outside a battle' do
 end
 
 # -- RPG2003 battle-page commands (Force Flee / Enable Combo / Call Common) ----
+
+check 'Control Variables reads a monster stat in battle (operand type 8)' do
+  b = battle_with(foe_hp: 80, foe_mp: 12)   # Slime: atk 5, def 0, agi 5
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 8, 0, 0]),   # HP
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 8, 0, 1]),   # SP
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 8, 0, 4]),   # attack
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 8, 0, 7]),   # agility
+            FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 8, 9, 0])])  # not in the troop
+  it.update
+  eq 80, st.variables[1]
+  eq 12, st.variables[2]
+  eq 5, st.variables[3]
+  eq 5, st.variables[4]
+  eq 0, st.variables[5]
+end
 
 check 'RPG2003 event opcodes match the LCF Code enum' do
   eq 1005, IC::CALL_COMMON_EVENT
