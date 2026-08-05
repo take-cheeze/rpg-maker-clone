@@ -198,7 +198,7 @@ unrolls. `Window#tone` (the windowskin colour tint) is likewise stored only.
 
 One use each (title background, animation effects). Cosmetic.
 
-### 6. Reading graphics out of the encrypted archive ✅ (audio still to come)
+### 6. Reading graphics and audio out of the encrypted archive ✅
 
 Shared with the XP gap. `RPGVX::RGSSData` has resolved `Data/*` through
 `Game.rgss2a`/`Game.rgss3a` for a while, but the native asset loaders only ever
@@ -224,11 +224,29 @@ inside `Game.rgssad`, and the engine must find it in the first and report the
 miss in the second. The A/B is the point — a single run would pass just as well
 if the archive were never consulted.
 
-**Audio is still loose-file only.** `RGSS::Audio` plays through a C function
-table (`include/rgss_audio.hxx`) whose entry points all take a path, so a packed
-BGM needs that interface to grow memory variants (SDL_mixer reads from an
-`SDL_RWops` happily enough). A packed game therefore boots and draws, but stays
-silent.
+**Audio comes out of the archive too.** `RGSS::Audio` plays through a C function
+table (`include/rgss_audio.hxx`) whose entry points all took a path, so each has
+grown a `*_play_mem` twin taking the encoded bytes; the SDL backend feeds them to
+`Mix_LoadMUS_RW`/`Mix_LoadWAV_RW` through an `SDL_RWops`. The Ruby side mirrors
+`Bitmap`: after the disk search misses, the four kinds' archive folders are
+crossed with the same extensions, so a bare `"Theme1"` finds
+`Audio/BGM/Theme1.ogg`.
+
+The subtlety is lifetime. `Mix_LoadMUS_RW` *streams* from the RWops, so the bytes
+must outlive the music — and RGSS resumes the BGM after a music effect ends,
+which with an archived track means replaying from bytes that have to still be
+there. Both buffers are owned by the backend and released only where the stream
+they feed is freed.
+
+Verified by the `audio_probe` ctest, which plays the same sound from a loose file
+and then out of an archive under `SDL_AUDIODRIVER=dummy` (SDL's dummy driver
+decodes and mixes with no sound card) and requires both to advance
+`Audio.bgm_pos` — with a *stop* between them that must read 0. That middle step
+is what earns the other two: without it the packed arm passed against an empty
+archive, because `bgm_pos` was reporting the loose track's position. Halting
+music does not free the stream, and `Mix_GetMusicPosition` kept answering for a
+stopped one; a game saving `bgm_pos` to resume a track later would have recorded
+a position for music that was not playing. Fixed while building the probe.
 
 ## What this means for turning the host on
 
@@ -236,6 +254,5 @@ For VX / VX Ace the script host is not an alternative to a built-in flow — it 
 the only route to a real game. A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
 tints, flashes and fades the screen, dissolves between scenes, and — packed or
-loose — finds its graphics. What is left is narrow: **packed audio** (the second
-half of item 6, a change to the audio backend's C interface), and the cosmetic
-items 4 and 5.
+loose — finds its graphics and its music. What is left is cosmetic: the window
+open/close animation and `Window#tone` (item 4), and the two blurs (item 5).

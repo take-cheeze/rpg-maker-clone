@@ -970,6 +970,50 @@ assert "a packed graphic loads into a Bitmap through RGSS.asset_archive" do
   end
 end
 
+# The same for audio, which a release packs alongside its graphics. Whether the
+# bytes then reach the mixer is native and needs a real audio device — that is
+# the `audio_probe` ctest. What this pins is that a game's bare track name finds
+# the entry and arrives *decrypted*, through a real archive of both versions.
+assert "a packed track plays through RGSS.asset_archive" do
+  wav = "RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00" \
+        "\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+  [:pack_v1, :pack_v3].each do |packer|
+    files = [
+      ["Data\\System.rxdata", Marshal.dump([1, 2, 3])],
+      ["Audio\\BGM\\Theme1.wav", wav]
+    ]
+    a = RPGXP::RGSSAD.new(RPGXP::RGSSAD.send(packer, files))
+    class << RGSS::Audio
+      alias _bgm_play_mem_orig3 _bgm_play_mem
+      alias _can_play_mem_orig3 _can_play_mem?
+      def _bgm_play_mem(name, bytes, volume, pitch)
+        $audio_arch_capture = [name, bytes, volume, pitch]
+        nil
+      end
+      # The test binary installs no audio backend; pretend one is there so the
+      # lookup is what is being measured.
+      def _can_play_mem? = true
+    end
+    RGSS.asset_archive = a
+    begin
+      $audio_arch_capture = nil
+      # No folder, no extension — how the database names a track.
+      RGSS::Audio.bgm_play("Theme1", 70, 100)
+      assert_false $audio_arch_capture.nil?, "#{packer}: packed BGM did not play"
+      assert_equal "Audio/BGM/Theme1.wav", $audio_arch_capture[0]
+      # Byte-for-byte through the encryption, or no decoder would take it.
+      assert_equal wav.bytes, $audio_arch_capture[1].bytes
+      assert_equal 70, $audio_arch_capture[2]
+    ensure
+      RGSS.asset_archive = nil
+      class << RGSS::Audio
+        alias _bgm_play_mem _bgm_play_mem_orig3
+        alias _can_play_mem? _can_play_mem_orig3
+      end
+    end
+  end
+end
+
 # ---- Autonomous event movement: Character / MoveRoute / MoveType -----------
 
 # World stand-in for the movement engine.
