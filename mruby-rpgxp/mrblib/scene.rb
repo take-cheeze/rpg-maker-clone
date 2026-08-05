@@ -522,6 +522,12 @@ class RPGXP
         # holds the map (see setup_sprites) -- the flash as its colour overlay,
         # the shake as its scroll origin, exactly where Spriteset_Map puts them.
         @screen = Game::Screen.new
+        # Scroll Map (203) pushes the camera off the leader; the offset rides on
+        # top of the follow camera and persists until another scroll moves it.
+        @scroll = Game::Scroll.new
+        # Show Animation (207) playbacks, keyed by target (:player or an event
+        # id). RMXP keeps one animation slot per character; so does this.
+        @animations = {}
 
         @resolver = EventResolver.new(@db.common_events)
         @interpreter = Game::Interpreter.new(@state)
@@ -559,6 +565,7 @@ class RPGXP
         close_number_input
         @event_sprites.each_value { |s| s[:sprite].dispose } if @event_sprites
         dispose_frozen
+        dispose_animations
         @picture_sprites.each_value { |e| e[:sprite].dispose } if @picture_sprites
         [@tilemap, @player_sprite, @screen_viewport,
          @picture_viewport].each { |s| s.dispose if s }
@@ -850,6 +857,239 @@ class RPGXP
       rescue StandardError => e
         $stderr.puts "[RGSS] screen effect step failed: #{e.message}"
         @screen_dirty = false
+      end
+
+      # Run the Script (355) sources an interpreter queued this frame.
+      #
+      # What a game's inline Ruby is evaluated *against* is the question this
+      # command really poses, and a real game answers it: of Pray for You's 23
+      # script blocks, 22 assign globals of the game's own invention
+      # (`$subtitle`, `$extra_cg[n]`, `$extra_flag`) that its bundled scripts
+      # read, and one reads `$game_variables[1]` before dumping a save. So the
+      # contract here is:
+      #
+      #   * the source is evaluated at the top level, as RGSS does, so a plain
+      #     global assignment behaves exactly as the game expects;
+      #   * the RMXP globals this runtime can honestly back are bound to it --
+      #     `$game_switches` and `$game_variables` reach the same switches and
+      #     variables the Control Switches / Control Variables commands write;
+      #   * anything else a script reaches for is simply not there. The built-in
+      #     flow is a reimplementation, not RGSS; a game that needs the rest of
+      #     RMXP's object graph wants RGSS_SCRIPT_HOST, which exists to give it
+      #     all of them.
+      #
+      # A script that raises must not take the map down with it: the failure is
+      # reported (never swallowed) and the event carries on.
+      def apply_script_requests(interp)
+        reqs = interp.take_script_requests
+        return if reqs.nil? || reqs.empty?
+        bind_script_globals
+        reqs.each { |r| run_event_script(r) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Script command failed: #{e.message}"
+      end
+
+      # Point the RMXP globals at this scene's state. Re-bound per batch rather
+      # than once, because a Transfer Player or a load swaps the State object.
+      def bind_script_globals
+        $game_switches = Game::SwitchStore.new(@state)
+        $game_variables = Game::VariableStore.new(@state)
+      end
+
+      def run_event_script(r)
+        where = "Map#{r[:map_id]} event #{r[:event_id]}"
+        rgss_eval_section(r[:source], "Script (#{where})")
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Script in #{where} raised #{e.class}: #{e.message}"
+      end
+
+      # Apply the Show Animation (207) requests an interpreter queued this frame.
+      # A second animation on the same character replaces the first, as RMXP's
+      # single `animation_id` slot does.
+      def apply_animation_requests(interp)
+        reqs = interp.take_animation_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each do |r|
+          record = @db.animations[r[:animation_id]]
+          unless record
+            $stderr.puts "[RGSS] Show Animation: no animation ##{r[:animation_id]}"
+            next
+          end
+          dispose_animation(r[:target])
+          @animations[r[:target]] =
+            { anim: Game::Animation.new(record), sprites: [], sheet: nil }
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Show Animation failed: #{e.message}"
+      end
+
+      # Draw one tick of every running animation and drop the finished ones.
+      # Called from render, after the characters have been positioned, because a
+      # non-screen animation is anchored on its target's sprite.
+      def update_animations
+        return if @animations.nil? || @animations.empty?
+        done = []
+        @animations.each do |target, entry|
+          if entry[:anim].playing?
+            draw_animation(target, entry)
+            entry[:anim].update
+          else
+            done << target
+          end
+        end
+        done.each { |t| dispose_animation(t) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] animation update failed: #{e.message}"
+      end
+
+      def draw_animation(target, entry)
+        anim = entry[:anim]
+        index = anim.frame_index
+        sheet = animation_sheet(entry, anim)
+        return unless sheet
+        ax, ay = animation_anchor(target, anim.position)
+        return if ax.nil?
+        cells = anim.cells(index)
+        cells.each_with_index { |cell, i| draw_animation_cell(entry, i, cell, ax, ay, sheet) }
+        # Sprites the frame no longer uses stay allocated but stop drawing.
+        i = cells.size
+        while i < entry[:sprites].size
+          entry[:sprites][i].visible = false
+          i += 1
+        end
+        run_animation_timings(target, anim, index)
+      end
+
+      # The sheet for an animation, loaded once per playback and hue-rotated the
+      # way RPG::Cache.animation does.
+      def animation_sheet(entry, anim)
+        return entry[:sheet] if entry[:sheet]
+        bmp = load_map_graphic("Animations", anim.sheet_name)
+        return nil unless bmp
+        hue_shift bmp, anim.sheet_hue
+        entry[:sheet] = bmp
+      end
+
+      # Where an animation's cells are centred: on the target character's sprite
+      # (nudged a quarter of its height up or down for the "top" / "bottom"
+      # positions), or fixed to the screen. nil when the target is not on the map
+      # any more.
+      def animation_anchor(target, position)
+        if position == Game::Animation::POSITION_SCREEN
+          return [SCREEN_W / 2, SCREEN_H - 160]
+        end
+        if target == :player
+          return [nil, nil] unless @player_sprite
+          w = @player_bmp.width
+          h = @player_bmp.height
+          x = @player_sprite.x + w / 2
+          y = @player_sprite.y + h / 2
+        else
+          s = @event_sprites && @event_sprites[target]
+          return [nil, nil] unless s
+          w = s[:w]
+          h = s[:h]
+          x = s[:sprite].x + w / 2
+          y = s[:sprite].y + h / 2
+        end
+        y -= h / 4 if position == Game::Animation::POSITION_TOP
+        y += h / 4 if position == Game::Animation::POSITION_BOTTOM
+        [x, y]
+      end
+
+      ANIMATION_Z = 2000
+
+      def draw_animation_cell(entry, i, cell, ax, ay, sheet)
+        sprite = entry[:sprites][i]
+        unless sprite
+          sprite = Sprite.new(@screen_viewport)
+          sprite.bitmap = sheet
+          sprite.z = ANIMATION_Z
+          entry[:sprites][i] = sprite
+        end
+        pattern, cx, cy, zoom, angle, mirror, opacity, blend = cell
+        rect = Game::Animation.cell_rect(pattern)
+        sprite.src_rect = Rect.new(rect[0], rect[1], rect[2], rect[3])
+        scale = zoom.to_f / 100.0
+        # RGSS centres a cell with ox/oy = 96; those are not wired to where a
+        # sprite draws here (as for a centred picture origin), so the half-cell
+        # is taken off the position instead, scaled with the zoom.
+        half = (Game::Animation::CELL_SIZE * scale / 2).to_i
+        sprite.x = ax + cx.to_i - half
+        sprite.y = ay + cy.to_i - half
+        sprite.zoom_x = scale
+        sprite.zoom_y = scale
+        sprite.angle = angle.to_i
+        sprite.mirror = mirror.to_i == 1
+        sprite.opacity = opacity.to_i
+        sprite.blend_type = blend.to_i
+        sprite.visible = true
+      end
+
+      # An animation frame's sound effect and flash. RMXP flashes either the
+      # target itself or the whole screen; both already exist here (the sprite's
+      # native decaying flash, and Game::Screen's).
+      def run_animation_timings(target, anim, index)
+        anim.timings_at(index).each do |t|
+          play_animation_se(t.se)
+          case t.flash_scope
+          when Game::Animation::FLASH_SCREEN
+            c = t.flash_color
+            @screen.start_flash(color_values(c), t.flash_duration.to_i) if c
+          when Game::Animation::FLASH_TARGET
+            flash_character(target, t.flash_color, t.flash_duration.to_i)
+          end
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] animation timing failed: #{e.message}"
+      end
+
+      def play_animation_se(se)
+        return if se.nil? || se.name.nil? || se.name.empty?
+        Audio.se_play(se.name, se.volume || 100, se.pitch || 100)
+      rescue StandardError => e
+        $stderr.puts "[RGSS] animation SE '#{se.name}' failed: #{e.message}"
+      end
+
+      def flash_character(target, color, duration)
+        return unless color
+        sprite = if target == :player
+                   @player_sprite
+                 else
+                   s = @event_sprites && @event_sprites[target]
+                   s && s[:sprite]
+                 end
+        return unless sprite
+        sprite.flash(Color.new(color.red, color.green, color.blue, color.alpha),
+                     duration)
+      rescue StandardError => e
+        $stderr.puts "[RGSS] animation flash failed: #{e.message}"
+      end
+
+      def dispose_animation(target)
+        entry = @animations[target]
+        return unless entry
+        entry[:sprites].each { |s| s.dispose if s }
+        entry[:sheet].dispose if entry[:sheet]
+        @animations.delete(target)
+      end
+
+      def dispose_animations
+        return unless @animations
+        @animations.keys.each { |t| dispose_animation(t) }
+      end
+
+      # Scroll Map (203): start the commanded scroll and carry straight on. RMXP
+      # holds the command while an earlier scroll is still running, so this keeps
+      # the interpreter suspended until there is nothing to collide with.
+      def drive_scroll
+        return if @scroll.scrolling?
+        r = @interpreter.scroll_request
+        @scroll.start(r[:direction], r[:distance], r[:speed], TILE) if r
+        @interpreter.resume
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Scroll Map failed: #{e.message}"
+        @interpreter.resume
       end
 
       # Only the foreground interpreter freezes the screen. A background (parallel)
@@ -1230,6 +1470,7 @@ class RPGXP
           when :teleport then perform_teleport(@interpreter.teleport)
           when :move_completion then drive_move_completion
           when :transition then drive_transition
+          when :scroll then drive_scroll
           end
         else
           @interpreter.update
@@ -1239,6 +1480,8 @@ class RPGXP
           apply_picture_requests(@interpreter)
           apply_freeze_request(@interpreter)
           apply_screen_requests(@interpreter)
+          apply_animation_requests(@interpreter)
+          apply_script_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -1359,6 +1602,8 @@ class RPGXP
           apply_location_requests(it)
           apply_picture_requests(it)
           apply_screen_requests(it)
+          apply_animation_requests(it)
+          apply_script_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
@@ -1368,6 +1613,8 @@ class RPGXP
           apply_location_requests(it)
           apply_picture_requests(it)
           apply_screen_requests(it)
+          apply_animation_requests(it)
+          apply_script_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError
@@ -1803,8 +2050,9 @@ class RPGXP
 
       def render
         px, py = player_pixel
-        cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
-        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
+        @scroll.update
+        cam_x = camera_axis(px + TILE / 2, SCREEN_W, @map.width * TILE, @scroll.x)
+        cam_y = camera_axis(py + TILE / 2, SCREEN_H, @map.height * TILE, @scroll.y)
 
         scroll_tilemap cam_x, cam_y
         draw_event_sprites cam_x, cam_y
@@ -1818,6 +2066,19 @@ class RPGXP
         # Change Transparent Flag (208) simply stops the leader being drawn.
         @player_sprite.visible = !@state.player_transparent
         draw_player_frame
+        # Animations anchor on the sprites just positioned, so they come last.
+        update_animations
+      end
+
+      # The follow camera plus any Scroll Map offset, clamped to the map — RMXP
+      # clamps `display_x`/`display_y` the same way, so a scroll can never show
+      # past the edge.
+      def camera_axis(focus, screen, world, offset)
+        cam = Game.camera_offset(focus, screen, world) + offset
+        return 0 if world <= screen
+        return 0 if cam < 0
+        max = world - screen
+        cam > max ? max : cam
       end
 
       # Scroll the ground to the camera and let it animate. Each ox/oy write

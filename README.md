@@ -162,6 +162,17 @@
   maths (an alpha that reaches zero exactly on the duration, a shake that
   reverses past twice its power and settles back on centre) into the map
   viewport's colour overlay and scroll origin
+- **Scroll Map** (203) pushes the camera off the party leader for a cutscene,
+  clamped to the map, and **Show Animation** (207) plays an `RPG::Animation` on
+  the hero or any event — its cells blitted from the 192×192 grid of the sheet
+  with each cell's offset, zoom, angle, mirror, opacity and blend, four game
+  frames apiece, anchored over / on / under the target or fixed to the screen,
+  with the per-frame timings' sound effect and flash
+- **Script** (355) runs a game's inline Ruby: the command and its continuation
+  lines are joined and evaluated at the top level, with `$game_switches` and
+  `$game_variables` bound to the same switches and variables the event commands
+  write, and a raising script reported rather than swallowed. That leaves the XP
+  map scene with a handler for **every** event command a real game uses
 
 ### RPG Maker VX / VX Ace
 

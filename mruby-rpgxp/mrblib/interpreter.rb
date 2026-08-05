@@ -97,7 +97,11 @@ class RPGXP
       CHANGE_EQUIP    = 319
       TRANSFER_PLAYER = 201
       EVENT_LOCATION  = 202
+      SCROLL_MAP      = 203
       TRANSPARENT     = 208
+      SHOW_ANIMATION  = 207
+      SCRIPT          = 355
+      SCRIPT_LINE     = 655
       MOVE_ROUTE      = 209
       WAIT_FOR_MOVE   = 210
       PREPARE_TRANSITION = 221
@@ -165,6 +169,8 @@ class RPGXP
         @location_requests = []
         @picture_requests = []
         @screen_requests = []
+        @animation_requests = []
+        @script_requests = []
         @erase_requested = false
         @freeze_requested = false
         @running = true
@@ -172,15 +178,20 @@ class RPGXP
         self
       end
 
+      # End the list. The queued side-effect requests are deliberately *not*
+      # cleared: they are the effects of commands that already ran, and the
+      # scene has not drained them yet.
+      #
+      # Clearing them here silently dropped every one of those effects whenever
+      # a list ended with Exit Event Processing (115) or was stopped by a
+      # teleport — the whole batch went out with the list that produced it,
+      # because `stop` runs inside the same `update` the scene drains after. The
+      # queues are emptied by `start` (a fresh run) and `reset` (construction),
+      # which is where a stale request genuinely should not survive.
       def stop
         @list = []
         @index = 0
         @call_stack = []
-        @move_route_requests = []
-        @tint_requests = []
-        @location_requests = []
-        @picture_requests = []
-        @screen_requests = []
         @freeze_requested = false
         @running = false
         reset_waits
@@ -240,6 +251,23 @@ class RPGXP
         @picture_requests = []
         reqs
       end
+
+      # Drain the Show Animation (207) requests queued since the last call.
+      def take_animation_requests
+        reqs = @animation_requests || []
+        @animation_requests = []
+        reqs
+      end
+
+      # Drain the Script (355) sources queued since the last call.
+      def take_script_requests
+        reqs = @script_requests || []
+        @script_requests = []
+        reqs
+      end
+
+      # The Scroll Map (203) the interpreter is suspended on, or nil.
+      attr_reader :scroll_request
 
       # True (once) if a Prepare for Transition ran since the last call.
       def take_freeze_request
@@ -310,6 +338,8 @@ class RPGXP
         @location_requests = []
         @picture_requests = []
         @screen_requests = []
+        @animation_requests = []
+        @script_requests = []
         @erase_requested = false
         @freeze_requested = false
         reset_waits
@@ -326,6 +356,7 @@ class RPGXP
         @input_variable = nil
         @input_digits = nil
         @transition_name = nil
+        @scroll_request = nil
       end
 
       def switches;  @state.switches;  end
@@ -337,6 +368,7 @@ class RPGXP
         when SHOW_CHOICES    then do_show_choices(cmd)
         when INPUT_NUMBER    then do_input_number(cmd)
         when WHEN, WHEN_CANCEL then skip_past_choices(cmd) # fell through a branch
+        when SCRIPT_LINE     then consume # swallowed by the 355 above
         when CHOICES_END, BRANCH_END, LABEL, COMMENT, COMMENT_LINE,
              TEXT_LINE, 0
           consume
@@ -368,8 +400,11 @@ class RPGXP
         when TRANSFER_PLAYER then do_transfer(cmd)
         when EVENT_LOCATION  then do_event_location(cmd)
         when TRANSPARENT     then do_transparent(cmd)
+        when SHOW_ANIMATION  then do_show_animation(cmd)
+        when SCRIPT          then do_script(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
         when WAIT_FOR_MOVE   then do_wait_for_move(cmd)
+        when SCROLL_MAP      then do_scroll_map(cmd)
         when PREPARE_TRANSITION then do_prepare_transition(cmd)
         when EXECUTE_TRANSITION then do_execute_transition(cmd)
         when TINT_SCREEN     then do_tint_screen(cmd)
@@ -1010,6 +1045,65 @@ class RPGXP
         @screen_requests << { op: :shake, power: param(cmd, 0, 0).to_i,
                               speed: param(cmd, 1, 0).to_i,
                               duration: param(cmd, 2, 0).to_i }
+      end
+
+      # Script (355), with its continuation lines (655). RMXP joins the 355 and
+      # every 655 under it into one source string and `eval`s it inside the
+      # interpreter.
+      #
+      # Ours queues the source for the scene instead of evaluating it here, for
+      # the same reason the picture and screen commands are queued: this file is
+      # driven under CRuby over a real game's event lists by
+      # scripts/rpgxp_testbed_check.rb, and a data check must not *run* the
+      # game's scripts -- one of Pray for You's writes a save file.
+      def do_script(cmd)
+        lines = [param(cmd, 0, "").to_s]
+        i = @index + 1
+        while i < @list.size && @list[i].code == SCRIPT_LINE
+          lines << @list[i].parameters[0].to_s
+          i += 1
+        end
+        @index = i
+        source = lines.join("\n")
+        return if source.empty?
+        @script_requests << { source: source, event_id: @event_id,
+                              map_id: @map_id }
+      end
+
+      # Show Animation (207): [target, animation id]. RMXP's `command_207` just
+      # writes `character.animation_id`, and Sprite_Character plays it on the
+      # next frame -- nothing pauses, and a second animation on the same
+      # character replaces the first. Queued for the scene, which owns the
+      # sprites; the target uses the same character codes as Set Move Route.
+      def do_show_animation(cmd)
+        target = param(cmd, 0)
+        id = param(cmd, 1, 0).to_i
+        @index += 1
+        return if id <= 0
+        resolved =
+          case target
+          when MOVE_TARGET_PLAYER then :player
+          when MOVE_TARGET_THIS   then @event_id
+          else target
+          end
+        return if resolved.nil?
+        @animation_requests << { target: resolved, animation_id: id }
+      end
+
+      # Scroll Map (203): [direction, distance in tiles, speed]. RMXP's
+      # `command_203` returns false — "run me again next frame" — while a scroll
+      # is still in progress, so a second Scroll Map holds the list until the
+      # first has finished and only then starts. Ours suspends for the same
+      # reason and the scene resumes it the moment it could start the scroll,
+      # which is the same frame when nothing else is scrolling. The scroll itself
+      # does not pause the list (games follow it with their own Wait).
+      def do_scroll_map(cmd)
+        @index += 1
+        @scroll_request = { direction: param(cmd, 0, 0).to_i,
+                            distance: param(cmd, 1, 0).to_i,
+                            speed: param(cmd, 2, 0).to_i }
+        @wait_kind = :scroll
+        @waiting = true
       end
 
       # Prepare for Transition (221): freeze the screen as it is now. RMXP's

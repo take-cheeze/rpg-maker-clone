@@ -8,8 +8,10 @@ Accepted — the data, script-host and boot checks run green on both the
 OpenGame.exe test bed and the packed *Pray for You* release; the wine comparison
 stays a manual/dev script, as in ADR 0021 / 0025.
 
-**Amended 2026-08-05: the picture layer, the message pause arrow and the screen
-effects (transitions, flash, shake) landed**, and
+**Amended 2026-08-05: the picture layer, the message pause arrow, the screen
+effects (transitions, flash, shake), Scroll Map and Show Animation landed** —
+leaving the map scene with a handler for every event command a real XP game uses
+except `355` (script) — and
 `scripts/compare-rpgxp-wine.bash` grew a `STEPS_SPEC` override so a game's
 opening cutscene can be driven instead of only its start map. See the follow-ups
 below for what that closed and what it did not.
@@ -160,9 +162,39 @@ screen). The rest is the windowskin background's shading.
   foreground interpreter freezes the screen: a background process is never
   suspended on a UI request, so its 222 would never dissolve the still and the
   screen would stay stuck on a snapshot for good.
-- Still no handler: `203` (scroll map), `207` (show animation) and `355`
-  (script). 207 needs the animation system; 355 needs a decision about what a
-  game's inline Ruby should be evaluated against.
+- **Scroll Map (203) and Show Animation (207) are done**, which leaves the map
+  scene with a handler for every command a real game uses except one. 203 is
+  carried as an offset on top of the follow camera (RMXP has no separate notion:
+  its `display_x`/`display_y` *is* the camera), clamped to the map the same way.
+  207 blits an animation's cells from the 192x192 grid of its sheet with each
+  cell's own offset, zoom, angle, mirror, opacity and blend, four game frames
+  per animation frame, and runs the per-frame timings' sound effect and flash.
+  Its leading tick is worth knowing about: RMXP's own index formula yields -1
+  there, so the genuine runtime shows the *last* frame for one game frame before
+  the animation starts — clamping to the first frame instead holds that one for
+  five ticks.
+- **`355` (script) is done, and the game itself settled the design question.**
+  What a script should be evaluated *against* looked open until the 23 blocks in
+  Pray for You were read: 22 assign globals of the game's own invention
+  (`$subtitle`, `$extra_cg[n]`, `$extra_flag`) that its bundled scripts read, and
+  one reads `$game_variables[1]` before dumping a save. So the source is
+  evaluated at the top level as RGSS does, `$game_switches` and
+  `$game_variables` are bound to the same state Control Switches / Control
+  Variables write, and nothing else is provided — a game needing the rest of
+  RMXP's object graph wants `RGSS_SCRIPT_HOST`, which exists to give it all of
+  them. The interpreter *queues* the source rather than evaluating it, for the
+  same reason the other effect commands are queued and one specific to this one:
+  `rpgxp_testbed_check.rb` drives the interpreter over real event lists under
+  CRuby, and a data check must not run a game's scripts — one of Pray for You's
+  writes a save file.
+- **That work turned up a bug in every effect command, not just this one.**
+  `Interpreter#stop` cleared each queued request, and it runs inside the same
+  `update` the scene drains afterwards — so a list ending in Exit Event
+  Processing (115), or stopped by a teleport, silently dropped the move routes,
+  tints, event locations, pictures, screen effects, animations and scripts the
+  commands before it had produced. They had already run; ending the list does
+  not un-run them. Only the Script command made it obvious, because its effect
+  is all-or-nothing.
 - **Driving the reference past the opening needs 32-bit GStreamer.** Pray for
   You's opening plays MP3 BGM, and `RGSS103J.dll` decodes it through
   winegstreamer; without `gstreamer1.0-plugins-base:i386` (and friends) in the
