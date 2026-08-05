@@ -814,6 +814,63 @@ assert "RGSS::Audio prefers a loose file over the archive" do
   end
 end
 
+assert "RGSS::Audio finds an upper-case extension on disk" do
+  # RPG Maker games were authored on Windows, whose filesystem does not
+  # distinguish `.MID` from `.mid`, so a released game mixes both spellings in
+  # one folder (Pray for You's Audio/BGM holds ten `.MID` beside eight `.mid`).
+  # A lower-case-only search made the upper-case half unplayable on a
+  # case-sensitive filesystem, reported as "no BGM found" for a file that is
+  # right there.
+  path = "test-upper-se.WAV"
+  File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
+  class << RGSS::Audio
+    alias _se_play_orig3 _se_play
+    def _se_play(p, v, pi)
+      $audio_se_capture = [p, v, pi]
+      nil
+    end
+  end
+  begin
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-upper-se")
+    assert_false $audio_se_capture.nil?, "the .WAV should have resolved"
+    assert_equal path, $audio_se_capture[0]
+  ensure
+    class << RGSS::Audio
+      alias _se_play _se_play_orig3
+    end
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Audio finds an upper-case extension in the archive" do
+  # The same for a packed release: an archive entry name is whatever the editor
+  # wrote, so it carries the same mixed-case extensions the disk tree does.
+  archive = FakeArchive.new({ "Audio/BGM/Theme2.MID" => "MThd-fixture" })
+  class << RGSS::Audio
+    alias _bgm_play_mem_orig2 _bgm_play_mem
+    alias _can_play_mem_orig2 _can_play_mem?
+    def _bgm_play_mem(name, bytes, volume, pitch)
+      $audio_mem_capture = [name, bytes, volume, pitch]
+      nil
+    end
+    def _can_play_mem? = true
+  end
+  RGSS.asset_archive = archive
+  begin
+    $audio_mem_capture = nil
+    RGSS::Audio.bgm_play("Theme2")
+    assert_false $audio_mem_capture.nil?, "the .MID entry should have resolved"
+    assert_equal "Audio/BGM/Theme2.MID", $audio_mem_capture[0]
+  ensure
+    RGSS.asset_archive = nil
+    class << RGSS::Audio
+      alias _bgm_play_mem _bgm_play_mem_orig2
+      alias _can_play_mem? _can_play_mem_orig2
+    end
+  end
+end
+
 assert "RGSS::Audio says so when it cannot play packed audio" do
   # A build with no audio backend must not swallow the play silently: the
   # loader reports it once through warn_stub. Checked by observing that the

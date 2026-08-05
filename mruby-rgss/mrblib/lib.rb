@@ -774,6 +774,21 @@ module RGSS
     SOUND_DIRS = ["", "Sound", "Audio/SE"].freeze
     # Tried in order after the name as-is; the data usually omits the extension.
     EXTS = ["", ".ogg", ".wav", ".mid", ".midi", ".mp3", ".flac"].freeze
+    # Every spelling of those to actually try: each one, then its upper-case
+    # form. RPG Maker games were authored on Windows, whose filesystem does not
+    # distinguish the two, so a released game mixes them freely inside a single
+    # folder -- Pray for You's Audio/BGM holds ten `.MID` beside eight `.mid`,
+    # and on a case-sensitive filesystem the upper-case ten resolved to nothing
+    # ("Audio: no BGM found for ..." on a file that is right there).
+    EXT_SPELLINGS = begin
+      list = []
+      EXTS.each do |e|
+        list << e
+        up = e.upcase
+        list << up unless up == e
+      end
+      list.freeze
+    end
 
     # The archive sub-folders each kind of audio lives in, for a packed release.
     # Unlike the disk search these are exact: an archive entry name is whatever
@@ -911,7 +926,7 @@ module RGSS
       def find_packed(archive, kind, filename)
         ARCHIVE_DIRS[kind].each do |dir|
           base = dir.empty? ? filename : "#{dir}/#{filename}"
-          EXTS.each do |ext|
+          EXT_SPELLINGS.each do |ext|
             cand = "#{base}#{ext}"
             bytes = archive.read(cand)
             return [cand, bytes] if bytes
@@ -947,7 +962,7 @@ module RGSS
       # First of +base+ with each known extension appended that exists on disk
       # (also trying the decomposed NFD form), or nil.
       def exist_with_ext(base)
-        EXTS.each do |ext|
+        EXT_SPELLINGS.each do |ext|
           cand = "#{base}#{ext}"
           return cand if File.exist?(cand)
           nfd = RGSS.to_nfd(cand)

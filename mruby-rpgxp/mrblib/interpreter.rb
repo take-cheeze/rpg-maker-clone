@@ -97,6 +97,7 @@ class RPGXP
       CHANGE_EQUIP    = 319
       TRANSFER_PLAYER = 201
       MOVE_ROUTE      = 209
+      WAIT_FOR_MOVE   = 210
       TINT_SCREEN     = 223
       PLAY_BGM        = 241
       PLAY_BGS        = 245
@@ -307,6 +308,7 @@ class RPGXP
         when CHANGE_EQUIP    then do_change_equipment(cmd)
         when TRANSFER_PLAYER then do_transfer(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
+        when WAIT_FOR_MOVE   then do_wait_for_move(cmd)
         when TINT_SCREEN     then do_tint_screen(cmd)
         when BATTLE_PROCESS  then do_battle_process(cmd)
         when IF_WIN, IF_ESCAPE, IF_LOSE then skip_past_battle(cmd) # fell through a branch
@@ -814,6 +816,17 @@ class RPGXP
           end
         return if resolved.nil?
         @move_route_requests << { target: resolved, route: route }
+      end
+
+      # Wait for Move's Completion (210): suspend until every forced route this
+      # event queued has finished walking. RMXP's `command_210` spins while any
+      # character still has `move_route_forcing` set; the scene owns the routes,
+      # so it is the one that answers and calls `resume`. Without this the list
+      # ran straight on -- an event said its line before it had walked over.
+      def do_wait_for_move(_cmd)
+        @wait_kind = :move_completion
+        @waiting = true
+        @index += 1
       end
 
       # Change Screen Color Tone (223): [RPG::Tone, duration in frames]. Like

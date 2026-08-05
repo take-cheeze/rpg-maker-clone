@@ -891,6 +891,7 @@ class RPGXP
           when :number   then open_number_input(@interpreter.input_digits)
           when :wait     then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
+          when :move_completion then drive_move_completion
           end
         else
           @interpreter.update
@@ -941,6 +942,51 @@ class RPGXP
         else
           @wait_timer -= 1
         end
+      end
+
+      # Wait for Move's Completion (210): hold the interpreter until no forced
+      # route is walking any more. `step_events` refuses to move anything while
+      # an event process is running (that is what keeps the map still during a
+      # message), so the routes have to be driven here -- the interpreter is
+      # suspended *on* them, which is the one case RMXP keeps forcing characters
+      # along for too.
+      #
+      # A *repeating* forced route never completes, so a game that waits on one
+      # would hang here (it hangs in RMXP too). Rather than freeze -- headlessly,
+      # with no way to tell -- the wait is bounded and says why it gave up.
+      MOVE_COMPLETION_TIMEOUT = 600 # frames
+
+      def drive_move_completion
+        step_forced_routes
+        if forced_routes_running?
+          @move_wait_frames = (@move_wait_frames || 0) + 1
+          return if @move_wait_frames <= MOVE_COMPLETION_TIMEOUT
+          $stderr.puts "[RGSS] Wait for Move's Completion gave up after " \
+                       "#{MOVE_COMPLETION_TIMEOUT} frames; a forced route is " \
+                       "still running (a repeating route never completes)"
+        end
+        @move_wait_frames = nil
+        @interpreter.resume
+      end
+
+      def forced_routes_running?
+        return true if @player_route
+        !(@forced_routes.nil? || @forced_routes.empty?)
+      end
+
+      # Advance only the forced routes, past the "an event is running" hold.
+      def step_forced_routes
+        step_player_route
+        @events.each do |_id, e|
+          ch = e[:char]
+          next unless ch
+          ch.update
+          forced = @forced_routes[e[:id]]
+          next if forced.nil? || ch.moving?
+          step_forced_event(e, ch, forced)
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] forced route step failed: #{e.message}"
       end
 
       # Advance every background parallel process one frame. They honour Wait but
@@ -1012,6 +1058,7 @@ class RPGXP
         @erased = {} # erased events reappear on a fresh map
         @player_route = nil
         @player_char = nil
+        @move_wait_frames = nil
         build_events
         build_parallels
       rescue StandardError => e

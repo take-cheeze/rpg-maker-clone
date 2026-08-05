@@ -814,6 +814,24 @@ assert "Interpreter: set move route resolves the target" do
   assert_true it4.take_move_route_requests.empty?
 end
 
+assert "Interpreter: wait for move's completion suspends the list" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(209, [-1, move_route([mv(1)])], 0), # Set Move Route -> player
+    cmd(210, [], 0),                        # Wait for Move's Completion
+    cmd(121, [5, 5, 0], 0)                  # must NOT run until the route ends
+  ], 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal :move_completion, it.wait_kind
+  assert_false s.switches[5]
+  # The scene resumes it once no forced route is walking.
+  it.resume
+  assert_false it.waiting?
+  assert_true s.switches[5]
+end
+
 assert "Interpreter: change screen tone queues a request without pausing" do
   s = new_state
   tone = Tone.new(-68, -68, 0, 0)
