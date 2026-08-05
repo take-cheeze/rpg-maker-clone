@@ -1,14 +1,13 @@
-- MZ (M6.3c): the off-screen EGL/GLES2 backend now pins itself to the
-  pure-software surfaceless path and cuts off any route to an X server while it
-  binds, so RPG Maker MZ can boot in the native binary under Xvfb.
-  `Utils.canUseWebGL()` had returned false there: with `DISPLAY` set (the binary
-  runs under `xvfb-run`), Mesa dispatched even a surfaceless `eglMakeCurrent`
-  through GLX to the X server, which denied it (`X BadAccess` on
-  `X_GLXMakeCurrent`) — while the headless `gl_test`, running the identical code
-  with no X server at all, binds cleanly. Around each EGL call the backend now
-  unsets `DISPLAY` and `XAUTHORITY` and forces `EGL_PLATFORM=surfaceless` /
-  `GALLIUM_DRIVER=llvmpipe` / `LIBGL_ALWAYS_SOFTWARE=1`, reproducing that
-  headless environment; the surfaceless bind (with a 1×1-pbuffer and explicit
-  software-device fallback) then succeeds off-screen into an FBO. The backend
-  stays lazy — only a WebGL `getContext` triggers it — so non-WebGL games (the
-  RPG2k `exe_open` smoke) never touch GL.
+- MZ (M6.3c): the MZ boot smoke now runs with **no X server** — SDL's headless
+  `dummy` video driver and a scrubbed `DISPLAY`/`XAUTHORITY` instead of Xvfb — so
+  RPG Maker MZ boots to `Scene_Boot` through the off-screen WebGL backend.
+  `Utils.canUseWebGL()` had returned false under Xvfb because, whenever an X
+  server is reachable, Mesa dispatches even a surfaceless `eglMakeCurrent`
+  through GLX to it and is denied (`X BadAccess` on `X_GLXMakeCurrent`) — while
+  the headless `gl_test`, running the identical code with no X server, binds
+  cleanly. With no X server the engine's renderer (surfaceless EGL over llvmpipe
+  into an FBO) takes the same pure-software path and binds. The MZ probe never
+  needs a visible window, so the `dummy` driver (which still satisfies LVGL's
+  window requirement) is enough; `exe_open` and the other native smokes are
+  unchanged (they keep using Xvfb). The backend also pins itself to software and
+  hides `DISPLAY` around each EGL call (`ScopedSoftwareEGL`) as belt-and-braces.

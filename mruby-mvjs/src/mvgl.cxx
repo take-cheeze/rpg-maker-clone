@@ -64,18 +64,19 @@ void warn(const char* what, const char* detail) {
                detail ? detail : "");
 }
 
-// Pin EGL/GLES to the pure-software surfaceless path and cut off every route to
-// an X server for the duration of an EGL call, restoring the environment after.
-// Our GL is entirely off-screen (surfaceless llvmpipe + an FBO) and must never
-// touch the window system — but under Xvfb Mesa otherwise dispatches even a
-// surfaceless `eglMakeCurrent` through GLX to the X server, which denies it
-// with a fatal `X BadAccess` on `X_GLXMakeCurrent` (hiding DISPLAY alone did
-// not stop this: Mesa still reached X). Unsetting DISPLAY *and* XAUTHORITY
-// removes the route to X, and EGL_PLATFORM/GALLIUM_DRIVER/LIBGL_ALWAYS_SOFTWARE
-// pin the software surfaceless path — together reproducing the headless gl_test
-// environment (no display), where the identical code binds cleanly. Safe:
-// nothing else in the process uses EGL/GLX (LVGL's SDL backend is the software
-// renderer), and every variable is restored the moment the EGL call returns.
+// Pin EGL/GLES to the pure-software surfaceless path for the duration of an EGL
+// call, restoring the environment after. Our GL is entirely off-screen
+// (surfaceless llvmpipe + an FBO) and never needs the window system, so this
+// forces `EGL_PLATFORM=surfaceless` / `GALLIUM_DRIVER=llvmpipe` /
+// `LIBGL_ALWAYS_SOFTWARE=1` and hides `DISPLAY`/`XAUTHORITY`. NOTE this is
+// belt-and-braces, not a guarantee of no-X: when an X server is actually
+// reachable, Mesa still dispatches even a surfaceless `eglMakeCurrent` through
+// GLX and is denied (`X BadAccess` on `X_GLXMakeCurrent`) — hiding the env
+// alone does not stop it. The real off-screen guarantee comes from running with
+// no X server at all (the headless `gl_test`, and the MZ boot smoke via SDL's
+// `dummy` video driver), which is where this binds cleanly. Safe: nothing else
+// in the process uses EGL/GLX (LVGL's SDL backend is the software renderer),
+// and every variable is restored the moment the EGL call returns.
 class ScopedSoftwareEGL {
  public:
   ScopedSoftwareEGL() {

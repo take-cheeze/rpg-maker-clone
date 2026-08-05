@@ -40,9 +40,16 @@ fi
 
 log="$(mktemp)"
 echo "== ${GAME}"
-# A fixed, distinct display number (never `xvfb-run -a`, whose probe is not
-# atomic and can steal a display from a concurrent run — see build.yml).
-if ! xvfb-run --server-num="${SERVER_NUM}" timeout 180 "${ENGINE}" \
+# Run with NO X server reachable: SDL's headless "dummy" video driver instead of
+# Xvfb, and DISPLAY/XAUTHORITY scrubbed. MZ's renderer is off-screen (surfaceless
+# EGL + an FBO), but whenever an X server is present Mesa dispatches even a
+# surfaceless eglMakeCurrent through GLX to it and is denied (X BadAccess on
+# X_GLXMakeCurrent) — which is why booting under Xvfb failed while the headless
+# gl_test (no X) binds cleanly. With no X, Mesa uses the pure-software surfaceless
+# path and MZ boots. The SERVER_NUM arg is kept for compatibility but unused.
+# (LVGL v9.5 requires a window; the dummy driver provides one without a display.)
+if ! env -u DISPLAY -u XAUTHORITY SDL_VIDEODRIVER=dummy \
+        timeout 180 "${ENGINE}" \
         --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
     echo "FAILED: ${GAME}: the engine exited non-zero" >&2
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -60 || true
