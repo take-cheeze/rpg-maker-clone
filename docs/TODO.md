@@ -380,10 +380,14 @@ The work below is roughly ordered by the critical path to a walkable game
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
   are matched against the target's per-attribute defence ranks (A..E → 200 / 150
   / 100 / 50 / 0 percent, strongest element winning), so a foe is hurt more by a
-  weakness and can fully nullify an element it is immune to. Still to come:
-  enemy-cast infliction, all-target skill/item scopes, per-attribute rate
-  overrides from the Attribute table, the per-terrain backdrop and the RPG2000
-  Game Over graphic.
+  weakness and can fully nullify an element it is immune to. The party can also
+  **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
+  (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
+  gets away, and a failed attempt forfeits the party's round (every member
+  skips, the enemies still act) while raising the next try by 10 points. Still
+  to come: enemy-cast infliction, all-target skill/item scopes, per-attribute
+  rate overrides from the Attribute table, the per-terrain backdrop and the
+  RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
