@@ -67,6 +67,12 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
+      # Serialise store access for the concurrent `nix develop` steps below.
+      # Must come before every nix command in the job, the warm-up included,
+      # since it is what exports NIX_REMOTE for the steps that follow.
+      - name: Start nix-daemon
+        run: ./scripts/start-nix-daemon.bash
+
       - run: nix develop -c echo test
 
       - name: cache rtp
@@ -514,6 +520,12 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      # As in the `build` job, and for the same reason: this job fans out into
+      # concurrent `nix develop` steps, so give them a daemon to serialise
+      # against. Before the warm-up, which is itself a nix command.
+      - name: Start nix-daemon
+        run: ./scripts/start-nix-daemon.bash
 
       # Realise the dev shell up front, exactly as the `build` job does. This
       # job fans out into concurrent `nix develop` steps below, and building the
