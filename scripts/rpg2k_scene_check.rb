@@ -1283,6 +1283,19 @@ check 'Recall to Location teleports the player to the stored position' do
   eq 1, st.map_id, 'on the recalled map'
 end
 
+check 'a teleport lands the party facing the direction it asked for' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # RPG2003's facing argument: 1 = up, which the runtime speaks as numpad 8.
+  auto.event_commands = [ECmd.new(ic::TELEPORT, [1, 4, 3, 1])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # facing down to start with
+  20.times { scene.update }
+  eq [4, 3], [st.x, st.y], 'arrived at the destination'
+  eq 8, st.direction, 'and turned to face up'
+end
+
 check 'a teleport clears every shown picture' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

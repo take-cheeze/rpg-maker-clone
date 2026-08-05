@@ -2041,10 +2041,28 @@ module Game
 
     # -- UI / map requests ----------------------------------------------------
 
+    # Teleport (10810): move the party to map param0 at (param1, param2).
+    #
+    # param3 is an **RPG2003** addition: the facing to arrive in, 1-based over
+    # the editor's up / right / down / left, with 0 meaning "keep the current
+    # one". It is not the runtime's 2/4/6/8 numpad direction, and passing it
+    # through raw set two of the four values to numbers that are not directions
+    # at all (1 and 3, which no delta or charset row matches) and a third to the
+    # wrong one — only "left" happened to line up. An RPG2000 project writes 0
+    # here, so converting unconditionally is the same as EasyRPG's
+    # `IsRPG2k3Commands` guard for the games that can emit it.
     def do_teleport(cmd)
-      @teleport = [cmd.param(0), cmd.param(1), cmd.param(2), cmd.param(3)]
+      @teleport = [cmd.param(0), cmd.param(1), cmd.param(2),
+                   teleport_facing(cmd.param(3))]
       @wait_kind = :teleport
       @waiting = true
+    end
+
+    # The numpad facing a Teleport's 1-based direction argument names, or 0 for
+    # "keep the current facing" (which is what an out-of-range value means too).
+    def teleport_facing(param)
+      return 0 unless param && param >= 1 && param <= FACING_NUMPAD.size
+      FACING_NUMPAD[param - 1]
     end
 
     # Memorize Location: store the player's current map id, x and y into the

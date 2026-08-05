@@ -1667,6 +1667,35 @@ check 'Recall to Location issues a teleport from the stored variables' do
   eq [3, 6, 2, 0], it.teleport # keeps the current facing (direction 0)
 end
 
+check 'Teleport converts its RPG2003 facing argument to a numpad direction' do
+  # param3 is 1-based over the editor's up / right / down / left; the runtime
+  # (and Game::State#direction) speak the 2/4/6/8 numpad. Passing it through
+  # raw made 1 and 3 into numbers that are not directions at all.
+  { 1 => 8, 2 => 6, 3 => 2, 4 => 4 }.each do |param, numpad|
+    st = new_state
+    it = Game::Interpreter.new(st)
+    it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, param])])
+    it.update
+    eq [5, 3, 9, numpad], it.teleport, "facing argument #{param}"
+  end
+end
+
+check 'Teleport with no facing argument keeps the current one' do
+  # 0 is what an RPG2000 project writes — the edition that has no such argument.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 0])])
+  it.update
+  eq [5, 3, 9, 0], it.teleport, 'nothing to face, so the scene leaves it alone'
+
+  # An out-of-range value means the same rather than an invalid direction.
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 9])])
+  it2.update
+  eq [5, 3, 9, 0], it2.teleport
+end
+
 # -- Store Terrain ID / Store Event ID ---------------------------------------
 
 # A map_info hook: terrain id is x*10+y, and an event id 7 sits at (2, 3) facing
