@@ -3706,6 +3706,39 @@ check 'without variance a seeded fight deals exactly the base damage' do
   eq 20, bat.step_action[:damage]                    # exact base, unaffected
 end
 
+check 'battle: a critical hit triples the damage when the fight rolls one' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_denom = 1                                # 1-in-1 -> always crits
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  # 6-arg: variance off, criticals on.
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
+  bat.begin_round
+  e = bat.step_action
+  eq 60, e[:damage]                                  # base 20 * 3
+  eq true, e[:critical]
+end
+
+check 'battle: no critical when the fight has criticals off' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_denom = 1                                # would always crit, but...
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))  # 3-arg: crit off
+  bat.begin_round
+  e = bat.step_action
+  eq 20, e[:damage]
+  ok !e[:critical]
+end
+
+check 'battle: a zero crit_denom never criticals even with criticals on' do
+  hero = combatant('Hero', 40, 0, 20, 100)           # crit_denom nil -> never
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
+  bat.begin_round
+  e = bat.step_action
+  eq 20, e[:damage]
+  ok !e[:critical]
+end
+
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
                              mrate: 40, variance: 4) }

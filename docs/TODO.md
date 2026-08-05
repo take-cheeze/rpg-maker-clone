@@ -361,9 +361,11 @@ The work below is roughly ordered by the critical path to a walkable game
   member of its own side. Basic attacks **and attack skills** apply RPG2000's
   **damage variance** (a `var` of 4 for attacks, each skill's own `variance` for
   skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
-  off for seeded / headless fights. Still to come: enemy-cast infliction,
-  criticals / attributes, all-target skill/item scopes, the per-terrain backdrop
-  and the RPG2000 Game Over graphic.
+  off for seeded / headless fights. A basic attack can land a **3x critical hit**
+  at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
+  `critical_hit_chance`); no crit on a same-side hit. Still to come: enemy-cast
+  infliction, elemental attributes, `prevent_critical` gear, all-target skill/item
+  scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
