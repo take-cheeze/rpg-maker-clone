@@ -1003,15 +1003,22 @@ end
 
 assert "RGSS::Window RGSS2/RGSS3 API surface" do
   # Window.new needs a live display (see the Tilemap note below), so assert the
-  # VX/VX Ace surface is defined; the behaviour of these accessors is exercised
-  # by the VX runtime checks (scripts/rpgvx_testbed_check.rb). The dual-form
-  # constructor (RGSS1's optional viewport / RGSS2's x, y, width, height) needs
-  # no assertion here: it aliases the native initialize at load, so a broken
-  # alias would fail the whole gem, not one test.
+  # VX/VX Ace surface is defined; what these accessors actually *draw* is
+  # measured on a real display by RGSS.window_probe (the render_probe ctest).
+  # The dual-form constructor (RGSS1's optional viewport / RGSS2's x, y, width,
+  # height) needs no assertion here: it aliases the native initialize at load, so
+  # a broken alias would fail the whole gem, not one test.
   %i[openness openness= open? close? padding padding= padding_bottom
      padding_bottom= arrows_visible arrows_visible= tone tone=].each do |m|
     assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"
   end
+  # `openness=`, `tone` and `tone=` must stay native: each redraws, and a
+  # plain-Ruby accessor would store the value and animate nothing. mrblib loads
+  # after the C init, so re-adding one there silently shadows the native and the
+  # window stops opening. That cannot be told apart from here — this mruby has no
+  # instance_method/source_location to ask with — so the guard is
+  # RGSS.window_probe, which measures the area the window covers at three
+  # openness values and fails if it does not change.
 end
 
 assert "RGSS::Viewport RGSS2/RGSS3 screen-effect surface" do

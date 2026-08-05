@@ -926,10 +926,21 @@ screen (544×416). Full rationale:
     the `render_probe` ctest under xvfb (display 98) and needs no game. Verified
     to have teeth by neutering `vp_refresh_overlay` and the transition in turn —
     each broke exactly the assertion it should.
-  - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: `Viewport#tone` on `Window` contents (a different composite
-    path; RGSS keeps windows in their own viewport, so a map tint does not tint
-    the message window anyway), the window open/close animation, and
+  - ✅ **`Window#openness` and `Window#tone`** — the VX open/close animation and
+    the windowskin tint. The window unrolls from its horizontal centre line: the
+    frame is composited at `height * openness / 255` and shifted down by half of
+    what it lost, with the 9-slice's corner height clamped to half the drawn
+    height so a part-open window keeps a frame; contents, cursor and pause arrow
+    stay hidden until it is fully open. The tone goes on the *background* only —
+    applied right after the background tile and before anything on top — through
+    the shared `apply_tone_px`, and is re-checked from `#update` because the
+    scripts mutate the Tone in place. Both native, and deliberately not
+    redefined in mrblib (which loads after the C init and would shadow them).
+    Measured by `RGSS.window_probe`: `drawn=[0,0,86] half=[0,0,43]
+    closed=[0,0,0] toned=[86,0,86]`.
+  - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
+    contents (a different composite path; RGSS keeps windows in their own
+    viewport, so a map tint does not tint the message window anyway) and
     `Bitmap#blur`/`#radial_blur`.
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
