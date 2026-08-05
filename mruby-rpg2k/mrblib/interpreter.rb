@@ -1235,13 +1235,14 @@ module Game
     def other_operand(cmd)
       case cmd.param(5)
       when 0 then party.gold
-      when 1 then @state.timer_seconds
+      when 1 then @state.timer(0).seconds
       when 2 then party.actors.size
       when 3 then @state.save_count
       when 4 then @state.battle_count
       when 5 then @state.win_count
       when 6 then @state.defeat_count
       when 7 then @state.escape_count
+      when 9 then @state.timer(1).seconds # RPG2003's second timer
       else 0
       end
     end
@@ -1261,15 +1262,18 @@ module Game
     # Timer: op 0 set (seconds), 1 start, 2 stop. Start carries the RPG2000
     # "show timer" flag in param 3 (param 4 is the run-in-battle flag, unused
     # here); stopping freezes the display but leaves it shown.
+    # Timer Operation (10230). param0 is the operation (0 set, 1 start,
+    # 2 stop); a set reads its seconds from param2, as a constant or through
+    # param1 == 1 as a variable; a start carries the "show the timer" flag in
+    # param3 and the "keep running in battle" flag in param4. param5 selects
+    # *which* timer — RPG2003 has a second one, and RPG2000 data simply never
+    # carries that parameter, so it reads 0 and addresses the only timer there.
     def do_timer(cmd)
+      t = @state.timer(cmd.param(5))
       case cmd.param(0)
-      when 0
-        sec = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
-        @state.timer_frames = sec * 60
-      when 1
-        @state.timer_running = true
-        @state.timer_visible = cmd.param(3) != 0
-      when 2 then @state.timer_running = false
+      when 0 then t.set(cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)])
+      when 1 then t.start(cmd.param(3) != 0, cmd.param(4) != 0)
+      when 2 then t.stop
       end
     end
 
@@ -1817,8 +1821,7 @@ module Game
         rhs = cmd.param(2) == 0 ? cmd.param(3) : variables[cmd.param(3)]
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
       when 2 # timer: param1 seconds, param2 comparison (0 >=, 1 <=)
-        cmd.param(2) == 0 ? @state.timer_seconds >= cmd.param(1) \
-                          : @state.timer_seconds <= cmd.param(1)
+        timer_condition(cmd, 0)
       when 3 # gold: param1 amount, param2 comparison (0 >=, 1 <=)
         cmd.param(2) == 0 ? party.gold >= cmd.param(1) : party.gold <= cmd.param(1)
       when 4 # item: param1 id, param2 (0 has / 1 not)
@@ -1838,8 +1841,18 @@ module Game
         @triggered_by_decision_key ? true : false
       when 9 # the BGM has played through at least once
         @state.bgm_looped ? true : false
+      when 10 # RPG2003's second timer, laid out exactly like type 2
+        timer_condition(cmd, 1)
       else true
       end
+    end
+
+    # The timer conditions (type 2 the first timer, type 10 RPG2003's second):
+    # param1 is the seconds to compare against and param2 the comparison
+    # (0 "at least", 1 "at most").
+    def timer_condition(cmd, id)
+      secs = @state.timer(id).seconds
+      cmd.param(2) == 0 ? secs >= cmd.param(1) : secs <= cmd.param(1)
     end
 
     # Orientation directions (0 up / 1 right / 2 down / 3 left) mapped to the

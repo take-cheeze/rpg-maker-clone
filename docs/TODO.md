@@ -542,10 +542,22 @@ The work below is roughly ordered by the critical path to a walkable game
   the message/choice UI (those requests are skipped) — full parallel UI is a
   later refinement
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
-  `Game::State` countdown) and is now **drawn**: the start operation's
-  "show timer" flag sets a `timer_visible` state (persisted in the save), and
-  while set `Scene::Map` shows a small top-centre window counting down as
-  `M:SS`, independent of whether the timer is still running. The **Tint Screen**
+  `Game::Timer`) and is **drawn**: the start operation's "show timer" flag makes
+  `Scene::Map` show a small window counting down as `M:SS`. There are **two**
+  timers — RPG2003 adds a second, selected by the command's sixth parameter, read
+  back by Control Variables selector 9 and by Conditional Branch type 10, and
+  drawn in its own window to the right of the first (RPG_RT parks the pair at the
+  screen's left and right edges as digit sprites off the System graphic; drawing
+  them that way is a rendering-parity job of its own). The start operation's
+  second flag — **keep running in battle** — is honoured: without it a timer
+  pauses *and* hides for the duration of a fight rather than being stopped. Two
+  RPG_RT details this used to get wrong are fixed from EasyRPG's
+  `Game_Party` timer block: **set** seeds `seconds * 60 + 59` (so a freshly-set
+  timer holds the number it was given for a whole second instead of dropping one
+  after a single frame), and **stop hides it** — the countdown reaching zero goes
+  through that same stop, which is how a finished timer leaves the screen instead
+  of sitting at `0:00`. Both timers persist in the save, and a save written
+  before the second one existed still loads. The **Tint Screen**
   (11030) command now drives a
   `Game::Screen` tint state machine on `Game::State`: it interpolates the four
   RPG2000 channels (red/green/blue/saturation, 0..200) toward their target over

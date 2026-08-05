@@ -1965,12 +1965,13 @@ check 'the timer window shows M:SS while visible and hides when never shown' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
   scene.update
-  ok scene.instance_variable_get(:@timer_window).nil?, 'no window until shown'
+  eq [nil, nil], scene.instance_variable_get(:@timer_windows),
+     'no window until shown'
   # Show a 75 s timer (Start with the show flag on).
   st.timer_frames = 75 * 60
   st.timer_visible = true
   scene.update
-  win = scene.instance_variable_get(:@timer_window)
+  win = scene.instance_variable_get(:@timer_windows)[0]
   ok win, 'the window is built on first display'
   ok win.visible, 'and shown'
   eq '1:15', win.contents.draw_calls.last[4], 'it draws the M:SS text'
@@ -1978,6 +1979,40 @@ check 'the timer window shows M:SS while visible and hides when never shown' do
   st.timer_visible = false
   scene.update
   ok !win.visible, 'clearing visibility hides the timer window'
+end
+
+check "RPG2003's second timer draws in its own window" do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  st.timer(1).set(30)
+  st.timer(1).start(true)
+  scene.update
+  wins = scene.instance_variable_get(:@timer_windows)
+  eq nil, wins[0], 'the first timer was never shown, so has no window'
+  ok wins[1], 'the second one does'
+  eq '0:30', wins[1].contents.draw_calls.last[4]
+  ok wins[1].x > (RPG2k::Scene::Map::SCREEN_W / 2),
+     'and sits to the right of the first, the way RPG_RT parks it'
+end
+
+check 'a timer without the battle flag pauses and hides for the fight' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).set(30)
+  st.timer(0).start(true, false)  # visible, but not during battle
+  scene.update
+  ok scene.instance_variable_get(:@timer_windows)[0].visible
+
+  frames = st.timer(0).frames
+  scene.instance_variable_set(:@battle_ui, { phase: :command })
+  scene.update
+  eq frames, st.timer(0).frames, 'it stopped counting for the fight'
+  ok !scene.instance_variable_get(:@timer_windows)[0].visible, 'and is hidden'
+
+  st.timer(0).in_battle = true
+  scene.update
+  ok st.timer(0).frames < frames, 'with the battle flag it keeps counting'
+  ok scene.instance_variable_get(:@timer_windows)[0].visible, 'and drawing'
 end
 
 check 'boarding plays the vehicle BGM; disembarking restores the map BGM' do

@@ -482,8 +482,9 @@ class RPG2k
         @wait_timer = nil
         @anim_wait = nil
         @map_animation = nil
-        @timer_window = nil
-        @timer_text = nil
+        # One window per timer (RPG2003 has two); built lazily when first shown.
+        @timer_windows = [nil, nil]
+        @timer_texts = [nil, nil]
         @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -523,7 +524,7 @@ class RPG2k
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
-        @timer_window.dispose if @timer_window
+        (@timer_windows || []).each { |w| w.dispose if w }
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
         @flash_buffer.dispose if @flash_buffer
@@ -533,7 +534,10 @@ class RPG2k
       end
 
       def update
-        @state.tick_timer # the timer keeps counting during events too
+        # The timers keep counting during events too. A fight is running when the
+        # battle UI is up, and a timer without the "run in battle" flag pauses
+        # (and hides) for its duration rather than being stopped.
+        @state.tick_timer(!@battle_ui.nil?)
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
@@ -4209,32 +4213,48 @@ class RPG2k
       TIMER_INNER_W = 40
       TIMER_INNER_H = 16
 
+      # Both timers are drawn the same way; RPG_RT puts the first at the screen's
+      # left edge and the second at its right, so the two are laid out that way
+      # here too (drawing them as digit sprites off the System graphic, the way
+      # RPG_RT actually does, is a rendering-parity job of its own).
       def draw_timer
-        unless @state.timer_visible
-          @timer_window.visible = false if @timer_window
+        battle = !@battle_ui.nil?
+        @timer_windows ||= [nil, nil]
+        @timer_texts ||= [nil, nil]
+        2.times { |id| draw_one_timer(id, battle) }
+      end
+
+      def draw_one_timer(id, battle)
+        timer = @state.timer(id)
+        unless timer.drawn?(battle)
+          w = @timer_windows[id]
+          w.visible = false if w
           return
         end
-        build_timer_window unless @timer_window
-        @timer_window.visible = true
-        text = @state.timer_display_text
-        return if text == @timer_text
+        @timer_windows[id] ||= build_timer_window(id)
+        win = @timer_windows[id]
+        win.visible = true
+        text = timer.display_text
+        return if text == @timer_texts[id]
 
-        @timer_text = text
-        c = @timer_window.contents
+        @timer_texts[id] = text
+        c = win.contents
         c.clear
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, c.height, text, 1 # centre-aligned
       end
 
-      def build_timer_window
+      def build_timer_window(id)
         ow = TIMER_INNER_W + Window::BORDER * 2
         oh = TIMER_INNER_H + Window::BORDER * 2
-        win = Window.new((SCREEN_W - ow) / 2, 4, ow, oh)
+        # Timer 1 sits left of centre and timer 2 right of it, mirroring the
+        # edges RPG_RT parks them at while keeping this build's centred window.
+        x = id == 0 ? (SCREEN_W - ow) / 2 : SCREEN_W - ow - 4
+        win = Window.new(x, 4, ow, oh)
         win.z = 250 # above the map, below the message / menu windows (z 300+)
         win.windowskin = @windowskin
         win.contents = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H)
-        @timer_window = win
-        @timer_text = nil
+        win
       end
 
       # Position and draw each vehicle placed on the current map. A parked vehicle
