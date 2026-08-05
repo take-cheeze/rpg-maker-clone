@@ -1850,14 +1850,25 @@ module Game
       @gold = 999_999 if @gold > 999_999
     end
 
-    # RPG2000 database item types. Types 1..5 are the equipment slots (see
-    # Actor::EQUIP_ORDER); 6 is a healing medicine (薬); 7 is a skill book (本)
-    # that teaches a skill; 8 is a seed (種) that permanently raises a stat;
-    # 9 is a switch item (スイッチ) that turns on a game switch when used.
+    # RPG2000 database item types (liblcf's `RPG::Item::Type`). Types 1..5 are the
+    # equipment slots (see Actor::EQUIP_ORDER); 6 is a healing medicine (薬);
+    # 7 is a skill book (本) that teaches a skill; 8 is a seed (種, 素材) that
+    # permanently raises a stat; **9 is a special item (特殊) that invokes a
+    # skill** and **10 is a switch item (スイッチ)** that turns on a game switch.
+    #
+    # Those last two used to be numbered one lower, which put every one of them
+    # on the wrong branch. Nepheshel settles it from the bytes: its 14 type-9
+    # items each carry a *distinct* `skill_id` naming a skill of the same name
+    # (item 天使の翼 → skill 天使の翼, 火炎玉 → 火炎玉) with `switch_id` left at
+    # the default 1, while its 41 type-10 items are the mirror image — 41 distinct
+    # `switch_id`s and `skill_id` left at the default. Reading 9 as "switch" made
+    # the 14 special items flip switch **1** (the default they never set) and left
+    # the 41 real switch items unrecognised, so they never appeared in the bag.
     ITEM_MEDICINE = 6
     ITEM_SKILL_BOOK = 7
     ITEM_SEED = 8
-    ITEM_SWITCH = 9
+    ITEM_SPECIAL = 9
+    ITEM_SWITCH = 10
 
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
@@ -1870,20 +1881,51 @@ module Game
     # medicine or switch item the party holds whose "usable in field" occasion is
     # set (a battle-only medicine is hidden here, mirroring #battle_usable?), or a
     # skill book / seed (always field-only, no occasion to gate on).
+    #
+    # A **special** item defers to the skill it invokes, as RPG_RT does
+    # (`Game_Party::IsItemUsable` hands a Type_special straight to
+    # `IsSkillUsable`): the item's own occasion flags say nothing useful about a
+    # thrown bomb. That is what keeps Nepheshel's 火炎玉 out of the field menu —
+    # its skill targets an enemy — while 天使の翼, whose skill targets an ally,
+    # stays in.
     def field_usable?(id)
       it = db_item(id)
       return false unless it && item_count(id) > 0
       case it.type
-      when ITEM_MEDICINE, ITEM_SWITCH then field_item_occasion?(it)
-      when ITEM_SKILL_BOOK, ITEM_SEED then true
+      when ITEM_MEDICINE, ITEM_SKILL_BOOK, ITEM_SEED then true
+      when ITEM_SWITCH then item_field_occasion?(it)
+      when ITEM_SPECIAL then field_skill?(db_skill(it.skill_id))
       else false
       end
     end
 
-    # Whether item `it` may be used from the field menu. Defaults to usable when
-    # the row (a bare fixture) carries no `occasion_field` flag.
-    def field_item_occasion?(it)
-      it.respond_to?(:occasion_field) ? it.occasion_field : true
+    # An item's occasion flags, read by the **field name the format actually
+    # uses**. RPG2000 gives an item three of them and they are not
+    # interchangeable (EasyRPG's `Game_Party::IsItemUsable`):
+    #
+    #   occasion_field1 (37) — set means "field only", i.e. **bars battle use**;
+    #                          it is what gates a medicine in a fight.
+    #   occasion_field2 (57) — a **switch** item's field flag.
+    #   occasion_battle (58) — a **switch** item's battle flag.
+    #
+    # This build used to ask every item for `occasion_field`, which is not a
+    # field either real row has — so the lookup fell through to its "no flag,
+    # assume usable" default on every genuine item and the gate never once fired.
+    # Only hand-built fixtures, which did define that name, ever exercised it.
+    def item_field_occasion?(it)
+      return it.occasion_field2 if it.respond_to?(:occasion_field2)
+      true
+    end
+
+    def item_battle_occasion?(it)
+      return it.occasion_battle if it.respond_to?(:occasion_battle)
+      true
+    end
+
+    # Whether `it` is flagged field-only (occasion_field1), which is what keeps a
+    # medicine out of a battle.
+    def item_field_only?(it)
+      it.respond_to?(:occasion_field1) ? it.occasion_field1 : false
     end
 
     # Whether item `id` is a switch item (turns on a game switch when used).
@@ -1952,6 +1994,10 @@ module Game
         seed_boosts(it).any? { |b| b != 0 }
       when ITEM_SWITCH
         true # a switch item always flips its switch
+      when ITEM_SPECIAL
+        # Judged by the skill it invokes, exactly as casting that skill would be
+        # -- but free: the item is the cost, and its user need not know the skill.
+        skill_effective?(actor, it.skill_id, actor, true)
       else
         false
       end
@@ -1968,8 +2014,19 @@ module Game
       when ITEM_MEDICINE then use_medicine(it, id, actor)
       when ITEM_SKILL_BOOK then use_skill_book(it, id, actor)
       when ITEM_SEED then use_seed(it, id, actor)
+      when ITEM_SPECIAL then use_special_item(it, id, actor)
       else []
       end
+    end
+
+    # A special item (特殊) invokes the skill in its `skill_id` on `actor`, with
+    # the item taking the place of the SP cost: the user pays nothing and need not
+    # have learnt the skill. One is consumed only when the cast actually did
+    # something, matching how the other item kinds here refuse to be wasted.
+    def use_special_item(it, id, actor)
+      affected = cast_skill(actor, it.skill_id, actor, true)
+      lose_item(id, 1) unless affected.empty?
+      affected
     end
 
     # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
@@ -2083,10 +2140,27 @@ module Game
     end
 
     # RPG2000 skill type (field 8): 0 normal (an HP/SP/stat effect), 1 teleport,
-    # 2 escape, 3 switch. The field skill menu casts normal skills; the
-    # teleport/escape/switch types are later refinements. Skill scope (field 12):
-    # 0 single enemy, 1 all enemies, 2 the caster, 3 a single ally, 4 all allies.
+    # 2 escape, 3 switch. Skill scope (field 12): 0 single enemy, 1 all enemies,
+    # 2 the caster, 3 a single ally, 4 all allies.
     SKILL_NORMAL = 0
+    SKILL_TELEPORT = 1
+    SKILL_ESCAPE = 2
+    SKILL_SWITCH = 3
+    # RPG2003 numbers its **subskill** categories from 4 up (liblcf's
+    # `Skill::Type_subskill`): a 2003 game sorts its skills into custom battle
+    # commands, and the category id lands in this same field. Such a skill is an
+    # ordinary skill — the number only says which menu it is filed under.
+    SKILL_SUBSKILL = 4
+
+    # Whether `sk` behaves as an ordinary HP/SP/stat skill: type 0, or any RPG2003
+    # subskill category. Testing `type == SKILL_NORMAL` instead hid **57 of
+    # mtf-meido-action's 134 skills** — 43% of the game, including every one of
+    # its healing lines (Heal / Recovery / Cure / Raise are category 5) and its
+    # elemental attack lines — from both the field menu and the battle menu.
+    def self.normal_skill?(sk)
+      t = sk.type
+      t == SKILL_NORMAL || t >= SKILL_SUBSKILL
+    end
 
     # The database row for a skill id, or nil when the database has no skill table
     # (a bare fixture) or no such row.
@@ -2106,15 +2180,82 @@ module Game
       end
     end
 
-    # `caster`'s known skills usable from the field menu -- normal skills flagged
-    # `occasion_field` that target the caster or an ally (scope >= 2) -- as
-    # `[skill_id, cost]` pairs in ascending id order.
+    # `caster`'s known skills usable from the field menu, as `[skill_id, cost]`
+    # pairs in ascending id order: anything flagged `occasion_field` that either
+    # behaves as an ordinary skill and targets the caster or an ally (scope >= 2,
+    # since the field menu has no enemy to aim at) or is a **switch** skill, which
+    # has no target at all — it just turns its switch on. Nepheshel's companions
+    # are summoned and dismissed exactly this way (skills 120–125, "ファルを召還"
+    # and friends, each flipping the switch its common event watches).
     def field_skills(caster)
       return [] unless caster
-      caster.skills.sort.select do |sid|
-        sk = db_skill(sid)
-        sk && sk.type == SKILL_NORMAL && sk.occasion_field && sk.scope >= 2
-      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+      caster.skills.sort.select { |sid| field_skill?(db_skill(sid)) }
+            .map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+    end
+
+    # Whether skill row `sk` belongs in the field menu.
+    #
+    # The `occasion_field` / `occasion_battle` flags gate **switch skills only**.
+    # That is not a simplification — it is what RPG_RT does (EasyRPG's
+    # `Algo::IsSkillUsable` reads them in the `Type_switch` arm and nowhere
+    # else), and the RPG2000 editor only offers the 使用可能な場面 checkboxes for
+    # a スイッチ skill in the first place. The bytes agree exactly: Nepheshel
+    # writes chunks 18/19 for 12 of its 306 skills and those 12 are precisely its
+    # 12 switch skills, while mtf-meido-action, which has no switch skill, writes
+    # neither chunk for any of its 134. Gating every skill on `occasion_battle`
+    # (default false, so almost never set) is what used to leave the battle skill
+    # menu holding 12 skills in one game and none at all in the other.
+    #
+    # An ordinary skill outside battle needs a target the field can offer (scope
+    # >= 2, i.e. self or allies -- there is no enemy to aim at) and has to do
+    # something once there: change HP/SP, or inflict a state.
+    def field_skill?(sk)
+      return false unless sk
+      case sk.type
+      when SKILL_ESCAPE, SKILL_TELEPORT
+        false # see #unsupported_field_skill?
+      when SKILL_SWITCH
+        field_occasion?(sk)
+      else
+        return false unless sk.scope >= 2
+        # The raw state set, not #skill_inflicted_states: a plain antidote cures
+        # rather than inflicts (`reverse_state_effect` off), and curing poison
+        # between fights is the whole point of the field skill menu.
+        sk.affect_hp || sk.affect_sp || !skill_state_ids(sk).empty?
+      end
+    end
+
+    # Escape (type 1) and Teleport (type 2) skills warp the party to a memorised
+    # target. RPG_RT also gates them on the party's escape / teleport access and
+    # on a target having been memorised. Neither is offered yet: teleport needs a
+    # destination picker this build has no screen for. Between them the two test
+    # beds hold exactly one of each (mtf-meido-action's "Escape" and "Teleport"),
+    # so there is nothing here to measure a real implementation against.
+    def unsupported_field_skill?(sk)
+      !sk.nil? && (sk.type == SKILL_ESCAPE || sk.type == SKILL_TELEPORT)
+    end
+
+    # Whether a **switch** skill's field / battle occasion flag is set. Defaults
+    # to usable when the row (a bare fixture) carries no flag.
+    def field_occasion?(sk)
+      sk.respond_to?(:occasion_field) ? sk.occasion_field : true
+    end
+
+    # Whether skill `sid` is a switch skill (turns a game switch on, no target).
+    def switch_skill?(sid)
+      sk = db_skill(sid)
+      !sk.nil? && sk.type == SKILL_SWITCH
+    end
+
+    # Cast a switch skill: spend the caster's SP and return the id of the switch
+    # to turn on, so the caller can flip it (the switch table lives on the state,
+    # not the party -- the same split #use_switch_item already uses). nil when
+    # `sid` is not a switch skill the caster can cast, and then nothing is spent.
+    def cast_switch_skill(caster, sid)
+      return nil unless switch_skill?(sid) && can_cast?(caster, sid)
+      sk = db_skill(sid)
+      caster.change_mp(-skill_cost(sk, caster))
+      sk.switch_id
     end
 
     # Whether `caster` can cast skill `sid` right now: it knows the skill and can
@@ -2175,9 +2316,9 @@ module Game
     # out a no-op (e.g. a heal on an already-full ally). Requires the caster to be
     # able to cast it at all. A skill that cures a condition the target actually
     # has (or inflicts one it lacks) is usable even when HP/SP are full.
-    def skill_effective?(caster, sid, target)
+    def skill_effective?(caster, sid, target, free = false)
       sk = db_skill(sid)
-      return false unless sk && can_cast?(caster, sid)
+      return false unless sk && (free ? !caster.nil? : can_cast?(caster, sid))
       amount = skill_effect(sk, caster)
       cured = skill_cured_states(sk)
       inflicted = skill_inflicted_states(sk)
@@ -2196,9 +2337,13 @@ module Game
     # costs nothing. States are applied before HP so a cure that clears the death
     # state revives the target and the recovery then lands. Returns the affected
     # actors.
-    def cast_skill(caster, sid, target = nil)
+    #
+    # `free` casts without the knows-it / can-afford-it gate and without spending
+    # SP: a **special item** invokes its skill that way, since the item is the
+    # cost and the user need not have learnt the skill at all.
+    def cast_skill(caster, sid, target = nil, free = false)
       sk = db_skill(sid)
-      return [] unless sk && can_cast?(caster, sid)
+      return [] unless sk && (free ? !caster.nil? : can_cast?(caster, sid))
       amount = skill_effect(sk, caster)
       cured = skill_cured_states(sk)
       inflicted = skill_inflicted_states(sk)
@@ -2224,7 +2369,7 @@ module Game
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
-      caster.change_mp(-skill_cost(sk, caster)) unless affected.empty?
+      caster.change_mp(-skill_cost(sk, caster)) unless free || affected.empty?
       affected
     end
 
@@ -2241,20 +2386,33 @@ module Game
     # caster, 3 a single ally, 4 all allies.
     BATTLE_SKILL_SCOPES = [0, 1, 2, 3, 4].freeze
 
-    # `actor`'s known normal skills usable in battle — flagged `occasion_battle`
-    # with a single-target scope — as `[skill_id, cost]` pairs in ascending id
-    # order. `caster` is the battle snapshot the SP cost is figured from.
+    # `actor`'s known skills usable in battle, as `[skill_id, cost]` pairs in
+    # ascending id order: those flagged `occasion_battle` that either behave as an
+    # ordinary skill with a scope the battle menu can aim, or are a **switch**
+    # skill (no target — Nepheshel's 突撃準備 / 呪文詠唱 charge-ups are these).
+    # `caster` is the battle snapshot the SP cost is figured from.
     def battle_skills(actor, caster)
       return [] unless actor && caster
-      actor.skills.sort.select do |sid|
-        sk = db_skill(sid)
-        sk && sk.type == SKILL_NORMAL && battle_occasion?(sk) &&
-          BATTLE_SKILL_SCOPES.include?(sk.scope)
-      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+      actor.skills.sort.select { |sid| battle_skill?(db_skill(sid)) }
+           .map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
     end
 
-    # Whether skill `sk` may be used in battle. Defaults to usable when the row
-    # (a bare fixture) carries no `occasion_battle` flag.
+    # Whether skill row `sk` belongs in the battle menu. Mirrors #field_skill?:
+    # the occasion flags gate switch skills only, an escape / teleport skill is
+    # never usable in a fight, and an ordinary skill always is — RPG_RT asks
+    # nothing else of it once a battle is running.
+    def battle_skill?(sk)
+      return false unless sk
+      case sk.type
+      when SKILL_ESCAPE, SKILL_TELEPORT then false
+      when SKILL_SWITCH then battle_occasion?(sk)
+      else BATTLE_SKILL_SCOPES.include?(sk.scope)
+      end
+    end
+
+    # Whether a **switch** skill's battle occasion flag is set (see
+    # #field_skill? for why only switch skills consult these). Defaults to usable
+    # when the row (a bare fixture) carries no flag.
     def battle_occasion?(sk)
       sk.respond_to?(:occasion_battle) ? sk.occasion_battle : true
     end
@@ -2314,17 +2472,19 @@ module Game
     end
 
     # Whether item `id` can be used in battle: a medicine flagged occasion_battle
-    # the party actually holds.
+    # the party actually holds, or a **special** item whose skill is battle-usable
+    # (the same deferral #field_usable? makes). Nepheshel's whole thrown-bomb line
+    # — 火炎玉, 爆裂玉, 氷結玉, 雷撃玉 and the rest — is special items, so this is
+    # what puts them in the battle item list at all.
     def battle_usable?(id)
       it = db_item(id)
       return false unless it && item_count(id) > 0
-      it.type == ITEM_MEDICINE && battle_item_occasion?(it)
-    end
-
-    # Whether medicine `it` may be used in battle. Defaults to usable when the row
-    # (a bare fixture) carries no `occasion_battle` flag.
-    def battle_item_occasion?(it)
-      it.respond_to?(:occasion_battle) ? it.occasion_battle : true
+      case it.type
+      when ITEM_MEDICINE then !item_field_only?(it)
+      when ITEM_SWITCH then item_battle_occasion?(it)
+      when ITEM_SPECIAL then battle_skill?(db_skill(it.skill_id))
+      else false
+      end
     end
 
     # The bag's battle-usable items as `[id, count]` pairs in ascending id order.

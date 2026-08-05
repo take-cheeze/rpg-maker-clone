@@ -5230,16 +5230,30 @@ class RPG2k
         it = @state.party.db_item(id)
         # A switch item has no actor target; an all-ally medicine skips the
         # target prompt; single-target medicines / skill books ask who to use on.
+        # A special item follows the *skill* it invokes, since that is what
+        # decides the scope — self (2) or all-ally (4) needs no prompt.
         if it && it.type == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
+        elsif it && it.type == Game::Party::ITEM_SPECIAL
+          sk = @state.party.db_skill(it.skill_id)
+          if sk && (sk.scope == 2 || sk.scope == 4)
+            apply_item(id, nil)
+          else
+            prompt_item_target(id)
+          end
         elsif it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
           apply_item(id, nil)
         else
-          @pending_item = id
-          @mode = :target
-          @target_index = 0
-          build_target_window
+          prompt_item_target(id)
         end
+      end
+
+      # Ask which party member the pending item is used on.
+      def prompt_item_target(id)
+        @pending_item = id
+        @mode = :target
+        @target_index = 0
+        build_target_window
       end
 
       # A switch item turns on its game switch (the party consumes one); the menu
@@ -5729,9 +5743,11 @@ class RPG2k
         return if skills.empty?
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
-        # A self (2) or all-ally (4) skill needs no target prompt; a single-ally
-        # skill (3) asks which ally.
-        if sk && (sk.scope == 2 || sk.scope == 4)
+        # A switch skill has no target at all; a self (2) or all-ally (4) skill
+        # needs no target prompt; a single-ally skill (3) asks which ally.
+        if sk && sk.type == Game::Party::SKILL_SWITCH
+          apply_switch_skill(sid)
+        elsif sk && (sk.scope == 2 || sk.scope == 4)
           apply_skill(sid, nil)
         else
           @pending_skill = sid
@@ -5762,6 +5778,19 @@ class RPG2k
           show_message("It had no effect.")
         else
           show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+        end
+      end
+
+      # A switch skill (type 3) spends its SP and turns on a game switch, with
+      # nothing to target. This is how a Nepheshel player summons and dismisses a
+      # companion — the switch is what its common event watches.
+      def apply_switch_skill(sid)
+        switch = @state.party.cast_switch_skill(caster, sid)
+        if switch
+          @state.switches[switch] = true
+          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+        else
+          show_message("It had no effect.")
         end
       end
 
