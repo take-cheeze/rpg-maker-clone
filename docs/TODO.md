@@ -536,7 +536,24 @@ The work below is roughly ordered by the critical path to a walkable game
   off for seeded / headless fights. A basic attack can land a **3x critical hit**
   at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
   `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
-  the **`prevent_critical`** flag can never be crit. **Elemental attributes**
+  the **`prevent_critical`** flag can never be crit. Four more **equipment combat
+  flags** are read now (ADR 0033), each of them previously parsed and used by
+  nothing: **二刀流** (`dual_attack`) makes a basic attack swing **twice** — 13 of
+  Nepheshel's weapons — skipping the second blow when the first fells the target;
+  **必中** (`ignore_evasion`, 13 more weapons) drops the agility term from the
+  to-hit roll so the weapon hits at its own rate (82% → 98% against an agi-999
+  foe), while the wielder's own blindness still applies on top, since what the
+  flag ignores is the *target's* evasion; **MP消費半分** (`half_sp_cost`, any
+  slot) halves a skill's cost rounding up; and **強力防御** (`strong_defence`, an
+  actor-row flag 7 of Nepheshel's 50 actors carry including its hero) halves
+  damage a second time while defending — a quarter, not a half. Still unread: a
+  weapon's **`critical_hit` bonus**, the largest count in that audit at 75 items,
+  which needs the crit model to move from a 1-in-N denominator to RPG_RT's
+  probability (`1/critical_hit_chance` plus the best weapon's percentage);
+  **`attack_all`** (7 weapons), whose handling is not in EasyRPG's `algo.cpp`
+  with the others and is left declared rather than guessed; and **`preemptive`**
+  / **`raise_evasion`**, the latter having nowhere to land until the to-hit
+  formula grows an evasion term separate from agility. **Elemental attributes**
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
   are matched against the target's per-attribute defence ranks (A..E, strongest
   element winning) — the rates come from each attribute's own `a_rate` .. `e_rate`
@@ -973,7 +990,9 @@ The work below is roughly ordered by the critical path to a walkable game
   not, on any genuine item. See ADR 0031. Remaining: **teleport / escape** skill
   types (one of each across both test beds; teleport wants a destination picker
   this build has no screen for, so `Party#unsupported_field_skill?` declares the
-  gap), the battle-time skill variance, and two-handed / dual-wield equipping.
+  gap), the battle-time skill variance, and two-handed / dual-wield **equipping**
+  (the equip screen's slot rules — a 二刀流 weapon's *combat* effect is read now,
+  see ADR 0033).
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default

@@ -1816,7 +1816,7 @@ end
 # A database row for an actor, and a fake DB exposing just what Game::Party /
 # Game::Actor read (player table + the initial party list).
 FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
-                           :initial_level, :status)
+                           :initial_level, :status, :strong_defence)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -1862,17 +1862,20 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
                       :prevent_critical, :attribute_set, :switch_id,
-                      :occasion_field2, :occasion_field1)
+                      :occasion_field2, :occasion_field1,
+                      :dual_attack, :ignore_evasion, :half_sp_cost, :hit)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
               attribute_set: nil, switch_id: 0, occ_field: true,
-              field_only: false)
+              field_only: false, dual_attack: false, ignore_evasion: false,
+              half_sp_cost: false, hit: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit, attribute_set, switch_id, occ_field, field_only)
+               prevent_crit, attribute_set, switch_id, occ_field, field_only,
+               dual_attack, ignore_evasion, half_sp_cost, hit)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -6228,6 +6231,119 @@ check 'battle: a sealing state blocks skills above its threshold' do
   eq true, bat.skill_sealed?(hero, physical), 'rate 4 reaches the level-2 seal'
   eq false, bat.skill_sealed?(hero, weak_phys), 'rate 1 stays under it'
   eq false, bat.skill_sealed?(hero, nil), 'a missing skill row is not sealed'
+end
+
+# -- equipment-granted combat modifiers (ADR 0033) ----------------------------
+#
+# A party built from a real database row, so the Actor -> Combatant plumbing that
+# carries these flags is what is under test, not a hand-set snapshot.
+def geared_party(items, strong_defence = false)
+  row = CurveRow.new('Hero', '', 0, 1, [200, 50, 20, 10, 10, 10])
+  row.strong_defence = strong_defence
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  Game::State.new(Game::Party.new(db), 1, 0, 0)
+end
+
+check 'battle: a 二刀流 weapon swings twice' do
+  items = { 7 => fake_item(type: 1, atk: 5, dual_attack: true),
+            8 => fake_item(type: 1, atk: 5) }
+  st = geared_party(items)
+  hero = st.party.leader
+  foe = combatant('Foe', 0, 0, 5, 10_000)
+
+  hero.equip([8, 0, 0, 0, 0])                      # plain weapon
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  eq 1, bat.allies[0].strike_count
+  entry = bat.send(:swing, bat.allies[0], foe)
+  ok entry.is_a?(Hash), 'one swing, one log entry'
+
+  hero.equip([7, 0, 0, 0, 0])                      # 二刀流
+  foe2 = combatant('Foe', 0, 0, 5, 10_000)
+  bat2 = Game::Battle.new([Game::Battle.from_actor(hero)], [foe2], Game::Rng.new(1))
+  eq 2, bat2.allies[0].strike_count
+  entries = bat2.send(:swing, bat2.allies[0], foe2)
+  eq 2, entries.size, 'two swings, two log entries'
+  ok entries[0][:damage] > 0 && entries[1][:damage] > 0
+
+  # The second swing is skipped when the first fells the target.
+  dying = combatant('Dying', 0, 0, 5, 1)
+  bat3 = Game::Battle.new([Game::Battle.from_actor(hero)], [dying], Game::Rng.new(1))
+  e3 = bat3.send(:swing, bat3.allies[0], dying)
+  ok e3.is_a?(Hash), 'a felled target is not struck again'
+end
+
+check 'battle: a 必中 weapon ignores the target\'s evasion' do
+  items = { 7 => fake_item(type: 1, atk: 5, hit: 90, ignore_evasion: true),
+            8 => fake_item(type: 1, atk: 5, hit: 90) }
+  st = geared_party(items)
+  hero = st.party.leader
+  swift = combatant('Swift', 0, 0, 999, 100)       # far faster than the hero
+
+  hero.equip([8, 0, 0, 0, 0])
+  plain = Game::Battle.new([Game::Battle.from_actor(hero)], [swift],
+                           Game::Rng.new(1), nil, false, false, true)
+  dodgy = plain.send(:to_hit, plain.allies[0], swift)
+  ok dodgy < 90, "a fast target evades (#{dodgy}% < the weapon's 90%)"
+
+  hero.equip([7, 0, 0, 0, 0])
+  sure = Game::Battle.new([Game::Battle.from_actor(hero)], [swift],
+                          Game::Rng.new(1), nil, false, false, true)
+  eq 90, sure.send(:to_hit, sure.allies[0], swift),
+     "必中 drops the evasion term, leaving the weapon's own hit rate"
+end
+
+check 'battle: 必中 still suffers the wielder\'s own blindness' do
+  # What the flag ignores is the *target's* evasion, not a status spoiling the
+  # attacker's aim, so Blind still applies on top.
+  states = { 3 => fake_state(reduce_hit_ratio: 50) }
+  items = { 7 => fake_item(type: 1, atk: 5, hit: 90, ignore_evasion: true) }
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 0, 0, 0, 0])
+  swift = combatant('Swift', 0, 0, 999, 100)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [swift],
+                         Game::Rng.new(1), states, false, false, true)
+  bat.allies[0].states = [3]
+  eq 45, bat.send(:to_hit, bat.allies[0], swift), 'the weapon is sure, the wielder is blind'
+end
+
+check 'battle: 強力防御 halves damage a second time' do
+  st = geared_party({}, true)
+  hero = st.party.leader
+  ok hero.strong_defence?, 'the row carries the flag'
+  brute = combatant('Brute', 200, 0, 5, 100)
+
+  [false, true].each_with_index do |flag, i|
+    bat = Game::Battle.new([Game::Battle.from_actor(hero)], [brute], Game::Rng.new(1))
+    d = bat.allies[0]
+    d.strong_defence = flag
+    d.defending = true
+    before = d.hp
+    bat.send(:deal_attack, brute, d)
+    @guard_damage ||= []
+    @guard_damage[i] = before - d.hp
+  end
+  ok @guard_damage[0] > 0
+  eq @guard_damage[0] / 2, @guard_damage[1],
+     'strong defence takes half of what an ordinary guard leaves'
+end
+
+check 'MP消費半分 gear halves a skill cost, rounding up' do
+  skills = { 1 => fake_skill(sp_cost: 7), 2 => fake_skill(sp_cost: 1),
+             3 => fake_skill(sp_type: 1, sp_percent: 20) }
+  items = { 9 => fake_item(type: 5, half_sp_cost: true) }  # an accessory
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [100, 40, 10, 5, 5, 5]) },
+                       [1], items, skills)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+  eq false, hero.half_sp_cost?
+  eq 7, st.party.skill_cost(db.skill[1], hero)
+  hero.equip([0, 0, 0, 0, 9])
+  ok hero.half_sp_cost?, 'the accessory grants it'
+  eq 4, st.party.skill_cost(db.skill[1], hero), '7 -> 4, rounded up'
+  eq 1, st.party.skill_cost(db.skill[2], hero), 'a 1-SP skill still costs 1'
+  # A percentage cost is halved the same way (20% of 40 max SP = 8 -> 4).
+  eq 4, st.party.skill_cost(db.skill[3], hero)
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do

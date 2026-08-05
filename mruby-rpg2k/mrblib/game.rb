@@ -1302,6 +1302,45 @@ module Game
       best && best > 0 ? best : 90
     end
 
+    # Whether any equipped item carries boolean field `name`. The weapon combat
+    # flags below all work this way — one piece of gear is enough to grant them.
+    # `weapon_only` restricts the search to the weapon slot (item type 1), which
+    # is where RPG2000 keeps the attack modifiers.
+    def equipment_flag?(name, weapon_only = false)
+      return false unless @db.respond_to?(:item)
+      @equipment.any? do |iid|
+        next false if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next false unless it
+        next false if weapon_only && !(it.respond_to?(:type) && it.type == 1)
+        it.respond_to?(name) && it.send(name) ? true : false
+      end
+    end
+
+    # 二刀流 — an equipped weapon that swings **twice** per basic attack
+    # (EasyRPG's `GetNumberOfAttacks`: `weapon.dual_attack ? 2 : 1`). Nepheshel
+    # gives 13 of its weapons this.
+    def dual_attack?; equipment_flag?(:dual_attack, true); end
+
+    # 必中 — an equipped weapon whose attack cannot be evaded. RPG_RT's
+    # `CalcNormalAttackToHit` returns before it applies the agility / evasion
+    # term for such a weapon. 13 of Nepheshel's weapons carry it.
+    def ignores_evasion?; equipment_flag?(:ignore_evasion, true); end
+
+    # MP消費半分 — gear that halves what a skill costs to cast. Any slot, not just
+    # the weapon (Nepheshel's 賢者の指輪 is an accessory).
+    def half_sp_cost?; equipment_flag?(:half_sp_cost); end
+
+    # 強力防御 — an actor whose Defend halves damage a *second* time (a quarter
+    # rather than a half, per EasyRPG's `AdjustDamageForDefend`). This one is a
+    # property of the actor row (field 24), not of gear, and an RPG2003 class can
+    # override it the way it overrides the growth curves.
+    def strong_defence?
+      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row ||= @db_row
+      row.respond_to?(:strong_defence) ? (row.strong_defence ? true : false) : false
+    end
+
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
     def normalize_equipment(spec)
@@ -2173,11 +2212,17 @@ module Game
     # percentage of the caster's max SP (sp_type 1). Mirrors EasyRPG's
     # CalculateSkillCost (the half-SP-cost modifier is a later refinement).
     def skill_cost(sk, caster)
-      if sk.sp_type == 1
-        caster.max_mp * (sk.sp_percent || 0) / 100
-      else
-        sk.sp_cost || 0
-      end
+      cost =
+        if sk.sp_type == 1
+          caster.max_mp * (sk.sp_percent || 0) / 100
+        else
+          sk.sp_cost || 0
+        end
+      # MP消費半分 gear halves the bill, rounding **up** so a 1-SP skill still
+      # costs 1 (EasyRPG's `cost = (cost + 1) / 2`). Asked of whatever the caller
+      # handed over — a Game::Actor in the menus, a battle snapshot in a fight.
+      return cost unless caster.respond_to?(:half_sp_cost?) && caster.half_sp_cost?
+      (cost + 1) / 2
     end
 
     # `caster`'s known skills usable from the field menu, as `[skill_id, cost]`
@@ -4388,8 +4433,21 @@ module Game
                            :actor, :states, :state_turns, :crit_denom,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
                            :hit_rate, :state_ranks, :hidden, :battle_turn,
-                           :actions, :charged, :enemy_id, :battler_name) do
+                           :actions, :charged, :enemy_id, :battler_name,
+                           # Equipment-granted combat modifiers (ADR 0033):
+                           # how many times a basic attack swings, whether it
+                           # can be evaded, whether Defend halves twice, and
+                           # whether skills cost half.
+                           :strikes, :ignores_evasion, :strong_defence,
+                           :half_sp_cost) do
       def dead?; hp <= 0; end
+
+      # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
+      # members start nil, so the reader normalises.
+      def strike_count; n = strikes; n && n > 1 ? n : 1; end
+      # Whether this battler's gear halves what a skill costs (Party#skill_cost
+      # asks whatever it is handed, actor or snapshot).
+      def half_sp_cost?; half_sp_cost ? true : false; end
 
       # RPG2003 counts turns per battler as well as per battle: this is how many
       # turns *this* battler has taken, which the troop pages' turn_enemy /
@@ -4442,12 +4500,20 @@ module Game
     def self.state_ranks_of(b); b.respond_to?(:state_ranks) ? b.state_ranks : {}; end
 
     def self.from_actor(a)
-      Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
+      c = Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
                     nil, crit_denom_of(a), prevents_crit_of(a),
                     attr_ranks_of(a), atk_attrs_of(a), nil, hit_rate_of(a),
                     state_ranks_of(a))
+      c.strikes = flag_of(a, :dual_attack?) ? 2 : 1
+      c.ignores_evasion = flag_of(a, :ignores_evasion?)
+      c.strong_defence = flag_of(a, :strong_defence?)
+      c.half_sp_cost = flag_of(a, :half_sp_cost?)
+      c
     end
+
+    # A boolean predicate on the source row, false for a fixture without it.
+    def self.flag_of(b, name); b.respond_to?(name) && b.send(name) ? true : false; end
 
     # Enemies have no source actor (that field stays nil), so the post-battle
     # write-back skips them; they carry no status set into this simple sim.
@@ -4769,10 +4835,19 @@ module Game
     # accuracy enabled (see #initialize).
     def to_hit(attacker, target)
       base = attacker.hit_rate || 90
-      src = attacker.agi
-      src = 1 if src < 1
-      tgt = target.agi
-      raw = Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
+      # 必中: a weapon flagged `ignore_evasion` skips the agility term entirely —
+      # RPG_RT's `CalcNormalAttackToHit` returns before it applies evasion for
+      # such a weapon. The attacker's own statuses still spoil its aim, since
+      # what the flag ignores is the *target's* evasion, not the wielder's blind.
+      raw =
+        if attacker.ignores_evasion
+          Game.clamp(base, 0, 100)
+        else
+          src = attacker.agi
+          src = 1 if src < 1
+          tgt = target.agi
+          Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
+        end
       raw * hit_modifier(attacker) / 100
     end
 
@@ -5021,7 +5096,7 @@ module Game
       end
       target = attack_target(b)
       return nil unless target
-      deal_attack(b, target)
+      swing(b, target)
     end
 
     # -- enemy AI (行動パターン) ------------------------------------------------
@@ -5295,6 +5370,17 @@ module Game
     # critical hit, then halved (min 1) if the target defends. A target immune to
     # the weapon's element (0% rate) takes no damage. The crit note rides on the
     # log entry.
+    # One basic attack, which a 二刀流 weapon makes land **twice** (EasyRPG's
+    # `GetNumberOfAttacks`). Returns a single log entry for the ordinary case and
+    # an array when the weapon swings again, so the log reads the same as the
+    # enemy's own dual-attack action — whose "the second swing only lands if the
+    # first did not fell the target" rule this follows too.
+    def swing(b, target)
+      first = deal_attack(b, target)
+      return first if b.strike_count < 2 || target.dead?
+      [first, deal_attack(b, target)]
+    end
+
     def deal_attack(b, target)
       # When accuracy is on, roll the attacker's to-hit chance: a miss deals no
       # damage and reads as `missed` on the log entry.
@@ -5321,7 +5407,14 @@ module Game
       elsif charged
         dmg *= 2
       end
-      dmg = [dmg / 2, 1].max if target.defending && dmg > 0
+      # Defending halves the blow, and 強力防御 halves it again — a quarter, not a
+      # half (EasyRPG's `AdjustDamageForDefend` applies the second `dmg /= 2`
+      # for a battler with strong defence). Seven of Nepheshel's 50 actors have
+      # it, including its hero.
+      if target.defending && dmg > 0
+        dmg = [dmg / 2, 1].max
+        dmg = [dmg / 2, 1].max if target.strong_defence
+      end
       target.hp -= dmg
       woke = target.dead? ? [] : shake_off_states(target)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
