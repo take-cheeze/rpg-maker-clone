@@ -34,6 +34,22 @@
 #include <cstring>
 #include <vector>
 
+// GLES2 has no packed depth/stencil renderbuffer format in its base header; the
+// value is the one OES_packed_depth_stencil defines, which mvgl.cxx already
+// uses for the main FBO's own attachment.
+#ifndef GL_DEPTH24_STENCIL8
+#define GL_DEPTH24_STENCIL8 0x88F0
+#endif
+// WebGL1-only enums, absent from GLES2: a combined internal format and a
+// combined attachment point. Both are translated below (see
+// js_gl_*renderbuffer*).
+#ifndef GL_DEPTH_STENCIL
+#define GL_DEPTH_STENCIL 0x84F9
+#endif
+#ifndef GL_DEPTH_STENCIL_ATTACHMENT
+#define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
+#endif
+
 namespace {
 
 // The GL contexts backing live WebGLRenderingContext objects, referenced from
@@ -1065,6 +1081,91 @@ JSValue js_gl_framebuffer_texture_2d(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// -- renderbuffers -----------------------------------------------------------
+//
+// These back the depth/stencil attachment PIXI adds to a *render texture*'s
+// framebuffer. They used to be stubs (createRenderbuffer returned 0, the rest
+// were no-ops) on the assumption that only the main FBO — which mvgl.cxx builds
+// with its own packed DEPTH24_STENCIL8 buffer — ever needs one. That is not how
+// MZ renders: `Scene_Base` puts a `ColorFilter` on every scene, so the scene is
+// drawn into a filter render texture and only the filter's output quad touches
+// the main FBO. rmmz's `WindowLayer.render` asks for a stencil there
+// (`renderer.framebuffer.forceStencil()`) and then masks each window against
+// the ones in front of it; with no attachment the stencil test always passes,
+// so every window overpainted its neighbours.
+//
+// Two WebGL1 enums have no GLES2 equivalent and are translated here: the
+// combined `DEPTH_STENCIL` internal format becomes `DEPTH24_STENCIL8`, and the
+// combined `DEPTH_STENCIL_ATTACHMENT` point becomes an attach to both the depth
+// and the stencil attachment (which is what the packed buffer feeds).
+
+JSValue js_gl_create_renderbuffer(JSContext* ctx,
+                                  JSValueConst,
+                                  int argc,
+                                  JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_NewInt32(ctx, 0);
+  GLuint r = 0;
+  glGenRenderbuffers(1, &r);
+  return JS_NewInt32(ctx, static_cast<int32_t>(r));
+}
+
+JSValue js_gl_bind_renderbuffer(JSContext* ctx,
+                                JSValueConst,
+                                int argc,
+                                JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)))
+    glBindRenderbuffer(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                       static_cast<GLuint>(gi(ctx, argc, argv, 2)));
+  return JS_UNDEFINED;
+}
+
+// renderbufferStorage(target, internalformat, width, height)
+JSValue js_gl_renderbuffer_storage(JSContext* ctx,
+                                   JSValueConst,
+                                   int argc,
+                                   JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_UNDEFINED;
+  GLenum fmt = static_cast<GLenum>(gi(ctx, argc, argv, 2));
+  if (fmt == GL_DEPTH_STENCIL)
+    fmt = GL_DEPTH24_STENCIL8;
+  glRenderbufferStorage(static_cast<GLenum>(gi(ctx, argc, argv, 1)), fmt,
+                        gi(ctx, argc, argv, 3), gi(ctx, argc, argv, 4));
+  return JS_UNDEFINED;
+}
+
+// framebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer)
+JSValue js_gl_framebuffer_renderbuffer(JSContext* ctx,
+                                       JSValueConst,
+                                       int argc,
+                                       JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_UNDEFINED;
+  const GLenum target = static_cast<GLenum>(gi(ctx, argc, argv, 1));
+  const GLenum attach = static_cast<GLenum>(gi(ctx, argc, argv, 2));
+  const GLenum rbtarget = static_cast<GLenum>(gi(ctx, argc, argv, 3));
+  const GLuint rb = static_cast<GLuint>(gi(ctx, argc, argv, 4));
+  if (attach == GL_DEPTH_STENCIL_ATTACHMENT) {
+    glFramebufferRenderbuffer(target, GL_DEPTH_ATTACHMENT, rbtarget, rb);
+    glFramebufferRenderbuffer(target, GL_STENCIL_ATTACHMENT, rbtarget, rb);
+  } else {
+    glFramebufferRenderbuffer(target, attach, rbtarget, rb);
+  }
+  return JS_UNDEFINED;
+}
+
+JSValue js_gl_delete_renderbuffer(JSContext* ctx,
+                                  JSValueConst,
+                                  int argc,
+                                  JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0))) {
+    GLuint r = static_cast<GLuint>(gi(ctx, argc, argv, 1));
+    glDeleteRenderbuffers(1, &r);
+  }
+  return JS_UNDEFINED;
+}
+
 JSValue js_gl_check_framebuffer_status(JSContext* ctx,
                                        JSValueConst,
                                        int argc,
@@ -1480,11 +1581,16 @@ const char* kWebGLPreamble = R"MVJS(
   P.framebufferTexture2D = function (t, a, tt, tex, l) { g.__mv_glFramebufferTexture2D(this.__gl, t, a, tt, tex || 0, l); };
   P.checkFramebufferStatus = function (t) { return g.__mv_glCheckFramebufferStatus(this.__gl, t); };
   P.deleteFramebuffer = function (f) { g.__mv_glDeleteFramebuffer(this.__gl, f); };
-  P.createRenderbuffer = function () { return 0; };
-  P.bindRenderbuffer = function () {};
-  P.renderbufferStorage = function () {};
-  P.framebufferRenderbuffer = function () {};
-  P.deleteRenderbuffer = function () {};
+  // Renderbuffers back the depth/stencil a render texture's framebuffer needs.
+  // MZ reaches these through rmmz's WindowLayer, which asks PIXI for a stencil
+  // on whatever framebuffer is current — always a filter target, since every
+  // scene carries a ColorFilter — and then masks each window against the ones
+  // in front of it. See the native side for the two WebGL1 enums translated.
+  P.createRenderbuffer = function () { return g.__mv_glCreateRenderbuffer(this.__gl); };
+  P.bindRenderbuffer = function (t, r) { g.__mv_glBindRenderbuffer(this.__gl, t, r || 0); };
+  P.renderbufferStorage = function (t, f, w, h) { g.__mv_glRenderbufferStorage(this.__gl, t, f, w, h); };
+  P.framebufferRenderbuffer = function (t, a, rt, r) { g.__mv_glFramebufferRenderbuffer(this.__gl, t, a, rt, r || 0); };
+  P.deleteRenderbuffer = function (r) { g.__mv_glDeleteRenderbuffer(this.__gl, r); };
 
   // Draw & read.
   P.drawArrays = function (m, f, c) { g.__mv_glDrawArrays(this.__gl, m, f, c); };
@@ -1610,6 +1716,12 @@ void mv_install_webgl(JSContext* ctx) {
   reg(ctx, g, "__mv_glCreateFramebuffer", js_gl_create_framebuffer, 1);
   reg(ctx, g, "__mv_glBindFramebuffer", js_gl_bind_framebuffer, 3);
   reg(ctx, g, "__mv_glFramebufferTexture2D", js_gl_framebuffer_texture_2d, 6);
+  reg(ctx, g, "__mv_glCreateRenderbuffer", js_gl_create_renderbuffer, 1);
+  reg(ctx, g, "__mv_glBindRenderbuffer", js_gl_bind_renderbuffer, 3);
+  reg(ctx, g, "__mv_glRenderbufferStorage", js_gl_renderbuffer_storage, 5);
+  reg(ctx, g, "__mv_glFramebufferRenderbuffer", js_gl_framebuffer_renderbuffer,
+      5);
+  reg(ctx, g, "__mv_glDeleteRenderbuffer", js_gl_delete_renderbuffer, 2);
   reg(ctx, g, "__mv_glCheckFramebufferStatus", js_gl_check_framebuffer_status,
       2);
   reg(ctx, g, "__mv_glDeleteFramebuffer", js_gl_delete_framebuffer, 2);
