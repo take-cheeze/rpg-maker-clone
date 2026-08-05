@@ -1369,16 +1369,16 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
-                      :prevent_critical, :attribute_set)
+                      :prevent_critical, :attribute_set, :switch_id)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
-              attribute_set: nil)
+              attribute_set: nil, switch_id: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit, attribute_set)
+               prevent_crit, attribute_set, switch_id)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -1811,6 +1811,23 @@ check 'field_items lists only held medicines, in id order with counts' do
   st.party.gain_item(5, 1)
   st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
   eq [[5, 1], [9, 2]], st.party.field_items
+end
+
+check 'a switch item is field-usable, effective, and flips its switch on use' do
+  items = { 4 => fake_item(type: 9, switch_id: 12, name: 'Whistle') }
+  st = item_party(items)
+  st.party.gain_item(4, 2)
+  eq [[4, 2]], st.party.field_items, 'switch items appear in the field menu'
+  ok st.party.switch_item?(4)
+  ok st.party.item_effective?(4, st.party.leader), 'a switch item is always effective'
+  # Using it consumes one and returns the switch to flip; the caller sets it.
+  sid = st.party.use_switch_item(4)
+  eq 12, sid, 'use returns the switch id'
+  eq 1, st.party.item_count(4), 'one is consumed'
+  st.switches[sid] = true
+  ok st.switches[12], 'the switch is now on'
+  # A non-switch (or absent) item flips nothing and consumes nothing.
+  ok st.party.use_switch_item(999).nil?, 'a non-switch item is not a switch use'
 end
 
 check 'item_recovery sums the flat amount and the percentage (integer math)' do

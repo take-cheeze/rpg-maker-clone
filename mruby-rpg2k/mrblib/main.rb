@@ -4096,9 +4096,11 @@ class RPG2k
         return if items.empty?
         id, = items[@item_index]
         it = @state.party.db_item(id)
-        # Only an all-ally medicine skips the target prompt; single-target
-        # medicines and skill books (always one actor) ask who to use it on.
-        if it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
+        # A switch item has no actor target; an all-ally medicine skips the
+        # target prompt; single-target medicines / skill books ask who to use on.
+        if it && it.type == Game::Party::ITEM_SWITCH
+          apply_switch_item(id)
+        elsif it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
           apply_item(id, nil)
         else
           @pending_item = id
@@ -4106,6 +4108,14 @@ class RPG2k
           @target_index = 0
           build_target_window
         end
+      end
+
+      # A switch item turns on its game switch (the party consumes one); the menu
+      # owns the switch table.
+      def apply_switch_item(id)
+        sid = @state.party.use_switch_item(id)
+        @state.switches[sid] = true if sid
+        show_message(sid ? "Switch turned on." : "It had no effect.", :used)
       end
 
       def update_target
