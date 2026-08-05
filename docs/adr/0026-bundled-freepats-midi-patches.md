@@ -114,13 +114,30 @@ gated by the existing download barrier.
   decoder at all and preloading patches into it would have achieved nothing.
   The build now asks for `-sSDL2_MIXER_FORMATS=ogg,mid` (which compiles the port
   with `-DMUSIC_MID_TIMIDITY`, the same codec the native build uses) *and*
-  mounts the patch set at `/timidity` via `-DWASM_MIDI_PATCHES=ON`. CI passes
-  that flag, so the deployed and preview pages both play MIDI — at the cost of
-  ~32 MiB in `index.data`. Dropping the flag gives a slimmer page whose `.mid`
-  playback is silent; the decoder itself is small and stays in either way.
-  The preload is deliberately not guarded on the directory existing, matching
-  `WASM_SAMPLE_DIR`: the download runs concurrently with the configure and is
-  awaited by a barrier before the link.
+  mounts the patch set at `/timidity`. The decoder is small and stays in either
+  way; the patches cost ~32 MiB in `index.data`.
+- **Making the patch preload opt-in was a mistake, corrected later.**
+  `-DWASM_MIDI_PATCHES` started as a plain option defaulting to *off*, on the
+  reasoning that the page's games are mostly OGG and the check could not be
+  automatic — a configure-time `EXISTS` test would race CI's download, which
+  runs concurrently with the configure and is only awaited by a barrier before
+  the link. CI passed the flag, so the deployed page was fine, but the build in
+  the README's own snippet does not, and that page could not play MIDI at all:
+  with no config to read, TiMidity fails `Mix_LoadMUS` outright rather than
+  synthesising silence, so an RPG2000 project ran without music. The option is
+  now `AUTO` (default) / `ON` / `OFF`: `AUTO` preloads when the patches have
+  already been downloaded, which is exactly the local flow, and `ON` keeps the
+  unguarded preload CI needs. The lesson is the general one this ADR opened
+  with — the failure shape here is silence, so the default has to be the one
+  that makes sound.
+- **The browser had no way to report any of this.** The page's on-screen log
+  mirrors stdout/stderr, and ng-log writes only `ERROR` and above there, so a
+  wasm build now lowers that threshold to `WARNING`: the patch-set warning, and
+  the per-track load failure that follows it, were otherwise written to a log
+  file inside the in-memory filesystem that no one can reach. The messages
+  themselves are also browser-aware, since "set `TIMIDITY_CFG`" is not advice a
+  page can act on. CI additionally greps the linked `index.js` for the preload,
+  because losing the patches breaks no build step.
 - **FreePats covers 72 of 128 melodic programs.** A MIDI selecting a missing
   program sounds thinner than it would with a fuller set; `TIMIDITY_CFG` is the
   documented escape hatch.

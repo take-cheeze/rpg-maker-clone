@@ -627,6 +627,17 @@ int main(int argc, char** argv) {
   }
   nglog::InitializeLogging(argv[0]);
 
+#ifdef __EMSCRIPTEN__
+  // The page has no terminal and no log file anyone can reach: ng-log's files
+  // land in the in-memory filesystem and vanish with the tab. Its on-screen log
+  // panel mirrors stdout/stderr (Module.print / printErr in src/shell.html),
+  // and ng-log only writes ERROR and above there by default -- which hid the
+  // warnings that explain a *silent* failure, a page built without the MIDI
+  // patch set being the one that cost the most to diagnose. Mirror warnings
+  // too, so the page says why rather than just going quiet.
+  nglog::SetStderrLogging(nglog::NGLOG_WARNING);
+#endif
+
   // RPG Maker XP projects render at 640x480 and VX / VX Ace ones at 544x416
   // (RPG2000/MV use 320x240). When the window size was not overridden on the
   // command line, size the canvas to the detected maker's resolution so its

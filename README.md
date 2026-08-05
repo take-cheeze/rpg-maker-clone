@@ -416,10 +416,15 @@
   time.
 
   ```sh
+  ./scripts/download-freepats.bash                  # MIDI instruments, once
   emcmake cmake -S . -B wasm-build -GNinja
   cmake --build wasm-build
   python3 scripts/serve.py wasm-build --port 8000   # then open localhost:8000
   ```
+
+  The first line is what makes an RPG2000 project's `.mid` BGM audible in the
+  page; it is picked up automatically by the configure that follows (see the
+  audio section below). Skip it for a page ~32 MiB lighter and silent on MIDI.
 
 - The page's loader accepts three sources for an RPG Maker 2000/2003 (RPG2k) or
   XP project:
@@ -539,10 +544,14 @@ part that explains it). Nothing else is collected.
   for API compatibility but not applied (SDL_mixer has no pitch control)
 - **MIDI works in the browser too.** Emscripten's SDL2_mixer port compiles one
   decoder per requested format and defaults to OGG-only, so the build asks for
-  `-sSDL2_MIXER_FORMATS=ogg,mid` to get the TiMidity decoder, and the deployed
-  page carries the patch set (`-DWASM_MIDI_PATCHES=ON`, ~32 MiB of
-  `index.data`). Configure without that flag for a slimmer page whose `.mid`
-  playback is silent
+  `-sSDL2_MIXER_FORMATS=ogg,mid` to get the TiMidity decoder, and the page
+  carries the patch set as ~32 MiB of `index.data`. That happens on its own:
+  `-DWASM_MIDI_PATCHES` defaults to `AUTO`, which packages the patches whenever
+  `scripts/download-freepats.bash` has already run — so download first, then
+  configure. Pass `ON` to require them regardless (what CI does, because its
+  download runs alongside the configure), or `OFF` for a slimmer page whose
+  `.mid` playback is silent. A page without them says so in its on-screen log
+  rather than just going quiet
 
 ## TODO
 - Editor with [imgui](https://github.com/ocornut/imgui)

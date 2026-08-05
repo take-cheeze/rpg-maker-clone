@@ -792,6 +792,21 @@ jobs:
           ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
 
+      # A page that lost its patch set does not fail the build, it just goes
+      # quiet: MIDI is where nearly all RPG2000 BGM lives, and without the
+      # instruments a .mid does not even load. The preload's file table lands in
+      # index.js, so the deployed page can be asked directly whether it carries
+      # them rather than trusting that the flag above still reached the link.
+      - name: Check the page carries the MIDI patch set
+        run: |
+          if ! grep -q '/timidity/timidity.cfg' wasm-build/index.js; then
+            echo "::error::the wasm page has no MIDI patch set preloaded, so" \
+              "every .mid BGM/ME would be silent. Check the freepats download" \
+              "and -DWASM_MIDI_PATCHES=ON in the cmake step above."
+            exit 1
+          fi
+          echo "MIDI patch set present in index.data"
+
       - name: ccache stats
         if: always()
         # As in the `build` job: this captures stdout into the step summary, so

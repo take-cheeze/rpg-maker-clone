@@ -164,9 +164,18 @@ void init_midi_config(void) {
     return;
   }
 
+#ifdef __EMSCRIPTEN__
+  // The page's advice is different: there is no executable to install next to
+  // and no environment to set, only the build flag that packages the patches.
+  LOG(WARNING) << "Audio: this page carries no MIDI patch set, so .mid BGM/ME "
+                  "will not play. Rebuild it after running "
+                  "scripts/download-freepats.bash (or with "
+                  "-DWASM_MIDI_PATCHES=ON).";
+#else
   LOG(WARNING) << "Audio: no TiMidity configuration found; MIDI music will "
                   "load but play silence. Set TIMIDITY_CFG to a patch set, or "
                   "install assets/timidity next to the executable.";
+#endif
 }
 
 int midi_available(void) {
@@ -259,14 +268,34 @@ bool start_music(const std::string& what, int volume, int loops) {
   return true;
 }
 
+// Explain a music load that failed. A .mid with no patch set resolved does not
+// fail for a reason the caller can read off SDL_mixer's message -- TiMidity
+// reports the missing config file, not that this build shipped without one --
+// so name the actual cause rather than passing the decoder's wording through.
+// `size` is the archived entry's byte count, or -1 when the music came from a
+// file (whose size adds nothing a path does not already say).
+void log_music_load_failure(const std::string& what, int size = -1) {
+  std::string origin = "'" + what + "'";
+  if (size >= 0)
+    origin = "archived " + origin + " (" + std::to_string(size) + " bytes)";
+  if (has_midi_extension(what) && g_timidity_cfg.empty()) {
+    LOG(WARNING) << "Audio: cannot play MIDI " << origin
+                 << ": no patch set was found, so nothing can synthesise it "
+                    "(see the startup warning). SDL_mixer said: "
+                 << Mix_GetError();
+    return;
+  }
+  LOG(WARNING) << "Audio: failed to load music " << origin << ": "
+               << Mix_GetError();
+}
+
 // Free and replace the current music with a freshly loaded stream, then play it
 // (loops = -1 loops forever, 1 plays once). Returns false on load failure.
 bool play_music(const std::string& path, int volume, int loops) {
   free_music();
   g_music = Mix_LoadMUS(path.c_str());
   if (!g_music) {
-    LOG(WARNING) << "Audio: failed to load music '" << path
-                 << "': " << Mix_GetError();
+    log_music_load_failure(path);
     return false;
   }
   return start_music(path, volume, loops);
@@ -293,8 +322,7 @@ bool play_music_mem(const std::string& name,
   }
   g_music = Mix_LoadMUS_RW(rw, 1);  // 1: SDL_mixer closes the RWops
   if (!g_music) {
-    LOG(WARNING) << "Audio: failed to load archived music '" << name << "' ("
-                 << size << " bytes): " << Mix_GetError();
+    log_music_load_failure(name, size);
     g_music_bytes.clear();
     return false;
   }
