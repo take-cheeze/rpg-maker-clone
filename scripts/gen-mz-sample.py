@@ -235,11 +235,12 @@ system = {
         "screenHeight": 624,
         "uiAreaWidth": 808,
         "uiAreaHeight": 616,
-        # No font is shipped (the RTP fonts are not redistributable), and MZ's
-        # FontManager marks an empty filename "loaded" without touching the
-        # FontFace API, so the boot is never gated on a font we cannot ship.
-        "mainFontFilename": "",
-        "numberFontFilename": "",
+        # The authored font (scripts/gen-sample-font.py) — a face we own, so it
+        # can be committed where the RTP fonts cannot. Shipped as .woff because
+        # that is what real MZ projects ship, which also makes CI exercise the
+        # WOFF unpacker in mvcanvas.cxx.
+        "mainFontFilename": "Sample.woff",
+        "numberFontFilename": "Sample.woff",
         "fallbackFonts": "",
         "fontSize": 26,
         "windowOpacity": 192,
