@@ -438,6 +438,77 @@ class RPGXP
       end
     end
 
+    # The screen-wide effects of RMXP's `Game_Screen` that are not the tone:
+    # Screen Flash (224) and Screen Shake (225). Pure data plus RMXP's own
+    # per-frame maths, so the scene only has to hand the results to a viewport
+    # (`color` for the flash, `ox` for the shake).
+    class Screen
+      # Flash colour as [red, green, blue, alpha]; alpha decays to zero over the
+      # flash's duration. Shake is a signed pixel offset.
+      attr_reader :flash_color, :shake
+
+      def initialize
+        @flash_color = [0.0, 0.0, 0.0, 0.0]
+        @flash_duration = 0
+        @shake = 0.0
+        @shake_power = 0
+        @shake_speed = 0
+        @shake_duration = 0
+        @shake_direction = 1
+      end
+
+      def flashing?; @flash_duration >= 1 || @flash_color[3] > 0; end
+      def shaking?;  @shake_duration >= 1 || @shake != 0; end
+
+      # Screen Flash (224): `color` is [r, g, b, a], `duration` in frames.
+      def start_flash(color, duration)
+        @flash_color = [color[0], color[1], color[2], color[3]]
+        @flash_duration = duration.to_i
+        return if @flash_duration >= 1
+        @flash_color[3] = 0.0
+      end
+
+      # Screen Shake (225): power and speed 1..9, duration in frames.
+      def start_shake(power, speed, duration)
+        @shake_power = power.to_i
+        @shake_speed = speed.to_i
+        @shake_duration = duration.to_i
+      end
+
+      def update
+        step_flash
+        step_shake
+      end
+
+      private
+
+      # RMXP fades the flash by scaling its alpha by (d - 1) / d each frame, so
+      # it reaches zero exactly as the duration runs out.
+      def step_flash
+        return if @flash_duration < 1
+        d = @flash_duration
+        @flash_color[3] = @flash_color[3] * (d - 1) / d
+        @flash_duration = d - 1
+      end
+
+      # RMXP's shake is a spring: the offset moves by power*speed/10 a frame and
+      # reverses whenever it passes twice the power, and on the last frame it
+      # snaps to zero rather than being left off-centre (the `@shake * (@shake +
+      # delta) < 0` test — the step that would cross the middle).
+      def step_shake
+        return if @shake_duration < 1 && @shake == 0
+        delta = (@shake_power * @shake_speed * @shake_direction) / 10.0
+        if @shake_duration <= 1 && @shake * (@shake + delta) < 0
+          @shake = 0.0
+        else
+          @shake += delta
+        end
+        @shake_direction = -1 if @shake > @shake_power * 2
+        @shake_direction = 1 if @shake < -@shake_power * 2
+        @shake_duration -= 1 if @shake_duration >= 1
+      end
+    end
+
     # One slot of RMXP's `$game_screen.pictures`: what Show Picture (231) put on
     # screen, and where a Move Picture (232) / Rotate Picture (233) / Change
     # Picture Tone (234) is taking it. Pure data plus the per-frame easing, the

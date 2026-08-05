@@ -100,7 +100,11 @@ class RPGXP
       TRANSPARENT     = 208
       MOVE_ROUTE      = 209
       WAIT_FOR_MOVE   = 210
+      PREPARE_TRANSITION = 221
+      EXECUTE_TRANSITION = 222
       TINT_SCREEN     = 223
+      FLASH_SCREEN    = 224
+      SHAKE_SCREEN    = 225
       SHOW_PICTURE    = 231
       MOVE_PICTURE    = 232
       ROTATE_PICTURE  = 233
@@ -160,7 +164,9 @@ class RPGXP
         @tint_requests = []
         @location_requests = []
         @picture_requests = []
+        @screen_requests = []
         @erase_requested = false
+        @freeze_requested = false
         @running = true
         reset_waits
         self
@@ -174,6 +180,8 @@ class RPGXP
         @tint_requests = []
         @location_requests = []
         @picture_requests = []
+        @screen_requests = []
+        @freeze_requested = false
         @running = false
         reset_waits
       end
@@ -209,6 +217,14 @@ class RPGXP
         reqs
       end
 
+      # Drain the Screen Flash (224) / Screen Shake (225) requests queued since
+      # the last call. Each is a hash with an `:op` of :flash or :shake.
+      def take_screen_requests
+        reqs = @screen_requests || []
+        @screen_requests = []
+        reqs
+      end
+
       # Drain the Set Event Location (202) requests queued since the last call.
       def take_location_requests
         reqs = @location_requests || []
@@ -224,6 +240,17 @@ class RPGXP
         @picture_requests = []
         reqs
       end
+
+      # True (once) if a Prepare for Transition ran since the last call.
+      def take_freeze_request
+        v = @freeze_requested
+        @freeze_requested = false
+        v
+      end
+
+      # The transition graphic Execute Transition asked for ("" for a plain
+      # dissolve). Read by the scene when it starts the fade.
+      attr_reader :transition_name
 
       # Advance until the list finishes or a UI request suspends us. Runs at most
       # MAX_STEPS_PER_FRAME commands so a bad loop cannot hang the frame.
@@ -282,7 +309,9 @@ class RPGXP
         @tint_requests = []
         @location_requests = []
         @picture_requests = []
+        @screen_requests = []
         @erase_requested = false
+        @freeze_requested = false
         reset_waits
       end
 
@@ -296,6 +325,7 @@ class RPGXP
         @teleport = nil
         @input_variable = nil
         @input_digits = nil
+        @transition_name = nil
       end
 
       def switches;  @state.switches;  end
@@ -340,7 +370,11 @@ class RPGXP
         when TRANSPARENT     then do_transparent(cmd)
         when MOVE_ROUTE      then do_move_route(cmd)
         when WAIT_FOR_MOVE   then do_wait_for_move(cmd)
+        when PREPARE_TRANSITION then do_prepare_transition(cmd)
+        when EXECUTE_TRANSITION then do_execute_transition(cmd)
         when TINT_SCREEN     then do_tint_screen(cmd)
+        when FLASH_SCREEN    then do_flash_screen(cmd)
+        when SHAKE_SCREEN    then do_shake_screen(cmd)
         when SHOW_PICTURE, MOVE_PICTURE, ROTATE_PICTURE, PICTURE_TONE,
              ERASE_PICTURE then do_picture(cmd)
         when BATTLE_PROCESS  then do_battle_process(cmd)
@@ -950,6 +984,57 @@ class RPGXP
         @wait_kind = :move_completion
         @waiting = true
         @index += 1
+      end
+
+      # Screen Flash (224): [RPG::Color, duration]. Screen Shake (225): [power,
+      # speed, duration]. Neither pauses -- RMXP writes into $game_screen and
+      # Spriteset_Map catches up next frame -- so both are queued for the scene,
+      # which owns the screen viewport they act on.
+      #
+      # The Color is passed through as the object, not unpacked into numbers
+      # here, for the same reason Change Screen Color Tone (223) passes its Tone
+      # through: this file is driven under CRuby over real event lists by
+      # scripts/rpgxp_testbed_check.rb, where the RGSS value types are Marshal
+      # shims with no component readers. The scene -- which only ever runs in the
+      # real build -- reads the channels.
+      def do_flash_screen(cmd)
+        color = param(cmd, 0)
+        @index += 1
+        return unless color
+        @screen_requests << { op: :flash, duration: param(cmd, 1, 0).to_i,
+                              color: color }
+      end
+
+      def do_shake_screen(cmd)
+        @index += 1
+        @screen_requests << { op: :shake, power: param(cmd, 0, 0).to_i,
+                              speed: param(cmd, 1, 0).to_i,
+                              duration: param(cmd, 2, 0).to_i }
+      end
+
+      # Prepare for Transition (221): freeze the screen as it is now. RMXP's
+      # `command_221` is a bare `Graphics.freeze`; a game pairs it with a
+      # teleport, a tint or a map change and then dissolves the still away with
+      # 222, so the change itself is never seen. Does not pause.
+      def do_prepare_transition(_cmd)
+        @index += 1
+        @freeze_requested = true
+      end
+
+      # Execute Transition (222): [transition graphic name]. Dissolve the frozen
+      # still away. RMXP hands this to Scene_Map, which calls the *blocking*
+      # `Graphics.transition(20)` — so the interpreter does not advance for those
+      # 20 frames. Ours suspends instead and lets the scene fade the still one
+      # frame per update: same ordering, without a 20-frame loop inside a single
+      # frame callback (which is what the browser build could not afford, see
+      # docs/adr/0023-rpgxp-script-host-frame-driver.md).
+      TRANSITION_FRAMES = 20
+
+      def do_execute_transition(cmd)
+        @index += 1
+        @transition_name = param(cmd, 0, "")
+        @wait_kind = :transition
+        @waiting = true
       end
 
       # Change Screen Color Tone (223): [RPG::Tone, duration in frames]. Like

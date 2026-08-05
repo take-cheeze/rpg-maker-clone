@@ -814,6 +814,100 @@ assert "Interpreter: set move route resolves the target" do
   assert_true it4.take_move_route_requests.empty?
 end
 
+assert "Game::Screen decays a flash to nothing over its duration" do
+  sc = RPGXP::Game::Screen.new
+  assert_false sc.flashing?
+  sc.start_flash([255, 255, 255, 255], 4)
+  assert_true sc.flashing?
+  4.times { sc.update }
+  assert_equal 0.0, sc.flash_color[3]
+  assert_false sc.flashing?
+  # A zero duration is an immediate clear, not a permanent tint.
+  sc.start_flash([255, 0, 0, 255], 0)
+  assert_equal 0.0, sc.flash_color[3]
+end
+
+assert "Game::Screen shakes and settles back on centre" do
+  sc = RPGXP::Game::Screen.new
+  assert_equal 0.0, sc.shake
+  sc.start_shake(5, 5, 20)
+  sc.update
+  # power * speed / 10 the first frame.
+  assert_equal 2.5, sc.shake
+  # It reverses once it passes twice the power, so it never runs away.
+  40.times { sc.update }
+  assert_true sc.shake.abs <= 5 * 2 + 2.5
+  # And it ends centred rather than stuck off to one side.
+  60.times { sc.update }
+  assert_equal 0.0, sc.shake
+  assert_false sc.shaking?
+end
+
+assert "Interpreter: flash and shake queue without pausing" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(224, [Color.new(255, 255, 255, 200), 10], 0),
+    cmd(225, [6, 7, 30], 0),
+    cmd(121, [5, 5, 0], 0)
+  ], 1, 7)
+  it.update
+  assert_false it.waiting?
+  assert_true s.switches[5]
+  reqs = it.take_screen_requests
+  assert_equal 2, reqs.size
+  assert_equal :flash, reqs[0][:op]
+  # The Color object is passed through untouched (the scene reads its channels).
+  assert_equal 200.0, reqs[0][:color].alpha
+  assert_equal 10, reqs[0][:duration]
+  assert_equal :shake, reqs[1][:op]
+  assert_equal 6, reqs[1][:power]
+  assert_equal 7, reqs[1][:speed]
+  assert_equal 30, reqs[1][:duration]
+  assert_true it.take_screen_requests.empty?
+
+  # A flash with no Color object is dropped rather than raising.
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(224, [nil, 10], 0), cmd(121, [6, 6, 0], 0)], 1, 7)
+  it2.update
+  assert_true it2.take_screen_requests.empty?
+  assert_true s.switches[6]
+end
+
+assert "Interpreter: prepare/execute transition freezes then suspends" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([
+    cmd(221, [], 0),                # Prepare for Transition (does not pause)
+    cmd(121, [5, 5, 0], 0),         # so this still runs this frame
+    cmd(222, ["Blind"], 0),         # Execute Transition (pauses)
+    cmd(121, [6, 6, 0], 0)          # must NOT run until the fade is over
+  ], 1, 7)
+  it.update
+  assert_true s.switches[5]
+  assert_true it.waiting?
+  assert_equal :transition, it.wait_kind
+  assert_equal "Blind", it.transition_name
+  assert_false s.switches[6]
+  # The scene takes the freeze once, then resumes when the still has faded.
+  assert_true it.take_freeze_request
+  assert_false it.take_freeze_request
+  it.resume
+  assert_false it.waiting?
+  assert_true s.switches[6]
+end
+
+assert "Interpreter: a transition with no graphic name still suspends" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  it.start([cmd(222, [""], 0)], 1, 7)
+  it.update
+  assert_true it.waiting?
+  assert_equal "", it.transition_name
+  # No 221 ran, so there is nothing for the scene to dissolve.
+  assert_false it.take_freeze_request
+end
+
 assert "Game::Picture eases a move onto its target and stops there" do
   p = RPGXP::Game::Picture.new(1)
   p.show("CG1", 0, 0, 0, 100, 100, 255, 0)
