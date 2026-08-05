@@ -203,6 +203,31 @@ needed it (`RPG::Weather` scatters its drops with `rand` too — that would have
 been the next report). Added to `build_config.rb` with the dependency edge in
 `mrbgem.rake`.
 
+### 0h. `#clone` / `#dup` on the value types ✅ (where a game's screen tone stopped it)
+
+With `rand` and the table write fixed, both beds reach **`Scene_Map`** — the test
+bed goes `Scene_Title → Scene_Map` and runs to the timeout, the released game
+`Scene_logo → Scene_Title → Scene_Map`. The next report:
+
+```
+[RGSS] script host: section "Main" raised TypeError: uninitialized RGSS::Tone
+[RGSS] script host:   from Game_Screen:102:in red
+[RGSS] script host:   from Game_Screen:102:in update
+```
+
+`Game_Screen#start_tone_change` keeps `@tone_target = tone.clone`, and mruby's
+`clone`/`dup` allocate a bare object of the same class and copy only its
+instance variables — so a cloned `Color`/`Tone`/`Rect`/`Table` carried no native
+payload and the first read of it raised. Both call `initialize_copy` on the new
+object, which the four value types now define. Games do this constantly (the
+screen tone, the flash colour, a map's fog tone, a picture's tone), so it is on
+the path of anything that tints the screen.
+
+**Still open in the same family:** `Bitmap#clone` — RGSS's own `RPG::Cache`
+clones bitmaps for hue variants (ours re-loads instead, see gap 0), but a
+community script that clones one will raise the same way. It needs a real pixel
+copy, not a payload copy.
+
 ### 0g. `Table#[]=` past the edge ✅ (a write RGSS drops, we raised on)
 
 ```

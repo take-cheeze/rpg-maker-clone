@@ -413,6 +413,28 @@ mrb_value table_init(mrb_state* M, V self) {
   return self;
 }
 
+// RGSS's value types are copied with #clone / #dup throughout a game's own
+// scripts — `@tone_target = tone.clone` in Game_Screen, `@flash_color =
+// color.clone`, Game_Map's fog tone, Game_Picture's. mruby's clone/dup allocate
+// a bare object of the same class and copy only its instance variables, so the
+// copy came back with no native payload at all and the first read of it raised
+// "uninitialized RGSS::Tone" — which is where Pray for You stopped once it
+// reached its map and the screen tone started moving. Both clone and dup call
+// initialize_copy on the new object, so this is where the payload is copied.
+template <class T>
+mrb_value data_init_copy(mrb_state* M, V self) {
+  V other;
+  mrb_get_args(M, "o", &other);
+  if (mrb_obj_equal(M, self, other))
+    return self;
+  const T& src = DataType<T>::get(M, other);
+  if (DATA_PTR(self))
+    DataType<T>::get(M, self) = src;
+  else
+    DataType<T>::alloc_obj(M, self) = src;
+  return self;
+}
+
 mrb_value table_get(mrb_state* M, V self) {
   mrb_int x, y = 0, z = 0;
   mrb_get_args(M, "i|ii", &x, &y, &z);
@@ -5171,6 +5193,8 @@ void define_rect(mrb_state* M, RClass* m) {
         return self;
       },
       MRB_ARGS_OPT(4));
+  mrb_define_method(M, rect, "initialize_copy", data_init_copy<Rect>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(
       M, rect, "set",
       [](mrb_state* M, V self) {
@@ -5551,6 +5575,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(color, MRB_TT_DATA);
   mrb_define_method(M, color, "initialize", color_init,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  // #clone / #dup, which a game's scripts use on these constantly.
+  mrb_define_method(M, color, "initialize_copy", data_init_copy<Color>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, color, "set", color_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_method(M, color, "red", component_get<Color, &Color::red>,
@@ -5581,6 +5608,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
   mrb_define_method(M, tone, "initialize", tone_init,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, tone, "set", tone_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_method(M, tone, "red", component_get<Tone, &Tone::red>,
@@ -5610,6 +5639,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(table, MRB_TT_DATA);
   mrb_define_method(M, table, "initialize", table_init,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
+  mrb_define_method(M, table, "initialize_copy", data_init_copy<Table>,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, table, "[]", table_get,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
   mrb_define_method(M, table, "[]=", table_set,

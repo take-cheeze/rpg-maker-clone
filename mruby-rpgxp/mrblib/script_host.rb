@@ -131,6 +131,11 @@ class RPGXP
         begin
           rgss_eval_section(source, name)
         rescue StandardError, ScriptError => e
+          # A timeout is how a *headless* run ends, not how it fails: the driver
+          # treats it as a clean end (RPGXP#drive_script_host). Reporting it as
+          # "section Main raised …" with a backtrace made a passing CI run read
+          # like a crashed one.
+          raise e if quiet_end?(e)
           $stderr.puts "[RGSS] script host: section #{name.inspect} raised " \
                        "#{e.class}: #{e.message}"
           report_backtrace(e)
@@ -140,6 +145,16 @@ class RPGXP
         end
       end
       true
+    end
+
+    # Whether this exception is the run *ending* rather than the game breaking.
+    # Only the timeout qualifies here: `exit` raises SystemExit, which is not a
+    # StandardError and never reaches the rescue above. Guarded, because the
+    # CRuby harnesses load this file without RGSS::Timeout defined.
+    def self.quiet_end?(e)
+      RGSS.const_defined?(:Timeout) && e.is_a?(RGSS::Timeout)
+    rescue StandardError
+      false
     end
 
     # Where in the *game's own scripts* a failure happened. The section name and

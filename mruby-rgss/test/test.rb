@@ -102,6 +102,53 @@ end
 # to ignore. Converting arguments before the bounds check turned it into
 # "TypeError: true cannot be converted to Integer" and killed the game on New
 # Game.
+# A game's own scripts copy these constantly — `@tone_target = tone.clone` in
+# Game_Screen, `@flash_color = color.clone`, Game_Map's fog tone, Game_Picture's
+# — and mruby's clone/dup allocate a bare object of the same class, copying only
+# instance variables. Without initialize_copy the copy carried no native payload
+# at all and the first read raised "uninitialized RGSS::Tone", which is where a
+# released game stopped once it reached its map and the screen tone moved.
+assert "RGSS value types survive #clone and #dup" do
+  color = RGSS::Color.new(10, 20, 30, 40)
+  [color.clone, color.dup].each do |copy|
+    assert_equal 10.0, copy.red
+    assert_equal 20.0, copy.green
+    assert_equal 30.0, copy.blue
+    assert_equal 40.0, copy.alpha
+    # A copy is its own object: changing it must not move the original.
+    copy.set(1, 2, 3, 4)
+    assert_equal 1.0, copy.red
+    assert_equal 10.0, color.red
+  end
+
+  tone = RGSS::Tone.new(-5, 0, 5, 50)
+  [tone.clone, tone.dup].each do |copy|
+    assert_equal(-5.0, copy.red)
+    assert_equal 5.0, copy.blue
+    assert_equal 50.0, copy.gray
+  end
+  # The shape Game_Screen#update runs every frame while a tone is changing.
+  target = tone.clone
+  moving = RGSS::Tone.new(0, 0, 0, 0)
+  moving.red = (moving.red * 3 + target.red) / 4
+  assert_equal(-1.25, moving.red) # components are floats, as in RGSS
+
+  rect = RGSS::Rect.new(1, 2, 3, 4)
+  copy = rect.clone
+  assert_equal 1, copy.x
+  assert_equal 4, copy.height
+  copy.set(9, 9, 9, 9)
+  assert_equal 1, rect.x, "the original rect moved with its copy"
+
+  table = RGSS::Table.new(2, 2)
+  table[1, 1] = 7
+  tcopy = table.clone
+  assert_equal 7, tcopy[1, 1]
+  assert_equal 2, tcopy.xsize
+  tcopy[1, 1] = 8
+  assert_equal 7, table[1, 1], "the original table shares its copy's storage"
+end
+
 assert "RGSS::Table drops out-of-range writes without reading the value" do
   t = RGSS::Table.new(2, 2)
   t[0, 0] = 5
