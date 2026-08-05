@@ -1802,6 +1802,25 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   ok !wsp.visible, 'clearing weather hides the overlay'
 end
 
+check 'the timer window shows M:SS while visible and hides when never shown' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok scene.instance_variable_get(:@timer_window).nil?, 'no window until shown'
+  # Show a 75 s timer (Start with the show flag on).
+  st.timer_frames = 75 * 60
+  st.timer_visible = true
+  scene.update
+  win = scene.instance_variable_get(:@timer_window)
+  ok win, 'the window is built on first display'
+  ok win.visible, 'and shown'
+  eq '1:15', win.contents.draw_calls.last[4], 'it draws the M:SS text'
+  # Hiding the timer hides the window.
+  st.timer_visible = false
+  scene.update
+  ok !win.visible, 'clearing visibility hides the timer window'
+end
+
 check 'boarding plays the vehicle BGM; disembarking restores the map BGM' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
