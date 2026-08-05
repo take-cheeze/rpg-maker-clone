@@ -1337,6 +1337,16 @@ const char* kWebGLPreamble = R"MVJS(
 
 }  // namespace
 
+// Read back the WebGL context's FBO as top-down RGBA8 (see mvhost.hxx). The MZ
+// present path copies this onto the on-screen RGSS::Bitmap each frame, the way
+// mv_canvas_pixels serves MV's Canvas2D main canvas.
+const uint8_t* mv_webgl_pixels(int handle, int* w, int* h) {
+  mvgl::Context* c = bind(handle);
+  if (!c)
+    return nullptr;
+  return mvgl::pixels(c, w, h);
+}
+
 // Install the WebGL bridge: the __mv_gl* natives and the WebGLRenderingContext
 // prototype. Called once after the Canvas2D bridge (mvjs.cxx). The canvas
 // shim's getContext("webgl") gates on __mv_glCreate existing, so on a build
@@ -1431,5 +1441,10 @@ void mv_install_webgl(JSContext* ctx) {
 // No native GL: install nothing. The canvas shim's getContext("webgl") gates on
 // __mv_glCreate, so it keeps returning null and PIXI/MZ reports WebGL absent.
 void mv_install_webgl(JSContext*) {}
+
+// No GL backend: there is no WebGL frame to present.
+const uint8_t* mv_webgl_pixels(int, int*, int*) {
+  return nullptr;
+}
 
 #endif

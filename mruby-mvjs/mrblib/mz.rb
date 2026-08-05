@@ -134,11 +134,13 @@ class MZ
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }
     end
 
-    # False until the WebGL-subset backend PIXI v5 needs (milestone M6) is built.
-    # The quickjs host itself is already present (it is shared with MV), but MZ
-    # cannot render a frame without WebGL, so a whole game cannot yet boot.
+    # True where the WebGL-subset backend PIXI v5 needs (milestone M6.3) is
+    # compiled in — the surfaceless-EGL GLES2 context (MV::GL). There MZ boots to
+    # Scene_Boot and presents frames on-screen (see #start / #main_loop); where
+    # it is absent (Emscripten uses the browser's own WebGL; header-less builds)
+    # MZ falls back to the boot probe that reports the pending state.
     def runtime_available?
-      false
+      MV::GL.available?
     end
   end
 
@@ -156,26 +158,162 @@ class MZ
   # wired yet, so the pending notice still follows. The rest of the binary — and
   # the other makers — are unaffected either way.
   def start
+    unless self.class.runtime_available?
+      # No native WebGL backend (e.g. header-less builds): probe how far the
+      # boot gets and report, as before — nothing can be presented.
+      boundary = boot_probe
+      if boundary && !boundary.empty?
+        $stderr.puts "[MZ] boot stopped at: #{boundary.split("\n").first}"
+      elsif @boot_scene && !@boot_scene.empty?
+        $stderr.puts "[MZ-BOOT] booted to #{@boot_scene} through the WebGL " \
+                     "renderer"
+      end
+      warn_runtime_pending
+      return
+    end
+
+    boot
+    # Only enter the frame loop if the boot actually reached a scene; if WebGL
+    # could not be made current (e.g. running under an X server, where Mesa
+    # rejects the bind — see mvgl.cxx), there is nothing to present, so report
+    # the boundary instead of spinning on a dead SceneManager.
+    if @boot_scene.nil? || @boot_scene.empty?
+      warn_runtime_pending
+      return
+    end
+    loop { main_loop }
+  rescue RGSS::Timeout
+    # The engine raises this to unwind the run loop cleanly (e.g. --timeout_ms).
+  rescue StandardError => e
+    $stderr.puts "[MZ] boot error: #{e.message}"
+    warn_runtime_pending
+  end
+
+  # One iteration of the host loop (Emscripten drives this directly): advance MZ
+  # by a frame, present the WebGL frame on-screen, then let RGSS repaint. A no-op
+  # beyond the pending notice where WebGL is absent.
+  def main_loop
+    unless self.class.runtime_available?
+      warn_runtime_pending
+      return
+    end
+    # Under Emscripten main_loop is called without #start; boot lazily once.
+    boot unless @booted
+    return if @boot_scene.nil? || @boot_scene.empty?
+
+    sync_input # push RGSS input into MZ's Input before the scene updates
+    sync_touch # push RGSS mouse into MZ's TouchInput before the scene update
+    # Advance one MZ frame (SceneManager.update renders the scene through PIXI
+    # into the WebGL canvas), then blit that frame on-screen. Guard the update so
+    # a per-frame throw is logged, not fatal — one bad frame never aborts the
+    # loop, as in a browser.
+    MV::JS.eval(
+      "(function(){ if (typeof SceneManager !== 'undefined') { try { " \
+      "SceneManager.update(1); } catch(e){ if (typeof console !== " \
+      "'undefined' && console.error) console.error('[MZ] frame: ' + " \
+      "((e && (e.stack || e.message)) || e)); } } })();"
+    )
+    present
+    RGSS::Input.update
+    RGSS::Graphics.update
+  end
+
+  private
+
+  # Boot the engine once: run it to Scene_Boot (via #boot_probe), report the
+  # `[MZ-BOOT]` marker (or the boundary if it stopped early), and create the
+  # on-screen surface frames are presented onto. Sets @booted so the lazy boot
+  # in #main_loop runs only once.
+  def boot
+    @booted = true
     boundary = boot_probe
     if boundary && !boundary.empty?
       $stderr.puts "[MZ] boot stopped at: #{boundary.split("\n").first}"
     elsif @boot_scene && !@boot_scene.empty?
       $stderr.puts "[MZ-BOOT] booted to #{@boot_scene} through the WebGL renderer"
     end
-    warn_runtime_pending
+    create_screen
+  end
+
+  # Push the engine's held keys (RGSS::Input) into MZ's `Input._currentState`
+  # before the scene updates, so SceneManager.update sees them. rmmz's Input has
+  # the same virtual-button names and `_currentState` shape as rmmv, so the key
+  # map and injection are shared with MV (MV.pressed_buttons reads only
+  # RGSS::Input). Mirrors MV#sync_input.
+  def sync_input
+    assigns = MV.pressed_buttons.map { |b| "c['#{b}']=true;" }.join
+    MV::JS.eval(
+      "(function(){ if (typeof Input === 'undefined' || !Input._currentState) " \
+      "return; var c = Input._currentState; for (var k in c) c[k] = false; " \
+      "#{assigns} })();"
+    )
   rescue StandardError => e
-    $stderr.puts "[MZ] boot probe error: #{e.message}"
-    warn_runtime_pending
+    $stderr.puts "[MZ] input sync error: #{e.message}"
   end
 
-  # Per-frame entry point (Emscripten drives this directly, as for the other
-  # makers). A no-op beyond the pending notice until the renderer lands: without
-  # WebGL nothing can be presented, so there is no per-frame work to do.
-  def main_loop
-    warn_runtime_pending
+  # Push a pointer sample (mouse x/y + left button) into MZ's TouchInput before
+  # the scene updates, so menu/map clicks work. rmmz's TouchInput takes the same
+  # `_newState` edges as rmmv, so the bridge JS is shared with MV. Mirrors
+  # MV#sync_touch.
+  def sync_touch
+    MV::JS.eval(
+      MV.touch_bridge_js(
+        RGSS::Input.mouse_x, RGSS::Input.mouse_y, RGSS::Input.mouse_pressed?
+      )
+    )
+  rescue StandardError => e
+    $stderr.puts "[MZ] touch sync error: #{e.message}"
   end
 
-  private
+  # The on-screen surface MZ's WebGL frame is presented onto: one full-screen
+  # sprite whose bitmap #present overwrites each frame (mirrors MV#create_screen).
+  # Held in instance variables so neither is garbage-collected while running.
+  def create_screen
+    @screen_bitmap = RGSS::Bitmap.new(WIDTH, HEIGHT)
+    @screen_sprite = RGSS::Sprite.new
+    @screen_sprite.bitmap = @screen_bitmap
+    @screen_sprite.z = 0
+  end
+
+  # Copy MZ's rendered WebGL frame onto the on-screen bitmap. PIXI renders into
+  # the WebGL canvas' FBO during SceneManager.update; MV::JS.present_gl reads that
+  # FBO back and blits it into the sprite's bitmap (marking it dirty) so the next
+  # Graphics.update draws it.
+  def present
+    return unless @screen_bitmap
+    handle = mz_gl_handle
+    unless @present_logged
+      @present_logged = true
+      if handle && handle > 0
+        $stderr.puts "[MZ] presenting frames on-screen (webgl handle #{handle})"
+      else
+        $stderr.puts "[MZ] present: no WebGL context handle resolved; " \
+                     "frames not shown"
+      end
+    end
+    MV::JS.present_gl(@screen_bitmap, handle) if handle && handle > 0
+  end
+
+  # Resolve the integer handle of MZ's main WebGL context (the id stored as
+  # `.__gl` on the WebGLRenderingContext the wrapper returns). PIXI v5 exposes it
+  # as `Graphics._app.renderer.gl`; fall back to the canvas' cached context.
+  # Cached once non-zero (the renderer is created once, at boot).
+  def mz_gl_handle
+    return @mz_gl_handle if @mz_gl_handle && @mz_gl_handle > 0
+    @mz_gl_handle = MV::JS.eval(<<~'JS').to_i
+      (function () {
+        try {
+          if (typeof Graphics === 'undefined') return 0;
+          var gl = (Graphics._app && Graphics._app.renderer &&
+                    Graphics._app.renderer.gl) || null;
+          if (!gl && Graphics._canvas && Graphics._canvas.getContext) {
+            gl = Graphics._canvas.getContext('webgl');
+          }
+          return (gl && gl.__gl) ? gl.__gl : 0;
+        } catch (e) { return 0; }
+      })();
+    JS
+  end
 
   # Drive the shared quickjs host through the real MZ engine and boot it. With
   # the WebGL backend built (M6.3), `SceneManager.run(Scene_Boot)` gets past the
@@ -245,11 +383,11 @@ class MZ
   def warn_runtime_pending
     return if @warned_runtime_pending
     @warned_runtime_pending = true
-    $stderr.puts "[MZ] RPG Maker MZ support is under construction: the engine " \
-                 "now boots on the shared host and renders Scene_Boot through " \
-                 "the WebGL backend (M6.3), but continuous play — per-frame " \
-                 "present to the screen and input — is not wired yet, so the " \
-                 "boot is a probe rather than a playable game. The " \
+    $stderr.puts "[MZ] RPG Maker MZ support is under construction: where the " \
+                 "WebGL backend is available the engine boots to Scene_Boot, " \
+                 "presents frames on-screen and takes input (M6.3), but this " \
+                 "build/run has no usable WebGL context (or the boot did not " \
+                 "reach a scene), so there is nothing to present. The " \
                  "engine/host/IO/input/audio layers are shared with MV. See " \
                  "docs/adr/0004-javascript-maker-mv-quickjs.md (M6)."
   end

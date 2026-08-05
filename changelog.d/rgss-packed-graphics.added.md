@@ -27,7 +27,5 @@
     test-bed checks now pack a graphic alongside the data too, and the VX one
     asserts that booting a packed project registers its archive at all.
 
-  Audio is not covered yet: `RGSS::Audio` plays through a C function table
-  (`include/rgss_audio.hxx`) whose entry points all take a path, so a packed BGM
-  needs that interface to grow memory variants. A packed game boots and draws,
-  but stays silent.
+  Packed *audio* needed a change to the audio backend's C interface and landed
+  separately — see the entry below.
