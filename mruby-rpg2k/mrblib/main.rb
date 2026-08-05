@@ -2829,6 +2829,13 @@ class RPG2k
         lines = ['Victory!']
         lines << "Gained #{exp} EXP." if exp > 0
         lines << "Found #{gold} gold." if gold > 0
+        # Each defeated enemy may drop its treasure item (rolled on the battle's
+        # own RNG); grant it to the bag and name it in the result window.
+        troop.drops(@battle_ui[:battle].rng).each do |iid|
+          @state.party.gain_item(iid, 1)
+          it = @state.party.db_item(iid)
+          lines << "Found #{it ? it.name : "item #{iid}"}."
+        end
         lines
       end
 

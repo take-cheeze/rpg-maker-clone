@@ -317,7 +317,9 @@ The work below is roughly ordered by the critical path to a walkable game
   buy / sell menus (one unit per confirm — the quantity selector is a later
   refinement).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
-  instantiate a database enemy group into live members and total its EXP / gold,
+  instantiate a database enemy group into live members and total its EXP / gold
+  (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
+  granted to the bag on a win),
   and the command decodes its troop id, escape / defeat modes and first-strike
   and routes the `[Victory]` / `[Escape]` / `[Defeat]` handler branches on the
   outcome (the "end event processing" escape mode abandons the event). The
