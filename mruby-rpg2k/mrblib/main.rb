@@ -3146,11 +3146,13 @@ class RPG2k
         pauses = []
         instants = []
         auto_close = false
+        show_gold = false
         offset = 0
         scans.each_with_index do |s, li|
           s[:pauses].each { |p| pauses << { at: offset + p[:at], kind: p[:kind] } }
           (s[:instants] || []).each { |a, b| instants << [offset + a, offset + b] }
           auto_close ||= s[:auto_close]
+          show_gold ||= s[:show_gold]
           offset += plain[li].length
         end
 
@@ -3176,12 +3178,14 @@ class RPG2k
         # Plain messages type out gradually; choice lists appear at once.
         reveal = Game::TextReveal.new(plain, 0, pauses, auto_close, instants)
         reveal.reveal_all if choice
+        # `\$` shows the party's gold in a small window alongside the message.
+        gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
         @message = { window: win, choice: choice, count: plain.length,
                      reveal: reveal, contents: contents, inner_w: inner_w,
                      seg_lines: seg_lines, face: face,
                      face_index: cfg.face_index,
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
-                     text_x: text_x, text_w: text_w }
+                     text_x: text_x, text_w: text_w, gold_window: gold_window }
         draw_message_contents
         win.contents = contents
         @choice_index = 0
@@ -3415,6 +3419,7 @@ class RPG2k
       def close_message
         return unless @message
         @message[:window].dispose
+        @message[:gold_window].dispose if @message[:gold_window]
         @message = nil
       end
 

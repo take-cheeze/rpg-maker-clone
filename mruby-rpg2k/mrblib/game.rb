@@ -32,10 +32,10 @@ module Game
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
   # `\n[n]` the name of actor n, `\\` a literal backslash, `\_` a space; `\c[n]`
-  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits), `\^` (auto-close) and
-  # `\>`/`\<` (instant span) are surfaced by #scan for the typewriter to act on;
-  # the remaining display codes (`\s` speed, `\$`) are dropped. `names` may be a
-  # Hash or any object responding to `[]`.
+  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits), `\^` (auto-close),
+  # `\>`/`\<` (instant span) and `\$` (show the gold window) are surfaced by #scan
+  # for the scene to act on; the remaining display code (`\s` speed) is dropped.
+  # `names` may be a Hash or any object responding to `[]`.
   module Message
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
@@ -63,6 +63,7 @@ module Game
     #              (:quarter) and `\|` (:full) timed holds;
     #   :auto_close — `\^` (close the window without a keypress once revealed);
     #   :instants — [[start, end)] spans that reveal at once (`\>` … `\<`);
+    #   :show_gold — `\$` (show the party's gold in a small window);
     #   :length  — the visible character count (what the reveal counts).
     def self.scan(text, variables, names)
       segs = []
@@ -70,6 +71,7 @@ module Game
       instants = []
       instant_start = nil # character index where an open `\>` span began
       auto_close = false
+      show_gold = false
       cur = ''
       color = 0
       count = 0 # visible characters emitted so far (pause positions index this)
@@ -94,13 +96,14 @@ module Game
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
           when '^'      then auto_close = true
+          when '$'      then show_gold = true # show the gold window
           when '>'      then instant_start = count if instant_start.nil?
           when '<'
             if instant_start
               instants << [instant_start, count]
               instant_start = nil
             end
-          # other display codes (`\s` speed, `\$`) produce no characters and no
+          # the remaining display code (`\s` speed) produces no characters and no
           # pacing here: dropped.
           end
         else
@@ -112,7 +115,7 @@ module Game
       segs << { text: cur, color: color } unless cur.empty?
       instants << [instant_start, count] if instant_start # unclosed `\>` runs to EOL
       { segments: segs, pauses: pauses, auto_close: auto_close,
-        instants: instants, length: count }
+        instants: instants, show_gold: show_gold, length: count }
     end
 
     # Truncate per-line colour segments to the first `revealed` characters

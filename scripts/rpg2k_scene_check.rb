@@ -861,6 +861,28 @@ check 'a \\! pause holds the reveal until a button is pressed' do
   ok reveal.done?
 end
 
+check 'a message with \$ shows a gold window; a plain one does not' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'Rich! \\$')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message opened'
+  gw = msg[:gold_window]
+  ok gw, 'the \\$ gold window is present'
+  ok gw.visible, 'and visible'
+
+  # A plain message (no \$) shows no gold window.
+  auto2 = page(trigger: 3)
+  auto2.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hello')]
+  scene2 = new_scene({ 1 => event(2, 2, auto2) }, player: [5, 5])
+  msg2 = nil
+  12.times { scene2.update; msg2 = scene2.instance_variable_get(:@message); break if msg2 }
+  ok msg2, 'plain message opened'
+  ok msg2[:gold_window].nil?, 'no \\$ -> no gold window'
+end
+
 check 'a \> \< instant span reveals far faster than the typewriter' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
