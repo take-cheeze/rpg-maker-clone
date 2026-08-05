@@ -67,7 +67,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - run: nix develop -c echo test
+      - run: ./scripts/nix-develop.bash echo test
 
       - name: cache rtp
         uses: actions/cache@v6
@@ -282,7 +282,7 @@ jobs:
           # in the archive — and asserts the engine finds it only when it is
           # there, which is what makes the check non-vacuous. Displays 113-114.
           - name: RGSSAD packed-asset smoke test
-            run: nix develop -c ./scripts/rgssad_asset_check.bash 113
+            run: ./scripts/nix-develop.bash -c ./scripts/rgssad_asset_check.bash 113
 
           - name: MV boot smoke test
             continue-on-error: true
@@ -549,7 +549,7 @@ jobs:
       # no other nix process running, keeps those steps from racing each other
       # for the store lock; it costs nothing overall because each of them would
       # otherwise pay for the same realisation anyway.
-      - run: nix develop -c echo test
+      - run: ./scripts/nix-develop.bash echo test
 
       # Fetch + build the MIT MV engine into the committed sample so it can be
       # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
