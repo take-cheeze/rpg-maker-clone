@@ -5237,6 +5237,27 @@ check 'battle-event opcodes match the LCF Code enum' do
   eq 23311, IC::END_BRANCH_B
 end
 
+check 'BattlePage.check_turns matches EasyRPG CheckTurns exactly' do
+  # Transcribed from Game_Battle::CheckTurns(turns, base, multiple):
+  #   multiple == 0 -> turns >= base && (turns - base) == 0
+  #   otherwise     -> turns >= base && (turns - base) % multiple == 0
+  # Cross-check the Ruby against that C expression over a grid, so the
+  # simplification of the first branch to `turn == base` stays honest.
+  (0..8).each do |turn|
+    (0..4).each do |base|
+      (0..3).each do |mult|
+        want = if mult == 0
+                 turn >= base && (turn - base) == 0
+               else
+                 turn >= base && (turn - base) % mult == 0
+               end
+        got = BP.check_turns(turn, base, mult)
+        eq want, got, "turn=#{turn} base=#{base} multiple=#{mult}"
+      end
+    end
+  end
+end
+
 check 'BattlePage.check_turns matches RPG2000 turn arithmetic' do
   # No multiple: the turn must equal the base exactly.
   ok BP.check_turns(3, 3, 0)
