@@ -1,0 +1,184 @@
+# 30. Actors live in a permanent roster, not in the party list
+
+Date: 2026-08-05
+
+## Status
+
+Accepted
+
+## Context
+
+`Game::Party` owned its members outright. `add_actor` built a fresh
+`Game::Actor` from the database row and pushed it; `remove_actor` dropped the
+object on the floor:
+
+```ruby
+def add_actor(id)
+  return if include_actor?(id)
+  @actors.push Actor.new(@db, id)      # <- rebuilt from the database, every time
+  @revision += 1
+end
+
+def remove_actor(id)
+  @actors.reject! { |a| a.id == id }   # <- the only reference; the actor is gone
+end
+```
+
+That is fine for a game whose party never changes. It is wrong for a game whose
+party changes constantly, and Nepheshel is exactly that game: its entire
+companion mechanic is Change Party Member (10330), which it issues **5205
+times** — 2835 adds and 2370 removes. Tallied by actor id:
+
+| actor | adds | removes |
+|---|---|---|
+| 2 ファル | 630 | 471 |
+| 3 ティララ | 630 | 471 |
+| 4 ディーヴァ | 630 | 471 |
+| 5 ファル (alt) | 312 | 316 |
+| 6 ティララ (alt) | 312 | 316 |
+| 7 ディーヴァ (alt) | 312 | 316 |
+| 1, 15 | 9 | 9 |
+
+Common event 1 (ファル召還, "summon Fal") adds actor 2; common event 2
+(ファルを帰す, "send Fal home") removes her. The player summons and dismisses
+companions all game long. Every dismissal threw the companion away and every
+summon rebuilt her from the database row, so a levelled companion came back as a
+level-1 stranger. Driving those two real common events through the interpreter
+against the real `RPG_RT.ldb` measures it exactly — level, EXP, name, HP and
+skill count before the swap versus after:
+
+```
+after levelling: id2 [21, 16682, "RENAMED", 3, 9]
+in party after remove: [15]
+after rejoin:    id2 [1, 0, "ファル", 30, 1]
+```
+
+Level 21 → 1. 16682 EXP → 0. Nine learned skills → one. The rename undone.
+Everything the player had invested in that companion, discarded on the round
+trip. (The other test bed, mtf-meido-action, issues no Change Party Member at
+all, which is why this went unnoticed: it is a Nepheshel-shaped bug.)
+
+The save layer had the same hole from the other end. `#to_h` and `#to_lsd` wrote
+one per-actor entry per *current member*, and `.from_lsd` skipped saved actors
+who were not in the party:
+
+```ruby
+(save[108] || []).each do |aid, sa|
+  next unless roster.include?(aid)      # <- a companion who is away is dropped
+```
+
+So even the actors that survived in memory did not survive a save.
+
+The `.lsd` format itself says what the model should be. `AGENTS.md` already
+records chunk 108 (`SAVE_PARTY_ACTOR`) as "one entry per actor the party has
+**ever** held" — a real Nepheshel save carries rows for companions who are not
+currently along. A table keyed by actor id, holding everyone the game has met,
+is not something to invent: it is what RPG_RT serialises, because RPG_RT keeps
+one `Game_Actor` per database row for the whole session (`Game_Actors`) and
+treats the party as nothing more than a list of ids into it.
+
+A second, smaller symptom shared the same root. The `\N[n]` message control code
+resolved through `@db.player[id].name` — the *database* row — so a hero the
+player had named could not be addressed by the name they chose. Nepheshel opens
+Enter Hero Name (10740) on actor 1 and then refers to `\N[1]` in 34 messages.
+`\N[0]` was worse than stale: actor ids are 1-based, so it resolved to nothing
+at all and rendered as the empty string, which is how a boss line reading
+`\n[0]よ…` ("…, you") lost its subject.
+
+## Decision
+
+Introduce `Game::Actors`, a permanent roster keyed by database id, and demote
+`Game::Party` to an ordered view over it.
+
+- `Actors#[]` builds an actor from the database on first request and caches it
+  from then on — RPG_RT's `Game_Actors::GetActor`. A missing row logs and
+  returns nil instead of raising, so a game that references an actor the
+  database lacks keeps running.
+- `Actors#existing` looks up **without** creating. Read paths use it, so merely
+  naming an actor in a message does not enrol them in the roster the save
+  writes out.
+- `Party#add_actor` takes its actor from the roster, so rejoining is literally
+  the same object; `Party#remove_actor` only edits the ordered list.
+- `Party#to_h` writes the per-actor tables for the whole roster and keeps
+  `actor_ids` as the party proper. `#load_state` restores every id the saved
+  tables mention, pulling each through the roster, so an actor who was away when
+  the game was saved comes back exactly as they left.
+- `State#to_lsd` writes chunk 108 from the roster and `.from_lsd` restores every
+  entry in it, dropping the `next unless roster.include?` guard. Both directions
+  now match what a genuine save holds.
+- `\N[n]` resolves the live roster actor, falling back to the database row for
+  an actor the game has never instantiated; `\N[0]` is the party leader.
+- **A command that names one actor resolves through the roster, not the party.**
+  RPG_RT's `Game_Interpreter::GetActors` reads the party only for scope 0 ("the
+  whole party") and goes to `Game_Actors::GetActor` for a fixed or
+  variable-indexed id, so Change EXP / Level / Parameters / Skills / Equipment /
+  HP / MP / Condition / Full Heal / Simulated Attack and the four Change Actor
+  Name / Title / Sprite / Face commands (plus Enter Hero Name) all reach a
+  member who is currently away.
+
+  This is the other half of the same bug, and it is not a corner case:
+  **every** fixed-actor-id command in Nepheshel — 7805 of them, of which Change
+  Skills on actor 1 alone is 2871 — names an actor the game also dismisses. A
+  party-only lookup dropped the lot whenever the target happened to be out.
+  Measured per companion, 653 of the game's own commands change nothing at all
+  when run against an absent actor under the old lookup. It got worse with the
+  roster rather than better: before, a dismissed companion was rebuilt from the
+  database anyway, so a missed Change Skills was masked by the larger reset;
+  now the companion persists, so the skill is simply never learned.
+- **Reading an actor goes through the roster too**, and the split is the
+  interesting part. Conditional Branch type 5 has seven sub-conditions: "is in
+  the party" is a *party* question (`IsActorInParty`) and the other six —
+  name, level, HP, knows-skill, has-equipped, has-state — are *actor* questions
+  (`Game_Actors::GetActor`). Nepheshel writes 28 of the first kind and 243 of
+  the second, so answering both from the party sent 243 branches down the wrong
+  path whenever the companion they named was away. Control Variables' actor-stat
+  operand is the same: **all 2436** of Nepheshel's name a swappable companion,
+  and the game's party status display is built out of them, so a dismissed
+  member was listed at level 0.
+
+## Consequences
+
+Nepheshel's companion system works. A summoned companion keeps their level, EXP,
+learned skills, equipment, statuses, current HP/SP and any renaming across a
+dismissal, a re-summon, and a save taken while they are away — the same three
+figures as above now read `[21, 16682, "RENAMED", 3, 9]` at every step.
+
+Saves get slightly larger (per-actor rows for everyone met, not just the current
+party) and slightly more compatible: a real `.lsd` written by the editor with
+out-of-party companions in chunk 108 now loads them instead of discarding them.
+Older Marshal saves still load — an absent roster entry simply leaves that actor
+at their database defaults, which is what the old saves recorded anyway.
+
+The roster is reachable as `state.party.roster`. Placing it behind the party
+rather than on `Game::State` keeps every existing `state.party.*` call site
+working and keeps the two halves — who exists, who is fighting — owned by one
+object; the trade-off is that "roster" now means two things in the code's
+history (the old `.lsd` field name for the party id list is renamed
+`member_ids` at the one place both appear, to keep that straight).
+
+One shape of bug is closed off for good: "the party did not have that actor, so
+nothing happened" can no longer be a silent outcome. Every place that used to
+say *a no-op for an actor not in the party* now says what RPG_RT says, and the
+only remaining nil is an id the **database** has no row for — which is logged,
+once per id so a parallel process asking every frame cannot flood the log.
+
+Covered by `scripts/rpg2k_logic_check.rb` (rejoining keeps state; the roster
+builds each id once; the save carries actors who are out of the party) and
+`scripts/rpg2k_scene_check.rb` (`\N[n]` names the live actor, `\N[0]` the
+leader).
+
+Fixtures were not enough to find this, so the change also adds
+`scripts/rpg2k_testbed_logic_check.rb`: a new harness that drives a **real**
+test bed's `RPG_RT.ldb` through the **real** `Game::Interpreter`, joining what
+`lcf_testbed_check.rb` (real data, not run) and `rpg2k_logic_check.rb` (run, not
+real data) each do half of. It finds every actor a game's common events both add
+and remove, then runs the game's own commands to take each companion out and
+bring them back — across a plain swap, a Marshal save and a `.lsd` round trip.
+It also replays every fixed-actor-id command the game aims at each companion
+while that companion is out of the party, and asserts they are not all no-ops.
+
+Nepheshel's three companions give 24 checks; against the old party model they
+fail with the numbers spelled out (`level 6 → 1`, `645 EXP → 0`, three skills →
+one; `653 command(s) changed the absent actor`). A game with no companion swaps,
+like mtf-meido-action, is reported and skipped rather than failed. It runs in CI
+beside the other RPG2k logic checks.

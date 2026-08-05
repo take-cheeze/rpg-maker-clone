@@ -222,7 +222,11 @@ def fake_db(common = nil, troop_pages = nil)
                                      flash_green: 31, flash_blue: 31, flash_power: 20) }
     ) },
     common_event: common,
-    player: {}
+    # Database actor rows carry the *original* names, which a \N[n] must not
+    # use once the actor has been renamed in play (see the \N[n] check).
+    player: { 1 => OpenStruct.new(name: 'DbHero'),
+              2 => OpenStruct.new(name: 'DbAlly'),
+              3 => OpenStruct.new(name: 'DbStranger') }
   )
 end
 
@@ -1161,6 +1165,55 @@ check 'a \\! pause holds the reveal until a button is pressed' do
   5.times { RGSS::Input.reset; scene.update }
   eq 4, reveal.revealed, 'the remaining text revealed'
   ok reveal.done?
+end
+
+# A party whose actors have been renamed in play, backed by a roster, for the
+# \N[n] message-code check.
+class RosterStubActor
+  attr_reader :id, :charset_name, :charset_index, :transparent
+  attr_accessor :name
+  def initialize(id, name)
+    @id = id
+    @name = name
+    @charset_name = ''
+    @charset_index = 0
+    @transparent = false
+  end
+end
+# Stands in for Game::Actors: `[]` is the get-or-create lookup the interpreter's
+# fixed-id commands use, `existing` the non-creating one \N[n] reads through.
+# The fixture is fixed, so both answer from the same table.
+class RosterStub
+  def initialize(h); @h = h; end
+  def [](id); @h[id]; end
+  def existing(id); @h[id]; end
+end
+class RosterStubParty
+  attr_reader :actors, :roster, :revision
+  def initialize
+    hero = RosterStubActor.new(1, 'Named')      # renamed by Enter Hero Name
+    away = RosterStubActor.new(2, 'Levelled')   # met, then left the party
+    @actors = [hero]
+    @roster = RosterStub.new(1 => hero, 2 => away)
+    @revision = 0
+  end
+  def leader; @actors.first; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+end
+
+check '\\N[n] names the live actor, and \\N[0] the party leader' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: '\\N[0]/\\N[1]/\\N[2]/\\N[3]')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  scene.instance_variable_get(:@state).instance_variable_set(:@party, RosterStubParty.new)
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message opened'
+  text = msg[:seg_lines].map { |segs| segs.map { |s| s[:text] }.join }.join
+  # \N[0] is the leader; 1 and 2 are live actors (2 is out of the party but in
+  # the roster); 3 has never been instantiated, so it falls back to its row.
+  eq 'Named/Named/Levelled/DbStranger', text
 end
 
 check 'a message with \$ shows a gold window; a plain one does not' do
@@ -2129,10 +2182,15 @@ class NameStubActor
   def initialize(id, name); @id = id; @name = name; end
 end
 class NameStubParty
-  attr_reader :actors
+  attr_reader :actors, :roster
   attr_accessor :leader
   # leader stays nil (no sprite to render) — the name widget doesn't need it.
-  def initialize; @actors = [NameStubActor.new(1, 'Hero')]; @leader = nil; end
+  # Enter Hero Name names its actor by id, which resolves through the roster.
+  def initialize
+    @actors = [NameStubActor.new(1, 'Hero')]
+    @leader = nil
+    @roster = RosterStub.new(1 => @actors[0])
+  end
   def actor_by_id(id); @actors.find { |a| a.id == id }; end
 end
 
@@ -2180,9 +2238,14 @@ class LevelStubActor
   def change_level_by(n); @level += n; end
 end
 class LevelStubParty
-  attr_reader :actors
+  attr_reader :actors, :roster
   attr_accessor :leader
-  def initialize; @actors = [LevelStubActor.new]; @leader = nil; end
+  # A Change Level naming a fixed actor id resolves through the roster.
+  def initialize
+    @actors = [LevelStubActor.new]
+    @leader = nil
+    @roster = RosterStub.new(@actors[0].id => @actors[0])
+  end
   def actor_by_id(id); @actors.find { |a| a.id == id }; end
   # The stat commands re-check for a party wipe; this stub's actor is alive.
   def all_dead?; false; end

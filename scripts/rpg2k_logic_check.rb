@@ -1956,6 +1956,137 @@ check 'both timers round-trip through the save; an old save still loads' do
   eq 0, old.timer(1).seconds, 'and the second starts empty'
 end
 
+# -- the permanent actor roster (Game::Actors) --------------------------------
+#
+# Nepheshel drives its whole party mechanic through Change Party Member: it adds
+# and removes actors 2/3/4 and 5/6/7 thousands of times (630 adds + 471 removes
+# for actor 2 alone). Rebuilding the actor from the database on every add threw
+# away everything the player had earned, which is what these pin down.
+def roster_db
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  FakeActorDB.new(players, [1])
+end
+
+check 'an actor who leaves and rejoins the party keeps their state' do
+  db = roster_db
+  party = Game::Party.new(db)
+  party.add_actor(2)
+  ally = party.actor_by_id(2)
+  eq 3, ally.level, 'joins at the database initial level'
+  ally.set_level(9)
+  ally.name = 'Renamed'
+  ally.hp = 7
+  levelled_hp = ally.max_hp
+
+  party.remove_actor(2)
+  eq nil, party.actor_by_id(2), 'out of the party'
+  ok party.roster.existing(2), 'but still in the roster'
+
+  party.add_actor(2)
+  back = party.actor_by_id(2)
+  ok back.equal?(ally), 'the very same actor object rejoins'
+  eq 9, back.level, 'keeps the level they left with'
+  eq 'Renamed', back.name, 'keeps a renamed name'
+  eq 7, back.hp, 'keeps current HP'
+  eq levelled_hp, back.max_hp
+end
+
+check 'Actors builds each id once and reports a missing row as nil' do
+  roster = Game::Actors.new(roster_db)
+  a = roster[1]
+  ok a.equal?(roster[1]), 'the same instance comes back'
+  eq nil, roster.existing(2), 'existing() does not create'
+  ok roster[2], 'and [] does'
+  eq [1, 2], roster.all.map { |x| x.id }, 'all() is in id order'
+  eq nil, roster[0], 'a non-positive id has no actor'
+  eq nil, roster[99], 'nor does a row the database lacks'
+end
+
+check 'the save carries actors who are out of the party' do
+  db = roster_db
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.add_actor(2)
+  away = st.party.actor_by_id(2)
+  away.change_level_by(6)           # 3 -> 9, the Change Level command's path
+  away.name = 'Renamed'
+  st.party.remove_actor(2)          # leaves the party *before* the save
+
+  loaded = Game::State.load(db, st.to_h)
+  eq [1], loaded.party.actors.map { |a| a.id }, 'the party is just the leader'
+  restored = loaded.party.roster.existing(2)
+  ok restored, 'the absent member is still in the restored roster'
+  eq 9, restored.level
+  eq 'Renamed', restored.name
+  loaded.party.add_actor(2)
+  eq 9, loaded.party.actor_by_id(2).level, 'and rejoins at that level'
+end
+
+check 'a stat command naming a fixed actor reaches one who is out of the party' do
+  db = roster_db
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ic = Game::Interpreter::Cmd
+  interp = Game::Interpreter.new(st)
+
+  # Bring the ally in, then send them away again.
+  st.party.add_actor(2)
+  away = st.party.actor_by_id(2)
+  st.party.remove_actor(2)
+  eq nil, st.party.actor_by_id(2), 'actor 2 is not in the party'
+
+  # Scope 1 = "this actor", by fixed id: RPG_RT resolves it through the roster,
+  # so it lands on the absent ally rather than being dropped. Params are
+  # [scope, actor id, 0 add, 0 constant, amount, show-message].
+  eq 3, away.level, 'the ally starts at their database level'
+  interp.start([FakeCmd.new(ic::CHANGE_LEVEL, [1, 2, 0, 0, 7, 0])])
+  interp.update while interp.running? && !interp.waiting?
+  eq 10, away.level, 'Change Level reached the absent actor'
+
+  interp.start([FakeCmd.new(ic::CHANGE_ACTOR_NAME, [2], string: 'Away')])
+  interp.update while interp.running? && !interp.waiting?
+  eq 'Away', away.name, 'Change Actor Name reached the absent actor'
+
+  # Scope 0 = "the whole party" still means only the members present.
+  leader_before = st.party.leader.level
+  interp.start([FakeCmd.new(ic::CHANGE_LEVEL, [0, 0, 0, 0, 9, 0])])
+  interp.update while interp.running? && !interp.waiting?
+  eq 10, away.level, 'a party-wide change leaves the absent actor alone'
+  eq leader_before + 9, st.party.leader.level, 'and does apply to the members present'
+end
+
+check 'reading an actor sees one who is out of the party; "in party" does not' do
+  db = roster_db
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ic = Game::Interpreter::Cmd
+  interp = Game::Interpreter.new(st)
+
+  st.party.add_actor(2)
+  away = st.party.actor_by_id(2)
+  away.change_level_by(4)          # 3 -> 7
+  st.party.remove_actor(2)
+
+  # Control Variables operand 5: [.., .., .., .., 5 operand, actor id, attribute]
+  # attribute 0 = level. The absent ally reports their real level, not 0.
+  interp.start([FakeCmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 5, 2, 0])])
+  interp.update while interp.running? && !interp.waiting?
+  eq 7, st.variables[1], "an absent actor's level reads through"
+
+  # Conditional type 5: [5 type, actor id, sub-condition, value].
+  # Sub-condition 2 is "level >=" — asked of the actor, so it is true.
+  eq true, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 2, 7])),
+     'a level test sees the absent actor'
+  eq false, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 2, 8])),
+     'and compares properly'
+  # Sub-condition 0 is "is in the party" — that one really is about the party.
+  eq false, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 0, 0])),
+     '"in party" stays false while they are away'
+  st.party.add_actor(2)
+  eq true, interp.send(:actor_condition, FakeCmd.new(ic::CONDITIONAL, [5, 2, 0, 0])),
+     'and true once they rejoin'
+end
+
 check 'State save round-trips the message configuration' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,

@@ -278,6 +278,15 @@ jobs:
               ./scripts/nix-develop.bash ruby scripts/rpg2k_scene_check.rb
               ./scripts/nix-develop.bash ruby scripts/rpg2k_render_check.rb
 
+          # The join of the two check kinds above: real test-bed databases
+          # (LCF test-bed smoke check's data) driven through the real
+          # Game::Interpreter, so a rule only genuine game data violates gets
+          # caught. Its first subject is Nepheshel's companion swaps — the
+          # party-roster bug of ADR 0030 passed every fixture check. Skips with
+          # exit 0 when no game has been downloaded.
+          - name: RPG2k test-bed logic check
+            run: ./scripts/nix-develop.bash ruby scripts/rpg2k_testbed_logic_check.rb
+
           - name: test
             run: |
               ./scripts/nix-develop.bash cmake --build build -t test
