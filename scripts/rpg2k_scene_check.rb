@@ -503,6 +503,33 @@ check 'player-touch (trigger 1): walking into an event runs it, no move' do
   eq [0, 0], [st.x, st.y], 'player did not step onto the event'
 end
 
+check 'event-touch (trigger 2) also fires when the player walks into it' do
+  # RPG_RT tests both touch triggers as one set on the player's own move — so a
+  # trigger-2 event fires from either side, which is how Nepheshel's roaming
+  # monsters (9,637 trigger-2 pages) start a fight when you walk into them.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 2) # event touch, standing still
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[6], 'walking into an event-touch event ran it'
+  eq [0, 0], [st.x, st.y], 'and the party did not step onto it'
+end
+
+check 'an action event is not set off by walking into it' do
+  # The pairing is only the two touch triggers: trigger 0 still needs the button.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6
+  6.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok !st.switches[6], 'an action event ignores being walked into'
+end
+
 check 'event-touch (trigger 2): an event walking into the player runs it' do
   ic = Game::Interpreter::Cmd
   pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8)
@@ -1520,6 +1547,47 @@ check 'a shown picture renders through the scene and its move advances' do
   6.times { scene.update }
   ok !st.pictures_moving?, 'the move completed under the scene loop'
   eq 60, st.pictures[1].y, 'the picture reached its target'
+end
+
+check 'a toned picture is tinted before it is composited' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  # A darkened picture: RPG2000's 30/30/30/100 is the tone 128 of the RPG2003
+  # test-bed's 315 Show Pictures ask for.
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255,
+                     red: 30, green: 30, blue: 30, saturation: 100)
+  scene.update
+  toned = scene.instance_variable_get(:@picture_tone_cache)
+  ok toned && toned.size == 1, 'the source was toned into a scratch bitmap'
+  _src, tone = toned.values.first.tone_calls.first
+  # (30 - 100) * 255 / 100 = -178 on each colour channel, no desaturation.
+  eq [-178, -178, -178, 0], [tone.red, tone.green, tone.blue, tone.gray]
+
+  # Drawing again reuses the cache rather than re-toning every frame.
+  scene.update
+  eq 1, scene.instance_variable_get(:@picture_tone_cache).size
+  eq 1, toned.values.first.tone_calls.size, 'toned once, not once per frame'
+end
+
+check 'an untinted picture skips the tone pass entirely' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  scene.update
+  eq 0, scene.instance_variable_get(:@picture_tone_cache).size,
+     'a neutral tone costs no work'
+end
+
+check 'a picture saturation below neutral desaturates' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255,
+                     red: 100, green: 100, blue: 100, saturation: 0)
+  scene.update
+  toned = scene.instance_variable_get(:@picture_tone_cache)
+  _src, tone = toned.values.first.tone_calls.first
+  # RPG2000 counts down from 100 to "less saturated"; RGSS counts grey up.
+  eq [0, 0, 0, 255], [tone.red, tone.green, tone.blue, tone.gray]
 end
 
 check 'coloured message text blends with the windowskin swatch when present' do

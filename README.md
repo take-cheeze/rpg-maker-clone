@@ -58,7 +58,8 @@
   command: every command that can knock the last member out re-checks, as the
   real runtime does, so a damage floor that kills you is fatal. Events start on the action button, on
   player touch (walking into them),
-  on event touch (they walk into the player), auto-start, or run continuously as
+  on event touch (either they walk into the party or the party walks into them —
+  which is how a game's roaming monsters start a fight), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too. Pages are re-selected **while
   the map runs**, so setting the switch an event's page 2 waits on turns it into
