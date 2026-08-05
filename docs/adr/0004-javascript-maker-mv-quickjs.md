@@ -372,8 +372,11 @@ JavaScript loads and interprets the JSON.
       the player sprite and touch UI, message windows with their text, and the
       party menu over a blurred map background. The battle screenshot waits for
       `Scene_Battle`'s fade-in before capturing; the bed's own battle frame stays
-      near-black because the authored sample ships no battler art or battleback,
-      the same reason MV runs its battle smoke against a real downloaded game.
+      near-black. That was read at the time as the authored sample shipping no
+      battler art or battleback — the same reason MV runs its battle smoke
+      against a real downloaded game. **It was the wrong reading**, and M6.3i
+      below has the real one: the battle scene was throwing an exception on
+      every frame, so the frame was dark because almost nothing in it ran.
     - **M6.3f — the stencil never reached the surface MZ draws on (landed).**
       M6.3c mapped `stencilFunc`/`Op`/`Mask` onto GL so `WindowLayer`'s
       per-window clipping would clip, and proved it on the main FBO — which
@@ -486,6 +489,65 @@ JavaScript loads and interprets the JSON.
       `played=true`, because the cell sprite is visible and carries the host's
       1x1 placeholder bitmap. The log cannot tell a drawn burst from a drawn
       nothing. The frame check fails on it.
+    - **M6.3i — the battles were frozen the whole time (landed).** The battle
+      smoke asserted `Scene_Battle` was reached, and had been green since
+      M6.3d. Writing a probe that *plays* the fight — tap confirm through the
+      party command window, the actor command window and the target window,
+      then watch the enemy's HP — showed the battle had never worked at all:
+      `BattleManager._phase` stayed at `"start"` forever, no window ever opened,
+      and no key press had any effect.
+
+      The cause is four lines of rmmz and one field of authored data:
+
+      ```js
+      Sprite_Enemy.prototype.initMembers = function() { … this._battlerName = ""; … };
+      Sprite_Enemy.prototype.updateBitmap = function() {
+          const name = this._enemy.battlerName();
+          if (this._battlerName !== name || …) { … this.loadBitmap(name); }
+      };
+      Sprite_Enemy.prototype.updateFrame = function() {
+          … this.setFrame(0, 0, this.bitmap.width, this.bitmap.height);
+      };
+      ```
+
+      The bed's enemy had `battlerName: ""`, which *equals* the sprite's initial
+      value, so the load never fired, `this.bitmap` stayed `undefined`, and the
+      next line read `.width` off it. That threw on the first frame of the
+      battle and every frame after — and because the throw happens inside
+      `Scene_Battle.update`, everything after it was skipped: the window layer
+      stopped updating, so the battle-start message never opened or cleared,
+      so `$gameMessage.isBusy()` stayed true, so `BattleManager.isBusy()` stayed
+      true, so the phase never advanced. A fight dead on arrival, silently.
+
+      This is rmmz's own behaviour, not something the host introduces — a
+      browser breaks identically — and the editor never writes an empty
+      `battlerName`, so only a hand-authored bed can reach it. Two more fields
+      were missing for the same reason: the class and the enemy carried no
+      `xparam` HIT trait, and a physical action's chance to connect is
+      `successRate * 0.01 * subject.hit` with `hit` defaulting to **0**, so once
+      the fight did run, every attack missed and neither side could ever win.
+      With a battler image and 95% hit on both sides, the fight resolves:
+      100 HP to 0, victory, back to the map.
+
+      Three things are worth keeping from this one:
+
+      * **The smoke was green over a scene that never worked.** "Reached
+        `Scene_Battle`" is true the instant the scene is pushed, which is before
+        its first update — so it is a claim about scene construction, not about
+        combat. The interesting assertion is always the one *after* the thing
+        starts.
+      * **The frame check's exemption was hiding it.** M6.3g exempted the
+        battle frame from the "the scene's art reached the frame" check, on the
+        documented reasoning that a bed with no battler art is legitimately
+        near-black. That reasoning was inherited from M6.3e's note above and
+        never questioned. With the bed fixed, the battle frame is 57.7%
+        dominant across 101 colours and takes the same check as every other
+        mode — the exemption is gone.
+      * **Exceptions inside the frame pump are invisible.** Nothing logged. The
+        throw surfaced only by wrapping `SceneManager._scene.update` in a
+        try/catch from a probe. Anything that runs inside PIXI's ticker can fail
+        silently in this host, which is worth remembering the next time a scene
+        looks alive and does nothing.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a

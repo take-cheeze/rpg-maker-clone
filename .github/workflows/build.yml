@@ -421,6 +421,24 @@ jobs:
               MZ_MODE: battle
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # Reaching Scene_Battle is a much smaller claim than combat working,
+          # and the gap between them is where MZ's battles were found frozen:
+          # the bed's enemy had an empty `battlerName`, so `Sprite_Enemy` never
+          # loaded a bitmap and `updateFrame` threw on every frame of every
+          # battle, taking out the rest of Scene_Battle.update. The smoke above
+          # stayed green throughout, because the scene is entered before the
+          # first broken update. This mode plays the fight out — confirm is
+          # tapped through the party/actor/target windows until an enemy takes
+          # damage and the victory sequence hands back to the map — and asserts
+          # `damaged=true ended=true`. Longer timeout: several turns of software
+          # GL. See ADR 0004 M6.3i.
+          - name: MZ battle-play smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: battle_play
+              MZ_TIMEOUT_MS: "120000"
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           # Run the battle smoke against the real bed (Lunatic-Core): it ships
           # battlers and a battleback, so the captured Scene_Battle frame shows
           # an actual battle (enemy + battle log) rather than the art-less

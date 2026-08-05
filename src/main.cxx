@@ -189,6 +189,16 @@ DEFINE_int32(
     "(implies --mz_new_game to reach the map) and log whether Scene_Battle was "
     "reached, so a headless run confirms the combat entry path works. 0 "
     "disables. Used in CI");
+DEFINE_bool(
+    mz_battle_play,
+    false,
+    "For RPG Maker MZ: once in the battle --mz_battle_test starts, play it out "
+    "— tap confirm through the party/actor command windows and the target "
+    "selection until the enemy's HP falls and the battle hands back to the "
+    "map — and log whether the fight actually resolved. Reaching Scene_Battle "
+    "is a much smaller claim than combat working; this covers what lies "
+    "between. Implies --mz_battle_test (troop 1 unless one is named). Used in "
+    "CI");
 DEFINE_string(
     mz_screenshot,
     "",
@@ -856,6 +866,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_BATTLE_TEST"),
                 mrb_fixnum_value(FLAGS_mz_battle_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_BATTLE_PLAY"),
+                mrb_bool_value(FLAGS_mz_battle_play));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mz_screenshot.c_str()));
