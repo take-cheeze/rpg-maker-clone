@@ -63,6 +63,15 @@ DEFINE_bool(
     "CI, in the browser build and beside the genuine RGSS runtime under wine; "
     "see scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash)");
 DEFINE_bool(
+    rgss_script_host,
+    false,
+    "For RPG Maker XP / VX / VX Ace: run the game's own bundled scripts "
+    "(Data/Scripts.rxdata) instead of the reimplemented title/map flow, the "
+    "way RGSS10*.dll does. Off by default while the RGSS class library is "
+    "completed (docs/rpgxp-rgss-api-gap.md). This flag is the only way to turn "
+    "the host on in a built engine: the RGSS_SCRIPT_HOST environment variable "
+    "the docs used to name cannot work, because this mruby has no ENV");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -716,6 +725,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPGXP_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpgxp_new_game));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_SCRIPT_HOST"),
+                mrb_bool_value(FLAGS_rgss_script_host));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

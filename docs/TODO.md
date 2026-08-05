@@ -891,13 +891,22 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   exposes `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost`
   installs the Kernel `load_data`/`save_data` built-ins and evaluates every
   section at the top level (mruby-eval) so "Main" drives the game. Boot runs the
-  host when it is enabled (`RGSS_SCRIPT_HOST`, off by default) and the project
+  host when it is enabled (`--rgss_script_host`, off by default) and the project
   ships scripts, falling back to the built-in flow otherwise. Decoding, the
   built-ins and top-level evaluation of real script source are covered by
-  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. Remaining before
+  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. **The switch was
+  dead until now** — it was an `RGSS_SCRIPT_HOST` environment variable, and this
+  mruby has no `ENV`, so no built engine could ever turn the host on and it had
+  never run outside the CRuby harnesses. With `--rgss_script_host` it does, and a
+  boot failure names the section that raised. Remaining before
   it can be the default: complete the `mruby-rgss` class library the stock
-  scripts call — the precise gap (measured against the real test-bed scripts) is
-  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
+  scripts call — the precise gap (now *measured* by booting, not counted) is
+  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). The first
+  thing that stops the game's own engine is **`RPG::Sprite`**, which the script
+  bundle does not define (`RGSS104E.dll` supplies it, with `RPG::Weather`), so
+  `Sprite_Character < RPG::Sprite` is the first line that cannot run; most of
+  what it needs already exists as `Game::Animation` and the map scene's cell
+  blitting, written for Show Animation (207). `Font`,
   `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
   `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
   widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on
