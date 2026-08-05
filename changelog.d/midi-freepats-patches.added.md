@@ -23,5 +23,11 @@
   installed patch is unreferenced — TiMidity drops an unresolvable instrument
   silently at play time, so this would otherwise ship unnoticed. It skips
   cleanly when the patches were never downloaded.
-- The wasm build omits the patch set by default (it would add ~32 MiB to
-  `index.data`); configure with `-DWASM_MIDI_PATCHES=ON` to mount it.
+- **MIDI plays in the browser build too.** Emscripten's SDL2_mixer port compiles
+  one decoder per requested format and defaults to OGG-only, so a stock
+  `-sUSE_SDL_MIXER=2` build had no MIDI decoder at all; the build now asks for
+  `-sSDL2_MIXER_FORMATS=ogg,mid`, which compiles the port with
+  `-DMUSIC_MID_TIMIDITY`. CI configures the wasm page with
+  `-DWASM_MIDI_PATCHES=ON`, mounting the patch set at `/timidity` (~32 MiB of
+  `index.data`); drop the flag for a slimmer page whose `.mid` playback is
+  silent.

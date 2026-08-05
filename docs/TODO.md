@@ -574,8 +574,10 @@ The work below is roughly ordered by the critical path to a walkable game
   audible (ADR 0026). `TIMIDITY_CFG` overrides the patch set;
   `Audio.midi_available?` reports whether one was found. Remaining polish:
   pitch/tempo control (SDL_mixer exposes none), MIDI for SE/BGS (they play as
-  samples, which are never synthesised), and the wasm build, which omits the
-  patch set unless `-DWASM_MIDI_PATCHES=ON`
+  samples, which are never synthesised). The browser build plays MIDI too: the
+  Emscripten SDL2_mixer port is asked for `-sSDL2_MIXER_FORMATS=ogg,mid` (it
+  defaults to OGG-only, so it had no MIDI decoder at all) and CI mounts the
+  patch set with `-DWASM_MIDI_PATCHES=ON`, at ~32 MiB of `index.data`
 - ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)

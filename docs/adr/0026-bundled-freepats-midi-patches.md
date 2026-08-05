@@ -108,10 +108,19 @@ gated by the existing download barrier.
   cannot drift silently. A corrupt or truncated cache is re-fetched rather than
   trusted; a checksum mismatch fails loudly instead of feeding a synthesiser
   garbage that would surface as confusing audio errors.
-- **The wasm build does not get the patches by default.** `-DWASM_MIDI_PATCHES=ON`
-  mounts them at `/timidity`, but ~32 MiB in `index.data` is a heavy download for
-  a web page, and Emscripten's SDL2_mixer port does not necessarily build the
-  TiMidity codec at all. The browser build therefore stays OGG/WAV-first.
+- **The browser build needed two things, not one.** Emscripten's SDL2_mixer port
+  compiles one decoder per requested format and defaults to
+  `SDL2_MIXER_FORMATS=["ogg"]`, so a stock `-sUSE_SDL_MIXER=2` build has no MIDI
+  decoder at all and preloading patches into it would have achieved nothing.
+  The build now asks for `-sSDL2_MIXER_FORMATS=ogg,mid` (which compiles the port
+  with `-DMUSIC_MID_TIMIDITY`, the same codec the native build uses) *and*
+  mounts the patch set at `/timidity` via `-DWASM_MIDI_PATCHES=ON`. CI passes
+  that flag, so the deployed and preview pages both play MIDI — at the cost of
+  ~32 MiB in `index.data`. Dropping the flag gives a slimmer page whose `.mid`
+  playback is silent; the decoder itself is small and stays in either way.
+  The preload is deliberately not guarded on the directory existing, matching
+  `WASM_SAMPLE_DIR`: the download runs concurrently with the configure and is
+  awaited by a barrier before the link.
 - **FreePats covers 72 of 128 melodic programs.** A MIDI selecting a missing
   program sounds thinner than it would with a fuller set; `TIMIDITY_CFG` is the
   documented escape hatch.

@@ -295,8 +295,12 @@
 - MIDI is synthesised for **BGM and ME** only — SE and BGS play as mixer
   samples, which SDL_mixer never synthesises MIDI for. Pitch/tempo is accepted
   for API compatibility but not applied (SDL_mixer has no pitch control)
-- The wasm build leaves the patches out by default (~32 MiB of `index.data`);
-  configure with `-DWASM_MIDI_PATCHES=ON` to bundle them
+- **MIDI works in the browser too.** Emscripten's SDL2_mixer port compiles one
+  decoder per requested format and defaults to OGG-only, so the build asks for
+  `-sSDL2_MIXER_FORMATS=ogg,mid` to get the TiMidity decoder, and the deployed
+  page carries the patch set (`-DWASM_MIDI_PATCHES=ON`, ~32 MiB of
+  `index.data`). Configure without that flag for a slimmer page whose `.mid`
+  playback is silent
 
 ## TODO
 - Editor with [imgui](https://github.com/ocornut/imgui)

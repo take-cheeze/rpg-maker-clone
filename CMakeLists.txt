@@ -10,8 +10,19 @@ if(EMSCRIPTEN)
   # Emscripten ships SDL2 and SDL2_mixer as "ports": -sUSE_SDL=2 /
   # -sUSE_SDL_MIXER=2 provide both the headers (needed while compiling lvgl's
   # SDL driver and the audio backend) and the libraries at link time.
-  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
-  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2")
+  #
+  # The port compiles one decoder per requested format and defaults to
+  # SDL2_MIXER_FORMATS=["ogg"] — WAV is unconditional, everything else is
+  # opt-in. So a stock -sUSE_SDL_MIXER=2 build has no MIDI decoder at all, and a
+  # .mid would stay silent no matter how the synthesiser is configured. Adding
+  # "mid" builds the port with -DMUSIC_MID_TIMIDITY, i.e. the same TiMidity
+  # codec the native build uses (tools/ports/sdl2_mixer.py upstream). It needs a
+  # patch set to make sound: see WASM_MIDI_PATCHES below. Must be set for both
+  # compile and link, as the setting is [compile+link].
+  add_compile_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2"
+                      "-sSDL2_MIXER_FORMATS=ogg,mid")
+  add_link_options("-sUSE_SDL=2" "-sUSE_SDL_MIXER=2"
+                   "-sSDL2_MIXER_FORMATS=ogg,mid")
   # mruby is built with MRB_USE_CXX_EXCEPTION and throws real C++ exceptions for
   # its internal control flow, so exception support must be enabled across the
   # whole binary; otherwise the first throw aborts in the catch machinery.
@@ -335,14 +346,19 @@ if(EMSCRIPTEN)
                         "--preload-file=${WASM_SAMPLE_DIR}@/game_sample")
   endif()
 
-  # Optionally mount the bundled MIDI patch set at /timidity, where
-  # src/sdl_audio.cxx looks for it. Off by default: FreePats adds ~33 MB to
-  # index.data, a heavy download for a web page whose games are mostly OGG, and
-  # Emscripten's SDL2_mixer port does not necessarily build the TiMidity codec
-  # in the first place. Turn on with -DWASM_MIDI_PATCHES=ON.
-  option(WASM_MIDI_PATCHES
-         "Preload the bundled MIDI patch set into the wasm build" OFF)
-  if(WASM_MIDI_PATCHES AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
+  # Mount the MIDI patch set at /timidity, where src/sdl_audio.cxx looks for it.
+  # The TiMidity decoder above is only half of MIDI playback; without these
+  # instrument samples a .mid still plays silence in the browser.
+  #
+  # Off by default because FreePats adds ~32 MiB to index.data, which is a lot
+  # for a web page whose games are mostly OGG. Turn on with
+  # -DWASM_MIDI_PATCHES=ON, having run scripts/download-freepats.bash.
+  #
+  # Deliberately not guarded on the directory existing, matching WASM_SAMPLE_DIR
+  # above: the download runs concurrently with this configure and is awaited
+  # before the link, so a configure-time check would race it.
+  option(WASM_MIDI_PATCHES "Preload the MIDI patch set into the wasm build" OFF)
+  if(WASM_MIDI_PATCHES)
     target_link_options(${PROJECT_NAME} PRIVATE
                         "--preload-file=${TIMIDITY_ASSET_DIR}@/timidity")
   endif()

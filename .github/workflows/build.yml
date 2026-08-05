@@ -506,6 +506,15 @@ jobs:
         background: true
         run: nix develop -c ./scripts/download-opengame-xp.bash
 
+      # Instrument samples for the TiMidity decoder the port is built with
+      # (-sSDL2_MIXER_FORMATS in CMakeLists.txt). They are packaged into
+      # index.data at link time by -DWASM_MIDI_PATCHES=ON below, so this is
+      # awaited by the pre-link barrier rather than the configure.
+      - name: Download MIDI patches
+        id: freepats
+        background: true
+        run: nix develop -c ./scripts/download-freepats.bash
+
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
@@ -538,14 +547,15 @@ jobs:
             CMAKE_C_COMPILER_LAUNCHER=ccache \
             CMAKE_CXX_COMPILER_LAUNCHER=ccache \
             emcmake cmake -S . -B wasm-build -GNinja \
-            -DWASM_SAMPLE_DIR=data/mv-sample
+            -DWASM_SAMPLE_DIR=data/mv-sample \
+            -DWASM_MIDI_PATCHES=ON
 
-      # Barrier: the link step packages data/mv-sample into index.data, so the
-      # engine files must be in place before the build starts. A failed
-      # background fetch surfaces here and fails the job, exactly as it did when
-      # this ran inline.
-      - name: Wait for the MV sample engine
-        wait: [mv-sample]
+      # Barrier: the link step packages data/mv-sample and the MIDI patch set
+      # into index.data, so both must be in place before the build starts. A
+      # failed background fetch surfaces here and fails the job, exactly as it
+      # did when this ran inline.
+      - name: Wait for the MV sample engine and MIDI patches
+        wait: [mv-sample, freepats]
 
       - name: build
         run: |
