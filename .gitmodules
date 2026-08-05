@@ -8,10 +8,6 @@
 [submodule "third_party/cmdline"]
 	path = 3rd/cmdline
 	url = https://github.com/tanakh/cmdline.git
-[submodule "third_party/timidity"]
-	path = 3rd/timidity
-	url = https://git.code.sf.net/p/timidity/git
-	ignore = dirty
 [submodule "third_party/lvgl"]
 	path = 3rd/lvgl
 	url = https://github.com/lvgl/lvgl.git
