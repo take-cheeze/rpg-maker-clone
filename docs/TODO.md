@@ -367,8 +367,9 @@ The work below is roughly ordered by the critical path to a walkable game
   skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
   off for seeded / headless fights. A basic attack can land a **3x critical hit**
   at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
-  `critical_hit_chance`); no crit on a same-side hit. Still to come: enemy-cast
-  infliction, elemental attributes, `prevent_critical` gear, all-target skill/item
+  `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
+  the **`prevent_critical`** flag can never be crit. Still to come: enemy-cast
+  infliction, elemental attributes, all-target skill/item
   scopes, the per-terrain backdrop and the RPG2000 Game Over graphic.
   The remaining event commands (tile substitution and other native-render
   effects) are TODO. **Show Battle Animation** (11210) now plays on the map — the
