@@ -2480,6 +2480,28 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
      'the panel closed with the message'
 end
 
+check 'a hidden troop member is not targetable until it is revealed' do
+  scene, _st = battle_scene_with_pages(nil)
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  eq 2, ui[:foes].length
+  # Hide the second member the way an invisible troop entry would have.
+  ui[:foes][1].hidden = true
+  ui[:troop].members[1].hidden = true
+  targets = scene.send(:living_foes)
+  eq 1, targets.length, 'the target cursor skips the hidden member'
+  ok !targets.include?(ui[:foes][1])
+
+  scene.send(:reveal_battle_monster, 1)
+  ok !ui[:foes][1].hidden, 'revealing clears the combatant flag, not just the sprite'
+  eq 2, scene.send(:living_foes).length, 'and it becomes targetable'
+  ok ui[:enemy_sprites][1], 'with a sprite built for it'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
