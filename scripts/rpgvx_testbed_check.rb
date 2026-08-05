@@ -127,6 +127,20 @@ module RGSS
     attr_accessor :asset_archive
   end
 
+  # The default UI font is native too: mruby-rgss/src/default_font.cxx locates
+  # the downloaded assets/fonts file, and the VX boot shell points
+  # Font.default_path at it for projects that ship no font of their own. This
+  # harness rasterises nothing, so the shim only has to carry the two entry
+  # points the boot touches, and reports no font (a normal state — the font is
+  # downloaded, not committed).
+  def self.default_font_path = nil
+
+  class Font
+    class << self
+      attr_accessor :default_path
+    end
+  end
+
   # Graphics is native. These stand-ins mirror the parts of mruby-rgss's module
   # the VX path touches (the real ones are unit-tested in mruby-rgss/test):
   # counting frames so the per-frame driver can be asserted, RGSS2's frame wait,
