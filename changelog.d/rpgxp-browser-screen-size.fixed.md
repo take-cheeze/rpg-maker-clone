@@ -4,5 +4,4 @@
   `--game_dir` before creating it, but in the browser the project is mounted
   later by the page's loader, so `rpg_start_game()` resizes the display when it
   detects one. The page's loader panel also disappears once a game starts —
-  `hidden` was being overridden by the panel's own `display: flex` rule. Both
-  found by `scripts/rpgxp_browser_check.py`.
+  `hidden` was being overridden by the panel's own `display: flex` rule.

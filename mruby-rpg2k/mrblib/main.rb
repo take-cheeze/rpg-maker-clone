@@ -2354,10 +2354,12 @@ class RPG2k
         # The database's state table drives per-turn afflictions (poison slip,
         # sleep skip) in battle.
         situations = db.respond_to?(:situation) ? db.situation : nil
+        properties = db.respond_to?(:property) ? db.property : nil
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
                                                 situations, true, true, true,
-                                                req[:first_strike] ? true : false),
+                                                req[:first_strike] ? true : false,
+                                                properties),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
@@ -5336,6 +5338,7 @@ class RPG2k
         @window.contents = contents
 
         refresh_cursor
+        play_title_bgm
       end
 
       def update
@@ -5439,6 +5442,24 @@ class RPG2k
         Audio.se_play name, se.volume, se.pitch
       rescue StandardError => e
         $stderr.puts "[RGSS] cursor SE playback failed: #{e.message}"
+      end
+
+      # Play the database's title music (System > title BGM), as RPG_RT does
+      # when the title screen comes up. Re-entering the title (Return to Title)
+      # builds a new scene and so restarts it, which is what RPG_RT does too.
+      #
+      # `fade_in` is read from the record but not honoured: the audio backend
+      # can fade a BGM out, not in (see ADR 0006), so the music starts at full
+      # volume. A no-op when the game defines no title music, the file is
+      # missing, or no audio backend is installed.
+      def play_title_bgm
+        bgm = db.system.title_music
+        return unless bgm
+        name = bgm.file
+        return if name.nil? || name.empty?
+        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] title BGM playback failed: #{e.message}"
       end
     end
   end

@@ -380,9 +380,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
   the **`prevent_critical`** flag can never be crit. **Elemental attributes**
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
-  are matched against the target's per-attribute defence ranks (A..E → 200 / 150
-  / 100 / 50 / 0 percent, strongest element winning), so a foe is hurt more by a
-  weakness and can fully nullify an element it is immune to. The party can also
+  are matched against the target's per-attribute defence ranks (A..E, strongest
+  element winning) — the rates come from each attribute's own `a_rate` .. `e_rate`
+  in the database `property` table (RPG2000 defaults 300 / 200 / 100 / 50 / 0),
+  and a status infliction likewise reads the `situation` table's per-state rates
+  — so a foe is hurt more by a weakness and can fully nullify an element it is
+  immune to. The party can also
   **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
   (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
   gets away, and a failed attempt forfeits the party's round (every member
@@ -403,8 +406,8 @@ The work below is roughly ordered by the critical path to a walkable game
   still computed per target's defence. **All-party items** (medicine scope 1)
   work the same way through `command_item_all`, healing / curing every living
   ally and consuming a single item for the whole volley. Still to come:
-  enemy-cast infliction, per-attribute rate overrides from the Attribute table,
-  the per-terrain backdrop and the RPG2000 Game Over graphic.
+  enemy-cast infliction, the per-terrain backdrop and the RPG2000 Game Over
+  graphic.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
@@ -634,9 +637,17 @@ The work below is roughly ordered by the critical path to a walkable game
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
-  `Music/`/`Sound/`/`Audio/*`. Remaining polish: pitch/tempo control (SDL_mixer
-  exposes none) and guaranteeing a MIDI synth in the build (depends on the
-  SDL_mixer build's MIDI support; WAV/OGG work everywhere)
+  `Music/`/`Sound/`/`Audio/*`
+- ✅ MIDI music — `scripts/download-freepats.bash` installs the FreePats patch
+  set into `assets/timidity` (git-ignored, ~32 MiB), which drives SDL_mixer's
+  built-in TiMidity synthesiser, so the `.mid` BGM that RPG2000 projects ship is
+  audible (ADR 0026). `TIMIDITY_CFG` overrides the patch set;
+  `Audio.midi_available?` reports whether one was found. Remaining polish:
+  pitch/tempo control (SDL_mixer exposes none), MIDI for SE/BGS (they play as
+  samples, which are never synthesised). The browser build plays MIDI too: the
+  Emscripten SDL2_mixer port is asked for `-sSDL2_MIXER_FORMATS=ogg,mid` (it
+  defaults to OGG-only, so it had no MIDI decoder at all) and CI mounts the
+  patch set with `-DWASM_MIDI_PATCHES=ON`, at ~32 MiB of `index.data`
 - ✅ RTP resolution / `FullPackageFlag` (issue #40) — `RPG_RT.ini`'s
   `FullPackageFlag=1` clears `RTP_DIR`, and `Bitmap` lookup already falls back
   from the game directory to the RTP (with `.png`/`.xyz`/`.bmp` extensions)
@@ -796,28 +807,36 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
   (Asyncify or a per-frame driver). (Graphics and audio both come out of the
   encrypted archive now — see Encrypted archives above.)
-- ✅ **Cross-runtime testing** — an XP project is booted in every runtime it can
-  run in, all asserting the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks
-  New Game without input): `scripts/rpgxp_boot_check.bash` (the native binary,
-  the guard against mruby/CRuby divergence the CRuby-hosted checks cannot see),
-  `scripts/rpgxp_browser_check.py` (the emscripten page, driven in headless
-  Chromium over the DevTools protocol with no npm dependency) — both in CI — and
+- ✅ **Cross-runtime testing** — an XP project is booted natively and against the
+  genuine runtime, both asserting the same `[RPGXP-MAP]` marker
+  (`--rpgxp_new_game` picks New Game without input):
+  `scripts/rpgxp_boot_check.bash` (the native binary, in CI — the guard against
+  mruby/CRuby divergence the CRuby-hosted checks cannot see) and
   `scripts/compare-rpgxp-wine.bash`, which diffs our frames against the genuine
   `Game.exe` + `RGSS104E.dll` under wine, the XP twin of
   `compare-nepheshel-wine.bash`. That comparison is the harness the remaining
   render work below is meant to be driven by. See
   [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](adr/0025-rpgxp-cross-runtime-testing.md);
-  the browser pass already found (and this fixed) an XP project rendering on a
-  320x240 screen in the page and the loader panel covering the running game, and
-  the wine pass found four more (the XP RTP key was never read, `.jpg` was
-  missing from the asset search, truecolour images were red/blue-swapped, and an
-  RGBA image loaded opaque drew garbage) — the XP title screen now differs from
-  the genuine runtime in 15% of its pixels, down from 74%, the rest being the
-  windowskin's opacity and the reference's font-less text.
-  Still open there: running the **script host** in the browser (the ADR 0023
-  frame driver has never been verified in a real browser), and a way to pass
-  engine flags to the page so the browser check can use `--rpgxp_new_game`
-  instead of pressing keys.
+  a third check played the project in the **browser build** and found (and this
+  fixed) an XP project rendering on a 320x240 screen in the page and the loader
+  panel covering the running game, and the wine pass found four more (the XP RTP
+  key was never read, `.jpg` was missing from the asset search, truecolour images
+  were red/blue-swapped, and an RGBA image loaded opaque drew garbage) — the XP
+  title screen now differs from the genuine runtime in 15% of its pixels, down
+  from 74%, the rest being the windowskin's opacity and the reference's font-less
+  text.
+- **Re-test the browser build without a heavyweight dependency.**
+  `scripts/rpgxp_browser_check.py` drove the emscripten page in headless Chromium
+  over the DevTools protocol, but the `chromium` it needed was the largest
+  download in the dev shell — paid for by every `nix develop`, in every job, for
+  one non-blocking check — so both were removed (ADR 0025, amended). The page's
+  loader, DOM input path and frame loop are untested again. Bringing it back
+  wants a browser that is *found* rather than *fetched* (a system chromium, skip
+  when absent) or a browser-only CI job. Still open with it: running the **script
+  host** in the browser (the ADR 0023 frame driver has never been verified in a
+  real browser), loading a **packed** release (`Game.ini` + `Game.rgssad`) through
+  the shell, and a way to pass engine flags to the page so a browser check can use
+  `--rpgxp_new_game` instead of pressing keys.
 - ✅ **A released game as a test bed** — every XP check above also runs on
   *Pray for You* (`scripts/download-prayforyou.bash`): a packed release
   (`Game.ini` + `Game.rgssad`, nothing loose), 69 maps, 1107 event pages, 15,797
@@ -828,7 +847,7 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   message box laid out the RPG2000 way instead of RMXP's inset 480x160 — with
   those fixed a map frame differs from the genuine runtime in 25% of its pixels,
   down from 97%, the rest being the reference's own font-less message box. See
-  [`docs/adr/0026-rpgxp-released-game-parity.md`](adr/0026-rpgxp-released-game-parity.md).
+  [`docs/adr/0027-rpgxp-released-game-parity.md`](adr/0027-rpgxp-released-game-parity.md).
   The event-command histogram over that whole game names what a real XP game
   uses that we still skip: `221`/`222` (prepare/execute transition), `210` (wait
   for move completion), `231`/`235` (show/erase picture), `224`/`225` (screen
@@ -932,11 +951,32 @@ screen (544×416). Full rationale:
     the `render_probe` ctest under xvfb (display 98) and needs no game. Verified
     to have teeth by neutering `vp_refresh_overlay` and the transition in turn —
     each broke exactly the assertion it should.
-  - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: `Viewport#tone` on `Window` contents (a different composite
-    path; RGSS keeps windows in their own viewport, so a map tint does not tint
-    the message window anyway), the window open/close animation, and
-    `Bitmap#blur`/`#radial_blur`.
+  - ✅ **`Window#openness` and `Window#tone`** — the VX open/close animation and
+    the windowskin tint. The window unrolls from its horizontal centre line: the
+    frame is composited at `height * openness / 255` and shifted down by half of
+    what it lost, with the 9-slice's corner height clamped to half the drawn
+    height so a part-open window keeps a frame; contents, cursor and pause arrow
+    stay hidden until it is fully open. The tone goes on the *background* only —
+    applied right after the background tile and before anything on top — through
+    the shared `apply_tone_px`, and is re-checked from `#update` because the
+    scripts mutate the Tone in place. Both native, and deliberately not
+    redefined in mrblib (which loads after the C init and would shadow them).
+    Measured by `RGSS.window_probe`: `drawn=[0,0,86] half=[0,0,43]
+    closed=[0,0,0] toned=[86,0,86]`.
+  - ✅ **`Bitmap#blur` / `#radial_blur`** — the title background and the
+    animation effects. `blur` is a 3x3 box blur over a snapshot of the bitmap,
+    so each output pixel reads the original neighbourhood instead of feeding
+    already-blurred pixels back in; `radial_blur(angle, division)` averages
+    `division` rotated copies spread over `angle` degrees and centred on the
+    original. Both average premultiplied by alpha, so a transparent neighbour
+    contributes weight but no colour. Pure pixel work, so unlike the rest of
+    this section they are pinned in `mruby-rgss/test` rather than measured on a
+    display — down to the exact seam values (170/85 either side of a
+    white/black edge) and the mirror symmetry of the swept arc, which is what
+    actually pins the centre of rotation.
+  - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
+    contents (a different composite path; RGSS keeps windows in their own
+    viewport, so a map tint does not tint the message window anyway).
 - **Built-in title/map flow** — the reimplemented scene stack the RPG2000 and XP
   runtimes have (title → New Game → walkable map). Not written yet; a boot
   without the script host reports that instead of showing a blank window.

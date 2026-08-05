@@ -1,14 +1,19 @@
 module RGSS
   class Timeout < StandardError; end
 
-  # Emit a warning the first time an unimplemented stub method is called.
-  # Warning on every call would flood the log from within the game loop, so
-  # each method name is reported only once.
-  @warned_stubs = {}
+  # Emit a warning only the first time it is raised. Warning on every call would
+  # flood the log from within the game loop, so each distinct message is
+  # reported once.
+  @warned_once = {}
+  def self.warn_once(message)
+    return if @warned_once[message]
+    @warned_once[message] = true
+    $stderr.puts "[RGSS] #{message}"
+  end
+
+  # Warn once that an unimplemented stub method was called.
   def self.warn_stub(name)
-    return if @warned_stubs[name]
-    @warned_stubs[name] = true
-    $stderr.puts "[RGSS] #{name} is not implemented yet (stub, does nothing)"
+    warn_once("#{name} is not implemented yet (stub, does nothing)")
   end
 
   # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
@@ -200,7 +205,24 @@ module RGSS
     Graphics.update
     drawn = frame_mean
 
-    $stderr.puts "[RGSS-PROBE] window alive=#{alive} drawn=#{drawn.inspect}"
+    # RGSS2/RGSS3 openness: the window unrolls from its centre line, so the area
+    # it covers scales with the value. Half-open must measure about half.
+    win.openness = 128
+    Graphics.update
+    half = frame_mean
+
+    win.openness = 0
+    Graphics.update
+    closed = frame_mean
+
+    win.openness = 255
+    win.tone = Tone.new(255, 0, 0, 0)
+    Graphics.update
+    toned = frame_mean
+
+    $stderr.puts "[RGSS-PROBE] window alive=#{alive} drawn=#{drawn.inspect} " \
+                 "half=#{half.inspect} closed=#{closed.inspect} " \
+                 "toned=#{toned.inspect}"
 
     ok = true
     unless alive
@@ -211,6 +233,25 @@ module RGSS
     unless drawn[2] > 20
       $stderr.puts "[RGSS-PROBE] FAIL the window did not draw"
       ok = false
+    end
+    if ok
+      # Generous bounds: what is checked is that openness *scales the drawn
+      # height*, not the exact ratio.
+      unless half[2] > drawn[2] / 4 && half[2] < drawn[2] * 3 / 4
+        $stderr.puts "[RGSS-PROBE] FAIL openness=128 covered #{half[2]} of " \
+                     "#{drawn[2]}, expected roughly half — the open/close " \
+                     "animation is not drawn"
+        ok = false
+      end
+      unless closed[2].zero?
+        $stderr.puts "[RGSS-PROBE] FAIL openness=0 still drew something"
+        ok = false
+      end
+      # An additive red tone over the blue background lifts red.
+      unless toned[0] > drawn[0] + 20
+        $stderr.puts "[RGSS-PROBE] FAIL Window#tone did not tint the background"
+        ok = false
+      end
     end
     win.dispose
     skin.dispose
@@ -637,20 +678,15 @@ module RGSS
     # scripts: openness x16, open?/close? x15, padding x8, arrows_visible x1 (see
     # docs/rpgvx-rgss-api-gap.md).
     #
-    # These are plain state here: the native window is drawn at full size
-    # whatever `openness` says, so the open/close *animation* is not shown yet —
-    # but because the scripts only ever wait on the value they set, a window
-    # still opens, closes and lays out correctly.
+    # `openness=` and `tone`/`tone=` are native (src/lib.cxx): both have to
+    # redraw, since the frame is drawn at a fraction of its height to animate the
+    # open/close and the tone tints the background. They must NOT be defined here
+    # — mrblib loads after the C init and would shadow them. `padding` and the
+    # rest below really are plain state the scripts drive.
 
     # 0 (fully closed) .. 255 (fully open).
     def openness
       @openness.nil? ? 255 : @openness
-    end
-
-    def openness=(value)
-      value = 0 if value < 0
-      value = 255 if value > 255
-      @openness = value
     end
 
     def open?
@@ -682,12 +718,6 @@ module RGSS
     end
 
     attr_writer :arrows_visible
-
-    def tone
-      @tone ||= Tone.new(0, 0, 0, 0)
-    end
-
-    attr_writer :tone
 
     # RGSS2/RGSS3 construct a window with its geometry — `Window.new(x, y,
     # width, height)` — where RGSS1 (XP) took an optional viewport and had the
@@ -817,11 +847,22 @@ module RGSS
         _se_stop
       end
 
+      # True when a MIDI patch set was resolved, i.e. when a .mid BGM/ME will be
+      # audible rather than silent. False in builds with no audio backend (the
+      # `rake test` binary) and when no TiMidity configuration was found.
+      def midi_available?
+        _midi_available
+      end
+
       # RGSS2+. The VX/VX Ace scripts call it once at boot when the project asks
-      # for MIDI playback; SDL_mixer picks its own synth, so there is nothing to
-      # set up here.
+      # for MIDI playback. The synth is configured when the audio device opens
+      # (src/sdl_audio.cxx picks up assets/timidity, or TIMIDITY_CFG), so there
+      # is nothing left to do here; warn only when MIDI would be silent.
       def setup_midi
-        RGSS.warn_stub("Audio.setup_midi")
+        unless midi_available?
+          RGSS.warn_once("Audio.setup_midi: no MIDI patch set; MIDI will be silent")
+        end
+        nil
       end
 
       private
@@ -835,10 +876,18 @@ module RGSS
       # Returns nil either way — RGSS's Audio.*_play has no return value, and a
       # miss here is the same "asset not found" silence the disk path gives.
       def play_packed(kind, filename, volume, pitch)
+        return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
-        return nil if archive.nil? || filename.nil? || filename.empty?
-        name, bytes = find_packed(archive, kind, filename)
-        return nil if bytes.nil?
+        name, bytes = archive ? find_packed(archive, kind, filename) : nil
+        if bytes.nil?
+          # Neither a real file (the caller already searched GAME_DIR/RTP_DIR
+          # and every known extension) nor an archive entry. Say so once: an
+          # unresolved name is otherwise a silent no-op, which sounds exactly
+          # like a broken decoder and sent us looking in the wrong place.
+          RGSS.warn_once(
+            "Audio: no #{kind.to_s.upcase} found for #{filename.inspect}")
+          return nil
+        end
         # Say so once rather than dropping every play silently: on a build with
         # no audio backend (or one predating the memory entry points) a packed
         # game would otherwise be mysteriously mute.

@@ -99,21 +99,19 @@
   while the RGSS class library is completed; see
   [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
   (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
-- An XP project is exercised in **every runtime it can run in**, all reaching the
-  same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks New Game without input):
-  `scripts/rpgxp_boot_check.bash` boots the native binary headlessly (in CI),
-  `scripts/rpgxp_browser_check.py` plays the project **in the browser build** —
-  it serves the emscripten page, hands the shell's own loader a zip of the
-  project, presses keys through the DevTools protocol and checks the runtime log
-  and the rendered canvas (headless Chromium, Python standard library only, no
-  npm dependency) — and `scripts/compare-rpgxp-wine.bash` diffs our frames
+- An XP project is exercised **against the genuine runtime as well as our own**,
+  both reaching the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks New Game
+  without input): `scripts/rpgxp_boot_check.bash` boots the native binary
+  headlessly (in CI), and `scripts/compare-rpgxp-wine.bash` diffs our frames
   against the **genuine RGSS runtime**, booting the project's own
   `Game.exe`/`RGSS104E.dll` under wine on the same key script (the XP twin of the
   RPG2000 comparison; install the RTP into that wine prefix with
-  `scripts/rtp_xp_install.bash` and both runtimes read the same assets). The
-  browser pass immediately found two page-only bugs — an XP project rendering on
-  a 320x240 screen with its title window off-canvas, and the loader panel staying
-  on top of the running game — and the wine pass found four more that had kept an
+  `scripts/rtp_xp_install.bash` and both runtimes read the same assets). A
+  browser pass ran alongside these for a while and found two page-only bugs — an
+  XP project rendering on a 320x240 screen with its title window off-canvas, and
+  the loader panel staying on top of the running game; it has since been dropped
+  because the headless browser it needed dominated the dev shell's download. The
+  wine pass found four more bugs that had kept an
   XP project from drawing its RTP art at all: the XP RTP registry key was never
   read, `.jpg` was missing from the asset search, truecolour images came out with
   red and blue exchanged, and an RGBA image loaded opaque drew garbage. With those
@@ -132,7 +130,7 @@
   and the message box was full-width at the bottom instead of RMXP's inset
   480×160. On the same map frame that took the difference from 97% of pixels to
   25%, the rest being the reference's own missing font; see
-  [`docs/adr/0026-rpgxp-released-game-parity.md`](docs/adr/0026-rpgxp-released-game-parity.md)
+  [`docs/adr/0027-rpgxp-released-game-parity.md`](docs/adr/0027-rpgxp-released-game-parity.md)
 
 ### RPG Maker VX / VX Ace
 
@@ -308,9 +306,23 @@
   `GAME_DIR`/`RTP_DIR`, in the `Music/`, `Sound/` and `Audio/*` sub-folders, and
   with the usual extensions (`.ogg`, `.wav`, `.mid`, `.mp3`, `.flac`) — so the
   event interpreter's *Play BGM* / *Play SE* commands are audible
-- Playable formats depend on the SDL_mixer build (WAV/OGG everywhere; MIDI needs
-  a synth such as Timidity/FluidSynth). Pitch/tempo is accepted for API
-  compatibility but not applied (SDL_mixer has no pitch control)
+- **MIDI plays once you fetch the instruments.** RPG2000 projects ship most of
+  their music as `.mid`, which carries note events but no audio, so SDL_mixer's
+  built-in TiMidity synthesiser needs a patch set to make any sound. Run
+  `./scripts/download-freepats.bash` to install
+  [FreePats](assets/timidity/README.md) into `assets/timidity/` (~32 MiB,
+  git-ignored); the engine finds it at startup. Without it, MIDI loads and plays
+  silence — `RGSS::Audio.midi_available?` and a startup warning report that.
+  `TIMIDITY_CFG` points the engine at a different (e.g. fuller) patch set
+- MIDI is synthesised for **BGM and ME** only — SE and BGS play as mixer
+  samples, which SDL_mixer never synthesises MIDI for. Pitch/tempo is accepted
+  for API compatibility but not applied (SDL_mixer has no pitch control)
+- **MIDI works in the browser too.** Emscripten's SDL2_mixer port compiles one
+  decoder per requested format and defaults to OGG-only, so the build asks for
+  `-sSDL2_MIXER_FORMATS=ogg,mid` to get the TiMidity decoder, and the deployed
+  page carries the patch set (`-DWASM_MIDI_PATCHES=ON`, ~32 MiB of
+  `index.data`). Configure without that flag for a slimmer page whose `.mid`
+  playback is silent
 
 ## TODO
 - Editor with [imgui](https://github.com/ocornut/imgui)
@@ -318,4 +330,5 @@
   tiles; the map scene already blits real chipset graphics with autotiles and
   tile animation
 - Battle system and the item/skill/equip/status menu screens
-- Audio pitch/tempo control and a guaranteed MIDI synth in the build
+- Audio pitch/tempo control (SDL_mixer exposes none), and MIDI for SE/BGS, which
+  play as samples rather than through the synthesiser

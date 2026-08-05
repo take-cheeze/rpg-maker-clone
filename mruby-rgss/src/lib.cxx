@@ -1376,6 +1376,126 @@ mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
 // RGSS Bitmap#hue_change(hue): rotate every pixel's hue by `hue` degrees,
 // preserving saturation, value and alpha (an RGB -> HSV -> RGB pass, matching
 // RMXP's hue rotation). A hue of 0 (mod 360) is a no-op.
+// RGSS Bitmap#blur: soften the whole bitmap in place.
+//
+// A 3x3 box blur, run over a copy so every output pixel reads the *original*
+// neighbourhood -- blurring in place would feed already-blurred pixels back in
+// and smear along the scan order rather than evenly. Edge pixels average only
+// the neighbours that exist, so the border is not darkened toward transparent.
+//
+// The channels are averaged premultiplied by alpha, which is what stops a
+// transparent neighbour dragging colour out of an opaque pixel: a transparent
+// pixel has no colour to contribute, only weight. RGSS's own blur is a
+// fixed, mild one with no parameters, so there is nothing here to tune.
+mrb_value bmp_blur(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  if (b.width < 1 || b.height < 1)
+    return self;
+  const std::vector<uint8_t> src = b.buffer;
+  // Read through the untouched copy, not the bitmap being written.
+  auto read_src = [&](int32_t x, int32_t y, int& r, int& g, int& bl, int& a) {
+    const unsigned bpp = lv_color_format_get_size(b.format);
+    const uint8_t* p = src.data() + ((size_t)y * b.width + x) * bpp;
+    bl = p[0];
+    g = p[1];
+    r = p[2];
+    a = bpp >= 4 ? p[3] : 255;
+  };
+  for (int32_t y = 0; y < b.height; ++y) {
+    for (int32_t x = 0; x < b.width; ++x) {
+      int rs = 0, gs = 0, bs = 0, as = 0, n = 0;
+      for (int32_t dy = -1; dy <= 1; ++dy) {
+        for (int32_t dx = -1; dx <= 1; ++dx) {
+          const int32_t sx = x + dx, sy = y + dy;
+          if (sx < 0 || sy < 0 || sx >= b.width || sy >= b.height)
+            continue;
+          int r, g, bl, a;
+          read_src(sx, sy, r, g, bl, a);
+          rs += r * a / 255;
+          gs += g * a / 255;
+          bs += bl * a / 255;
+          as += a;
+          ++n;
+        }
+      }
+      if (n == 0)
+        continue;
+      const int a = as / n;
+      // Undo the premultiply. A fully transparent result has no colour to
+      // recover, so leave it black rather than dividing by zero.
+      const int r = a > 0 ? std::min(255, rs * 255 / n / a) : 0;
+      const int g = a > 0 ? std::min(255, gs * 255 / n / a) : 0;
+      const int bl = a > 0 ? std::min(255, bs * 255 / n / a) : 0;
+      bmp_put(b, x, y, r, g, bl, a);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
+// RGSS Bitmap#radial_blur(angle, division): a rotational blur about the centre.
+//
+// `division` copies of the image, spread evenly over `angle` degrees and
+// centred on the original (so the result is symmetric rather than smeared to
+// one side), averaged together. Sampling is nearest-neighbour; samples that
+// rotate off the bitmap contribute nothing, which keeps the corners from
+// pulling in transparent pixels and going dark. As in #blur the average is
+// taken premultiplied.
+//
+// division < 2 or angle == 0 is the identity, matching "no rotation to spread
+// over" rather than dividing by zero.
+mrb_value bmp_radial_blur(mrb_state* M, V self) {
+  Bitmap& b = bmp_self(M, self);
+  mrb_int angle, division;
+  mrb_get_args(M, "ii", &angle, &division);
+  if (division < 2 || angle == 0 || b.width < 1 || b.height < 1)
+    return self;
+  const std::vector<uint8_t> src = b.buffer;
+  const unsigned bpp = lv_color_format_get_size(b.format);
+  auto read_src = [&](int32_t x, int32_t y, int& r, int& g, int& bl, int& a) {
+    const uint8_t* p = src.data() + ((size_t)y * b.width + x) * bpp;
+    bl = p[0];
+    g = p[1];
+    r = p[2];
+    a = bpp >= 4 ? p[3] : 255;
+  };
+  const double cx = (b.width - 1) / 2.0;
+  const double cy = (b.height - 1) / 2.0;
+  const double span = angle * 3.14159265358979323846 / 180.0;
+  for (int32_t y = 0; y < b.height; ++y) {
+    for (int32_t x = 0; x < b.width; ++x) {
+      int rs = 0, gs = 0, bs = 0, as = 0, n = 0;
+      for (mrb_int k = 0; k < division; ++k) {
+        // -span/2 .. +span/2, so the unrotated image sits in the middle.
+        const double t = (double)k / (double)(division - 1) - 0.5;
+        const double th = span * t;
+        const double s = std::sin(th), c = std::cos(th);
+        const double dx = x - cx, dy = y - cy;
+        const int32_t sx = (int32_t)std::lround(cx + dx * c - dy * s);
+        const int32_t sy = (int32_t)std::lround(cy + dx * s + dy * c);
+        if (sx < 0 || sy < 0 || sx >= b.width || sy >= b.height)
+          continue;
+        int r, g, bl, a;
+        read_src(sx, sy, r, g, bl, a);
+        rs += r * a / 255;
+        gs += g * a / 255;
+        bs += bl * a / 255;
+        as += a;
+        ++n;
+      }
+      if (n == 0)
+        continue;
+      const int a = as / n;
+      const int r = a > 0 ? std::min(255, rs * 255 / n / a) : 0;
+      const int g = a > 0 ? std::min(255, gs * 255 / n / a) : 0;
+      const int bl = a > 0 ? std::min(255, bs * 255 / n / a) : 0;
+      bmp_put(b, x, y, r, g, bl, a);
+    }
+  }
+  b.dirty = true;
+  return self;
+}
+
 mrb_value bmp_hue_change(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int hue;
@@ -4056,6 +4176,46 @@ Bitmap& window_ensure_canvas(mrb_state* M,
   return c;
 }
 
+// An integer ivar, or `dflt` when it was never assigned. The RGSS2/RGSS3-only
+// window attributes are plain state the scripts drive, so a window that
+// predates them -- an RGSS1 one, or a VX one before its first `openness=` --
+// has no such ivar at all.
+static mrb_int iv_int_or(mrb_state* M,
+                         mrb_value self,
+                         const char* iv,
+                         mrb_int dflt) {
+  const mrb_value v = mrb_iv_get(M, self, mrb_intern_cstr(M, iv));
+  return mrb_nil_p(v) ? dflt : mrb_as_int(M, v);
+}
+
+// RGSS2/RGSS3 Window#tone: a colour tone over the window's *background*, not
+// its frame and not its contents. Applied to the whole canvas right after the
+// background is laid down and before anything is drawn on top, which is what
+// confines it to the background without a second buffer.
+//
+// Unlike Viewport#tone this is not folded in by each child: a window composites
+// itself, so it tones its own pixels. The per-pixel maths is the shared
+// apply_tone_px, so the three tone paths cannot drift apart.
+static void window_apply_tone(mrb_state* M, mrb_value self, Bitmap& canvas) {
+  const mrb_value tv = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  if (!mrb_test(tv) || !DATA_PTR(tv))
+    return;
+  const Tone& tn = DataType<Tone>::get(M, tv);
+  if (!tone_is_set(tn))
+    return;
+  for (int y = 0; y < canvas.height; ++y) {
+    for (int x = 0; x < canvas.width; ++x) {
+      int r, g, b, a;
+      bmp_read(canvas, x, y, r, g, b, a);
+      if (a == 0)
+        continue;
+      apply_tone_px(r, g, b, tn);
+      bmp_put(canvas, x, y, r, g, b, a);
+    }
+  }
+  canvas.dirty = true;
+}
+
 // An opacity ivar clamped to 0..255, defaulting to RGSS's 255 when the script
 // never assigned one. It used to read the ivar unconditionally, so setting a
 // windowskin on a window whose opacity had not been set was a TypeError on nil
@@ -4088,8 +4248,25 @@ void window_refresh(mrb_state* M, mrb_value self) {
     return;
   const mrb_int w =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@width")));
-  const mrb_int h =
+  const mrb_int full_h =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@height")));
+  // RGSS2/RGSS3 openness: the window unrolls from its horizontal centre line,
+  // so it is drawn at a fraction of its height and shifted down by half of what
+  // it lost. Every VX window opens and closes this way (`Window_Base#open`
+  // steps openness by 48 a frame), and RGSS hides the contents until it is
+  // fully open. 255 -- the default, and every RGSS1 window -- is the ordinary
+  // full draw.
+  const mrb_int openness = std::min<mrb_int>(
+      255, std::max<mrb_int>(0, iv_int_or(M, self, "@openness", 255)));
+  const mrb_int h = full_h * openness / 255;
+  lv_obj_set_y(obj, (int32_t)(iv_int_or(M, self, "@y", 0) + (full_h - h) / 2));
+  if (h <= 0) {
+    // Fully closed: nothing to draw, and a zero-height canvas is not a valid
+    // LVGL buffer, so size the object away instead.
+    lv_obj_set_size(obj, (int32_t)w, 0);
+    lv_obj_invalidate(obj);
+    return;
+  }
   window_ensure_canvas(M, self, w, h);
   const mrb_value canvas =
       mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
@@ -4125,35 +4302,62 @@ void window_refresh(mrb_state* M, mrb_value self) {
         }
       }
     }
+    // The tone tints the background only, so it goes on before the frame and
+    // the contents are drawn over it.
+    window_apply_tone(M, self, DataType<Bitmap>::get(M, canvas));
     // Frame: the 64x64 border at (128,0), a 9-slice with 16px corners/margins.
-    const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
-                            make_rect(M, 128, 0, b, b), mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, blt, 5, tl);
-    const mrb_value tr[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(0), skin,
-                            make_rect(M, 176, 0, b, b), mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, blt, 5, tr);
-    const mrb_value bl[] = {mrb_fixnum_value(0), mrb_fixnum_value(h - b), skin,
-                            make_rect(M, 128, 48, b, b), mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, blt, 5, bl);
-    const mrb_value br[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(h - b),
-                            skin, make_rect(M, 176, 48, b, b),
-                            mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, blt, 5, br);
-    const mrb_value top[] = {make_rect(M, b, 0, w - 2 * b, b), skin,
-                             make_rect(M, 144, 0, 32, b), mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, sblt, 4, top);
-    const mrb_value bottom[] = {make_rect(M, b, h - b, w - 2 * b, b), skin,
-                                make_rect(M, 144, 48, 32, b),
-                                mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, sblt, 4, bottom);
-    const mrb_value left[] = {make_rect(M, 0, b, b, h - 2 * b), skin,
-                              make_rect(M, 128, 16, b, 32),
+    // The corner shrinks vertically with a part-open window, so a half-unrolled
+    // one keeps a frame instead of drawing its top and bottom borders over each
+    // other (h is the *drawn* height -- see openness above).
+    const mrb_int bv = std::min<mrb_int>(b, h / 2);
+    if (bv > 0) {
+      const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
+                              make_rect(M, 128, 0, b, bv),
                               mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, sblt, 4, left);
-    const mrb_value right[] = {make_rect(M, w - b, b, b, h - 2 * b), skin,
-                               make_rect(M, 176, 16, b, 32),
+      mrb_funcall_argv(M, canvas, blt, 5, tl);
+      const mrb_value tr[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(0),
+                              skin, make_rect(M, 176, 0, b, bv),
+                              mrb_fixnum_value(op)};
+      mrb_funcall_argv(M, canvas, blt, 5, tr);
+      const mrb_value bl[] = {mrb_fixnum_value(0), mrb_fixnum_value(h - bv),
+                              skin, make_rect(M, 128, 64 - bv, b, bv),
+                              mrb_fixnum_value(op)};
+      mrb_funcall_argv(M, canvas, blt, 5, bl);
+      const mrb_value br[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(h - bv),
+                              skin, make_rect(M, 176, 64 - bv, b, bv),
+                              mrb_fixnum_value(op)};
+      mrb_funcall_argv(M, canvas, blt, 5, br);
+      const mrb_value top[] = {make_rect(M, b, 0, w - 2 * b, bv), skin,
+                               make_rect(M, 144, 0, 32, bv),
                                mrb_fixnum_value(op)};
-    mrb_funcall_argv(M, canvas, sblt, 4, right);
+      mrb_funcall_argv(M, canvas, sblt, 4, top);
+      const mrb_value bottom[] = {make_rect(M, b, h - bv, w - 2 * b, bv), skin,
+                                  make_rect(M, 144, 64 - bv, 32, bv),
+                                  mrb_fixnum_value(op)};
+      mrb_funcall_argv(M, canvas, sblt, 4, bottom);
+    }
+    if (h > 2 * bv) {
+      const mrb_value left[] = {make_rect(M, 0, bv, b, h - 2 * bv), skin,
+                                make_rect(M, 128, 16, b, 32),
+                                mrb_fixnum_value(op)};
+      mrb_funcall_argv(M, canvas, sblt, 4, left);
+      const mrb_value right[] = {make_rect(M, w - b, bv, b, h - 2 * bv), skin,
+                                 make_rect(M, 176, 16, b, 32),
+                                 mrb_fixnum_value(op)};
+      mrb_funcall_argv(M, canvas, sblt, 4, right);
+    }
+  } else {
+    // No windowskin: the tone still applies to whatever background there is.
+    window_apply_tone(M, self, DataType<Bitmap>::get(M, canvas));
+  }
+
+  // Everything below is window *furniture* -- contents, cursor, pause arrow --
+  // which RGSS hides entirely while a window is opening or closing. Only the
+  // frame animates.
+  if (openness < 255) {
+    mrb_gc_arena_restore(M, arena);
+    lv_obj_invalidate(obj);
+    return;
   }
 
   const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
@@ -4373,10 +4577,65 @@ mrb_value window_set_stretch(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// A single number standing for a Tone's four channels, so a change can be
+// spotted with one comparison. Shared with the viewport's tone tracking.
+double vp_tone_key(const Tone& t);
+
+// RGSS2/RGSS3 Window#openness: 0 (closed) .. 255 (open). Native rather than
+// plain state because assigning it has to redraw -- the frame is drawn at a
+// fraction of its height (see window_refresh), which *is* the open/close
+// animation. `Window_Base#open` steps this by 48 a frame.
+mrb_value window_set_openness(mrb_state* M, mrb_value self) {
+  mrb_int v;
+  mrb_get_args(M, "i", &v);
+  v = std::min<mrb_int>(255, std::max<mrb_int>(0, v));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@openness"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return mrb_fixnum_value(v);
+}
+
+// RGSS2/RGSS3 Window#tone, created on first read like the viewport's so
+// `window.tone.set(...)` has something to mutate.
+mrb_value window_tone(mrb_state* M, mrb_value self) {
+  mrb_value t = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  if (mrb_nil_p(t)) {
+    const mrb_value args[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
+                              mrb_fixnum_value(0), mrb_fixnum_value(0)};
+    t = mrb_obj_new(
+        M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Tone"), 4, args);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  }
+  return t;
+}
+
+mrb_value window_set_tone(mrb_state* M, mrb_value self) {
+  mrb_value t;
+  mrb_get_args(M, "o", &t);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
+  window_refresh(M, self);
+  return t;
+}
+
+// Whether the tone changed since the last check. The scripts mutate the Tone
+// *in place* (`window.tone.set(...)`) and call update every frame, so
+// assignment alone is not enough to notice -- the same reason Viewport#tone is
+// re-checked from its own update. One comparison when it did not move.
+bool window_sync_tone(mrb_state* M, mrb_value self) {
+  const mrb_value tv = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const double key = (mrb_test(tv) && DATA_PTR(tv))
+                         ? vp_tone_key(DataType<Tone>::get(M, tv))
+                         : 0.0;
+  const mrb_value prev = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tone_key"));
+  if (mrb_float_p(prev) && mrb_float(prev) == key)
+    return false;
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tone_key"), mrb_float_value(M, key));
+  return true;
+}
+
 // Per-frame tick: advance the blink/pause animation and, when the window has a
 // visible cursor or is paused, redraw so the animation and any in-place
 // cursor_rect mutation show. Windows without a cursor or pause need no
-// per-frame work.
+// per-frame work beyond the tone check, which is one comparison.
 mrb_value window_update(mrb_state* M, mrb_value self) {
   const mrb_int anim =
       mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@_anim")));
@@ -4388,7 +4647,8 @@ mrb_value window_update(mrb_state* M, mrb_value self) {
                           DataType<Rect>::get(M, cr).width > 0;
   const bool paused =
       mrb_test(mrb_iv_get(M, self, mrb_intern_lit(M, "@pause")));
-  if (has_cursor || paused)
+  const bool tone_moved = window_sync_tone(M, self);
+  if (has_cursor || paused || tone_moved)
     window_refresh(M, self);
   return self;
 }
@@ -5124,6 +5384,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "pause=", window_set_pause, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "stretch=", window_set_stretch, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "update", window_update, MRB_ARGS_NONE());
+  // RGSS2 / RGSS3 (VX, VX Ace): the open/close animation and the background
+  // tone. Native because both have to redraw -- and so they must NOT be
+  // redefined in mrblib, which loads after this and would shadow them.
+  mrb_define_method(M, window, "openness=", window_set_openness,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "tone", window_tone, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "tone=", window_set_tone, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, window, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
@@ -5153,6 +5420,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
+  // RGSS2/RGSS3 blurs: one use each in the stock scripts (the title background
+  // and the animation effects).
+  mrb_define_method(M, bmp, "blur", bmp_blur, MRB_ARGS_NONE());
+  mrb_define_method(M, bmp, "radial_blur", bmp_radial_blur, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));

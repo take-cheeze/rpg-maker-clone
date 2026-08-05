@@ -2527,10 +2527,26 @@ module Game
     TURN_ACTOR    = 0x100
     COMMAND_ACTOR = 0x200
 
-    # RPG2000's turn matcher (EasyRPG's `Game_Battle::CheckTurns`): with no
-    # `multiple` the turn must equal `base` exactly; otherwise it must be at or
-    # past `base` and an exact number of `multiple` steps beyond it. So
-    # base 0 / multiple 2 fires on turns 0, 2, 4, ...
+    # RPG2000's turn matcher: with no `multiple` the turn must equal `base`
+    # exactly; otherwise it must be at or past `base` and an exact number of
+    # `multiple` steps beyond it. So base 0 / multiple 2 fires on turns 0, 2,
+    # 4, ...
+    #
+    # Both the body and the argument order are taken from EasyRPG Player, not
+    # from guesswork: `Game_Battle::CheckTurns(int turns, int base, int
+    # multiple)` is `turns >= base && (turns - base) == 0` when multiple is 0
+    # (which is just `turns == base`, written that way below) and
+    # `turns >= base && (turns - base) % multiple == 0` otherwise; and
+    # `Game_Interpreter_Battle::AreConditionsMet` calls it as
+    # `CheckTurns(GetTurn(), condition.turn_b, condition.turn_a)` — so `base` is
+    # the page's `turn_b` and `multiple` its `turn_a`, which reads backwards
+    # from the field names and is exactly why it is worth writing down.
+    #
+    # Real data agrees but cannot by itself pin the order down: every turn-gated
+    # page in the games checked so far has `turn_b == 0` (156 pages at
+    # multiple 0, firing on turn 0; 9 at multiple 1, firing every turn), and a
+    # swapped order would produce the same two behaviours for those values. A
+    # game with a "from turn N, every M" page would settle it independently.
     def self.check_turns(turn, base, multiple)
       return turn == base if multiple.nil? || multiple == 0
       turn >= base && (turn - base) % multiple == 0
@@ -3273,8 +3289,13 @@ module Game
     # a seeded fight is exactly reproducible; the live game turns them on.
     # `first_strike`, when true, gives the party a pre-emptive opening round: the
     # enemies are caught off guard and skip their turn in round 1 only.
+    # `attributes` is an optional attribute-definition lookup (`[id]` -> a row
+    # exposing `a_rate` .. `e_rate`, e.g. the database's `property` table) so
+    # elemental damage reads each attribute's own rank rates; omitted, the
+    # RPG2000 default table applies.
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
-                   criticals = false, accuracy = false, first_strike = false)
+                   criticals = false, accuracy = false, first_strike = false,
+                   attributes = nil)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
@@ -3283,6 +3304,7 @@ module Game
       @criticals = criticals
       @accuracy = accuracy
       @first_strike = first_strike
+      @attributes = attributes
       @rounds = 0
       @result = nil
       @escaped = false     # set once the party successfully flees (#attempt_escape)
@@ -3712,11 +3734,24 @@ module Game
       d < 1 ? 1 : d
     end
 
-    # RPG2000's default attribute rate table: a defence rank of A..E (index 0..4)
-    # scales damage to 200 / 150 / 100 / 50 / 0 percent. (Per-attribute overrides
-    # from the database's Attribute table aren't modelled yet — every element uses
-    # these defaults.)
-    ATTR_RATE_PCT = [200, 150, 100, 50, 0].freeze
+    # RPG2000's default attribute rate table (liblcf's RPG::Attribute defaults):
+    # a defence rank of A..E (index 0..4) scales damage to 300 / 200 / 100 / 50 /
+    # 0 percent. Used as the fallback when the fight carries no attribute table
+    # (a bare fixture); a real database's per-attribute `a_rate` .. `e_rate`
+    # override it (see #attr_rate).
+    ATTR_RATE_PCT = [300, 200, 100, 50, 0].freeze
+
+    # The percentage a defence `rank` (0..4) scales damage for attribute `aid`:
+    # the attribute's own `a_rate` .. `e_rate` from the database `property` table
+    # when known, else the RPG2000 default table.
+    def attr_rate(aid, rank)
+      row = @attributes ? @attributes[aid] : nil
+      if row && row.respond_to?(:a_rate)
+        r = [row.a_rate, row.b_rate, row.c_rate, row.d_rate, row.e_rate][rank]
+        return r if r
+      end
+      ATTR_RATE_PCT[rank]
+    end
 
     # The percentage `attr_ids` scale damage against `target`: the strongest
     # (largest) rate among the attack's elements, per EasyRPG's
@@ -3731,7 +3766,7 @@ module Game
         rank = ranks[aid] || 2
         rank = 0 if rank < 0
         rank = 4 if rank > 4
-        pct = ATTR_RATE_PCT[rank]
+        pct = attr_rate(aid, rank)
         best = pct if best.nil? || pct > best
       end
       best || 100
@@ -3838,10 +3873,23 @@ module Game
       end
     end
 
-    # RPG2000's default state rate table: a susceptibility rank of A..E (index
-    # 0..4) scales an infliction chance to 100 / 80 / 60 / 30 / 0 percent.
-    # (Per-state overrides from the database's State table aren't modelled yet.)
+    # RPG2000's default state rate table (liblcf's RPG::State defaults): a
+    # susceptibility rank of A..E (index 0..4) scales an infliction chance to
+    # 100 / 80 / 60 / 30 / 0 percent. Used as the fallback; a state row that
+    # carries its own `a_rate` .. `e_rate` (the `situation` table) overrides it.
     STATE_RATE_PCT = [100, 80, 60, 30, 0].freeze
+
+    # The percentage a susceptibility `rank` (0..4) scales an infliction of state
+    # `sid`: the state's own `a_rate` .. `e_rate` from the situation table when
+    # known, else the RPG2000 default table.
+    def state_rate(sid, rank)
+      row = state_def(sid)
+      if row && row.respond_to?(:a_rate)
+        r = [row.a_rate, row.b_rate, row.c_rate, row.d_rate, row.e_rate][rank]
+        return r if r
+      end
+      STATE_RATE_PCT[rank]
+    end
 
     # The percentage a target's susceptibility scales an infliction of `sid`: its
     # rank in the target's `state_ranks` (default C / 60% for a listed-but-absent
@@ -3853,7 +3901,7 @@ module Game
       rank = ranks[sid] || 2
       rank = 0 if rank < 0
       rank = 4 if rank > 4
-      STATE_RATE_PCT[rank]
+      state_rate(sid, rank)
     end
 
     # Inflict a skill command's `inflict` states on `target`, each landing only if

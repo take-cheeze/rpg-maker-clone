@@ -1,4 +1,4 @@
-# 26. Testing RPG Maker XP against a released game (Pray for You)
+# 27. Testing RPG Maker XP against a released game (Pray for You)
 
 Date: 2026-08-05
 
@@ -10,9 +10,10 @@ stays a manual/dev script, as in ADR 0021 / 0025.
 
 ## Context
 
-ADR 0025 set up three runtimes for RPG Maker XP — the native binary, the browser
-build and the genuine `RGSS10*.dll` under wine — but pointed all of them at one
-project: the `OpenGame.exe` `Testbed/XP` bed. That bed is an *editor* project:
+ADR 0025 set up cross-runtime testing for RPG Maker XP — the native binary and
+the genuine `RGSS10*.dll` under wine (and, until that ADR was amended, the
+browser build) — but pointed all of it at one project: the `OpenGame.exe`
+`Testbed/XP` bed. That bed is an *editor* project:
 a loose `Data/` folder, **one** map, **two** event pages, **fifteen** event
 commands. Every XP check the repo has was measured against it, and its own ADR
 listed "load a packed release" as the obvious next case.
@@ -112,5 +113,14 @@ screen). The rest is the windowskin background's shading.
   frame against our already-faded-in one. A save-resume comparison of a fixed map
   (the RPG2000 side's `compare-nepheshel-save-wine.bash` trick) would remove the
   timing from the measurement.
-- The browser check still loads only the unpacked bed; the packed game is now the
-  obvious second case there too.
+- If the browser leg comes back (ADR 0025 was amended to drop it), this packed
+  release is the case it should load through the page's own loader — a
+  `Game.ini` + `Game.rgssad` zip takes a different path through it than a loose
+  `Data/` tree.
+- The boot logs `Audio: no BGM found for "tr17memories"` on this game. The file
+  is there — `Audio/BGM/tr17memories.MID` — but `RGSS::Audio::EXTS` tries only
+  lower-case extensions, which is a miss on a case-sensitive filesystem and a
+  hit on the Windows the games were authored on. A real release mixes `.MID`
+  and `.mid` in one folder, so the search wants to be case-insensitive; left
+  out of this change because it is in the shared audio resolver, not the XP
+  runtime.
