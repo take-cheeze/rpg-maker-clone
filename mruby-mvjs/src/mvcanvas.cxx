@@ -35,6 +35,9 @@
 #include <dirent.h>
 #include <stb_truetype.h>
 
+// The engine's fallback font, for projects that ship none (also mruby-rgss).
+#include "default_font.hxx"
+
 namespace {
 
 // The game font, loaded once on first text draw. MV renders all window/menu
@@ -66,12 +69,18 @@ std::string lower_ext(const std::string& name) {
 // practice:
 // **RPG Maker MZ projects ship `fonts/*.woff`** (mplus-1m-regular.woff and
 // friends), so a loader that only looked for .ttf/.otf found nothing and every
-// MZ game drew blank windows. Returns "" when the dir holds no usable font.
+// MZ game drew blank windows.
+//
+// A project that ships no font at all (the MZ sample, and anything whose
+// deployment left the RTP font behind) falls back to the engine's default font
+// — every glyph MV draws goes through here, so without one its whole UI is
+// blank rather than merely wrong-looking. Returns "" only when that is missing
+// too.
 std::string font_dir_first_font() {
   const std::string dir = mv_resolve_path("fonts");
   DIR* d = opendir(dir.c_str());
   if (!d)
-    return std::string();
+    return rgss::default_font_path();
   std::string sfnt, woff;
   while (dirent* e = readdir(d)) {
     const std::string ext = lower_ext(e->d_name);
@@ -81,7 +90,13 @@ std::string font_dir_first_font() {
       woff = dir + "/" + e->d_name;
   }
   closedir(d);
-  return !sfnt.empty() ? sfnt : woff;
+  if (!sfnt.empty())
+    return sfnt;
+  if (!woff.empty())
+    return woff;
+  // Nothing usable in the project's own fonts/ — fall back to the engine's
+  // default font (assets/fonts), so the windows still draw.
+  return rgss::default_font_path();
 }
 
 // Big-endian readers over a byte buffer, bounds-checked by the caller.

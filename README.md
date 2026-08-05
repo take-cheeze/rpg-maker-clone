@@ -405,6 +405,31 @@ part that explains it). Nothing else is collected.
   the capture on CRuby. See
   [`docs/adr/0027-copyable-error-report.md`](docs/adr/0027-copyable-error-report.md).
 
+### Text and fonts
+
+- Window and menu text is rasterised with **stb_truetype** from the project's
+  own font: RPG Maker XP/VX pick a family name out of the project's `Fonts/`
+  folder (`RGSS::Font#name`, matched leniently against the file names), MV/MZ
+  load the first font under `fonts/` — `.ttf`/`.otf`, or the `.woff` that MZ
+  projects actually ship, unpacked to the sfnt inside it. Size, bold, italic,
+  outline, shadow and the colours all come from the `Font`
+- **Projects that ship no font get one once you fetch it.** On Windows the
+  maker's default resolves to a system font (`MS PGothic`) that is not ours to
+  redistribute, so a project can easily ship none — and then every window drew
+  with the built-in 12px **shinonome** bitmap font whatever size it asked for
+  (MV/MZ, whose text is all TrueType, drew nothing at all). Run
+  `./scripts/download-default-font.bash` to install
+  [M PLUS 1p](assets/fonts/README.md) into `assets/fonts/` (~1.7 MiB,
+  git-ignored, SIL Open Font License); the engine finds it at startup and the
+  XP/VX/MV/MZ runtimes fall back to it. A font the project *does* ship still
+  wins, `RPG_DEFAULT_FONT` overrides the choice, and `-DWASM_DEFAULT_FONT=ON`
+  bakes it into the web page. See
+  [`docs/adr/0028-bundled-default-ui-font.md`](docs/adr/0028-bundled-default-ui-font.md)
+- **RPG2000/2003 keeps shinonome deliberately.** Its metrics match RPG_RT's MS
+  Gothic, which is what the render-parity comparisons above are measured
+  against, so the fallback is opt-in per maker (`RGSS::Font.default_path`) and
+  RPG2000 does not opt in
+
 ### Audio
 
 - `RGSS::Audio` plays real music and sound through an

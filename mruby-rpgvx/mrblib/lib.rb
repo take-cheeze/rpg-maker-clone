@@ -100,6 +100,11 @@ class RPGVX
 
   def initialize(_args)
     @edition = self.class.detect(GAME_DIR)
+    # Like XP: the UI font is picked by family name and expected under the
+    # project's Fonts/, so projects that ship none fall back to the bundled
+    # default font (assets/fonts) rather than to the 12px shinonome bitmap
+    # font. A project font still wins.
+    RGSS::Font.default_path ||= RGSS.default_font_path
     # Declare the screen the window was opened at (src/main.cxx sizes it to the
     # same numbers), so the scripts' `Graphics.width`/`height` — which VX's
     # camera and every window layout are computed from — report VX's resolution

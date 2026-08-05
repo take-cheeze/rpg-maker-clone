@@ -17,6 +17,7 @@
 #include <ng-log/logging.h>
 #include <inicpp.hpp>
 
+#include "default_font.hxx"
 #include "error_dump.hxx"
 #include "iterm.hxx"
 #include "log_console.hxx"
@@ -385,6 +386,33 @@ extern "C" void* mrb_basic_alloc_func(void* p, size_t size) {
 }
 #endif
 
+// Tell the text renderer where this build keeps the bundled default UI font —
+// the font used when a project ships none of its own, which is most of what the
+// XP/VX/MV/MZ runtimes are handed (see assets/fonts/README.md). The gem that
+// rasterises text cannot know these paths: it is also built for the
+// terminal-only and Emscripten variants, so it stays free of build-system
+// wiring and takes them from here.
+//
+// Probed at run time, never at configure time, matching the MIDI patch set: the
+// download is independent of the configure, so an EXISTS check would freeze
+// whichever order the two happened to run in.
+void init_default_font() {
+  // Installed layout first, then the source tree, the same order sdl_audio.cxx
+  // probes for the patch set.
+  rgss::add_default_font_dir(RGSS_DEFAULT_FONT_INSTALL_DIR);
+  rgss::add_default_font_dir(RGSS_DEFAULT_FONT_SOURCE_DIR);
+
+  const std::string& path = rgss::default_font_path();
+  if (path.empty()) {
+    LOG(INFO)
+        << "Text: no default font installed; a project that ships none of "
+           "its own draws with the built-in shinonome bitmap font at its "
+           "fixed 12px. Run scripts/download-default-font.bash to add one.";
+  } else {
+    LOG(INFO) << "Text: default font from '" << path << "'";
+  }
+}
+
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
 // Installs the SDL keyboard watch that feeds RGSS::Input (src/sdl_input.cxx).
@@ -612,6 +640,9 @@ int main(int argc, char** argv) {
   // Bring up audio for every backend (SDL_mixer initialises the SDL audio
   // subsystem itself, so this works under the terminal backends too).
   rgss_audio_init();
+
+  // Before any game runs, so the first window drawn already has its font.
+  init_default_font();
 
 #ifdef __EMSCRIPTEN__
   // mruby uses word boxing, which stores the type tag in the low 3 bits of each

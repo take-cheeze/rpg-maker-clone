@@ -455,11 +455,26 @@ module RGSS
     @default_outline = true
     @default_color = Color.new(255, 255, 255, 255)
     @default_out_color = Color.new(0, 0, 0, 128)
+    # Font file used when the project ships none. See #default_path below.
+    @default_path = nil
 
     class << self
       attr_accessor :default_name, :default_size, :default_bold,
                     :default_italic, :default_shadow, :default_outline,
                     :default_color, :default_out_color
+
+      # Path to a font file draw_text falls back to when the project itself
+      # ships none — nil (no fallback) unless a runtime sets it. A font found
+      # under the project's own Fonts/ still wins; this is only reached when
+      # there is nothing there.
+      #
+      # Opt-in per maker, because there is no single right answer: RPG Maker
+      # XP/VX want a real TrueType face at the size the window asked for, so
+      # their boot points this at RGSS.default_font_path (the bundled default
+      # font, assets/fonts). RPG2000 leaves it nil — its text renders with the
+      # built-in shinonome bitmap font, whose metrics match RPG_RT's MS Gothic
+      # and which the render-parity comparisons are checked against.
+      attr_accessor :default_path
 
       def exist?(name)
         true
