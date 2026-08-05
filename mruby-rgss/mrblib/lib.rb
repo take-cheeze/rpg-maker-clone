@@ -807,10 +807,18 @@ module RGSS
       # Returns nil either way — RGSS's Audio.*_play has no return value, and a
       # miss here is the same "asset not found" silence the disk path gives.
       def play_packed(kind, filename, volume, pitch)
+        return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
-        return nil if archive.nil? || filename.nil? || filename.empty?
-        name, bytes = find_packed(archive, kind, filename)
-        return nil if bytes.nil?
+        name, bytes = archive ? find_packed(archive, kind, filename) : nil
+        if bytes.nil?
+          # Neither a real file (the caller already searched GAME_DIR/RTP_DIR
+          # and every known extension) nor an archive entry. Say so once: an
+          # unresolved name is otherwise a silent no-op, which sounds exactly
+          # like a broken decoder and sent us looking in the wrong place.
+          RGSS.warn_once(
+            "Audio: no #{kind.to_s.upcase} found for #{filename.inspect}")
+          return nil
+        end
         # Say so once rather than dropping every play silently: on a build with
         # no audio backend (or one predating the memory entry points) a packed
         # game would otherwise be mysteriously mute.
