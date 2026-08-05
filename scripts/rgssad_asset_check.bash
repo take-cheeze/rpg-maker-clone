@@ -16,8 +16,9 @@
 # is packed twice, differing only in whether the title graphic is inside the
 # archive:
 #
-#   with    -> the engine must NOT log "title graphic load failed"
-#   without -> it must, and must still boot (a missing asset is not fatal)
+#   with    -> nothing must report the title graphic as unloadable
+#   without -> RPG::Cache must report exactly that, and the game must still run
+#              (a missing asset is not fatal: the cache stands a blank in)
 #
 # A change that quietly stopped consulting the archive turns the first run into
 # the second, and this fails.
@@ -36,8 +37,11 @@
 #   * a loose file next to the working directory, since a bare relative name is
 #     tried first. Both runs use an absolute --game_dir and a scratch cwd.
 #
-# The engine also aborts on an uncaught mruby exception, so both runs reaching
-# [RPGXP-MAP] is part of the test.
+# The graphic is loaded by the *game's own* Scene_Title, through
+# `RPG::Cache.title` -- there is no built-in title screen any more (ADR 0030) --
+# so this also exercises the whole host path. The engine aborts on an uncaught
+# mruby exception, so both runs reaching a second [RPGXP-HOST-SCENE] is part of
+# the test.
 #
 # Usage: ./scripts/rgssad_asset_check.bash [server_num] [game_dir]
 #   server_num  xvfb-run --server-num to use (default 113; see the reserved
@@ -133,27 +137,32 @@ for which in with without ; do
     # loose file from the repo either.
     if ! (cd "${WORK}/${which}" && \
           xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
-            --game_dir "${WORK}/${which}" --rpgxp_new_game \
+            --game_dir "${WORK}/${which}" --rgss_host_new_game \
             --timeout_ms="${TIMEOUT_MS}") >"${log}" 2>&1 ; then
         echo "FAILED: packed ${which}: the engine exited non-zero" >&2
         fail=1
-    elif ! grep -q '\[RPGXP-MAP\]' "${log}" ; then
-        echo "FAILED: packed ${which}: never reached the map ([RPGXP-MAP] missing)" >&2
+    elif [ "$(grep -c '\[RPGXP-HOST-SCENE\]' "${log}")" -lt 2 ] ; then
+        echo "FAILED: packed ${which}: the game never got past its first scene" >&2
+        grep '\[RPGXP-HOST-SCENE\]' "${log}" >&2 || true
         fail=1
     fi
-    grep '\[RPGXP-MAP\]' "${log}" || true
+    grep '\[RPGXP-HOST-SCENE\]' "${log}" || true
     num=$((num + 1))
 done
 
-if grep -q 'title graphic load failed' "${WORK}/with.log" ; then
+# RPG::Cache names the path it could not load, so match on the Titles/ folder:
+# a packed project ships no other graphics either, and every one of those misses
+# is expected.
+MISS='RPG::Cache: Graphics/Titles/'
+if grep -q "${MISS}" "${WORK}/with.log" ; then
     echo "FAILED: the title graphic was in the archive and the engine did not" \
          "find it -- the packed-asset path is broken" >&2
-    grep 'title graphic load failed' "${WORK}/with.log" >&2
+    grep "${MISS}" "${WORK}/with.log" >&2
     fail=1
 fi
 # The other half of the A/B: without the entry the load must fail, or the check
 # above proves nothing (e.g. a loose copy leaking in from somewhere).
-if ! grep -q 'title graphic load failed' "${WORK}/without.log" ; then
+if ! grep -q "${MISS}" "${WORK}/without.log" ; then
     echo "FAILED: the title graphic was NOT in the archive and the engine" \
          "loaded one anyway -- this check cannot tell the two apart" >&2
     fail=1

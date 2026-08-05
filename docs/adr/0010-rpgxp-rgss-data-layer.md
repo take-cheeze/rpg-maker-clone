@@ -4,7 +4,10 @@ Date: 2026-08-03
 
 ## Status
 
-Accepted
+Accepted; the **reimplemented title/map/event flow this ADR introduced was
+removed** by [ADR 0030](0030-rgss-only-the-games-own-engine.md) once a game's own
+scripts could run. The data layer it also introduced — `RPGXP::RGSSData` and the
+typed `RPG::*` schema — is unchanged and is what the script host reads through.
 
 ## Context
 

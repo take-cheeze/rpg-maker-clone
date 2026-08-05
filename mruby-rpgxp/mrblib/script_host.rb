@@ -11,14 +11,14 @@
 # exposes the handful of Kernel built-ins the scripts expect the engine to
 # supply (load_data / save_data / $RGSS_SCRIPTS), then evals each decompressed
 # section against the top level using its editor name — so the game's own logic
-# runs unmodified, rather than the reimplemented default flow in game.rb/scene.rb.
+# runs unmodified.
 #
-# It was built as the alternative to that reimplementation (see
-# docs/adr/0017-rpgxp-rgss-script-host.md) and is now the **default** path
-# (docs/adr/0029-rgss-script-host-by-default.md): a project that ships scripts
-# ships its own engine, so running them is what running the game means. The
-# built-in flow stays as the fallback — for a project that ships no scripts, when
-# the host fails to boot, and whenever the opt-out (RGSS_SCRIPT_HOST=0) is set.
+# It was built as the alternative to a reimplementation of RMXP's default engine
+# (docs/adr/0017-rpgxp-rgss-script-host.md), became the default boot path
+# (ADR 0029), and is now the **only** one: ADR 0030 removed the reimplementation,
+# because reproducing the default scripts could never run the games that
+# customise them. A project that ships no scripts has nothing to run, and the
+# boot shell says so.
 # `Kernel#eval` comes from the core mruby-eval gem, a hard dependency of this gem
 # (mruby-rpgxp/mrbgem.rake).
 class RPGXP
@@ -28,10 +28,10 @@ class RPGXP
   module ScriptHost
     # Environment variable that switches the script host off. The host is on by
     # default, so this is an *opt-out*: set RGSS_SCRIPT_HOST to one of
-    # DISABLED_VALUES to boot the built-in reimplemented flow instead (what the
-    # headless render checks compare against, and the escape hatch for a project
-    # whose scripts the host cannot yet run). The native binary spells the same
-    # switch --norgss_script_host.
+    # DISABLED_VALUES and the project is loaded but not run — there is no second
+    # engine to run it with (ADR 0030), so this is a way to inspect a project, or
+    # to boot past scripts that crash the engine, not a way to play one. The
+    # native binary spells the same switch --norgss_script_host.
     ENABLED_ENV = "RGSS_SCRIPT_HOST".freeze
 
     # The values that turn the host *off*, compared literally in lower case (no
@@ -45,7 +45,7 @@ class RPGXP
     # True while the host's blocking `Main` runs inside the driver Fiber (see
     # RPGXP#setup_script_host_driver). The wrapped Graphics.update reads this to
     # decide whether to yield the fiber once per frame — so the flag is only ever
-    # set on the script-host path and the built-in flow never yields. See
+    # set while a game is being driven, and nothing else yields. See
     # docs/adr/0023-rpgxp-script-host-frame-driver.md.
     @driving = false
     def self.driving?
@@ -56,19 +56,17 @@ class RPGXP
       @driving = v
     end
 
-    # Whether to run the bundled scripts instead of the built-in flow. **On by
-    # default**: an RGSS project's scripts *are* its engine, so running them is
-    # the faithful boot; the built-in reimplementation is the fallback for a
-    # project that ships none, and for a host that cannot get the game's own
-    # engine up. Only an explicit opt-out turns it off, from either of two
-    # places, because the two runtimes read their settings differently:
+    # Whether to run the project's bundled scripts. **On by default**, and the
+    # only way a game runs: an RGSS project's scripts *are* its engine (ADR
+    # 0030). Only an explicit opt-out turns it off, from either of two places,
+    # because the two runtimes read their settings differently:
     #
     # **The `--rgss_script_host` flag** is the switch that works in a built
     # engine. src/main.cxx publishes it as the RGSS_SCRIPT_HOST constant, the way
-    # it publishes `--rpgxp_new_game` as RPGXP_NEW_GAME, and it is read through
-    # its own rescue because an undefined constant raises here (this mruby has no
-    # `defined?(CONST)`). It also folds in the environment variable below, which
-    # a booted game cannot read for itself.
+    # it publishes the other headless-run switches, and it is read through its own
+    # rescue because an undefined constant raises here (this mruby has no
+    # `defined?(CONST)`). It also folds in the environment variable below, which a
+    # booted game cannot read for itself.
     #
     # **The RGSS_SCRIPT_HOST environment variable** is what every document used
     # to name, and on its own it could never have switched the host: this mruby
@@ -100,13 +98,13 @@ class RPGXP
     # Run the project's bundled scripts to completion. `db` answers #scripts
     # (an ordered array of [name, source]) and #read_object / #save_object for
     # the Kernel built-ins. Returns true when the scripts were run, false when
-    # the project ships none, so the caller can fall back to the built-in flow.
+    # the project ships none, which the caller reports.
     # Evaluating "Main" blocks here until the game's own loop exits, exactly as
     # RGSS does.
     def self.run(db)
       sections = db.scripts
       if sections.empty?
-        $stderr.puts "[RGSS] script host: project ships no scripts; using built-in flow"
+        $stderr.puts "[RGSS] script host: project ships no scripts"
         return false
       end
       install_kernel(db)
@@ -114,9 +112,9 @@ class RPGXP
       # some scripts read it (e.g. to hot-reload). Mirror that shape.
       idx = -1
       $RGSS_SCRIPTS = sections.map { |name, source| [idx += 1, name, source] }
-      # A machine-readable marker, the script-host twin of the built-in flow's
-      # [RPGXP-MAP]: it is what a headless run (scripts/rpgxp_boot_check.bash)
-      # asserts on to prove the host — not the built-in flow — booted the game.
+      # A machine-readable marker: what a headless run
+      # (scripts/rpgxp_boot_check.bash) asserts on to prove a game's own bundle is
+      # what booted, and how much of it there was.
       $stderr.puts "[RPGXP-SCRIPTS] running #{sections.size} script sections"
       sections.each do |name, source|
         # Evaluate through the top-level helper so a section's `class Scene_Title`
@@ -126,8 +124,7 @@ class RPGXP
         # runs, so a boot failure is a report about which part of the RGSS class
         # library is still missing (docs/rpgxp-rgss-api-gap.md) — and "NameError:
         # uninitialized constant RPG::Sprite" says nothing about *where* to look
-        # without it. Re-raised, so the caller still falls back to the built-in
-        # flow.
+        # without it. Re-raised, so the run ends on it.
         begin
           rgss_eval_section(source, name)
         rescue StandardError, ScriptError => e
@@ -209,8 +206,8 @@ class RPGXP
     end
 
     # Wrap the native Graphics.update so a scene's `loop { Graphics.update; ... }`
-    # yields the driver Fiber once per frame. Idempotent, and installed only on
-    # the script-host path — a built-in flow keeps the pristine native method.
+    # yields the driver Fiber once per frame. Idempotent, and installed only when
+    # a game is actually driven, so a project with no scripts never wraps it.
     def self.install_graphics_yield
       return if RGSS::Graphics.respond_to?(:_update_native)
       RGSS::Graphics.singleton_class.class_eval do
@@ -224,24 +221,31 @@ class RPGXP
       end
     end
 
-    # Frames the host has driven, and the last scene it reported.
+    # Frames the host has driven, the last scene it reported, and the frame the
+    # game's own map scene first appeared on (which is when the move probe can
+    # start).
     @frames = 0
     @scene_name = nil
+    @map_frame = nil
 
     # Called once per driven frame, from the wrapper above. Two jobs, both about
     # being able to *see* what a game's own engine is doing from a log:
     #
     #   * report each scene the game moves to. `$scene` is the game's own global
     #     (RGSS's Main loops `$scene.main while $scene != nil`), so this reads
-    #     what it already publishes and modifies nothing. The marker is the
-    #     script-host twin of the built-in flow's [RPGXP-MAP].
+    #     what it already publishes and modifies nothing.
     #   * with --rgss_host_new_game, tap the confirm key so a headless run gets
-    #     off the game's title screen without a keyboard — the script-host twin
-    #     of --rpgxp_new_game (which drives the *built-in* title instead).
+    #     off the game's own title screen without a keyboard.
+    #   * with --rgss_host_move_test, walk the party once the game's own map
+    #     scene is up and report whether it moved.
     def self.watch_frame
       @frames += 1
       report_scene
-      confirm_tap if auto_new_game?
+      # While the move probe is holding a direction, stop tapping confirm: a
+      # confirm on a map talks to whatever is in front of the party, and a
+      # message window would swallow the walk.
+      confirm_tap if auto_new_game? && !probing_move?
+      move_probe if move_test?
     end
 
     def self.report_scene
@@ -250,7 +254,21 @@ class RPGXP
       name = scene.class.to_s
       return if name == @scene_name
       @scene_name = name
-      $stderr.puts "[RPGXP-HOST-SCENE] #{name}"
+      # Remember when the map first appeared; the move probe waits for it.
+      @map_frame = @frames if @map_frame.nil? && map_scene?(name)
+      # The frame number is the diagnostic that matters when a headless run ends
+      # on its timeout: it is the only way to tell "the game stalled" from "the
+      # frames were slower than the budget" (an unaccelerated CI display renders
+      # a 640x480 tilemap far below the 40 fps the constants below assume).
+      $stderr.puts "[RPGXP-HOST-SCENE] #{name} frame=#{@frames}"
+    end
+
+    # A game's map scene, by the name RGSS gives it. Matched by name rather than
+    # by constant because a game is free to rename or subclass it (Pray for You
+    # ships its own `Scene_logo` before the title, and community menu scripts
+    # replace whole scenes) — what matters is that the party is on a map.
+    def self.map_scene?(name)
+      name.include?("Scene_Map")
     end
 
     # A tap a second in, repeated every second: pushed through the same buffer
@@ -258,7 +276,12 @@ class RPGXP
     # it would a real key. Repeated because a game's first screen is its own
     # business — a notice, a language picker, a title menu whose first item is
     # not New Game — and one press cannot know which.
-    CONFIRM_EVERY = 60
+    #
+    # The interval is in *frames* while a headless run's budget is in wall-clock
+    # milliseconds, so it is kept short: on an unaccelerated CI display the whole
+    # boot-plus-walk has to fit in a few hundred frames, and every frame spent
+    # waiting for the first tap is one the walk below does not get.
+    CONFIRM_EVERY = 40
     CONFIRM_HOLD = 4
 
     def self.confirm_tap
@@ -268,11 +291,95 @@ class RPGXP
       RGSS::Input._push(RGSS::Input::C, false) if phase == CONFIRM_HOLD
     end
 
-    # `--rgss_host_new_game`, published by src/main.cxx as a constant (this mruby
-    # build has no ENV). Read through its own rescue: the constant is absent
-    # under the CRuby harnesses, and an undefined constant raises here.
+    # Walk the party leader on the game's own map: hold one direction at a time,
+    # cycling through all four, then report where it started and ended.
+    #
+    # This is the script-host twin of the MV/MZ movement smoke tests, and the
+    # rung above "the game reached its map": a game whose own Game_Player reads
+    # `Input.dir4` and steps across its own passability is a game being *played*,
+    # not merely drawn. All four directions are tried because a start map may
+    # have a wall on any one of them, and the keys go through the same buffer the
+    # SDL backend feeds, so the game's own Input.update applies them as it would
+    # a keyboard.
+    #
+    # `$game_player` is the game's own global; only its published `x`/`y` are
+    # read (see report_scene, which reads `$scene` the same way).
+    #
+    # The two counts are a budget, not a preference: the probe finishes
+    # MOVE_SETTLE + MOVE_HOLD * MOVE_DIRS frames after the map appears, and a
+    # headless run is cut off by wall-clock milliseconds, so a settle long enough
+    # to be "safe" is what made the first CI run end on its timeout with the game
+    # standing on its map and no walk reported. MOVE_HOLD stays long enough for a
+    # default-speed step (a tile takes ~16 frames at move speed 4).
+    MOVE_SETTLE = 60        # frames on the map before walking: transitions, autoruns
+    MOVE_HOLD = 30          # frames held per direction
+    MOVE_DIRS = 4
+
+    def self.probing_move?
+      return false unless move_test? && !@map_frame.nil?
+      elapsed = @frames - @map_frame
+      elapsed >= MOVE_SETTLE && elapsed < MOVE_SETTLE + MOVE_HOLD * MOVE_DIRS
+    end
+
+    def self.move_probe
+      return if @map_frame.nil? || @move_done
+      elapsed = @frames - @map_frame
+      return if elapsed < MOVE_SETTLE
+      step = elapsed - MOVE_SETTLE
+      if step >= MOVE_HOLD * MOVE_DIRS
+        finish_move_probe
+        return
+      end
+      dir = move_dirs[step / MOVE_HOLD]
+      return unless (step % MOVE_HOLD).zero?
+      @move_start ||= player_tile
+      # One direction at a time: release the last before holding the next.
+      RGSS::Input._push(@move_held, false) unless @move_held.nil?
+      @move_held = dir
+      RGSS::Input._push(dir, true)
+    end
+
+    def self.finish_move_probe
+      @move_done = true
+      RGSS::Input._push(@move_held, false) unless @move_held.nil?
+      @move_held = nil
+      from = @move_start
+      to = player_tile
+      moved = !from.nil? && !to.nil? && from != to
+      $stderr.puts "[RPGXP-HOST-MOVE] start=#{tile_s(from)} end=#{tile_s(to)} " \
+                   "moved=#{moved} frame=#{@frames}"
+    end
+
+    def self.move_dirs
+      @move_dirs ||= [RGSS::Input::DOWN, RGSS::Input::LEFT,
+                      RGSS::Input::RIGHT, RGSS::Input::UP]
+    end
+
+    # The party leader's tile, or nil before the game has one.
+    def self.player_tile
+      player = $game_player
+      return nil if player.nil? || !player.respond_to?(:x)
+      [player.x, player.y]
+    rescue StandardError
+      nil
+    end
+
+    def self.tile_s(tile)
+      tile.nil? ? "?" : "#{tile[0]},#{tile[1]}"
+    end
+
+    # `--rgss_host_new_game` / `--rgss_host_move_test`, published by src/main.cxx
+    # as constants (this mruby build has no ENV). Read through their own rescue:
+    # the constants are absent under the CRuby harnesses, and an undefined
+    # constant raises here.
     def self.auto_new_game?
       RGSS_HOST_NEW_GAME
+    rescue StandardError
+      false
+    end
+
+    def self.move_test?
+      RGSS_HOST_MOVE_TEST
     rescue StandardError
       false
     end
