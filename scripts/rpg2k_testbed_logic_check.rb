@@ -72,6 +72,7 @@ CE_COMMANDS = 22
 DB_SKILL = 12
 DB_ITEM = 13
 DB_STATE = 18
+DB_ACTOR = 11
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -471,7 +472,86 @@ def check_states(dir)
   end
 end
 
-dirs.each { |d| check_game(d); check_menus(d); check_states(d) }
+# Equipment-granted combat modifiers, against the real item and actor tables.
+# A weapon flag the runtime never reads is a weapon whose selling point does
+# nothing — a 二刀流 blade that swings once, a 必中 dagger that misses. See
+# docs/adr/0033-equipment-combat-modifiers.md.
+def check_equipment(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  items = db[DB_ITEM]
+  return unless items
+
+  dual = []
+  sure = []
+  half = []
+  items.each do |id, it|
+    dual << id if it.type == 1 && it.dual_attack
+    sure << id if it.type == 1 && it.ignore_evasion
+    half << id if it.half_sp_cost
+  end
+  strong = []
+  db[DB_ACTOR]&.each { |id, r| strong << id if r.strong_defence }
+  puts format('   equipment: %d 二刀流, %d 必中, %d MP消費半分, %d 強力防御 actor(s)',
+              dual.size, sure.size, half.size, strong.size)
+
+  unless dual.empty?
+    check "#{name}: a 二刀流 weapon makes its wielder swing twice" do
+      dual.each do |iid|
+        a = Game::Actor.new(db, first_actor_id(db))
+        a.equip([iid, 0, 0, 0, 0])
+        eq true, a.dual_attack?, "item ##{iid} (#{items[iid].name}) grants it"
+        eq 2, Game::Battle.from_actor(a).strike_count
+      end
+    end
+  end
+
+  unless sure.empty?
+    check "#{name}: a 必中 weapon drops the evasion term" do
+      swift = combatant('Swift', 0, 0, 999, 100)
+      sure.each do |iid|
+        a = Game::Actor.new(db, first_actor_id(db))
+        a.equip([iid, 0, 0, 0, 0])
+        bat = Game::Battle.new([Game::Battle.from_actor(a)], [swift],
+                               Game::Rng.new(1), db[DB_STATE], false, false, true)
+        eq a.attack_hit_rate, bat.send(:to_hit, bat.allies[0], swift),
+           "item ##{iid} (#{items[iid].name}) hits at its own rate"
+      end
+    end
+  end
+
+  unless half.empty?
+    check "#{name}: MP消費半分 gear halves a skill's cost" do
+      party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+      sk = nil
+      db[DB_SKILL]&.each { |_i, s| sk ||= s if (s.sp_cost || 0) > 1 && s.sp_type == 0 }
+      next unless sk
+      a = Game::Actor.new(db, first_actor_id(db))
+      full = party.skill_cost(sk, a)
+      ok full > 1, "the sample skill costs more than 1 SP (#{full})"
+      half.each do |iid|
+        # Equip it in the slot its own type names (1..5 map to the five slots),
+        # so the flag is read off gear the actor is really wearing.
+        slot = items[iid].type - 1
+        next unless slot >= 0 && slot < 5
+        gear = [0, 0, 0, 0, 0]
+        gear[slot] = iid
+        a.equip(gear)
+        ok a.half_sp_cost?, "item ##{iid} (#{items[iid].name}) grants MP消費半分"
+        eq (full + 1) / 2, party.skill_cost(sk, a),
+           "and halves the #{full}-SP skill, rounding up"
+      end
+    end
+  end
+end
+
+# The lowest defined actor id in the database.
+def first_actor_id(db)
+  db[DB_ACTOR].each { |id, _r| return id }
+  1
+end
+
+dirs.each { |d| check_game(d); check_menus(d); check_states(d); check_equipment(d) }
 
 if $failures.zero?
   puts "rpg2k test-bed logic check: #{$checks} checks passed"
