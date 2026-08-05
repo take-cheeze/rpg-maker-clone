@@ -71,6 +71,7 @@ DB_COMMON_EVENT = 25
 CE_COMMANDS = 22
 DB_SKILL = 12
 DB_ITEM = 13
+DB_STATE = 18
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -377,7 +378,100 @@ def check_menus(dir)
   end
 end
 
-dirs.each { |d| check_game(d); check_menus(d) }
+# The status effects a real game's 状態 table asks for, exercised against that
+# table. A state whose numbers the runtime never reads is a status that does
+# nothing — Blind not blinding, a blow never waking a sleeper, Silence not
+# silencing — and that is invisible to any fixture built from the same
+# assumption. See docs/adr/0032-state-effects.md.
+def combatant(name, atk, dfn, agi, hp, states = [])
+  c = Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
+  c.states = states
+  c.state_turns = {}
+  c.hit_rate = 90
+  c
+end
+
+def check_states(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  states = db[DB_STATE]
+  return unless states
+
+  blinding = []
+  waking = []
+  sealing = []
+  states.each do |id, r|
+    blinding << id if r.reduce_hit_ratio && r.reduce_hit_ratio < 100
+    waking << id if (r.release_by_attack || 0) > 0
+    sealing << id if r.restrict_magic || r.restrict_skill
+  end
+  puts format('   states: %d blinding, %d shaken off by a blow, %d sealing',
+              blinding.size, waking.size, sealing.size)
+
+  unless blinding.empty?
+    check "#{name}: a blinding state cuts accuracy" do
+      foe = combatant('Foe', 0, 0, 10, 100)
+      bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)], [foe],
+                             Game::Rng.new(1), states, false, false, true)
+      clear = bat.allies[0]
+      base = bat.send(:to_hit, clear, foe)
+      ok base > 0, 'an unafflicted attacker can hit'
+      blinding.each do |sid|
+        clear.states = [sid]
+        ratio = states[sid].reduce_hit_ratio
+        eq base * ratio / 100, bat.send(:to_hit, clear, foe),
+           "state ##{sid} (#{states[sid].name}) scales accuracy by #{ratio}%"
+      end
+    end
+  end
+
+  unless waking.empty?
+    check "#{name}: a blow shakes off a state that allows it" do
+      # Roll each state many times; a state set to N% must come off sometimes and
+      # a 100% one every time. Seeds vary so the rolls do.
+      sid = waking.max_by { |i| states[i].release_by_attack }
+      shaken = 0
+      200.times do |i|
+        foe = combatant('Foe', 0, 0, 5, 1000, [sid])
+        bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)], [foe],
+                               Game::Rng.new(i + 1), states)
+        shaken += 1 if bat.send(:deal_attack, bat.allies[0], foe)[:woke]
+      end
+      ok shaken > 0,
+         "state ##{sid} (#{states[sid].name}, #{states[sid].release_by_attack}%) " \
+         'never came off in 200 blows'
+    end
+  end
+
+  unless sealing.empty?
+    check "#{name}: a sealing state seals magic but not plain physical skills" do
+      bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)],
+                             [combatant('B', 0, 0, 5, 100)], Game::Rng.new(1), states)
+      caster = bat.allies[0]
+      sealing.each do |sid|
+        caster.states = [sid]
+        sealed = 0
+        physical_sealed = 0
+        total_magic = 0
+        db[DB_SKILL]&.each do |_id, sk|
+          if (sk.magical_rate || 0) > 0
+            total_magic += 1
+            sealed += 1 if bat.skill_sealed?(caster, sk)
+          elsif (sk.physical_rate || 0) == 0
+            physical_sealed += 1 if bat.skill_sealed?(caster, sk)
+          end
+        end
+        next unless states[sid].restrict_magic
+        ok total_magic.zero? || sealed > 0,
+           "state ##{sid} (#{states[sid].name}) seals no magic at all"
+        eq 0, physical_sealed,
+           "state ##{sid} left rate-0 skills alone"
+      end
+    end
+  end
+end
+
+dirs.each { |d| check_game(d); check_menus(d); check_states(d) }
 
 if $failures.zero?
   puts "rpg2k test-bed logic check: #{$checks} checks passed"

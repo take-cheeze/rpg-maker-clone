@@ -4772,7 +4772,36 @@ module Game
       src = attacker.agi
       src = 1 if src < 1
       tgt = target.agi
-      Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
+      raw = Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
+      raw * hit_modifier(attacker) / 100
+    end
+
+    # How much the attacker's own statuses cut its accuracy: the **lowest**
+    # `reduce_hit_ratio` among the states afflicting it, not the product of them
+    # (EasyRPG's `Game_Battler::GetHitChanceModifierFromStates` takes a running
+    # `std::min`). 100 means unhindered.
+    #
+    # Nothing read this field before, which made 盲目 / Blind — a status whose
+    # entire purpose is to make its victim miss — a status that did nothing at
+    # all. Nine of Nepheshel's 25 states carry a reduced ratio (Blind halves it,
+    # the poisons take 15% off) and two of mtf-meido-action's ten do, its Blind
+    # cutting accuracy to a fifth.
+    def hit_modifier(b)
+      m = 100
+      (b.states || []).each do |sid|
+        r = state_hit_ratio(state_def(sid))
+        m = r if r < m
+      end
+      m
+    end
+
+    # A state's `reduce_hit_ratio`, defaulting to 100 (no reduction) for an
+    # unknown state or a fixture row without the field. Distinct from
+    # #state_field, whose 0 default would read a missing field as "always miss".
+    def state_hit_ratio(d)
+      return 100 unless d.respond_to?(:reduce_hit_ratio)
+      v = d.reduce_hit_ratio
+      v.nil? ? 100 : v
     end
 
     # Queue a single-target Skill for `ally`: cast on `target` (an enemy for an
@@ -4877,6 +4906,30 @@ module Game
         a.action = nil; a.defending = false; a.command = nil; a.skip = false
       end
       @result = alive?(@allies) ? :victory : :defeat if finished? && !@escaped
+    end
+
+    # Whether one of `b`'s statuses seals skill row `sk`. RPG2000 gives a state
+    # two independent seals, each with a threshold: `restrict_skill` bars any
+    # skill whose `physical_rate` reaches `restrict_skill_level`, and
+    # `restrict_magic` bars any whose `magical_rate` reaches
+    # `restrict_magic_level` (EasyRPG's `Game_Actor::IsSkillUsable`). A threshold
+    # of 1, which is what both test beds use, therefore seals everything with any
+    # magic in it while leaving a purely physical skill alone.
+    #
+    # This is what 封印 / Silence are *for*, and nothing consulted either field —
+    # Nepheshel seals magic with 恐怖 and 封印, mtf-meido-action with Silence, and
+    # all three left the victim casting freely.
+    def skill_sealed?(b, sk)
+      return false unless sk
+      (b.states || []).each do |sid|
+        d = state_def(sid)
+        next unless d
+        return true if state_flag(d, :restrict_skill) &&
+                       (sk.physical_rate || 0) >= state_field(d, :restrict_skill_level)
+        return true if state_flag(d, :restrict_magic) &&
+                       (sk.magical_rate || 0) >= state_field(d, :restrict_magic_level)
+      end
+      false
     end
 
     private
@@ -5063,6 +5116,7 @@ module Game
       return false unless @ai
       sk = @ai.skill(a.skill_id)
       return false unless sk
+      return false if skill_sealed?(b, sk) # silenced: this entry cannot fire
       cmd = @ai.skill_command(sk, b, nil)
       return false unless cmd
       cost = cmd[:cost] || 0
@@ -5269,9 +5323,39 @@ module Game
       end
       dmg = [dmg / 2, 1].max if target.defending && dmg > 0
       target.hp -= dmg
-      { attacker: b.name, target: target.name, damage: dmg, critical: crit,
-        charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
-        defeated: target.dead? }
+      woke = target.dead? ? [] : shake_off_states(target)
+      entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
+                charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
+                defeated: target.dead? }
+      entry[:woke] = woke unless woke.empty?
+      entry
+    end
+
+    # Statuses a **normal attack** knocks its target out of: each state carrying
+    # a `release_by_attack` percentage rolls against it, and a hit that lands
+    # wakes the sleeper. Returns the ids removed, so the log can report them.
+    #
+    # Normal attacks only — EasyRPG calls `BattlePhysicalStateHeal` from
+    # `Normal::vExecute` and from nowhere else, so a skill never shakes a status
+    # loose — and only when the target lives through the blow. A normal attack is
+    # wholly physical (`physical_rate` 100), which reduces EasyRPG's
+    # `release_by_damage * physical_rate / 100` to the stored percentage.
+    #
+    # Without this, "asleep" meant asleep until the state's own timer expired, no
+    # matter how hard it was hit: Nepheshel's 睡眠 wakes on 80% of blows and its
+    # 混乱 clears on 30%; mtf-meido-action's Sleep is 50% and Provoke / Confuse
+    # 25%.
+    def shake_off_states(target)
+      woke = []
+      (target.states || []).dup.each do |sid|
+        d = state_def(sid)
+        chance = d ? state_field(d, :release_by_attack) : 0
+        next unless chance > 0 && @rng.random(100) < chance
+        target.states.delete(sid)
+        (target.state_turns || {}).delete(sid) if target.state_turns
+        woke.push(sid)
+      end
+      woke
     end
 
     # Whether `b`'s attack criticals: enabled for the fight, the attacker has a
@@ -5348,6 +5432,12 @@ module Game
         r = v if v > r && (v == RESTRICTION_ATTACK_ENEMY || v == RESTRICTION_ATTACK_ALLY)
       end
       r
+    end
+
+    # A state's boolean field, false for an unknown state or a fixture row that
+    # does not model it.
+    def state_flag(d, name)
+      d.respond_to?(name) ? (d.send(name) ? true : false) : false
     end
 
     # A random living target for a forced attack: an enemy (attack-enemy) or a
