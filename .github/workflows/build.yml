@@ -440,10 +440,13 @@ jobs:
     # shape that label is meant for, and it bills at a lower rate.
     runs-on: ubuntu-slim
     permissions:
-      # Read the PR to find its head commit; write reactions on the comment
-      # (a PR conversation comment is an issue comment, hence `issues`).
-      pull-requests: read
-      issues: write
+      # Read the PR to find its head commit, and write the 👀 reaction on the
+      # comment. The reaction goes through `/issues/comments/{id}/reactions`,
+      # but this job only ever runs on a pull request's conversation comment
+      # (see the `if` above), and GitHub authorises those against the pull
+      # request the comment belongs to — `issues: write` is not enough, the
+      # POST 403s without `pull-requests: write`.
+      pull-requests: write
     outputs:
       head-sha: ${{ steps.pr.outputs.head-sha }}
     env:
@@ -458,6 +461,10 @@ jobs:
             --jq '"head-sha=\(.head.sha)"' >> "$GITHUB_OUTPUT"
 
       - name: Acknowledge the command
+        # The reaction is only a visible "the run started" hint, and this job is
+        # what gates the preview build and deploy. Don't let a failed ack cost
+        # someone their preview.
+        continue-on-error: true
         run: |
           gh api --silent -X POST \
             "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" \
