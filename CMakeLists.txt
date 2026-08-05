@@ -36,6 +36,17 @@ else()
   endif()
 endif()
 
+# Seed the toolchain probe results before any subproject can probe for them. The
+# wasm configure is otherwise ~110s, almost all of it nested try_compile
+# projects run by ng-log/gflags/quickjs/lvgl under emcc; the file supplies the
+# answers a real Emscripten configure produced, and gates itself on the
+# Emscripten version so a toolchain bump falls back to probing rather than
+# reusing values that no longer apply. Must stay above the add_subdirectory
+# calls below -- a check_* macro only skips when its result is already cached.
+if(EMSCRIPTEN)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/emscripten-probe-cache.cmake)
+endif()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 # LVGL looks for lv_conf.h at the top-level project directory by default; ours
 # lives under include/, so point LVGL's build at that directory explicitly.

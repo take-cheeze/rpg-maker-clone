@@ -578,43 +578,6 @@ jobs:
           key: wasm-ccache-${{ github.run_id }}
           restore-keys: wasm-ccache-
 
-      # Reuse the previous run's *configure* results. The emscripten configure
-      # is dominated by CMake's compiler probes, and every one of them is a
-      # nested try_compile project — a full emcc invocation (python driver,
-      # clang, wasm-ld) rather than the sub-100ms cc the native build pays.
-      # ng-log alone runs 47 of them (check_cxx_symbol_exists /
-      # check_include_file_cxx / check_type_size), with gflags, lvgl, quickjs
-      # and CMake's own C/CXX compiler-ID + ABI detection on top. That is why
-      # the wasm `cmake` step costs minutes while the native one costs seconds.
-      #
-      # Every probe result is stored in wasm-build/CMakeCache.txt, and each
-      # check_* macro is a no-op when its result variable is already cached, so
-      # restoring the configured build tree makes the reconfigure skip the
-      # try_compile projects entirely. Only the tree as it exists *right after
-      # configure* is saved (see the save step below, placed before `build`), so
-      # the cache holds the CMake state and not a copy of the object files
-      # ccache already covers.
-      #
-      # The key deliberately has no `restore-keys` prefix fallback:
-      # CMakeCache.txt pins absolute /nix/store paths for emcc, so a tree
-      # configured against a different toolchain must miss rather than be
-      # half-reused. flake.* covers the emscripten version, and the workflow
-      # file covers the configure flags set in the `cmake` step below.
-      #
-      # The save step below repeats this key verbatim rather than reading it
-      # back from `steps.cmake-cache.outputs.cache-primary-key`. The two must be
-      # kept in sync by hand, which is the same trade the `psp-smoke` job makes
-      # for its PPSSPP cache — and that one demonstrably persists across runs,
-      # which the output-reference form did not.
-      - name: Restore the CMake configure cache
-        id: cmake-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: wasm-build
-          key: >-
-            wasm-cmake-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix',
-            '.github/workflows/build.yml') }}
-
       # Emscripten builds its system libraries (libc/libc++, and the -fexceptions
       # variant this project forces) on the first emcc call, which costs ~50s of
       # the configure step. The nixpkgs emscripten setup hook points EM_CACHE at
@@ -629,39 +592,12 @@ jobs:
         # enough for it to wrap emcc during the build step too. This overrides
         # the sccache launcher the devShell exports (sccache cannot cache emcc).
         # WASM_SAMPLE_DIR bakes the MV sample into the page at /game_sample.
-        #
-        # A restored configure cache is an optimisation, never a requirement:
-        # if reconfiguring on top of it fails for any reason, drop the tree and
-        # configure from scratch so a stale cache can only cost time, not break
-        # the build. The retry is loud (::warning::) rather than silent, so a
-        # cache that keeps going stale is visible in the run rather than hidden
-        # behind a green step.
         run: |
-          configure_wasm() {
-            ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
-              CMAKE_C_COMPILER_LAUNCHER=ccache \
-              CMAKE_CXX_COMPILER_LAUNCHER=ccache \
-              emcmake cmake -S . -B wasm-build -GNinja \
-              -DWASM_SAMPLE_DIR=data/mv-sample
-          }
-          configure_wasm || {
-            echo "::warning::reconfigure over the restored CMake cache failed;" \
-              "discarding wasm-build and configuring from scratch"
-            rm -rf wasm-build
-            configure_wasm
-          }
-
-      # Saved here, before `build`, so the cache holds the configure output
-      # alone — running it after the build would upload every object file too.
-      # Key repeated verbatim from the restore step above; keep the two in sync.
-      - name: Save the CMake configure cache
-        if: steps.cmake-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: wasm-build
-          key: >-
-            wasm-cmake-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix',
-            '.github/workflows/build.yml') }}
+          ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
+            CMAKE_C_COMPILER_LAUNCHER=ccache \
+            CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            emcmake cmake -S . -B wasm-build -GNinja \
+            -DWASM_SAMPLE_DIR=data/mv-sample
 
       # Barrier: the link step packages data/mv-sample into index.data, so the
       # engine files must be in place before the build starts. A failed
@@ -682,20 +618,11 @@ jobs:
         if: always()
         # As in the `build` job: the test-bed download may still be in flight,
         # and this captures stdout into the step summary.
-        #
-        # Also report whether the CMake configure cache was reused. Whether that
-        # cache hits is only visible as a `cmake` step that took seconds instead
-        # of minutes, which is easy to misread as noise; stating it outright
-        # means a cache that silently stops persisting shows up as a run-over-run
-        # change in the summary rather than as an unexplained slowdown.
         env:
           NIX_DEVELOP_SEPARATE_STREAMS: 1
-          CMAKE_CACHE_HIT: ${{ steps.cmake-cache.outputs.cache-hit }}
         run: |
           {
             echo "## ccache stats — wasm"
-            echo ""
-            echo "CMake configure cache hit: \`${CMAKE_CACHE_HIT:-<unset>}\`"
             echo ""
             echo '```'
             ./scripts/nix-develop.bash ccache --show-stats
