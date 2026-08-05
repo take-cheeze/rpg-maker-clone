@@ -67,7 +67,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - run: ./scripts/nix-develop.bash echo test
+      - run: nix develop --quiet -c echo test
 
       - name: cache rtp
         uses: actions/cache@v6
@@ -549,7 +549,7 @@ jobs:
       # no other nix process running, keeps those steps from racing each other
       # for the store lock; it costs nothing overall because each of them would
       # otherwise pay for the same realisation anyway.
-      - run: ./scripts/nix-develop.bash echo test
+      - run: nix develop --quiet -c echo test
 
       # Fetch + build the MIT MV engine into the committed sample so it can be
       # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
