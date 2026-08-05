@@ -848,11 +848,15 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   those fixed a map frame differs from the genuine runtime in 25% of its pixels,
   down from 97%, the rest being the reference's own font-less message box. See
   [`docs/adr/0027-rpgxp-released-game-parity.md`](adr/0027-rpgxp-released-game-parity.md).
-  The event-command histogram over that whole game names what a real XP game
-  uses that we still skip: `221`/`222` (prepare/execute transition), `210` (wait
-  for move completion), `231`/`235` (show/erase picture), `224`/`225` (screen
-  flash/shake), `202` (set event location), `203` (scroll map), `207` (show
-  animation), `208` (change transparency) and `355` (script).
+  Playing it further added **Wait for Move's Completion (210)**, **Set Event
+  Location (202)** and **Change Transparent Flag (208)** — 210 first, because
+  without it a list ran straight on and an event delivered its line before it
+  had walked over — and found that ten of the game's music tracks were
+  unplayable, its `Audio/BGM` mixing `.MID` with `.mid` where the search only
+  tried lower case. The event-command histogram over the whole game still names
+  what a real XP game uses that we skip: `221`/`222` (prepare/execute
+  transition), `231`/`235` (show/erase picture), `224`/`225` (screen
+  flash/shake), `203` (scroll map), `207` (show animation) and `355` (script).
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

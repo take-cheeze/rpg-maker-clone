@@ -72,6 +72,10 @@ class RPGXP
         @items = Hash.new(0)
         @weapons = Hash.new(0)
         @armors = Hash.new(0)
+        # RMXP's Game_Player#transparent, set by Change Transparent Flag (208):
+        # the party leader is not drawn while it is on. Games use it to hand a
+        # cutscene over to an event that stands where the hero does.
+        @player_transparent = false
       end
 
       MAX_ITEMS = 99
@@ -79,7 +83,7 @@ class RPGXP
       attr_reader :db
       attr_accessor :map_id, :x, :y, :direction, :map, :party, :gold,
                     :switches, :variables, :self_switches,
-                    :items, :weapons, :armors
+                    :items, :weapons, :armors, :player_transparent
 
       # Possession counts, clamped to 0..MAX_ITEMS. `store` is one of :items /
       # :weapons / :armors.
@@ -127,7 +131,8 @@ class RPGXP
           variables: hash_to_plain(@variables),
           self_switches: hash_to_plain(@self_switches),
           items: hash_to_plain(@items), weapons: hash_to_plain(@weapons),
-          armors: hash_to_plain(@armors), actors: actor_states }
+          armors: hash_to_plain(@armors), actors: actor_states,
+          player_transparent: @player_transparent }
       end
 
       def self.load(db, h)
@@ -140,6 +145,7 @@ class RPGXP
         (h[:weapons] || {}).each { |k, v| s.weapons[k] = v }
         (h[:armors] || {}).each { |k, v| s.armors[k] = v }
         (h[:actors] || {}).each { |id, ah| a = s.actor(id); a && a.load_h(ah) }
+        s.player_transparent = h[:player_transparent] ? true : false
         s
       end
 

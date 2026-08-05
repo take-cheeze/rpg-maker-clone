@@ -129,7 +129,11 @@
   the screen-sized viewport that holds the map, like RMXP's `Spriteset_Map`),
   and the message box was full-width at the bottom instead of RMXP's inset
   480×160. On the same map frame that took the difference from 97% of pixels to
-  25%, the rest being the reference's own missing font; see
+  25%, the rest being the reference's own missing font. Playing it further added
+  **Wait for Move's Completion** (210), **Set Event Location** (202) and
+  **Change Transparent Flag** (208), and turned up ten unplayable music tracks —
+  its `Audio/BGM` mixes `.MID` with `.mid`, which only a case-sensitive
+  filesystem tells apart. See
   [`docs/adr/0027-rpgxp-released-game-parity.md`](docs/adr/0027-rpgxp-released-game-parity.md)
 
 ### RPG Maker VX / VX Ace

@@ -100,14 +100,40 @@ the wine prefix, so its message box draws no text at all while ours draws the
 game's Japanese lines (the same limitation ADR 0025 measured on the title
 screen). The rest is the windowskin background's shading.
 
+**Found by playing the game further, and fixed here:**
+
+- **Wait for Move's Completion (210) had no handler** — the third most common
+  command in the game after text and move routes (373 uses). The list ran
+  straight on, so an event delivered its line before it had finished walking
+  over. The interpreter now suspends on it, and the map scene drives the forced
+  routes while it waits: `step_events` refuses to move anything while an event
+  process is running (that is what holds the map still during a message), so a
+  route the interpreter is suspended *on* has to be stepped from the wait
+  itself, which is what RMXP does too. A repeating forced route never completes
+  — waiting on one hangs RMXP as well — so the wait is bounded and logs why it
+  gave up rather than freezing a headless run.
+- **Set Event Location (202) and Change Transparent Flag (208) had no handler**
+  (86 uses between them). 202 snaps a character onto a tile — direct, from a
+  pair of variables, or exchanging places with another event — carrying the
+  leader's mid-step bookkeeping with it so it cannot glide back to where it was
+  walking. 208 stops the leader being drawn, which is how a cutscene hands the
+  hero's tile to an event that looks like him; it is part of the saved state.
+- **Ten of the game's music tracks were unplayable.** The boot logged
+  `Audio: no BGM found for "tr17memories"` while `Audio/BGM/tr17memories.MID`
+  sat right there: `RGSS::Audio::EXTS` tried only lower-case extensions, a hit
+  on the Windows these games were authored on and a miss on a case-sensitive
+  filesystem. That one folder mixes ten `.MID` with eight `.mid`. Both the disk
+  and the archive search now try either case — fixed here even though it is in
+  the shared audio resolver rather than the XP runtime, because every maker has
+  the same problem with the same real-world data.
+
 **Follow-ups this opens:**
 
-- The event-command histogram over the whole game shows the commands a real XP
-  game leans on that we still skip: `221`/`222` (prepare/execute transition, 419
-  each), `210` (wait for move completion, 373), `231`/`235` (show/erase picture,
-  235 and 234), `224`/`225` (screen flash/shake), `202` (set event location),
-  `203` (scroll map), `207` (show animation), `208` (change transparency) and
-  `355` (script). Each is now measurable against the reference.
+- The event-command histogram over the whole game still names commands a real XP
+  game leans on that have no handler: `221`/`222` (prepare/execute transition,
+  419 uses each), `231`/`235` (show/erase picture, 235 and 234), `224`/`225`
+  (screen flash/shake), `203` (scroll map), `207` (show animation) and `355`
+  (script). Each is now measurable against the reference.
 - The `newgame` step of the comparison is not a fair diff: the two runtimes reach
   the opening fade at different moments, so the step compares a black reference
   frame against our already-faded-in one. A save-resume comparison of a fixed map
@@ -117,10 +143,3 @@ screen). The rest is the windowskin background's shading.
   release is the case it should load through the page's own loader — a
   `Game.ini` + `Game.rgssad` zip takes a different path through it than a loose
   `Data/` tree.
-- The boot logs `Audio: no BGM found for "tr17memories"` on this game. The file
-  is there — `Audio/BGM/tr17memories.MID` — but `RGSS::Audio::EXTS` tries only
-  lower-case extensions, which is a miss on a case-sensitive filesystem and a
-  hit on the Windows the games were authored on. A real release mixes `.MID`
-  and `.mid` in one folder, so the search wants to be case-insensitive; left
-  out of this change because it is in the shared audio resolver, not the XP
-  runtime.

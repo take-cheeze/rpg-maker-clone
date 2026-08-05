@@ -744,6 +744,65 @@ class RPGXP
         $stderr.puts "[RGSS] Set Move Route apply failed: #{e.message}"
       end
 
+      # Apply the Set Event Location (202) requests an interpreter queued this
+      # frame. A character is *snapped* to its tile, as RMXP's
+      # `Game_Character#moveto` does: no walking, no passability test.
+      def apply_location_requests(interp)
+        reqs = interp.take_location_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_location_request(r) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Set Event Location apply failed: #{e.message}"
+      end
+
+      def apply_location_request(r)
+        unless r[:swap_with]
+          place_character(r[:target], r[:x], r[:y], r[:direction])
+          return
+        end
+        # "Exchange with another event": each ends up where the other was.
+        here = character_tile(r[:target])
+        there = character_tile(r[:swap_with])
+        return if here.nil? || there.nil?
+        place_character(r[:target], there[0], there[1], r[:direction])
+        place_character(r[:swap_with], here[0], here[1], 0)
+      end
+
+      # The tile a Set Event Location target stands on, or nil when it is not on
+      # this map.
+      def character_tile(target)
+        return [@state.x, @state.y] if target == :player
+        e = @events[target]
+        e && e[:char] ? [e[:char].x, e[:char].y] : nil
+      end
+
+      def place_character(target, x, y, direction)
+        return if x.nil? || y.nil?
+        if target == :player
+          @state.x = x
+          @state.y = y
+          @state.direction = direction if direction && direction > 0
+          # Mid-step bookkeeping has to go with it, or the leader glides back to
+          # where it was walking.
+          @moving = false
+          @move_count = 0
+          @dest_x = x
+          @dest_y = y
+          @player_route = nil
+          @player_char = nil
+          @last_frame = nil
+        else
+          e = @events[target]
+          return unless e && e[:char]
+          ox = e[:char].x
+          oy = e[:char].y
+          e[:char].x = x
+          e[:char].y = y
+          e[:char].direction = direction if direction && direction > 0
+          reoccupy(e, ox, oy)
+        end
+      end
+
       # Apply the Change Screen Color Tone (223) requests an interpreter queued
       # this frame. Like a Set Move Route it does not suspend the interpreter, so
       # it is polled the same way.
@@ -897,6 +956,7 @@ class RPGXP
           @interpreter.update
           apply_move_requests(@interpreter)
           apply_tint_requests(@interpreter)
+          apply_location_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -1014,12 +1074,14 @@ class RPGXP
           it.update
           apply_move_requests(it)
           apply_tint_requests(it)
+          apply_location_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
           it.update
           apply_move_requests(it)
           apply_tint_requests(it)
+          apply_location_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError
@@ -1462,6 +1524,8 @@ class RPGXP
         @player_sprite.x = px - cam_x - (pw - TILE) / 2
         @player_sprite.y = sy - (ph - TILE)
         @player_sprite.z = character_z(sy, false)
+        # Change Transparent Flag (208) simply stops the leader being drawn.
+        @player_sprite.visible = !@state.player_transparent
         draw_player_frame
       end
 

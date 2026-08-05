@@ -814,6 +814,56 @@ assert "Interpreter: set move route resolves the target" do
   assert_true it4.take_move_route_requests.empty?
 end
 
+assert "Interpreter: set event location queues a snap without pausing" do
+  s = new_state
+  it = RPGXP::Game::Interpreter.new(s)
+  # Direct designation: player -> (8, 5) facing left.
+  it.start([cmd(202, [-1, 0, 8, 5, 4], 0), cmd(121, [5, 5, 0], 0)], 1, 7)
+  it.update
+  assert_false it.waiting?
+  assert_true s.switches[5]
+  reqs = it.take_location_requests
+  assert_equal 1, reqs.size
+  assert_equal :player, reqs[0][:target]
+  assert_equal 8, reqs[0][:x]
+  assert_equal 5, reqs[0][:y]
+  assert_equal 4, reqs[0][:direction]
+  assert_true it.take_location_requests.empty?
+
+  # Variable designation reads the two variables named by the parameters.
+  s.variables[11] = 3
+  s.variables[12] = 9
+  it2 = RPGXP::Game::Interpreter.new(s)
+  it2.start([cmd(202, [0, 1, 11, 12, 0], 0)], 1, 7)
+  it2.update
+  r2 = it2.take_location_requests[0]
+  assert_equal 7, r2[:target] # "this event"
+  assert_equal 3, r2[:x]
+  assert_equal 9, r2[:y]
+
+  # Exchange designation names the other event instead of a tile.
+  it3 = RPGXP::Game::Interpreter.new(s)
+  it3.start([cmd(202, [4, 2, 6, 0, 0], 0)], 1, 7)
+  it3.update
+  r3 = it3.take_location_requests[0]
+  assert_equal 4, r3[:target]
+  assert_equal 6, r3[:swap_with]
+  assert_true r3[:x].nil?
+end
+
+assert "Interpreter: change transparent flag toggles the leader" do
+  s = new_state
+  assert_false s.player_transparent
+  run_to_end(s, [cmd(208, [0], 0)])   # 0 = transparent
+  assert_true s.player_transparent
+  run_to_end(s, [cmd(208, [1], 0)])   # 1 = normal
+  assert_false s.player_transparent
+  # And it survives a save/load round-trip.
+  s.player_transparent = true
+  loaded = RPGXP::Game::State.load(s.db, Marshal.load(Marshal.dump(s.to_h)))
+  assert_true loaded.player_transparent
+end
+
 assert "Interpreter: wait for move's completion suspends the list" do
   s = new_state
   it = RPGXP::Game::Interpreter.new(s)
