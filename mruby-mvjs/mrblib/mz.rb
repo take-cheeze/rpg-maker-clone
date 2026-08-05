@@ -32,6 +32,13 @@ class MZ
   WIDTH = 816
   HEIGHT = 624
 
+  # How many host frames #boot_probe drives while waiting for the boot to leave
+  # Scene_Boot. MZ's Scene_Boot readiness hangs on promise-based, localforage-
+  # backed storage (forageKeysUpdated / ConfigManager.load / loadGlobalInfo), so
+  # it only settles once microtasks are pumped over several frames; the probe
+  # breaks as soon as a real scene is reached, so this is only the give-up cap.
+  BOOT_PROBE_FRAMES = 240
+
   # The files that unambiguously mark a directory as an RPG Maker MZ project:
   # the core engine script and the system database. MV uses `js/rpg_core.js`
   # instead, so the two never collide.
@@ -203,16 +210,17 @@ class MZ
 
     sync_input # push RGSS input into MZ's Input before the scene updates
     sync_touch # push RGSS mouse into MZ's TouchInput before the scene update
-    # Advance one MZ frame (SceneManager.update renders the scene through PIXI
-    # into the WebGL canvas), then blit that frame on-screen. Guard the update so
-    # a per-frame throw is logged, not fatal — one bad frame never aborts the
-    # loop, as in a browser.
-    MV::JS.eval(
-      "(function(){ if (typeof SceneManager !== 'undefined') { try { " \
-      "SceneManager.update(1); } catch(e){ if (typeof console !== " \
-      "'undefined' && console.error) console.error('[MZ] frame: ' + " \
-      "((e && (e.stack || e.message)) || e)); } } })();"
-    )
+    # Advance one MZ frame, then blit it on-screen. As in MV, driving the engine
+    # is a single MV::JS.pump: it fires MZ's requestAnimationFrame/ticker (so
+    # SceneManager.update renders the scene through PIXI into the WebGL canvas)
+    # and drains promise microtasks, keeping the engine's async work (storage,
+    # asset/font loads) progressing. Guard it so a per-frame throw is logged, not
+    # fatal — one bad frame never aborts the loop, as in a browser.
+    begin
+      pump_frame
+    rescue StandardError => e
+      $stderr.puts "[MZ] frame error: #{e.message}"
+    end
     present
     RGSS::Input.update
     RGSS::Graphics.update
@@ -349,32 +357,74 @@ class MZ
       end
     end
 
-    # Replace catchException so a boot error is captured (not swallowed), run the
-    # boot, then drive a few frames so Scene_Boot creates and renders through the
-    # WebGL renderer rather than only instantiating the SceneManager.
+    # Replace catchException so a boot error is captured (not swallowed), then
+    # start the engine. SceneManager.run starts MZ's requestAnimationFrame/ticker
+    # loop; we drive it from Ruby with MV::JS.pump (exactly as MV does), which
+    # fires that queue — SceneManager.update renders the scene through PIXI into
+    # the WebGL canvas — *and drains promise microtasks* each frame. The microtask
+    # drain is what a hand-rolled `SceneManager.update` loop misses and what MZ's
+    # boot needs: Scene_Boot's readiness gates on promise-based, localforage-backed
+    # storage (forageKeysUpdated / ConfigManager.load / DataManager.loadGlobalInfo),
+    # which never settles unless microtasks run between frames. So it advances past
+    # Scene_Boot to a real scene instead of stalling.
+    @clock = 0.0
     MV::JS.eval(
       "(function(){ if (typeof SceneManager === 'undefined' || " \
       "typeof Scene_Boot === 'undefined') return; " \
       "SceneManager.__mzErr = null; " \
       "SceneManager.catchException = function(e){ SceneManager.__mzErr = " \
       "(e && (e.stack || e.message)) || String(e); }; " \
-      "try { SceneManager.run(Scene_Boot); " \
-      "for (var i = 0; i < 60 && !SceneManager.__mzErr; i++) { " \
-      "try { SceneManager.update(1); } catch(e){ SceneManager.__mzErr = " \
-      "(e && (e.stack || e.message)) || String(e); break; } } " \
-      "} catch(e){ SceneManager.__mzErr = " \
+      "try { SceneManager.run(Scene_Boot); } catch(e){ SceneManager.__mzErr = " \
       "(e && (e.stack || e.message)) || String(e); } })();"
     )
-    @boot_scene = MV::JS.eval(
+    # Drive frames until the boot leaves Scene_Boot (reached a real scene) or a
+    # boot error is caught; BOOT_PROBE_FRAMES caps the wait so a genuinely stuck
+    # boot still returns and reports its boundary.
+    @boot_scene = ""
+    BOOT_PROBE_FRAMES.times do
+      begin
+        pump_frame
+      rescue StandardError => e
+        $stderr.puts "[MZ] boot pump error: #{e.message}"
+        break
+      end
+      break unless mz_boot_error.empty?
+      scene = current_scene_name
+      next if scene.empty?
+      @boot_scene = scene
+      break unless scene == "Scene_Boot" # advanced to a real scene
+    end
+    @boot_scene = current_scene_name if @boot_scene.empty?
+    log_boot_readiness
+    mz_boot_error
+  end
+
+  # The name of MZ's current scene class (e.g. "Scene_Boot", "Scene_Title"), or
+  # "" before the SceneManager exists.
+  def current_scene_name
+    MV::JS.eval(
       "(function(){ return (typeof SceneManager !== 'undefined' && " \
       "SceneManager._scene && SceneManager._scene.constructor) ? " \
       "SceneManager._scene.constructor.name : ''; })();"
     )
-    log_boot_readiness
+  end
+
+  # The boot error captured by the catchException override (see #boot_probe), or
+  # "" if the boot has not thrown.
+  def mz_boot_error
     MV::JS.eval(
       "(function(){ return (typeof SceneManager !== 'undefined' && " \
       "SceneManager.__mzErr) ? SceneManager.__mzErr : ''; })();"
     )
+  end
+
+  # Advance MZ by one host frame: fire the requestAnimationFrame/timer queue and
+  # drain promise microtasks (MV::JS.pump), with time advancing at the engine's
+  # nominal 60 fps so MZ's frame timing stays sane. Shared by the boot probe and
+  # the run loop; mirrors MV#pump_frame.
+  def pump_frame
+    @clock = (@clock || 0.0) + 1000.0 / 60.0
+    MV::JS.pump(@clock)
   end
 
   # Log what the current scene (normally Scene_Boot) is waiting on, so the piece
