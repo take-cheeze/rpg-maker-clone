@@ -446,6 +446,8 @@ class RPGXP
         @dest_x = @state.x
         @dest_y = @state.y
         @last_frame = nil
+        @player_pattern = 0
+        @player_anime = 0
 
         @resolver = EventResolver.new(@db.common_events)
         @interpreter = Game::Interpreter.new(@state)
@@ -503,6 +505,7 @@ class RPGXP
             end
           end
         end
+        animate_player
         render
       end
 
@@ -922,6 +925,8 @@ class RPGXP
         @dest_x = x
         @dest_y = y
         @last_frame = nil
+        @player_pattern = 0
+        @player_anime = 0
         @characters = {} # new map: events start at their spawn tiles
         @forced_routes = {} # forced routes do not survive a map change
         @erased = {} # erased events reappear on a fresh map
@@ -1245,8 +1250,9 @@ class RPGXP
             @state.y = @dest_y
             @moving = false
             @move_count = 0
+          else
+            return # still crossing the tile: nothing new starts
           end
-          return
         end
 
         return if @player_route # a forced route controls the player
@@ -1372,9 +1378,26 @@ class RPGXP
         end
       end
 
+      # The player walks at SPEED pixels a frame, which is RMXP's move speed 4
+      # (2 ** 4 of the 128 units it counts a tile in), and its walk cycle runs
+      # off the same animation counter every other character uses: 1.5 ticks a
+      # frame, a new frame every 18 - move_speed * 2 ticks, back to the standing
+      # frame once it has stopped. Keying the frame off the distance walked
+      # instead -- (@move_count / 8) % 4 -- cycled all four frames within a
+      # single tile, about three times the real runtime's rate.
+      PLAYER_MOVE_SPEED = 4
+      PLAYER_ANIME_TICKS = 18 - PLAYER_MOVE_SPEED * 2
+
+      def animate_player
+        @player_anime += 1.5 if @moving || @player_pattern != 0
+        return if @player_anime <= PLAYER_ANIME_TICKS
+        @player_anime = 0
+        @player_pattern = @moving ? (@player_pattern + 1) % 4 : 0
+      end
+
       def draw_player_frame
         return unless @charset
-        pat = @moving ? Game::CharSet::PATTERNS[(@move_count / 8) % 4] : 0
+        pat = Game::CharSet::PATTERNS[@player_pattern]
         frame = [@state.direction, pat]
         return if frame == @last_frame
         @last_frame = frame
