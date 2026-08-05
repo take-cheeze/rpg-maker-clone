@@ -85,9 +85,8 @@ class RPGXP
     @scenes.last.dispose
     @scenes = [scene]
     # A machine-readable marker so a headless run (see --rpgxp_new_game,
-    # scripts/rpgxp_boot_check.bash, scripts/rpgxp_browser_check.py and
-    # scripts/compare-rpgxp-wine.bash) can assert the map scene was really
-    # reached, not just the title.
+    # scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash) can
+    # assert the map scene was really reached, not just the title.
     $stderr.puts "[RPGXP-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
   rescue StandardError => e
     $stderr.puts "[RGSS] Failed to start new game: #{e.message}"
