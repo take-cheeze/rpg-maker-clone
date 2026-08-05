@@ -632,11 +632,18 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   XP-styled window, title BGM / cursor & decision SE). `src/main.cxx` sizes the
   window to XP's native 640×480.
 - 🚧 **Map scene** — New Game builds the party from `System.party_members`,
-  loads the start map and enters a walkable `Scene::Map`: the three tile layers
-  render as placeholder colour blocks, the party leader is drawn from its
-  `Graphics/Characters` sheet, and movement is grid-based with tileset
-  passability and a follow camera. Real tileset/autotile blitting and event
-  sprites (events are markers for now) are the remaining rendering work.
+  loads the start map and enters a walkable `Scene::Map`. The three tile layers
+  now render through the native `RGSS::Tilemap` — the project's real tileset
+  graphic, the seven autotiles assembled from their quads and animated, and
+  priority tiles routed above the characters — exactly the objects RMXP's
+  `Spriteset_Map` builds. Every event draws from its active page's graphic (a
+  `Graphics/Characters` sheet, or the tile id a page uses instead); an event with
+  an empty graphic draws nothing, as in RMXP. Characters stack by the screen row
+  they stand on (`Sprite_Character#update`'s `screen_z`), with `always_on_top`
+  pages above the priority layer. Movement is grid-based with tileset passability
+  and a follow camera. Remaining: per-row priority interleaving rather than one
+  flat above-layer (ADR 0022), and the character effects the sprites ignore —
+  opacity, blend mode, hue and step animation.
 - 🚧 **Event system** — event pages select their active page by condition
   (`Game::EventPage`: switch / variable / self-switch, highest match wins) and a
   `Game::Interpreter` runs the XP command list with a suspend/resume model: Show
@@ -653,7 +660,13 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `Game::MoveRoute` drive an event's page move type (fixed / random / approach)
   or custom move route (the full XP move-command set), paced by move frequency
   and blocked by terrain / the player / other events, and the **event-touch**
-  trigger fires when an event walks into the player. The interpreter's *Set Move
+  trigger fires when an event walks into the player. An event **glides** between
+  tiles the way RGSS moves a character: taking a step claims the destination
+  tile at once (that is what collision sees) and the drawn position closes the
+  128-unit gap at `2 ** move_speed` a frame, while the walk row cycles off the
+  same animation counter and falls back to the page's own frame once the event
+  comes to rest. The wait between autonomous steps is RMXP's
+  `(40 - frequency * 2) * (6 - frequency)` frames. The interpreter's *Set Move
   Route* (209) command is now wired up: it queues the `RPG::MoveRoute` packed
   into the command for its target — the player, "this event" or a map event id —
   and `Scene::Map` drains the queue and drives the target along the route in the

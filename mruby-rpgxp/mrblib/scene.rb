@@ -22,6 +22,10 @@ class RPGXP
       @skin = skin
       @active = true
       @cursor_rect = nil
+      # RGSS draws a window's background at `back_opacity` and leaves the frame
+      # opaque. 255 is the class default; the scenes that want to see through a
+      # window (RMXP's Scene_Title uses 160) set it themselves.
+      @back_opacity = 255
 
       @viewport = Viewport.new(x, y, [width, 1].max, [height, 1].max)
       @viewport.z = 100
@@ -61,6 +65,13 @@ class RPGXP
       draw_cursor
     end
 
+    attr_reader :back_opacity
+
+    def back_opacity=(v)
+      @back_opacity = v
+      draw_skin
+    end
+
     # Selection highlight, in contents coordinates (offset by the border).
     def cursor_rect=(rect)
       @cursor_rect = rect
@@ -86,7 +97,7 @@ class RPGXP
 
     def draw_skin_background
       @skin_bmp.stretch_blt Rect.new(2, 2, @width - 4, @height - 4), @skin,
-                            Rect.new(0, 0, 128, 128)
+                            Rect.new(0, 0, 128, 128), @back_opacity
     rescue StandardError
       draw_fallback
     end
@@ -122,6 +133,18 @@ class RPGXP
       @skin_bmp.fill_rect @width - 2, 0, 2, @height, edge
     end
 
+    # The selection highlight comes out of the windowskin, like everything else
+    # about a window: RGSS keeps a 32x32 cursor block at (128, 64) and
+    # nine-slices it over the cursor rect (CURSOR_EDGE-wide corners and edges,
+    # the middle stretched). Drawing a flat blue bar instead was the single
+    # biggest difference left on the title screen against the genuine runtime --
+    # its cursor is a thin outline over a nearly clear interior, ours was a solid
+    # slab. Falls back to the old hand-drawn bar when the project has no skin.
+    CURSOR_SRC_X = 128
+    CURSOR_SRC_Y = 64
+    CURSOR_SRC_SIZE = 32
+    CURSOR_EDGE = 4
+
     def draw_cursor
       @cursor_bmp.clear
       return unless @active && @cursor_rect
@@ -129,12 +152,52 @@ class RPGXP
       return if r.width <= 0 || r.height <= 0
       x = BORDER + r.x
       y = BORDER + r.y
-      @cursor_bmp.fill_rect x, y, r.width, r.height, Color.new(40, 72, 200, 160)
+      if @skin
+        draw_skin_cursor x, y, r.width, r.height
+      else
+        draw_fallback_cursor x, y, r.width, r.height
+      end
+    end
+
+    def draw_skin_cursor(x, y, w, h)
+      e = CURSOR_EDGE
+      sx = CURSOR_SRC_X
+      sy = CURSOR_SRC_Y
+      # The source block's middle span, between its corners.
+      m = CURSOR_SRC_SIZE - e * 2
+      iw = w - e * 2
+      ih = h - e * 2
+      s = @skin
+      # Corners.
+      @cursor_bmp.blt x, y, s, Rect.new(sx, sy, e, e)
+      @cursor_bmp.blt x + w - e, y, s, Rect.new(sx + e + m, sy, e, e)
+      @cursor_bmp.blt x, y + h - e, s, Rect.new(sx, sy + e + m, e, e)
+      @cursor_bmp.blt x + w - e, y + h - e, s,
+                      Rect.new(sx + e + m, sy + e + m, e, e)
+      return if iw <= 0 || ih <= 0
+      # Edges and the stretched middle.
+      @cursor_bmp.stretch_blt Rect.new(x + e, y, iw, e), s,
+                              Rect.new(sx + e, sy, m, e)
+      @cursor_bmp.stretch_blt Rect.new(x + e, y + h - e, iw, e), s,
+                              Rect.new(sx + e, sy + e + m, m, e)
+      @cursor_bmp.stretch_blt Rect.new(x, y + e, e, ih), s,
+                              Rect.new(sx, sy + e, e, m)
+      @cursor_bmp.stretch_blt Rect.new(x + w - e, y + e, e, ih), s,
+                              Rect.new(sx + e + m, sy + e, e, m)
+      @cursor_bmp.stretch_blt Rect.new(x + e, y + e, iw, ih), s,
+                              Rect.new(sx + e, sy + e, m, m)
+    rescue StandardError => e
+      $stderr.puts "[RGSS] windowskin cursor failed, using a plain bar: #{e.message}"
+      draw_fallback_cursor x, y, w, h
+    end
+
+    def draw_fallback_cursor(x, y, w, h)
+      @cursor_bmp.fill_rect x, y, w, h, Color.new(40, 72, 200, 160)
       border = Color.new(200, 216, 255, 255)
-      @cursor_bmp.fill_rect x, y, r.width, 2, border
-      @cursor_bmp.fill_rect x, y + r.height - 2, r.width, 2, border
-      @cursor_bmp.fill_rect x, y, 2, r.height, border
-      @cursor_bmp.fill_rect x + r.width - 2, y, 2, r.height, border
+      @cursor_bmp.fill_rect x, y, w, 2, border
+      @cursor_bmp.fill_rect x, y + h - 2, w, 2, border
+      @cursor_bmp.fill_rect x, y, 2, h, border
+      @cursor_bmp.fill_rect x + w - 2, y, 2, h, border
     end
   end
 
@@ -267,6 +330,9 @@ class RPGXP
         h = COMMANDS.size * LINE_H + Panel::BORDER * 2
         @command = Panel.new((WIDTH - w) / 2, HEIGHT - h - 64, w, h, @skin)
         @command.z = 200
+        # RMXP's Scene_Title: `@command_window.back_opacity = 160`, so the title
+        # graphic shows through the menu.
+        @command.back_opacity = 160
         contents = Bitmap.new(@command.inner_width, @command.inner_height)
         contents.font.color = Color.new(255, 255, 255, 255)
         COMMANDS.each_with_index do |c, i|
@@ -297,12 +363,12 @@ class RPGXP
       end
     end
 
-    # First walkable map slice: renders the three tile layers as placeholder
-    # colour blocks (real chipset/autotile blitting is future work), draws the
-    # party leader from its Character graphic and moves it on the grid with pixel
-    # interpolation, tileset collision and an edge-clamped follow camera. Map
-    # events are drawn as markers for now; running their command lists is the
-    # next milestone.
+    # The walkable map: the three tile layers render through the native
+    # RGSS::Tilemap (the real tileset graphic, autotiles assembled from their
+    # quads and animated, priority tiles sorted above the characters), the party
+    # leader and every event draw from their Character graphics, and movement is
+    # grid-based with pixel interpolation, tileset collision and an edge-clamped
+    # follow camera.
     # Resolves the command list a Call Common Event refers to (common events are
     # 1-based in the database array).
     class EventResolver
@@ -356,11 +422,10 @@ class RPGXP
       COLS = SCREEN_W / TILE + 1
       ROWS = SCREEN_H / TILE + 1
       SPEED = 4 # pixels/frame while stepping (must divide TILE)
+      # RMXP tile ids: 0 empty, 48..383 the seven autotiles, TILE_ID_BASE and up
+      # the tileset graphic in reading order.
+      TILE_ID_BASE = 384
       MSG_LINE_H = 32
-
-      # Frames between autonomous event steps, keyed by RMXP move frequency
-      # (1 slowest .. 6 fastest). Placeholder pacing while events draw as markers.
-      EVENT_MOVE_DELAY = { 1 => 120, 2 => 60, 3 => 30, 4 => 15, 5 => 8, 6 => 4 }.freeze
 
       # Event-page start triggers (RPG::Event::Page#trigger).
       TRIGGER_ACTION       = 0 # player presses the action button facing it
@@ -375,13 +440,14 @@ class RPGXP
         @map = state.map
         @tileset = Game::TileSet.new(@db, @map.tileset_id)
         @charset = load_charset
-        @tile_colors = {}
 
         @moving = false
         @move_count = 0
         @dest_x = @state.x
         @dest_y = @state.y
         @last_frame = nil
+        @player_pattern = 0
+        @player_anime = 0
 
         @resolver = EventResolver.new(@db.common_events)
         @interpreter = Game::Interpreter.new(@state)
@@ -403,7 +469,6 @@ class RPGXP
         @forced_routes = {}
         @player_route = nil
         @player_char = nil
-        @player_route_timer = 0
         # Event ids erased by an Erase Event (116) command: skipped when the event
         # list is rebuilt so they stay gone until the map is (re)loaded.
         @erased = {}
@@ -418,7 +483,8 @@ class RPGXP
       def dispose
         close_message
         close_number_input
-        [@lower_sprite, @upper_sprite, @player_sprite].each { |s| s.dispose if s }
+        @event_sprites.each_value { |s| s[:sprite].dispose } if @event_sprites
+        [@tilemap, @player_sprite].each { |s| s.dispose if s }
       end
 
       def update
@@ -439,6 +505,7 @@ class RPGXP
             end
           end
         end
+        animate_player
         render
       end
 
@@ -453,7 +520,9 @@ class RPGXP
         return nil unless actor
         name = actor.character_name
         return nil if name.nil? || name.empty?
-        Bitmap.new "Graphics/Characters/#{name}"
+        bmp = Bitmap.new "Graphics/Characters/#{name}"
+        hue_shift bmp, actor.character_hue
+        bmp
       rescue StandardError => e
         $stderr.puts "[RGSS] leader charset load failed, using marker: #{e.message}"
         nil
@@ -472,6 +541,8 @@ class RPGXP
           @events[id] = entry
           @event_tiles[[entry[:char].x, entry[:char].y]] = entry if entry[:page]
         end
+        # A rebuild can have swapped which page (and so which graphic) is active.
+        refresh_event_sprites
       rescue StandardError => e
         $stderr.puts "[RGSS] event setup failed, map runs with no events: #{e.message}"
         @events = {}
@@ -494,18 +565,27 @@ class RPGXP
           ch.through = page.through ? true : false
           ch.direction_fix = page.direction_fix ? true : false
           ch.always_on_top = page.always_on_top ? true : false
+          # RMXP's page defaults are walk_anime on, step_anime off; an absent
+          # field means the page never said, not "off".
+          ch.walk_anime = page.walk_anime.nil? ? true : (page.walk_anime ? true : false)
+          ch.step_anime = page.step_anime ? true : false
           g = page.graphic
-          ch.set_graphic(g.character_name, g.character_hue, g.direction, g.pattern) if g
+          if g
+            ch.set_graphic(g.character_name, g.character_hue, g.direction, g.pattern)
+            # RMXP's Game_Event#refresh takes these off the page's graphic too;
+            # a move route's Change Opacity / Change Blending then overrides them.
+            ch.opacity = g.opacity || 255
+            ch.blend_type = g.blend_type || 0
+          end
           move_type = page.move_type || 0
           route = Game::MoveRoute.from_page(page.move_route) if move_type == Game::MoveType::CUSTOM
         end
         { id: id, ev: ev, page: page, char: ch, trigger: page && page.trigger,
-          move_type: move_type, route: route,
-          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 30 }
+          move_type: move_type, route: route }
       rescue StandardError => e
         $stderr.puts "[RGSS] event ##{id} setup failed: #{e.message}"
         { id: id, ev: ev, page: nil, char: (@characters[id] ||= Game::Character.new(ev.x, ev.y)),
-          trigger: nil, move_type: 0, route: nil, move_timer: 30 }
+          trigger: nil, move_type: 0, route: nil }
       end
 
       def ev_direction(page)
@@ -566,28 +646,33 @@ class RPGXP
         drive_interpreter
       end
 
-      # Advance each event's autonomous / custom-route movement one frame, paced
-      # by move frequency. Skipped once any event process is running this frame,
-      # so the map holds still during messages.
+      # Advance each event one frame: its walk animation and the glide toward
+      # the tile it stepped onto, then -- once it has stood still long enough --
+      # its next autonomous or custom-route step. Skipped once any event process
+      # is running this frame, so the map holds still during messages.
       def step_events
-        @events.each { |_id, e| step_event(e) }
+        @events.each do |_id, e|
+          ch = e[:char]
+          ch.update if ch
+          step_event(e)
+        end
       end
 
       def step_event(e)
         return if event_busy?
         ch = e[:char]
         return unless ch
+        # Still crossing a tile: nothing new starts until it arrives.
+        return if ch.moving?
         # A forced route (Set Move Route) overrides page movement until it is done.
         forced = @forced_routes[e[:id]]
         return step_forced_event(e, ch, forced) if forced
         return unless e[:page]
-        e[:move_timer] -= 1
-        return if e[:move_timer] > 0
-        e[:move_timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
+        return if ch.stop_count <= move_wait(ch)
         ox = ch.x
         oy = ch.y
         if e[:route]
-          e[:route].step(ch, @world) unless e[:route].done?
+          run_route(e[:route], ch)
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir) if dir
@@ -597,15 +682,37 @@ class RPGXP
         $stderr.puts "[RGSS] event ##{e[:id]} movement failed: #{ex.message}"
       end
 
+      # Frames an event stands still between steps, as RMXP paces autonomous
+      # movement: `(40 - frequency * 2) * (6 - frequency)`, so frequency 1 waits
+      # 190 frames and frequency 6 never waits at all. The glide itself is timed
+      # separately, by move speed.
+      def move_wait(ch)
+        f = ch.move_frequency || 3
+        (40 - f * 2) * (6 - f)
+      end
+
+      # One turn of a move route. A movement command ends the turn (the walk
+      # takes time); the commands that only have an effect -- turns, switches,
+      # a graphic change -- run straight away and the route carries on, as
+      # RMXP's move_type_custom does, so a route of them does not spend a whole
+      # wait period per command. Bounded so a route made only of effects cannot
+      # spin.
+      ROUTE_EFFECTS_PER_TURN = 64
+
+      def run_route(route, ch)
+        ROUTE_EFFECTS_PER_TURN.times do
+          break if route.done?
+          break unless route.step(ch, @world) == :effect
+        end
+      end
+
       # Advance an event's forced route one paced step, updating its occupied
       # tile, and drop the route once a non-repeating one is exhausted.
       def step_forced_event(e, ch, forced)
-        forced[:timer] -= 1
-        return if forced[:timer] > 0
-        forced[:timer] = EVENT_MOVE_DELAY[ch.move_frequency] || 30
+        return if ch.stop_count <= move_wait(ch)
         ox = ch.x
         oy = ch.y
-        forced[:route].step(ch, @world) unless forced[:route].done?
+        run_route(forced[:route], ch)
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
         @forced_routes.delete(e[:id]) if forced[:route].done?
       rescue StandardError => ex
@@ -648,15 +755,13 @@ class RPGXP
       def start_player_route(route)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
         @player_route = route
-        @player_route_timer = 0
       end
 
       def step_player_route
         return unless @player_route
-        @player_route_timer -= 1
-        return if @player_route_timer > 0
-        @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 30
-        @player_route.step(@player_char, @world) unless @player_route.done?
+        @player_char.update
+        return if @player_char.moving? || @player_char.stop_count <= move_wait(@player_char)
+        run_route(@player_route, @player_char)
         @state.x = @player_char.x
         @state.y = @player_char.y
         @state.direction = @player_char.direction
@@ -678,7 +783,12 @@ class RPGXP
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
           ch.face(dir)
-          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && list_nonempty?(page_list(e))
+          if e[:trigger] == TRIGGER_EVENT_TOUCH && list_nonempty?(page_list(e))
+            # Bumping into the player runs the event; wait a full move period
+            # before bumping again rather than re-running it every frame.
+            ch.hold_still
+            start_event(e)
+          end
         elsif @world.passable?(ch, dir)
           ch.move(dir)
         else
@@ -815,6 +925,8 @@ class RPGXP
         @dest_x = x
         @dest_y = y
         @last_frame = nil
+        @player_pattern = 0
+        @player_anime = 0
         @characters = {} # new map: events start at their spawn tiles
         @forced_routes = {} # forced routes do not survive a map change
         @erased = {} # erased events reappear on a fresh map
@@ -973,18 +1085,11 @@ class RPGXP
       end
 
       def setup_sprites
-        @lower_sprite = Sprite.new
-        @lower_sprite.z = 0
-        @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
-        @lower_sprite.bitmap = @lower_bmp
-
-        @upper_sprite = Sprite.new
-        @upper_sprite.z = 200
-        @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
-        @upper_sprite.bitmap = @upper_bmp
+        setup_tilemap
 
         @player_sprite = Sprite.new
-        @player_sprite.z = 100
+        # z is set per frame from the screen row the leader stands on, so
+        # characters overlap in the right order (see character_z).
         pw = @charset ? Game::CharSet.cell_width(@charset) : TILE
         ph = @charset ? Game::CharSet.cell_height(@charset) : TILE
         @player_bmp = Bitmap.new(pw, ph)
@@ -992,6 +1097,149 @@ class RPGXP
         unless @charset
           @player_bmp.fill_rect 4, 0, TILE - 8, ph, Color.new(240, 240, 80, 255)
         end
+
+        setup_event_sprites
+      end
+
+      # The map ground: an RGSS::Tilemap fed the tileset graphic, the seven
+      # autotiles and the map's own data/priority Tables, which is exactly what
+      # RMXP's Spriteset_Map builds. The renderer is native (mruby-rgss): it
+      # blits regular tiles from the tileset, assembles autotiles from their four
+      # quads, animates them, and routes priority tiles to a layer above the
+      # characters. Until now this scene painted a colour block per tile id --
+      # navigable, but nothing like the real map (the wine comparison in
+      # docs/adr/0025-rpgxp-cross-runtime-testing.md measured every map pixel as
+      # differing from the genuine runtime because of it).
+      #
+      # A missing tileset graphic must not take the map down: the Tilemap simply
+      # draws nothing, and the scene stays walkable.
+      def setup_tilemap
+        @tilemap = Tilemap.new
+        @tilemap.map_data = @map.data
+        ts = @db.tilesets[@map.tileset_id]
+        unless ts
+          $stderr.puts "[RGSS] map #{@state.map_id} has no tileset " \
+                       "##{@map.tileset_id}; drawing no ground"
+          return
+        end
+        @tilemap.priorities = ts.priorities
+        @tilemap.tileset = load_map_graphic("Tilesets", ts.tileset_name)
+        (ts.autotile_names || []).each_with_index do |name, i|
+          break if i >= 7 # RGSS has exactly seven autotile slots
+          bmp = load_map_graphic("Autotiles", name)
+          @tilemap.autotiles[i] = bmp if bmp
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] tilemap setup failed, map draws empty: #{e.message}"
+      end
+
+      # One Graphics/<dir>/<name> bitmap, or nil when the name is blank or the
+      # file is missing. Reported rather than swallowed, as the rest of the
+      # runtime does: a missing tile graphic is why a map would render bare.
+      def load_map_graphic(dir, name)
+        return nil if name.nil? || name.empty?
+        Bitmap.new "Graphics/#{dir}/#{name}"
+      rescue StandardError => e
+        $stderr.puts "[RGSS] #{dir}/#{name} load failed: #{e.message}"
+        nil
+      end
+
+      # Event sprites. RMXP draws an event from its active page's graphic: a
+      # Graphics/Characters sheet (four directions x four patterns), or the tile
+      # itself when the page picked a tile id instead. An event whose graphic is
+      # empty draws *nothing* -- which is why the red marker this scene used to
+      # paint into the ground layer is gone: it marked every invisible event, on
+      # pixels the genuine runtime leaves as plain map.
+      def setup_event_sprites
+        @event_sprites = {}
+        refresh_event_sprites
+      end
+
+      # Rebuild the sprites from the current pages. Page re-selection can swap an
+      # event's graphic (or remove it), so this runs whenever the event list is
+      # rebuilt, not only on entry.
+      def refresh_event_sprites
+        return unless @event_sprites
+        @event_sprites.each_value { |s| s[:sprite].dispose }
+        @event_sprites = {}
+        @events.each do |id, e|
+          s = build_event_sprite(e)
+          @event_sprites[id] = s if s
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] event sprite setup failed: #{e.message}"
+        @event_sprites ||= {}
+      end
+
+      def build_event_sprite(entry)
+        page = entry[:page]
+        g = page && page.graphic
+        return nil unless g
+        name = g.character_name
+        if name && !name.empty?
+          charset = load_map_graphic("Characters", name)
+          return nil unless charset
+          # RMXP caches character graphics per (name, hue); each event sprite
+          # owns its bitmap here, so rotate that copy in place.
+          hue_shift charset, g.character_hue
+          w = Game::CharSet.cell_width(charset)
+          h = Game::CharSet.cell_height(charset)
+          new_event_sprite(Bitmap.new(w, h), charset, w, h)
+        elsif g.tile_id && g.tile_id >= TILE_ID_BASE
+          bmp = tile_graphic(g.tile_id)
+          bmp && new_event_sprite(bmp, nil, TILE, TILE)
+        end
+      end
+
+      def new_event_sprite(bitmap, charset, w, h)
+        sprite = Sprite.new
+        sprite.bitmap = bitmap
+        { sprite: sprite, bitmap: bitmap, charset: charset, w: w, h: h,
+          frame: nil, opacity: nil, blend_type: nil }
+      end
+
+      # Rotate a character graphic's hue in place, as RPG::Cache.character does
+      # for a page (or an actor) that asked for a hue. A zero hue is a no-op,
+      # and a runtime without the operation must not cost us the sprite.
+      def hue_shift(bitmap, hue)
+        hue = hue.to_i
+        return if bitmap.nil? || hue % 360 == 0
+        bitmap.hue_change hue
+      rescue StandardError => e
+        $stderr.puts "[RGSS] hue #{hue} not applied: #{e.message}"
+      end
+
+      # Character stacking, as RMXP's Sprite_Character#update does it: a
+      # character's z follows the screen y of the tile it stands on, so whoever
+      # is further down the screen draws in front. An "always on top" event
+      # (RMXP's `always_on_top` page flag) jumps above the tilemap's priority
+      # layer instead. Everything stays under the fog/weather planes.
+      ALWAYS_ON_TOP_Z = 950
+
+      def character_z(screen_y, always_on_top)
+        return ALWAYS_ON_TOP_Z if always_on_top
+        # Feet-line y, clamped under the priority layer so a character near the
+        # bottom edge cannot outrank it.
+        z = screen_y + TILE
+        z < 0 ? 0 : (z > 890 ? 890 : z)
+      end
+
+      # A single map tile cut out of the tileset graphic, for an event whose page
+      # uses a tile id as its graphic (doors, chests laid into the map). Tile ids
+      # from TILE_ID_BASE up index the tileset in reading order.
+      def tile_graphic(tile_id)
+        ts = @tilemap && @tilemap.tileset
+        return nil unless ts
+        cols = ts.width / TILE
+        cols = 1 if cols < 1
+        idx = tile_id - TILE_ID_BASE
+        bmp = Bitmap.new(TILE, TILE)
+        bmp.blt 0, 0, ts, Rect.new((idx % cols) * TILE, (idx / cols) * TILE,
+                                   TILE, TILE)
+        bmp
+      rescue StandardError => e
+        $stderr.puts "[RGSS] event tile graphic #{tile_id} failed: #{e.message}"
+        nil
       end
 
       def step_movement
@@ -1002,8 +1250,9 @@ class RPGXP
             @state.y = @dest_y
             @moving = false
             @move_count = 0
+          else
+            return # still crossing the tile: nothing new starts
           end
-          return
         end
 
         return if @player_route # a forced route controls the player
@@ -1064,52 +1313,91 @@ class RPGXP
         cam_x = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
         cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
 
-        draw_layers cam_x, cam_y
+        scroll_tilemap cam_x, cam_y
+        draw_event_sprites cam_x, cam_y
 
         pw = @player_bmp.width
         ph = @player_bmp.height
+        sy = py - cam_y
         @player_sprite.x = px - cam_x - (pw - TILE) / 2
-        @player_sprite.y = py - cam_y - (ph - TILE)
+        @player_sprite.y = sy - (ph - TILE)
+        @player_sprite.z = character_z(sy, false)
         draw_player_frame
       end
 
-      def draw_layers(cam_x, cam_y)
-        @lower_bmp.clear
-        @upper_bmp.clear
-        first_tx = cam_x / TILE
-        first_ty = cam_y / TILE
-        ox = cam_x % TILE
-        oy = cam_y % TILE
-
-        (0...ROWS).each do |ry|
-          (0...COLS).each do |rx|
-            tx = first_tx + rx
-            ty = first_ty + ry
-            next unless in_bounds?(tx, ty)
-            dx = rx * TILE - ox
-            dy = ry * TILE - oy
-
-            # Layers 0/1 to the lower sprite, layer 2 to the upper (drawn above
-            # the player), matching RMXP's three-layer stack.
-            b0 = @map.data[tx, ty, 0]
-            b1 = @map.data[tx, ty, 1]
-            @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(b0)
-            @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(b1) if b1 && b1 != 0
-
-            top = @map.data[tx, ty, 2]
-            @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(top) if top && top != 0
-
-            if @event_tiles[[tx, ty]]
-              @lower_bmp.fill_rect dx + 4, dy + 4, TILE - 8, TILE - 8,
-                                   Color.new(230, 90, 90, 255)
-            end
-          end
+      # Scroll the ground to the camera and let it animate. Each ox/oy write
+      # re-tiles the whole visible area natively, so only write them when the
+      # camera actually moved; #update then costs nothing on a map with no
+      # animated autotile.
+      def scroll_tilemap(cam_x, cam_y)
+        return unless @tilemap
+        if cam_x != @cam_x || cam_y != @cam_y
+          @cam_x = cam_x
+          @cam_y = cam_y
+          @tilemap.ox = cam_x
+          @tilemap.oy = cam_y
         end
+        @tilemap.update
+      end
+
+      def draw_event_sprites(cam_x, cam_y)
+        return unless @event_sprites
+        @event_sprites.each do |id, s|
+          e = @events[id]
+          # Erased, or its page went away between rebuilds: keep the sprite (the
+          # page may come back) but stop drawing it.
+          if e.nil? || e[:page].nil?
+            s[:sprite].visible = false
+            next
+          end
+          ch = e[:char]
+          s[:sprite].visible = true
+          # Character sheets are wider/taller than a tile: RMXP centres them on
+          # the tile and stands them on its bottom edge, as the player is drawn.
+          sy = ch.pixel_y(TILE) - cam_y
+          s[:sprite].x = ch.pixel_x(TILE) - cam_x - (s[:w] - TILE) / 2
+          s[:sprite].y = sy - (s[:h] - TILE)
+          s[:sprite].z = character_z(sy, ch.always_on_top)
+          # Page graphic (or move-route) opacity and blending. Written only when
+          # they change: each one reaches into the native sprite.
+          if s[:opacity] != ch.opacity
+            s[:opacity] = ch.opacity
+            s[:sprite].opacity = ch.opacity
+          end
+          if s[:blend_type] != ch.blend_type
+            s[:blend_type] = ch.blend_type
+            s[:sprite].blend_type = ch.blend_type
+          end
+          next unless s[:charset]
+          frame = [ch.direction, ch.pattern]
+          next if frame == s[:frame]
+          s[:frame] = frame
+          rect = Game::CharSet.frame_rect(s[:charset], ch.direction, ch.pattern)
+          s[:bitmap].clear
+          s[:bitmap].blt 0, 0, s[:charset], rect
+        end
+      end
+
+      # The player walks at SPEED pixels a frame, which is RMXP's move speed 4
+      # (2 ** 4 of the 128 units it counts a tile in), and its walk cycle runs
+      # off the same animation counter every other character uses: 1.5 ticks a
+      # frame, a new frame every 18 - move_speed * 2 ticks, back to the standing
+      # frame once it has stopped. Keying the frame off the distance walked
+      # instead -- (@move_count / 8) % 4 -- cycled all four frames within a
+      # single tile, about three times the real runtime's rate.
+      PLAYER_MOVE_SPEED = 4
+      PLAYER_ANIME_TICKS = 18 - PLAYER_MOVE_SPEED * 2
+
+      def animate_player
+        @player_anime += 1.5 if @moving || @player_pattern != 0
+        return if @player_anime <= PLAYER_ANIME_TICKS
+        @player_anime = 0
+        @player_pattern = @moving ? (@player_pattern + 1) % 4 : 0
       end
 
       def draw_player_frame
         return unless @charset
-        pat = @moving ? Game::CharSet::PATTERNS[(@move_count / 8) % 4] : 0
+        pat = Game::CharSet::PATTERNS[@player_pattern]
         frame = [@state.direction, pat]
         return if frame == @last_frame
         @last_frame = frame
@@ -1118,14 +1406,6 @@ class RPGXP
         @player_bmp.blt 0, 0, @charset, rect
       end
 
-      # Deterministic placeholder colour per tile id (empty tiles are a dark
-      # void), the same navigable stand-in the RPG2000 map scene uses.
-      def tile_color(id)
-        return (@void ||= Color.new(16, 16, 28, 255)) if id.nil? || id == 0
-        @tile_colors[id] ||= Color.new(40 + (id * 37) % 180,
-                                       40 + (id * 71) % 180,
-                                       60 + (id * 143) % 160, 255)
-      end
     end
   end
 end

@@ -224,9 +224,37 @@ fs::path rtp_path() {
       ini["Software\\\\ASCII\\\\RPG2000"]["\"RuntimePackagePath\""]);
 }
 
-fs::path xp_rtp_path() {
+// The RTP a project asks for, from its own Game.ini: RPG Maker XP writes
+// `RTP1=Standard` (plus optional RTP2/RTP3 slots), VX and VX Ace a single
+// `RTP=RPGVX` / `RTP=RPGVXAce`. That name is the registry *value* the runtime
+// looks up under its edition's key, so reading it here resolves a project that
+// ships with a differently named RTP instead of assuming the stock one.
+std::string ini_rtp_name(const fs::path& game_dir) {
+  const fs::path ini_path = game_dir / "Game.ini";
+  if (!fs::exists(ini_path))
+    return std::string();
+  inicpp::IniManager ini(ini_path.string());
+  std::string name = ini["Game"].toString("RTP1");
+  if (name.empty())
+    name = ini["Game"].toString("RTP");
+  return name;
+}
+
+// Each RGSS generation registers its RTPs under its own key, keyed by RTP name:
+// RGSS (XP) -> "Standard", RGSS2 (VX) -> "RPGVX", RGSS3 (VX Ace) -> "RPGVXAce".
+fs::path rgss_rtp_path(const std::string& rgss_key,
+                       const std::string& name,
+                       const char* fallback) {
   inicpp::IniManager ini = get_reg("system.reg");
-  return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
+  const std::string section =
+      "Software\\\\Enterbrain\\\\" + rgss_key + "\\\\RTP";
+  const std::string value =
+      "\"" + (name.empty() ? std::string(fallback) : name) + "\"";
+  return reg2path(ini[section][value]);
+}
+
+fs::path xp_rtp_path(const fs::path& game_dir) {
+  return rgss_rtp_path("RGSS", ini_rtp_name(game_dir), "Standard");
 }
 
 // RPG Maker VX / VX Ace projects look like XP ones from the outside — a
@@ -240,6 +268,19 @@ bool is_rpgvx_game(const fs::path& gd) {
   return fs::exists(gd / "Data" / "System.rvdata2") ||
          fs::exists(gd / "Data" / "System.rvdata") ||
          fs::exists(gd / "Game.rgss3a") || fs::exists(gd / "Game.rgss2a");
+}
+
+// VX Ace (RGSS3) rather than VX (RGSS2); only meaningful for a VX-family
+// project. The two editions install their RTPs under different keys.
+bool is_rpgvxace_game(const fs::path& gd) {
+  return fs::exists(gd / "Data" / "System.rvdata2") ||
+         fs::exists(gd / "Game.rgss3a");
+}
+
+fs::path vx_rtp_path(const fs::path& gd) {
+  const bool ace = is_rpgvxace_game(gd);
+  return rgss_rtp_path(ace ? "RGSS3" : "RGSS2", ini_rtp_name(gd),
+                       ace ? "RPGVXAce" : "RPGVX");
 }
 
 // An RPG Maker XP project: Game.ini plus either a loose Data/System.rxdata or
@@ -550,19 +591,23 @@ int main(int argc, char** argv) {
   // RPG_RT.ini's FullPackageFlag=1 marks a self-contained game; honour it by
   // clearing RTP_DIR so bitmap lookups never reach into the installed RTP.
   //
-  // The two makers register their RTP under different keys and lay it out
-  // differently, so pick by project type: RPG Maker XP resolves
-  // Software\Enterbrain\RGSS\RTP\Standard (whose tree is rooted at Graphics/
-  // and Audio/, matching the "Graphics/Titles/..." paths XP data stores),
-  // RPG2000 resolves Software\ASCII\RPG2000\RuntimePackagePath. Only the
-  // RPG2000 key was wired up before, so an XP project could never find its RTP
-  // art and every asset fell back to a placeholder (found while bringing up
+  // Each maker registers its RTP under its own key and lays it out differently,
+  // so pick by project type: RPG Maker XP resolves
+  // Software\Enterbrain\RGSS\RTP (whose tree is rooted at Graphics/ and Audio/,
+  // matching the "Graphics/Titles/..." paths XP data stores), VX and VX Ace the
+  // same shape under RGSS2 / RGSS3, and RPG2000
+  // Software\ASCII\RPG2000\RuntimePackagePath. Only the RPG2000 key was wired
+  // up before, so an XP project could never find its RTP art and every asset
+  // fell back to a placeholder (found while bringing up
   // scripts/compare-rpgxp-wine.bash, which needs both runtimes to draw the same
-  // pictures to be worth anything).
+  // pictures to be worth anything) -- and a VX project still resolved the
+  // RPG2000 path, which can never hold its assets.
+  const fs::path game_dir = FLAGS_game_dir;
   const std::string rtp_dir =
-      full_package_flag(FLAGS_game_dir)
-          ? std::string()
-          : (is_xp_game(FLAGS_game_dir) ? xp_rtp_path() : rtp_path()).string();
+      full_package_flag(game_dir) ? std::string()
+      : is_xp_game(game_dir)      ? xp_rtp_path(game_dir).string()
+      : is_rpgvx_game(game_dir)   ? vx_rtp_path(game_dir).string()
+                                  : rtp_path().string();
   mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
                 mrb_str_new_cstr(M, rtp_dir.c_str()));
 #endif
