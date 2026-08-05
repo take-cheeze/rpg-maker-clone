@@ -118,7 +118,18 @@ class RPGXP
       PLAY_BGS        = 245
       PLAY_ME         = 249
       PLAY_SE         = 250
+      FADE_OUT_BGM    = 242
+      FADE_OUT_BGS    = 246
       BATTLE_PROCESS  = 301
+      # The Game_System settings: what the message box looks like, which battle
+      # music plays, and the three access switches.
+      CHANGE_TEXT_OPTIONS  = 104
+      CHANGE_BATTLE_BGM    = 132
+      CHANGE_BATTLE_END_ME = 133
+      CHANGE_SAVE_ACCESS   = 134
+      CHANGE_MENU_ACCESS   = 135
+      CHANGE_ENCOUNTER     = 136
+      CHANGE_ACTOR_GRAPHIC = 322
 
       # Battle Processing (301) result branches, at the 301's own indent: If Win
       # (601), If Escape (602), If Lose (603) and the branch terminator (604).
@@ -419,6 +430,15 @@ class RPGXP
         when PLAY_BGS        then do_play(cmd, :bgs)
         when PLAY_ME         then do_play(cmd, :me)
         when PLAY_SE         then do_play(cmd, :se)
+        when FADE_OUT_BGM    then do_fade_out(cmd, :bgm)
+        when FADE_OUT_BGS    then do_fade_out(cmd, :bgs)
+        when CHANGE_TEXT_OPTIONS  then do_change_text_options(cmd)
+        when CHANGE_BATTLE_BGM    then do_change_battle_bgm(cmd)
+        when CHANGE_BATTLE_END_ME then do_change_battle_end_me(cmd)
+        when CHANGE_SAVE_ACCESS   then do_change_save_access(cmd)
+        when CHANGE_MENU_ACCESS   then do_change_menu_access(cmd)
+        when CHANGE_ENCOUNTER     then do_change_encounter(cmd)
+        when CHANGE_ACTOR_GRAPHIC then do_change_actor_graphic(cmd)
         else consume # unsupported command: skip
         end
       end
@@ -1144,11 +1164,11 @@ class RPGXP
       end
 
       def do_play(cmd, kind)
-        audio = param(cmd, 0)
-        return @index += 1 unless audio && audio.respond_to?(:name) && audio.name
-        name = audio.name
-        vol = audio.respond_to?(:volume) ? (audio.volume || 100) : 100
-        pit = audio.respond_to?(:pitch) ? (audio.pitch || 100) : 100
+        audio = Game::System.audio_fields(param(cmd, 0))
+        return @index += 1 unless audio
+        name = audio[:name]
+        vol = audio[:volume]
+        pit = audio[:pitch]
         begin
           case kind
           when :bgm then Audio.bgm_play(name, vol, pit)
@@ -1158,6 +1178,96 @@ class RPGXP
           end
         rescue StandardError => e
           $stderr.puts "[RGSS] event audio '#{name}' failed: #{e.message}"
+        end
+        @index += 1
+      end
+
+      # Milliseconds in one second: Fade Out BGM/BGS spell their fade in whole
+      # seconds, the Audio backend takes milliseconds.
+      MS_PER_SECOND = 1000
+
+      # Fade Out BGM (242) / Fade Out BGS (246): [seconds]. RMXP's command_242 is
+      # a bare `Audio.bgm_fade(@parameters[0] * 1000)` -- it starts the fade and
+      # returns, so the list keeps running while the music dies away. A game that
+      # wants to wait for silence follows it with its own Wait, and 65 of
+      # PrayforYou's 71 uses do exactly that.
+      #
+      # Falling through to the "unsupported, skip" arm left the music playing
+      # under the scene the fade was there to quieten -- the most-used gap the XP
+      # interpreter had.
+      def do_fade_out(cmd, kind)
+        seconds = param(cmd, 0, 0).to_i
+        begin
+          case kind
+          when :bgm then Audio.bgm_fade(seconds * MS_PER_SECOND)
+          when :bgs then Audio.bgs_fade(seconds * MS_PER_SECOND)
+          end
+        rescue StandardError => e
+          $stderr.puts "[RGSS] event audio fade failed: #{e.message}"
+        end
+        @index += 1
+      end
+
+      # -- Game_System settings -----------------------------------------------
+      # None of these pause: they write a setting whoever reads it later honours.
+
+      def system; @state.system; end
+
+      # Change Text Options (104): [position (0 top / 1 middle / 2 bottom),
+      # frame (0 windowskin panel / 1 none)]. The next message box opens with
+      # them; the one on screen, if any, keeps the look it was opened with, as
+      # in RMXP (Window_Message applies them in `reset_window`, on open).
+      def do_change_text_options(cmd)
+        system.message_position = param(cmd, 0, Game::System::MSG_BOTTOM).to_i
+        system.message_frame = param(cmd, 1, Game::System::MSG_FRAMED).to_i
+        @index += 1
+      end
+
+      # Change Battle BGM (132) / Change Battle End ME (133): [RPG::AudioFile].
+      # Stored as an override of the database's own music, for the battle scene
+      # to prefer once there is one. A command carrying an empty name is a real
+      # setting -- "this fight is silent" -- and is kept as such (an empty
+      # `name`), distinct from the nil that means "never overridden".
+      def do_change_battle_bgm(cmd)
+        system.battle_bgm = Game::System.audio_fields(param(cmd, 0))
+        @index += 1
+      end
+
+      def do_change_battle_end_me(cmd)
+        system.battle_end_me = Game::System.audio_fields(param(cmd, 0))
+        @index += 1
+      end
+
+      # Change Save Access (134) / Change Menu Access (135) / Change Encounter
+      # (136): [0 disable / 1 enable]. RMXP stores the negation --
+      # `$game_system.save_disabled = (@parameters[0] == 0)` -- so keep the same
+      # polarity, which is the one the code that honours the flag wants.
+      def access_disabled?(cmd); param(cmd, 0, 1) == 0; end
+
+      def do_change_save_access(cmd)
+        system.save_disabled = access_disabled?(cmd)
+        @index += 1
+      end
+
+      def do_change_menu_access(cmd)
+        system.menu_disabled = access_disabled?(cmd)
+        @index += 1
+      end
+
+      def do_change_encounter(cmd)
+        system.encounter_disabled = access_disabled?(cmd)
+        @index += 1
+      end
+
+      # Change Actor Graphic (322): [actor_id, charset name, charset hue,
+      # battler name, battler hue]. The actor id is given directly, unlike the
+      # Change Actor *value* commands, which select it through the fixed /
+      # variable-held pair `change_actor_target` reads.
+      def do_change_actor_graphic(cmd)
+        a = @state.actor(param(cmd, 0))
+        if a
+          a.set_graphic(param(cmd, 1, ""), param(cmd, 2, 0),
+                        param(cmd, 3, ""), param(cmd, 4, 0))
         end
         @index += 1
       end

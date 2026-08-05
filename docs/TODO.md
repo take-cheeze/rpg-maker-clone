@@ -1047,14 +1047,40 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   branches — If Win (601), If Escape (602), If Lose (603), branch end (604) —
   running only the branch that matches the resolved outcome (a win by default,
   configurable via the interpreter's `battle_outcome`, since there is no battle
-  system yet); the real `OpenGame.exe` XP test bed uses this structure. Covered
+  system yet); the real `OpenGame.exe` XP test bed uses this structure. A
+  **`Game::System`** now holds the settings the configuration commands write, and
+  they are part of the save: **Change Save / Menu Access** (134/135) and **Change
+  Encounter** (136) — stored with RMXP's `*_disabled` polarity — **Change Battle
+  BGM / Battle End ME** (132/133), kept as an override that is `nil` until a
+  command sets one so a reader falls back to the database's own (an *empty* name
+  is a distinct, real setting: silence), and **Change Text Options** (104), whose
+  position and frame the map scene applies when it opens a message box (top /
+  middle / bottom at RMXP's 16px margin, and a frameless box drawn the way RGSS's
+  `opacity = 0` draws one — contents and pause arrow, no windowskin). **Fade Out
+  BGM / BGS** (242/246) fade in milliseconds and do not pause the list, matching
+  `command_242`; they were the single most-used unhandled command in a real game.
+  **Change Actor Graphic** (322) swaps an actor's charset and battler, and
+  `State#leader` now answers with the live `Game::Actor` so the map draws the
+  graphic the event set rather than the one the editor shipped. Covered
   by `mruby-rpgxp/test` and driven over the real test bed by
   `scripts/rpgxp_testbed_check.rb` (which now builds a `Game::Actor` for every
-  database actor). Still to come: **Change Parameters** (317, permanent stat deltas
+  database actor). What is left is **measured** rather than guessed at now —
+  `scripts/rpgxp_command_coverage.rb` tallies a real game's command codes against
+  the ones the interpreter names, and Pray for You is at **0.4 % unhandled (67
+  commands across 11 codes)**, down from 1.0 %. Those 11, in order of use: **Shop
+  Processing** (302) with its goods continuation (605), **Call Save / Menu Screen**
+  (352/351) and **Return to Title** (354) — all four waiting on scenes that do not
+  exist yet — **Set Weather Effects** (236) and **Change Map Settings** (204,
+  panorama / fog / battleback), waiting on the renderer planes; **Change State**
+  (313), waiting on an actor state model; and the battle-only 333/337/338. Also
+  still to come: **Change Parameters** (317, permanent stat deltas
   on top of the table, via a per-actor `*_plus` set); the actor *state* (5) and
   enemy / character conditional sub-conditions; vehicle move-route targets; and
-  the many screen-effect / picture commands, plus the battle system itself that
-  Battle Processing would drive (skipped for now).
+  the battle system itself that Battle Processing would drive (skipped for now).
+  One caveat worth recording: `rpgxp_testbed_check.rb` treats an unsupported
+  command as "skipped, not fatal" and does not fail on the runtime's `[RGSS]`
+  gap logs the way `rpg2k_command_soak.rb` does — it cannot yet, because
+  Battle Processing legitimately logs one per use.
 - ✅ **Encrypted archives** — a packed release that ships only a `Game.rgssad`
   (RPG Maker XP; VX's same-format `Game.rgss2a`) or a VX Ace `Game.rgss3a` loads:
   `RPGXP::RGSSAD` (`mruby-rpgxp/mrblib/rgssad.rb`) decrypts **both** the version-1

@@ -64,6 +64,8 @@ module Audio
   def self.bgs_play(*); end
   def self.me_play(*); end
   def self.se_play(*); end
+  def self.bgm_fade(*); end
+  def self.bgs_fade(*); end
 end
 class RPGXP; end
 load File.join(mrblib, "game.rb")

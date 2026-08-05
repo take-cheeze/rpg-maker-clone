@@ -27,6 +27,9 @@ class RPGXP
       # opaque. 255 is the class default; the scenes that want to see through a
       # window (RMXP's Scene_Title uses 160) set it themselves.
       @back_opacity = 255
+      # RGSS's `opacity`, as a flag: the skin is either drawn or it is not (see
+      # #frame_visible=).
+      @frame_visible = true
 
       @viewport = Viewport.new(x, y, [width, 1].max, [height, 1].max)
       @viewport.z = 100
@@ -79,6 +82,18 @@ class RPGXP
       draw_skin
     end
 
+    # Whether the windowskin (background *and* border) is drawn at all. RGSS
+    # spells this `self.opacity = 0`, which blanks the skin and leaves the
+    # contents, the cursor and the pause arrow -- they are separate sprites
+    # there as they are here. Change Text Options (104) uses it for its
+    # "no frame" message box.
+    def frame_visible=(v)
+      v = !!v
+      return if @frame_visible == v
+      @frame_visible = v
+      draw_skin
+    end
+
     # Selection highlight, in contents coordinates (offset by the border).
     def cursor_rect=(rect)
       @cursor_rect = rect
@@ -109,6 +124,7 @@ class RPGXP
 
     def draw_skin
       @skin_bmp.clear
+      return unless @frame_visible
       if @skin
         draw_skin_background
         draw_skin_border
@@ -1684,8 +1700,9 @@ class RPGXP
         # appended under the text) grows it upward from the same bottom edge
         # rather than clipping.
         h = [lines.length * MSG_LINE_H + Panel::BORDER * 2, MSG_H].max
-        win = Panel.new(MSG_X, SCREEN_H - MSG_MARGIN - h, MSG_W, h,
-                        load_windowskin)
+        win = Panel.new(MSG_X, message_y(h), MSG_W, h, load_windowskin)
+        win.frame_visible =
+          @state.system.message_frame != Game::System::MSG_FRAMELESS
         win.z = 300
         contents = Bitmap.new(win.inner_width, win.inner_height)
         contents.font.color = Color.new(255, 255, 255, 255)
@@ -1701,6 +1718,17 @@ class RPGXP
         @message = { window: win, choice: choice, count: lines.length }
         @choice_index = 0
         set_choice_cursor if choice
+      end
+
+      # Where a message box `h` tall sits, per Change Text Options (104). The
+      # same three positions RMXP's Window_Message#reset_window picks between,
+      # with the same 16px margin at the screen edge.
+      def message_y(h)
+        case @state.system.message_position
+        when Game::System::MSG_TOP    then MSG_MARGIN
+        when Game::System::MSG_MIDDLE then (SCREEN_H - h) / 2
+        else SCREEN_H - MSG_MARGIN - h
+        end
       end
 
       def set_choice_cursor

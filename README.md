@@ -212,8 +212,25 @@
 - **Script** (355) runs a game's inline Ruby: the command and its continuation
   lines are joined and evaluated at the top level, with `$game_switches` and
   `$game_variables` bound to the same switches and variables the event commands
-  write, and a raising script reported rather than swallowed. That leaves the XP
-  map scene with a handler for **every** event command a real game uses
+  write, and a raising script reported rather than swallowed
+- How much of a real game's event script actually runs is now **measured**, not
+  asserted. This README used to claim the XP map scene had "a handler for every
+  event command a real game uses"; `scripts/rpgxp_command_coverage.rb` — the
+  counterpart of `scripts/analyze_game.rb` for XP — tallies a game's command
+  codes against the ones the interpreter names and shows that it did not.
+  Nothing had caught it because `scripts/rpgxp_testbed_check.rb` deliberately
+  treats an unsupported command as "skipped, not fatal", so *Pray for You* ran
+  end to end with 1 % of its commands silently doing nothing. The largest by far
+  was **Fade Out BGM** (242): 65 uses, every one of them leaving the music
+  playing under the scene it was there to quieten. That and the rest of the
+  **Game_System** family now run — Fade Out BGM / BGS (242/246), Change Battle
+  BGM / Battle End ME (132/133), Change Save / Menu Access (134/135), Change
+  Encounter (136), Change Text Options (104, whose message position and frame
+  the map scene applies) and Change Actor Graphic (322) — taking the game to
+  **0.4 % unhandled**. What remains is 67 commands across 11 codes, each waiting
+  on something that genuinely does not exist yet: a shop, save and menu scene
+  (302/605, 351/352/354), the weather and panorama/fog planes (236, 204), an
+  actor state model (313), and the battle system (333/337/338)
 
 ### RPG Maker VX / VX Ace
 

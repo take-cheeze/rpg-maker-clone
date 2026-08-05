@@ -501,6 +501,148 @@ assert "Interpreter: Change Skills / Change Equipment (via a variable-held id)" 
   assert_equal 0, a.weapon_id
 end
 
+assert "Interpreter: Change Actor Graphic swaps the charset the map draws" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  # The leader is the live actor, so what the map draws follows the command.
+  assert_equal s.actor(1), s.leader
+  run_to_end(s, [cmd(322, [1, "zero_b", 30, "bat_zero_b", 40], 0)])
+  assert_equal "zero_b", s.leader.character_name
+  assert_equal 30, s.leader.character_hue
+  assert_equal "bat_zero_b", s.actor(1).battler_name
+  assert_equal 40, s.actor(1).battler_hue
+  # An empty charset name is a real setting (the actor stops being drawn), not
+  # a no-op.
+  run_to_end(s, [cmd(322, [1, "", 0, "", 0], 0)])
+  assert_equal "", s.leader.character_name
+  # An unknown actor id is ignored rather than raising.
+  run_to_end(s, [cmd(322, [99, "ghost", 0, "ghost", 0], 0)])
+  assert_equal "", s.leader.character_name
+end
+
+# ---- Game_System settings (the event commands that write configuration) ----
+
+# Capture what reaches RGSS::Audio's fade calls. As in the RPG2000/VX suites the
+# overrides only capture while a list is installed and otherwise call straight
+# through, so this file cannot disturb another gem's audio test whatever order
+# the suites run in.
+class << RGSS::Audio
+  alias _xp_bgm_fade_orig bgm_fade
+  alias _xp_bgs_fade_orig bgs_fade
+
+  def bgm_fade(time)
+    return _xp_bgm_fade_orig(time) unless $xp_audio.is_a?(Array)
+    $xp_audio << [:bgm_fade, time]
+    nil
+  end
+
+  def bgs_fade(time)
+    return _xp_bgs_fade_orig(time) unless $xp_audio.is_a?(Array)
+    $xp_audio << [:bgs_fade, time]
+    nil
+  end
+end
+
+def xp_capture_audio
+  $xp_audio = []
+  yield
+  $xp_audio
+ensure
+  $xp_audio = nil
+end
+
+def xp_audio_file(name, volume = nil, pitch = nil)
+  a = RPG::AudioFile.new
+  a.name = name
+  a.volume = volume
+  a.pitch = pitch
+  a
+end
+
+assert "Interpreter: Fade Out BGM / BGS fade in milliseconds and keep running" do
+  s = new_state
+  played = xp_capture_audio do
+    run_to_end(s, [
+      cmd(242, [5], 0),         # fade the BGM over 5 seconds
+      cmd(246, [3], 0),         # ... and the BGS over 3
+      cmd(121, [8, 8, 0], 0)    # then switch 8 ON (proves it did not pause)
+    ])
+  end
+  assert_equal [[:bgm_fade, 5000], [:bgs_fade, 3000]], played
+  assert_true s.switches[8]
+
+  # A zero-second fade is a stop, and still reaches the backend.
+  assert_equal [[:bgm_fade, 0]],
+               xp_capture_audio { run_to_end(new_state, [cmd(242, [0], 0)]) }
+end
+
+assert "Interpreter: the access switches store RMXP's disabled polarity" do
+  s = new_state
+  assert_false s.system.save_disabled
+  assert_false s.system.menu_disabled
+  assert_false s.system.encounter_disabled
+  # Parameter 0 is 0 to *disable*, 1 to enable.
+  run_to_end(s, [cmd(134, [0], 0), cmd(135, [0], 0), cmd(136, [0], 0)])
+  assert_true s.system.save_disabled
+  assert_true s.system.menu_disabled
+  assert_true s.system.encounter_disabled
+  run_to_end(s, [cmd(134, [1], 0), cmd(135, [1], 0), cmd(136, [1], 0)])
+  assert_false s.system.save_disabled
+  assert_false s.system.menu_disabled
+  assert_false s.system.encounter_disabled
+end
+
+assert "Interpreter: Change Text Options sets the message position and frame" do
+  s = new_state
+  assert_equal RPGXP::Game::System::MSG_BOTTOM, s.system.message_position
+  assert_equal RPGXP::Game::System::MSG_FRAMED, s.system.message_frame
+  run_to_end(s, [cmd(104, [0, 1], 0)])
+  assert_equal RPGXP::Game::System::MSG_TOP, s.system.message_position
+  assert_equal RPGXP::Game::System::MSG_FRAMELESS, s.system.message_frame
+  run_to_end(s, [cmd(104, [1, 0], 0)])
+  assert_equal RPGXP::Game::System::MSG_MIDDLE, s.system.message_position
+  assert_equal RPGXP::Game::System::MSG_FRAMED, s.system.message_frame
+end
+
+assert "Interpreter: Change Battle BGM / Battle End ME record an override" do
+  s = new_state
+  # nil until a command sets one, so a reader knows to use the database's.
+  assert_nil s.system.battle_bgm
+  assert_nil s.system.battle_end_me
+  run_to_end(s, [cmd(132, [xp_audio_file("Intruder", 80, 110)], 0),
+                 cmd(133, [xp_audio_file("Victory")], 0)])
+  assert_equal({ name: "Intruder", volume: 80, pitch: 110 }, s.system.battle_bgm)
+  # A record with no volume/pitch takes RGSS's 100/100.
+  assert_equal({ name: "Victory", volume: 100, pitch: 100 }, s.system.battle_end_me)
+  # An empty name is silence -- a real setting, distinct from "not overridden".
+  run_to_end(s, [cmd(132, [xp_audio_file("")], 0)])
+  assert_equal "", s.system.battle_bgm[:name]
+end
+
+assert "Game::State save round-trip preserves the system settings" do
+  s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
+  run_to_end(s, [
+    cmd(134, [0], 0),                                   # saving off
+    cmd(136, [0], 0),                                   # encounters off
+    cmd(104, [1, 1], 0),                                # middle, no frame
+    cmd(132, [xp_audio_file("Intruder", 80, 110)], 0),  # battle BGM override
+    cmd(322, [1, "zero_b", 30, "bat_zero_b", 40], 0)    # and a new charset
+  ])
+  loaded = RPGXP::Game::State.load(xp_change_db,
+                                   Marshal.load(Marshal.dump(s.to_h)))
+  assert_true loaded.system.save_disabled
+  assert_false loaded.system.menu_disabled
+  assert_true loaded.system.encounter_disabled
+  assert_equal RPGXP::Game::System::MSG_MIDDLE, loaded.system.message_position
+  assert_equal RPGXP::Game::System::MSG_FRAMELESS, loaded.system.message_frame
+  assert_equal({ name: "Intruder", volume: 80, pitch: 110 },
+               loaded.system.battle_bgm)
+  assert_nil loaded.system.battle_end_me
+  assert_equal "zero_b", loaded.leader.character_name
+  assert_equal 30, loaded.leader.character_hue
+  assert_equal "bat_zero_b", loaded.actor(1).battler_name
+  assert_equal 40, loaded.actor(1).battler_hue
+end
+
 assert "Game::State save round-trip preserves mutated actor state" do
   s = RPGXP::Game::State.new(xp_change_db, [1], 1, 0, 0)
   a = s.actor(1)

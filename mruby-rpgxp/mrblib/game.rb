@@ -48,6 +48,74 @@ class RPGXP
       end
     end
 
+    # RMXP's `$game_system`, narrowed to the fields an event command writes: the
+    # three access switches, the battle-music overrides and the message-box
+    # options. They live apart from the switches and variables because a game
+    # treats them as configuration -- "no saving inside this dungeon", "this
+    # boss brings its own music" -- and expects them to persist the way progress
+    # does, so they are part of the save (see State#to_h).
+    #
+    # The rest of Game_System (play time, the timer, the save count) is
+    # bookkeeping no command sets and the runtime does not keep.
+    class System
+      # Change Text Options (104), parameter 0: where the message box sits.
+      MSG_TOP    = 0
+      MSG_MIDDLE = 1
+      MSG_BOTTOM = 2
+      # ... parameter 1: whether the windowskin panel is drawn behind the text.
+      MSG_FRAMED    = 0
+      MSG_FRAMELESS = 1
+
+      def initialize
+        @save_disabled = false
+        @menu_disabled = false
+        @encounter_disabled = false
+        # nil means "not overridden", so a reader falls back to the database's
+        # own battle_bgm / battle_end_me. Change Battle BGM (132) carrying an
+        # empty RPG::AudioFile means *silence*, which is a different thing, so
+        # the two cannot share one representation.
+        @battle_bgm = nil
+        @battle_end_me = nil
+        @message_position = MSG_BOTTOM
+        @message_frame = MSG_FRAMED
+      end
+
+      attr_accessor :save_disabled, :menu_disabled, :encounter_disabled,
+                    :battle_bgm, :battle_end_me,
+                    :message_position, :message_frame
+
+      # An RPG::AudioFile reduced to the three plain fields anything that plays
+      # it needs. The overrides are held this way rather than as the data object
+      # itself because they go into the save, which is our own portable hash
+      # (State#to_h) -- putting an RGSS data object in there would tie a save
+      # file to the schema. nil in, nil out.
+      def self.audio_fields(audio)
+        return nil unless audio && audio.respond_to?(:name) && audio.name
+        { name: audio.name,
+          volume: audio.respond_to?(:volume) ? (audio.volume || 100) : 100,
+          pitch: audio.respond_to?(:pitch) ? (audio.pitch || 100) : 100 }
+      end
+
+      def to_h
+        { save_disabled: @save_disabled, menu_disabled: @menu_disabled,
+          encounter_disabled: @encounter_disabled,
+          battle_bgm: @battle_bgm, battle_end_me: @battle_end_me,
+          message_position: @message_position, message_frame: @message_frame }
+      end
+
+      def load_h(h)
+        return self unless h
+        @save_disabled = h[:save_disabled] ? true : false
+        @menu_disabled = h[:menu_disabled] ? true : false
+        @encounter_disabled = h[:encounter_disabled] ? true : false
+        @battle_bgm = h[:battle_bgm]
+        @battle_end_me = h[:battle_end_me]
+        @message_position = h[:message_position] || MSG_BOTTOM
+        @message_frame = h[:message_frame] || MSG_FRAMED
+        self
+      end
+    end
+
     # The mutable game state: which map/tile the player stands on and the global
     # switch/variable stores. `party` is the list of actor ids; the database is
     # kept for name/graphic lookups. `map` is the currently loaded RPG::Map.
@@ -76,11 +144,14 @@ class RPGXP
         # the party leader is not drawn while it is on. Games use it to hand a
         # cutscene over to an event that stands where the hero does.
         @player_transparent = false
+        # The Game_System settings the event commands write (access switches,
+        # battle music overrides, message options).
+        @system = System.new
       end
 
       MAX_ITEMS = 99
 
-      attr_reader :db
+      attr_reader :db, :system
       attr_accessor :map_id, :x, :y, :direction, :map, :party, :gold,
                     :switches, :variables, :self_switches,
                     :items, :weapons, :armors, :player_transparent
@@ -104,11 +175,15 @@ class RPGXP
         @self_switches[[map_id, event_id, ch]] = on
       end
 
-      # The lead actor's RPG::Actor record (nil when the party is empty or the id
-      # is unknown), used for the on-map character graphic.
+      # The lead party member as a live Game::Actor (nil when the party is empty
+      # or the id is unknown), used for the on-map character graphic.
+      #
+      # Live rather than the raw RPG::Actor record so Change Actor Graphic (322)
+      # is visible: the command overrides the actor's charset, and reading the
+      # database record straight would keep drawing the graphic the editor
+      # shipped no matter what the event set.
       def leader
-        id = @party.first
-        id && @db.actors[id]
+        actor(@party.first)
       end
 
       # The live Game::Actor for actor `id` (any database actor, not only party
@@ -132,7 +207,7 @@ class RPGXP
           self_switches: hash_to_plain(@self_switches),
           items: hash_to_plain(@items), weapons: hash_to_plain(@weapons),
           armors: hash_to_plain(@armors), actors: actor_states,
-          player_transparent: @player_transparent }
+          player_transparent: @player_transparent, system: @system.to_h }
       end
 
       def self.load(db, h)
@@ -146,6 +221,7 @@ class RPGXP
         (h[:armors] || {}).each { |k, v| s.armors[k] = v }
         (h[:actors] || {}).each { |id, ah| a = s.actor(id); a && a.load_h(ah) }
         s.player_transparent = h[:player_transparent] ? true : false
+        s.system.load_h(h[:system])
         s
       end
 
@@ -194,7 +270,8 @@ class RPGXP
 
       attr_reader :id, :exp
       attr_accessor :level, :hp, :sp, :skills,
-                    :weapon_id, :armor1_id, :armor2_id, :armor3_id, :armor4_id
+                    :weapon_id, :armor1_id, :armor2_id, :armor3_id, :armor4_id,
+                    :character_name, :character_hue, :battler_name, :battler_hue
 
       def initialize(db, id)
         @db = db
@@ -213,6 +290,14 @@ class RPGXP
         @skills = learnable_skills(@level)
         @hp = max_hp
         @sp = max_sp
+        # The graphics start as the database's and are overwritten by Change
+        # Actor Graphic (322); they are held here rather than read back off the
+        # record so the override is per-save, not a mutation of the database
+        # every later State would inherit.
+        @character_name = @record.character_name
+        @character_hue = @record.character_hue
+        @battler_name = @record.battler_name
+        @battler_hue = @record.battler_hue
       end
 
       # The actor's database display name.
@@ -316,6 +401,17 @@ class RPGXP
         end
       end
 
+      # Change Actor Graphic (322): the walking charset and the battler, each
+      # with its hue. Mirrors RGSS's Game_Actor#set_graphic, which likewise
+      # writes all four in one go -- the command always carries all four, and an
+      # empty name is a real value (the actor becomes invisible on the map).
+      def set_graphic(character_name, character_hue, battler_name, battler_hue)
+        @character_name = character_name
+        @character_hue = character_hue
+        @battler_name = battler_name
+        @battler_hue = battler_hue
+      end
+
       # -- save round-trip ----------------------------------------------------
 
       # The mutable state to persist (the fields the Change Actor commands touch);
@@ -323,7 +419,9 @@ class RPGXP
       def to_h
         { level: @level, exp: @exp, hp: @hp, sp: @sp, skills: @skills.dup,
           weapon_id: @weapon_id, armor1_id: @armor1_id, armor2_id: @armor2_id,
-          armor3_id: @armor3_id, armor4_id: @armor4_id }
+          armor3_id: @armor3_id, armor4_id: @armor4_id,
+          character_name: @character_name, character_hue: @character_hue,
+          battler_name: @battler_name, battler_hue: @battler_hue }
       end
 
       # Restore mutable state from #to_h (missing keys keep the database defaults).
@@ -341,6 +439,10 @@ class RPGXP
         @armor4_id = h[:armor4_id] if h.key?(:armor4_id)
         @hp = h[:hp] if h[:hp]
         @sp = h[:sp] if h[:sp]
+        @character_name = h[:character_name] if h.key?(:character_name)
+        @character_hue = h[:character_hue] if h.key?(:character_hue)
+        @battler_name = h[:battler_name] if h.key?(:battler_name)
+        @battler_hue = h[:battler_hue] if h.key?(:battler_hue)
         self
       end
 
