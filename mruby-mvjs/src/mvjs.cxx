@@ -800,6 +800,33 @@ void emit_log_thumbnail(const uint8_t* px, int w, int h) {
   std::fprintf(stderr, "[MV-THUMB %dx%d]%s[/MV-THUMB]\n", tw, th, b64.c_str());
 }
 
+// Encode a straight RGBA8 frame (`px`, w x h) to a PNG at `path` and emit the
+// log thumbnail beside it. Shared by the MV (canvas) and MZ (WebGL) screenshot
+// entry points below. Returns false if the frame is empty or the file cannot be
+// encoded/written.
+bool write_frame_png(const std::string& path, const uint8_t* px, int w, int h) {
+  if (!px || w <= 0 || h <= 0)
+    return false;
+
+  // Encode to memory (the only stb-write API available here), then write it
+  // out. The sink appends each chunk to the string passed as its context.
+  std::string png;
+  if (!stbi_write_png_to_func(png_string_sink, &png, w, h, 4, px, w * 4))
+    return false;
+
+  std::FILE* f = std::fopen(path.c_str(), "wb");
+  if (!f)
+    return false;
+  std::fwrite(png.data(), 1, png.size(), f);
+  std::fclose(f);
+
+  // Also emit a small base64 thumbnail to the log so the rendered frame can be
+  // inspected from CI output alone — the uploaded artifact lives on a storage
+  // host our egress policy blocks, so the log line is the only way to see it.
+  emit_log_thumbnail(px, w, h);
+  return true;
+}
+
 // MV::JS.screenshot(path) -> bool: encode the main canvas' current frame out
 // to a PNG at `path`. Used to capture the rendered frame in CI so the visual
 // output can be inspected. The canvas is straight RGBA8, which is exactly what
@@ -826,32 +853,26 @@ mrb_value js_screenshot(mrb_state* mrb, mrb_value self) {
 
   int w = 0, h = 0;
   const uint8_t* px = mv_canvas_pixels(handle, &w, &h);
-  if (!px || w <= 0 || h <= 0)
+  return mrb_bool_value(write_frame_png(p, px, w, h));
+}
+
+// MV::JS.screenshot_gl(path, handle) -> bool: the same capture for a WebGL
+// frame — MZ renders through PIXI v5 into the GLES2 backend's FBO rather than a
+// 2D canvas, so its frame is read back from the context `handle` (a
+// WebGLRenderingContext's `.__gl` id, as MV::JS.present_gl takes) instead of
+// resolved from the canvas registry.
+mrb_value js_screenshot_gl(mrb_state* mrb, mrb_value self) {
+  const char* path;
+  mrb_int len;
+  mrb_int handle = 0;
+  mrb_get_args(mrb, "si", &path, &len, &handle);
+  if (handle <= 0)
     return mrb_false_value();
 
-  // Encode to memory (the only stb-write API available here), then write it
-  // out. The sink appends each chunk to the string passed as its context.
-  std::string png;
-  const int ok = stbi_write_png_to_func(
-      [](void* ctx, void* data, int size) {
-        static_cast<std::string*>(ctx)->append(static_cast<const char*>(data),
-                                               static_cast<size_t>(size));
-      },
-      &png, w, h, 4, px, w * 4);
-  if (!ok)
-    return mrb_false_value();
-
-  std::FILE* f = std::fopen(p.c_str(), "wb");
-  if (!f)
-    return mrb_false_value();
-  std::fwrite(png.data(), 1, png.size(), f);
-  std::fclose(f);
-
-  // Also emit a small base64 thumbnail to the log so the rendered frame can be
-  // inspected from CI output alone — the uploaded artifact lives on a storage
-  // host our egress policy blocks, so the log line is the only way to see it.
-  emit_log_thumbnail(px, w, h);
-  return mrb_true_value();
+  int w = 0, h = 0;
+  const uint8_t* px = mv_webgl_pixels(static_cast<int>(handle), &w, &h);
+  return mrb_bool_value(
+      write_frame_png(std::string(path, static_cast<size_t>(len)), px, w, h));
 }
 
 // Decode %XX percent-escapes. MV builds asset URLs with
@@ -938,6 +959,8 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
                           MRB_ARGS_REQ(2));
   mrb_define_class_method(mrb, js, "screenshot", js_screenshot,
                           MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, js, "screenshot_gl", js_screenshot_gl,
+                          MRB_ARGS_REQ(2));
 
   // MV::GL — the off-screen GLES2 backend for the MZ WebGL path (M6.3a).
   RClass* gl = mrb_define_class_under(mrb, mv, "GL", mrb->object_class);

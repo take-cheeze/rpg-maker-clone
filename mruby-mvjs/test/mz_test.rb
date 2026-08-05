@@ -91,6 +91,49 @@ assert 'MZ.host_globals_js defines the DOM globals rmmz_managers needs' do
   assert_true js.include?("=== 'undefined'")
 end
 
+assert 'MZ.host_globals_js installs the globals MZ boots on' do
+  # Evaluated against the real host, so this checks the shim's *effect* rather
+  # than its text. Idempotent, so running it here cannot disturb another spec.
+  MV::JS.eval(MZ.host_globals_js)
+
+  # rmmz_managers.js needs both constructors to exist at module-load time.
+  assert_equal 'function', MV::JS.eval("typeof HTMLVideoElement")
+  assert_equal 'function', MV::JS.eval("typeof HTMLImageElement")
+
+  # HTMLImageElement must be the host's *own* Image constructor. PIXI v5 wraps a
+  # texture source with `source instanceof HTMLImageElement`; when that is false
+  # it builds a fresh Image and assigns the object it was handed to its `src`,
+  # so every bitmap MZ loads would become a broken texture.
+  assert_equal true, MV::JS.eval("HTMLImageElement === Image")
+  assert_equal true, MV::JS.eval("(new Image()) instanceof HTMLImageElement")
+
+  # SceneManager.checkBrowser throws "does not support IndexedDB" without this.
+  assert_equal true, MV::JS.eval("!!indexedDB")
+  assert_equal 'function', MV::JS.eval("typeof indexedDB.open")
+end
+
+assert 'MZ reuses MVs input probe cadence' do
+  # The movement probe holds a direction through RGSS::Input and cycles so some
+  # open direction is found on any map; rmmz and rmmv share the button names and
+  # state shape, so MZ drives MV's probe rather than duplicating it.
+  assert_true MV::MOVE_PROBE_FRAMES > MV::MOVE_PROBE_DWELL
+  dirs = (0...MV::MOVE_PROBE_FRAMES).map { |f| MV.move_probe_dir(f) }.uniq
+  # All four directions come up inside one probe run, so a wall on one side
+  # cannot make the probe report "did not move".
+  assert_equal 4, dirs.size
+end
+
+assert 'MZ.runnable_scripts is what the boot evaluates, in load order' do
+  # The boot evaluates exactly this list (see MZ#boot_probe) and then hands the
+  # loop to PIXI's ticker, so a library missing from it is a library the engine
+  # never sees. PIXI must precede every rmmz module that builds on it.
+  scripts = MZ.runnable_scripts
+  assert_true scripts.index("js/libs/pixi.js") < scripts.index("js/rmmz_core.js")
+  assert_true scripts.index("js/rmmz_core.js") < scripts.index("js/rmmz_scenes.js")
+  # plugins.js loads last so a game's plugins can patch the engine classes.
+  assert_equal "js/plugins.js", scripts.last
+end
+
 assert 'MZ.runtime_available? tracks whether the WebGL backend (MV::GL) is built' do
   # MZ boots to Scene_Boot and presents frames on-screen only where the native
   # surfaceless-EGL GLES2 backend is compiled in; elsewhere (Emscripten uses the

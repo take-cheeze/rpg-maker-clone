@@ -107,6 +107,23 @@ DEFINE_bool(
     "reached RGSS::Audio and the asset resolves, so a headless run confirms "
     "the audio path works. Used in CI");
 DEFINE_bool(
+    mz_new_game,
+    false,
+    "For RPG Maker MZ: once the title screen appears, auto-select New Game so "
+    "the game advances to its start map without input (used to capture "
+    "in-game output in CI)");
+DEFINE_bool(
+    mz_move_test,
+    false,
+    "For RPG Maker MZ: once on the map, hold a direction for a spell (implies "
+    "--mz_new_game to reach the map) and log the player's start/end tile, so a "
+    "headless run confirms input actually moves the player. Used in CI");
+DEFINE_string(
+    mz_screenshot,
+    "",
+    "For RPG Maker MZ: write a PNG of the presented WebGL frame to this path "
+    "after boot, then keep running (used to capture output in CI)");
+DEFINE_bool(
     rgss_effect_probe,
     false,
     "Drive the RGSS screen effects on a real display and measure the rendered "
@@ -685,6 +702,15 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_AUDIO_TEST"),
                 mrb_bool_value(FLAGS_mv_audio_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_NEW_GAME"),
+                mrb_bool_value(FLAGS_mz_new_game));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_MOVE_TEST"),
+                mrb_bool_value(FLAGS_mz_move_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_SCREENSHOT"),
+                mrb_str_new_cstr(M, FLAGS_mz_screenshot.c_str()));
   CHECK_NO_EXC(M);
 
   const mrb_value args = mrb_ary_new_capa(M, argc - 1);
