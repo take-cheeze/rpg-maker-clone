@@ -51,6 +51,12 @@ struct RgssAudioBackend {
   // deferred work (e.g. resuming the BGM after a music effect finishes).
   // May be null.
   void (*update)(void);
+
+  // Non-zero when the backend resolved a MIDI instrument configuration, i.e.
+  // when a .mid BGM/ME is expected to be audible rather than silent. Lets the
+  // Ruby layer answer Audio.midi_available? instead of guessing. May be null,
+  // which reads as "unknown" and is reported as unavailable.
+  int (*midi_available)(void);
 };
 
 // Install (copy) the audio backend, or detach it by passing null. Safe to call

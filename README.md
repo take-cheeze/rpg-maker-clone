@@ -284,9 +284,19 @@
   `GAME_DIR`/`RTP_DIR`, in the `Music/`, `Sound/` and `Audio/*` sub-folders, and
   with the usual extensions (`.ogg`, `.wav`, `.mid`, `.mp3`, `.flac`) — so the
   event interpreter's *Play BGM* / *Play SE* commands are audible
-- Playable formats depend on the SDL_mixer build (WAV/OGG everywhere; MIDI needs
-  a synth such as Timidity/FluidSynth). Pitch/tempo is accepted for API
-  compatibility but not applied (SDL_mixer has no pitch control)
+- **MIDI plays once you fetch the instruments.** RPG2000 projects ship most of
+  their music as `.mid`, which carries note events but no audio, so SDL_mixer's
+  built-in TiMidity synthesiser needs a patch set to make any sound. Run
+  `./scripts/download-freepats.bash` to install
+  [FreePats](assets/timidity/README.md) into `assets/timidity/` (~32 MiB,
+  git-ignored); the engine finds it at startup. Without it, MIDI loads and plays
+  silence — `RGSS::Audio.midi_available?` and a startup warning report that.
+  `TIMIDITY_CFG` points the engine at a different (e.g. fuller) patch set
+- MIDI is synthesised for **BGM and ME** only — SE and BGS play as mixer
+  samples, which SDL_mixer never synthesises MIDI for. Pitch/tempo is accepted
+  for API compatibility but not applied (SDL_mixer has no pitch control)
+- The wasm build leaves the patches out by default (~32 MiB of `index.data`);
+  configure with `-DWASM_MIDI_PATCHES=ON` to bundle them
 
 ## TODO
 - Editor with [imgui](https://github.com/ocornut/imgui)
@@ -294,4 +304,5 @@
   tiles; the map scene already blits real chipset graphics with autotiles and
   tile animation
 - Battle system and the item/skill/equip/status menu screens
-- Audio pitch/tempo control and a guaranteed MIDI synth in the build
+- Audio pitch/tempo control (SDL_mixer exposes none), and MIDI for SE/BGS, which
+  play as samples rather than through the synthesiser

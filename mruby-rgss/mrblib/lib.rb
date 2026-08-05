@@ -1,14 +1,19 @@
 module RGSS
   class Timeout < StandardError; end
 
-  # Emit a warning the first time an unimplemented stub method is called.
-  # Warning on every call would flood the log from within the game loop, so
-  # each method name is reported only once.
-  @warned_stubs = {}
+  # Emit a warning only the first time it is raised. Warning on every call would
+  # flood the log from within the game loop, so each distinct message is
+  # reported once.
+  @warned_once = {}
+  def self.warn_once(message)
+    return if @warned_once[message]
+    @warned_once[message] = true
+    $stderr.puts "[RGSS] #{message}"
+  end
+
+  # Warn once that an unimplemented stub method was called.
   def self.warn_stub(name)
-    return if @warned_stubs[name]
-    @warned_stubs[name] = true
-    $stderr.puts "[RGSS] #{name} is not implemented yet (stub, does nothing)"
+    warn_once("#{name} is not implemented yet (stub, does nothing)")
   end
 
   # Color, Rect, Table and Tone are implemented in C (see src/lib.cxx).
@@ -434,11 +439,22 @@ module RGSS
         _se_stop
       end
 
+      # True when a MIDI patch set was resolved, i.e. when a .mid BGM/ME will be
+      # audible rather than silent. False in builds with no audio backend (the
+      # `rake test` binary) and when no TiMidity configuration was found.
+      def midi_available?
+        _midi_available
+      end
+
       # RGSS2+. The VX/VX Ace scripts call it once at boot when the project asks
-      # for MIDI playback; SDL_mixer picks its own synth, so there is nothing to
-      # set up here.
+      # for MIDI playback. The synth is configured when the audio device opens
+      # (src/sdl_audio.cxx picks up assets/timidity, or TIMIDITY_CFG), so there
+      # is nothing left to do here; warn only when MIDI would be silent.
       def setup_midi
-        RGSS.warn_stub("Audio.setup_midi")
+        unless midi_available?
+          RGSS.warn_once("Audio.setup_midi: no MIDI patch set; MIDI will be silent")
+        end
+        nil
       end
 
       private

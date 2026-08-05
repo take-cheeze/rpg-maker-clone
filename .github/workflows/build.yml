@@ -113,6 +113,14 @@ jobs:
         background: true
         run: nix develop -c ./scripts/download-mz-corescript.bash
 
+      # MIDI instrument patches for SDL_mixer's TiMidity synth. Not committed
+      # (~32 MiB of samples), so fetch them here or the `timidity_patches` check
+      # skips and any .mid the smoke tests touch plays silence.
+      - name: Download MIDI patches
+        id: dl-freepats
+        background: true
+        run: nix develop -c ./scripts/download-freepats.bash
+
       - name: pre-commit
         id: pre-commit
         background: true
@@ -150,7 +158,9 @@ jobs:
       # checks that consume them. A failed background step (e.g. pre-commit)
       # surfaces here and fails the job, exactly as it did when these ran inline.
       - name: Wait for lint and downloads
-        wait: [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample]
+        wait:
+          [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample,
+           dl-freepats]
 
       - name: Prepare screenshot dir
         run: mkdir -p ss

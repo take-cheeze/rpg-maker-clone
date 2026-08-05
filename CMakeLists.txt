@@ -244,6 +244,20 @@ target_link_libraries(
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
 
+# MIDI instruments for SDL_mixer's built-in TiMidity synthesiser. A .mid holds
+# note events only, so without a GUS patch set MIDI music loads and then plays
+# silence. The patches are ~32 MiB of samples, so they are downloaded by
+# scripts/download-freepats.bash rather than committed.
+#
+# The path is baked in unconditionally and probed at run time (sdl_audio.cxx),
+# never tested here: the download is independent of the configure, so a
+# configure-time EXISTS check would freeze whichever order they happened to run
+# in and force a re-configure on anyone who built before fetching.
+set(TIMIDITY_ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/timidity)
+target_compile_definitions(
+  ${PROJECT_NAME}
+  PRIVATE "RGSS_TIMIDITY_CFG_SOURCE=\"${TIMIDITY_ASSET_DIR}/timidity.cfg\"")
+
 if(EMSCRIPTEN)
   # Emit a runnable page (index.html + .js + .wasm) with a growable heap so the
   # interpreter and game assets fit.
@@ -320,9 +334,29 @@ if(EMSCRIPTEN)
     target_link_options(${PROJECT_NAME} PRIVATE
                         "--preload-file=${WASM_SAMPLE_DIR}@/game_sample")
   endif()
+
+  # Optionally mount the bundled MIDI patch set at /timidity, where
+  # src/sdl_audio.cxx looks for it. Off by default: FreePats adds ~33 MB to
+  # index.data, a heavy download for a web page whose games are mostly OGG, and
+  # Emscripten's SDL2_mixer port does not necessarily build the TiMidity codec
+  # in the first place. Turn on with -DWASM_MIDI_PATCHES=ON.
+  option(WASM_MIDI_PATCHES
+         "Preload the bundled MIDI patch set into the wasm build" OFF)
+  if(WASM_MIDI_PATCHES AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
+    target_link_options(${PROJECT_NAME} PRIVATE
+                        "--preload-file=${TIMIDITY_ASSET_DIR}@/timidity")
+  endif()
 endif()
 
 install(TARGETS ${PROJECT_NAME} RUNTIME)
+
+# Ship the MIDI patch set beside the binary so an installed build keeps working
+# without the source tree. src/sdl_audio.cxx probes <exe>/../share/... for it.
+if(NOT EMSCRIPTEN AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
+  include(GNUInstallDirs)
+  install(DIRECTORY ${TIMIDITY_ASSET_DIR}/
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/rpg-maker-clone/timidity)
+endif()
 
 enable_testing()
 
@@ -331,6 +365,15 @@ if(NOT EMSCRIPTEN)
     NAME mruby_test
     COMMAND env ${MRB_OPTS} rake test
     WORKING_DIRECTORY "${MRUBY_PREFIX}")
+
+  # A patch missing from the downloaded set is silent at run time (TiMidity just
+  # drops that instrument), so check the config against the files. The script
+  # skips cleanly when the patches were never downloaded, so this is registered
+  # unconditionally and stays honest either way.
+  add_test(
+    NAME timidity_patches
+    COMMAND ruby ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_timidity_patches.rb
+            ${TIMIDITY_ASSET_DIR})
 
   set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
                    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)

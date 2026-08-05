@@ -130,6 +130,14 @@ mrb_value se_stop(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
+// True only when the backend resolved a MIDI patch set, so a .mid BGM/ME will
+// actually be audible. False with no backend installed (tests, no-audio builds)
+// and false when the backend found no TiMidity configuration.
+mrb_value midi_available(mrb_state* M, mrb_value self) {
+  bool ok = g_backend.midi_available && g_backend.midi_available() != 0;
+  return mrb_bool_value(ok);
+}
+
 mrb_value audio_update(mrb_state* M, mrb_value self) {
   if (g_backend.update)
     g_backend.update();
@@ -175,5 +183,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   mrb_define_module_function(M, audio, "_se_play", se_play, MRB_ARGS_ARG(1, 2));
   mrb_define_module_function(M, audio, "_se_stop", se_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_update", audio_update,
+                             MRB_ARGS_NONE());
+  mrb_define_module_function(M, audio, "_midi_available", midi_available,
                              MRB_ARGS_NONE());
 }
