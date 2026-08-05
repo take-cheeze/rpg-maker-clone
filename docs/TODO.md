@@ -239,13 +239,21 @@ The work below is roughly ordered by the critical path to a walkable game
   equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
-  spirit / agility), an **item** count (number held, or number equipped across the
+  spirit / agility, and the **id of the item in each of the five equipment
+  slots**), an **item** count (number held, or number equipped across the
   party), **game quantities** (party gold, timer seconds, party size, and the
   **save / battle / win / defeat / escape counts** — running tallies bumped by
-  Save and by each Enemy Encounter and its outcome, persisted in the save) and a
-  **character position** (the hero's or a map event's map id / x / y / facing —
-  an event's map id reads 0, matching an RPG_RT 2000 quirk; screen coordinates
-  are not modelled).
+  Save and by each Enemy Encounter and its outcome, persisted in the save), a
+  **character position** (the hero's or a map event's map id / x / y / facing /
+  **screen x / y** — an event's map id reads 0, matching an RPG_RT 2000 quirk;
+  the screen coordinates are measured against the live camera, which
+  `Scene::Map#camera_position` now exposes, with RPG_RT's own asymmetric offsets:
+  X from the tile's centre, Y from its bottom) and, in a fight, a **monster
+  stat** (RPG2003's battle operand — HP / SP / max HP-SP / attack / defence /
+  spirit / agility of a troop member). An operand this build does not know (the
+  Maniac patch adds nine more) now reads **0 and logs**, where it used to return
+  the operand's own *selector* — so a 2003 game's battle operand wrote the troop
+  member index into the variable and looked like a plausible number.
   Conditional Branch covers switch / variable / **timer** / gold / item /
   **vehicle** (is the party aboard the boat / ship / airship) / **orientation**
   (is the hero or a map event facing a given direction) conditions and **all**
@@ -456,11 +464,22 @@ The work below is roughly ordered by the critical path to a walkable game
   <game>` reports a game's troop pages, and Nepheshel's 2819 conditional pages
   confirm the `switch_a` / `switch_b` / `turn` / `enemy_hp` bits and show that
   every battle-only command it uses has a handler (see the comment on
-  `Game::BattlePage` for what each bit is confirmed by). Still TODO here:
-  the per-battler turn counters and the party-fatigue / chosen-command
-  conditions (pages gated on those deliberately do not fire rather than firing
-  unchecked), and video playback for Play Movie (no decoder is linked in; the
-  request is logged). **Show Battle Animation** (11210) now plays on the map — the
+  `Game::BattlePage` for what each bit is confirmed by). The **RPG2003
+  conditions resolve now too**: each `Combatant` carries its own `battle_turn`,
+  bumped as that battler's turn begins (EasyRPG's `Scene_Battle::NextTurn`), so
+  `turn_enemy` / `turn_actor` read real per-battler counters through the same
+  base/multiple arithmetic; and `fatigue` is `Game_Party::GetFatigue`'s formula —
+  HP two thirds of the weight, SP the other third, an SP-less party dividing by
+  1 rather than 0. A page whose condition box is **entirely unticked never runs**,
+  which is RPG_RT's reading of "no trigger" and the opposite of how every other
+  RPG2000 page kind treats vacuous conditions; both test beds carry such pages
+  (446 of Nepheshel's 3265, all 88 of mtf-meido-action's) and every one is empty,
+  so no real game changes behaviour. Still TODO here: the `command_actor`
+  (chosen battle command) condition, which RPG_RT only answers for the battler
+  whose action triggered the check — this runtime evaluates pages once per turn
+  with no acting battler, the same null-`source` case EasyRPG bails on, so such a
+  page deliberately does not fire rather than firing unchecked; and video
+  playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
   wait flag (per-cell zoom / tone and target-only flashes are approximations for
@@ -1273,11 +1292,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         draw a full-screen quad, and assert only the right half survives — which
         is the same shape the window masking uses, and which came out green on
         both halves with the stubs.
+      - ✅ **Audio.** rmmz's `AudioManager` exposes the same high-level surface
+        MV's bridge overrides, so MZ installs `MV::AUDIO_BRIDGE_JS` verbatim and
+        drains the same op queue into `RGSS::Audio` (`MZ#pump_audio`); the whole
+        reason MZ was silent was that nobody installed it. One MZ-only addition
+        was needed on top (`MZ::AUDIO_BRIDGE_EXTRA_JS`): `Scene_Boot.start` calls
+        `SoundManager.preloadImportantSounds`, which loads the system SEs through
+        `AudioManager.loadStaticSe` -> `createBuffer` -> `new WebAudio`, and MZ's
+        `WebAudio` fetches with **`fetch`** (MV used XMLHttpRequest) — a global
+        this host does not provide, so the boot died in `Scene_Boot.start` the
+        moment the bed named a system sound. Both entry points are now inert;
+        playback still rides the bridged `playSe`. The bed ships an authored
+        `audio/se/Beep.wav` wired to the UI sounds, and `--mz_audio_test` plays
+        one SE on the map, which `mz_boot_check.bash` asserts as `[MZ-AUDIO]`.
+        (Worth noting the engine queues its own ops too — New Game's fade-out
+        emits `bgm_fade`/`bgs_fade`/`me_fade` — so the path is exercised even
+        without the probe.)
       - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
         back without it, and `getExtension` returns null so the fallback is what
-        runs);
-        texture Y-flip and uniform-introspection polish as real content exercises
-        them; MZ's audio bridge (MV routes `AudioManager` to `RGSS::Audio`; MZ
-        still runs on the silent Web Audio stub, so the bed ships no sounds), and
-        a `.woff` font path (the canvas text loader finds only `.ttf`/`.otf` in a
-        game's `fonts/`, and MZ games ship `.woff`, so their text draws blank).
+        runs); texture Y-flip and uniform-introspection polish as real content
+        exercises them; and a `.woff` font path — the canvas text loader finds
+        only `.ttf`/`.otf` in a game's `fonts/` and MZ games ship `.woff`, so a
+        real MZ game's text draws blank. That is the biggest visible gap left.

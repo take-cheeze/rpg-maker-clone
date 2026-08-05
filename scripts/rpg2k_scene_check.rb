@@ -1874,6 +1874,44 @@ check 'the choice window plays the cursor and decision system sounds' do
   ok !scene.instance_variable_get(:@message), 'the choice window closed on confirm'
 end
 
+check 'character_screen_position measures against the live camera' do
+  # A map small enough that the camera cannot scroll, so screen position is just
+  # the map position: the offsets RPG_RT applies are then visible on their own.
+  scene = new_scene({ 1 => event(3, 4, page) }, player: [1, 2])
+  tile = RPG2k::Scene::Map::TILE
+  eq [0, 0], scene.camera_position, 'a map smaller than the view cannot scroll'
+
+  hero = scene.character_screen_position(10001)
+  # X is measured from the tile's centre, Y from its bottom — RPG_RT's own
+  # asymmetry, which is the whole reason this is worth pinning down.
+  eq 1 * tile + tile / 2, hero[:x]
+  eq 2 * tile + tile, hero[:y]
+
+  ev = scene.character_screen_position(1)
+  eq 3 * tile + tile / 2, ev[:x]
+  eq 4 * tile + tile, ev[:y]
+
+  eq nil, scene.character_screen_position(99), 'no such event on this map'
+end
+
+check 'a scrolled camera shifts the screen position it reports' do
+  # A tall map so the follow camera actually scrolls, and the hero's screen
+  # position stops tracking its map position.
+  scene = new_scene({}, player: [1, 20])
+  w = 6; h = 40
+  tall = Game::Map.new(1, OpenStruct.new(
+    width: w, height: h, chipset_id: 1,
+    lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+    events: {}))
+  scene.instance_variable_set(:@map, tall)
+  scene.instance_variable_get(:@state).map = tall
+
+  cam_y = scene.camera_position[1]
+  ok cam_y > 0, 'the camera scrolled down to follow the hero'
+  tile = RPG2k::Scene::Map::TILE
+  eq 20 * tile + tile - cam_y, scene.character_screen_position(10001)[:y]
+end
+
 check 'the message window moves away from the hero when not position-fixed' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
@@ -2368,12 +2406,15 @@ end
 
 # -- battle-event pages --------------------------------------------------------
 
-# A troop battle-event page: `flags` 0 means "no condition", so it fires on turn
-# 0 as soon as the fight opens.
-def troop_page(cmds, flags = 0, opts = {})
+# A troop battle-event page. The default condition is the turn test at base 0 /
+# multiple 0, so the page fires on turn 0 as the fight opens -- an entirely
+# unticked condition box would never fire at all, which is how RPG_RT reads it
+# (see Game::BattlePage.active?).
+def troop_page(cmds, flags = Game::BattlePage::TURN, opts = {})
   cond = OpenStruct.new({ flags: flags, switch_a_id: 1, switch_b_id: 1,
                           variable_id: 1, variable_value: 0, turn_a: 0,
-                          turn_b: 0, enemy_id: 0, enemy_hp_min: 0,
+                          turn_b: 0, fatigue_min: 0, fatigue_max: 100,
+                          enemy_id: 0, enemy_hp_min: 0,
                           enemy_hp_max: 100, actor_id: 1, actor_hp_min: 0,
                           actor_hp_max: 100 }.merge(opts))
   OpenStruct.new(condition: cond, event: cmds)
@@ -2414,6 +2455,14 @@ check 'a battle page gated on an unmet condition does not fire' do
   scene, st = battle_scene_with_pages(pages)
   10.times { scene.update }
   ok !st.switches[14], 'the gated page stayed put'
+end
+
+check 'a battle page with no condition ticked at all never fires' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 15, 15, 0])], 0) }
+  scene, st = battle_scene_with_pages(pages)
+  10.times { scene.update }
+  ok !st.switches[15], 'RPG_RT reads an unticked condition box as never, not always'
 end
 
 check 'Terminate Battle from a page ends the fight and resumes the event' do

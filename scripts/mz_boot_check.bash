@@ -15,6 +15,7 @@
 #   [MZ-SCENE] <scene>            (once per scene change)
 #   [MZ-MAP]   reached the map at <x,y>
 #   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
+#   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #
 # or "[MZ] boot stopped at: <error>" when it stops short. This asserts the boot
 # marker, that the boot got past the loading scene, and — since the whole point
@@ -68,7 +69,8 @@ echo "== ${GAME}"
 if ! env -u DISPLAY -u XAUTHORITY SDL_VIDEODRIVER=dummy \
         timeout 300 "${ENGINE}" \
         --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" \
-        --mz_new_game --mz_move_test --mz_screenshot="${SHOT}" \
+        --mz_new_game --mz_move_test --mz_audio_test \
+        --mz_screenshot="${SHOT}" \
         >"${log}" 2>&1 ; then
     echo "FAILED: ${GAME}: the engine exited non-zero" >&2
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -60 || true
@@ -100,7 +102,12 @@ grep -q '\[MZ-MAP\] reached the map' "${log}" ||
 grep -q '\[MZ-MOVE\].*moved=true' "${log}" ||
     fail "input never moved the player ([MZ-MOVE] moved=true missing)"
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ\] screenshot' "${log}"
+# The audio bridge: rmmz's AudioManager -> the op queue -> RGSS::Audio. Without
+# it MZ's sound goes to the silent Web Audio stub and nothing reaches the mixer.
+grep -q '\[MZ-AUDIO\]' "${log}" ||
+    fail "no audio op reached RGSS::Audio ([MZ-AUDIO] missing)"
+
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
