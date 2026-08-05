@@ -22,6 +22,13 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # gem: without the edge, gem init order left Kernel#sprintf undefined when the
   # host loaded, so the scripts' "%02d"/"%04d" formatting raised NoMethodError.
   add_dependency 'mruby-sprintf'
+  # Numeric#zero?, used by the Scroll Map offset and the pause-arrow animation.
+  # Same story as mruby-sprintf above: it is enabled in build_config.rb, but
+  # without the dependency edge to order its initialization before this gem the
+  # method was undefined in the `rake test` binary — `undefined method 'zero?'
+  # for Integer`, in CI only, with the full game build working. See the
+  # "mruby stdlib methods live in core *-ext mrbgems" note in AGENTS.md.
+  add_dependency 'mruby-numeric-ext'
 
   # Load order matters: lib.rb defines the RPGXP class and its WIDTH/HEIGHT/TILE
   # constants (and pulls RGSS into Object), which the scene/game sources read at
