@@ -1369,16 +1369,16 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :price, :skill_id,
                       :atk_points2, :def_points2, :spi_points2, :agi_points2,
                       :occasion_battle, :state_set, :reverse_state_effect,
-                      :prevent_critical, :attribute_set, :switch_id)
+                      :prevent_critical, :attribute_set, :switch_id, :occasion_field)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
-              attribute_set: nil, switch_id: 0)
+              attribute_set: nil, switch_id: 0, occ_field: true)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
-               prevent_crit, attribute_set, switch_id)
+               prevent_crit, attribute_set, switch_id, occ_field)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -1827,6 +1827,23 @@ check 'field_items lists only held medicines, in id order with counts' do
   st.party.gain_item(5, 1)
   st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
   eq [[5, 1], [9, 2]], st.party.field_items
+end
+
+check 'a battle-only medicine is hidden from the field menu but shown in battle' do
+  items = {
+    5 => fake_item(type: 6, rhp: 50, occ_field: true,  occ_battle: false), # field only
+    6 => fake_item(type: 6, rhp: 50, occ_field: false, occ_battle: true),  # battle only
+  }
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(6, 1)
+  ok st.party.field_usable?(5), 'the field medicine is usable in the field'
+  ok !st.party.field_usable?(6), 'the battle-only medicine is hidden from the field'
+  eq [[5, 1]], st.party.field_items
+  # ... and the reverse holds for the battle item list.
+  ok st.party.battle_usable?(6), 'the battle-only medicine is usable in battle'
+  ok !st.party.battle_usable?(5), 'the field-only medicine is not usable in battle'
+  eq [[6, 1]], st.party.battle_items
 end
 
 check 'a switch item is field-usable, effective, and flips its switch on use' do
