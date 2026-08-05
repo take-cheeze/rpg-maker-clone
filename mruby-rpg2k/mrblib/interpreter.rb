@@ -1106,19 +1106,27 @@ module Game
       when 5 then actor_operand(cmd)                       # an actor's stat
       when 6 then event_operand(cmd)                       # a character's position
       when 7 then other_operand(cmd)                       # gold / timer / ...
-      else cmd.param(5)
+      when 8 then enemy_operand(cmd)                       # a monster's stat (2003)
+      else
+        # An operand this build does not know (the Maniac patch adds 9..21).
+        # Reading 0 is the safe answer; returning param5 — which is the operand's
+        # *selector*, not a value — used to write the enemy index or actor id
+        # into the variable and look like a plausible number.
+        $stderr.puts "[RPG2k] Control Variables: unsupported operand #{cmd.param(4)}"
+        0
       end
     end
 
     # Operand type 6: a positional value of a character. param5 selects it (10001
     # the hero / party, a positive id a map event); param6 the value (0 map id,
-    # 1 x tile, 2 y tile, 3 facing, in RPG2000's 2/4/6/8 numpad convention).
-    # Screen coordinates (4 / 5) are not modelled and read 0, and -- matching a
-    # long-standing RPG_RT quirk -- a *map event's* map id also reads 0. An
-    # unresolvable reference (no map_info hook, unknown event) reads 0.
+    # 1 x tile, 2 y tile, 3 facing in RPG2000's 2/4/6/8 numpad convention,
+    # 4 screen x, 5 screen y). Matching a long-standing RPG_RT quirk, a *map
+    # event's* map id reads 0. An unresolvable reference (no map_info hook,
+    # unknown event) reads 0.
     def event_operand(cmd)
       ref = cmd.param(5)
       attr = cmd.param(6)
+      return screen_operand(ref, attr) if attr == 4 || attr == 5
       if ref == 10001 # the hero / party leader
         case attr
         when 0 then @state.map_id
@@ -1134,11 +1142,22 @@ module Game
         when 1 then pos[:x]
         when 2 then pos[:y]
         when 3 then pos[:direction]
-        else 0 # event map id (RPG2000 quirk) and screen coords read 0
+        else 0 # an event's map id reads 0 (the RPG2000 quirk)
         end
       else
         0
       end
+    end
+
+    # The screen-coordinate selectors of operand 6 (attr 4 x / 5 y): where the
+    # character currently sits in the view, which only the map scene can answer
+    # because it owns the camera. Without that hook (a headless interpreter, or a
+    # battle page) there is no view to measure against, so it reads 0.
+    def screen_operand(ref, attr)
+      return 0 unless @map_info.respond_to?(:character_screen_position)
+      pos = @map_info.character_screen_position(ref)
+      return 0 unless pos
+      attr == 4 ? pos[:x] : pos[:y]
     end
 
     # Operand type 4: a count for the item with id param5. param6 selects the
@@ -1164,11 +1183,15 @@ module Game
 
     # Operand type 5: a stat of the actor with id param5. param6 selects the
     # attribute (0 level, 1 EXP, 2 HP, 3 MP, 4 max HP, 5 max MP, 6 attack,
-    # 7 defence, 8 spirit, 9 agility). An actor not in the party reads as 0.
+    # 7 defence, 8 spirit, 9 agility, then 10..14 the id of the item in each
+    # equipment slot — weapon, shield, armour, helmet, accessory, in the order
+    # Game::Actor::EQUIP_ORDER already stores them, 0 for an empty slot). An
+    # actor not in the party reads as 0.
     def actor_operand(cmd)
       actor = party.actor_by_id(cmd.param(5))
       return 0 unless actor
-      case cmd.param(6)
+      attr = cmd.param(6)
+      case attr
       when 0 then actor.level
       when 1 then actor.exp
       when 2 then actor.hp
@@ -1179,6 +1202,28 @@ module Game
       when 7 then actor.def
       when 8 then actor.int
       when 9 then actor.agi
+      when 10, 11, 12, 13, 14 then actor.equipment[attr - 10] || 0
+      else 0
+      end
+    end
+
+    # Operand type 8: a stat of a monster in the running fight (RPG2003's battle
+    # operand). param5 is the troop member index — the editor's own numbering,
+    # the same one Change Monster HP uses — and param6 the attribute (0 HP,
+    # 1 SP, 2 max HP, 3 max SP, 4 attack, 5 defence, 6 spirit, 7 agility).
+    # Outside a battle, or for a member that is not in this troop, it reads 0.
+    def enemy_operand(cmd)
+      foe = @battle && @battle.enemy(cmd.param(5))
+      return 0 unless foe
+      case cmd.param(6)
+      when 0 then foe.hp
+      when 1 then foe.mp || 0
+      when 2 then foe.max_hp
+      when 3 then foe.max_mp || 0
+      when 4 then foe.atk
+      when 5 then foe.def
+      when 6 then foe.spi
+      when 7 then foe.agi
       else 0
       end
     end

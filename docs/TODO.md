@@ -239,13 +239,21 @@ The work below is roughly ordered by the critical path to a walkable game
   equipped item's bonuses into the effective stats). **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
-  spirit / agility), an **item** count (number held, or number equipped across the
+  spirit / agility, and the **id of the item in each of the five equipment
+  slots**), an **item** count (number held, or number equipped across the
   party), **game quantities** (party gold, timer seconds, party size, and the
   **save / battle / win / defeat / escape counts** — running tallies bumped by
-  Save and by each Enemy Encounter and its outcome, persisted in the save) and a
-  **character position** (the hero's or a map event's map id / x / y / facing —
-  an event's map id reads 0, matching an RPG_RT 2000 quirk; screen coordinates
-  are not modelled).
+  Save and by each Enemy Encounter and its outcome, persisted in the save), a
+  **character position** (the hero's or a map event's map id / x / y / facing /
+  **screen x / y** — an event's map id reads 0, matching an RPG_RT 2000 quirk;
+  the screen coordinates are measured against the live camera, which
+  `Scene::Map#camera_position` now exposes, with RPG_RT's own asymmetric offsets:
+  X from the tile's centre, Y from its bottom) and, in a fight, a **monster
+  stat** (RPG2003's battle operand — HP / SP / max HP-SP / attack / defence /
+  spirit / agility of a troop member). An operand this build does not know (the
+  Maniac patch adds nine more) now reads **0 and logs**, where it used to return
+  the operand's own *selector* — so a 2003 game's battle operand wrote the troop
+  member index into the variable and looked like a plausible number.
   Conditional Branch covers switch / variable / **timer** / gold / item /
   **vehicle** (is the party aboard the boat / ship / airship) / **orientation**
   (is the hero or a map event facing a given direction) conditions and **all**
@@ -456,11 +464,22 @@ The work below is roughly ordered by the critical path to a walkable game
   <game>` reports a game's troop pages, and Nepheshel's 2819 conditional pages
   confirm the `switch_a` / `switch_b` / `turn` / `enemy_hp` bits and show that
   every battle-only command it uses has a handler (see the comment on
-  `Game::BattlePage` for what each bit is confirmed by). Still TODO here:
-  the per-battler turn counters and the party-fatigue / chosen-command
-  conditions (pages gated on those deliberately do not fire rather than firing
-  unchecked), and video playback for Play Movie (no decoder is linked in; the
-  request is logged). **Show Battle Animation** (11210) now plays on the map — the
+  `Game::BattlePage` for what each bit is confirmed by). The **RPG2003
+  conditions resolve now too**: each `Combatant` carries its own `battle_turn`,
+  bumped as that battler's turn begins (EasyRPG's `Scene_Battle::NextTurn`), so
+  `turn_enemy` / `turn_actor` read real per-battler counters through the same
+  base/multiple arithmetic; and `fatigue` is `Game_Party::GetFatigue`'s formula —
+  HP two thirds of the weight, SP the other third, an SP-less party dividing by
+  1 rather than 0. A page whose condition box is **entirely unticked never runs**,
+  which is RPG_RT's reading of "no trigger" and the opposite of how every other
+  RPG2000 page kind treats vacuous conditions; both test beds carry such pages
+  (446 of Nepheshel's 3265, all 88 of mtf-meido-action's) and every one is empty,
+  so no real game changes behaviour. Still TODO here: the `command_actor`
+  (chosen battle command) condition, which RPG_RT only answers for the battler
+  whose action triggered the check — this runtime evaluates pages once per turn
+  with no acting battler, the same null-`source` case EasyRPG bails on, so such a
+  page deliberately does not fire rather than firing unchecked; and video
+  playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
   wait flag (per-cell zoom / tone and target-only flashes are approximations for
@@ -1289,7 +1308,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         without the probe.)
       - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
         back without it, and `getExtension` returns null so the fallback is what
-        runs); texture Y-flip and uniform-introspection polish as real content
-        exercises them; and a `.woff` font path — the canvas text loader finds
-        only `.ttf`/`.otf` in a game's `fonts/` and MZ games ship `.woff`, so a
-        real MZ game's text draws blank. That is the biggest visible gap left.
+        runs); and texture Y-flip and uniform-introspection polish as real
+        content exercises them.
+      - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
+        under a game's `fonts/`, but **MZ projects ship `.woff`**
+        (`mplus-1m-regular.woff` and friends), so it found nothing and every real
+        MZ game drew blank windows — `data/mz-sample` hid this by shipping no
+        font at all and setting `mainFontFilename` to "". `mvcanvas.cxx` now
+        unpacks WOFF 1.0 to the sfnt inside it (a table-by-table container whose
+        tables are stored raw or zlib-deflated; the zlib decoder stb_image
+        already provides does the work, so no new dependency) and hands that to
+        stb_truetype. WOFF2 is a different format (Brotli + a transformed
+        `glyf`) and is reported rather than half-parsed into garbage, as are a
+        malformed WOFF and a font stb_truetype rejects — silent blank text is
+        exactly what let this hide.
+      - 🚧 Remaining for fonts: no CI test covers the unpacker, because it
+        needs a redistributable font and the bed ships none. Verified locally
+        instead, against two real TTFs repacked as WOFF: the unpacked sfnt comes
+        back byte-for-byte the size of the original, stb_truetype accepts it, the
+        vertical metrics and every A-Z advance/lsb match the original exactly,
+        and a glyph rasterises with real ink. Authoring a tiny TTF we own (the
+        way the bed's PNGs are authored) would let the smoke render text and
+        close this.
