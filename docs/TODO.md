@@ -307,8 +307,15 @@ The work below is roughly ordered by the critical path to a walkable game
   it hid for so long. The roster is what the **save** carries as well — the
   Marshal save and `Save<N>.lsd` chunk 108 both hold every actor the party has
   ever held, matching a genuine RPG_RT save, so a companion who is away when the
-  game is saved comes back intact instead of being dropped on load. See ADR
-  0030. **Control
+  game is saved comes back intact instead of being dropped on load. The roster is
+  also what a command **naming one actor** resolves through — every command above
+  that takes a fixed or variable-selected actor rather than the whole party, plus
+  Change Actor Name / Title / Sprite / Face and Enter Hero Name — matching
+  RPG_RT's `GetActors`, which reads the party only for the "whole party" scope
+  and `Game_Actors::GetActor` otherwise. That too is the common case rather than
+  a corner: all **7805** fixed-actor-id commands in Nepheshel name a companion it
+  also dismisses (Change Skills on actor 1 alone is 2871), and 653 per companion
+  silently did nothing while that companion was away. See ADR 0030. **Control
   Variables** reads not just constants and other variables but also a **random**
   range, an **actor stat** (level / EXP / HP / MP / max HP-MP / attack / defence /
   spirit / agility, and the **id of the item in each of the five equipment

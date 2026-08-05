@@ -9,6 +9,15 @@
   restored too: both the Marshal save and `Save<N>.lsd` chunk 108 now carry every
   actor the party has ever held (which is what a genuine RPG_RT save holds), and
   loading a real save no longer discards the companions who were away.
+- **A command that names one actor now finds them even when they are out of the
+  party.** Change EXP / Level / Parameters / Skills / Equipment / HP / MP /
+  Condition / Full Heal / Simulated Attack with a fixed or variable-selected
+  target, and Change Actor Name / Title / Sprite / Face and Enter Hero Name, all
+  resolve through the roster the way RPG_RT's `Game_Actors` does; only the
+  "whole party" scope still means the current members. Every fixed-actor-id
+  command in Nepheshel (7805 — Change Skills on actor 1 alone is 2871) names a
+  companion the game also dismisses, so 653 of the game's own commands per
+  companion silently did nothing whenever that companion was away.
 - **`\N[n]` in a message names the live actor**, not the database row, so a hero
   the player named through Enter Hero Name is called what they chose — Nepheshel
   renames actor 1 and then refers to `\N[1]` in 34 messages. **`\N[0]`** is the

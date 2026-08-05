@@ -108,6 +108,23 @@ Introduce `Game::Actors`, a permanent roster keyed by database id, and demote
   now match what a genuine save holds.
 - `\N[n]` resolves the live roster actor, falling back to the database row for
   an actor the game has never instantiated; `\N[0]` is the party leader.
+- **A command that names one actor resolves through the roster, not the party.**
+  RPG_RT's `Game_Interpreter::GetActors` reads the party only for scope 0 ("the
+  whole party") and goes to `Game_Actors::GetActor` for a fixed or
+  variable-indexed id, so Change EXP / Level / Parameters / Skills / Equipment /
+  HP / MP / Condition / Full Heal / Simulated Attack and the four Change Actor
+  Name / Title / Sprite / Face commands (plus Enter Hero Name) all reach a
+  member who is currently away.
+
+  This is the other half of the same bug, and it is not a corner case:
+  **every** fixed-actor-id command in Nepheshel — 7805 of them, of which Change
+  Skills on actor 1 alone is 2871 — names an actor the game also dismisses. A
+  party-only lookup dropped the lot whenever the target happened to be out.
+  Measured per companion, 653 of the game's own commands change nothing at all
+  when run against an absent actor under the old lookup. It got worse with the
+  roster rather than better: before, a dismissed companion was rebuilt from the
+  database anyway, so a missed Change Skills was masked by the larger reset;
+  now the companion persists, so the skill is simply never learned.
 
 ## Consequences
 
@@ -129,10 +146,11 @@ object; the trade-off is that "roster" now means two things in the code's
 history (the old `.lsd` field name for the party id list is renamed
 `member_ids` at the one place both appear, to keep that straight).
 
-Follow-up this does not do: `Change Actor Name` / `Change Actor Title` (10610 /
-10620) still only find actors through `Party#actor_by_id`, so they act on
-current members only. Neither test bed uses either command, so there is nothing
-to measure the correct behaviour against yet.
+One shape of bug is closed off for good: "the party did not have that actor, so
+nothing happened" can no longer be a silent outcome. Every place that used to
+say *a no-op for an actor not in the party* now says what RPG_RT says, and the
+only remaining nil is an id the **database** has no row for — which is logged,
+once per id so a parallel process asking every frame cannot flood the log.
 
 Covered by `scripts/rpg2k_logic_check.rb` (rejoining keeps state; the roster
 builds each id once; the save carries actors who are out of the party) and
@@ -146,7 +164,11 @@ test bed's `RPG_RT.ldb` through the **real** `Game::Interpreter`, joining what
 real data) each do half of. It finds every actor a game's common events both add
 and remove, then runs the game's own commands to take each companion out and
 bring them back — across a plain swap, a Marshal save and a `.lsd` round trip.
-Nepheshel's three companions give 18 checks; against the old party model they
-fail with the state diff spelled out (`level 6 → 1`, `645 EXP → 0`, three skills
-→ one). A game with no companion swaps, like mtf-meido-action, is reported and
-skipped rather than failed. It runs in CI beside the other RPG2k logic checks.
+It also replays every fixed-actor-id command the game aims at each companion
+while that companion is out of the party, and asserts they are not all no-ops.
+
+Nepheshel's three companions give 24 checks; against the old party model they
+fail with the numbers spelled out (`level 6 → 1`, `645 EXP → 0`, three skills →
+one; `653 command(s) changed the absent actor`). A game with no companion swaps,
+like mtf-meido-action, is reported and skipped rather than failed. It runs in CI
+beside the other RPG2k logic checks.

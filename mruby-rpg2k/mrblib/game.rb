@@ -1658,19 +1658,25 @@ module Game
     def initialize(db)
       @db = db
       @all = {}
+      @missing = {} # ids already reported, so a bad id in a loop logs once
     end
 
     # The actor for `id`, built from the database on first request and cached
     # from then on (RPG_RT's `Game_Actors::GetActor`). nil for a non-positive id
     # or a row the database does not have — the miss is logged rather than
-    # raised, so a game that references a missing actor keeps running.
+    # raised, so a game that references a missing actor keeps running. A command
+    # in a parallel process can ask every frame, so each bad id is reported once
+    # rather than filling the log.
     def [](id)
       return nil if id.nil? || id <= 0
       a = @all[id]
       return a if a
       @all[id] = Actor.new(@db, id)
     rescue RuntimeError => e
-      $stderr.puts "[RPG2k] actor ##{id} could not be built: #{e.message}"
+      unless @missing[id]
+        @missing[id] = true
+        $stderr.puts "[RPG2k] actor ##{id} could not be built: #{e.message}"
+      end
       nil
     end
 

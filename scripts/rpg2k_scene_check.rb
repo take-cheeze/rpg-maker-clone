@@ -1180,8 +1180,12 @@ class RosterStubActor
     @transparent = false
   end
 end
+# Stands in for Game::Actors: `[]` is the get-or-create lookup the interpreter's
+# fixed-id commands use, `existing` the non-creating one \N[n] reads through.
+# The fixture is fixed, so both answer from the same table.
 class RosterStub
   def initialize(h); @h = h; end
+  def [](id); @h[id]; end
   def existing(id); @h[id]; end
 end
 class RosterStubParty
@@ -2165,10 +2169,15 @@ class NameStubActor
   def initialize(id, name); @id = id; @name = name; end
 end
 class NameStubParty
-  attr_reader :actors
+  attr_reader :actors, :roster
   attr_accessor :leader
   # leader stays nil (no sprite to render) — the name widget doesn't need it.
-  def initialize; @actors = [NameStubActor.new(1, 'Hero')]; @leader = nil; end
+  # Enter Hero Name names its actor by id, which resolves through the roster.
+  def initialize
+    @actors = [NameStubActor.new(1, 'Hero')]
+    @leader = nil
+    @roster = RosterStub.new(1 => @actors[0])
+  end
   def actor_by_id(id); @actors.find { |a| a.id == id }; end
 end
 
@@ -2216,9 +2225,14 @@ class LevelStubActor
   def change_level_by(n); @level += n; end
 end
 class LevelStubParty
-  attr_reader :actors
+  attr_reader :actors, :roster
   attr_accessor :leader
-  def initialize; @actors = [LevelStubActor.new]; @leader = nil; end
+  # A Change Level naming a fixed actor id resolves through the roster.
+  def initialize
+    @actors = [LevelStubActor.new]
+    @leader = nil
+    @roster = RosterStub.new(@actors[0].id => @actors[0])
+  end
   def actor_by_id(id); @actors.find { |a| a.id == id }; end
   # The stat commands re-check for a party wipe; this stub's actor is alive.
   def all_dead?; false; end

@@ -71,6 +71,22 @@ DB_COMMON_EVENT = 25
 CE_COMMANDS = 22
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
+# Commands that name one actor by a fixed id rather than acting on the party.
+# RPG_RT resolves all of these through Game_Actors, so they reach a member who
+# is currently out of the party. `:scope` means param0 selects party (0) / this
+# actor (1) / variable-indexed actor (2) with the id in param1; `:actor0` means
+# param0 *is* the actor id.
+Cmd = Game::Interpreter::Cmd
+FIXED_ACTOR_COMMANDS = {
+  Cmd::CHANGE_EXP => :scope,       Cmd::CHANGE_LEVEL => :scope,
+  Cmd::CHANGE_PARAM => :scope,     Cmd::CHANGE_SKILLS => :scope,
+  Cmd::CHANGE_EQUIP => :scope,     Cmd::CHANGE_HP => :scope,
+  Cmd::CHANGE_MP => :scope,        Cmd::CHANGE_CONDITION => :scope,
+  Cmd::FULL_HEAL => :scope,        Cmd::SIMULATED_ATTACK => :scope,
+  Cmd::CHANGE_ACTOR_NAME => :actor0,   Cmd::CHANGE_ACTOR_TITLE => :actor0,
+  Cmd::CHANGE_ACTOR_SPRITE => :actor0, Cmd::CHANGE_ACTOR_FACE => :actor0,
+}.freeze
+
 $failures = 0
 $checks = 0
 
@@ -129,6 +145,27 @@ end
 def snapshot(a)
   { level: a.level, exp: a.exp, name: a.name, hp: a.hp, mp: a.mp,
     skills: a.skills.dup.sort, equipment: a.equipment.dup, states: a.states.dup.sort }
+end
+
+# Every fixed-actor-id command anywhere in the game (common events, troop pages
+# and map event pages), as { actor_id => [command, ...] }.
+def fixed_actor_commands(db, dir)
+  out = Hash.new { |h, k| h[k] = [] }
+  collect = lambda do |cmds|
+    next unless cmds.is_a?(Array)
+    cmds.each do |c|
+      layout = FIXED_ACTOR_COMMANDS[c.code] or next
+      aid = layout == :actor0 ? c.param(0) : (c.param(0) == 1 ? c.param(1) : nil)
+      out[aid] << c if aid && aid > 0
+    end
+  end
+  db[DB_COMMON_EVENT]&.each { |_id, ev| collect.call(ev[CE_COMMANDS]) }
+  db[15]&.each { |_g, g| g[11]&.each { |_p, pg| collect.call(pg[12]) } }
+  Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
+    mu = LCF::MapUnit.new(File.open(f, 'rb'))
+    mu[81]&.each { |_e, ev| ev[5]&.each { |_p, pg| collect.call(pg[52]) } }
+  end
+  out
 end
 
 def check_game(dir)
@@ -215,6 +252,35 @@ def check_game(dir)
       [:level, :exp, :hp, :mp, :skills, :equipment, :states].each do |f|
         eq before[f], snapshot(back)[f], "#{f} survived the .lsd round trip"
       end
+    end
+  end
+
+  # A command that names one actor by a fixed id acts on that actor wherever they
+  # are — RPG_RT looks them up in Game_Actors, not the party. In a game that
+  # swaps members this is not a corner case: every such command Nepheshel issues
+  # names a companion it also dismisses, so a party-only lookup drops all of
+  # them whenever the target happens to be away.
+  fixed = fixed_actor_commands(db, dir)
+  aimed_at_companions = fixed.select { |aid, _| companions.include?(aid) }
+  n = aimed_at_companions.values.map(&:size).inject(0) { |a, b| a + b }
+  puts "   #{n} fixed-actor-id command(s) name a swappable companion"
+
+  aimed_at_companions.keys.sort.each do |aid|
+    check "#{name}: fixed-id commands reach actor #{aid} while away" do
+      state = Game::State.new(Game::Party.new(db, party_ids), 1, 0, 0)
+      run(state, [adds[aid]])
+      ok state.party.actor_by_id(aid), "actor #{aid} joined"
+      run(state, [removes[aid]])
+      eq nil, state.party.actor_by_id(aid), "actor #{aid} is away"
+
+      # The game's own commands, run while the target is out of the party. Every
+      # one must find its actor; none may silently no-op.
+      away = state.party.roster.existing(aid)
+      ok away, 'the absent actor is still in the roster'
+      before = snapshot(away)
+      aimed_at_companions[aid].each { |c| run(state, [c]) }
+      ok snapshot(away) != before,
+         "#{aimed_at_companions[aid].size} command(s) changed the absent actor"
     end
   end
 end

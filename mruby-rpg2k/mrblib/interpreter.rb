@@ -1080,7 +1080,7 @@ module Game
     # with the entered name. A no-op (no wait) for an actor not in the party, since
     # this build only instantiates party actors.
     def do_name_input(cmd)
-      actor = party.actor_by_id(cmd.param(0))
+      actor = identity_target(cmd)
       return unless actor
       @name_input_request = {
         actor_id: cmd.param(0), charset: cmd.param(1),
@@ -1487,12 +1487,23 @@ module Game
 
     # The actors a stat-change command targets. param0 selects the scope: 0 the
     # whole party, 1 a fixed actor id (param1), 2 the actor whose id is held in
-    # variable param1. Actors not in the party resolve to nothing.
+    # variable param1.
+    #
+    # Only scope 0 means "the party". A **named** actor is looked up in the
+    # roster, so the command reaches one who is currently out of the party —
+    # RPG_RT's `Game_Interpreter::GetActors`, which reads the party for scope 0
+    # and `Game_Actors::GetActor` for the other two. That distinction is the
+    # whole point in a game that swaps members: **every** fixed-id stat command
+    # in Nepheshel (7805 of them — Change Skills on actor 1 alone is 2871) names
+    # an actor the game also dismisses, so treating a named target as
+    # party-only silently dropped the lot whenever that actor was away. With
+    # actors persisting (ADR 0030) such a miss is permanent: the skill is never
+    # learned rather than being re-granted on the next rebuild.
     def stat_targets(cmd)
       case cmd.param(0)
       when 0 then party.actors
-      when 1 then [party.actor_by_id(cmd.param(1))].compact
-      when 2 then [party.actor_by_id(variables[cmd.param(1)])].compact
+      when 1 then [party.roster[cmd.param(1)]].compact
+      when 2 then [party.roster[variables[cmd.param(1)]]].compact
       else []
       end
     end
@@ -1609,22 +1620,27 @@ module Game
 
     # -- actor identity / graphic ---------------------------------------------
 
+    # Every command in this group names its actor by a fixed id in param0, and
+    # RPG_RT resolves all of them through `Game_Actors::GetActor` — the roster,
+    # not the party — so a companion who is currently away is still renamed,
+    # re-dressed and re-portraited, and has it waiting when they rejoin. nil only
+    # for an id the database has no row for.
+    def identity_target(cmd); party.roster[cmd.param(0)]; end
+
     # Change Actor Name: rename the actor whose id is param0 to the command
-    # string. A blank name is ignored (RPG_RT keeps the previous name), and an
-    # actor not in the party is a no-op — this build only instantiates party
-    # actors.
+    # string. A blank name is ignored (RPG_RT keeps the previous name).
     def do_change_actor_name(cmd)
       name = cmd.string
       return if name.nil? || name.empty?
-      actor = party.actor_by_id(cmd.param(0))
+      actor = identity_target(cmd)
       actor.name = name if actor
     end
 
     # Change Actor Title: set the title (class/subtitle shown on the status
     # screen) of the actor whose id is param0 to the command string. An empty
-    # string clears the title. A no-op for an actor not in the party.
+    # string clears the title.
     def do_change_actor_title(cmd)
-      actor = party.actor_by_id(cmd.param(0))
+      actor = identity_target(cmd)
       actor.title = cmd.string || '' if actor
     end
 
@@ -1632,9 +1648,9 @@ module Game
     # param0 a new CharSet graphic — the command string names the file, param1 is
     # the cell index and param2 the transparency flag (non-zero hides the sprite).
     # Records a one-shot request so the owning scene can reload the party leader's
-    # on-screen sprite; a no-op for an actor not in the party.
+    # on-screen sprite.
     def do_change_actor_sprite(cmd)
-      actor = party.actor_by_id(cmd.param(0))
+      actor = identity_target(cmd)
       return unless actor
       actor.set_charset(cmd.string || '', cmd.param(1))
       actor.transparent = cmd.param(2) != 0
@@ -1645,9 +1661,8 @@ module Game
     # graphic — the command string names the file and param1 the cell index. This
     # is the actor's own portrait (menus, the save-select screen), not the message
     # face a Change Face Graphic (10130) selects, so nothing on the map reloads.
-    # A no-op for an actor not in the party.
     def do_change_actor_face(cmd)
-      actor = party.actor_by_id(cmd.param(0))
+      actor = identity_target(cmd)
       return unless actor
       actor.set_faceset(cmd.string || '', cmd.param(1))
     end
