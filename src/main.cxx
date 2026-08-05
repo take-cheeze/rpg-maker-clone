@@ -135,6 +135,34 @@ DEFINE_bool(
     "bridge (implies --mz_new_game to reach the map) and log whether the op "
     "reached RGSS::Audio and the asset resolves, so a headless run confirms "
     "the audio path works. Used in CI");
+DEFINE_bool(
+    mz_message_test,
+    false,
+    "For RPG Maker MZ: once on the map, show a text message (implies "
+    "--mz_new_game to reach the map) and log whether the message window "
+    "opened, so a headless run confirms the message/window path renders. "
+    "Used in CI");
+DEFINE_bool(
+    mz_menu_test,
+    false,
+    "For RPG Maker MZ: once on the map, open the party menu (implies "
+    "--mz_new_game to reach the map) and log whether Scene_Menu opened, so a "
+    "headless run confirms the menu path works. Used in CI");
+DEFINE_bool(
+    mz_save_test,
+    false,
+    "For RPG Maker MZ: once on the map, save to a slot and load it back "
+    "(implies --mz_new_game to reach the map) and log whether the save/load "
+    "round-trip succeeded, so a headless run confirms the save path works. "
+    "MZ's save chain is asynchronous, so the result is reported once it "
+    "settles. Used in CI");
+DEFINE_int32(
+    mz_battle_test,
+    0,
+    "For RPG Maker MZ: once on the map, start a battle against this troop id "
+    "(implies --mz_new_game to reach the map) and log whether Scene_Battle was "
+    "reached, so a headless run confirms the combat entry path works. 0 "
+    "disables. Used in CI");
 DEFINE_string(
     mz_screenshot,
     "",
@@ -761,6 +789,18 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_AUDIO_TEST"),
                 mrb_bool_value(FLAGS_mz_audio_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_MESSAGE_TEST"),
+                mrb_bool_value(FLAGS_mz_message_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_MENU_TEST"),
+                mrb_bool_value(FLAGS_mz_menu_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_SAVE_TEST"),
+                mrb_bool_value(FLAGS_mz_save_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_BATTLE_TEST"),
+                mrb_fixnum_value(FLAGS_mz_battle_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mz_screenshot.c_str()));

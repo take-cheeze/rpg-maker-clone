@@ -349,6 +349,39 @@ jobs:
             continue-on-error: true
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # The rest of the in-game paths, one run each (the same shape as the
+          # MV smokes above), all through the same no-X headless launcher the
+          # play smoke uses. Each mode asserts its own success line, so a probe
+          # that merely ran cannot pass: the message window has to open
+          # (`[MZ-MSG] busy=true window_open=true`), Scene_Menu has to be
+          # reached (`[MZ-MENU] reached_menu=true`), the asynchronous save chain
+          # has to settle with the slot written and read back (`[MZ-SAVE]`), and
+          # Battle Processing has to land in Scene_Battle (`[MZ-BTL]`).
+          # Non-blocking while the MZ runtime is brought up, like the MV smokes.
+          - name: MZ message smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: message
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
+          - name: MZ menu smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: menu
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
+          - name: MZ save smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: save
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
+          - name: MZ battle smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: battle
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           # Run the battle smoke against the real bed (Lunatic-Core): it ships
           # battlers and a battleback, so the captured Scene_Battle frame shows
           # an actual battle (enemy + battle log) rather than the art-less
@@ -469,6 +502,18 @@ jobs:
         with:
           name: mz-play-screenshot
           path: ss/mz_play.png
+          if-no-files-found: warn
+
+      - name: Upload MZ scene screenshots
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mz-scene-screenshots
+          path: |
+            ss/mz_message.png
+            ss/mz_menu.png
+            ss/mz_save.png
+            ss/mz_battle.png
           if-no-files-found: warn
 
   # `/preview` command gate. Cloudflare previews are opt-in per pull request:

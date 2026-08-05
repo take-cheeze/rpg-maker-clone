@@ -287,6 +287,49 @@ JavaScript loads and interprets the JSON.
       were neutralised. Remaining: `.woff` font loading (the canvas text loader
       finds only `.ttf`/`.otf`, and MZ games ship `.woff`, so their text draws
       blank), verified against a real MZ project.
+    - **M6.3d — the rest of the in-game paths (landed).** Booting and walking is
+      not playing, so the four paths the MV side already proves are now driven on
+      MZ too, each behind its own launcher flag and each asserted by
+      `scripts/mz_boot_check.bash` under an `MZ_MODE`
+      (`play`/`message`/`menu`/`save`/`battle`): a message queued through
+      `$gameMessage` must open `Window_Message` (`--mz_message_test`),
+      `Scene_Map`'s own `callMenu` must reach `Scene_Menu` (`--mz_menu_test`), a
+      save must round-trip through the real `DataManager` (`--mz_save_test`), and
+      a Battle Processing command run through the map interpreter must land in
+      `Scene_Battle` (`--mz_battle_test=<troopId>`). Three things are worth
+      recording about how MZ differs from MV here:
+      1. **The save path is asynchronous.** MV's `DataManager.saveGame` returns a
+         boolean; MZ's returns a promise, and so does everything under it
+         (`objectToJson` → `jsonToZip` (pako) → `saveZip` → localforage, and the
+         mirror image on load). A probe that reads a return value therefore
+         cannot work: `MZ#maybe_save_test` starts the chain and polls a global
+         the chain parks its verdict on, one read per pumped frame — the pump
+         being what drains the microtasks the chain waits on. It also reads
+         `savefileExists` *after* the save resolves, because `saveToForage`
+         refreshes `StorageManager`'s key cache only at the end of its own chain,
+         and it finishes with `SceneManager.goto(Scene_Map)` the way
+         `Scene_Load.onLoadSuccess` does — a load throws the `$game*` objects
+         away and rebuilds them, so the running scene has to be rebuilt against
+         the new ones rather than left holding the discarded set. A re-entry that
+         throws is appended to the verdict, not allowed to overwrite it.
+      2. **The menu cannot be reached with a key.** rmmz's keyboard
+         `Input.keyMapper` has no `"menu"` binding (only the gamepad's Y), so the
+         probe sets `Scene_Map#menuCalling` — exactly what `isMenuCalled` sets —
+         and lets `updateCallMenu` run the real `callMenu` inside the scene loop.
+         It re-asserts the flag every frame, since `updateCallMenu` clears it on
+         any frame the menu is momentarily disabled (the New Game transfer still
+         settling right after the map arrives).
+      3. **The battle must be started from inside the scene loop**, for the same
+         reason as on MV: a bare `SceneManager.push(Scene_Battle)` leaves the map
+         active with the encounter effect frozen, because that effect only
+         advances while the scene is inactive. rmmz's `command301` takes the same
+         `[type, troopId, canEscape, canLose]` parameters as rmmv's, so the
+         injected command list is shared in shape with the MV probe.
+      No native gap turned up this time: the battle's encounter effect snapshots
+      the screen through `Bitmap.snap` → PIXI's `extract.canvas`, which reads the
+      FBO back with `gl.readPixels` and writes it through the canvas bridge's
+      `getImageData`/`putImageData` — a path the boot already exercised, since
+      `Scene_Title.terminate` snaps for the menu background on every New Game.
 
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
