@@ -6756,6 +6756,71 @@ check 'Game::Enemy decodes its action pattern off the database row' do
      'and the combatant carries it into the fight'
 end
 
+# -- battle backdrop resolution (map tree backdrop_type) -----------------------
+
+# One map-tree node's backdrop settings.
+class FakeMapNode
+  attr_accessor :backdrop_type, :backdrop_file, :parent_map_id
+  def initialize(type, file = '', parent = 0)
+    @backdrop_type = type; @backdrop_file = file; @parent_map_id = parent
+  end
+end
+
+check 'backdrop type 2 uses the map own file, whatever the terrain says' do
+  props = { 1 => FakeMapNode.new(2, 'black') }
+  eq 'black', Game::Backdrop.name_for(1, props, 'Grassland')
+end
+
+check 'backdrop type 1 uses the terrain backdrop' do
+  props = { 1 => FakeMapNode.new(1, 'ignored') }
+  eq 'Grassland', Game::Backdrop.name_for(1, props, 'Grassland')
+  eq '', Game::Backdrop.name_for(1, props, ''), 'and nothing when the terrain names none'
+end
+
+check 'backdrop type 0 inherits from the parent map' do
+  props = { 1 => FakeMapNode.new(2, 'cave'),
+            2 => FakeMapNode.new(0, '', 1) }
+  eq 'cave', Game::Backdrop.name_for(2, props, 'Grassland'), 'the parent pins a file'
+end
+
+check 'backdrop inheritance walks more than one level' do
+  props = { 1 => FakeMapNode.new(2, 'boss'),
+            2 => FakeMapNode.new(0, '', 1),
+            3 => FakeMapNode.new(0, '', 2) }
+  eq 'boss', Game::Backdrop.name_for(3, props, 'Grassland')
+end
+
+check 'an inherited terrain type resolves to the terrain, not the parent file' do
+  props = { 1 => FakeMapNode.new(1, 'unused'),
+            2 => FakeMapNode.new(0, '', 1) }
+  eq 'Desert', Game::Backdrop.name_for(2, props, 'Desert')
+end
+
+check 'a map inheriting from the root falls back to the terrain' do
+  props = { 1 => FakeMapNode.new(0, '', 0) }   # parent 0 = the tree root
+  eq 'Snow Field', Game::Backdrop.name_for(1, props, 'Snow Field')
+end
+
+check 'an unknown map id falls back to the terrain' do
+  eq 'Swamp', Game::Backdrop.name_for(7, { 1 => FakeMapNode.new(2, 'x') }, 'Swamp')
+  eq 'Swamp', Game::Backdrop.name_for(1, nil, 'Swamp'), 'and so does having no tree'
+end
+
+check 'a looping map tree ends at the terrain instead of hanging' do
+  props = { 1 => FakeMapNode.new(0, '', 2),
+            2 => FakeMapNode.new(0, '', 1) }   # 1 -> 2 -> 1 -> ...
+  eq 'Forest1', Game::Backdrop.name_for(1, props, 'Forest1')
+end
+
+check 'a map that parents itself ends at the terrain' do
+  eq 'Ruins1', Game::Backdrop.name_for(1, { 1 => FakeMapNode.new(0, '', 1) }, 'Ruins1')
+end
+
+check 'a node missing its fields is treated as inheriting' do
+  bare = Struct.new(:nothing).new(0)
+  eq 'Wasteland', Game::Backdrop.name_for(1, { 1 => bare }, 'Wasteland')
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

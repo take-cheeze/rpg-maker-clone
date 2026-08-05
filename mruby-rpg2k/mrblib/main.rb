@@ -2428,7 +2428,7 @@ class RPG2k
       # centred on its database position. Hidden (invisible) members get no sprite
       # until a battle event reveals them — a mechanism still to come.
       def build_battle_sprites
-        build_battle_back
+        build_battle_back(encounter_backdrop)
         @battle_ui[:enemy_sprites] = @battle_ui[:troop].members.each_with_index.map do |enemy, i|
           next nil if enemy.hidden
           bmp = battler_bitmap(enemy)
@@ -2439,15 +2439,46 @@ class RPG2k
           spr.z = 100 + i
           spr
         end
+        # The battler each sprite was drawn from, so a transformation mid-fight
+        # is noticed and redrawn (see #refresh_battle_sprites).
+        @battle_ui[:sprite_names] = @battle_ui[:foes].map { |f| f.battler_name }
         refresh_battle_sprites
       end
 
-      # A plain dark battle field behind the enemies. The real per-terrain
-      # backdrop (Backdrop/<name>, chosen by the tile the encounter started on) is
-      # still to come — the encounter request does not carry that terrain yet.
       # Where a battle-event page's message panel sits — above the action banner,
       # so a page talking mid-round does not fight it for the same row.
       BATTLE_EVENT_MSG_Y = 8
+
+      # The backdrop this encounter fights over: whatever Game::Backdrop resolves
+      # for the current map, given the terrain the party is standing on. '' when
+      # nothing names one, which draws the flat field.
+      def encounter_backdrop
+        Game::Backdrop.name_for(@state.map_id, map_properties,
+                                terrain_backdrop(@state.x, @state.y))
+      end
+
+      # The map tree's map_properties table, or nil when this build has no tree
+      # (the scene harnesses construct a map directly).
+      def map_properties
+        return nil unless respond_to?(:map_tree) && map_tree
+        map_tree.respond_to?(:map_properties) ? map_tree.map_properties : nil
+      rescue StandardError
+        nil
+      end
+
+      # The backdrop named by the terrain of the tile at (x, y) — the database
+      # terrain row's `background_name` (field 4). '' when the tile, the terrain
+      # table or the field is missing.
+      def terrain_backdrop(x, y)
+        tid = terrain_id(x, y)
+        return '' unless tid && tid > 0 && db.respond_to?(:terrain)
+        row = db.terrain[tid]
+        return '' unless row && row.respond_to?(:background_name)
+        row.background_name.to_s
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] terrain backdrop lookup failed: #{e.message}"
+        ''
+      end
 
       def build_battle_back(name = nil)
         bmp = battle_back_bitmap(name)
@@ -2506,6 +2537,13 @@ class RPG2k
       def refresh_battle_sprites
         sprites = @battle_ui[:enemy_sprites]
         return unless sprites
+        # A transformation swaps a monster's graphic mid-fight, so redraw any
+        # combatant no longer wearing the battler its sprite was built from
+        # before deciding what is visible.
+        names = (@battle_ui[:sprite_names] ||= [])
+        @battle_ui[:foes].each_with_index do |foe, i|
+          rebuild_battler_sprite(i, foe) if sprites[i] && names[i] != foe.battler_name
+        end
         @battle_ui[:foes].each_with_index do |foe, i|
           spr = sprites[i]
           # Out of play, not merely dead: a monster that has fled (its own Escape
@@ -2514,6 +2552,25 @@ class RPG2k
           # keep it out of the target cursor.
           spr.visible = !foe.out_of_play? if spr
         end
+      end
+
+      # Redraw troop slot `i` with `foe`'s current battler graphic, keeping its
+      # place and depth, and release the sprite and bitmap the old one held.
+      def rebuild_battler_sprite(i, foe)
+        sprites = @battle_ui[:enemy_sprites]
+        member = @battle_ui[:troop].members[i]
+        return unless member
+        old = sprites[i]
+        bmp = battler_bitmap(foe)
+        spr = Sprite.new
+        spr.bitmap = bmp
+        spr.x = member.x - bmp.width / 2
+        spr.y = member.y - bmp.height / 2
+        spr.z = 100 + i
+        spr.visible = !foe.out_of_play?
+        sprites[i] = spr
+        dispose_battle_sprite(old)
+        @battle_ui[:sprite_names][i] = foe.battler_name
       end
 
       def living_allies; @battle_ui[:allies].reject(&:dead?); end

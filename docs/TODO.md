@@ -421,7 +421,25 @@ The work below is roughly ordered by the critical path to a walkable game
   command (12420) and a battle defeat whose encounter says "game over" rather
   than running a `[Defeat]` handler. A game that names no picture (or whose file
   is missing) still reaches the screen, on plain black, rather than the defeat
-  failing. Still to come: the per-terrain backdrop.
+  failing.
+  **The battle backdrop is chosen from the game's own data now** rather than
+  always being the flat void. RPG2000 keeps it on the map-tree node, not the map:
+  `Game::Backdrop.name_for` reads the node's `backdrop_type`, a tri-state the
+  editor's map-properties dialog offers and liblcf spells
+  BGMType_parent / _terrain / _specific — 親マップと同じ (inherit), 地形で指定
+  (the terrain being fought on names it) or 指定する (this map pins one file) —
+  and the scene resolves it against the terrain under the party
+  (`Scene::Map#encounter_backdrop`, via the terrain row's `background_name`).
+  The inheriting case has to walk the tree, and it is the common one: **491 of
+  Nepheshel's 537 maps and 4 of mtf-meido-action's 13 are type 0** and answer only
+  through a parent. Resolving every map in both games shows the walk earning its
+  keep — 475 of Nepheshel's maps reach their "black" interior backdrop purely by
+  inheritance (plus one pinned boss backdrop) where a naive reading would leave
+  them all on the flat field, while all 13 of mtf-meido-action's maps vary with
+  the terrain fought on (Grassland / Desert / Snow Field / ...), the branch
+  Nepheshel never takes since it names no terrain backdrops at all. The walk is
+  bounded and cycle-safe, so a tree that loops ends at the terrain instead of
+  hanging the battle.
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are
@@ -461,11 +479,10 @@ The work below is roughly ordered by the critical path to a walkable game
   games (157 and 88 fights) completes without error with 1980 and 1193 skill
   casts landing where there were none. `ruby scripts/analyze_game.rb --enemies
   <game>` reports a game's patterns the way `--troops` reports its battle pages.
-  One presentation gap remains: a transformed monster fights with its new stats
-  and pattern but keeps its original battler sprite, because the battle screen
-  builds each sprite once from the troop member's `battler_name` — reloading it
-  mid-fight is a scene-side change left for the same pass that gives the battle
-  screen its per-terrain backdrop.
+  A **transformed monster is redrawn** with the battler it turned into: the
+  combatant carries its `battler_name`, and `Scene::Map#refresh_battle_sprites`
+  rebuilds any sprite whose battler no longer matches the one it was drawn from
+  (an unchanged battler is left alone, so the field does not churn every frame).
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM

@@ -3258,6 +3258,67 @@ module Game
     end
   end
 
+  # Which battle backdrop (Backdrop/<name>) a fight on a given map uses.
+  #
+  # RPG2000 does not store the backdrop on the map itself: each map-tree node
+  # (RPG_RT.lmt `map_properties`) carries a `backdrop_type` choosing between the
+  # three options the editor's map-properties dialog offers, and the type is a
+  # tri-state that has to be walked, not read:
+  #
+  #   0 親マップと同じ  inherit whatever the parent map resolves to
+  #   1 地形で指定      the backdrop named by the terrain being fought on
+  #   2 指定する        the map's own `backdrop_file`, for every fight on it
+  #
+  # (liblcf spells these BGMType_parent / _terrain / _specific — `background_type`
+  # reuses the BGM enum.) Both test beds need the walk: 491 of Nepheshel's 537
+  # maps and 4 of mtf-meido-action's 13 are type 0 and answer only through a
+  # parent. Nepheshel pins 24 maps to a file ("black" for its dark interiors, a
+  # boss backdrop for one fight) while naming no terrain backdrops at all;
+  # mtf-meido-action is the other way round, leaving its 9 type-1 maps to 10
+  # named terrains (Grassland, Snow Field, Desert, ...).
+  module Backdrop
+    TYPE_PARENT   = 0
+    TYPE_TERRAIN  = 1
+    TYPE_SPECIFIC = 2
+
+    # The backdrop name for a fight on `map_id` standing on terrain whose own
+    # backdrop is `terrain_name`. `properties` is the map tree's map_properties
+    # table (`[map_id]` -> a row exposing backdrop_type / backdrop_file /
+    # parent_map_id). Returns '' when nothing names one, which the scene draws as
+    # its flat field.
+    #
+    # An inheriting map walks up its parents; the walk is bounded and remembers
+    # where it has been, so a tree that loops (or a node that parents itself)
+    # ends at the terrain rather than hanging the battle.
+    def self.name_for(map_id, properties, terrain_name = '')
+      terrain_name = terrain_name.to_s
+      seen = {}
+      id = map_id.to_i
+      while id > 0 && !seen[id]
+        seen[id] = true
+        row = properties ? properties[id] : nil
+        return terrain_name unless row
+        case int_field(row, :backdrop_type)
+        when TYPE_SPECIFIC
+          return row.respond_to?(:backdrop_file) ? row.backdrop_file.to_s : ''
+        when TYPE_TERRAIN
+          return terrain_name
+        else
+          id = int_field(row, :parent_map_id)
+        end
+      end
+      # The root (or a loop): RPG_RT has nothing left to inherit, so the terrain
+      # answers.
+      terrain_name
+    end
+
+    def self.int_field(row, name)
+      return 0 unless row.respond_to?(name)
+      v = row.send(name)
+      v.nil? ? 0 : v.to_i
+    end
+  end
+
   # One entry of an enemy's 行動パターン (action pattern) table — the database
   # enemy row's chunk 42, decoded off the LCF row into plain data so the battle
   # simulation can pick an action without holding a database row.
@@ -3546,7 +3607,7 @@ module Game
                            :actor, :states, :state_turns, :crit_denom,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
                            :hit_rate, :state_ranks, :hidden, :battle_turn,
-                           :actions, :charged, :enemy_id) do
+                           :actions, :charged, :enemy_id, :battler_name) do
       def dead?; hp <= 0; end
 
       # RPG2003 counts turns per battler as well as per battle: this is how many
@@ -3622,6 +3683,9 @@ module Game
       # built from (which a transformation re-points at another enemy row).
       c.actions = e.respond_to?(:actions) ? (e.actions || []) : []
       c.enemy_id = e.respond_to?(:id) ? e.id : nil
+      # The Monster/<name> graphic, carried so the battle screen can redraw a
+      # combatant whose transformation swapped it.
+      c.battler_name = e.respond_to?(:battler_name) ? e.battler_name : nil
       c
     end
 
@@ -4380,6 +4444,7 @@ module Game
       b.hit_rate = Battle.hit_rate_of(into)
       b.actions = into.actions
       b.enemy_id = act.enemy_id
+      b.battler_name = into.battler_name
       { attacker: b.name, transform: true, target: into.name }
     end
 

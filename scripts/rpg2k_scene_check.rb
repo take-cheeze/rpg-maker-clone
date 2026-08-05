@@ -2736,6 +2736,29 @@ check 'a hidden troop member is not targetable until it is revealed' do
   ok ui[:enemy_sprites][1], 'with a sprite built for it'
 end
 
+check 'a transformed monster is redrawn with its new battler graphic' do
+  scene, _st = battle_scene_with_pages(nil)
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  before = ui[:enemy_sprites][0]
+  ok before, 'the monster is on the field'
+  # What Game::Battle's transform action does to the combatant.
+  ui[:foes][0].battler_name = 'Dragon'
+  ui[:foes][0].name = 'Dragon'
+  scene.send(:refresh_battle_sprites)
+  ok !ui[:enemy_sprites][0].equal?(before), 'its sprite is rebuilt'
+  eq 'Dragon', ui[:sprite_names][0], 'and tracked against the new battler'
+  ok ui[:enemy_sprites][0].visible, 'still on the field'
+  # A second refresh with nothing changed must not churn the sprite again.
+  same = ui[:enemy_sprites][0]
+  scene.send(:refresh_battle_sprites)
+  ok ui[:enemy_sprites][0].equal?(same), 'an unchanged battler is left alone'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
