@@ -2407,7 +2407,11 @@ class RPG2k
           open_shop(req) # opened this frame; take input from the next one
           return
         end
-        @shop[:screen] == :command ? drive_shop_command : drive_shop_list
+        case @shop[:screen]
+        when :command  then drive_shop_command
+        when :quantity then drive_shop_quantity
+        else drive_shop_list
+        end
       end
 
       def open_shop(req)
@@ -2441,6 +2445,13 @@ class RPG2k
           rows << ['Sell', :sell] if m.allow_sell?
           rows << ['Leave', :leave]
           rows
+        when :quantity
+          # The counter is one row: how many, and what the stack comes to.
+          q = @shop[:quantity]
+          unit = q[:mode] == :buy ? m.price(q[:id]) : m.sell_price(q[:id])
+          verb = q[:mode] == :buy ? 'Buy' : 'Sell'
+          [["#{verb} #{m.name(q[:id])} x#{q[:count]}  " \
+            "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
         when :buy
           m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
         else # :sell
@@ -2504,12 +2515,70 @@ class RPG2k
         if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C) && !lines.empty?
-          id = lines[@shop[:index]][1]
-          @shop[:screen] == :buy ? @shop[:model].buy(id) : @shop[:model].sell(id)
-          draw_shop # refresh gold and, after a sale, the (shrunk) list
+          open_shop_quantity(lines[@shop[:index]][1])
         elsif Input.trigger?(Input::B)
           @shop[:has_menu] ? shop_switch(:command) : leave_shop
         end
+      end
+
+      # How far LEFT / RIGHT jump the quantity cursor — RPG_RT's shop counter
+      # moves in tens on the horizontal axis so a stack of 99 is a few presses
+      # away rather than ninety-nine.
+      SHOP_QUANTITY_STEP = 10
+
+      # Picking an item opens the quantity counter rather than transacting one
+      # unit: RPG2000 asks how many, bounded by what the party can afford, the
+      # 99-item cap, or (selling) what it holds. An item with no room at all —
+      # unaffordable, already capped — never opens the counter.
+      def open_shop_quantity(id)
+        model = @shop[:model]
+        max = @shop[:screen] == :buy ? model.max_buy(id) : model.max_sell(id)
+        return if max < 1
+        @shop[:quantity] = { id: id, count: 1, max: max, mode: @shop[:screen] }
+        @shop[:screen] = :quantity
+        draw_shop
+      end
+
+      # Drive the quantity counter: UP / DOWN by one, RIGHT / LEFT by ten (both
+      # clamped to 1..max), C commits the whole stack in one transaction and B
+      # goes back to the list having bought nothing.
+      def drive_shop_quantity
+        q = @shop[:quantity]
+        if shop_quantity_move(q)
+          draw_shop
+        elsif Input.trigger?(Input::C)
+          model = @shop[:model]
+          q[:mode] == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
+          close_shop_quantity
+        elsif Input.trigger?(Input::B)
+          close_shop_quantity
+        end
+      end
+
+      # Apply one frame of quantity input; returns whether the count changed.
+      def shop_quantity_move(q)
+        before = q[:count]
+        if Input.trigger?(Input::UP)
+          q[:count] += 1
+        elsif Input.trigger?(Input::DOWN)
+          q[:count] -= 1
+        elsif Input.trigger?(Input::RIGHT)
+          q[:count] += SHOP_QUANTITY_STEP
+        elsif Input.trigger?(Input::LEFT)
+          q[:count] -= SHOP_QUANTITY_STEP
+        else
+          return false
+        end
+        q[:count] = Game.clamp(q[:count], 1, q[:max])
+        q[:count] != before
+      end
+
+      # Leave the counter for the list it was opened from, refreshing the gold
+      # and (after a sale) the shrunk list.
+      def close_shop_quantity
+        @shop[:screen] = @shop[:quantity][:mode]
+        @shop[:quantity] = nil
+        draw_shop
       end
 
       # Move the shop cursor with Up / Down; returns true if it moved.
@@ -2597,7 +2666,11 @@ class RPG2k
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
                                                 situations, true, true, true,
                                                 req[:first_strike] ? true : false,
-                                                properties),
+                                                properties,
+                                                # Lets the troop run its 行動パターン:
+                                                # skills, transformations and the
+                                                # switch / party-level conditions.
+                                                Game::EnemyAi.new(db, @state)),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
@@ -2629,7 +2702,7 @@ class RPG2k
       # centred on its database position. Hidden (invisible) members get no sprite
       # until a battle event reveals them — a mechanism still to come.
       def build_battle_sprites
-        build_battle_back
+        build_battle_back(encounter_backdrop)
         @battle_ui[:enemy_sprites] = @battle_ui[:troop].members.each_with_index.map do |enemy, i|
           next nil if enemy.hidden
           bmp = battler_bitmap(enemy)
@@ -2640,15 +2713,46 @@ class RPG2k
           spr.z = 100 + i
           spr
         end
+        # The battler each sprite was drawn from, so a transformation mid-fight
+        # is noticed and redrawn (see #refresh_battle_sprites).
+        @battle_ui[:sprite_names] = @battle_ui[:foes].map { |f| f.battler_name }
         refresh_battle_sprites
       end
 
-      # A plain dark battle field behind the enemies. The real per-terrain
-      # backdrop (Backdrop/<name>, chosen by the tile the encounter started on) is
-      # still to come — the encounter request does not carry that terrain yet.
       # Where a battle-event page's message panel sits — above the action banner,
       # so a page talking mid-round does not fight it for the same row.
       BATTLE_EVENT_MSG_Y = 8
+
+      # The backdrop this encounter fights over: whatever Game::Backdrop resolves
+      # for the current map, given the terrain the party is standing on. '' when
+      # nothing names one, which draws the flat field.
+      def encounter_backdrop
+        Game::Backdrop.name_for(@state.map_id, map_properties,
+                                terrain_backdrop(@state.x, @state.y))
+      end
+
+      # The map tree's map_properties table, or nil when this build has no tree
+      # (the scene harnesses construct a map directly).
+      def map_properties
+        return nil unless respond_to?(:map_tree) && map_tree
+        map_tree.respond_to?(:map_properties) ? map_tree.map_properties : nil
+      rescue StandardError
+        nil
+      end
+
+      # The backdrop named by the terrain of the tile at (x, y) — the database
+      # terrain row's `background_name` (field 4). '' when the tile, the terrain
+      # table or the field is missing.
+      def terrain_backdrop(x, y)
+        tid = terrain_id(x, y)
+        return '' unless tid && tid > 0 && db.respond_to?(:terrain)
+        row = db.terrain[tid]
+        return '' unless row && row.respond_to?(:background_name)
+        row.background_name.to_s
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] terrain backdrop lookup failed: #{e.message}"
+        ''
+      end
 
       def build_battle_back(name = nil)
         bmp = battle_back_bitmap(name)
@@ -2707,10 +2811,40 @@ class RPG2k
       def refresh_battle_sprites
         sprites = @battle_ui[:enemy_sprites]
         return unless sprites
+        # A transformation swaps a monster's graphic mid-fight, so redraw any
+        # combatant no longer wearing the battler its sprite was built from
+        # before deciding what is visible.
+        names = (@battle_ui[:sprite_names] ||= [])
+        @battle_ui[:foes].each_with_index do |foe, i|
+          rebuild_battler_sprite(i, foe) if sprites[i] && names[i] != foe.battler_name
+        end
         @battle_ui[:foes].each_with_index do |foe, i|
           spr = sprites[i]
-          spr.visible = !foe.dead? if spr
+          # Out of play, not merely dead: a monster that has fled (its own Escape
+          # action, or a page's Force Flee) or one still flagged invisible is off
+          # the field and must not be drawn — the same test #living_foes uses to
+          # keep it out of the target cursor.
+          spr.visible = !foe.out_of_play? if spr
         end
+      end
+
+      # Redraw troop slot `i` with `foe`'s current battler graphic, keeping its
+      # place and depth, and release the sprite and bitmap the old one held.
+      def rebuild_battler_sprite(i, foe)
+        sprites = @battle_ui[:enemy_sprites]
+        member = @battle_ui[:troop].members[i]
+        return unless member
+        old = sprites[i]
+        bmp = battler_bitmap(foe)
+        spr = Sprite.new
+        spr.bitmap = bmp
+        spr.x = member.x - bmp.width / 2
+        spr.y = member.y - bmp.height / 2
+        spr.z = 100 + i
+        spr.visible = !foe.out_of_play?
+        sprites[i] = spr
+        dispose_battle_sprite(old)
+        @battle_ui[:sprite_names][i] = foe.battler_name
       end
 
       def living_allies; @battle_ui[:allies].reject(&:dead?); end
@@ -3313,9 +3447,26 @@ class RPG2k
           "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
         elsif e[:missed]
           "#{e[:attacker]} misses #{e[:target]}"
+        elsif e[:transform]
+          "#{e[:attacker]} transforms!"
+        elsif e[:defend]
+          "#{e[:attacker]} defends"
+        elsif e[:observe]
+          "#{e[:attacker]} watches closely"
+        elsif e[:charge]
+          "#{e[:attacker]} gathers strength"
+        elsif e[:fled]
+          "#{e[:attacker]} flees!"
+        elsif e[:nothing]
+          "#{e[:attacker]} does nothing"
         else
-          hits = e[:skill] ? "'s #{e[:skill]} hits" : ' hits'
+          hits = if e[:autodestruct] then ' blows itself up on'
+                 elsif e[:skill] then "'s #{e[:skill]} hits"
+                 else ' hits'
+                 end
           line = "#{e[:attacker]}#{hits} #{e[:target]} for #{e[:damage]}"
+          line += ' (critical!)' if e[:critical]
+          line += ' (charged)' if e[:charged]
           line += ' — defeated!' if e[:defeated]
           line
         end

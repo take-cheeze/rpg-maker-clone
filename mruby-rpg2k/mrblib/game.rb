@@ -3752,26 +3752,194 @@ module Game
       @party.items.keys.select { |id| sellable?(id) }.sort
     end
 
-    # Buy one unit of `id`: must be stocked, buying allowed, affordable and not
-    # already capped at 99. Returns whether the purchase happened.
-    def buy(id)
-      return false unless @allow_buy && @goods.include?(id)
+    # The RPG2000 per-item stack cap: a party holds at most 99 of anything.
+    ITEM_CAP = 99
+
+    # How many of `id` the party could buy right now — what the quantity
+    # selector's cursor is bounded by. The binding constraint is whichever of
+    # affordability and the 99-item cap runs out first; a free item (price 0,
+    # which RPG2000 does allow a shop to stock) is limited only by the cap.
+    # 0 when the shop will not sell it at all.
+    def max_buy(id)
+      return 0 unless @allow_buy && @goods.include?(id)
+      room = ITEM_CAP - @party.item_count(id)
+      return 0 if room <= 0
       cost = price(id)
-      return false if @party.gold < cost || @party.item_count(id) >= 99
-      @party.gain_gold(-cost)
-      @party.gain_item(id, 1)
+      return room if cost <= 0
+      affordable = @party.gold / cost
+      affordable < room ? affordable : room
+    end
+
+    # How many of `id` the party could sell — everything it holds, or 0 when the
+    # item cannot be sold here at all.
+    def max_sell(id)
+      @allow_sell && sellable?(id) ? @party.item_count(id) : 0
+    end
+
+    # Buy `n` units of `id` in one transaction: must be stocked, buying allowed,
+    # affordable and within the 99 cap. All-or-nothing — a count beyond what
+    # #max_buy allows buys nothing rather than silently buying fewer, so the
+    # caller cannot overspend by asking for too many. Returns whether it happened.
+    def buy(id, n = 1)
+      n = n.to_i
+      return false if n < 1 || n > max_buy(id)
+      @party.gain_gold(-price(id) * n)
+      @party.gain_item(id, n)
       @did_transaction = true
       true
     end
 
-    # Sell one unit of `id` at half price: must be allowed and sellable. Returns
-    # whether the sale happened.
-    def sell(id)
-      return false unless @allow_sell && sellable?(id)
-      @party.gain_gold(sell_price(id))
-      @party.gain_item(id, -1)
+    # Sell `n` units of `id` at half price each, all-or-nothing like #buy.
+    def sell(id, n = 1)
+      n = n.to_i
+      return false if n < 1 || n > max_sell(id)
+      @party.gain_gold(sell_price(id) * n)
+      @party.gain_item(id, -n)
       @did_transaction = true
       true
+    end
+  end
+
+  # Which battle backdrop (Backdrop/<name>) a fight on a given map uses.
+  #
+  # RPG2000 does not store the backdrop on the map itself: each map-tree node
+  # (RPG_RT.lmt `map_properties`) carries a `backdrop_type` choosing between the
+  # three options the editor's map-properties dialog offers, and the type is a
+  # tri-state that has to be walked, not read:
+  #
+  #   0 親マップと同じ  inherit whatever the parent map resolves to
+  #   1 地形で指定      the backdrop named by the terrain being fought on
+  #   2 指定する        the map's own `backdrop_file`, for every fight on it
+  #
+  # (liblcf spells these BGMType_parent / _terrain / _specific — `background_type`
+  # reuses the BGM enum.) Both test beds need the walk: 491 of Nepheshel's 537
+  # maps and 4 of mtf-meido-action's 13 are type 0 and answer only through a
+  # parent. Nepheshel pins 24 maps to a file ("black" for its dark interiors, a
+  # boss backdrop for one fight) while naming no terrain backdrops at all;
+  # mtf-meido-action is the other way round, leaving its 9 type-1 maps to 10
+  # named terrains (Grassland, Snow Field, Desert, ...).
+  module Backdrop
+    TYPE_PARENT   = 0
+    TYPE_TERRAIN  = 1
+    TYPE_SPECIFIC = 2
+
+    # The backdrop name for a fight on `map_id` standing on terrain whose own
+    # backdrop is `terrain_name`. `properties` is the map tree's map_properties
+    # table (`[map_id]` -> a row exposing backdrop_type / backdrop_file /
+    # parent_map_id). Returns '' when nothing names one, which the scene draws as
+    # its flat field.
+    #
+    # An inheriting map walks up its parents; the walk is bounded and remembers
+    # where it has been, so a tree that loops (or a node that parents itself)
+    # ends at the terrain rather than hanging the battle.
+    def self.name_for(map_id, properties, terrain_name = '')
+      terrain_name = terrain_name.to_s
+      seen = {}
+      id = map_id.to_i
+      while id > 0 && !seen[id]
+        seen[id] = true
+        row = properties ? properties[id] : nil
+        return terrain_name unless row
+        case int_field(row, :backdrop_type)
+        when TYPE_SPECIFIC
+          return row.respond_to?(:backdrop_file) ? row.backdrop_file.to_s : ''
+        when TYPE_TERRAIN
+          return terrain_name
+        else
+          id = int_field(row, :parent_map_id)
+        end
+      end
+      # The root (or a loop): RPG_RT has nothing left to inherit, so the terrain
+      # answers.
+      terrain_name
+    end
+
+    def self.int_field(row, name)
+      return 0 unless row.respond_to?(name)
+      v = row.send(name)
+      v.nil? ? 0 : v.to_i
+    end
+  end
+
+  # One entry of an enemy's 行動パターン (action pattern) table — the database
+  # enemy row's chunk 42, decoded off the LCF row into plain data so the battle
+  # simulation can pick an action without holding a database row.
+  #
+  # An enemy does not simply attack: each turn RPG_RT walks this table, keeps the
+  # entries whose `condition` currently holds, and picks one at random weighted
+  # by `rating` (see Game::Battle#choose_enemy_action). `kind` says what the
+  # chosen entry does — a basic action, a skill, or a transformation into another
+  # enemy — and an entry may also flip a switch once it has run.
+  #
+  # The field names and values are liblcf's RPG::EnemyAction. Real data uses
+  # nearly all of them: across the two test beds 510 of 959 actions are skills
+  # (which is why an enemy that only ever swung its fists was so far off), and
+  # every condition type except `sp` appears.
+  class EnemyAction
+    # `kind`: what the action does.
+    KIND_BASIC     = 0
+    KIND_SKILL     = 1
+    KIND_TRANSFORM = 2
+
+    # `basic`: which basic action, when kind is KIND_BASIC.
+    BASIC_ATTACK       = 0
+    BASIC_DUAL_ATTACK  = 1
+    BASIC_DEFEND       = 2
+    BASIC_OBSERVE      = 3
+    BASIC_CHARGE       = 4
+    BASIC_AUTODESTRUCT = 5
+    BASIC_ESCAPE       = 6
+    BASIC_NOTHING      = 7
+
+    # `condition_type`: what gates the action. The two `condition_param`s are the
+    # inclusive bounds of a range for the numeric conditions, and the turn
+    # condition's base / multiple pair.
+    COND_ALWAYS    = 0
+    COND_SWITCH    = 1
+    COND_TURN      = 2
+    COND_ACTORS    = 3
+    COND_HP        = 4
+    COND_SP        = 5
+    COND_PARTY_LVL = 6
+    COND_FATIGUE   = 7
+
+    attr_reader :kind, :basic, :skill_id, :enemy_id, :condition_type,
+                :condition_param1, :condition_param2, :switch_id, :switch_on,
+                :switch_on_id, :switch_off, :switch_off_id, :rating
+
+    # Read one action off an LCF row, tolerating a fixture that omits a field
+    # (the check harnesses build these by hand).
+    def initialize(row)
+      @kind             = int_of(row, :kind, 0)
+      @basic            = int_of(row, :basic, 0)
+      @skill_id         = int_of(row, :skill_id, 0)
+      @enemy_id         = int_of(row, :enemy_id, 0)
+      @condition_type   = int_of(row, :condition_type, 0)
+      @condition_param1 = int_of(row, :condition_param1, 0)
+      @condition_param2 = int_of(row, :condition_param2, 0)
+      @switch_id        = int_of(row, :switch_id, 0)
+      @switch_on_id     = int_of(row, :switch_on_id, 0)
+      @switch_off_id    = int_of(row, :switch_off_id, 0)
+      @switch_on        = bool_of(row, :switch_on)
+      @switch_off       = bool_of(row, :switch_off)
+      # The editor's default priority is 50; a row without one still competes.
+      @rating           = int_of(row, :rating, 50)
+    end
+
+    def skill?;     @kind == KIND_SKILL; end
+    def transform?; @kind == KIND_TRANSFORM; end
+    def basic?;     @kind == KIND_BASIC; end
+
+    private
+
+    def int_of(row, name, dflt)
+      return dflt unless row.respond_to?(name)
+      v = row.send(name)
+      v.nil? ? dflt : v.to_i
+    end
+
+    def bool_of(row, name)
+      row.respond_to?(name) && row.send(name) ? true : false
     end
   end
 
@@ -3833,7 +4001,15 @@ module Game
       # The "miss" flag (field 26): a flagged enemy is clumsier and attacks at a
       # 70% base hit rate rather than the usual 90% (EasyRPG's GetHitChance).
       @miss = row && row.respond_to?(:miss) ? (row.miss ? true : false) : false
+      # The 行動パターン table (field 42), decoded now since `row` isn't kept. An
+      # enemy whose row lists none falls back to plain attacking.
+      @actions = []
+      list = row && row.respond_to?(:actions) ? row.actions : nil
+      list.each { |_i, a| @actions << EnemyAction.new(a) } if list
     end
+
+    # This enemy's action pattern (Game::EnemyAction list, possibly empty).
+    attr_reader :actions
 
     attr_reader :crit_denom, :attribute_ranks, :state_ranks
     def crit_denominator; @crit_denom; end
@@ -3893,6 +4069,66 @@ module Game
   # every enemy is down or :defeat when the whole party is. `#step` performs one
   # action at a time and appends a `#log` entry, so an on-screen battle can
   # animate it action-by-action; `#run` steps to completion for a headless
+  # The outside world an enemy's 行動パターン needs, which Game::Battle itself
+  # deliberately does not hold: it works on Combatant snapshots and keeps no
+  # database. A skill action needs the skill table (and the party's own casting
+  # formulas, so an enemy's fireball is costed and scaled exactly like a hero's),
+  # a transformation needs the enemy table, and the switch / party-level
+  # conditions read live game state.
+  #
+  # Passed to Game::Battle as its `ai` collaborator. Every accessor tolerates a
+  # partial source so the check harnesses can hand in a stub (or nothing at all,
+  # in which case the enemies fall back to plain attacking as before).
+  class EnemyAi
+    def initialize(db, state)
+      @db = db
+      @state = state
+    end
+
+    # The database row for a skill / enemy id, or nil.
+    def skill(id)
+      @db && @db.respond_to?(:skill) ? @db.skill[id] : nil
+    end
+
+    # A freshly instantiated Game::Enemy for `id` — what a transformation turns
+    # into, read through the same constructor a troop member is built with (so it
+    # decodes its stats, ranks and its own action pattern). nil when unknown.
+    def enemy(id)
+      return nil unless @db && @db.respond_to?(:enemy) && id && id > 0
+      return nil unless @db.enemy[id]
+      Enemy.new(@db, id)
+    end
+
+    # The cast numbers for `sk` from `caster` on `target`, reusing Game::Party's
+    # own battle_skill_command so an enemy's skill costs and scales identically.
+    def skill_command(sk, caster, target)
+      party = @state && @state.respond_to?(:party) ? @state.party : nil
+      return nil unless party && party.respond_to?(:battle_skill_command)
+      party.battle_skill_command(sk, caster, target)
+    end
+
+    def switch?(id)
+      sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
+      sw ? sw[id] : false
+    end
+
+    def set_switch(id, on)
+      sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
+      sw[id] = on if sw && id && id > 0
+    end
+
+    # The party's average level, which the party_lvl action condition ranges
+    # over (EasyRPG's Game_Party::GetAverageLevel). 0 with no party.
+    def party_level
+      party = @state && @state.respond_to?(:party) ? @state.party : nil
+      actors = party && party.respond_to?(:actors) ? party.actors : nil
+      return 0 if actors.nil? || actors.empty?
+      total = 0
+      actors.each { |a| total += (a.respond_to?(:level) ? (a.level || 0) : 0) }
+      total / actors.size
+    end
+  end
+
   # resolution. It works on Combatant snapshots, so the caller can resolve a
   # battle without mutating the real party. This is a deliberately simple first
   # cut — escape and enemy-cast state infliction are still to come, and the
@@ -3912,7 +4148,8 @@ module Game
                            :action, :defending, :mp, :max_mp, :spi, :command,
                            :actor, :states, :state_turns, :crit_denom,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
-                           :hit_rate, :state_ranks, :hidden, :battle_turn) do
+                           :hit_rate, :state_ranks, :hidden, :battle_turn,
+                           :actions, :charged, :enemy_id, :battler_name) do
       def dead?; hp <= 0; end
 
       # RPG2003 counts turns per battler as well as per battle: this is how many
@@ -3984,6 +4221,13 @@ module Game
       # A member the troop flagged invisible starts out of play until a Show
       # Hidden Monster command brings it in (see Combatant#out_of_play?).
       c.hidden = e.respond_to?(:hidden) && e.hidden ? true : false
+      # The 行動パターン the AI picks from each turn, and the database id it was
+      # built from (which a transformation re-points at another enemy row).
+      c.actions = e.respond_to?(:actions) ? (e.actions || []) : []
+      c.enemy_id = e.respond_to?(:id) ? e.id : nil
+      # The Monster/<name> graphic, carried so the battle screen can redraw a
+      # combatant whose transformation swapped it.
+      c.battler_name = e.respond_to?(:battler_name) ? e.battler_name : nil
       c
     end
 
@@ -4015,9 +4259,15 @@ module Game
     # exposing `a_rate` .. `e_rate`, e.g. the database's `property` table) so
     # elemental damage reads each attribute's own rank rates; omitted, the
     # RPG2000 default table applies.
+    # `ai` is an optional Game::EnemyAi giving the enemies' action patterns the
+    # database and game state they need (skill / enemy tables, switches, the
+    # party's average level). Without one an enemy can still run the basic
+    # actions its pattern lists, but a skill or transformation it cannot resolve
+    # falls back to a plain attack — which is exactly the old behaviour, so every
+    # existing fixture keeps its results.
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
                    criticals = false, accuracy = false, first_strike = false,
-                   attributes = nil)
+                   attributes = nil, ai = nil)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
@@ -4027,6 +4277,7 @@ module Game
       @accuracy = accuracy
       @first_strike = first_strike
       @attributes = attributes
+      @ai = ai
       @rounds = 0
       @result = nil
       @escaped = false     # set once the party successfully flees (#attempt_escape)
@@ -4468,9 +4719,282 @@ module Game
       end
       return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
+      # An enemy with a 行動パターン chooses from it rather than always swinging.
+      if side_of(b) == :enemy
+        # A guard raised last turn expires as this one begins (the allies' is
+        # cleared by #end_round; an enemy acts on its own schedule).
+        b.defending = false
+        act = choose_enemy_action(b)
+        return perform_enemy_action(b, act) if act
+      end
       target = attack_target(b)
       return nil unless target
       deal_attack(b, target)
+    end
+
+    # -- enemy AI (行動パターン) ------------------------------------------------
+
+    # Pick the action `b` takes this turn from its pattern, or nil to fall back
+    # to a plain attack (no pattern, or nothing currently valid).
+    #
+    # Port of EasyRPG's EnemyAi::AlgorithmRatingBased: collect the ratings of the
+    # actions whose condition holds, find the highest, then drop every action
+    # more than 10 below it (`rating - max + 10`, floored at 0) and pick from
+    # what remains at random, weighted by the adjusted rating. So a boss's
+    # rating-50 attack and rating-48 spell both stay in the mix, while a
+    # rating-40 desperation move is excluded until the moves above it stop being
+    # valid — which is how an RPG2000 enemy's behaviour shifts as a fight goes on.
+    def choose_enemy_action(b)
+      list = b.actions
+      return nil if list.nil? || list.empty?
+      prios = []
+      max_prio = 0
+      list.each do |a|
+        r = enemy_action_valid?(b, a) ? a.rating : 0
+        r = 0 if r < 0
+        prios << r
+        max_prio = r if r > max_prio
+      end
+      return nil if max_prio <= 0
+      total = 0
+      prios = prios.map do |pr|
+        v = pr > 0 ? pr - max_prio + 10 : 0
+        v = 0 if v < 0
+        total += v
+        v
+      end
+      return nil if total <= 0
+      which = @rng.random(total)
+      chosen = nil
+      list.each_with_index do |a, i|
+        chosen = a
+        which -= prios[i]
+        break if which < 0
+      end
+      chosen
+    end
+
+    # Whether action `a`'s condition currently holds for enemy `b`. The condition
+    # types and their arithmetic are EasyRPG's EnemyAi::IsActionValid; the ranges
+    # are inclusive on both ends.
+    def enemy_action_valid?(b, a)
+      return false if a.skill? && !enemy_skill_ready?(b, a)
+      case a.condition_type
+      when EnemyAction::COND_ALWAYS
+        true
+      when EnemyAction::COND_SWITCH
+        @ai ? @ai.switch?(a.switch_id) : false
+      when EnemyAction::COND_TURN
+        # Same argument order as the battle pages' turn condition: the base is
+        # condition_param2 and the multiple condition_param1 (see
+        # BattlePage.check_turns, which documents why it reads backwards).
+        BattlePage.check_turns(turn, a.condition_param2, a.condition_param1)
+      when EnemyAction::COND_ACTORS
+        n = @allies.reject(&:out_of_play?).size
+        n >= a.condition_param1 && n <= a.condition_param2
+      when EnemyAction::COND_HP
+        within_percent?(b.hp, b.max_hp, a)
+      when EnemyAction::COND_SP
+        within_percent?(b.mp, b.max_mp, a)
+      when EnemyAction::COND_PARTY_LVL
+        return false unless @ai
+        lvl = @ai.party_level
+        lvl >= a.condition_param1 && lvl <= a.condition_param2
+      when EnemyAction::COND_FATIGUE
+        f = fatigue
+        f >= a.condition_param1 && f <= a.condition_param2
+      else
+        # An operand this build does not know stays out of the running rather
+        # than firing unchecked.
+        false
+      end
+    end
+
+    # Whether `cur` as a percentage of `max` falls inside the action's range.
+    def within_percent?(cur, max, a)
+      return false if max.nil? || max <= 0
+      pct = (cur || 0) * 100 / max
+      pct >= a.condition_param1 && pct <= a.condition_param2
+    end
+
+    # Whether `b` can actually cast the skill action `a`: the skill exists and it
+    # can pay the SP. An enemy that cannot afford its spell falls through to its
+    # other actions, the way RPG_RT skips an unusable one.
+    def enemy_skill_ready?(b, a)
+      return false unless @ai
+      sk = @ai.skill(a.skill_id)
+      return false unless sk
+      cmd = @ai.skill_command(sk, b, nil)
+      return false unless cmd
+      cost = cmd[:cost] || 0
+      cost <= 0 || (b.mp || 0) >= cost
+    end
+
+    # Run the action `b` chose and return its log entry (or entries). Any switch
+    # the action flips is applied once it has run.
+    def perform_enemy_action(b, act)
+      entry = if act.skill?
+                enemy_skill_action(b, act)
+              elsif act.transform?
+                enemy_transform_action(b, act)
+              else
+                enemy_basic_action(b, act)
+              end
+      apply_action_switches(act)
+      entry
+    end
+
+    # An action may switch a game switch on and/or off once it has run — how an
+    # enemy's move signals a troop's battle-event pages.
+    def apply_action_switches(act)
+      return unless @ai
+      @ai.set_switch(act.switch_on_id, true) if act.switch_on
+      @ai.set_switch(act.switch_off_id, false) if act.switch_off
+    end
+
+    # The basic actions (kind 0). Attack and dual attack go through the ordinary
+    # attack path (so accuracy, criticals, elements and variance all apply);
+    # the rest have no damage of their own and read as a plain note on the log.
+    def enemy_basic_action(b, act)
+      case act.basic
+      when EnemyAction::BASIC_DUAL_ATTACK
+        target = attack_target(b)
+        return nil unless target
+        first = deal_attack(b, target)
+        # The second swing only lands if the first did not fell the target.
+        return [first] if target.dead?
+        [first, deal_attack(b, target)]
+      when EnemyAction::BASIC_DEFEND
+        b.defending = true
+        { attacker: b.name, defend: true }
+      when EnemyAction::BASIC_OBSERVE
+        { attacker: b.name, observe: true }
+      when EnemyAction::BASIC_CHARGE
+        # The next attack this enemy lands does double damage (EasyRPG's
+        # IsCharged, spent in #deal_attack).
+        b.charged = true
+        { attacker: b.name, charge: true }
+      when EnemyAction::BASIC_AUTODESTRUCT
+        enemy_autodestruct(b)
+      when EnemyAction::BASIC_ESCAPE
+        # The enemy runs: out of play without counting as a kill, exactly as a
+        # battle page's Force Flee removes one.
+        b.hidden = true
+        { attacker: b.name, fled: true }
+      when EnemyAction::BASIC_NOTHING
+        { attacker: b.name, nothing: true }
+      else
+        target = attack_target(b)
+        target ? deal_attack(b, target) : nil
+      end
+    end
+
+    # Self-destruction (basic 5): the enemy blows itself up, hitting every living
+    # party member for `atk - def/2` (EasyRPG's CalcSelfDestructEffect, floored at
+    # 0 and spread by the usual variance), and dies doing it.
+    def enemy_autodestruct(b)
+      targets = @allies.reject(&:out_of_play?)
+      entries = targets.map do |t|
+        dmg = b.atk - t.def / 2
+        dmg = 0 if dmg < 0
+        dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
+        dmg = [dmg / 2, 1].max if t.defending && dmg > 0
+        t.hp -= dmg
+        { attacker: b.name, target: t.name, damage: dmg, critical: false,
+          autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead? }
+      end
+      # The blast kills the caster whether or not it found anyone to hit.
+      b.hp = 0
+      entries.empty? ? { attacker: b.name, autodestruct: true } : entries
+    end
+
+    # A skill action (kind 1): cast through the same command pipeline the party
+    # uses, so an enemy's attack spell scales, rolls its accuracy and inflicts its
+    # states exactly like a hero's — which is what finally lets an enemy poison or
+    # sleep the party. A skill whose scope names the caster's own side heals /
+    # buffs a fellow monster instead.
+    def enemy_skill_action(b, act)
+      sk = @ai && @ai.skill(act.skill_id)
+      return enemy_fallback_attack(b) unless sk
+      targets = enemy_skill_targets(b, sk)
+      return enemy_fallback_attack(b) if targets.empty?
+      cmd = @ai.skill_command(sk, b, targets.first)
+      return enemy_fallback_attack(b) unless cmd
+      b.command = skill_command_hash(sk, cmd, targets.first)
+      if targets.size > 1
+        # An all-target skill carries one effect per target, since attack damage
+        # is computed against each target's own defence.
+        per = targets.map do |t|
+          c = @ai.skill_command(sk, b, t)
+          c ? { target: t, hp: c[:hp] || 0, mp: c[:mp] || 0 } : nil
+        end.compact
+        return enemy_fallback_attack(b) if per.empty?
+        b.command[:all] = true
+        b.command[:targets] = per
+        b.command[:target] = nil
+      end
+      entry = apply_command(b)
+      b.command = nil
+      entry
+    end
+
+    # Wrap the party's cast numbers in the command hash #apply_command consumes.
+    def skill_command_hash(sk, cmd, target)
+      { kind: :skill, target: target, name: skill_name_of(sk),
+        cost: cmd[:cost] || 0, hp: cmd[:hp] || 0, mp: cmd[:mp] || 0,
+        inflict: cmd[:inflict] || [], chance: cmd[:chance] || 100,
+        variance: cmd[:variance] || 0, attributes: cmd[:attributes] || [] }
+    end
+
+    def skill_name_of(sk)
+      sk.respond_to?(:name) ? sk.name.to_s : ''
+    end
+
+    # Who an enemy's skill hits, read from the caster's side of the field: a
+    # scope aimed at "enemies" (0 single / 1 all) means the party, and one aimed
+    # at "allies" (2 the caster / 3 single / 4 all) means the troop.
+    def enemy_skill_targets(b, sk)
+      scope = sk.respond_to?(:scope) ? sk.scope.to_i : 0
+      case scope
+      when 1 then @allies.reject(&:out_of_play?)
+      when 2 then [b]
+      when 3
+        own = @enemies.reject(&:out_of_play?)
+        own.empty? ? [] : [own[@rng.random(own.size)]]
+      when 4 then @enemies.reject(&:out_of_play?)
+      else
+        foes = @allies.reject(&:out_of_play?)
+        foes.empty? ? [] : [foes[@rng.random(foes.size)]]
+      end
+    end
+
+    # A transformation (kind 2): the monster becomes another database enemy,
+    # taking on its name, stats and battle graphic (and its action pattern) while
+    # keeping its place in the fight. Current HP / SP carry over clamped to the
+    # new maxima, matching RPG_RT's Game_Enemy::Transform.
+    def enemy_transform_action(b, act)
+      into = @ai && @ai.enemy(act.enemy_id)
+      return enemy_fallback_attack(b) unless into
+      b.name = into.name
+      b.atk = into.atk; b.def = into.def; b.agi = into.agi; b.spi = into.spi
+      b.max_hp = into.max_hp; b.max_mp = into.max_sp
+      b.hp = b.hp > into.max_hp ? into.max_hp : b.hp
+      b.mp = (b.mp || 0) > into.max_sp ? into.max_sp : b.mp
+      b.crit_denom = Battle.crit_denom_of(into)
+      b.attr_ranks = Battle.attr_ranks_of(into)
+      b.state_ranks = Battle.state_ranks_of(into)
+      b.hit_rate = Battle.hit_rate_of(into)
+      b.actions = into.actions
+      b.enemy_id = act.enemy_id
+      b.battler_name = into.battler_name
+      { attacker: b.name, transform: true, target: into.name }
+    end
+
+    # A skill / transformation that could not be resolved (no database to hand)
+    # degrades to a plain attack rather than costing the enemy its turn.
+    def enemy_fallback_attack(b)
+      target = attack_target(b)
+      target ? deal_attack(b, target) : nil
     end
 
     # `b` lands a basic attack on `target`: the base damage (scaled by the
@@ -4494,11 +5018,21 @@ module Game
       # No critical on a same-side hit (e.g. a confused ally striking an ally) or
       # against a target whose gear prevents criticals, matching EasyRPG.
       crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
-      dmg *= 3 if crit
+      # A charged-up attack (the enemy's Charge basic action) hits twice as hard,
+      # but a critical takes precedence over it — EasyRPG's CalcNormalAttackEffect
+      # applies one or the other, never both. The charge is spent either way.
+      charged = b.charged ? true : false
+      b.charged = false if charged
+      if crit
+        dmg *= 3
+      elsif charged
+        dmg *= 2
+      end
       dmg = [dmg / 2, 1].max if target.defending && dmg > 0
       target.hp -= dmg
       { attacker: b.name, target: target.name, damage: dmg, critical: crit,
-        target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
+        charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
+        defeated: target.dead? }
     end
 
     # Whether `b`'s attack criticals: enabled for the fight, the attacker has a

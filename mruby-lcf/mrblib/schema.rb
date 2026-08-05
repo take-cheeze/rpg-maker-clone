@@ -928,10 +928,50 @@ module LCF
         36 => { name: :parallax_sx, type: :int, default: 0 },
         37 => { name: :parallax_autoloop_y, type: :bool, default: false },
         38 => { name: :parallax_sy, type: :int, default: 0 },
+        # --- RPG2003 random dungeon generator (マップ生成) -------------------
+        #
+        # Editor-only: the settings the "generate dungeon" tool was last run
+        # with, kept so reopening the map restores the dialog. RPG_RT never
+        # reads them at run time and neither does this runtime — they are
+        # declared so a real map parses completely rather than leaving live
+        # chunks unaccounted for.
+        #
+        # Not on the wiki's マップ page, so the ids and defaults are liblcf's
+        # LMU_Reader::ChunkMap / RPG::Map (0x28..0x3E and 0x5A). The test beds
+        # confirm the ones they exercise: mtf-meido-action writes top_level
+        # (42) on 8 maps, and generator_height (50) as 2 on all 13 — the fields
+        # it leaves out are exactly the ones already at their liblcf default
+        # (generator_width 4, the six `true` flags), which is what an eliding
+        # writer produces and is a good check that these defaults are right.
+        40 => { name: :generator_flag, type: :bool, default: false },
+        41 => { name: :generator_mode, type: :int, default: 0 },
+        42 => { name: :top_level, type: :bool, default: false },
+        48 => { name: :generator_tiles, type: :int, default: 0 },
+        49 => { name: :generator_width, type: :int, default: 4 },
+        50 => { name: :generator_height, type: :int, default: 1 },
+        51 => { name: :generator_surround, type: :bool, default: true },
+        52 => { name: :generator_upper_wall, type: :bool, default: true },
+        53 => { name: :generator_floor_b, type: :bool, default: true },
+        54 => { name: :generator_floor_c, type: :bool, default: true },
+        55 => { name: :generator_extra_b, type: :bool, default: true },
+        56 => { name: :generator_extra_c, type: :bool, default: true },
+        # Nine room slots. x/y are liblcf `uint32_t` vectors, read here as
+        # signed 32-bit — the values are map coordinates, so the two readings
+        # only differ above 2^31, which no map reaches. The tile ids are
+        # shorts: reading chunk 62 as int16 yields real RPG2000 tile ids
+        # (49 lower-layer, 10000/10001/10006/10007 upper-layer) where an int32
+        # reading gives nonsense, which is what pins the width down.
+        60 => { name: :generator_x, type: :int32_array },
+        61 => { name: :generator_y, type: :int32_array },
+        62 => { name: :generator_tile_ids, type: :int16_array },
         # width * height signed shorts, one tile id per cell.
         71 => { name: :lower_layer, type: :int16_array },
         72 => { name: :upper_layer, type: :int16_array },
         81 => { name: :events, type: :Array2D, elements: MAP_EVENT },
+        # The 2k3e ("RPG2003 English release") save counter, a second counter
+        # beside the ordinary one below. BER-encoded like every other int —
+        # mtf-meido-action's first map holds 593.
+        90 => { name: :save_count_2k3e, type: :int, default: 0 },
         91 => { name: :save_count, type: :int, default: 0 },
       }
     }

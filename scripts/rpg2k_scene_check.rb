@@ -1630,7 +1630,13 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   st.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the shop opens straight to the buy list (buy-only)
   ok !st.switches[1] && !st.switches[2], 'still shopping'
-  RGSS::Input.triggered = [RGSS::Input::C] # buy the first good (id 3 @ 100)
+  # Picking a good opens the quantity counter; a second confirm commits it.
+  RGSS::Input.triggered = [RGSS::Input::C] # select the first good (id 3 @ 100)
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 500, st.party.gold, 'nothing is spent just by opening the counter'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the default quantity of 1
   scene.update
   RGSS::Input.triggered = []
   scene.update
@@ -1641,6 +1647,120 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   scene.update # the Transaction branch runs
   ok st.switches[1], 'the Transaction branch ran (a purchase happened)'
   ok !st.switches[2], 'the No Transaction branch was skipped'
+end
+
+
+# Open a buy-only shop stocking goods 3 (100g) and 5, with `gold` on hand, and
+# advance to the quantity counter for the first good.
+def shop_quantity_scene(gold)
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(gold))
+  3.times { scene.update }
+  press(scene, RGSS::Input::C) # select the first good -> the counter
+  [scene, st]
+end
+
+# Send one triggered button and let the scene settle.
+def press(scene, button)
+  RGSS::Input.triggered = [button]
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+end
+
+check 'Open Shop scene: the quantity counter opens on a chosen good' do
+  scene, _st = shop_quantity_scene(500)
+  shop = scene.instance_variable_get(:@shop)
+  eq :quantity, shop[:screen], 'the counter is up'
+  eq 1, shop[:quantity][:count], 'starting at one'
+  eq 3, shop[:quantity][:id]
+  eq 5, shop[:quantity][:max], '500 gold buys five at 100'
+end
+
+check 'Open Shop scene: the counter steps by one and clamps to its bounds' do
+  scene, _st = shop_quantity_scene(500)
+  shop = scene.instance_variable_get(:@shop)
+  press(scene, RGSS::Input::UP)
+  eq 2, shop[:quantity][:count]
+  press(scene, RGSS::Input::DOWN)
+  eq 1, shop[:quantity][:count]
+  press(scene, RGSS::Input::DOWN)
+  eq 1, shop[:quantity][:count], 'never below one'
+  5.times { press(scene, RGSS::Input::UP) }
+  eq 5, shop[:quantity][:count], 'never past what the party can afford'
+end
+
+check 'Open Shop scene: the counter steps by ten on the horizontal axis' do
+  scene, _st = shop_quantity_scene(999_999)
+  shop = scene.instance_variable_get(:@shop)
+  eq 99, shop[:quantity][:max], 'rich enough to hit the item cap'
+  press(scene, RGSS::Input::RIGHT)
+  eq 11, shop[:quantity][:count], '1 + 10'
+  press(scene, RGSS::Input::LEFT)
+  eq 1, shop[:quantity][:count]
+  20.times { press(scene, RGSS::Input::RIGHT) }
+  eq 99, shop[:quantity][:count], 'clamped at the cap'
+end
+
+check 'Open Shop scene: confirming the counter buys the whole stack at once' do
+  scene, st = shop_quantity_scene(500)
+  press(scene, RGSS::Input::UP)
+  press(scene, RGSS::Input::UP)   # three
+  press(scene, RGSS::Input::C)
+  eq 200, st.party.gold, '500 - 3*100'
+  eq 3, st.party.item_count(3), 'three bought in one confirm'
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'and it returns to the buy list'
+end
+
+check 'Open Shop scene: cancelling the counter buys nothing' do
+  scene, st = shop_quantity_scene(500)
+  press(scene, RGSS::Input::UP)
+  press(scene, RGSS::Input::B)
+  eq 500, st.party.gold, 'no gold spent'
+  eq 0, st.party.item_count(3)
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'back on the buy list'
+end
+
+check 'Open Shop scene: the counter sells a whole stack too' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # mode 2 = sell-only, so the shop opens straight onto the sell list.
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [2, 0, 0, 0, 3], indent: 0),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(0))
+  st.party.gain_item(3, 5)
+  3.times { scene.update }
+  press(scene, RGSS::Input::C)          # pick the held item -> the counter
+  shop = scene.instance_variable_get(:@shop)
+  eq :quantity, shop[:screen]
+  eq :sell, shop[:quantity][:mode], 'selling, not buying'
+  eq 5, shop[:quantity][:max], 'bounded by what is held'
+  press(scene, RGSS::Input::UP)
+  press(scene, RGSS::Input::UP)         # three
+  press(scene, RGSS::Input::C)
+  eq 150, st.party.gold, '3 * half of 100'
+  eq 2, st.party.item_count(3)
+end
+
+check 'Open Shop scene: an unaffordable good never opens the counter' do
+  scene, st = shop_quantity_scene(50)   # good 3 costs 100
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'still on the list'
+  ok shop[:quantity].nil?, 'no counter for something out of reach'
+  eq 50, st.party.gold
 end
 
 check 'Open Shop scene: leaving without buying runs the No Transaction branch' do
@@ -2547,6 +2667,26 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
   ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
 end
 
+check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  sprites = ui[:enemy_sprites]
+  ok sprites[0].visible, 'drawn to begin with'
+  # Out of play without being dead — an enemy that ran (its own Escape action or
+  # a page's Force Flee), which used to stay on screen because visibility keyed
+  # off `dead?` alone.
+  ui[:foes][0].hidden = true
+  scene.send(:refresh_battle_sprites)
+  ok !sprites[0].visible, 'a monster that fled is taken off the field'
+  ok !ui[:foes][0].dead?, 'without counting as a kill'
+  ok sprites[1].visible, 'its companion is untouched'
+end
+
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
 #
 # Both flags exist so a headless run can leave the title screen without input:
@@ -2960,6 +3100,29 @@ check 'a hidden troop member is not targetable until it is revealed' do
   ok !ui[:foes][1].hidden, 'revealing clears the combatant flag, not just the sprite'
   eq 2, scene.send(:living_foes).length, 'and it becomes targetable'
   ok ui[:enemy_sprites][1], 'with a sprite built for it'
+end
+
+check 'a transformed monster is redrawn with its new battler graphic' do
+  scene, _st = battle_scene_with_pages(nil)
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  before = ui[:enemy_sprites][0]
+  ok before, 'the monster is on the field'
+  # What Game::Battle's transform action does to the combatant.
+  ui[:foes][0].battler_name = 'Dragon'
+  ui[:foes][0].name = 'Dragon'
+  scene.send(:refresh_battle_sprites)
+  ok !ui[:enemy_sprites][0].equal?(before), 'its sprite is rebuilt'
+  eq 'Dragon', ui[:sprite_names][0], 'and tracked against the new battler'
+  ok ui[:enemy_sprites][0].visible, 'still on the field'
+  # A second refresh with nothing changed must not churn the sprite again.
+  same = ui[:enemy_sprites][0]
+  scene.send(:refresh_battle_sprites)
+  ok ui[:enemy_sprites][0].equal?(same), 'an unchanged battler is left alone'
 end
 
 # -- summary ------------------------------------------------------------------

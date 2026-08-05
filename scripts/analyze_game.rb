@@ -15,9 +15,12 @@
 # implements.
 #
 # Usage:
-#   ruby scripts/analyze_game.rb [--json] [--troops] GAME_DIR [GAME_DIR ...]
+#   ruby scripts/analyze_game.rb [--json] [--troops] [--enemies] GAME_DIR [...]
 # `--troops` reports the troops' battle-event pages instead: which condition
 # flag bits the game uses and which battle-only commands its pages run.
+# `--enemies` reports the enemies' action patterns (行動パターン): the kinds,
+# basic actions, conditions and rating spread the game's monsters are scripted
+# with, which is what Game::Battle's enemy AI has to cover.
 # With no GAME_DIR it scans ./data for directories containing an RPG_RT.ldb.
 #
 # Only structural, encoding-independent facts are reported, so the Windows-31J
@@ -428,20 +431,93 @@ rescue StandardError => e
   warn "  troop analysis failed for #{dir}: #{e.class}: #{e.message}"
 end
 
+# Labels for the enemy action-pattern fields (lcf::rpg::EnemyAction), used by
+# --enemies. Read alongside Game::EnemyAction, which defines the same constants.
+ACTION_KINDS = { 0 => 'basic', 1 => 'skill', 2 => 'transform' }.freeze
+ACTION_BASICS = { 0 => 'attack', 1 => 'dual attack', 2 => 'defend',
+                  3 => 'observe', 4 => 'charge', 5 => 'self-destruct',
+                  6 => 'escape', 7 => 'do nothing' }.freeze
+ACTION_CONDS = { 0 => 'always', 1 => 'switch', 2 => 'turn', 3 => 'party size',
+                 4 => 'own HP %', 5 => 'own SP %', 6 => 'party level',
+                 7 => 'party fatigue' }.freeze
+
+# What a game's enemies are actually scripted to do (enemy chunk 42), so the
+# runtime's AI coverage can be checked against real content the same way
+# --troops checks the battle pages. An enemy that only ever attacks is cheap to
+# support and badly wrong for these games: over half of every action here is a
+# skill.
+def report_enemies(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  enemies = 0
+  patternless = 0
+  actions = 0
+  kinds = Hash.new(0)
+  basics = Hash.new(0)
+  conds = Hash.new(0)
+  ratings = Hash.new(0)
+  switched = 0
+  db.enemy.each do |_id, row|
+    enemies += 1
+    list = (row.respond_to?(:actions) ? row.actions : nil)
+    if list.nil? || list.to_a.empty?
+      patternless += 1
+      next
+    end
+    list.each do |_ai, a|
+      actions += 1
+      k = a.kind.to_i
+      kinds[k] += 1
+      basics[a.basic.to_i] += 1 if k.zero?
+      conds[a.condition_type.to_i] += 1
+      ratings[a.rating.to_i] += 1
+      switched += 1 if a.switch_on || a.switch_off
+    end
+  end
+
+  puts "\n== #{dir} enemy action patterns =="
+  puts "enemies: #{enemies}  without a pattern: #{patternless}  actions: #{actions}"
+  return if actions.zero?
+  puts 'kind:'
+  kinds.sort_by { |_, n| -n }.each do |k, n|
+    puts format('  %-10s %4d  (%d%%)', ACTION_KINDS[k] || k.to_s, n, n * 100 / actions)
+  end
+  puts 'basic action:'
+  basics.sort_by { |_, n| -n }.each do |b, n|
+    puts format('  %-14s %4d', ACTION_BASICS[b] || b.to_s, n)
+  end
+  puts 'condition:'
+  conds.sort_by { |_, n| -n }.each do |c, n|
+    puts format('  %-14s %4d', ACTION_CONDS[c] || c.to_s, n)
+  end
+  # The spread matters: the selector drops anything more than 10 below the best
+  # valid rating, so a game using a single rating never exercises that rule.
+  puts "ratings in use: #{ratings.keys.sort.inspect}"
+  puts "actions that flip a switch when they run: #{switched}"
+rescue StandardError => e
+  warn "  enemy analysis failed for #{dir}: #{e.class}: #{e.message}"
+end
+
 json = ARGV.delete('--json')
 troops = ARGV.delete('--troops')
+enemies_only = ARGV.delete('--enemies')
 games = ARGV.dup
 if games.empty?
   root = File.expand_path('../data', __dir__)
   games = Dir.glob(File.join(root, '**', 'RPG_RT.ldb')).map { |f| File.dirname(f) }.sort
 end
 if games.empty?
-  warn 'usage: ruby scripts/analyze_game.rb [--json] [--troops] GAME_DIR [GAME_DIR ...]'
+  warn 'usage: ruby scripts/analyze_game.rb [--json] [--troops] [--enemies] ' \
+       'GAME_DIR [GAME_DIR ...]'
   exit 1
 end
 
 if troops
   games.each { |g| report_troops(g) }
+  exit 0
+end
+
+if enemies_only
+  games.each { |g| report_enemies(g) }
   exit 0
 end
 

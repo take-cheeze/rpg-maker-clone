@@ -8,10 +8,26 @@
   `使用時アニメ` weapon fields (the shared `BATTLER_ANIMATION` union),
   skill switch/occasion chunks (13, 16, 18, 19), and the `battle_anime2`
   attack-motion + `基本と拡張`/`武器` pose object lists (chunks 2, 10, 11).
-  The remaining map-unit chunks that appear in real data (42, 50, 60–62, 90 —
-  save/encounter/parallax metadata) are **not documented on the wiki's マップ
-  page**, so they still need to be derived from the test-bed walk. These are
-  editor/battle/2003 details not on the walkable-game critical path
+  The map-unit chunks that used to be unaccounted for (42, 50, 60–62, 90) are
+  **declared now**. They are not the save/encounter/parallax metadata they were
+  guessed to be: they are the **RPG2003 random dungeon generator** block plus the
+  2k3e save counter, and since the wiki's マップ page does not document them the
+  ids, types and defaults come from liblcf's `LMU_Reader::ChunkMap` / `RPG::Map`
+  (0x28..0x3E, 0x5A) — chunk 42 is `top_level`, 50 `generator_height`, 60/61/62
+  the nine room slots' `generator_x` / `generator_y` / `generator_tile_ids`, 90
+  `save_count_2k3e`. The whole block (40–56 as well, which no test bed writes) is
+  declared so a real map parses with nothing left over. The bytes confirm the
+  reading rather than merely tolerating it: chunk 62 read as **shorts** yields
+  ordinary tile ids (49 lower-layer, 10000/10001/10006/10007 upper-layer) where
+  an int32 reading gives numbers in the millions, and the fields mtf-meido-action
+  omits are exactly the ones already at their liblcf default (`generator_width`
+  4, the six `true` flags) — which is what an eliding writer produces. Only that
+  game writes them at all, being the RPG2003 test bed; Nepheshel's 543 maps read
+  the whole block from its defaults. `lcf_testbed_check.rb` now asserts the
+  shape (nine coordinates, eighteen tile ids, every field materialising), and
+  that guard was checked by mis-declaring chunk 62 and watching it fail. These
+  remain editor-only details off the walkable-game critical path — nothing reads
+  them at run time, RPG_RT included
 - ✅ Show window component for title scene
 - ✅ Implement New Game functionality — builds the party, loads the start map
   and enters a walkable `Scene::Map` with events
@@ -322,9 +338,9 @@ The work below is roughly ordered by the critical path to a walkable game
   guards come with it: a battle-event page leaves defeat to the fight's own
   `[Defeat]` handler, and an **empty** party is not a wipe. Without this a
   Simulated Attack damage floor — Nepheshel runs 850 of them — could kill the
-  party and leave the player walking the map with it. Still remaining:
-  inflicting states from **battle** (rolling `state_chance` / to-hit, the
-  non-reverse item case, enemy attacks).
+  party and leave the player walking the map with it. Enemies inflict states
+  too now, by casting the status skills in their action pattern (see the
+  行動パターン entry below). Still remaining here: the non-reverse item case.
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
@@ -364,8 +380,19 @@ The work below is roughly ordered by the critical path to a walkable game
   price, sell at half, party 99-item / gold caps enforced), tracking whether
   anything was traded to pick the command's `[Transaction]` / `[No Transaction]`
   branches. The interpreter suspends on a `:shop` wait; `Scene::Map` drives the
-  buy / sell menus (one unit per confirm — the quantity selector is a later
-  refinement).
+  buy / sell menus. Picking an item opens a **quantity counter** rather than
+  trading a single unit: UP / DOWN step by one and RIGHT / LEFT by ten (RPG_RT's
+  horizontal axis, so a stack of 99 is a few presses rather than ninety-nine),
+  the count is clamped to `Game::Shop#max_buy` / `#max_sell` — whichever of
+  affordability, the 99-item cap and what the party holds binds first, with a
+  price-0 good limited only by the cap rather than dividing by zero — and one
+  confirm commits the whole stack through `buy(id, n)` / `sell(id, n)`. Those are
+  **all-or-nothing**: a count beyond what is allowed trades nothing rather than
+  quietly trading fewer, so no path can overspend, and a zero or negative count
+  is not a transaction (it cannot mint gold). An item with no room at all —
+  unaffordable, or already capped — does not open the counter, and cancelling it
+  returns to the list having traded nothing. Nepheshel opens 10 shops, so this is
+  exercised content rather than a hypothetical.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
@@ -462,7 +489,68 @@ The work below is roughly ordered by the critical path to a walkable game
   command (12420) and a battle defeat whose encounter says "game over" rather
   than running a `[Defeat]` handler. A game that names no picture (or whose file
   is missing) still reaches the screen, on plain black, rather than the defeat
-  failing. Still to come: enemy-cast infliction and the per-terrain backdrop.
+  failing.
+  **The battle backdrop is chosen from the game's own data now** rather than
+  always being the flat void. RPG2000 keeps it on the map-tree node, not the map:
+  `Game::Backdrop.name_for` reads the node's `backdrop_type`, a tri-state the
+  editor's map-properties dialog offers and liblcf spells
+  BGMType_parent / _terrain / _specific — 親マップと同じ (inherit), 地形で指定
+  (the terrain being fought on names it) or 指定する (this map pins one file) —
+  and the scene resolves it against the terrain under the party
+  (`Scene::Map#encounter_backdrop`, via the terrain row's `background_name`).
+  The inheriting case has to walk the tree, and it is the common one: **491 of
+  Nepheshel's 537 maps and 4 of mtf-meido-action's 13 are type 0** and answer only
+  through a parent. Resolving every map in both games shows the walk earning its
+  keep — 475 of Nepheshel's maps reach their "black" interior backdrop purely by
+  inheritance (plus one pinned boss backdrop) where a naive reading would leave
+  them all on the flat field, while all 13 of mtf-meido-action's maps vary with
+  the terrain fought on (Grassland / Desert / Snow Field / ...), the branch
+  Nepheshel never takes since it names no terrain backdrops at all. The walk is
+  bounded and cycle-safe, so a tree that loops ends at the terrain instead of
+  hanging the battle.
+  **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
+  than only ever attacking — the single biggest silent gap left in the battle
+  system, since **510 of the 959 enemy actions across the two test beds are
+  skills** that could never fire. `Game::EnemyAction` decodes the table and
+  `Game::Battle#choose_enemy_action` picks from it each turn: a port of EasyRPG's
+  rating-based algorithm, which keeps the entries whose condition currently
+  holds, finds the highest `rating`, drops everything more than 10 below it
+  (`rating - max + 10`, floored at 0) and picks from the rest weighted by that
+  adjusted rating — so a monster's behaviour shifts through a fight as its
+  preferred moves stop being valid. All eight condition types resolve (always,
+  switch, turn, party size, own HP %, own SP %, party average level and party
+  fatigue), the turn condition reusing `Game::BattlePage.check_turns` with the
+  same base / multiple argument order, and an unknown type keeps the action out
+  of the running rather than firing it unchecked. Every kind executes: a
+  **skill** goes through the same command pipeline the party casts with (so an
+  enemy's spell is costed against its SP, scaled by the target's elemental
+  resistance, rolled for accuracy and **inflicts its states** — which is what
+  finally lets a monster poison or sleep the party, the last enemy-cast gap), an
+  ally-scoped skill **heals a fellow monster**, an all-scope skill hits every
+  living target in one action; a **transformation** re-points the combatant at
+  another database enemy (name, stats, ranks and its new pattern, HP/SP clamped
+  to the new maxima); and the basic actions cover attack, **dual attack** (two
+  swings, the second skipped if the first felled the target), **defend** (the
+  guard halves the next blow and expires at that enemy's next turn), observe,
+  **charge** (the next attack lands doubled — a critical takes precedence, per
+  EasyRPG's `CalcNormalAttackEffect` — then the charge is spent),
+  **self-destruction** (`atk - def/2` across the living party, killing the
+  caster, per `CalcSelfDestructEffect`), **escape** (out of play without counting
+  as a kill, like a page's Force Flee) and do-nothing. An action's post-run
+  switch on / off is applied, so a monster's move can drive the troop's
+  battle-event pages. `Game::Battle` stays database-free: it reaches the skill /
+  enemy tables, the switches and the party's average level through a new
+  `Game::EnemyAi` collaborator, and without one (the seeded harness fixtures) an
+  enemy falls back to plain attacking exactly as before, so every existing
+  result is unchanged. Exercised over real data: all 300 Nepheshel enemies and
+  all 115 of mtf-meido-action's decode a pattern, and running every troop in both
+  games (157 and 88 fights) completes without error with 1980 and 1193 skill
+  casts landing where there were none. `ruby scripts/analyze_game.rb --enemies
+  <game>` reports a game's patterns the way `--troops` reports its battle pages.
+  A **transformed monster is redrawn** with the battler it turned into: the
+  combatant carries its `battler_name`, and `Scene::Map#refresh_battle_sprites`
+  rebuilds any sprite whose battler no longer matches the one it was drawn from
+  (an unchanged battler is left alone, so the field does not churn every frame).
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM
