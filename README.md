@@ -276,6 +276,14 @@
   than the MV path and is still being brought up against real games — the
   headless CI smoke is what the claim rests on, and it is not yet a blocking
   check
+- MZ **plays animations** too — with a caveat worth knowing, because MZ has two
+  animation systems and only one of them is reachable. `isMVAnimation` routes by
+  data shape: an animation carrying a `frames` array draws as sprite cells
+  (`Sprite_AnimationMV`) and works end to end here, including the per-cell blend
+  modes; anything else goes to Effekseer, whose WASM runtime is started by the
+  `main.js` this host bypasses, so such an animation runs its sound and flash
+  timings on schedule and draws **no visuals**. Nothing hangs and nothing errors,
+  which is exactly why it is documented rather than left to be discovered
 - MZ also **shows messages, opens the party menu, saves and fights**, each
   exercised headlessly the way the MV path is: a message queued through
   `$gameMessage` opens `Window_Message` over the map, `Scene_Map`'s own
@@ -304,8 +312,8 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `menu`, `save` or `battle`, each with its own
-  success line so a probe that merely ran cannot pass; `ruby
+  key moves the player), `message`, `menu`, `animation`, `save` or `battle`, each
+  with its own success line so a probe that merely ran cannot pass; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 - Those assertions all read the engine's **log**, which is how the empty frames
@@ -315,9 +323,12 @@
   uploaded has 18 distinct colours in its band where text puts 105), and that
   each mode's frame differs from the plain map frame the way that mode claims —
   the message window changes the bottom band and nothing above it, the menu and
-  battle scenes replace the screen, and the save round-trip lands back on the
+  battle scenes replace the screen, the animation's burst changes the middle of
+  the frame and nothing at its edges, and the save round-trip lands back on the
   map. Reverting the `texSubImage2D` fix leaves every boot-check mode reporting
-  OK and fails the frame check, which is the point of it
+  OK and fails the frame check, which is the point of it — as does renaming the
+  animation's sheet away, which the log reports as `played=true` because the
+  cell sprite is there, holding a placeholder bitmap
 
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
