@@ -152,6 +152,14 @@
   windowskin's blinking **pause arrow** while they hold text, as the genuine
   runtime does. `STEPS_SPEC` lets the wine comparison drive a game's opening
   cutscene instead of only walking around its start map
+- The **screen effects** run too: Prepare / Execute **Transition** (221/222)
+  holds the screen on a snapshot so a teleport or map change happens behind it,
+  then dissolves the still away — spread over real frames rather than blocking
+  in `Graphics.transition`, so the browser build's frame callback keeps its
+  budget — and **Screen Flash** / **Screen Shake** (224/225) carry RMXP's own
+  maths (an alpha that reaches zero exactly on the duration, a shake that
+  reverses past twice its power and settles back on centre) into the map
+  viewport's colour overlay and scroll origin
 
 ### RPG Maker VX / VX Ace
 

@@ -518,6 +518,10 @@ class RPGXP
         # not).
         @pictures = {}
         @picture_sprites = {}
+        # RMXP's $game_screen flash / shake, applied to the screen viewport that
+        # holds the map (see setup_sprites) -- the flash as its colour overlay,
+        # the shake as its scroll origin, exactly where Spriteset_Map puts them.
+        @screen = Game::Screen.new
 
         @resolver = EventResolver.new(@db.common_events)
         @interpreter = Game::Interpreter.new(@state)
@@ -554,6 +558,7 @@ class RPGXP
         close_message
         close_number_input
         @event_sprites.each_value { |s| s[:sprite].dispose } if @event_sprites
+        dispose_frozen
         @picture_sprites.each_value { |e| e[:sprite].dispose } if @picture_sprites
         [@tilemap, @player_sprite, @screen_viewport,
          @picture_viewport].each { |s| s.dispose if s }
@@ -579,6 +584,7 @@ class RPGXP
         end
         animate_player
         step_tone_change
+        step_screen_effects
         update_pictures
         render
       end
@@ -804,6 +810,110 @@ class RPGXP
         $stderr.puts "[RGSS] Set Move Route apply failed: #{e.message}"
       end
 
+      # Apply the Screen Flash (224) / Screen Shake (225) requests an interpreter
+      # queued this frame.
+      def apply_screen_requests(interp)
+        reqs = interp.take_screen_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each do |r|
+          if r[:op] == :flash
+            @screen.start_flash(color_values(r[:color]), r[:duration])
+          else
+            @screen.start_shake(r[:power], r[:speed], r[:duration])
+          end
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] screen effect failed: #{e.message}"
+      end
+
+      # One frame of the flash decay and the shake spring, handed to the screen
+      # viewport. Only written when something is actually running, and only when
+      # the value changed: each write re-composites the viewport natively.
+      def step_screen_effects
+        return unless @screen && @screen_viewport
+        return unless @screen.flashing? || @screen.shaking? || @screen_dirty
+        @screen.update
+        c = @screen.flash_color
+        if @flash_shown != c[3]
+          @flash_shown = c[3]
+          @screen_viewport.color = Color.new(c[0], c[1], c[2], c[3])
+        end
+        shake = @screen.shake.to_i
+        if @shake_shown != shake
+          @shake_shown = shake
+          @screen_viewport.ox = shake
+        end
+        @screen_viewport.update
+        # Keep stepping for one more frame after everything stopped, so the last
+        # write (back to no tint, no offset) actually lands.
+        @screen_dirty = @screen.flashing? || @screen.shaking?
+      rescue StandardError => e
+        $stderr.puts "[RGSS] screen effect step failed: #{e.message}"
+        @screen_dirty = false
+      end
+
+      # Only the foreground interpreter freezes the screen. A background (parallel)
+      # process is never suspended on a UI request -- step_parallel resumes those
+      # at once so the loop keeps running -- so its Execute Transition would
+      # never dissolve the still, leaving the screen stuck on a snapshot for
+      # good. Its 221 is simply not applied.
+      #
+      # Prepare for Transition (221): hold the screen exactly as it is now, on a
+      # sprite above everything, so the teleport / tint / map change that follows
+      # happens behind it unseen. RGSS's own Graphics.freeze snapshot, kept as
+      # scene state instead of inside Graphics because the dissolve below has to
+      # run one frame per update rather than in a blocking loop.
+      def apply_freeze_request(interp)
+        return unless interp.take_freeze_request
+        dispose_frozen
+        bmp = RGSS::Graphics.snap_to_bitmap
+        unless bmp
+          # A backend that cannot snapshot says so itself, once; the transition
+          # then degrades to a plain wait, which is what Graphics.transition does.
+          return
+        end
+        @frozen = { bitmap: bmp, sprite: Sprite.new }
+        @frozen[:sprite].bitmap = bmp
+        @frozen[:sprite].z = RGSS::Graphics::TRANSITION_Z
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Prepare for Transition failed: #{e.message}"
+        @frozen = nil
+      end
+
+      # Execute Transition (222): dissolve the frozen still away over
+      # Interpreter::TRANSITION_FRAMES frames, resuming the interpreter when it
+      # is gone. RMXP reaches the same ordering by *blocking* in
+      # Graphics.transition(20) — the scene simply is not updated during it — but
+      # a 20-frame loop inside one frame callback is what the browser build
+      # cannot afford, so the wait is spread over real frames instead.
+      def drive_transition
+        unless @frozen
+          @interpreter.resume # nothing frozen: 222 without a 221, or no snapshot
+          return
+        end
+        total = Game::Interpreter::TRANSITION_FRAMES
+        @transition_step = (@transition_step || 0) + 1
+        if @transition_step >= total
+          dispose_frozen
+          @transition_step = nil
+          @interpreter.resume
+          return
+        end
+        @frozen[:sprite].opacity = 255 - (255 * @transition_step / total)
+      rescue StandardError => e
+        $stderr.puts "[RGSS] Execute Transition failed: #{e.message}"
+        dispose_frozen
+        @transition_step = nil
+        @interpreter.resume
+      end
+
+      def dispose_frozen
+        return unless @frozen
+        @frozen[:sprite].dispose
+        @frozen[:bitmap].dispose
+        @frozen = nil
+      end
+
       # Apply the picture (231..235) requests an interpreter queued this frame,
       # against the picture list this scene owns.
       def apply_picture_requests(interp)
@@ -829,6 +939,11 @@ class RPGXP
         when :tone   then pic.start_tone_change(tone_values(r[:tone]), r[:duration])
         when :erase  then pic.erase
         end
+      end
+
+      # An RPG::Color from the data as the four numbers Game::Screen keeps.
+      def color_values(color)
+        [color.red, color.green, color.blue, color.alpha]
       end
 
       # An RPG::Tone from the data as the four numbers Game::Picture keeps.
@@ -1114,6 +1229,7 @@ class RPGXP
           when :wait     then drive_wait
           when :teleport then perform_teleport(@interpreter.teleport)
           when :move_completion then drive_move_completion
+          when :transition then drive_transition
           end
         else
           @interpreter.update
@@ -1121,6 +1237,8 @@ class RPGXP
           apply_tint_requests(@interpreter)
           apply_location_requests(@interpreter)
           apply_picture_requests(@interpreter)
+          apply_freeze_request(@interpreter)
+          apply_screen_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -1240,6 +1358,7 @@ class RPGXP
           apply_tint_requests(it)
           apply_location_requests(it)
           apply_picture_requests(it)
+          apply_screen_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
@@ -1248,6 +1367,7 @@ class RPGXP
           apply_tint_requests(it)
           apply_location_requests(it)
           apply_picture_requests(it)
+          apply_screen_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError

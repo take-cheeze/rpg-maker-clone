@@ -881,11 +881,12 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   unplayable, its `Audio/BGM` mixing `.MID` with `.mid` where the search only
   tried lower case. The **picture commands** (231–235, 471 uses) and the message
   **pause arrow** followed, with a `STEPS_SPEC` override on the comparison so a
-  game's opening cutscene can be driven rather than only its start map. What a
-  real XP game uses that we still skip: `221`/`222` (prepare/execute
-  transition), `224`/`225` (screen flash/shake), `203` (scroll map), `207` (show
-  animation) and `355` (script) — 221/222 want a look at `Graphics.transition`
-  first, since it blocks and drives its own frames.
+  game's opening cutscene can be driven rather than only its start map. The screen effects
+  followed — Prepare / Execute Transition (221/222) and Screen Flash / Shake
+  (224/225), 871 uses — with 222 suspending the interpreter and the scene fading
+  the frozen still per frame rather than calling the blocking
+  `Graphics.transition`. What a real XP game uses that we still skip: `203`
+  (scroll map), `207` (show animation) and `355` (script).
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

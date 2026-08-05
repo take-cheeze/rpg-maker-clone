@@ -8,7 +8,8 @@ Accepted — the data, script-host and boot checks run green on both the
 OpenGame.exe test bed and the packed *Pray for You* release; the wine comparison
 stays a manual/dev script, as in ADR 0021 / 0025.
 
-**Amended 2026-08-05: the picture layer and the message pause arrow landed**, and
+**Amended 2026-08-05: the picture layer, the message pause arrow and the screen
+effects (transitions, flash, shake) landed**, and
 `scripts/compare-rpgxp-wine.bash` grew a `STEPS_SPEC` override so a game's
 opening cutscene can be driven instead of only its start map. See the follow-ups
 below for what that closed and what it did not.
@@ -148,11 +149,20 @@ screen). The rest is the windowskin background's shading.
   the same layering `Spriteset_Map` gets from `@viewport2`. RGSS's `ox`/`oy` are
   not wired to where a sprite draws here, so a centred origin is folded into the
   position instead, scaled by the zoom.
-- Still no handler: `221`/`222` (prepare/execute transition, 419 uses each),
-  `224`/`225` (screen flash/shake), `203` (scroll map), `207` (show animation)
-  and `355` (script). 221/222 want a look at `Graphics.transition` first: it
-  blocks and drives its own frames, which does not obviously compose with being
-  called from inside the scene's update.
+- **The screen effects are done too**: Prepare / Execute Transition (221/222)
+  and Screen Flash / Shake (224/225), 871 uses between them. The transition
+  question — `Graphics.transition` blocks and drives its own frames, which does
+  not compose with being called from inside the scene's update — resolved by not
+  calling it: the interpreter suspends on 222 the way it does on a Wait, and the
+  scene fades the frozen still one frame per update. That is the same ordering
+  RMXP gets from blocking (its scene is not updated during the twenty frames
+  either) without a twenty-frame loop inside one frame callback. Only the
+  foreground interpreter freezes the screen: a background process is never
+  suspended on a UI request, so its 222 would never dissolve the still and the
+  screen would stay stuck on a snapshot for good.
+- Still no handler: `203` (scroll map), `207` (show animation) and `355`
+  (script). 207 needs the animation system; 355 needs a decision about what a
+  game's inline Ruby should be evaluated against.
 - **Driving the reference past the opening needs 32-bit GStreamer.** Pray for
   You's opening plays MP3 BGM, and `RGSS103J.dll` decodes it through
   winegstreamer; without `gstreamer1.0-plugins-base:i386` (and friends) in the
