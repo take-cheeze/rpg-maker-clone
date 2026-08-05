@@ -119,6 +119,13 @@ DEFINE_bool(
     "For RPG Maker MZ: once on the map, hold a direction for a spell (implies "
     "--mz_new_game to reach the map) and log the player's start/end tile, so a "
     "headless run confirms input actually moves the player. Used in CI");
+DEFINE_bool(
+    mz_audio_test,
+    false,
+    "For RPG Maker MZ: once on the map, play a sound effect through the audio "
+    "bridge (implies --mz_new_game to reach the map) and log whether the op "
+    "reached RGSS::Audio and the asset resolves, so a headless run confirms "
+    "the audio path works. Used in CI");
 DEFINE_string(
     mz_screenshot,
     "",
@@ -739,6 +746,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_MOVE_TEST"),
                 mrb_bool_value(FLAGS_mz_move_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_AUDIO_TEST"),
+                mrb_bool_value(FLAGS_mz_audio_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mz_screenshot.c_str()));

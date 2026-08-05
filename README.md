@@ -56,10 +56,12 @@
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
 - A troop's **battle-event pages** run during a fight: their conditions (switch,
-  variable, turn, enemy/actor HP) are re-checked each turn, and a matching page
-  runs the ordinary command set plus the battle-only commands — Change Monster
-  HP / MP / Condition, Show Hidden Monster, Change Battle Background, the battle
-  Show Battle Animation, the battle Conditional Branch and Terminate Battle
+  variable, turn, enemy/actor HP, plus RPG2003's per-battler turn counters and
+  party fatigue) are re-checked each turn, and a matching page runs the ordinary
+  command set plus the battle-only commands — Change Monster HP / MP / Condition,
+  Show Hidden Monster, Change Battle Background, the battle Show Battle
+  Animation, the battle Conditional Branch and Terminate Battle. A page whose
+  condition box is entirely unticked never fires, which is how RPG_RT reads it
 - The **RPG2003-only event commands** run too — the low opcodes the 2003 editor
   emits for the features RPG2000 never had. **Change Class** (1008) moves an
   actor to a database class, re-reading its growth curve, learn table and EXP
@@ -397,8 +399,9 @@ part that explains it). Nothing else is collected.
 - Window and menu text is rasterised with **stb_truetype** from the project's
   own font: RPG Maker XP/VX pick a family name out of the project's `Fonts/`
   folder (`RGSS::Font#name`, matched leniently against the file names), MV/MZ
-  load the first font under `fonts/`. Size, bold, italic, outline, shadow and
-  the colours all come from the `Font`
+  load the first font under `fonts/` — `.ttf`/`.otf`, or the `.woff` that MZ
+  projects actually ship, unpacked to the sfnt inside it. Size, bold, italic,
+  outline, shadow and the colours all come from the `Font`
 - **Projects that ship no font get one once you fetch it.** On Windows the
   maker's default resolves to a system font (`MS PGothic`) that is not ours to
   redistribute, so a project can easily ship none — and then every window drew

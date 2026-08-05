@@ -82,7 +82,7 @@ jobs:
         id: cache
         with:
           path: data
-          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
 
       # The native compile is the long pole. Everything that does not feed the
       # compiler — the RTP/game/MV downloads (network-bound) and pre-commit

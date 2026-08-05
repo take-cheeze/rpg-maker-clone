@@ -40,7 +40,8 @@ with real glyphs rather than blanks.
   boot (`mruby-rpgxp`, `mruby-rpgvx`). A font found under the project's own
   `Fonts/` still wins; this is only reached when the project ships none.
 - **RPG Maker MV / MZ** — `mruby-mvjs` falls back to it when the project's
-  `fonts/` directory holds no `.ttf`/`.otf`.
+  `fonts/` directory holds no usable font — no `.ttf`/`.otf`, and none of the
+  `.woff` files MZ projects normally ship.
 - **RPG2000 / 2003** — deliberately **not** affected. Its text keeps rendering
   with shinonome, whose metrics match RPG_RT's MS Gothic; the render-parity
   comparisons (`scripts/compare-nepheshel-wine.bash`) are checked against those

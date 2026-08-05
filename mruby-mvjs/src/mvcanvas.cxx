@@ -46,11 +46,6 @@ namespace {
 // find the first .ttf/.otf under the game's fonts/ dir and rasterise glyphs
 // with stb_truetype. Loading is lazy and cached; if no font is found, text
 // draws no-op and measureText falls back to a rough advance estimate.
-//
-// A project with no fonts/ of its own (the MZ sample, and anything whose
-// deployment left the RTP font behind) falls back to the engine's default font
-// — every glyph MV draws goes through here, so without one its whole UI is
-// blank rather than merely wrong-looking.
 struct GameFont {
   bool tried = false;
   bool ok = false;
@@ -58,26 +53,153 @@ struct GameFont {
   stbtt_fontinfo info{};
 };
 
-std::string font_dir_first_ttf() {
+// Lowercased extension of `name`, including the dot ("" if it has none).
+std::string lower_ext(const std::string& name) {
+  const size_t dot = name.rfind('.');
+  if (dot == std::string::npos)
+    return std::string();
+  std::string ext = name.substr(dot);
+  for (char& ch : ext)
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return ext;
+}
+
+// Find the game's font. A bare sfnt (.ttf/.otf) is preferred because it needs
+// no unpacking, but .woff is accepted too and is what actually matters in
+// practice:
+// **RPG Maker MZ projects ship `fonts/*.woff`** (mplus-1m-regular.woff and
+// friends), so a loader that only looked for .ttf/.otf found nothing and every
+// MZ game drew blank windows.
+//
+// A project that ships no font at all (the MZ sample, and anything whose
+// deployment left the RTP font behind) falls back to the engine's default font
+// — every glyph MV draws goes through here, so without one its whole UI is
+// blank rather than merely wrong-looking. Returns "" only when that is missing
+// too.
+std::string font_dir_first_font() {
   const std::string dir = mv_resolve_path("fonts");
   DIR* d = opendir(dir.c_str());
   if (!d)
     return rgss::default_font_path();
-  std::string found;
+  std::string sfnt, woff;
   while (dirent* e = readdir(d)) {
-    const std::string name = e->d_name;
-    if (name.size() < 4)
-      continue;
-    std::string ext = name.substr(name.size() - 4);
-    for (char& ch : ext)
-      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    if (ext == ".ttf" || ext == ".otf") {
-      found = dir + "/" + name;
-      break;
-    }
+    const std::string ext = lower_ext(e->d_name);
+    if (sfnt.empty() && (ext == ".ttf" || ext == ".otf"))
+      sfnt = dir + "/" + e->d_name;
+    else if (woff.empty() && ext == ".woff")
+      woff = dir + "/" + e->d_name;
   }
   closedir(d);
-  return found.empty() ? rgss::default_font_path() : found;
+  if (!sfnt.empty())
+    return sfnt;
+  if (!woff.empty())
+    return woff;
+  // Nothing usable in the project's own fonts/ — fall back to the engine's
+  // default font (assets/fonts), so the windows still draw.
+  return rgss::default_font_path();
+}
+
+// Big-endian readers over a byte buffer, bounds-checked by the caller.
+uint32_t be32(const uint8_t* p) {
+  return (static_cast<uint32_t>(p[0]) << 24) |
+         (static_cast<uint32_t>(p[1]) << 16) |
+         (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
+}
+uint16_t be16(const uint8_t* p) {
+  return static_cast<uint16_t>((p[0] << 8) | p[1]);
+}
+void put32(std::vector<uint8_t>& v, size_t at, uint32_t x) {
+  v[at] = static_cast<uint8_t>(x >> 24);
+  v[at + 1] = static_cast<uint8_t>(x >> 16);
+  v[at + 2] = static_cast<uint8_t>(x >> 8);
+  v[at + 3] = static_cast<uint8_t>(x);
+}
+void put16(std::vector<uint8_t>& v, size_t at, uint16_t x) {
+  v[at] = static_cast<uint8_t>(x >> 8);
+  v[at + 1] = static_cast<uint8_t>(x);
+}
+
+// Unpack a WOFF 1.0 file into the bare sfnt (TrueType/OpenType) font it wraps,
+// which is what stb_truetype can parse. WOFF is just a table-by-table
+// container: a 44-byte header, a directory of (tag, offset, compLength,
+// origLength, checksum) entries, and each table stored either raw or
+// zlib-compressed — exactly the zlib stb_image already implements, so no new
+// dependency.
+//
+// The rebuilt sfnt needs its own 12-byte header and 16-byte-per-table
+// directory, with tables 4-byte aligned. Table *checksums* are copied from the
+// WOFF directory rather than recomputed; stb_truetype does not verify them.
+//
+// WOFF2 (signature "wOF2") is a different format — Brotli, plus a transformed
+// glyf table — and is deliberately not handled; it is reported instead of being
+// half-parsed into garbage.
+bool woff_to_sfnt(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+  if (in.size() < 44)
+    return false;
+  if (std::memcmp(in.data(), "wOFF", 4) != 0)
+    return false;
+
+  const uint32_t flavor = be32(in.data() + 4);
+  const uint16_t num_tables = be16(in.data() + 12);
+  if (num_tables == 0 || in.size() < 44 + static_cast<size_t>(num_tables) * 20)
+    return false;
+
+  struct Entry {
+    uint32_t tag, offset, comp_len, orig_len, checksum;
+  };
+  std::vector<Entry> tables(num_tables);
+  size_t total = 12 + static_cast<size_t>(num_tables) * 16;
+  for (uint16_t i = 0; i < num_tables; ++i) {
+    const uint8_t* p = in.data() + 44 + static_cast<size_t>(i) * 20;
+    tables[i] = {be32(p), be32(p + 4), be32(p + 8), be32(p + 12), be32(p + 16)};
+    const Entry& t = tables[i];
+    // Every table must lie inside the file, and a stored table's lengths match.
+    if (t.comp_len > in.size() || t.offset > in.size() - t.comp_len)
+      return false;
+    if (t.comp_len > t.orig_len)
+      return false;
+    total += (t.orig_len + 3) & ~3u;  // 4-byte aligned
+  }
+
+  out.assign(total, 0);
+  // sfnt header: version, numTables, and the binary-search fields (derived, and
+  // unused by stb_truetype, but written correctly so the result is a valid
+  // font).
+  uint16_t entry_selector = 0;
+  while ((1u << (entry_selector + 1)) <= num_tables)
+    ++entry_selector;
+  const uint16_t search_range =
+      static_cast<uint16_t>((1u << entry_selector) * 16);
+  put32(out, 0, flavor);
+  put16(out, 4, num_tables);
+  put16(out, 6, search_range);
+  put16(out, 8, entry_selector);
+  put16(out, 10, static_cast<uint16_t>(num_tables * 16 - search_range));
+
+  size_t dst = 12 + static_cast<size_t>(num_tables) * 16;
+  for (uint16_t i = 0; i < num_tables; ++i) {
+    const Entry& t = tables[i];
+    const size_t dir = 12 + static_cast<size_t>(i) * 16;
+    put32(out, dir, t.tag);
+    put32(out, dir + 4, t.checksum);
+    put32(out, dir + 8, static_cast<uint32_t>(dst));
+    put32(out, dir + 12, t.orig_len);
+
+    if (dst + t.orig_len > out.size())
+      return false;
+    const char* src = reinterpret_cast<const char*>(in.data() + t.offset);
+    if (t.comp_len == t.orig_len) {
+      std::memcpy(out.data() + dst, src, t.orig_len);  // stored, not deflated
+    } else {
+      const int n = stbi_zlib_decode_buffer(
+          reinterpret_cast<char*>(out.data() + dst),
+          static_cast<int>(t.orig_len), src, static_cast<int>(t.comp_len));
+      if (n != static_cast<int>(t.orig_len))
+        return false;
+    }
+    dst += (t.orig_len + 3) & ~3u;
+  }
+  return true;
 }
 
 GameFont& game_font() {
@@ -85,7 +207,7 @@ GameFont& game_font() {
   if (f.tried)
     return f;
   f.tried = true;
-  const std::string path = font_dir_first_ttf();
+  const std::string path = font_dir_first_font();
   if (path.empty())
     return f;
   std::FILE* fp = std::fopen(path.c_str(), "rb");
@@ -98,9 +220,36 @@ GameFont& game_font() {
     f.data.resize(static_cast<size_t>(sz));
     if (std::fread(f.data.data(), 1, static_cast<size_t>(sz), fp) ==
         static_cast<size_t>(sz)) {
-      const int off = stbtt_GetFontOffsetForIndex(f.data.data(), 0);
-      if (off >= 0 && stbtt_InitFont(&f.info, f.data.data(), off))
-        f.ok = true;
+      // A WOFF wrapper is unpacked to the sfnt inside it first; anything else
+      // is handed to stb_truetype as-is. Report a failure rather than silently
+      // drawing no text — blank windows with no explanation is exactly how the
+      // missing .woff support hid for so long.
+      if (f.data.size() >= 4 && std::memcmp(f.data.data(), "wOF2", 4) == 0) {
+        std::fprintf(stderr,
+                     "[MV] font %s is WOFF2, which is not supported (it needs "
+                     "Brotli and a transformed glyf table); text will not "
+                     "draw. Ship a .ttf/.otf or WOFF 1.0 instead.\n",
+                     path.c_str());
+        f.data.clear();
+      } else if (f.data.size() >= 4 &&
+                 std::memcmp(f.data.data(), "wOFF", 4) == 0) {
+        std::vector<uint8_t> sfnt;
+        if (woff_to_sfnt(f.data, sfnt)) {
+          f.data.swap(sfnt);
+        } else {
+          std::fprintf(stderr, "[MV] font %s: could not unpack the WOFF\n",
+                       path.c_str());
+          f.data.clear();
+        }
+      }
+      if (!f.data.empty()) {
+        const int off = stbtt_GetFontOffsetForIndex(f.data.data(), 0);
+        if (off >= 0 && stbtt_InitFont(&f.info, f.data.data(), off))
+          f.ok = true;
+        else
+          std::fprintf(stderr, "[MV] font %s: stb_truetype rejected it\n",
+                       path.c_str());
+      }
     }
   }
   std::fclose(fp);
