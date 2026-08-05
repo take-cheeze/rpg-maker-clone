@@ -783,10 +783,19 @@ screen (544×416). Full rationale:
     scripts' in-place `color.set(...)` visible. Same mechanism ADR 0021 measured
     working for the RPG2000 fade, moved into the viewport so it clips and
     scrolls with it.
+  - ✅ **VX/VX Ace `Tilemap`** — `bitmaps` (the nine A1–A5/B–E sheets, assigned
+    by index the way the scripts do), `flags=`, and the VX tile-id decode: a
+    tile id carries both the autotile and which of its 48 (16 for walls, 4 for
+    waterfalls) edge shapes to assemble from four quarter-tiles, per family.
+    Ported from the MIT MV corescript, which inherited VX Ace's tile system
+    unchanged, and **differentially tested against it** — all 8300 ids × a full
+    animation cycle × the table flag (66,400 cases) match byte for byte. The
+    decode is exposed as `Tilemap.vx_tile_quads` so `mruby-rgss/test` pins it
+    without a display, as sample cases plus a checksum over the whole sweep.
+    Left as polish: the flat "above the characters" layer (the same
+    approximation ADR 0022 describes for XP) and the A2 table-edge tile.
   - Remaining, all native `mruby-rgss` work and ordered by what blocks a
-    playable game: the **VX/VX Ace `Tilemap`** (nine `bitmaps` sheets + the
-    `flags` table instead of XP's single tileset/autotiles — without it a game
-    boots but no map draws), **`Viewport#tone`** (unlike `color` a tone rescales
+    playable game: **`Viewport#tone`** (unlike `color` a tone rescales
     what is already drawn, so it needs a per-pixel pass over the viewport's
     contents — the same native work the RPG2000 screen tint is waiting on, and
     doing it once here would serve both),

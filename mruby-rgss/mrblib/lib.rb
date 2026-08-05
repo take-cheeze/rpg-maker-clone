@@ -231,6 +231,12 @@ module RGSS
     def autotiles
       @autotiles ||= Array.new(7)
     end
+
+    # RGSS2/RGSS3 (VX, VX Ace) replace the tileset + autotiles with nine sheets
+    # (`bitmaps`, native) and the tileset `flags` table. A tilemap that has been
+    # given any sheet is drawn the VX way; `flags=` is native (it re-tiles), so
+    # this only adds the reader.
+    attr_reader :flags
   end
 
   # RGSS Window: the framed, scrollable box every Window_Base subclass (message,

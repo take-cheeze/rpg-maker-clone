@@ -694,6 +694,96 @@ assert "RGSS::Viewport RGSS2/RGSS3 screen-effect surface" do
   end
 end
 
+# The VX / VX Ace tile geometry is pure arithmetic, so it is pinned here even
+# though drawing needs a display. Every expectation below was taken from a
+# differential run against the MIT RPG Maker MV corescript
+# (rpgtkoolmv/corescript, js/rpg_core/Tilemap.js), which inherited VX Ace's tile
+# system unchanged: all 8300 tile ids x 5 animation frames x the table flag
+# produce byte-identical geometry. See docs/rpgvx-rgss-api-gap.md.
+assert "RGSS::Tilemap.vx_tile_quads decodes plain tiles" do
+  # The B/C/D/E pages are sheets 5..8, one 32x32 quad each.
+  assert_equal [[5, 32, 0, 0, 0, 32, 32]], RGSS::Tilemap.vx_tile_quads(1)
+  assert_equal [[8, 0, 128, 0, 0, 32, 32]], RGSS::Tilemap.vx_tile_quads(800)
+  # A5 is sheet 4.
+  assert_equal [[4, 0, 0, 0, 0, 32, 32]], RGSS::Tilemap.vx_tile_quads(1536)
+  # Nothing draws for an empty tile, an out-of-range id, or the unused
+  # 1024..1535 band between the E page and A5.
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(0)
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(1024)
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(8192)
+end
+
+assert "RGSS::Tilemap.vx_tile_quads assembles autotiles from four quads" do
+  # A1 water (sheet 0), shape 0: four 16x16 quarter-tiles.
+  assert_equal [[0, 32, 64, 0, 0, 16, 16], [0, 16, 64, 16, 0, 16, 16],
+                [0, 32, 48, 0, 16, 16, 16], [0, 16, 48, 16, 16, 16, 16]],
+               RGSS::Tilemap.vx_tile_quads(2048)
+  # A2 ground is sheet 1, A3 buildings sheet 2 (16 wall shapes), A4 walls
+  # sheet 3.
+  assert_equal 1, RGSS::Tilemap.vx_tile_quads(2816)[0][0]
+  assert_equal 2, RGSS::Tilemap.vx_tile_quads(4352)[0][0]
+  assert_equal 3, RGSS::Tilemap.vx_tile_quads(5888)[0][0]
+  # A wall family has only 16 shapes, so a higher shape draws nothing (as in
+  # the corescript, whose table lookup simply misses).
+  assert_equal [], RGSS::Tilemap.vx_tile_quads(4352 + 20)
+end
+
+assert "RGSS::Tilemap.vx_tile_quads animates water and waterfalls" do
+  # The water surface cycles 0,1,2,1 over four frames: frames 1 and 3 share a
+  # column, and frame 2 is a further 64px along.
+  f0 = RGSS::Tilemap.vx_tile_quads(2048, 0)
+  f1 = RGSS::Tilemap.vx_tile_quads(2048, 1)
+  f2 = RGSS::Tilemap.vx_tile_quads(2048, 2)
+  f3 = RGSS::Tilemap.vx_tile_quads(2048, 3)
+  assert_equal 32, f0[0][1]
+  assert_equal 96, f1[0][1]
+  assert_equal 160, f2[0][1]
+  assert_equal f1, f3
+  # A waterfall (an odd A1 kind) has its own three-frame cycle, stepping down
+  # the sheet rather than across it.
+  w0 = RGSS::Tilemap.vx_tile_quads(2288, 0)
+  w1 = RGSS::Tilemap.vx_tile_quads(2288, 1)
+  assert_equal [480, 0], [w0[0][1], w0[0][2]]
+  assert_equal [480, 32], [w1[0][1], w1[0][2]]
+end
+
+assert "RGSS::Tilemap.vx_tile_quads matches the reference sweep" do
+  # A checksum over the *whole* decode — every tile id, both table settings, one
+  # full animation cycle (66,400 cases) — so a regression anywhere in it fails
+  # here, not just in the representative cases above. The expected value was
+  # computed from the differential run described at the top of this section, in
+  # which every one of those cases matched the MV corescript byte for byte.
+  #
+  # The rolling hash stays inside a 32-bit mrb_int on purpose: the modulus keeps
+  # the running value under 2**20, so `sum * 31` cannot overflow.
+  sum = 0
+  [0, 1, 2, 3].each do |frame|
+    [false, true].each do |table|
+      id = 0
+      while id < 8300
+        RGSS::Tilemap.vx_tile_quads(id, frame, table).each do |quad|
+          quad.each { |v| sum = (sum * 31 + v) % 1048573 }
+        end
+        sum = (sum * 31 + id) % 1048573
+        id += 1
+      end
+    end
+  end
+  assert_equal 782438, sum
+end
+
+assert "RGSS::Tilemap.vx_tile_quads splits an A2 table tile" do
+  # Without the table flag a shape is four quads; with it, a quad whose source
+  # row is a table row is replaced by the counter row plus a 16x8 strip of the
+  # original drawn over its bottom half — so a counter shows its side.
+  plain = RGSS::Tilemap.vx_tile_quads(2820)
+  table = RGSS::Tilemap.vx_tile_quads(2820, 0, true)
+  assert_equal 4, plain.size
+  assert_equal 5, table.size
+  assert_equal [1, 16, 48, 16, 16, 16, 16], table[3]
+  assert_equal [1, 48, 16, 16, 24, 16, 8], table[4]
+end
+
 assert "RGSS::Tilemap API surface" do
   # Tilemap is now native: Tilemap.new builds an lv_canvas the size of the
   # viewport and blits the visible tiles into it, so construction needs a live
