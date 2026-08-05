@@ -45,7 +45,13 @@ SERVER_NUM="${1:-112}"
 shift || true
 
 ENGINE="${ENGINE:-./build/rpg_maker_clone}"
-TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-20000}"
+# Wall-clock budget per run. The engine counts it in Graphics.update, but what
+# has to fit inside it is a *frame* count -- the game's own title screen, then
+# the settle and the four held directions of the move probe -- and CI has no GPU,
+# so a 640x480 tilemap redraw is nowhere near the 40 fps RGSS nominally runs at.
+# 20s was enough to reach the map and not to finish the walk; this is sized so
+# the probe still lands at well under ten frames a second.
+TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-45000}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then

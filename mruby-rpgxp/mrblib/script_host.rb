@@ -256,7 +256,11 @@ class RPGXP
       @scene_name = name
       # Remember when the map first appeared; the move probe waits for it.
       @map_frame = @frames if @map_frame.nil? && map_scene?(name)
-      $stderr.puts "[RPGXP-HOST-SCENE] #{name}"
+      # The frame number is the diagnostic that matters when a headless run ends
+      # on its timeout: it is the only way to tell "the game stalled" from "the
+      # frames were slower than the budget" (an unaccelerated CI display renders
+      # a 640x480 tilemap far below the 40 fps the constants below assume).
+      $stderr.puts "[RPGXP-HOST-SCENE] #{name} frame=#{@frames}"
     end
 
     # A game's map scene, by the name RGSS gives it. Matched by name rather than
@@ -272,7 +276,12 @@ class RPGXP
     # it would a real key. Repeated because a game's first screen is its own
     # business — a notice, a language picker, a title menu whose first item is
     # not New Game — and one press cannot know which.
-    CONFIRM_EVERY = 60
+    #
+    # The interval is in *frames* while a headless run's budget is in wall-clock
+    # milliseconds, so it is kept short: on an unaccelerated CI display the whole
+    # boot-plus-walk has to fit in a few hundred frames, and every frame spent
+    # waiting for the first tap is one the walk below does not get.
+    CONFIRM_EVERY = 40
     CONFIRM_HOLD = 4
 
     def self.confirm_tap
@@ -295,7 +304,14 @@ class RPGXP
     #
     # `$game_player` is the game's own global; only its published `x`/`y` are
     # read (see report_scene, which reads `$scene` the same way).
-    MOVE_SETTLE = 120       # frames on the map before walking: transitions, autoruns
+    #
+    # The two counts are a budget, not a preference: the probe finishes
+    # MOVE_SETTLE + MOVE_HOLD * MOVE_DIRS frames after the map appears, and a
+    # headless run is cut off by wall-clock milliseconds, so a settle long enough
+    # to be "safe" is what made the first CI run end on its timeout with the game
+    # standing on its map and no walk reported. MOVE_HOLD stays long enough for a
+    # default-speed step (a tile takes ~16 frames at move speed 4).
+    MOVE_SETTLE = 60        # frames on the map before walking: transitions, autoruns
     MOVE_HOLD = 30          # frames held per direction
     MOVE_DIRS = 4
 
@@ -331,7 +347,7 @@ class RPGXP
       to = player_tile
       moved = !from.nil? && !to.nil? && from != to
       $stderr.puts "[RPGXP-HOST-MOVE] start=#{tile_s(from)} end=#{tile_s(to)} " \
-                   "moved=#{moved}"
+                   "moved=#{moved} frame=#{@frames}"
     end
 
     def self.move_dirs
