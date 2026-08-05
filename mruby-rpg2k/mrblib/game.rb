@@ -1508,12 +1508,23 @@ module Game
     end
 
     # Whether item `id` can be used from the field (main-menu) item screen: a
-    # medicine, a skill book or a seed the party actually holds.
+    # medicine or switch item the party holds whose "usable in field" occasion is
+    # set (a battle-only medicine is hidden here, mirroring #battle_usable?), or a
+    # skill book / seed (always field-only, no occasion to gate on).
     def field_usable?(id)
       it = db_item(id)
       return false unless it && item_count(id) > 0
-      it.type == ITEM_MEDICINE || it.type == ITEM_SKILL_BOOK ||
-        it.type == ITEM_SEED || it.type == ITEM_SWITCH
+      case it.type
+      when ITEM_MEDICINE, ITEM_SWITCH then field_item_occasion?(it)
+      when ITEM_SKILL_BOOK, ITEM_SEED then true
+      else false
+      end
+    end
+
+    # Whether item `it` may be used from the field menu. Defaults to usable when
+    # the row (a bare fixture) carries no `occasion_field` flag.
+    def field_item_occasion?(it)
+      it.respond_to?(:occasion_field) ? it.occasion_field : true
     end
 
     # Whether item `id` is a switch item (turns on a game switch when used).

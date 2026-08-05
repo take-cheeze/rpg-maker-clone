@@ -546,10 +546,12 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_logic_check.rb`; the RGSS windows are the untestable-here UI.
   A **switch item** (type 9) is field-usable too: `Game::Party#use_switch_item`
   consumes one and returns the game switch it turns on, which the item menu then
-  sets (matching EasyRPG, where the scene owns the switch table).
-  Teleport/escape/switch skill types, the battle-time skill variance, the item
-  usable-occasion gate, and two-handed / dual-wield equipping are later
-  refinements.
+  sets (matching EasyRPG, where the scene owns the switch table). The **usable
+  occasion** is honoured on both sides: a medicine / switch item flagged
+  battle-only (`occasion_field` off) is hidden from the field menu, and one
+  flagged field-only is hidden from the battle item list (books / seeds stay
+  field-only). Teleport/escape/switch skill types, the battle-time skill
+  variance, and two-handed / dual-wield equipping are later refinements.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
