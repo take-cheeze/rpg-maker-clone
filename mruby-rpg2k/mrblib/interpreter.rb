@@ -98,6 +98,7 @@ module Game
       PLAY_MEMORIZED_BGM = 11540
       PLAY_SE          = 11550
       CHANGE_MAP_TILESET = 11710
+      CHANGE_PARALLAX  = 11720
       CHANGE_ENCOUNTER_RATE = 11740
       SET_TELEPORT_TARGET = 11810
       CHANGE_TELEPORT_ACCESS = 11820
@@ -135,6 +136,7 @@ module Game
       @halt_movement_requested = false
       @actor_graphic_changed = false
       @tileset_request = nil
+      @parallax_changed = false
       @input_variable = nil
       @input_digits = 1
       # Deterministic RNG for the Control Variables "random" operand (mruby has
@@ -169,6 +171,7 @@ module Game
       @actor_graphic_changed = false
       @system_graphic_changed = false
       @tileset_request = nil
+      @parallax_changed = false
       # Messages queued by a stat command (a Change Level / Change EXP with its
       # "show message" flag set) and shown one after another before the event
       # continues. Drained by #resume, so it survives the reset_waits between
@@ -218,6 +221,16 @@ module Game
       id = @tileset_request
       @tileset_request = nil
       id
+    end
+
+    # True (once) if a Change Parallax Background command replaced the map's
+    # panorama since the last call, clearing the flag. The owning scene polls
+    # this after #update and rebuilds the parallax sprite from the new override
+    # (Game::State#parallax). Non-blocking, like Change Map Tileset.
+    def take_parallax_request
+      v = @parallax_changed
+      @parallax_changed = false
+      v
     end
 
     # True (once) if a Halt All Movement command ran since the last call, clearing
@@ -564,6 +577,7 @@ module Game
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
+      when Cmd::CHANGE_PARALLAX   then do_change_parallax cmd
       when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
       when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
       when Cmd::SET_ESCAPE_TARGET   then do_set_escape_target cmd
@@ -1744,6 +1758,21 @@ module Game
     def do_change_system_graphic(cmd)
       @state.set_system_graphic(cmd.string || '', cmd.param(1))
       @system_graphic_changed = true
+    end
+
+    # Change Parallax Background (11720): replace the current map's panorama at
+    # runtime. The command string names the Panorama/<name> image; param0/1 are
+    # the horizontal / vertical loop flags, param2/4 enable horizontal / vertical
+    # autoscroll and param3/5 give their speeds (per EasyRPG's SetParallax). An
+    # empty name clears the backdrop. Stored as a Game::State override (reset on
+    # the next map change, like shown pictures) and flagged so the scene rebuilds
+    # the parallax sprite mid-map.
+    def do_change_parallax(cmd)
+      @state.set_parallax(name: (cmd.string || '').to_s,
+                          loop_x: cmd.param(0) != 0, loop_y: cmd.param(1) != 0,
+                          auto_x: cmd.param(2) != 0, sx: cmd.param(3),
+                          auto_y: cmd.param(4) != 0, sy: cmd.param(5))
+      @parallax_changed = true
     end
 
     # Change System BGM: override one of the system music slots (battle,

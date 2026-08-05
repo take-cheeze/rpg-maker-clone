@@ -3052,6 +3052,40 @@ check 'Change Map Tileset queues a one-shot tileset request, non-blocking' do
   eq nil, it.take_tileset_request, 'and clears after the first read'
 end
 
+# -- Change Parallax Background -----------------------------------------------
+
+check 'Change Parallax Background records a state override, non-blocking' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  eq nil, st.parallax, 'no override to start (the map panorama applies)'
+  # string = panorama; [loop_x, loop_y, auto_x, sx, auto_y, sy].
+  it.start([FakeCmd.new(IC::CHANGE_PARALLAX, [1, 0, 1, 3, 0, -2], string: 'Sky'),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Change Parallax must not pause the interpreter'
+  eq true, st.switches[1], 'the command after it still ran'
+  eq({ name: 'Sky', loop_x: true, loop_y: false, auto_x: true, sx: 3,
+       auto_y: false, sy: -2 }, st.parallax)
+end
+
+check 'Change Parallax Background flags a one-shot rebuild request' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_PARALLAX, [0, 0, 0, 0, 0, 0], string: 'Cave')])
+  it.update
+  eq true, it.take_parallax_request, 'the scene is told to rebuild once'
+  eq false, it.take_parallax_request, 'and the flag clears after one read'
+end
+
+check 'clear_parallax drops the override so the map panorama returns' do
+  st = party_state
+  st.set_parallax(name: 'Sky', loop_x: true, loop_y: true,
+                  auto_x: false, sx: 0, auto_y: false, sy: 0)
+  ok !st.parallax.nil?, 'override is set'
+  st.clear_parallax
+  eq nil, st.parallax, 'cleared on a map change'
+end
+
 # -- Weather Effects ----------------------------------------------------------
 
 check 'Weather Effects sets the weather type and strength, non-blocking' do

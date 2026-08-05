@@ -3569,7 +3569,27 @@ module Game
       # Shown pictures, id => Game::Picture. Transient like @screen (RPG2000's
       # HUD pictures are re-shown by parallel events on load), so not serialised.
       @pictures = {}
+      # Runtime parallax override from a Change Parallax Background command (nil =
+      # use the map's own panorama). Transient like @pictures: RPG2000 resets it
+      # to the map's default on every map change, so it is not serialised.
+      @parallax = nil
     end
+
+    # The Change Parallax Background override (a hash of name / loop / autoscroll
+    # settings), or nil when the map's own panorama applies.
+    attr_reader :parallax
+
+    # Change Parallax Background: override the current map's panorama. `opts`
+    # carries :name, :loop_x, :loop_y, :auto_x, :sx, :auto_y, :sy (see the
+    # interpreter). An empty name leaves the backdrop blank. Scene::Map rebuilds
+    # its parallax sprite from this override.
+    def set_parallax(opts)
+      @parallax = opts
+    end
+
+    # Drop any parallax override so the map's own panorama applies again. Called
+    # on a map change, alongside erase_all_pictures.
+    def clear_parallax; @parallax = nil; end
 
     attr_reader :pictures, :vehicles
     # The vehicle the party is currently riding (:boat / :ship / :airship), or

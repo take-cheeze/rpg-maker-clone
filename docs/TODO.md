@@ -132,7 +132,12 @@ The work below is roughly ordered by the critical path to a walkable game
   in the real Nepheshel data (all 45 parallax maps' images resolve and every
   offset stays in range across a camera sweep) and pinned by
   `scripts/rpg2k_render_check.rb`. The scroll *rate* mirrors EasyRPG's formulae
-  but still wants a native/wine visual diff to confirm.
+  but still wants a native/wine visual diff to confirm. The **Change Parallax
+  Background** event command (11720) swaps this panorama at runtime — the
+  interpreter records a `Game::State#parallax` override (name + loop / autoscroll
+  settings, per EasyRPG's `SetParallax`) and flags a one-shot rebuild the scene
+  polls; the override is dropped on the next map change so the destination map's
+  own panorama returns.
 - ✅ Character sprites — the party leader and every map event render from their
   CharSet graphic (`Game::CharSet`, 4-direction, 3 walk frames). Events also
   draw a chipset tile when their graphic is a tile substitution (empty CharSet
@@ -188,7 +193,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Erase / Show Screen, Tint Screen, Flash Screen, Shake Screen, Pan Screen,
   Show/Move/Erase Picture,
   Weather Effects, Call
-  Event, Move Event, Change / Trade Event Location, Change Map Tileset, Proceed
+  Event, Move Event, Change / Trade Event Location, Change Map Tileset,
+  Change Parallax Background, Proceed
   With Movement, Halt All Movement,
   Erase Event, Return to Title, End Event) with a per-frame step cap so a bad
   loop can't hang. **Memorize Location** stores the player's current map id, x and y
