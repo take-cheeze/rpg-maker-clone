@@ -87,6 +87,15 @@ exercises the commands its author reached for — `ChangeMonsterHP` (13110) and
 `TerminateBattle` (13410) never appear in Nepheshel, so they remain
 fixture-tested only.
 
+The first caveat is not hypothetical: tallying the *parameter* signatures behind
+each opcode (the same walk, grouped by `param(0..n)` instead of by code) turned
+up two commands that dispatched to a handler and still did the wrong thing —
+a "this event" (10005) character reference the read-side handlers could not
+resolve, and Show Choices ignoring its cancel setting, including the [Cancel]
+branch the editor stores as a fifth, blank-labelled option. Both are fixed; see
+the event-command interpreter entry in `docs/TODO.md`. A per-opcode 100 % is
+where that audit *starts*, not where it ends.
+
 ## The collection
 
 39 game projects plus two index files:

@@ -55,6 +55,14 @@
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
   auto-start and parallel common events run too
+- A command that names **"this event"** rather than an event id resolves to the
+  event running it, on both sides: the scene already steered Move Event and
+  friends that way, and the interpreter now answers the reads too — the
+  orientation conditional branch, the Control Variables character operand and a
+  Call Event onto another of this event's pages. **Show Choices** honours its
+  cancel setting as well: the cancel key picks the choice the command names, or
+  runs its dedicated **[Cancel]** branch, and a block that forbids cancelling
+  swallows the key
 - A troop's **battle-event pages** run during a fight: their conditions (switch,
   variable, turn, enemy/actor HP, plus RPG2003's per-battler turn counters and
   party fatigue) are re-checked each turn, and a matching page runs the ordinary

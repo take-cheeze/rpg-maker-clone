@@ -157,6 +157,21 @@ module Game
       PLAY_SOUND     = 35 # + file name (string) + volume, tempo, balance
     end
 
+    # Character reference ids a command uses instead of a map event id, from
+    # liblcf's `Game_Character::CharPlayer..CharThisEvent` (10002-10004, the
+    # three vehicle slots, sit between them and are only recognised by the scene,
+    # which owns the vehicles). **This event** is the event whose page is running
+    # the command list: the editor writes 10005, and a bare 0 means the same
+    # thing (RPG_RT's `GetCharacter` maps both), which is why every reference
+    # goes through #character_ref before it is looked up.
+    CHAR_PLAYER     = 10001
+    CHAR_THIS_EVENT = 10005
+
+    # Show Choices holds at most four selectable options; a fifth (index 4) is
+    # the optional [Cancel] branch, which is a jump target only and is never
+    # drawn in the window. Mirrors EasyRPG's `GetChoices(4)`.
+    MAX_CHOICES = 4
+
     # Upper bound on nested Call Event depth, so a common event that (directly or
     # indirectly) calls itself unwinds instead of growing the stack without end.
     MAX_CALL_DEPTH = 100
@@ -196,7 +211,7 @@ module Game
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
                 :teleport, :input_digits, :key_input_request, :inn_request,
                 :shop_request, :battle_request, :name_input_request,
-                :battle_animation
+                :battle_animation, :choice_cancel_type
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -214,6 +229,18 @@ module Game
     # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
     # makes those commands store 0 (the map is not queryable without it).
     attr_accessor :map_info
+    # The id of the map event whose page this interpreter is running, which is
+    # what a "this event" (0 / 10005) character reference resolves to. Set by the
+    # owning scene alongside #map_info; nil for a common event and for a battle
+    # page, neither of which has a map character of its own — a "this event"
+    # reference then resolves to nothing, exactly as it does in RPG_RT.
+    #
+    # The *write*-side commands (Move Event, Change Event Location, Flash Sprite)
+    # pass their raw target on to the scene, which already knows which event it
+    # is stepping. The read-side ones — Conditional Branch orientation, the
+    # Control Variables character operand and a Call Event naming a map event —
+    # are answered here, so they need the id too.
+    attr_accessor :event_id
 
     def start(commands)
       @list = commands || []
@@ -239,6 +266,11 @@ module Game
       # looping parallel process) never inherits the previous event's trigger;
       # the scene sets it again right after #start for an action-key event.
       @triggered_by_decision_key = false
+      # Cleared for the same reason as the trigger above: the shared foreground
+      # interpreter runs one event after another, and a stale id would answer a
+      # common event's "this event" reference with the last map event's position.
+      # The scene sets it again right after #start.
+      @event_id = nil
       # Messages queued by a stat command (a Change Level / Change EXP with its
       # "show message" flag set) and shown one after another before the event
       # continues. Drained by #resume, so it survives the reset_waits between
@@ -458,6 +490,25 @@ module Game
       reset_waits
     end
 
+    # Whether the cancel key may back out of the choice now on screen — false
+    # when nothing is being chosen, or when the block forbids cancelling
+    # (cancel type 0), where RPG_RT simply ignores the key.
+    def choice_cancellable?
+      @wait_kind == :choice && @choice_cancel_type > 0
+    end
+
+    # Cancel the choice on screen. Every allowed cancel type names an option in
+    # the same 1-based numbering, so cancelling is just picking option
+    # `type - 1`: type 2 of a two-option block picks the second choice, and
+    # type 5 picks option index 4, the [Cancel] branch. Returns false (and does
+    # nothing) when cancelling is not allowed, so the scene can leave the window
+    # up on the key.
+    def cancel_choice
+      return false unless choice_cancellable?
+      choose(@choice_cancel_type - 1)
+      true
+    end
+
     # Resume an Input Number request: store the entered `value` into the target
     # variable and continue. The owning scene drives a digit-entry widget while
     # the interpreter is paused on the :number wait, then calls this with the
@@ -625,6 +676,9 @@ module Game
       @wait_kind = nil
       @message_lines = nil
       @choice_labels = nil
+      # 0 = cancelling forbidden, which is also the right answer while nothing
+      # is being chosen (see #choice_cancellable?).
+      @choice_cancel_type = 0
       @wait_frames = 0
       @teleport = nil
       @key_input_request = nil
@@ -774,6 +828,10 @@ module Game
     #   0 – common event: param1 = common event id
     #   1 – map event:    param1 = event id, param2 = page number
     #   2 – map event, ids taken indirectly from variables
+    # The map-event id may be a "this event" reference (0 / 10005), which calls
+    # another page of the event already running — RPG_RT resolves the id through
+    # the same `GetCharacter` every other character reference uses, so a game can
+    # keep a page of shared subroutine commands on the event itself.
     # A missing/empty target is a no-op; recursion is bounded by MAX_CALL_DEPTH.
     def do_call_event(cmd)
       return unless @resolver
@@ -788,12 +846,31 @@ module Game
     def resolve_call(cmd)
       case cmd.param(0)
       when 0 then @resolver.common_event_commands(cmd.param(1))
-      when 1 then @resolver.map_event_commands(cmd.param(1), cmd.param(2))
-      when 2 then @resolver.map_event_commands(variables[cmd.param(1)],
-                                               variables[cmd.param(2)])
+      when 1 then map_event_call(cmd.param(1), cmd.param(2))
+      when 2 then map_event_call(variables[cmd.param(1)],
+                                 variables[cmd.param(2)])
       end
     rescue StandardError
       nil
+    end
+
+    # The command list of a map event's page, with the event id resolved through
+    # #character_ref so "this event" reaches the running event. An unresolvable
+    # reference (a common event calling "this event") has no page to run.
+    def map_event_call(event_ref, page)
+      id = character_ref(event_ref)
+      return nil if id.nil?
+      @resolver.map_event_commands(id, page)
+    end
+
+    # Translate a command's character reference into the map event id the scene
+    # can look up. "This event" (0 or 10005) becomes the id of the event running
+    # this command list — nil when there is none (a common event, a battle page).
+    # Every other reference, including the hero and the vehicle slots, passes
+    # through untouched for the caller to recognise.
+    def character_ref(ref)
+      return @event_id if ref == 0 || ref == CHAR_THIS_EVENT
+      ref
     end
 
     # -- flow helpers ---------------------------------------------------------
@@ -893,19 +970,31 @@ module Game
       end
     end
 
+    # Show Choices: collect the block's option labels and suspend on a :choice
+    # wait the owning scene answers with #choose (or #cancel_choice).
+    #
+    # param0 is the **cancel behaviour**, stored as a 1-based option index:
+    # 0 forbids cancelling, 1..4 makes the cancel key pick that choice (the
+    # editor's "「はい」/「いいえ」" default), and 5 runs a dedicated [Cancel]
+    # branch — which the editor writes as a *fifth* option, index 4, with an
+    # empty label. That branch is a jump target only: only options 0..3 are ever
+    # drawn (EasyRPG's `GetChoices(4)`), or the cancel branch would show up as a
+    # blank extra row and shift every label below it.
     def do_show_choices(cmd)
       labels = []
       i = @index
       while i < @list.size
         c = @list[i]
         break if c.indent == cmd.indent && c.code == Cmd::CHOICE_END
-        if c.indent == cmd.indent && c.code == Cmd::CHOICE_OPTION
+        if c.indent == cmd.indent && c.code == Cmd::CHOICE_OPTION &&
+           c.param(0) < MAX_CHOICES
           labels[c.param(0)] = c.string
         end
         i += 1
       end
       @choice_indent = cmd.indent
       @choice_labels = labels.compact
+      @choice_cancel_type = cmd.param(0)
       @wait_kind = :choice
       @waiting = true
     end
@@ -1118,16 +1207,18 @@ module Game
     end
 
     # Operand type 6: a positional value of a character. param5 selects it (10001
-    # the hero / party, a positive id a map event); param6 the value (0 map id,
-    # 1 x tile, 2 y tile, 3 facing in RPG2000's 2/4/6/8 numpad convention,
-    # 4 screen x, 5 screen y). Matching a long-standing RPG_RT quirk, a *map
-    # event's* map id reads 0. An unresolvable reference (no map_info hook,
-    # unknown event) reads 0.
+    # the hero / party, "this event" as 0 / 10005, any other positive id a map
+    # event); param6 the value (0 map id, 1 x tile, 2 y tile, 3 facing in
+    # RPG2000's 2/4/6/8 numpad convention, 4 screen x, 5 screen y). Matching a
+    # long-standing RPG_RT quirk, a *map event's* map id reads 0. An unresolvable
+    # reference (no map_info hook, unknown event, "this event" outside a map
+    # event) reads 0.
     def event_operand(cmd)
-      ref = cmd.param(5)
+      ref = character_ref(cmd.param(5))
       attr = cmd.param(6)
       return screen_operand(ref, attr) if attr == 4 || attr == 5
-      if ref == 10001 # the hero / party leader
+      return 0 if ref.nil?
+      if ref == CHAR_PLAYER # the hero / party leader
         case attr
         when 0 then @state.map_id
         when 1 then @state.x
@@ -1152,8 +1243,10 @@ module Game
     # The screen-coordinate selectors of operand 6 (attr 4 x / 5 y): where the
     # character currently sits in the view, which only the map scene can answer
     # because it owns the camera. Without that hook (a headless interpreter, or a
-    # battle page) there is no view to measure against, so it reads 0.
+    # battle page) there is no view to measure against, so it reads 0. `ref` has
+    # already been through #character_ref, so "this event" arrives as a real id.
     def screen_operand(ref, attr)
+      return 0 if ref.nil?
       return 0 unless @map_info.respond_to?(:character_screen_position)
       pos = @map_info.character_screen_position(ref)
       return 0 unless pos
@@ -1826,8 +1919,9 @@ module Game
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
-      when 6 # orientation: is character param1 (10001 the hero, a positive id a
-             # map event) facing direction param2 (0 up / 1 right / 2 down / 3 left)?
+      when 6 # orientation: is character param1 (10001 the hero, 0 / 10005 this
+             # event, any other positive id a map event) facing direction param2
+             # (0 up / 1 right / 2 down / 3 left)?
         facing = character_facing(cmd.param(1))
         !facing.nil? && facing == FACING_NUMPAD[cmd.param(2)]
       when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
@@ -1847,13 +1941,16 @@ module Game
     FACING_NUMPAD = [8, 6, 2, 4].freeze
 
     # The numpad facing (2/4/6/8) of the character referenced by `ref` (10001 the
-    # hero, a positive id a map event), or nil when it can't be resolved (no
-    # map_info, an unknown event, or a still-unmodelled this-event / vehicle ref).
+    # hero, 0 / 10005 this event, any other positive id a map event), or nil when
+    # it can't be resolved (no map_info, an unknown event, a "this event" outside
+    # a map event, or a still-unmodelled vehicle ref).
     def character_facing(ref)
-      if ref == 10001
+      id = character_ref(ref)
+      return nil if id.nil?
+      if id == CHAR_PLAYER
         @state.direction
-      elsif ref > 0 && ref < 10000 && @map_info.respond_to?(:event_position)
-        pos = @map_info.event_position(ref)
+      elsif id > 0 && id < 10000 && @map_info.respond_to?(:event_position)
+        pos = @map_info.event_position(id)
         pos && pos[:direction]
       end
     end
