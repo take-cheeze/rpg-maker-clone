@@ -2473,7 +2473,9 @@ class RPG2k
       end
 
       def living_allies; @battle_ui[:allies].reject(&:dead?); end
-      def living_foes;   @battle_ui[:foes].reject(&:dead?);   end
+      # Targetable foes: alive *and* in play, so a troop member still flagged
+      # invisible never appears in the target cursor.
+      def living_foes;   @battle_ui[:foes].reject(&:out_of_play?); end
       def current_actor; living_allies[@battle_ui[:actor_i]]; end
 
       # The real Game::Actor behind the current battler (the snapshots are built
@@ -2946,6 +2948,10 @@ class RPG2k
         member = @battle_ui[:troop].members[index]
         return unless member && member.hidden
         member.hidden = false
+        # Bring the combatant into the fight as well, not just the sprite: until
+        # now it took no turn and could not be targeted (Combatant#out_of_play?).
+        foe = @battle_ui[:battle].enemy(index)
+        foe.hidden = false if foe
         bmp = battler_bitmap(member)
         spr = Sprite.new
         spr.bitmap = bmp

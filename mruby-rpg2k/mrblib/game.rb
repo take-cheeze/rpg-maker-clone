@@ -3209,8 +3209,13 @@ module Game
                            :action, :defending, :mp, :max_mp, :spi, :command,
                            :actor, :states, :state_turns, :crit_denom,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
-                           :hit_rate, :state_ranks) do
+                           :hit_rate, :state_ranks, :hidden) do
       def dead?; hp <= 0; end
+      # A troop member the editor placed but flagged invisible has not entered
+      # the fight yet: it does not act, cannot be targeted and does not keep the
+      # battle going. Show Hidden Monster (13150) clears the flag and brings it
+      # in. Distinct from `dead?`, which is purely about HP.
+      def out_of_play?; dead? || hidden ? true : false; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
       def int; spi; end
@@ -3258,11 +3263,15 @@ module Game
     # Enemies have no source actor (that field stays nil), so the post-battle
     # write-back skips them; they carry no status set into this simple sim.
     def self.from_enemy(e)
-      Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
-                    nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
-                    crit_denom_of(e), prevents_crit_of(e),
-                    attr_ranks_of(e), atk_attrs_of(e), nil, hit_rate_of(e),
-                    state_ranks_of(e))
+      c = Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
+                        nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
+                        crit_denom_of(e), prevents_crit_of(e),
+                        attr_ranks_of(e), atk_attrs_of(e), nil, hit_rate_of(e),
+                        state_ranks_of(e))
+      # A member the troop flagged invisible starts out of play until a Show
+      # Hidden Monster command brings it in (see Combatant#out_of_play?).
+      c.hidden = e.respond_to?(:hidden) && e.hidden ? true : false
+      c
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -3644,7 +3653,7 @@ module Game
       @rng.random(100) < prob
     end
 
-    def alive?(side); side.any? { |b| !b.dead? }; end
+    def alive?(side); side.any? { |b| !b.out_of_play? }; end
 
     def refill_queue
       @rounds += 1
@@ -3657,7 +3666,7 @@ module Game
 
     # Battlers ordered by agility (highest first); ties keep their listed order.
     def turn_order
-      (@allies + @enemies).each_with_index
+      (@allies + @enemies).reject(&:out_of_play?).each_with_index
                           .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
     end
 
@@ -3790,7 +3799,7 @@ module Game
     def restricted_target(b, r)
       own = side_of(b) == :ally ? @allies : @enemies
       pool = r == RESTRICTION_ATTACK_ALLY ? own : (side_of(b) == :ally ? @enemies : @allies)
-      living = pool.reject(&:dead?)
+      living = pool.reject(&:out_of_play?)
       living.empty? ? nil : living[@rng.random(living.size)]
     end
 
@@ -3801,7 +3810,7 @@ module Game
       if side_of(b) == :ally && b.action && !b.action.dead?
         return b.action
       end
-      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:dead?)
+      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:out_of_play?)
       foes.empty? ? nil : foes[@rng.random(foes.size)]
     end
 

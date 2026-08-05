@@ -5529,6 +5529,72 @@ check 'Show Battle Animation (battle form) waits like the map form' do
   eq true, it.battle_animation[:battle]
 end
 
+# -- hidden troop members stay out of the fight --------------------------------
+
+# A troop member the editor flagged invisible: from_enemy must carry that
+# through, so the combatant starts out of play.
+FakeHiddenEnemy = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp, :sp,
+                             :max_sp, :spi, :hidden)
+def hidden_enemy(name, hidden, hp: 100, atk: 20)
+  FakeHiddenEnemy.new(name, atk, 0, 5, hp, hp, 0, 0, 0, hidden)
+end
+
+check 'Battle.from_enemy carries the troop member invisible flag' do
+  ok Game::Battle.from_enemy(hidden_enemy('Lurker', true)).out_of_play?
+  ok !Game::Battle.from_enemy(hidden_enemy('Slime', false)).out_of_play?
+  # out_of_play? is not dead? -- a hidden monster is at full HP, just absent.
+  ok !Game::Battle.from_enemy(hidden_enemy('Lurker', true)).dead?
+end
+
+check 'a hidden monster takes no turn and cannot be attacked' do
+  hero = combatant('Hero', 20, 0, 30, 100)   # fastest, acts first
+  seen = Game::Battle.from_enemy(hidden_enemy('Slime', false, hp: 100))
+  lurker = Game::Battle.from_enemy(hidden_enemy('Lurker', true, hp: 100, atk: 40))
+  b = Game::Battle.new([hero], [seen, lurker], Game::Rng.new(1))
+  b.run_round
+  eq 100, lurker.hp, 'the hidden monster was never hit'
+  ok seen.hp < 100, 'the visible one took the hero\'s attack'
+  ok hero.hp > 60, "the hidden monster did not attack back (hero #{hero.hp})"
+end
+
+check 'a battle ends when every visible monster is down, hidden ones aside' do
+  hero = combatant('Hero', 20, 0, 30, 100)
+  seen = Game::Battle.from_enemy(hidden_enemy('Slime', false, hp: 1))
+  lurker = Game::Battle.from_enemy(hidden_enemy('Lurker', true, hp: 100))
+  b = Game::Battle.new([hero], [seen, lurker], Game::Rng.new(1))
+  b.run_round
+  ok seen.dead?, 'the visible monster fell'
+  ok b.finished?, 'an unrevealed monster does not keep the fight going'
+  eq :victory, b.result
+end
+
+check 'revealing a hidden monster brings it into the fight' do
+  hero = combatant('Hero', 20, 0, 30, 100)
+  lurker = Game::Battle.from_enemy(hidden_enemy('Lurker', true, hp: 100, atk: 40))
+  b = Game::Battle.new([hero], [lurker], Game::Rng.new(1))
+  ok b.finished?, 'with only a hidden monster there is nothing to fight'
+
+  lurker.hidden = false # what Show Hidden Monster (13150) does
+  ok !b.finished?, 'once revealed the fight is on'
+  b.run_round
+  ok lurker.hp < 100, 'it can now be attacked'
+end
+
+check 'Show Hidden Monster reveals through the interpreter and the battle' do
+  b = battle_with(foe_hp: 100)
+  b.enemy(0).hidden = true
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::SHOW_HIDDEN_MONSTER, [0])])
+  it.update
+  eq [0], it.take_revealed_monsters, 'the scene is told which member to reveal'
+  # The interpreter queues the request; the scene clears the flag on both the
+  # troop member and the combatant (see Scene::Map#reveal_battle_monster).
+  ok b.enemy(0).out_of_play?, 'still out of play until the scene applies it'
+  b.enemy(0).hidden = false
+  ok !b.enemy(0).out_of_play?
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
