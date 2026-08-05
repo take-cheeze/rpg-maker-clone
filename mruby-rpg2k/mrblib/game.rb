@@ -6,6 +6,11 @@
 # the not-yet-implemented map renderer, and unit-testable on its own.
 module Game
   TILE = 16 # tile size in pixels
+  # The RPG2000 screen, in pixels. `RPG2k::WIDTH`/`HEIGHT` are the same numbers
+  # on the scene side; the pure-logic half needs them for the screen-transition
+  # geometry, which cannot reach the scene.
+  SCREEN_W = 320
+  SCREEN_H = 240
 
   # Pixel geometry of a character-set (CharSet/*.png) graphic. A charset holds
   # 4x2 = 8 character templates; each template is 3 walk frames wide by 4
@@ -389,6 +394,10 @@ module Game
   class ChipSet
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
+    # The non-directional bits of the same passage byte (EasyRPG's `Passable`).
+    # Only the counter flag is read so far: it marks a tile you may talk *across*
+    # — the shop counter an NPC stands behind.
+    COUNTER_BIT = 0x40
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
 
@@ -397,6 +406,9 @@ module Game
       @name = c ? c.name : ''
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
+      # The upper layer's own passage table, which is where the counter flag
+      # lives (the lower table has no room for it).
+      @passable_upper = c ? c.passable_data_upper : nil
       @terrain = c ? c.terrain_data : nil
       # Water-animation parameters (chipset chunks 11/12): the animation "type"
       # (0 = 3-frame back-and-forth, 1 = 3-frame cycle) and speed flag (0 slow,
@@ -424,6 +436,19 @@ module Game
       flags = @passable_lower[idx]
       return true if flags.nil?
       (flags & (DIR_BIT[dir] || 0)) != 0
+    end
+
+    # Is this an upper-layer **counter** tile — one the action button reaches
+    # across? RPG2000 marks shop and inn counters with it so the keeper can stand
+    # behind an impassable tile and still be talked to. Upper-layer ids start at
+    # BLOCK_F and index the upper passage table directly; anything below that is
+    # not an upper tile at all. A chipset without the table has no counters.
+    def counter?(upper_tile_id)
+      return false if @passable_upper.nil? || upper_tile_id.nil?
+      idx = upper_tile_id - ChipsetLayout::BLOCK_F
+      return false if idx < 0 || idx >= @passable_upper.size
+      flags = @passable_upper[idx]
+      !flags.nil? && (flags & COUNTER_BIT) != 0
     end
 
     # Terrain id of a lower-layer tile (for the Store Terrain ID command), looked
@@ -843,21 +868,47 @@ module Game
 
   # Game switches: a 1-indexed set of booleans, defaulting to false.
   class Switches
-    def initialize; @data = {}; end
+    # Bumped on every change of value. An event page's conditions are read from
+    # the switches, the variables, the party roster and its items, so the map
+    # scene watches these counters to know when a page might have flipped and
+    # its events need re-selecting (see Scene::Map#refresh_event_pages). Writing
+    # the value a switch already holds does not count as a change — a parallel
+    # process that sets the same flag every frame must not keep the map busy.
+    attr_reader :revision
+
+    def initialize; @data = {}; @revision = 0; end
     def [](id); @data[id] || false; end
-    def []=(id, v); @data[id] = v ? true : false; end
+
+    def []=(id, v)
+      nv = v ? true : false
+      return nv if self[id] == nv
+      @data[id] = nv
+      @revision += 1
+      nv
+    end
+
     def flip(id); self[id] = !self[id]; end
     def to_h; @data; end
-    def replace(h); @data = h || {}; end
+    def replace(h); @data = h || {}; @revision += 1; end
   end
 
   # Game variables: a 1-indexed set of integers, defaulting to 0.
   class Variables
-    def initialize; @data = {}; end
+    # See Switches#revision: page conditions read variables too.
+    attr_reader :revision
+
+    def initialize; @data = {}; @revision = 0; end
     def [](id); @data[id] || 0; end
-    def []=(id, v); @data[id] = v; end
+
+    def []=(id, v)
+      return v if self[id] == v
+      @data[id] = v
+      @revision += 1
+      v
+    end
+
     def to_h; @data; end
-    def replace(h); @data = h || {}; end
+    def replace(h); @data = h || {}; @revision += 1; end
   end
 
   # A digit-entry model backing the Input Number event command: `digits` cells,
@@ -1599,12 +1650,17 @@ module Game
 
     attr_reader :actors, :items, :gold
 
+    # Bumped whenever the roster or the bag changes — the two halves of the party
+    # an event page's conditions can test (see Switches#revision).
+    attr_reader :revision
+
     def initialize(db, ids = nil)
       @db = db
       ids ||= db.system.party || []
       @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| Actor.new(db, i) }
       @items = {}  # item id => count
       @gold = 0
+      @revision = 0
     end
 
     # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
@@ -1638,6 +1694,7 @@ module Game
     # its base stats), then the saved HP/MP are laid over the recomputed maxima.
     # A save written before actor_meta existed simply keeps the database defaults.
     def load_state(data)
+      @revision += 1
       @items = data[:items] || {}
       @gold = data[:gold] || 0
       exp = data[:exp] || {}
@@ -1686,9 +1743,14 @@ module Game
     def add_actor(id)
       return if include_actor?(id)
       @actors.push Actor.new(@db, id)
+      @revision += 1
     end
 
-    def remove_actor(id); @actors.reject! { |a| a.id == id }; end
+    def remove_actor(id)
+      before = @actors.size
+      @actors.reject! { |a| a.id == id }
+      @revision += 1 unless @actors.size == before
+    end
 
     def item_count(id); @items[id] || 0; end
     def has_item?(id); item_count(id) > 0; end
@@ -1697,7 +1759,10 @@ module Game
       c = item_count(id) + n
       c = 0 if c < 0
       c = 99 if c > 99
+      return c if @items[id] == c
       @items[id] = c
+      @revision += 1
+      c
     end
 
     def lose_item(id, n = 1); gain_item(id, -n); end
@@ -2349,6 +2414,24 @@ module Game
       @y += dy
     end
 
+    # Land on (x, y) in one hop — the move-route Begin Jump / End Jump pair,
+    # whose enclosed moves name a destination rather than a path.
+    #
+    # RPG_RT faces the jump's **dominant axis**, vertical winning a tie, which is
+    # not the direction of the last enclosed move: a jump two right and two down
+    # lands facing down. A jump that ends where it started leaves the facing
+    # alone — the genuine runtime sets its movement direction there but never
+    # touches the sprite's, and this model has the one field for both.
+    def jump(x, y)
+      dx = x - @x
+      dy = y - @y
+      unless dx == 0 && dy == 0
+        face(dy.abs >= dx.abs ? (dy >= 0 ? 2 : 8) : (dx >= 0 ? 6 : 4))
+      end
+      @x = x
+      @y = y
+    end
+
     # Move one tile diagonally, combining a horizontal and a vertical direction.
     # RPG2000 keeps a cardinal facing on diagonals, so we face the vertical part.
     def move_diagonal(horizontal, vertical)
@@ -2520,7 +2603,9 @@ module Game
         character.face(Character::CARDINALS[world.random(4)]); [:turned, true]
       when FACE_HERO      then character.face(toward_hero(character, world)); [:turned, true]
       when FACE_AWAY_HERO then character.face(away_hero(character, world));  [:turned, true]
-      when WAIT, BEGIN_JUMP, END_JUMP then [:waited, true]
+      when WAIT       then [:waited, true]
+      when BEGIN_JUMP then do_jump(character, world)
+      when END_JUMP   then [:effect, true] # an End Jump with no Begin: skipped
       when LOCK_FACING   then character.facing_locked = true;  [:effect, true]
       when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
       when SPEED_UP   then character.move_speed = [character.move_speed + 1, 6].min; [:effect, true]
@@ -2555,6 +2640,105 @@ module Game
       else
         character.face(dir) # an obstructed move still turns to face it
         @skippable ? [:blocked, true] : [:blocked, false]
+      end
+    end
+
+    # Begin Jump: the commands up to the matching End Jump do **not** step. They
+    # name the jump's *destination* — each move command contributes its direction
+    # as one tile of offset, each face / turn command only steers what the next
+    # move contributes — and the character then hops there in a single move,
+    # clearing whatever lies between. A port of EasyRPG's
+    # `Game_Character::BeginMoveRouteJump`.
+    #
+    # Only the landing tile is tested (`world.can_land?`), because the genuine
+    # runtime skips the "may I leave this tile" half of its passability check
+    # while jumping — that is what lets a jump cross a wall or a chasm at all.
+    # A blocked landing behaves like a blocked move: retried on a non-skippable
+    # route, stepped past on a skippable one.
+    def do_jump(character, world)
+      dx = 0
+      dy = 0
+      dir = character.direction
+      i = @index + 1
+      while i < @commands.size
+        id = @commands[i].command_id
+        if id >= MOVE_UP && id <= MOVE_FORWARD
+          dir = jump_move_direction(id, dir, character, world)
+          ddx, ddy = jump_delta(id, dir)
+          dx += ddx
+          dy += ddy
+        elsif id >= FACE_UP && id <= FACE_AWAY_HERO
+          dir = jump_face_direction(id, dir, character, world)
+        elsif id == END_JUMP
+          return land_jump(character, world, dx, dy, i)
+        end
+        # Any other command inside the block (a switch, a graphic change) is
+        # skipped, as RPG_RT skips it.
+        i += 1
+      end
+      # No End Jump before the route ran out: the jump is abandoned and the rest
+      # of the route goes with it, which is how RPG_RT unwinds the scan.
+      @index = @commands.size - 1
+      [:effect, true]
+    end
+
+    # Finish a jump scanned out to the End Jump at `end_index`.
+    def land_jump(character, world, dx, dy, end_index)
+      tx = character.x + dx
+      ty = character.y + dy
+      if character.through || world.can_land?(character, tx, ty)
+        character.jump(tx, ty)
+        @index = end_index
+        [:moved, true]
+      elsif @skippable
+        @index = end_index
+        [:blocked, true]
+      else
+        [:blocked, false] # retried from the Begin Jump next step
+      end
+    end
+
+    # The direction a move command inside a jump block contributes. The moves
+    # that would pick a direction at run time (random, toward / away from the
+    # hero) still pick one; Move Forward keeps the direction in hand.
+    def jump_move_direction(id, dir, character, world)
+      case id
+      when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT then MOVE_DIR[id]
+      when MOVE_RANDOM then Character::CARDINALS[world.random(4)]
+      when MOVE_TOWARD_HERO then toward_hero(character, world)
+      when MOVE_AWAY_HERO then away_hero(character, world)
+      else dir # Move Forward, and the diagonals (which carry their own delta)
+      end
+    end
+
+    # The tile offset a move command inside a jump block adds. A diagonal moves
+    # on both axes at once; everything else moves one tile along `dir`.
+    def jump_delta(id, dir)
+      if (pair = DIAGONAL[id])
+        horizontal, vertical = pair
+        hx, = Character::DIR_DELTA[horizontal] || [0, 0]
+        _, vy = Character::DIR_DELTA[vertical] || [0, 0]
+        [hx, vy]
+      else
+        Character::DIR_DELTA[dir] || [0, 0]
+      end
+    end
+
+    # The direction a face / turn command inside a jump block leaves in hand. It
+    # contributes no offset of its own — it only steers the next move command.
+    def jump_face_direction(id, dir, character, world)
+      case id
+      when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT then FACE_DIR[id]
+      when TURN_RIGHT then Character::TURN_RIGHT[dir] || dir
+      when TURN_LEFT  then Character::TURN_LEFT[dir]  || dir
+      when TURN_180   then Character::TURN_180[dir]   || dir
+      when TURN_RANDOM
+        world.random(2).zero? ? (Character::TURN_LEFT[dir] || dir)
+                             : (Character::TURN_RIGHT[dir] || dir)
+      when FACE_RANDOM then Character::CARDINALS[world.random(4)]
+      when FACE_HERO then toward_hero(character, world)
+      when FACE_AWAY_HERO then away_hero(character, world)
+      else dir
       end
     end
 
@@ -2831,6 +3015,314 @@ module Game
     end
   end
 
+  # The RPG2000 screen **transition** an Erase Screen (11010) / Show Screen
+  # (11020) runs, and the geometry it paints frame by frame.
+  #
+  # RPG_RT composites two full screens: the one being left and the one being
+  # arrived at, one of which is solid black (an erase ends black, a show starts
+  # black). Every transition is therefore a **black mask over the live scene** —
+  # the erase grows it, the show shrinks it — which is exactly what
+  # `Scene::Map`'s existing full-screen black overlay can express. This class
+  # owns the mask: `#visible_rects` returns the regions of the live scene showing
+  # through on the current frame, and the scene paints the overlay opaque and
+  # punches those out. The uniform fades stay a plain opacity ramp
+  # (`#black_alpha`), the cheap path they already were.
+  #
+  # Ported from EasyRPG Player's `Transition` (src/transition.{h,cpp}): the style
+  # ids are its `Transition::Type` enum in order, the command-parameter tables
+  # are its `Game_Interpreter::CommandEraseScreen` / `CommandShowScreen`
+  # switches, and the durations are its `GetDefaultFrames`.
+  class Transition
+    FADE_IN                 = 0
+    FADE_OUT                = 1
+    RANDOM_BLOCKS           = 2
+    RANDOM_BLOCKS_DOWN      = 3
+    RANDOM_BLOCKS_UP        = 4
+    BLIND_OPEN              = 5
+    BLIND_CLOSE             = 6
+    VERTICAL_STRIPES_IN     = 7
+    VERTICAL_STRIPES_OUT    = 8
+    HORIZONTAL_STRIPES_IN   = 9
+    HORIZONTAL_STRIPES_OUT  = 10
+    BORDER_TO_CENTER_IN     = 11
+    BORDER_TO_CENTER_OUT    = 12
+    CENTER_TO_BORDER_IN     = 13
+    CENTER_TO_BORDER_OUT    = 14
+    SCROLL_UP_IN            = 15
+    SCROLL_DOWN_IN          = 16
+    SCROLL_LEFT_IN          = 17
+    SCROLL_RIGHT_IN         = 18
+    SCROLL_UP_OUT           = 19
+    SCROLL_DOWN_OUT         = 20
+    SCROLL_LEFT_OUT         = 21
+    SCROLL_RIGHT_OUT        = 22
+    VERTICAL_COMBINE        = 23
+    VERTICAL_DIVISION       = 24
+    HORIZONTAL_COMBINE      = 25
+    HORIZONTAL_DIVISION     = 26
+    CROSS_COMBINE           = 27
+    CROSS_DIVISION          = 28
+    ZOOM_IN                 = 29
+    ZOOM_OUT                = 30
+    MOSAIC_IN               = 31
+    MOSAIC_OUT              = 32
+    WAVE_IN                 = 33
+    WAVE_OUT                = 34
+    CUT_IN                  = 35
+    CUT_OUT                 = 36
+    NONE                    = 37
+
+    # RPG2000's own transition **setting** numbering, 0..20, shared by three
+    # places: an Erase / Show Screen's parameter 0, the database System tab's six
+    # transition fields (chunks 61-66) and the Change Screen Transitions (10690)
+    # slots the save keeps (chunks 111-116). The same index means a different
+    # style depending on which direction it is read in, which is why there are
+    # two tables — EasyRPG's `Game_System::GetTransition` picks between them with
+    # `fades[which % 2]`, the erase slots being the even ones.
+    #
+    # Erase Screen's parameter 0 / an erase setting -> style. Anything past the
+    # table is NONE, RPG_RT's own `default:` arm (setting 20 is exactly that).
+    ERASE_STYLES = [
+      FADE_OUT, RANDOM_BLOCKS, RANDOM_BLOCKS_DOWN, RANDOM_BLOCKS_UP,
+      BLIND_CLOSE, VERTICAL_STRIPES_OUT, HORIZONTAL_STRIPES_OUT,
+      BORDER_TO_CENTER_OUT, CENTER_TO_BORDER_OUT, SCROLL_UP_OUT,
+      SCROLL_DOWN_OUT, SCROLL_LEFT_OUT, SCROLL_RIGHT_OUT, VERTICAL_DIVISION,
+      HORIZONTAL_DIVISION, CROSS_DIVISION, ZOOM_IN, MOSAIC_OUT, WAVE_OUT,
+      CUT_OUT
+    ].freeze
+
+    # Show Screen's parameter 0 / a show setting -> style: the same list in its
+    # "in" polarity.
+    SHOW_STYLES = [
+      FADE_IN, RANDOM_BLOCKS, RANDOM_BLOCKS_DOWN, RANDOM_BLOCKS_UP,
+      BLIND_OPEN, VERTICAL_STRIPES_IN, HORIZONTAL_STRIPES_IN,
+      BORDER_TO_CENTER_IN, CENTER_TO_BORDER_IN, SCROLL_UP_IN, SCROLL_DOWN_IN,
+      SCROLL_LEFT_IN, SCROLL_RIGHT_IN, VERTICAL_COMBINE, HORIZONTAL_COMBINE,
+      CROSS_COMBINE, ZOOM_OUT, MOSAIC_IN, WAVE_IN, CUT_IN
+    ].freeze
+
+    # Styles this build paints for real. The rest are the ones a black mask
+    # cannot express: the scrolls and the combine / division pairs slide the live
+    # scene itself, zoom / mosaic / wave resample it, and random blocks needs
+    # thousands of per-frame block blits. They run as a fade of the same length —
+    # the right duration and the right end state, the wrong texture — until the
+    # renderer can capture a screen and transform it.
+    DRAWN = [FADE_IN, FADE_OUT, BLIND_OPEN, BLIND_CLOSE, VERTICAL_STRIPES_IN,
+             VERTICAL_STRIPES_OUT, HORIZONTAL_STRIPES_IN,
+             HORIZONTAL_STRIPES_OUT, BORDER_TO_CENTER_IN, BORDER_TO_CENTER_OUT,
+             CENTER_TO_BORDER_IN, CENTER_TO_BORDER_OUT, CUT_IN, CUT_OUT,
+             NONE].freeze
+
+    # The highest setting index the numbering defines (20 = "no transition").
+    MAX_SETTING = 20
+
+    # Whether `v` is a usable setting index. A slot that is not — nil, or the
+    # "same as the database" marker RPG_RT saves — means "ask the database".
+    def self.setting?(v)
+      !v.nil? && v >= 0 && v <= MAX_SETTING
+    end
+
+    # The style an Erase Screen selects. `param` is the command's parameter 0 and
+    # `configured` the setting a **-1** ("use the configured transition") falls
+    # back to: the teleport-erase slot, itself seeded from the database. Both are
+    # setting indices, so the fallback goes through the same table.
+    def self.erase_style(param, configured)
+      style_for(ERASE_STYLES, param, configured)
+    end
+
+    def self.show_style(param, configured)
+      style_for(SHOW_STYLES, param, configured)
+    end
+
+    def self.style_for(table, param, configured)
+      setting = param < 0 ? configured : param
+      return NONE unless setting?(setting)
+      table[setting] || NONE
+    end
+
+    # How long a style runs, in frames (EasyRPG's `GetDefaultFrames`): the plain
+    # fades take 35, the instant cuts 1, NONE none at all, everything else 41 —
+    # which is why the stripe transitions tile the screen exactly (40 steps of a
+    # 6px / 8px pitch over 240 / 320 pixels).
+    def self.default_frames(style)
+      case style
+      when FADE_IN, FADE_OUT then 35
+      when CUT_IN, CUT_OUT   then 1
+      when NONE              then 0
+      else 41
+      end
+    end
+
+    attr_reader :style, :frames, :frame
+
+    # `erase` says which way the mask runs: true when black is arriving (Erase
+    # Screen), false when it is leaving (Show Screen).
+    def initialize(style, frames, width, height, erase)
+      @style = style
+      @frames = frames
+      @width = width
+      @height = height
+      @erase = erase
+      @frame = 0
+    end
+
+    def advance; @frame += 1 if @frame < @frames; end
+    def done?; @frame >= @frames; end
+
+    # Whether this style is drawn as a uniform black overlay (the fade family and
+    # every unported style) rather than as a mask of rectangles.
+    def uniform?
+      !DRAWN.include?(@style) || @style == FADE_IN || @style == FADE_OUT
+    end
+
+    # The overlay opacity for a uniform style, 0 (clear) .. 255 (black).
+    #
+    # EasyRPG ramps the arriving screen in over `total_frames - 2`, so the fade
+    # lands a couple of frames before the transition formally ends; that early
+    # landing is part of how an RPG2000 fade looks, so it is ported rather than
+    # tidied into a straight ramp.
+    def black_alpha
+      span = @frames - 2
+      level = span <= 0 ? 255 : 255 * (@frame + 1) / span
+      level = 255 if level > 255
+      @erase ? level : 255 - level
+    end
+
+    # The rectangles of the live scene showing through the black overlay this
+    # frame, each `[x, y, w, h]`. Only called for a non-uniform style; an empty
+    # list means the screen is entirely black.
+    #
+    # RPG_RT draws the screen being left, then the screen being arrived at over
+    # part of it — so the live regions are the arriving screen's on a Show and
+    # everything *else* on an Erase. For the two window transitions that means
+    # one polarity is a rectangle and the other is the four bands around it.
+    def visible_rects
+      case @style
+      when BLIND_OPEN, BLIND_CLOSE then blind_rects
+      when VERTICAL_STRIPES_IN, VERTICAL_STRIPES_OUT then vertical_stripe_rects
+      when HORIZONTAL_STRIPES_IN, HORIZONTAL_STRIPES_OUT then horizontal_stripe_rects
+      when BORDER_TO_CENTER_OUT then clip([border_to_center_rect])
+      when BORDER_TO_CENTER_IN  then around(border_to_center_rect)
+      when CENTER_TO_BORDER_IN  then clip([center_to_border_rect])
+      when CENTER_TO_BORDER_OUT then around(center_to_border_rect)
+      else [[0, 0, @width, @height]] # the cuts show the live screen for their one frame
+      end
+    end
+
+    private
+
+    # The frame index the geometry is drawn at, and the span it runs over —
+    # EasyRPG's `current_frame` and `total_frames - 1`.
+    def span; @frames - 1; end
+
+    # Blinds: 8-pixel bands, each closing (or opening) from its top edge by one
+    # pixel every five frames. The live band is what is left of the 8.
+    BLIND_BAND = 8
+
+    def blind_rects
+      shut = (@frame + 5) / 5
+      shut = BLIND_BAND if shut > BLIND_BAND
+      open_h = BLIND_BAND - shut
+      rects = []
+      bands = @height / BLIND_BAND
+      bands.times do |i|
+        # Closing shows the bottom of each band, opening the top of it.
+        if @style == BLIND_CLOSE
+          rects.push [0, i * BLIND_BAND + shut, @width, open_h] if open_h > 0
+        elsif shut > 0
+          rects.push [0, i * BLIND_BAND + open_h, @width, shut]
+        end
+      end
+      rects
+    end
+
+    # Vertical stripes: 3-pixel rows on a 6-pixel pitch, marching in from the top
+    # and the bottom at once. The arriving screen takes the rows at `i * 6` /
+    # `h - 3 - i * 6`, the leaving one keeps those at `i * 6 + 3` / `h - i * 6`.
+    STRIPE_H = 3
+    STRIPE_PITCH = 6
+
+    def vertical_stripe_rects
+      rects = []
+      if @erase
+        (span - (@frame + 1)).times do |i|
+          rects.push [0, i * STRIPE_PITCH + STRIPE_H, @width, STRIPE_H]
+          rects.push [0, @height - i * STRIPE_PITCH, @width, STRIPE_H]
+        end
+      else
+        (@frame + 1).times do |i|
+          rects.push [0, i * STRIPE_PITCH, @width, STRIPE_H]
+          rects.push [0, @height - STRIPE_H - i * STRIPE_PITCH, @width, STRIPE_H]
+        end
+      end
+      clip(rects)
+    end
+
+    # Horizontal stripes: the same march in columns, 4 pixels wide on an 8-pixel
+    # pitch, closing in from the left and right edges.
+    STRIPE_W = 4
+    STRIPE_COL_PITCH = 8
+
+    def horizontal_stripe_rects
+      rects = []
+      if @erase
+        (span - (@frame + 1)).times do |i|
+          rects.push [i * STRIPE_COL_PITCH + STRIPE_W, 0, STRIPE_W, @height]
+          rects.push [@width - i * STRIPE_COL_PITCH, 0, STRIPE_W, @height]
+        end
+      else
+        (@frame + 1).times do |i|
+          rects.push [i * STRIPE_COL_PITCH, 0, STRIPE_W, @height]
+          rects.push [@width - STRIPE_W - i * STRIPE_COL_PITCH, 0, STRIPE_W, @height]
+        end
+      end
+      clip(rects)
+    end
+
+    # Border to centre: the live scene shrinks toward the middle (erase) or the
+    # arriving one is revealed by that same shrinking window closing on it.
+    def border_to_center_rect
+      p = span <= 0 ? 1 : @frame
+      d = span <= 0 ? 1 : span
+      [(@width / 2) * p / d, (@height / 2) * p / d,
+       @width - @width * p / d, @height - @height * p / d]
+    end
+
+    # Centre to border: a window growing out of the middle onto which the
+    # arriving screen is drawn.
+    def center_to_border_rect
+      p = span <= 0 ? 1 : @frame
+      d = span <= 0 ? 1 : span
+      [@width / 2 - (@width / 2) * p / d, @height / 2 - (@height / 2) * p / d,
+       @width * p / d, @height * p / d]
+    end
+
+    # The four bands of screen left outside `rect` — the live scene when the
+    # arriving screen is the one inside the window rather than around it.
+    def around(rect)
+      x, y, w, h = rect
+      clip([[0, 0, @width, y],                              # above
+            [0, y + h, @width, @height - (y + h)],          # below
+            [0, y, x, h],                                   # left
+            [x + w, y, @width - (x + w), h]])               # right
+    end
+
+    # Drop rectangles that fell off the screen (the stripe marches overrun by a
+    # row or two at the end) and clamp the rest into it.
+    def clip(rects)
+      out = []
+      rects.each do |x, y, w, h|
+        next if w <= 0 || h <= 0 || x >= @width || y >= @height
+        x2 = x < 0 ? 0 : x
+        y2 = y < 0 ? 0 : y
+        w2 = x + w > @width ? @width - x2 : w - (x2 - x)
+        h2 = y + h > @height ? @height - y2 : h - (y2 - y)
+        out.push [x2, y2, w2, h2] if w2 > 0 && h2 > 0
+      end
+      out
+    end
+  end
+
   # Screen-effect state driven by the screen event commands. Models two effects
   # so far:
   #
@@ -2910,15 +3402,22 @@ module Game
     def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
 
     # Screen erasure level (0 fully visible .. 255 fully black). The scene draws
-    # a black overlay at this opacity — the native half still to come, like the
-    # tint and flash overlays — so the level is modelled but does not yet darken
-    # the screen.
-    def fade_level; @fade; end
+    # a black overlay at this opacity. While a shaped transition is running the
+    # overlay is a mask instead (see #transition), and this holds the level the
+    # screen settles at once it finishes.
+    def fade_level
+      return @fade unless @transition && @transition.uniform?
+      @transition.black_alpha
+    end
 
-    # The RPG2000 transition style requested by the last Erase / Show Screen
-    # (0 = fade, higher = block / stripe / scroll variants). Recorded for
-    # fidelity; only the fade is modelled.
+    # The RPG2000 transition style the last Erase / Show Screen selected (a
+    # Game::Transition constant).
     def fade_transition; @fade_transition; end
+
+    # The running Game::Transition, or nil between transitions. The scene reads
+    # it to paint the overlay: a uniform style is just #fade_level, a shaped one
+    # punches #visible_rects out of an opaque black overlay.
+    def transition; @transition && !@transition.done? ? @transition : nil; end
 
     # True while an erase / show fade is still in progress.
     def fading?; @fade_frames > 0; end
@@ -2975,17 +3474,18 @@ module Game
       end
     end
 
-    # Erase Screen: fade the screen out to black over `frames` frames using the
-    # given RPG2000 transition style. Held black afterwards until #show. A no-op
-    # (settles immediately) when the screen is already fully erased.
-    def erase(transition, frames)
-      fade_to(255, transition, frames)
+    # Erase Screen: take the screen to black in the given Game::Transition style,
+    # over that style's own length unless `frames` overrides it. Held black
+    # afterwards until #show. A no-op (settles immediately) when the screen is
+    # already fully erased — RPG_RT skips an erase-onto-erase outright.
+    def erase(style, frames = nil)
+      fade_to(255, style, frames, true)
     end
 
-    # Show Screen: fade the screen back in from black over `frames` frames. A
-    # no-op when the screen is already fully visible.
-    def show(transition, frames)
-      fade_to(0, transition, frames)
+    # Show Screen: bring the screen back from black in the given style. A no-op
+    # when the screen is already fully visible.
+    def show(style, frames = nil)
+      fade_to(0, style, frames, false)
     end
 
     # Pan-operation direction (RPG2000: 0 up, 1 right, 2 down, 3 left) -> unit
@@ -3036,24 +3536,41 @@ module Game
 
     private
 
-    # Start a fade toward `target` (0 visible / 255 black) over `frames` frames.
+    # Start a transition toward `target` (0 visible / 255 black) in `style`,
+    # running for `frames` frames or, when that is nil, the style's own length.
     # Already at the target -> settle immediately so the command does not wait.
-    def fade_to(target, transition, frames)
-      @fade_transition = transition
+    #
+    # Game::Transition::NONE is RPG_RT's "no transition at all": it neither
+    # animates nor changes whether the screen is erased, so it is dropped here
+    # rather than treated as an instant fade.
+    def fade_to(target, style, frames, erase)
+      style = Game::Transition::FADE_OUT if style.nil?
+      @fade_transition = style
+      return if style == Game::Transition::NONE
       @fade_target = target
+      frames = Game::Transition.default_frames(style) if frames.nil?
       if frames <= 0 || @fade == target
         @fade = target
         @fade_frames = 0
+        @transition = nil
       else
         @fade_frames = frames
+        @transition = Game::Transition.new(style, frames, Game::SCREEN_W,
+                                           Game::SCREEN_H, erase)
       end
     end
 
     def update_fade
       return if @fade_frames <= 0
+      # A shaped transition owns its own frame counter and paints a mask; a
+      # uniform one rides the plain level ramp. Either way the level lands on the
+      # target on the final frame, so the screen holds the right end state.
+      @transition.advance if @transition
       @fade += (@fade_target - @fade) / @fade_frames
       @fade_frames -= 1
-      @fade = @fade_target if @fade_frames.zero? # land exactly on the target
+      return unless @fade_frames.zero?
+      @fade = @fade_target # land exactly on the target
+      @transition = nil
     end
 
     def update_tint
@@ -4996,7 +5513,9 @@ module Game
       @escape_target = nil
       @system_bgm = {}
       @system_sfx = {}
-      @screen_transitions = Array.new(SCREEN_TRANSITION_SLOTS, 0)
+      # nil = "not configured yet"; #seed_screen_transitions fills each slot in
+      # from the database when the game starts.
+      @screen_transitions = Array.new(SCREEN_TRANSITION_SLOTS, nil)
       @system_graphic = nil
       @font_id = 0
       @weather = Weather.new
@@ -5101,11 +5620,42 @@ module Game
     # The six Change Screen Transitions (10690) slots (see #screen_transitions).
     SCREEN_TRANSITION_SLOTS = 6
 
-    # Change Screen Transitions: set slot `which` (0..5) to transition style
+    # The database System fields (chunks 61-66) backing those slots, in slot
+    # order: teleport erase / show, battle start erase / show, battle end erase /
+    # show. RPG_RT reads the database setting whenever the in-game slot has not
+    # been overridden, so the two lists have to line up.
+    DB_TRANSITION_FIELDS = [:transition_out, :transition_in,
+                            :battle_start_fadeout, :battle_start_fadein,
+                            :battle_end_fadeout, :battle_end_fadein].freeze
+
+    # Change Screen Transitions: set slot `which` (0..5) to transition setting
     # `style`. An out-of-range slot is ignored.
     def set_screen_transition(which, style)
       return unless which >= 0 && which < SCREEN_TRANSITION_SLOTS
       @screen_transitions[which] = style
+    end
+
+    # Fill any transition slot that does not hold a real setting index from the
+    # database's own System settings. Called when a game starts and after a save
+    # is restored, so an Erase / Show Screen's "use the configured transition"
+    # (-1) always has something to resolve against.
+    #
+    # A slot can arrive unset two ways: a fresh game has never had one, and a
+    # genuine `.lsd` stores a not-overridden slot as a marker rather than a
+    # setting (RPG_RT writes -1 when the value still matches the database, which
+    # the chunk's unsigned byte reads back out of range). Both mean the same
+    # thing — ask the database — so both are refilled here.
+    def seed_screen_transitions(db)
+      sys = db && db.respond_to?(:system) ? db.system : nil
+      DB_TRANSITION_FIELDS.each_with_index do |field, i|
+        next if Game::Transition.setting?(@screen_transitions[i])
+        v = sys && sys.respond_to?(field) ? sys.send(field) : nil
+        @screen_transitions[i] = Game::Transition.setting?(v) ? v : 0
+      end
+    rescue StandardError => e
+      # A database without the fields is not fatal — every slot then falls back
+      # to setting 0, the plain fade — but it should not pass unnoticed.
+      $stderr.puts "[RPG2k] screen transition defaults unreadable: #{e.message}"
     end
 
     # Change System Graphics: override the windowskin graphic (System/<name>) and
@@ -5390,12 +5940,15 @@ module Game
       state.escape_access = sys.escape_allowed unless sys.escape_allowed.nil?
       state.save_access = sys.save_allowed unless sys.save_allowed.nil?
       state.menu_access = sys.menu_allowed unless sys.menu_allowed.nil?
-      # Screen-transition slots (chunks 111..116), defaulting to 0 when unset.
+      # Screen-transition slots (chunks 111..116). A slot the save left
+      # un-overridden comes back out of range rather than as a setting, and
+      # #seed_screen_transitions refills those from the database below.
       state.screen_transitions = [
         sys.teleport_erase_transition, sys.teleport_show_transition,
         sys.battle_start_erase_transition, sys.battle_start_show_transition,
         sys.battle_end_erase_transition, sys.battle_end_show_transition
-      ].map { |v| v || 0 }
+      ]
+      state.seed_screen_transitions(db)
       # System windowskin / font override; an empty graphic means "use the
       # database default" (left unset).
       sg = sys.system_graphic
@@ -5510,11 +6063,13 @@ module Game
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}
-      # A save written before screen transitions existed restores all-default.
+      # A save written before screen transitions existed restores all-default,
+      # which the seeding below then fills in from the database.
       stx = h[:screen_transitions]
       if stx && stx.length == SCREEN_TRANSITION_SLOTS
         state.screen_transitions = stx.dup
       end
+      state.seed_screen_transitions(db)
       state.system_graphic = h[:system_graphic]
       state.font_id = h[:font_id] || 0
       if (v = h[:vehicles])

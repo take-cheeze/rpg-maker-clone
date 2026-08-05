@@ -57,7 +57,7 @@ mruby's own `eval`, against the native `mruby-rgss` class library.
   project ships scripts; otherwise it uses the ADR 0010 built-in flow, which is
   also the fallback if the host fails to boot.
 
-**The host is opt-in for now** (the `RGSS_SCRIPT_HOST` env var, read by
+**The host is opt-in for now** (the `--rgss_script_host` flag, read by
 `ScriptHost.enabled?`),
 defaulting off, for three reasons: it cannot be built or run in the current CI
 sandbox (no SDL/mruby binary), the `mruby-rgss` class library is not yet

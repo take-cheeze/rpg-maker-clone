@@ -179,11 +179,43 @@ The work below is roughly ordered by the critical path to a walkable game
   move type or custom route (paced by move frequency) and keeps events off each
   other, the player and impassable tiles. Covered by
   `scripts/rpg2k_logic_check.rb` (pure logic) and `scripts/rpg2k_scene_check.rb`
-  (scene integration under host Ruby)
+  (scene integration under host Ruby).
+  **Jumps really jump now.** `Begin Jump` / `End Jump` were both treated as
+  waits, so the moves between them stepped one tile at a time — three route
+  commands where RPG_RT runs one, testing every tile on the way when a jump is
+  the thing that clears them. `Game::MoveRoute#do_jump` ports EasyRPG's
+  `BeginMoveRouteJump`: the enclosed moves contribute a tile of offset each
+  without stepping, faces and turns only steer what the next move contributes,
+  and `Game::Character#jump` lands the character on the summed destination in
+  one move, facing the jump's dominant axis (a tie going vertical) rather than
+  its last move. Only the landing is tested — a new `can_land?` on the movement
+  world (`Scene::Map#char_can_land?`), because the genuine runtime skips the
+  "may I leave this tile" half of its check while jumping. Nepheshel has 625 jump
+  blocks, every one enclosing a runtime-directed move (484 away from the hero,
+  188 toward it, 133 forward) rather than a literal direction, and 141 enclose
+  more than one, so those now clear the tile they hop over. Remaining: the visual
+  arc — RPG_RT lifts the sprite along the hop and this build snaps it to the
+  landing tile, which needs the same per-frame sprite offset the walk
+  interpolation already has
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
-  (`Game::EventPage`), and all five start triggers now run: **action button**
+  (`Game::EventPage`) and **re-evaluated while the map runs**, not just when it
+  loads. They were selected once in `build_events`, so an event kept whichever
+  page it started the visit with however the state moved — talk to an NPC, set
+  the switch meant to turn it into its page 2, and nothing happened until the
+  party left and came back. `Scene::Map#refresh_event_pages` re-selects whenever
+  anything a condition reads has changed, carrying each event's position and
+  facing across (RPG_RT changes an event's page, not where it stands) and
+  rebuilding the parallel processes, since a page change can add or remove one;
+  an erased event stays erased for the visit. RPG_RT flags this per command
+  (`Game_Map::SetNeedRefresh` from Control Switches / Variables, Change Items,
+  Change Party Member) — this build instead gives `Game::Switches`,
+  `Game::Variables` and `Game::Party` revision counters and watches those, which
+  covers every writer including the ones that are not event commands, like the
+  item menu. Writing a value already held does not count, so a parallel process
+  setting the same flag every frame costs a sweep rather than a rebuild.
+  All five start triggers run: **action button**
   (0), **player touch** (1, walking into the event), **event touch** (2, the
   event walking into the player), **auto-start** (3) and **parallel** (4, a
   background interpreter per event, driven by `Scene::Map#step_parallels`). A
@@ -297,9 +329,18 @@ The work below is roughly ordered by the critical path to a walkable game
   stands the ally up and its recovery then lands, and a cure skill is usable even
   at full HP. A **party wipe now ends the game** (a game-over-mode battle defeat
   puts up the Game Over screen, then the title — see the Enemy Encounter
-  entry). Enemies inflict states too now, by casting the status skills in their
-  action pattern (see the 行動パターン entry below). Still remaining here: the
-  non-reverse item case.
+  entry), and **so does one an event causes**: the twelve commands that can
+  knock the party out on the map — Change Party Member / EXP / Level /
+  Parameters / Skills / Equipment / HP / MP / Condition, Full Heal, Simulated
+  Attack and Change Class — each re-check afterwards, through
+  `Game::Interpreter#check_game_over` (EasyRPG's `CheckGameOver`), and suspend on
+  the same `:game_over` wait the Game Over command raises. Both of RPG_RT's
+  guards come with it: a battle-event page leaves defeat to the fight's own
+  `[Defeat]` handler, and an **empty** party is not a wipe. Without this a
+  Simulated Attack damage floor — Nepheshel runs 850 of them — could kill the
+  party and leave the player walking the map with it. Enemies inflict states
+  too now, by casting the status skills in their action pattern (see the
+  行動パターン entry below). Still remaining here: the non-reverse item case.
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
@@ -616,8 +657,9 @@ The work below is roughly ordered by the critical path to a walkable game
   through the message window before the event continues (a small reusable
   pending-message queue on the interpreter); **Change System Graphics** (10680)
   overrides the windowskin / font (save chunks 15 / 17; the scene reloads the
-  skin); **Change Screen Transitions** (10690) records the six teleport / battle
-  transition styles (save chunks 111–116; modelled for save fidelity); and **Game
+  skin); **Change Screen Transitions** (10690) sets the six teleport / battle
+  transition styles (save chunks 111–116), which an Erase / Show Screen's "use
+  the configured transition" now reads; and **Game
   Over** (12520) returns to the title — all handled. **Vehicle locations** (boat /
   ship / airship) also persist in the save (`Game::Vehicle`, `.lsd` chunks
   105–107 / the Marshal save).
@@ -699,13 +741,32 @@ The work below is roughly ordered by the critical path to a walkable game
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
   the view holds where locking began). **Erase Screen** (11010) / **Show Screen**
-  (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) that
-  eases like the tint over a fixed transition and is held erased until a Show,
-  recording the requested transition style (fade / block / stripe / scroll) for
-  fidelity while modelling only the fade — and the fade **is** drawn, by the
-  same screen-sized sprite mechanism as the flash. All share the `:screen` wait,
-  so event timing around them is correct. **Show Picture** now renders (see the
-  interpreter bullet above).
+  (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) held
+  erased until a Show, drawn by the same screen-sized sprite mechanism as the
+  flash. All share the `:screen` wait, so event timing around them is correct.
+  **Show Picture** now renders (see the interpreter bullet above).
+
+  Those two commands now run their **actual transition style** rather than one
+  fixed fade. `Game::Transition` ports EasyRPG's transition model: the two
+  parameter → style tables (the same index means the "out" style to an erase and
+  the "in" style to a show), each style's own length — 35 frames for a fade, 41
+  for the shaped ones, 1 for a cut, 0 for "no transition" — and the frame-by-frame
+  geometry. Parameter **-1**, "use the configured transition", is by far the most
+  common value in real data (2124 of Nepheshel's 2146 Erase Screens) and used to
+  fall through unresolved; it now reads the Change Screen Transitions slot, which
+  `Game::State#seed_screen_transitions` fills in from the database's System
+  settings (chunks 61–66) at New Game and after a load — including a `.lsd` slot
+  the save left un-overridden, which comes back out of range rather than as a
+  setting. `Scene::Map` draws a shaped transition as a **mask**: the erase overlay
+  goes fully opaque and the regions of the map still showing through are punched
+  back out of it with `fill_rect`, which is exactly how RPG_RT composites the
+  screen being left against the screen being arrived at (one of the two is always
+  solid black). That draws the blinds, the vertical / horizontal stripes and the
+  border-to-centre / centre-to-border windows for real. Remaining: the styles a
+  black mask cannot express — the scrolls and the combine / division pairs slide
+  the live scene itself, zoom / mosaic / wave resample it, and random blocks wants
+  thousands of block blits a frame — which run as a fade of the right length and
+  the right end state until the renderer can capture a screen and transform it.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already
@@ -979,13 +1040,22 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   exposes `read_object`/`save_object`/`scripts`, and `RPGXP::ScriptHost`
   installs the Kernel `load_data`/`save_data` built-ins and evaluates every
   section at the top level (mruby-eval) so "Main" drives the game. Boot runs the
-  host when it is enabled (`RGSS_SCRIPT_HOST`, off by default) and the project
+  host when it is enabled (`--rgss_script_host`, off by default) and the project
   ships scripts, falling back to the built-in flow otherwise. Decoding, the
   built-ins and top-level evaluation of real script source are covered by
-  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. Remaining before
+  `mruby-rpgxp/test` and `scripts/rpgxp_script_host_check.rb`. **The switch was
+  dead until now** — it was an `RGSS_SCRIPT_HOST` environment variable, and this
+  mruby has no `ENV`, so no built engine could ever turn the host on and it had
+  never run outside the CRuby harnesses. With `--rgss_script_host` it does, and a
+  boot failure names the section that raised. Remaining before
   it can be the default: complete the `mruby-rgss` class library the stock
-  scripts call — the precise gap (measured against the real test-bed scripts) is
-  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). `Font`,
+  scripts call — the precise gap (now *measured* by booting, not counted) is
+  tracked in [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md). The first
+  thing that stops the game's own engine is **`RPG::Sprite`**, which the script
+  bundle does not define (`RGSS104E.dll` supplies it, with `RPG::Weather`), so
+  `Sprite_Character < RPG::Sprite` is the first line that cannot run; most of
+  what it needs already exists as `Game::Animation` and the map scene's cell
+  blitting, written for Show Animation (207). `Font`,
   `Graphics` timing, `Input` and `Audio` are already covered; the open pieces are
   `Sprite` extended properties, and the empty `Window` / `Tilemap` / `Plane`
   widgets, plus `Kernel#sprintf`. (`Graphics.freeze`/`transition` now draw, on

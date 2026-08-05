@@ -162,8 +162,22 @@ def fake_chipset(name = 'cs')
   # every tile of the synthetic all-zero map maps to).
   td = Array.new(162, 0)
   td[0] = 42
+  # The upper passage table marks chip 0 as a counter, so a test can lay a
+  # counter tile by putting BLOCK_F in the upper layer.
+  up = Array.new(144, 0)
+  up[0] = Game::ChipSet::COUNTER_BIT
   OpenStruct.new(name: name, chipset_name: name, passable_data_lower: nil,
-                 terrain_data: td)
+                 passable_data_upper: up, terrain_data: td)
+end
+
+# A map whose upper layer carries a counter tile at each of `counters`.
+def fake_map_with_counters(id, events, counters)
+  w = 6; h = 5
+  upper = Array.new(w * h, 1) # 1 is not an upper tile id, so: no counter
+  counters.each { |x, y| upper[y * w + x] = Game::ChipsetLayout::BLOCK_F }
+  Game::Map.new(id, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                   lower_layer: Array.new(w * h, 0),
+                                   upper_layer: upper, events: events))
 end
 
 def fake_db(common = nil, troop_pages = nil)
@@ -298,7 +312,9 @@ def fake_parent(db)
 end
 
 def fake_party
-  OpenStruct.new(leader: nil, actors: [])
+  # `revision` is what the scene watches to know a page condition may have
+  # changed; a test bumps it to ask for a refresh.
+  OpenStruct.new(leader: nil, actors: [], revision: 0)
 end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil)
@@ -334,6 +350,101 @@ check 'a custom-route event walks right and is blocked by the map edge' do
   # (x == width - 1 == 5) and stopped there, never leaving the map.
   eq 5, c.x, 'custom-route event should reach and hold the east edge'
   eq 1, c.y
+end
+
+check 'a custom-route jump clears a tile and stops at the map edge' do
+  # Begin Jump / two rights / End Jump: a two-tile hop per route lap, which
+  # lands on tiles a walking route would have had to step through.
+  ev = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::BEGIN_JUMP, R::MOVE_RIGHT,
+                                           R::MOVE_RIGHT, R::END_JUMP])))
+  scene = new_scene({ 1 => ev }, player: [0, 0])
+  200.times { scene.update }
+  c = chars(scene)[1]
+  # The map is 6 wide, so hops from x = 0 land on 2 and 4; 6 is off the map, so
+  # the event holds at 4 rather than clipping to the edge the way a step does.
+  eq 4, c.x, 'hopped two tiles at a time and stopped when the landing left the map'
+  eq 1, c.y
+end
+
+# -- event page refresh -------------------------------------------------------
+
+# An event with two pages: page 1 unconditional, page 2 gated on switch
+# `switch_id`. Later pages win, so page 2 takes over the moment the switch goes
+# on — the "talk to me once and I become someone else" idiom.
+def two_page_event(x, y, switch_id, page1, page2)
+  page2.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A,
+                                   switch_a_id: switch_id)
+  OpenStruct.new(x: x, y: y, pages: { 1 => page1, 2 => page2 })
+end
+
+check 'flipping a switch re-selects an event page mid-map' do
+  ic = Game::Interpreter::Cmd
+  # Page 1 is a stationary NPC; page 2 is a parallel process that sets switch 5.
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 4, charset_name: 'Ghost')
+  p2.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  scene = new_scene({ 1 => two_page_event(2, 2, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  5.times { scene.update }
+  ev = event_hashes(scene)[1]
+  eq 0, ev[:trigger], 'page 1 is active while switch 3 is off'
+  ok !st.switches[5], 'so the page-2 parallel process is not running'
+
+  st.switches[3] = true
+  5.times { scene.update }
+  ev = event_hashes(scene)[1]
+  eq 4, ev[:trigger], 'switch 3 flipped the event to page 2'
+  ok st.switches[5], 'and its parallel process now runs'
+end
+
+check 'a page change keeps the event where it stands' do
+  # The event walks east on page 1; when it flips to page 2 it must stay put
+  # rather than snapping back to its spawn tile.
+  p1 = page(x_move_type: Game::MoveType::CUSTOM, route: move_route([R::MOVE_RIGHT]))
+  p2 = page(trigger: 0, charset_name: 'Stopped')
+  scene = new_scene({ 1 => two_page_event(0, 1, 3, p1, p2) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  60.times { scene.update }
+  moved_x = chars(scene)[1].x
+  ok moved_x > 0, "the event walked east first (got #{moved_x})"
+
+  st.switches[3] = true
+  scene.update
+  eq moved_x, chars(scene)[1].x, 'the page change left it where it was'
+  eq 1, chars(scene)[1].y
+end
+
+check 'a refresh does not resurrect an erased event' do
+  ic = Game::Interpreter::Cmd
+  p1 = page(trigger: 3) # auto-start: erase myself
+  p1.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  p2 = page(trigger: 0)
+  scene = new_scene({ 1 => two_page_event(2, 2, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update }
+  ok event_hashes(scene)[1].nil?, 'the event erased itself'
+
+  st.switches[3] = true # would select page 2 if it were still around
+  5.times { scene.update }
+  ok event_hashes(scene)[1].nil?, 'an Erase Event outlasts a page refresh'
+end
+
+check 'an event with no matching page drops off the map, and comes back' do
+  # Only one page, gated on switch 3: with it off there is no active page at all.
+  only = page(trigger: 0)
+  only.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A,
+                                  switch_a_id: 3)
+  scene = new_scene({ 1 => OpenStruct.new(x: 2, y: 2, pages: { 1 => only }) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok event_hashes(scene)[1].nil?, 'no page holds, so nothing is on the map'
+
+  st.switches[3] = true
+  scene.update
+  ok event_hashes(scene)[1], 'the condition now holds, so the event appears'
 end
 
 check 'a random-mover roams but stays in bounds and off the player tile' do
@@ -413,6 +524,70 @@ check 'action (trigger 0) does not fire on mere contact' do
   6.times { scene.update }
   st = scene.instance_variable_get(:@state)
   ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
+end
+
+# A scene on a map with counter tiles, for the talk-across-a-counter checks.
+def counter_scene(events, counters, player:)
+  db = fake_db
+  state = Game::State.new(fake_party, 1, player[0], player[1])
+  state.map = fake_map_with_counters(1, events, counters)
+  RPG2k::Scene::Map.new(fake_parent(db), state)
+end
+
+check 'the action button reaches across a shop counter' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # Player at (0,0) facing east; (1,0) is the counter, the keeper is at (2,0).
+  scene = counter_scene({ 1 => event(2, 0, pg) }, [[1, 0]], player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok st.switches[4], 'talked to the keeper standing behind the counter'
+end
+
+check 'the reach stops after three counters, and at a non-counter tile' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # (1,0) is a counter but (2,0) is not, so the event at (3,0) is out of reach.
+  scene = counter_scene({ 1 => event(3, 0, pg) }, [[1, 0]], player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'the run of counters ended, so nothing was reached'
+
+  # Four counters deep is one more than RPG_RT looks through.
+  far = counter_scene({ 1 => event(5, 0, pg) },
+                      [[1, 0], [2, 0], [3, 0], [4, 0]], player: [0, 0])
+  st2 = far.instance_variable_get(:@state)
+  st2.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  far.update
+  RGSS::Input.reset
+  5.times { far.update }
+  ok !st2.switches[4], 'four counters is past the three-tile reach'
+end
+
+check 'an action event under the player answers the action button' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # The event shares the player's tile — RPG_RT checks there before the tile
+  # ahead, which is how a trigger-0 event on a doorway answers the button.
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [2, 2])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok st.switches[4], 'the event under the party ran'
 end
 
 # CONTROL_VARS params to add `by` to variable `id`:
@@ -1764,6 +1939,49 @@ check 'Game Over event command returns to the title, abandoning the event' do
   ok !st.switches[5], 'the rest of the event never ran'
 end
 
+# A one-member party for the wipe check: the scene's usual fake party is empty,
+# which RPG_RT (rightly) does not treat as a Game Over.
+class WipeStubActor
+  attr_reader :id
+  attr_accessor :hp
+  def initialize; @id = 1; @hp = 30; end
+  def change_hp(amount, allow_death)
+    @hp += amount
+    floor = allow_death ? 0 : 1
+    @hp = floor if @hp < floor
+  end
+  def dead?; @hp <= 0; end
+end
+
+class WipeStubParty
+  attr_reader :actors
+  attr_accessor :leader
+  def initialize; @actors = [WipeStubActor.new]; @leader = nil; end
+  def actor_by_id(id); @actors.find { |a| a.id == id }; end
+  def all_dead?; @actors.all? { |a| a.dead? }; end
+end
+
+check 'an event that wipes the party drops into Game Over' do
+  # No Game Over command anywhere — the wipe itself is what ends the game, the
+  # way a Simulated Attack floor trap does in a real game.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_HP, [0, 0, 1, 0, 9999, 1], indent: 0), # party, lethal
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, WipeStubParty.new)
+  parent = scene.instance_variable_get(:@parent)
+  5.times do
+    scene.update
+    break if parent.game_over_shown
+  end
+  ok parent.game_over_shown, 'the wipe put up the Game Over screen'
+  ok !st.switches[5], 'and the rest of the event never ran'
+end
+
 check 'the Game Over screen shows its picture, plays its BGM and waits' do
   parent = fake_parent(fake_db)
   Audio.reset_bgm
@@ -1885,6 +2103,8 @@ class LevelStubParty
   attr_accessor :leader
   def initialize; @actors = [LevelStubActor.new]; @leader = nil; end
   def actor_by_id(id); @actors.find { |a| a.id == id }; end
+  # The stat commands re-check for a party wipe; this stub's actor is alive.
+  def all_dead?; false; end
 end
 
 check 'Change Level show-message: the scene shows a message per level, then resumes' do
@@ -2544,13 +2764,39 @@ check 'Erase/Show Screen drives the fade layer opacity' do
   eq 0, fade.opacity, 'nothing erased yet, so the fade layer is invisible'
 
   st = scene.instance_variable_get(:@state)
-  st.screen.erase(0, 1) # fade fully out over one frame
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # fade fully out over one frame
   4.times { scene.update }
   eq 255, fade.opacity, 'a completed Erase Screen leaves the screen black'
 
-  st.screen.show(0, 1)
+  st.screen.show(Game::Transition::FADE_IN, 1)
   4.times { scene.update }
   eq 0, fade.opacity, 'Show Screen brings it back'
+end
+
+check 'a shaped transition paints a mask into the fade layer' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+
+  # Blinds close: the overlay goes fully opaque and the bands still showing the
+  # map are punched back out of it, rather than the whole screen dimming.
+  st.screen.erase(Game::Transition::BLIND_CLOSE)
+  fade.bitmap.fill_calls.clear if fade.bitmap.fill_calls
+  scene.update
+  eq 255, fade.opacity, 'the mask itself carries the shape, not the opacity'
+  fills = fade.bitmap.fill_calls || []
+  eq 31, fills.length, 'one full-screen black fill, then 30 band holes'
+  eq [0, 0, 320, 240], fills.first[0, 4], 'blacked out first'
+  eq [0, 1, 320, 7], fills[1][0, 4], 'then the open part of band 0'
+
+  # Once it finishes the overlay is solid black again, so the next plain fade
+  # does not inherit the holes.
+  st.screen.update until !st.screen.fading?
+  fade.bitmap.fill_calls.clear
+  scene.update
+  eq 1, (fade.bitmap.fill_calls || []).length, 'repainted solid for the fade path'
+  eq 255, fade.opacity, 'and the screen stays erased'
 end
 
 check 'Flash Screen drives the flash layer, and refills only on a colour change' do

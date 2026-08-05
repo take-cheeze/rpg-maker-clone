@@ -76,6 +76,9 @@ class FakeWorld
     !@blocked.include?([x, y])
   end
 
+  # A jump only tests where it lands, never the tiles it crosses.
+  def can_land?(_character, x, y); !@blocked.include?([x, y]); end
+
   def hero_position; @hero; end
   def set_switch(id, on); @switches[id] = on; end
   def play_sound(*a); @sounds << a; end
@@ -193,6 +196,99 @@ check 'a blocked skippable move advances past the obstruction' do
   eq [0, 0], [c.x, c.y]
   eq :moved, route.step(c, w) # moved on to MOVE_DOWN
   eq [0, 1], [c.x, c.y]
+end
+
+# -- Begin Jump / End Jump ----------------------------------------------------
+
+check 'a jump block hops to its accumulated destination in one step' do
+  # Two rights and a down inside the block: one hop to (2, 1), not three steps.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                 mc(R::MOVE_DOWN), mc(R::END_JUMP), mc(R::MOVE_DOWN)],
+                repeat: false)
+  c = Game::Character.new(0, 0)
+  w = FakeWorld.new
+  eq :moved, route.step(c, w)
+  eq [2, 1], [c.x, c.y], 'landed on the summed offset'
+  eq :moved, route.step(c, w) # the command after End Jump runs next
+  eq [2, 2], [c.x, c.y]
+end
+
+check 'a jump faces its dominant axis, not its last move' do
+  # Two right, two down: a tie on distance, which RPG_RT settles vertically.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                 mc(R::MOVE_DOWN), mc(R::MOVE_DOWN), mc(R::END_JUMP)])
+  c = Game::Character.new(0, 0, 8)
+  route.step(c, FakeWorld.new)
+  eq [2, 2], [c.x, c.y]
+  eq 2, c.direction, 'a tie faces vertically'
+
+  # Three right, one down: horizontal now dominates.
+  route2 = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                  mc(R::MOVE_RIGHT), mc(R::MOVE_DOWN), mc(R::END_JUMP)])
+  c2 = Game::Character.new(0, 0, 8)
+  route2.step(c2, FakeWorld.new)
+  eq 6, c2.direction
+end
+
+check 'faces inside a jump steer the next move without moving anything' do
+  # Face left, then Move Forward: one tile left, even though the character
+  # started facing down.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::FACE_LEFT), mc(R::MOVE_FORWARD),
+                 mc(R::END_JUMP)])
+  c = Game::Character.new(5, 5, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 5], [c.x, c.y]
+end
+
+check 'a jump only tests where it lands, not what it clears' do
+  # (1, 0) is a wall; the jump passes straight over it onto (2, 0).
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
+                 mc(R::END_JUMP)])
+  c = Game::Character.new(0, 0)
+  eq :moved, route.step(c, FakeWorld.new(blocked: [[1, 0]]))
+  eq [2, 0], [c.x, c.y], 'cleared the tile in between'
+end
+
+check 'a jump onto a blocked tile is retried, or skipped when skippable' do
+  cmds = [mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::END_JUMP),
+          mc(R::MOVE_DOWN)]
+  w = FakeWorld.new(blocked: [[1, 0]])
+
+  route = R.new(cmds, repeat: false, skippable: false)
+  c = Game::Character.new(0, 0)
+  eq :blocked, route.step(c, w)
+  eq [0, 0], [c.x, c.y]
+  eq 0, route.index, 'stays on the Begin Jump so the hop is retried'
+
+  skip = R.new(cmds, repeat: false, skippable: true)
+  c2 = Game::Character.new(0, 0)
+  eq :blocked, skip.step(c2, w)
+  eq [0, 0], [c2.x, c2.y]
+  eq :moved, skip.step(c2, w), 'stepped past the whole block'
+  eq [0, 1], [c2.x, c2.y]
+end
+
+check 'a jump toward the hero hops the way the hero lies' do
+  # Nepheshel's roaming monsters: every one of its 625 jump blocks encloses a
+  # runtime-directed move like this one rather than a literal direction.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_TOWARD_HERO), mc(R::END_JUMP)])
+  c = Game::Character.new(0, 0)
+  eq :moved, route.step(c, FakeWorld.new(hero: [5, 0]))
+  eq [1, 0], [c.x, c.y]
+
+  away = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_AWAY_HERO), mc(R::END_JUMP)])
+  c2 = Game::Character.new(5, 5)
+  eq :moved, away.step(c2, FakeWorld.new(hero: [9, 5]))
+  eq [4, 5], [c2.x, c2.y]
+end
+
+check 'a Begin Jump with no End Jump abandons the rest of the route' do
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_DOWN)],
+                repeat: false)
+  c = Game::Character.new(0, 0)
+  route.step(c, FakeWorld.new)
+  eq [0, 0], [c.x, c.y], 'nothing moved'
+  ok route.done?, 'and the route unwound rather than stepping the moves'
 end
 
 check 'a "through" character ignores collision' do
@@ -1229,7 +1325,7 @@ end
 
 check 'Show Screen fades back in from black' do
   st = new_state
-  st.screen.erase(0, 32)
+  st.screen.erase(Game::Transition::FADE_OUT, 32)
   st.screen.update until !st.screen.fading? # start fully black
   eq 255, st.screen.fade_level
   it = Game::Interpreter.new(st)
@@ -1253,12 +1349,161 @@ end
 
 check 'Erase Screen records the transition style and ramps the level' do
   st = new_state
-  st.screen.erase(3, 32) # transition style 3 (a block/stripe variant)
-  eq 3, st.screen.fade_transition, 'the style is recorded for fidelity'
+  # Setting 2 is Random Blocks Down, one of the styles a black mask cannot
+  # express, so it runs as a fade of the same length.
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [2])])
+  it.update
+  eq Game::Transition::RANDOM_BLOCKS_DOWN, st.screen.fade_transition
+  ok st.screen.transition.uniform?, 'an unported style falls back to the fade'
+  eq 41, st.screen.transition.frames, 'but keeps its own length'
   before = st.screen.fade_level
   st.screen.update
   ok st.screen.fade_level > before, 'the level eases toward black'
   ok st.screen.fade_level < 255, 'over time, not instantly'
+end
+
+# -- screen transitions (Game::Transition) ------------------------------------
+
+TR = Game::Transition
+
+check 'Erase / Show Screen map their parameter onto the RPG2000 style table' do
+  # The two directions read the same setting index differently.
+  eq TR::FADE_OUT,    TR.erase_style(0, 0)
+  eq TR::FADE_IN,     TR.show_style(0, 0)
+  eq TR::BLIND_CLOSE, TR.erase_style(4, 0)
+  eq TR::BLIND_OPEN,  TR.show_style(4, 0)
+  eq TR::CUT_OUT,     TR.erase_style(19, 0)
+  eq TR::CUT_IN,      TR.show_style(19, 0)
+  # Setting 20 and anything past the table are "no transition".
+  eq TR::NONE, TR.erase_style(20, 0)
+  eq TR::NONE, TR.erase_style(99, 0)
+  # -1 means "use the configured transition", which is itself a setting index.
+  eq TR::BLIND_CLOSE, TR.erase_style(-1, 4)
+  eq TR::BLIND_OPEN,  TR.show_style(-1, 4)
+  eq TR::NONE, TR.erase_style(-1, nil), 'an unconfigured slot has no style'
+end
+
+check 'each transition style runs for its own length' do
+  eq 35, TR.default_frames(TR::FADE_OUT)
+  eq 35, TR.default_frames(TR::FADE_IN)
+  eq 1,  TR.default_frames(TR::CUT_OUT)
+  eq 0,  TR.default_frames(TR::NONE)
+  eq 41, TR.default_frames(TR::BLIND_CLOSE), 'the shaped ones all take 41'
+end
+
+check 'Erase Screen resolves -1 against the configured transition' do
+  st = new_state
+  st.set_screen_transition(0, 4) # teleport erase -> blinds
+  st.set_screen_transition(1, 4) # teleport show  -> blinds
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [-1])])
+  it.update
+  eq TR::BLIND_CLOSE, st.screen.fade_transition
+  ok !st.screen.transition.uniform?, 'the blinds are painted, not faded'
+  st.screen.update until !st.screen.fading?
+
+  it.resume
+  it.start([FakeCmd.new(IC::SHOW_SCREEN, [-1])])
+  it.update
+  eq TR::BLIND_OPEN, st.screen.fade_transition
+end
+
+check 'a cut transition takes a single frame, not a fade' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [19]),   # cut out
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq TR::CUT_OUT, st.screen.fade_transition
+  eq 1, st.screen.transition.frames, 'a cut is one frame long, not 35'
+  # RPG_RT shows the live screen for that frame and lands black after it.
+  eq [[0, 0, 320, 240]], st.screen.transition.visible_rects
+  st.screen.update
+  ok !st.screen.fading?, 'and it is over after that one frame'
+  eq 255, st.screen.fade_level
+  it.resume
+  it.update
+  eq true, st.switches[1]
+end
+
+check '"no transition" neither animates nor changes the screen' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [20]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq TR::NONE, st.screen.fade_transition
+  eq 0, st.screen.fade_level, 'the screen is left exactly as it was'
+  ok !st.screen.erased?
+  eq true, st.switches[1], 'and nothing waited'
+end
+
+check 'a fade ramps the overlay opacity, an erase up and a show down' do
+  out = TR.new(TR::FADE_OUT, 35, 320, 240, true)
+  eq 255 * 1 / 33, out.black_alpha, 'the ramp runs over total - 2 frames'
+  32.times { out.advance }
+  eq 255, out.black_alpha, 'and lands fully black before the last frame'
+
+  into = TR.new(TR::FADE_IN, 35, 320, 240, false)
+  eq 255 - 255 / 33, into.black_alpha, 'a show is the same ramp inverted'
+  32.times { into.advance }
+  eq 0, into.black_alpha
+end
+
+check 'blinds close band by band and open the other way' do
+  # 8-pixel bands, one more pixel shut every five frames.
+  close = TR.new(TR::BLIND_CLOSE, 41, 320, 240, true)
+  rects = close.visible_rects
+  eq 30, rects.size, '240 / 8 bands still showing'
+  eq [0, 1, 320, 7], rects[0], 'one pixel of the first band has closed'
+  eq [0, 9, 320, 7], rects[1], 'and of the second'
+  4.times { close.advance }
+  eq [0, 1, 320, 7], close.visible_rects[0], 'still one pixel four frames in'
+  close.advance
+  eq [0, 2, 320, 6], close.visible_rects[0], 'a pixel more every five frames'
+
+  open = TR.new(TR::BLIND_OPEN, 41, 320, 240, false)
+  eq [0, 7, 320, 1], open.visible_rects[0], 'opening reveals from the bottom up'
+end
+
+check 'stripe transitions march in from both edges' do
+  # Vertical stripes: 3-pixel rows on a 6-pixel pitch. A show reveals the rows
+  # the arriving screen has taken; an erase keeps the ones it has not.
+  into = TR.new(TR::VERTICAL_STRIPES_IN, 41, 320, 240, false)
+  eq [[0, 0, 320, 3], [0, 237, 320, 3]], into.visible_rects
+  into.advance
+  eq 4, into.visible_rects.size, 'one row from each edge per frame'
+
+  out = TR.new(TR::VERTICAL_STRIPES_OUT, 41, 320, 240, true)
+  # 39 rows from each edge, less the bottom one RPG_RT places at y = h — off the
+  # screen on the first frame, and clipped away here rather than drawn.
+  eq 77, out.visible_rects.size, 'an erase starts with nearly every row live'
+  eq [0, 3, 320, 3], out.visible_rects[0]
+
+  # Horizontal stripes are the same march in 4-pixel columns on an 8-pixel pitch.
+  cols = TR.new(TR::HORIZONTAL_STRIPES_IN, 41, 320, 240, false)
+  eq [[0, 0, 4, 240], [316, 0, 4, 240]], cols.visible_rects
+end
+
+check 'the window transitions shrink, grow, and invert for the other direction' do
+  # Border to centre, erasing: the live scene is the shrinking centred window.
+  out = TR.new(TR::BORDER_TO_CENTER_OUT, 41, 320, 240, true)
+  eq [[0, 0, 320, 240]], out.visible_rects, 'the full screen on frame 0'
+  20.times { out.advance }
+  eq [[80, 60, 160, 120]], out.visible_rects, 'half way in, a half-size window'
+
+  # Showing, the arriving screen is *outside* that window, so the live regions
+  # are the four bands around it.
+  into = TR.new(TR::BORDER_TO_CENTER_IN, 41, 320, 240, false)
+  20.times { into.advance }
+  eq [[0, 0, 320, 60], [0, 180, 320, 60], [0, 60, 80, 120], [240, 60, 80, 120]],
+     into.visible_rects
+
+  # Centre to border grows a window out of the middle.
+  grow = TR.new(TR::CENTER_TO_BORDER_IN, 41, 320, 240, false)
+  20.times { grow.advance }
+  eq [[80, 60, 160, 120]], grow.visible_rects
 end
 
 check 'conditional branch on the timer' do
@@ -2064,6 +2309,81 @@ check 'Change HP allow-death flag chooses the floor (0 vs 1)' do
   it2.start([FakeCmd.new(IC::CHANGE_HP, [1, 1, 1, 0, 999, 1])]) # lethal
   it2.update
   eq 0, a.hp
+end
+
+# -- party wipe -> Game Over --------------------------------------------------
+
+check 'a Change HP that wipes the party goes to Game Over' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  # Scope 0 (the whole party), lethal, more damage than anyone has.
+  it.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 9999, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok st.party.all_dead?, 'the party is down'
+  ok it.waiting?, 'the event stops on the wipe'
+  eq :game_over, it.wait_kind
+  eq false, st.switches[1], 'the command after it never ran'
+end
+
+check 'a Simulated Attack that wipes the party goes to Game Over' do
+  # Nepheshel's damage floors are Simulated Attacks (850 of them); one strong
+  # enough to kill the party ends the game rather than leaving it walking.
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [0, 0, 9999, 0, 0, 0, 0, 0])])
+  it.update
+  ok st.party.all_dead?
+  eq :game_over, it.wait_kind
+end
+
+check 'a survivable hit leaves the event running' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 10, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !st.party.all_dead?
+  ok !it.waiting?, 'nothing to stop for'
+  eq true, st.switches[1]
+end
+
+check 'curing the death state clears the Game Over condition' do
+  st = party_state
+  st.party.actors.each { |a| a.set_hp(0) }
+  ok st.party.all_dead?, 'everyone is down to start with'
+  it = Game::Interpreter.new(st)
+  # Change Condition removing state 1 revives; the wipe check then passes.
+  it.start([FakeCmd.new(IC::CHANGE_CONDITION, [0, 0, 1, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !st.party.all_dead?, 'the party is back up'
+  ok !it.waiting?
+  eq true, st.switches[1]
+end
+
+check 'an empty party is not a Game Over, and a battle page never triggers one' do
+  # RPG_RT allows a party with no members at all — a game between members is not
+  # a game that has ended.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq 0, st.party.actors.size
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 9999, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'no members, no wipe'
+  eq true, st.switches[1]
+
+  # A battle page leaves defeat to the battle's own [Defeat] handler.
+  st2 = party_state
+  it2 = Game::Interpreter.new(st2)
+  # Any battle context will do: the check only asks whether one is present.
+  it2.battle = Object.new
+  it2.start([FakeCmd.new(IC::CHANGE_HP, [0, 0, 1, 0, 9999, 1])])
+  it2.update
+  ok st2.party.all_dead?
+  ok !it2.waiting?, 'the battle resolves its own defeat'
 end
 
 check 'Change HP heals with a variable operand' do
@@ -3448,7 +3768,11 @@ check 'Change Screen Transitions sets the chosen slot; round-trips through save'
                                      max_hp: 100, max_mp: 30, atk: 10, def: 8) }
   db = FakeActorDB.new(players, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  eq [0, 0, 0, 0, 0, 0], st.screen_transitions, 'all slots default to 0'
+  eq [nil] * 6, st.screen_transitions, 'a fresh state has no slot configured'
+  # Seeding fills every slot from the database's System settings; this fake
+  # database carries none, so each falls back to setting 0 (the plain fade).
+  st.seed_screen_transitions(db)
+  eq [0, 0, 0, 0, 0, 0], st.screen_transitions, 'seeded to the database defaults'
 
   it = Game::Interpreter.new(st)
   # Slot 2 (battle-start erase) -> style 5, slot 5 (battle-end show) -> style 9.

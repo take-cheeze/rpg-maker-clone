@@ -43,14 +43,31 @@ class RPGXP
       @driving = v
     end
 
-    # Whether to run the bundled scripts instead of the built-in flow: an
-    # explicit opt-in via the RGSS_SCRIPT_HOST env var (when the runtime exposes
-    # ENV). Off by default. Uses const_defined? rather than defined?(CONST),
-    # which raises on an undefined constant in this mruby build.
+    # Whether to run the bundled scripts instead of the built-in flow. Off by
+    # default; an explicit opt-in, from either of two places.
+    #
+    # **The `--rgss_script_host` flag** is the one that works in a built engine.
+    # src/main.cxx publishes it as the RGSS_SCRIPT_HOST constant, the way it
+    # publishes `--rpgxp_new_game` as RPGXP_NEW_GAME, and it is read through its
+    # own rescue because an undefined constant raises here (this mruby has no
+    # `defined?(CONST)`).
+    #
+    # **The RGSS_SCRIPT_HOST environment variable** is what every document used
+    # to name, and it could never have turned the host on: this mruby build has
+    # no ENV at all, so the check below was simply always false in the engine.
+    # Only the CRuby harnesses — where ENV does exist — ever saw it work, which
+    # is why the dead switch went unnoticed. It is still honoured, for them.
     def self.enabled?
+      return true if flag_enabled?
       return false unless Object.const_defined?(:ENV)
       flag = ENV[ENABLED_ENV]
       !(flag.nil? || flag.empty? || flag == "0" || flag == "false")
+    end
+
+    def self.flag_enabled?
+      RGSS_SCRIPT_HOST
+    rescue StandardError
+      false
     end
 
     # Run the project's bundled scripts to completion. `db` answers #scripts
@@ -73,7 +90,22 @@ class RPGXP
       sections.each do |name, source|
         # Evaluate through the top-level helper so a section's `class Scene_Title`
         # etc. define global (::) constants, as under RGSS — see rgss_eval_section.
-        rgss_eval_section(source, name)
+        #
+        # Name the section in the failure. The host is how a game's own engine
+        # runs, so a boot failure is a report about which part of the RGSS class
+        # library is still missing (docs/rpgxp-rgss-api-gap.md) — and "NameError:
+        # uninitialized constant RPG::Sprite" says nothing about *where* to look
+        # without it. Re-raised, so the caller still falls back to the built-in
+        # flow.
+        begin
+          rgss_eval_section(source, name)
+        rescue StandardError, ScriptError => e
+          $stderr.puts "[RGSS] script host: section #{name.inspect} raised " \
+                       "#{e.class}: #{e.message}"
+          # `raise` with no argument loses the exception in this mruby build
+          # (the caller saw a bare RuntimeError), so re-raise it explicitly.
+          raise e
+        end
       end
       true
     end

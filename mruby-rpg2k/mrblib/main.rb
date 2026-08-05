@@ -360,6 +360,12 @@ class RPG2k
         @scene.char_passable?(character, dir)
       end
 
+      # Whether a jump may land on (x, y) — only the destination is tested, the
+      # tiles crossed on the way are not (see Game::MoveRoute#do_jump).
+      def can_land?(character, x, y)
+        @scene.char_can_land?(character, x, y)
+      end
+
       def hero_position
         s = @scene.state
         [s.x, s.y]
@@ -470,6 +476,9 @@ class RPG2k
         # lets move routes / autonomous movement query the map.
         @rng = Game::Rng.new(0x2000)
         @world = MapWorld.new(self, @rng)
+        # Erased events, and the state revision the active pages were chosen at.
+        @erased_events = {}
+        @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
@@ -543,6 +552,9 @@ class RPG2k
         update_sprite_flashes # Flash Sprite decays during events too
         watch_bgm_loop # so the "BGM played once" branch can be answered
         @anim_frame += 1 # water / animated tiles cycle even during events
+        # An event page's conditions may have just stopped (or started) holding;
+        # re-select before anything reads a trigger or a graphic this frame.
+        refresh_event_pages
         if event_busy?
           drive_event
         else
@@ -646,6 +658,9 @@ class RPG2k
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
         @fade_sprite.bitmap = @fade_bmp
         @fade_sprite.opacity = 0
+        # Whether the overlay currently holds a transition mask rather than the
+        # solid black the opacity-only fade needs (see #draw_transition_mask).
+        @fade_masked = false
 
         @flash_sprite = Sprite.new
         @flash_sprite.z = 450
@@ -679,7 +694,7 @@ class RPG2k
       # over the command's duration.
       def update_screen_overlay
         screen = @state.screen
-        @fade_sprite.opacity = screen.fade_level
+        draw_transition_mask screen
         @tint_sprite.opacity = tint_overlay_opacity(screen.tint)
 
         r, g, b, strength = screen.flash_color
@@ -695,6 +710,44 @@ class RPG2k
         end
 
         draw_weather
+      end
+
+      # Fully opaque and fully clear black, for painting the erase overlay.
+      OPAQUE_BLACK = Color.new(0, 0, 0, 255)
+      CLEAR = Color.new(0, 0, 0, 0)
+
+      # Paint the screen-erasure overlay for this frame.
+      #
+      # A plain fade is just the overlay's opacity, and the bitmap stays the
+      # solid black it was built as — the cheap path, which is also every frame
+      # on which no transition is running. A *shaped* transition (blinds,
+      # stripes, a closing window) instead paints the bitmap: opaque black
+      # everywhere, then the regions of the live scene still showing through
+      # punched back out to fully transparent. `fill_rect` overwrites alpha, so
+      # the holes really are holes.
+      def draw_transition_mask(screen)
+        tr = screen.transition
+        if tr.nil? || tr.uniform?
+          reset_fade_bitmap if @fade_masked
+          @fade_sprite.opacity = screen.fade_level
+          return
+        end
+        @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        tr.visible_rects.each { |x, y, w, h| @fade_bmp.fill_rect x, y, w, h, CLEAR }
+        @fade_masked = true
+        @fade_sprite.opacity = 255
+      rescue StandardError => e
+        # A drawing failure must not strand the screen mid-transition: fall back
+        # to the plain fade level, which still lands on the right end state.
+        $stderr.puts "[RPG2k] screen transition draw failed: #{e.message}"
+        @fade_sprite.opacity = screen.fade_level
+      end
+
+      # Restore the overlay to solid black after a shaped transition, so the
+      # opacity-only path draws a full-screen fade again.
+      def reset_fade_bitmap
+        @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        @fade_masked = false
       end
 
       WEATHER_RAIN = 1
@@ -922,6 +975,7 @@ class RPG2k
         evs = @map.unit.events
         return unless evs
         evs.each do |id, ev|
+          next if @erased_events[id] # an Erase Event lasts the whole visit
           selected = Game::EventPage.select(ev.pages, @state.switches,
                                             @state.variables, @state.party)
           next unless selected
@@ -944,7 +998,9 @@ class RPG2k
         move_type = page_move_type(page)
         route = move_type == Game::MoveType::CUSTOM ?
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
-        { id: id, char: ch, trigger: page_trigger(page),
+        # `page` is kept so a refresh can tell whether the conditions still pick
+        # the same one (see #pages_changed?).
+        { id: id, char: ch, page: page, trigger: page_trigger(page),
           commands: page_commands(page), move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
           # Rendering state: the page's static graphic fields, a live walk
@@ -1138,12 +1194,44 @@ class RPG2k
 
       # On the action button, run the trigger-0 event the player is facing. The
       # faced event turns toward the player before its commands run.
+      # RPG_RT looks through at most three counter tiles in a row before giving
+      # up (EasyRPG's `Game_Player::CheckActionEvent`).
+      MAX_COUNTER_REACH = 3
+
       def try_action_trigger
         return if event_busy?
         return unless Input.trigger?(Input::C)
+        # An action event **under the player** fires too: RPG_RT checks the tile
+        # the party is standing on before the one it faces, which is how a
+        # trigger-0 event on a doorway tile answers the action button.
+        here = event_at(@state.x, @state.y)
+        return start_event(here, true) if actionable?(here)
+
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        start_event(ev, true) if ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands]
+        return start_event(ev, true) if actionable?(ev)
+
+        # Nothing on the faced tile: if it is a **counter** — a shop or inn
+        # counter, marked in the chipset's upper-layer passage table — look
+        # across it for whoever is standing behind, up to three counters deep.
+        MAX_COUNTER_REACH.times do
+          break unless counter_tile?(fx, fy)
+          fx, fy = target_tile(fx, fy, @state.direction)
+          ev = event_at(fx, fy)
+          return start_event(ev, true) if actionable?(ev)
+        end
+        nil
+      end
+
+      # Whether an event can answer the action button.
+      def actionable?(ev)
+        ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands] ? true : false
+      end
+
+      # Whether (x, y) carries an upper-layer counter tile.
+      def counter_tile?(x, y)
+        return false if @chipset.nil? || !@map.in_bounds?(x, y)
+        @chipset.counter?(@map.upper(x, y))
       end
 
       # On the action button, board a placed vehicle the party is standing on
@@ -1417,9 +1505,97 @@ class RPG2k
       # the next map (re)load, matching RPG2000's Erase Event.
       def erase_event(ev)
         @events.delete(ev)
+        # Remembered so a page refresh cannot resurrect it: an Erase Event lasts
+        # for the rest of the visit to the map, whatever its conditions do next.
+        @erased_events[ev[:id]] = true
         tile = [ev[:char].x, ev[:char].y]
         @event_tiles.delete(tile) if @event_tiles[tile].equal?(ev)
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
+      end
+
+      # -- page refresh -------------------------------------------------------
+
+      # An event's active page is chosen by its conditions, and those read the
+      # switches, the variables, the party roster and its items. Change one and
+      # the choice can change with it — the "talk to me once and I turn into my
+      # page 2" idiom every RPG2000 game is built on. The pages were only ever
+      # selected when the map loaded, so an event kept whichever page it started
+      # the visit with until the player left and came back.
+      #
+      # RPG_RT re-selects them whenever those four things change (its
+      # `Game_Map::SetNeedRefresh`, set by Control Switches / Variables, Change
+      # Items and Change Party Member). Rather than flagging each command — which
+      # silently misses any path that is not an event command, like using an item
+      # from the menu — this watches the revision counters those four carry, so
+      # every writer is covered by construction.
+      def page_revision
+        rev(@state.switches) + rev(@state.variables) + rev(@state.party)
+      end
+
+      # A collaborator's revision counter, or 0 for one that keeps none (the
+      # party stand-ins some harnesses pass in). A source that cannot report a
+      # change simply never asks for a refresh.
+      def rev(o)
+        o.respond_to?(:revision) && o.revision ? o.revision : 0
+      end
+
+      # Re-select every event's page if anything a condition reads has changed.
+      # The sweep is cheap (a few comparisons per event) and does nothing at all
+      # unless a page actually flipped, so a parallel process writing a variable
+      # every frame costs a sweep, not a rebuild.
+      def refresh_event_pages
+        rev = page_revision
+        return if rev == @page_revision
+        @page_revision = rev
+        return unless pages_changed?
+        rebuild_events_preserving_positions
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] event page refresh failed: #{e.message}"
+      end
+
+      # Whether any event's conditions now pick a different page than the one it
+      # is running. Walks the *map's* events rather than the live list, so it
+      # also catches an event that has no active page at all right now and has
+      # just gained one — those are absent from @events entirely.
+      def pages_changed?
+        evs = @map.unit.events
+        return false unless evs
+        live = {}
+        @events.each { |e| live[e[:id]] = e }
+        changed = false
+        evs.each do |id, src|
+          next if changed || @erased_events[id]
+          selected = Game::EventPage.select(src.pages, @state.switches,
+                                            @state.variables, @state.party)
+          page = selected && selected[1]
+          e = live[id]
+          changed = true unless page.equal?(e && e[:page])
+        end
+        changed
+      end
+
+      # Rebuild the runtime events for the newly-selected pages, carrying each
+      # event's **position and facing** across — RPG_RT changes an event's page,
+      # not where it stands, so an NPC that flips to page 2 stays where it was
+      # rather than snapping back to its spawn tile. Erased events stay erased,
+      # and the parallel processes are rebuilt because a page change can add or
+      # remove one.
+      def rebuild_events_preserving_positions
+        placed = {}
+        @events.each { |e| placed[e[:id]] = e[:char] }
+        build_events
+        @events.each do |e|
+          old = placed[e[:id]]
+          next unless old
+          e[:char].x = old.x
+          e[:char].y = old.y
+          e[:char].direction = old.direction
+        end
+        rebuild_event_tiles
+        build_parallels
+        # The event the foreground interpreter is running may have just been
+        # rebuilt; re-point it so "this event" still reaches the live character.
+        @active_event = @events.find { |e| e[:id] == @active_event[:id] } if @active_event
       end
 
       # -- Halt All Movement --------------------------------------------------
@@ -1938,6 +2114,35 @@ class RPG2k
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
+
+      # Collision test for a jump landing on (x, y): the same rules as a step —
+      # in bounds, not onto the player or another event, passable per the chipset
+      # — but applied to an arbitrary tile rather than the one ahead, and entered
+      # from the jump's dominant direction. The tiles the jump passes over are
+      # deliberately not tested: RPG_RT skips the "may I leave" half of its check
+      # while jumping, which is what lets a jump clear a wall.
+      def char_can_land?(character, x, y)
+        return true if character.through
+        return false unless @map.in_bounds?(x, y)
+        return false if x == @state.x && y == @state.y
+        return false if @event_tiles[[x, y]]
+        return true if @chipset.nil?
+        @chipset.passable?(@map.lower(x, y), jump_entry_direction(character, x, y))
+      end
+      public :char_can_land?
+
+      # The direction a jump from the character's tile enters (x, y) by: its
+      # dominant axis, vertical winning a tie, matching the facing Character#jump
+      # lands on.
+      def jump_entry_direction(character, x, y)
+        dx = x - character.x
+        dy = y - character.y
+        if dy.abs >= dx.abs
+          dy >= 0 ? 2 : 8
+        else
+          dx >= 0 ? 6 : 4
+        end
+      end
 
       # Terrain id of the lower-layer tile at (x, y), for the Store Terrain ID
       # command (0 when out of bounds or no chipset). Queried by the interpreter
@@ -3805,6 +4010,10 @@ class RPG2k
         @started_common = {}
         @active_event = nil
         @player_route = nil # a forced player route does not survive a teleport
+        # Both are per-visit: an Erase Event does not follow the party to the
+        # next map, and the destination's pages are chosen fresh.
+        @erased_events = {}
+        @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
@@ -5852,6 +6061,9 @@ class RPG2k
     init = map_tree.initial
     state = Game::State.new Game::Party.new(@db), init.initial_map_id,
                             init.initial_x, init.initial_y
+    # The database's System tab configures the six screen transitions a
+    # "use the configured transition" (-1) Erase / Show Screen resolves against.
+    state.seed_screen_transitions @db
     state.map = load_map state.map_id
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.

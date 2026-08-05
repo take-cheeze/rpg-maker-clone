@@ -16,7 +16,9 @@
 - Events move on their own: each event walks per its page's movement type
   (random, vertical/horizontal pacing, approaching or fleeing the hero) or runs a
   custom move route, paced by its move frequency and blocked by terrain, the
-  player and other events
+  player and other events. A route's **Begin Jump / End Jump** block hops to the
+  destination its enclosed moves add up to, in one move and testing only where it
+  lands — so a jump clears what it passes over, the way the real runtime's does
 - Tiles are blitted from the map's real ChipSet graphic — lower/upper chips,
   water and terrain autotiles assembled from quarter-tiles, and animated tiles —
   falling back to colour blocks only when the chipset image is missing
@@ -51,11 +53,17 @@
   BGM, Return to Title, Game Over (the database's `GameOver/` picture over its
   game-over music, dismissed back to the title) and Erase
   Event (remove an event from
-  the map) — **every RPG2000 event command now has a handler**. Events start on the action button, on
+  the map) — **every RPG2000 event command now has a handler**. An event that
+  **wipes the party** ends the game the same way, without needing a Game Over
+  command: every command that can knock the last member out re-checks, as the
+  real runtime does, so a damage floor that kills you is fatal. Events start on the action button, on
   player touch (walking into them),
   on event touch (they walk into the player), auto-start, or run continuously as
   a parallel background process, gated by their page/switch conditions;
-  auto-start and parallel common events run too
+  auto-start and parallel common events run too. Pages are re-selected **while
+  the map runs**, so setting the switch an event's page 2 waits on turns it into
+  that page there and then — keeping where it stands — rather than only on the
+  next visit to the map
 - A command that names **"this event"** rather than an event id resolves to the
   event running it, on both sides: the scene already steered Move Event and
   friends that way, and the interpreter now answers the reads too — the
@@ -64,6 +72,13 @@
   cancel setting as well: the cancel key picks the choice the command names, or
   runs its dedicated **[Cancel]** branch, and a block that forbids cancelling
   swallows the key
+- **Erase / Show Screen** run the transition style the command asks for, each at
+  its own RPG2000 length — including "use the configured transition", which
+  reads the Change Screen Transitions setting seeded from the game's database.
+  The blinds, the vertical / horizontal stripes and the border-to-centre /
+  centre-to-border windows are drawn as a mask over the map; the styles that need
+  the scene itself moved or resampled (scrolls, zoom, mosaic, wave, random
+  blocks) still run as a fade of the correct length
 - A troop's **battle-event pages** run during a fight: their conditions (switch,
   variable, turn, enemy/actor HP, plus RPG2003's per-battler turn counters and
   party fatigue) are re-checked each turn, and a matching page runs the ordinary
@@ -118,8 +133,8 @@
   (`Data/Scripts.rxdata`) unmodified — the way `RGSS104E.dll` does — instead of
   the reimplemented flow: it decompresses the ~90 Ruby sections, supplies the
   `load_data`/`save_data` built-ins and evaluates each at the top level (via
-  `mruby-eval`) so the game drives itself. It is opt-in (`RGSS_SCRIPT_HOST`)
-  while the RGSS class library is completed; see
+  `mruby-eval`) so the game drives itself. It is opt-in
+  (`--rgss_script_host`) while the RGSS class library is completed; see
   [`docs/adr/0017-rpgxp-rgss-script-host.md`](docs/adr/0017-rpgxp-rgss-script-host.md)
   (data layer: [`docs/adr/0010-rpgxp-rgss-data-layer.md`](docs/adr/0010-rpgxp-rgss-data-layer.md))
 - An XP project is exercised **against the genuine runtime as well as our own**,
@@ -201,7 +216,7 @@
 - The window is sized to VX's native 544×416 automatically
 - A VX/VX Ace game's engine *is* its script bundle, so a project that ships
   `Data/Scripts.rvdata[2]` can be driven by the same experimental **RGSS script
-  host** as XP (`RGSS_SCRIPT_HOST`); the built-in title/map flow is not written
+  host** as XP (`--rgss_script_host`); the built-in title/map flow is not written
   yet, and a boot without the host says so rather than opening a blank window.
   See
   [`docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md`](docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md)
@@ -247,12 +262,22 @@
   than the MV path and is still being brought up against real games — the
   headless CI smoke is what the claim rests on, and it is not yet a blocking
   check
+- MZ also **shows messages, opens the party menu, saves and fights**, each
+  exercised headlessly the way the MV path is: a message queued through
+  `$gameMessage` opens `Window_Message` over the map, `Scene_Map`'s own
+  `callMenu` reaches `Scene_Menu`, a save round-trips through the real
+  `DataManager` and a Battle Processing command run through the map interpreter
+  lands in `Scene_Battle`. MZ's save path is a **promise chain** (JsonEx → pako
+  → localforage) rather than MV's synchronous call, so the probe starts it and
+  polls until it settles, then re-enters the map the way `Scene_Load` does
 - The MZ engine is not redistributable (unlike MV's MIT corescript), so
   `data/mz-sample` commits only an authored database and art —
   `scripts/gen-mz-sample.py` writes both — and
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
-  `scripts/mz_boot_check.bash` boots that bed headlessly and asserts the game
-  reaches the map and that a held key moves the player; `ruby
+  `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
+  requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
+  key moves the player), `message`, `menu`, `save` or `battle`, each with its own
+  success line so a probe that merely ran cannot pass; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 
