@@ -26,6 +26,9 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # Declared here for the same reason as mruby-sprintf above: the dependency edge
   # is what orders its initialization before this gem.
   add_dependency 'mruby-kernel-ext'
+  # Kernel#rand, which a game's scripts roll for encounters and damage variance
+  # (and RPG::Weather for its drops). Same ordering reason.
+  add_dependency 'mruby-random'
   # Numeric#zero?, used by the Scroll Map offset and the pause-arrow animation.
   # Same story as mruby-sprintf above: it is enabled in build_config.rb, but
   # without the dependency edge to order its initialization before this gem the

@@ -41,7 +41,10 @@ These are complete enough for the stock scripts:
 - **`Viewport`** — `new` (~7), `ox`/`oy`, `rect`, `z`, `visible`, `update`,
   `dispose`.
 - **Kernel** — `load_data` (~27) and `save_data` are supplied by the script host
-  (`Object#load_data`/`#save_data` → the project database); `rand` (~36) is core.
+  (`Object#load_data`/`#save_data` → the project database); `rand` (~36) and
+  `Integer()` come from the `mruby-random` / `mruby-kernel-ext` core gems, which
+  had to be added to the build (see gap 0e — neither is in mruby's default set,
+  and this list called `rand` "core" until a game proved otherwise).
 
 ## Gaps ❌ / ⚠️ (ordered by how much they block a boot)
 
@@ -181,7 +184,41 @@ A failure inside a game's own scripts now also prints **where**: the host report
 up to a dozen backtrace frames with the section name and line
 (`Game_Battler_1:61`), since each section is evaluated under its editor name.
 Past the title screen, "Main raised NoMethodError" can otherwise mean any of a
-hundred scripts.
+hundred scripts. It paid for itself on the next run, naming both of these:
+
+### 0f. `Kernel#rand` ✅ (the first thing New Game does after building the party)
+
+```
+[RGSS] script host: section "Main" raised NoMethodError: undefined method 'rand' for Game_Player
+[RGSS] script host:   from Game_Player:88:in make_encounter_count
+[RGSS] script host:   from Game_Player:57:in moveto
+[RGSS] script host:   from Scene_Title:134:in command_new_game
+```
+
+`Game_Player#make_encounter_count` rolls `rand(n) + rand(n) + 1` as the party is
+placed. `Kernel#rand` is the **mruby-random** core gem, which was not in the
+build: this engine's own code uses seeded LCGs instead, because its runs are
+diffed frame by frame against the genuine runtimes, so nothing here had ever
+needed it (`RPG::Weather` scatters its drops with `rand` too — that would have
+been the next report). Added to `build_config.rb` with the dependency edge in
+`mrbgem.rake`.
+
+### 0g. `Table#[]=` past the edge ✅ (a write RGSS drops, we raised on)
+
+```
+[RGSS] script host: section "Main" raised TypeError: true cannot be converted to Integer
+[RGSS] script host:   from map_light:265:in []=
+```
+
+*Pray for You*'s `map_light` script walks `for x in 0..(self.width)` — inclusive,
+so one past the edge — and runs `@passages_data[x, y] |= 0x0f`. Out there the
+read answers `nil`, `nil | 0x0f` is `true`, and that `true` arrives as the value
+of a write RGSS was always going to ignore. `Table#[]=` converted its arguments
+before the bounds check, so it raised instead of dropping the write. The bounds
+check now comes first and the value is converted only when it is going to be
+stored; an *in-range* write of a non-Integer still raises. Out-of-range **reads**
+keep answering `nil` — the stock scripts test for exactly that
+(`tile_id = self.data[x,y,i]; if tile_id == nil`).
 
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at

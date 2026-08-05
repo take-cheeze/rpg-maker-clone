@@ -423,26 +423,37 @@ mrb_value table_get(mrb_state* M, V self) {
   return mrb_fixnum_value(t.data[i]);
 }
 
+// A write outside the table is dropped, and the value is only converted once it
+// is going to be stored. The order matters, because a game's own scripts lean
+// on it: Pray for You's `map_light` walks `for x in 0..(self.width)` —
+// inclusive, so one past the edge — and does `@passages_data[x, y] |= 0x0f`. At
+// the edge the read answers nil, `nil | 0x0f` is `true`, and that `true` comes
+// back here as the value of a write RGSS was always going to ignore. Converting
+// the arguments up front (mrb_get_args "ii|ii") raised "TypeError: true cannot
+// be converted to Integer" instead, which killed the game on New Game. An
+// *in-range* write of a non-Integer still raises, as it should.
 mrb_value table_set(mrb_state* M, V self) {
-  mrb_int p0, p1, p2 = 0, p3 = 0;
-  mrb_get_args(M, "ii|ii", &p0, &p1, &p2, &p3);
-  mrb_int argc = mrb_get_argc(M);
-  mrb_int x = p0, y = 0, z = 0, v;
+  mrb_value a0, a1, a2 = mrb_nil_value(), a3 = mrb_nil_value();
+  mrb_get_args(M, "oo|oo", &a0, &a1, &a2, &a3);
+  const mrb_int argc = mrb_get_argc(M);
+  mrb_int x = mrb_as_int(M, a0), y = 0, z = 0;
+  mrb_value v;
   if (argc == 2) {
-    v = p1;
+    v = a1;
   } else if (argc == 3) {
-    y = p1;
-    v = p2;
+    y = mrb_as_int(M, a1);
+    v = a2;
   } else {
-    y = p1;
-    z = p2;
-    v = p3;
+    y = mrb_as_int(M, a1);
+    z = mrb_as_int(M, a2);
+    v = a3;
   }
   Table& t = DataType<Table>::get(M, self);
-  long i = table_index(t, x, y, z);
-  if (i >= 0)
-    t.data[i] = (int16_t)v;
-  return mrb_fixnum_value(v);
+  const long i = table_index(t, x, y, z);
+  if (i < 0)
+    return v;
+  t.data[i] = (int16_t)mrb_as_int(M, v);
+  return v;
 }
 
 mrb_value table_resize(mrb_state* M, V self) {

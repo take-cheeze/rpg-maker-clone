@@ -94,6 +94,40 @@ assert "RGSS::Table 3D and resize" do
   assert_equal 99, t[1, 2, 3] # preserved through resize
 end
 
+# A write past the edge is dropped without the value ever being looked at, which
+# a game's own scripts lean on. Pray for You's `map_light` walks
+# `for x in 0..(self.width)` — inclusive, so one past the end — and runs
+# `@passages_data[x, y] |= 0x0f`: out there the read answers nil, `nil | 0x0f` is
+# `true`, and that `true` arrives as the value of a write RGSS was always going
+# to ignore. Converting arguments before the bounds check turned it into
+# "TypeError: true cannot be converted to Integer" and killed the game on New
+# Game.
+assert "RGSS::Table drops out-of-range writes without reading the value" do
+  t = RGSS::Table.new(2, 2)
+  t[0, 0] = 5
+
+  assert_nil t[2, 0], "a read past the edge is nil"
+  assert_nil t[0, 2]
+  assert_nil t[-1, 0]
+
+  # The exact shape from the game: nil | 0x0f == true, written back past the edge.
+  value = t[2, 0] | 0x0f
+  assert_true value == true, "nil | 0x0f should be true, as in RGSS"
+  t[2, 0] = value
+  t[0, -1] = true
+  assert_equal 5, t[0, 0], "the dropped writes must not disturb the table"
+
+  # In range, a non-Integer is still a TypeError.
+  raised = false
+  begin
+    t[0, 0] = true
+  rescue TypeError
+    raised = true
+  end
+  assert_true raised, "an in-range write of true must still raise"
+  assert_equal 5, t[0, 0]
+end
+
 assert "RGSS::Table marshal round-trip" do
   t = RGSS::Table.new(2, 2)
   t[0, 0] = 1

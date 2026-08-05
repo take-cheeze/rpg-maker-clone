@@ -472,8 +472,9 @@ class RPG2k
         @started_auto = {}
         @started_common = {}
         @common = Game::CommonEvent.load(@db)
-        # Deterministic RNG (mruby has no Kernel#rand here) and the adapter that
-        # lets move routes / autonomous movement query the map.
+        # Deterministic RNG (Kernel#rand exists but is unseeded, and these runs
+        # are diffed against the genuine runtime) and the adapter that lets move
+        # routes / autonomous movement query the map.
         @rng = Game::Rng.new(0x2000)
         @world = MapWorld.new(self, @rng)
         # Erased events, and the state revision the active pages were chosen at.

@@ -29,6 +29,13 @@ def rpg_maker_gems(conf)
   # with "undefined method 'Integer'" without this. Same gem supplies Float() /
   # String() / Array(), which community scripts reach for.
   conf.gem core: 'mruby-kernel-ext'
+  # Kernel#rand: a game's own scripts roll dice constantly — `Game_Player`
+  # makes its encounter count with `rand(n) + rand(n) + 1` the moment New Game
+  # places the party, damage variance uses it, and RPG::Weather scatters its
+  # drops with it. This engine's own code deliberately uses seeded LCGs instead
+  # (its runs are diffed frame by frame against the genuine runtimes), which is
+  # why the gem was never needed until games ran their own code.
+  conf.gem core: 'mruby-random'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 

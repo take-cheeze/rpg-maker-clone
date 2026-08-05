@@ -13,7 +13,7 @@
 
 class RPGXP
   module Game
-    # Small deterministic RNG (mruby has no seeded Kernel#rand here), used by the
+    # Small deterministic RNG (Kernel#rand exists but is unseeded), used by the
     # "set variable to a random value" operand so runs are reproducible.
     class Rng
       def initialize(seed = 12_345)

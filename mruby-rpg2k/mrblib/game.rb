@@ -2328,10 +2328,12 @@ module Game
     end
   end
 
-  # A tiny deterministic pseudo-random generator. mruby is built here without
-  # the `mruby-random` gem (see build_config.rb), so `Kernel#rand` is not
-  # available; move routes and autonomous movement need *some* randomness, so we
-  # supply our own. This is a small LCG (multiplier 75, modulus the prime 65537)
+  # A tiny deterministic pseudo-random generator. `Kernel#rand` does exist in
+  # this build (mruby-random, added for the RGSS script host — a game's own
+  # scripts call it), but it is unseeded: move routes and autonomous movement
+  # are diffed frame by frame against the genuine runtime
+  # (scripts/compare-nepheshel-wine.bash), which needs the same rolls every run,
+  # so they keep this one. This is a small LCG (multiplier 75, modulus the prime 65537)
   # whose arithmetic stays within a signed 32-bit `mrb_int` — no value ever
   # reaches 2**31 — so it never has to promote to a bigint on this target. The
   # period (65536) and quality are more than enough for picking a walk
