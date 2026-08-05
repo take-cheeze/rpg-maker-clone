@@ -695,6 +695,30 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   Also reconcile the scripts' blocking main loop with the emscripten frame loop
   (Asyncify or a per-frame driver), and read graphics/audio out of the encrypted
   archive.
+- ✅ **Cross-runtime testing** — an XP project is booted in every runtime it can
+  run in, all asserting the same `[RPGXP-MAP]` marker (`--rpgxp_new_game` picks
+  New Game without input): `scripts/rpgxp_boot_check.bash` (the native binary,
+  the guard against mruby/CRuby divergence the CRuby-hosted checks cannot see),
+  `scripts/rpgxp_browser_check.py` (the emscripten page, driven in headless
+  Chromium over the DevTools protocol with no npm dependency) — both in CI — and
+  `scripts/compare-rpgxp-wine.bash`, which diffs our frames against the genuine
+  `Game.exe` + `RGSS104E.dll` under wine, the XP twin of
+  `compare-nepheshel-wine.bash`. That comparison is the harness the remaining
+  render work below is meant to be driven by: the tile layers are still
+  placeholder colour blocks, so its map steps differ wholesale until real
+  tileset/autotile blitting lands. See
+  [`docs/adr/0025-rpgxp-cross-runtime-testing.md`](adr/0025-rpgxp-cross-runtime-testing.md);
+  the browser pass already found (and this fixed) an XP project rendering on a
+  320x240 screen in the page and the loader panel covering the running game, and
+  the wine pass found four more (the XP RTP key was never read, `.jpg` was
+  missing from the asset search, truecolour images were red/blue-swapped, and an
+  RGBA image loaded opaque drew garbage) — the XP title screen now differs from
+  the genuine runtime in 15% of its pixels, down from 74%, the rest being the
+  windowskin's opacity and the reference's font-less text.
+  Still open there: running the **script host** in the browser (the ADR 0023
+  frame driver has never been verified in a real browser), and a way to pass
+  engine flags to the page so the browser check can use `--rpgxp_new_game`
+  instead of pressing keys.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 

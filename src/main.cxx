@@ -52,6 +52,14 @@ DEFINE_bool(
     "Save<N>.lsd (see scripts/compare-nepheshel-save-wine.bash) instead of "
     "being driven there by counting key presses");
 DEFINE_bool(
+    rpgxp_new_game,
+    false,
+    "For RPG Maker XP: once the title screen appears, auto-select New Game so "
+    "the game advances into its start map without input, and log the map it "
+    "reaches as [RPGXP-MAP]. Used to smoke-test the RGSS path headlessly (in "
+    "CI, in the browser build and beside the genuine RGSS runtime under wine; "
+    "see scripts/rpgxp_boot_check.bash and scripts/compare-rpgxp-wine.bash)");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -145,6 +153,16 @@ namespace {
 
 namespace fs = std::filesystem;
 
+// RPG Maker XP's native screen size (RPG2000/MV render at 320x240). Mirrors
+// RPGXP::WIDTH / RPGXP::HEIGHT in mruby-rpgxp/mrblib/lib.rb; the display is
+// sized to it whenever an XP project is the one being booted.
+constexpr int RPGXP_WIDTH = 640;
+constexpr int RPGXP_HEIGHT = 480;
+
+// RPG Maker VX / VX Ace's native screen size (mruby-rpgvx).
+constexpr int RPGVX_WIDTH = 544;
+constexpr int RPGVX_HEIGHT = 416;
+
 #ifndef __EMSCRIPTEN__
 // mruby's heap is routed through lvgl's memory pool so both are accounted under
 // one allocator. mruby 4.0 removed per-state allocators (mrb_open_allocf); a
@@ -200,6 +218,32 @@ fs::path rtp_path() {
 fs::path xp_rtp_path() {
   inicpp::IniManager ini = get_reg("system.reg");
   return reg2path(ini["Software\\\\Enterbrain\\\\RGSS\\\\RTP"]["\"Standard\""]);
+}
+
+// RPG Maker VX / VX Ace projects look like XP ones from the outside — a
+// Game.ini beside a Data/ folder — so they have to be recognised before the XP
+// check below, which keys on Game.ini alone. Mirrors RPGVX::EDITIONS
+// (mruby-rpgvx/mrblib/lib.rb): an unpacked project is identified by
+// Data/System.rvdata(2), a packed release by its encrypted archive
+// (Game.rgss2a / Game.rgss3a), since such a release ships no loose Data/ at
+// all. The Ruby side re-detects which of the two editions it is.
+bool is_rpgvx_game(const fs::path& gd) {
+  return fs::exists(gd / "Data" / "System.rvdata2") ||
+         fs::exists(gd / "Data" / "System.rvdata") ||
+         fs::exists(gd / "Game.rgss3a") || fs::exists(gd / "Game.rgss2a");
+}
+
+// An RPG Maker XP project: Game.ini plus either a loose Data/System.rxdata or
+// XP's own encrypted archive (a packed release ships no loose Data/ folder),
+// and not a VX / VX Ace project, whose archives are its own. Mirrors the
+// game-class dispatch in main(), and decides both the screen size and which RTP
+// registry key the assets are looked up under.
+bool is_xp_game(const fs::path& game_dir) {
+  if (is_rpgvx_game(game_dir))
+    return false;
+  const bool xp_data = fs::exists(game_dir / "Data" / "System.rxdata") ||
+                       fs::exists(game_dir / "Game.rgssad");
+  return fs::exists(game_dir / "Game.ini") && xp_data;
 }
 
 // Read the [RPG_RT] FullPackageFlag from RPG_RT.ini in the game directory. When
@@ -260,19 +304,6 @@ extern "C" void rgss_sdl_input_init(void);
 extern "C" void rgss_audio_init(void);
 extern "C" void rgss_audio_shutdown(void);
 
-// Is this an RPG Maker VX (RGSS2) or VX Ace (RGSS3) project? Those look like XP
-// ones from the outside — a Game.ini beside a Data/ folder — so they have to be
-// recognised before the XP branch, which keys on Game.ini alone. Mirrors
-// RPGVX::EDITIONS (mruby-rpgvx/mrblib/lib.rb): an unpacked project is
-// identified by Data/System.rvdata(2), a packed release by its encrypted
-// archive (Game.rgss2a / Game.rgss3a), since such a release ships no loose
-// Data/ at all. The Ruby side re-detects which of the two editions it is.
-static bool is_rpgvx_game(const fs::path& gd) {
-  return fs::exists(gd / "Data" / "System.rvdata2") ||
-         fs::exists(gd / "Data" / "System.rvdata") ||
-         fs::exists(gd / "Game.rgss3a") || fs::exists(gd / "Game.rgss2a");
-}
-
 // Report an mruby exception (class, message, and Ruby backtrace) and bail out
 // of main(). Preferred over ng-log's CHECK: it prints the actual mruby error
 // detail, and under Emscripten ng-log's fatal path traps anyway (it formats
@@ -317,6 +348,20 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     // looks for Game.ini — a VX project has one too. See mruby-rpgvx.
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "Game.ini")) {
+    // RPG Maker XP renders at 640x480. Native main() sizes the display from
+    // --game_dir before creating it, but in the browser no project exists yet
+    // at that point (the page's loader mounts one here, later), so the display
+    // was created at the 320x240 default and doubled. Resize it now, before the
+    // runtime builds any screen-sized object: with a 320x240 canvas the XP
+    // scenes draw off the edge -- the title's command window lands past the
+    // bottom and its centred text past the right (found by
+    // scripts/rpgxp_browser_check.py; see docs/adr/0025).
+    if (em_display) {
+      lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
+      lv_sdl_window_set_zoom(em_display.get(), 1.f);
+      std::fprintf(stderr, "[RPGXP] display sized to %dx%d\n", RPGXP_WIDTH,
+                   RPGXP_HEIGHT);
+    }
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
   } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
              fs::exists(game_dir_path / "data" / "System.json")) {
@@ -384,21 +429,18 @@ int main(int argc, char** argv) {
   // then Game.ini plus either a loose Data/System.rxdata or an XP archive,
   // since a packed release ships no loose Data/ folder.
   {
-    const fs::path gd = FLAGS_game_dir;
-    const bool vx_game = is_rpgvx_game(gd);
-    const bool xp_data = fs::exists(gd / "Data" / "System.rxdata") ||
-                         fs::exists(gd / "Game.rgssad");
-    const bool xp_game = !vx_game && fs::exists(gd / "Game.ini") && xp_data;
+    const bool xp_game = is_xp_game(FLAGS_game_dir);
+    const bool vx_game = is_rpgvx_game(FLAGS_game_dir);
     gflags::CommandLineFlagInfo w_info, h_info;
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);
     if (w_info.is_default && h_info.is_default) {
       if (xp_game) {
-        FLAGS_width = 640;
-        FLAGS_height = 480;
+        FLAGS_width = RPGXP_WIDTH;
+        FLAGS_height = RPGXP_HEIGHT;
       } else if (vx_game) {
-        FLAGS_width = 544;
-        FLAGS_height = 416;
+        FLAGS_width = RPGVX_WIDTH;
+        FLAGS_height = RPGVX_HEIGHT;
       }
     }
   }
@@ -498,8 +540,20 @@ int main(int argc, char** argv) {
 #else
   // RPG_RT.ini's FullPackageFlag=1 marks a self-contained game; honour it by
   // clearing RTP_DIR so bitmap lookups never reach into the installed RTP.
+  //
+  // The two makers register their RTP under different keys and lay it out
+  // differently, so pick by project type: RPG Maker XP resolves
+  // Software\Enterbrain\RGSS\RTP\Standard (whose tree is rooted at Graphics/
+  // and Audio/, matching the "Graphics/Titles/..." paths XP data stores),
+  // RPG2000 resolves Software\ASCII\RPG2000\RuntimePackagePath. Only the
+  // RPG2000 key was wired up before, so an XP project could never find its RTP
+  // art and every asset fell back to a placeholder (found while bringing up
+  // scripts/compare-rpgxp-wine.bash, which needs both runtimes to draw the same
+  // pictures to be worth anything).
   const std::string rtp_dir =
-      full_package_flag(FLAGS_game_dir) ? std::string() : rtp_path().string();
+      full_package_flag(FLAGS_game_dir)
+          ? std::string()
+          : (is_xp_game(FLAGS_game_dir) ? xp_rtp_path() : rtp_path()).string();
   mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "RTP_DIR"),
                 mrb_str_new_cstr(M, rtp_dir.c_str()));
 #endif
@@ -512,6 +566,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_CONTINUE"),
                 mrb_bool_value(FLAGS_rpg2k_continue));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPGXP_NEW_GAME"),
+                mrb_bool_value(FLAGS_rpgxp_new_game));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

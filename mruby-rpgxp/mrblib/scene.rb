@@ -202,13 +202,36 @@ class RPGXP
           @index -= 1
           play_se(@db.system.cursor_se)
           refresh_cursor
-        elsif Input.trigger?(Input::C)
+        elsif Input.trigger?(Input::C) || auto_select?
           play_se(@db.system.decision_se)
           select_command
         end
       end
 
       private
+
+      # `--rpgxp_new_game`: pick New Game once, without input, so a headless run
+      # reaches the map scene instead of sitting on the title screen. One-shot;
+      # a no-op during normal play.
+      #
+      # The constant is read through its own `begin`/`rescue` rather than a
+      # helper taking its name: `Module#const_get` is not something this
+      # runtime's mruby build is known to carry, and the whole point of the flag
+      # is catching mruby/CRuby divergence, not adding more (ADR 0021).
+      def auto_select?
+        return false if @auto_started
+        return false unless auto_new_game?
+        @auto_started = true
+        @index = 0
+        $stderr.puts "[RGSS] --rpgxp_new_game: selecting New Game"
+        true
+      end
+
+      def auto_new_game?
+        RPGXP_NEW_GAME
+      rescue StandardError
+        false
+      end
 
       def build_background
         @bg = Sprite.new
@@ -234,7 +257,13 @@ class RPGXP
       end
 
       def build_command_window
-        w = 240
+        # RMXP's Scene_Title builds `Window_Command.new(192, commands)` and
+        # places it centred at y = 288; the height falls out of the same
+        # 32-pixel rows plus the skin's 16-pixel border. Matching its width is
+        # what puts our window on the genuine runtime's pixels -- 240 left it
+        # 48 too wide and 24 too far left (measured with
+        # scripts/compare-rpgxp-wine.bash).
+        w = 192
         h = COMMANDS.size * LINE_H + Panel::BORDER * 2
         @command = Panel.new((WIDTH - w) / 2, HEIGHT - h - 64, w, h, @skin)
         @command.z = 200

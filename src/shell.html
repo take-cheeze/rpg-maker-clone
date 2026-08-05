@@ -41,6 +41,11 @@
         --error: #ff6b6b;
       }
       * { box-sizing: border-box; }
+      /* The loader panel is dismissed by setting `hidden` on it, but the UA's
+         `[hidden] { display: none }` loses to the `display: flex` rules below,
+         so it stayed on screen above the running game. Author-level and
+         !important so any element hidden here really disappears. */
+      [hidden] { display: none !important; }
       html, body { margin: 0; }
       body {
         min-height: 100vh;
