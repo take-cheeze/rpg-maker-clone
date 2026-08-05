@@ -17,7 +17,8 @@
 # docs/adr/0017-rpgxp-rgss-script-host.md). Because the scripts drive their own
 # blocking main loop and lean on the full RGSS class library, the host is an
 # opt-in path for now (RPGXP::ScriptHost.enabled?), with the built-in flow as the
-# default and the fallback. Requires mruby-eval for Kernel#eval.
+# default and the fallback. `Kernel#eval` comes from the core mruby-eval gem,
+# a hard dependency of this gem (mruby-rpgxp/mrbgem.rake).
 class RPGXP
   # Defined with explicit `def self.` singleton methods (not a bare
   # `module_function`, which this mruby build does not apply to later defs) so
@@ -42,22 +43,11 @@ class RPGXP
       @driving = v
     end
 
-    # Whether the runtime can eval Ruby source at all (mruby-eval present, or
-    # CRuby). Kernel#eval is a public method under mruby-eval and a private one
-    # under CRuby; the private check is itself CRuby-only (mruby's Module has no
-    # private_method_defined?), so guard it with respond_to?.
-    def self.available?
-      return true if Kernel.method_defined?(:eval)
-      Kernel.respond_to?(:private_method_defined?) &&
-        Kernel.private_method_defined?(:eval)
-    end
-
-    # Whether to run the bundled scripts instead of the built-in flow: requires
-    # eval support and an explicit opt-in via the RGSS_SCRIPT_HOST env var (when
-    # the runtime exposes ENV). Off by default. Uses const_defined? rather than
-    # defined?(CONST), which raises on an undefined constant in this mruby build.
+    # Whether to run the bundled scripts instead of the built-in flow: an
+    # explicit opt-in via the RGSS_SCRIPT_HOST env var (when the runtime exposes
+    # ENV). Off by default. Uses const_defined? rather than defined?(CONST),
+    # which raises on an undefined constant in this mruby build.
     def self.enabled?
-      return false unless available?
       return false unless Object.const_defined?(:ENV)
       flag = ENV[ENABLED_ENV]
       !(flag.nil? || flag.empty? || flag == "0" || flag == "false")
@@ -66,11 +56,10 @@ class RPGXP
     # Run the project's bundled scripts to completion. `db` answers #scripts
     # (an ordered array of [name, source]) and #read_object / #save_object for
     # the Kernel built-ins. Returns true when the scripts were run, false when
-    # there was nothing to run (no scripts, or no eval) so the caller can fall
-    # back to the built-in flow. Evaluating "Main" blocks here until the game's
-    # own loop exits, exactly as RGSS does.
+    # the project ships none, so the caller can fall back to the built-in flow.
+    # Evaluating "Main" blocks here until the game's own loop exits, exactly as
+    # RGSS does.
     def self.run(db)
-      return false unless available?
       sections = db.scripts
       if sections.empty?
         $stderr.puts "[RGSS] script host: project ships no scripts; using built-in flow"

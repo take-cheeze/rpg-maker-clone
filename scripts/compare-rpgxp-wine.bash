@@ -146,6 +146,18 @@ STEPS=(
     "walk-up Up*3"
 )
 
+# A different game wants a different script -- an opening cutscene has to be
+# clicked through before it draws anything the default walk steps would reach.
+# STEPS_SPEC replaces the list wholesale: steps separated by ';', each still
+# "<label> <keys>", e.g.
+#     STEPS_SPEC='title -;newgame Return;op1 Return*8;op2 Return*8'
+if [ -n "${STEPS_SPEC:-}" ] ; then
+    STEPS=()
+    while IFS= read -r line ; do
+        [ -n "${line}" ] && STEPS+=("${line}")
+    done <<< "$(printf '%s' "${STEPS_SPEC}" | tr ';' '\n')"
+fi
+
 # The reference's screen is taller than the game by the window manager's frame.
 # On a 640x480 screen matchbox sizes the *framed* window to the screen, leaving
 # the genuine runtime a 640x460 client and clipping the game's bottom 20 rows

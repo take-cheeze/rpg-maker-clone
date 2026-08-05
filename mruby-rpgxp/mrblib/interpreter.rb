@@ -101,6 +101,11 @@ class RPGXP
       MOVE_ROUTE      = 209
       WAIT_FOR_MOVE   = 210
       TINT_SCREEN     = 223
+      SHOW_PICTURE    = 231
+      MOVE_PICTURE    = 232
+      ROTATE_PICTURE  = 233
+      PICTURE_TONE    = 234
+      ERASE_PICTURE   = 235
       PLAY_BGM        = 241
       PLAY_BGS        = 245
       PLAY_ME         = 249
@@ -154,6 +159,7 @@ class RPGXP
         @move_route_requests = []
         @tint_requests = []
         @location_requests = []
+        @picture_requests = []
         @erase_requested = false
         @running = true
         reset_waits
@@ -167,6 +173,7 @@ class RPGXP
         @move_route_requests = []
         @tint_requests = []
         @location_requests = []
+        @picture_requests = []
         @running = false
         reset_waits
       end
@@ -206,6 +213,15 @@ class RPGXP
       def take_location_requests
         reqs = @location_requests || []
         @location_requests = []
+        reqs
+      end
+
+      # Drain the picture (231..235) requests queued since the last call. Each is
+      # a hash with `:number`, an `:op` of :show/:move/:rotate/:tone/:erase and
+      # that op's fields.
+      def take_picture_requests
+        reqs = @picture_requests || []
+        @picture_requests = []
         reqs
       end
 
@@ -265,6 +281,7 @@ class RPGXP
         @move_route_requests = []
         @tint_requests = []
         @location_requests = []
+        @picture_requests = []
         @erase_requested = false
         reset_waits
       end
@@ -324,6 +341,8 @@ class RPGXP
         when MOVE_ROUTE      then do_move_route(cmd)
         when WAIT_FOR_MOVE   then do_wait_for_move(cmd)
         when TINT_SCREEN     then do_tint_screen(cmd)
+        when SHOW_PICTURE, MOVE_PICTURE, ROTATE_PICTURE, PICTURE_TONE,
+             ERASE_PICTURE then do_picture(cmd)
         when BATTLE_PROCESS  then do_battle_process(cmd)
         when IF_WIN, IF_ESCAPE, IF_LOSE then skip_past_battle(cmd) # fell through a branch
         when BATTLE_END      then consume
@@ -867,6 +886,59 @@ class RPGXP
       def do_transparent(cmd)
         @state.player_transparent = param(cmd, 0, 1).to_i == 0
         @index += 1
+      end
+
+      # The picture commands (231 Show, 232 Move, 233 Rotate, 234 Change Tone,
+      # 235 Erase). None of them pauses: RMXP writes straight into
+      # `$game_screen.pictures[n]` and Spriteset_Map catches up next frame, so
+      # each is queued for the scene, which owns the picture list.
+      #
+      # Show and Move share their parameter layout — `[number, name, origin,
+      # appoint_with_variables, x, y, zoom_x, zoom_y, opacity, blend_type]`, with
+      # Move putting a duration where Show has the name — and when
+      # `appoint_with_variables` is 1 the x/y slots name variables instead of
+      # holding pixels.
+      def do_picture(cmd)
+        code = cmd.code
+        number = param(cmd, 0).to_i
+        @index += 1
+        req = { number: number }
+        case code
+        when SHOW_PICTURE
+          req[:op] = :show
+          req[:name] = param(cmd, 1, "")
+          read_picture_placement(req, cmd, 2)
+        when MOVE_PICTURE
+          req[:op] = :move
+          req[:duration] = param(cmd, 1, 0).to_i
+          read_picture_placement(req, cmd, 2)
+        when ROTATE_PICTURE
+          req[:op] = :rotate
+          req[:speed] = param(cmd, 1, 0).to_i
+        when PICTURE_TONE
+          req[:op] = :tone
+          req[:tone] = param(cmd, 1)
+          req[:duration] = param(cmd, 2, 0).to_i
+          return if req[:tone].nil?
+        else
+          req[:op] = :erase
+        end
+        @picture_requests << req
+      end
+
+      # The shared origin / position / zoom / opacity / blend tail of Show and
+      # Move Picture, starting at parameter `i` (the origin).
+      def read_picture_placement(req, cmd, i)
+        req[:origin] = param(cmd, i, 0).to_i
+        by_variable = param(cmd, i + 1, 0).to_i == 1
+        a = param(cmd, i + 2, 0)
+        b = param(cmd, i + 3, 0)
+        req[:x] = by_variable ? variables[a] : a
+        req[:y] = by_variable ? variables[b] : b
+        req[:zoom_x] = param(cmd, i + 4, 100)
+        req[:zoom_y] = param(cmd, i + 5, 100)
+        req[:opacity] = param(cmd, i + 6, 255)
+        req[:blend_type] = param(cmd, i + 7, 0).to_i
       end
 
       # Wait for Move's Completion (210): suspend until every forced route this

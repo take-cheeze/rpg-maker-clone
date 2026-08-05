@@ -1,9 +1,10 @@
-# RPG Maker XP scenes: the title screen and the first walkable map scene, plus a
-# small XP-styled window helper. The title reproduces the default RMXP flow
-# (title graphic + New Game / Continue / Shutdown) directly against the database;
-# the map scene renders the three tile layers as placeholder colour blocks (real
-# tileset/autotile blitting is future work, mirroring the RPG2000 side) and lets
-# the party leader walk with tileset collision and a follow camera.
+# RPG Maker XP scenes: the title screen and the walkable map scene, plus a small
+# XP-styled window helper. The title reproduces the default RMXP flow (title
+# graphic + New Game / Continue / Shutdown) directly against the database; the
+# map scene draws the three tile layers through the native RGSS::Tilemap (the
+# project's real tileset and autotiles), the party leader and the events, its
+# pictures and its screen tone, and lets the leader walk with tileset collision
+# and a follow camera.
 
 class RPGXP
   # A compact RMXP-style window: a Viewport that clips a skin layer, a selection
@@ -43,6 +44,12 @@ class RPGXP
       @skin_sprite.bitmap = @skin_bmp
       @cursor_bmp = Bitmap.new([width, 1].max, [height, 1].max)
       @cursor_sprite.bitmap = @cursor_bmp
+      @pause = false
+      @pause_count = 0
+      @pause_sprite = Sprite.new(@viewport)
+      @pause_sprite.z = 3
+      @pause_bmp = Bitmap.new([width, 1].max, [height, 1].max)
+      @pause_sprite.bitmap = @pause_bmp
 
       draw_skin
     end
@@ -78,8 +85,23 @@ class RPGXP
       draw_cursor
     end
 
+    # Show or hide the pause arrow. Animating it is #update's job.
+    def pause=(v)
+      return if @pause == !!v
+      @pause = !!v
+      @pause_count = 0
+      draw_pause
+    end
+
+    # Advance the pause arrow's animation; call once a frame while it is shown.
+    def update
+      return unless @pause
+      @pause_count = (@pause_count + 1) % (PAUSE_FRAMES * PAUSE_FRAME_TICKS)
+      draw_pause if (@pause_count % PAUSE_FRAME_TICKS).zero?
+    end
+
     def dispose
-      [@skin_sprite, @cursor_sprite, @contents_sprite].each { |s| s.dispose if s }
+      [@skin_sprite, @cursor_sprite, @contents_sprite, @pause_sprite].each { |s| s.dispose if s }
       @viewport.dispose
     end
 
@@ -145,6 +167,19 @@ class RPGXP
     CURSOR_SRC_SIZE = 32
     CURSOR_EDGE = 4
 
+    # The "waiting for a key" arrow RGSS draws at the bottom of a window whose
+    # `pause` is set -- a message box holding its text until the player presses
+    # on. It comes out of the windowskin like everything else: four 16x16
+    # animation frames in a 32x32 block at (160, 64), cycled every eight frames,
+    # centred on the window's bottom edge. The genuine runtime draws it on every
+    # held message, so leaving it out was a visible difference in every message
+    # frame of scripts/compare-rpgxp-wine.bash.
+    PAUSE_SRC_X = 160
+    PAUSE_SRC_Y = 64
+    PAUSE_SIZE = 16
+    PAUSE_FRAMES = 4
+    PAUSE_FRAME_TICKS = 8
+
     def draw_cursor
       @cursor_bmp.clear
       return unless @active && @cursor_rect
@@ -189,6 +224,21 @@ class RPGXP
     rescue StandardError => e
       $stderr.puts "[RGSS] windowskin cursor failed, using a plain bar: #{e.message}"
       draw_fallback_cursor x, y, w, h
+    end
+
+    # Blit the current animation frame centred on the bottom edge, inside the
+    # border. A project with no windowskin gets nothing rather than an invented
+    # arrow -- the fallback panel is already not what RGSS draws.
+    def draw_pause
+      @pause_bmp.clear
+      return unless @pause && @skin
+      frame = @pause_count / PAUSE_FRAME_TICKS
+      sx = PAUSE_SRC_X + (frame % 2) * PAUSE_SIZE
+      sy = PAUSE_SRC_Y + (frame / 2) * PAUSE_SIZE
+      @pause_bmp.blt (@width - PAUSE_SIZE) / 2, @height - PAUSE_SIZE, @skin,
+                     Rect.new(sx, sy, PAUSE_SIZE, PAUSE_SIZE)
+    rescue StandardError => e
+      $stderr.puts "[RGSS] windowskin pause arrow failed: #{e.message}"
     end
 
     def draw_fallback_cursor(x, y, w, h)
@@ -462,6 +512,13 @@ class RPGXP
         @player_pattern = 0
         @player_anime = 0
 
+        # RMXP's $game_screen.pictures, keyed by the number the commands use.
+        # They live on the scene, not the map, so they survive a Transfer Player
+        # the way they do in RMXP (Spriteset_Map is rebuilt; the picture list is
+        # not).
+        @pictures = {}
+        @picture_sprites = {}
+
         @resolver = EventResolver.new(@db.common_events)
         @interpreter = Game::Interpreter.new(@state)
         @interpreter.resolver = @resolver
@@ -497,7 +554,9 @@ class RPGXP
         close_message
         close_number_input
         @event_sprites.each_value { |s| s[:sprite].dispose } if @event_sprites
-        [@tilemap, @player_sprite, @screen_viewport].each { |s| s.dispose if s }
+        @picture_sprites.each_value { |e| e[:sprite].dispose } if @picture_sprites
+        [@tilemap, @player_sprite, @screen_viewport,
+         @picture_viewport].each { |s| s.dispose if s }
       end
 
       def update
@@ -520,6 +579,7 @@ class RPGXP
         end
         animate_player
         step_tone_change
+        update_pictures
         render
       end
 
@@ -744,6 +804,109 @@ class RPGXP
         $stderr.puts "[RGSS] Set Move Route apply failed: #{e.message}"
       end
 
+      # Apply the picture (231..235) requests an interpreter queued this frame,
+      # against the picture list this scene owns.
+      def apply_picture_requests(interp)
+        reqs = interp.take_picture_requests
+        return if reqs.nil? || reqs.empty?
+        reqs.each { |r| apply_picture_request(r) }
+      rescue StandardError => e
+        $stderr.puts "[RGSS] picture command failed: #{e.message}"
+      end
+
+      def apply_picture_request(r)
+        n = r[:number]
+        return if n.nil? || n <= 0
+        pic = (@pictures[n] ||= Game::Picture.new(n))
+        case r[:op]
+        when :show
+          pic.show(r[:name], r[:origin], r[:x], r[:y], r[:zoom_x], r[:zoom_y],
+                   r[:opacity], r[:blend_type])
+        when :move
+          pic.move(r[:duration], r[:origin], r[:x], r[:y], r[:zoom_x],
+                   r[:zoom_y], r[:opacity], r[:blend_type])
+        when :rotate then pic.rotate(r[:speed])
+        when :tone   then pic.start_tone_change(tone_values(r[:tone]), r[:duration])
+        when :erase  then pic.erase
+        end
+      end
+
+      # An RPG::Tone from the data as the four numbers Game::Picture keeps.
+      def tone_values(tone)
+        [tone.red, tone.green, tone.blue, tone.gray]
+      end
+
+      # Advance every picture's move / tone / rotation ease and mirror the list
+      # into sprites. RMXP puts pictures in Spriteset_Map's @viewport2, above the
+      # map and below the windows; ours sit in their own viewport between the map
+      # (z 0) and the Panels (z 100) for the same ordering.
+      PICTURE_Z = 50
+
+      def update_pictures
+        return if @pictures.nil? || @pictures.empty?
+        @pictures.each_value do |pic|
+          pic.update
+          draw_picture(pic)
+        end
+      rescue StandardError => e
+        $stderr.puts "[RGSS] picture update failed: #{e.message}"
+      end
+
+      def draw_picture(pic)
+        entry = @picture_sprites[pic.number]
+        unless pic.shown?
+          entry[:sprite].visible = false if entry
+          return
+        end
+        entry = load_picture_sprite(pic, entry)
+        return unless entry
+        s = entry[:sprite]
+        s.visible = true
+        # RGSS's ox/oy are not wired to where a sprite draws here, so a centred
+        # origin (1) is applied to the position instead -- scaled, because the
+        # centre of a zoomed picture moves with the zoom.
+        if pic.origin == 0
+          s.x = pic.x.to_i
+          s.y = pic.y.to_i
+        else
+          s.x = (pic.x - entry[:w] * pic.zoom_x / 200.0).to_i
+          s.y = (pic.y - entry[:h] * pic.zoom_y / 200.0).to_i
+        end
+        s.zoom_x = pic.zoom_x / 100.0
+        s.zoom_y = pic.zoom_y / 100.0
+        s.angle = pic.angle
+        s.opacity = pic.opacity.to_i
+        s.blend_type = pic.blend_type
+        t = pic.tone
+        # Only write the tone when it changed: each write re-composites the
+        # sprite natively.
+        if entry[:tone] != t
+          entry[:tone] = [t[0], t[1], t[2], t[3]]
+          s.tone = Tone.new(t[0], t[1], t[2], t[3])
+        end
+      end
+
+      # The sprite for a picture, (re)built when the slot's graphic changed. A
+      # missing file leaves the slot blank rather than taking the map down.
+      def load_picture_sprite(pic, entry)
+        return entry if entry && entry[:name] == pic.name
+        entry[:sprite].dispose if entry
+        @picture_sprites.delete(pic.number)
+        bmp = load_map_graphic("Pictures", pic.name)
+        return nil unless bmp
+        @picture_viewport ||= begin
+          vp = Viewport.new(0, 0, SCREEN_W, SCREEN_H)
+          vp.z = PICTURE_Z
+          vp
+        end
+        sprite = Sprite.new(@picture_viewport)
+        sprite.bitmap = bmp
+        entry = { sprite: sprite, bitmap: bmp, name: pic.name,
+                  w: bmp.width, h: bmp.height, tone: nil }
+        @picture_sprites[pic.number] = entry
+        entry
+      end
+
       # Apply the Set Event Location (202) requests an interpreter queued this
       # frame. A character is *snapped* to its tile, as RMXP's
       # `Game_Character#moveto` does: no walking, no passability test.
@@ -957,6 +1120,7 @@ class RPGXP
           apply_move_requests(@interpreter)
           apply_tint_requests(@interpreter)
           apply_location_requests(@interpreter)
+          apply_picture_requests(@interpreter)
           apply_erase_request(@interpreter, @running_event_id)
           finish_event unless @interpreter.running? || @interpreter.waiting?
         end
@@ -1075,6 +1239,7 @@ class RPGXP
           apply_move_requests(it)
           apply_tint_requests(it)
           apply_location_requests(it)
+          apply_picture_requests(it)
           apply_erase_request(it, p[:id])
         else
           it.start(p[:list], @state.map_id, p[:id]) # loop the process
@@ -1082,6 +1247,7 @@ class RPGXP
           apply_move_requests(it)
           apply_tint_requests(it)
           apply_location_requests(it)
+          apply_picture_requests(it)
           apply_erase_request(it, p[:id])
         end
       rescue StandardError
@@ -1160,6 +1326,10 @@ class RPGXP
                              contents.width - MSG_TEXT_X, MSG_LINE_H, line
         end
         win.contents = contents
+        # RMXP sets Window_Message#pause while it holds a text box waiting for
+        # the player, and clears it for a choice (the cursor is the prompt
+        # there).
+        win.pause = !choice
         @message = { window: win, choice: choice, count: lines.length }
         @choice_index = 0
         set_choice_cursor if choice
@@ -1172,6 +1342,7 @@ class RPGXP
       end
 
       def drive_message
+        @message[:window].update
         if @message[:choice]
           if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
             @choice_index += 1

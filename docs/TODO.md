@@ -853,10 +853,13 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   without it a list ran straight on and an event delivered its line before it
   had walked over — and found that ten of the game's music tracks were
   unplayable, its `Audio/BGM` mixing `.MID` with `.mid` where the search only
-  tried lower case. The event-command histogram over the whole game still names
-  what a real XP game uses that we skip: `221`/`222` (prepare/execute
-  transition), `231`/`235` (show/erase picture), `224`/`225` (screen
-  flash/shake), `203` (scroll map), `207` (show animation) and `355` (script).
+  tried lower case. The **picture commands** (231–235, 471 uses) and the message
+  **pause arrow** followed, with a `STEPS_SPEC` override on the comparison so a
+  game's opening cutscene can be driven rather than only its start map. What a
+  real XP game uses that we still skip: `221`/`222` (prepare/execute
+  transition), `224`/`225` (screen flash/shake), `203` (scroll map), `207` (show
+  animation) and `355` (script) — 221/222 want a look at `Graphics.transition`
+  first, since it blocks and drives its own frames.
 - Reference for the RGSS game library:
   https://www.rpgmaker.fixato.org/Manual/RPGVXAce/rgss/
 
