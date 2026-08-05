@@ -836,6 +836,31 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check 'a \\! pause holds the reveal until a button is pressed' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # "ab" then a wait-for-key pause then "cd".
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'ab\\!cd')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  # Reveal runs up to the pause (2 chars) and then holds, no matter how long.
+  10.times { RGSS::Input.reset; scene.update }
+  eq 2, reveal.revealed, 'the reveal stops at the \\! pause'
+  ok reveal.pending_pause, 'and is waiting on the pause'
+  ok !reveal.done?
+  # Pressing a button releases the pause; the rest then types out.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok reveal.pending_pause.nil?, 'the button released the pause'
+  5.times { RGSS::Input.reset; scene.update }
+  eq 4, reveal.revealed, 'the remaining text revealed'
+  ok reveal.done?
+end
+
 # Tick a scene until its message window opens (or give up after `limit` frames).
 def open_msg(scene, limit = 15)
   msg = nil

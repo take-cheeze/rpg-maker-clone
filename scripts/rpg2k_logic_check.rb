@@ -373,6 +373,46 @@ check 'TextReveal handles empty lines and an all-empty message' do
   ok empty.done?, 'a message with no characters is already fully revealed'
 end
 
+check 'TextReveal halts at a pause until it is released' do
+  # "ab" then a \! pause (at 2) then "cd".
+  pauses = [{ at: 2, kind: :key }]
+  r = Game::TextReveal.new(['abcd'], 0, pauses)
+  r.advance(10)                       # cannot cross the pause
+  eq 2, r.revealed, 'the reveal stops at the pause point'
+  ok !r.done?
+  ok r.pending_pause, 'the pause is pending once reached'
+  eq :key, r.pending_pause[:kind]
+  r.reveal_all                        # even a fast-forward respects it
+  eq 2, r.revealed
+  r.release_pause
+  ok r.pending_pause.nil?, 'released -> no longer pending'
+  r.advance(10)
+  eq 4, r.revealed
+  ok r.done?
+end
+
+check 'TextReveal reveal_all runs to the end when no pause blocks it' do
+  r = Game::TextReveal.new(['abcd'], 0, [{ at: 2, kind: :quarter }])
+  r.advance(2)
+  r.release_pause                     # let the timed pause through
+  r.reveal_all
+  ok r.done?, 'with the only pause released, reveal_all finishes'
+end
+
+check 'Message.scan records pacing codes in revealed-char coordinates' do
+  vars = Object.new
+  def vars.[](i); { 3 => 42 }[i]; end
+  names = ->(_i) { 'X' }
+  s = Game::Message.scan('ab\.cd\|e\!f\^', vars, names)
+  eq 6, s[:length], '"abcdef" = 6 visible characters'
+  eq [{ at: 2, kind: :quarter }, { at: 4, kind: :full }, { at: 5, kind: :key }],
+     s[:pauses]
+  ok s[:auto_close], '\\^ sets auto_close'
+  # Pause offsets count the expanded length of \v / \n, not the code text.
+  s2 = Game::Message.scan('\v[3]\!x', vars, names)
+  eq [{ at: 2, kind: :key }], s2[:pauses], '42 is two chars, so \\! sits at 2'
+end
+
 # -- Screen (tint state machine) ---------------------------------------------
 
 check 'Screen starts neutral and settled' do

@@ -31,9 +31,11 @@ module Game
   end
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
-  # `\n[n]` the name of actor n, `\\` a literal backslash; the display-only codes
-  # (`\c`/`\s` colour/speed, `\.`/`\|`/`\!` waits, `\>`/`\<`, `\^`, `\_`, `\$`)
-  # are consumed. `names` may be a Hash or any object responding to `[]`.
+  # `\n[n]` the name of actor n, `\\` a literal backslash, `\_` a space; `\c[n]`
+  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits) and `\^` (auto-close)
+  # are surfaced by #scan for the typewriter to act on; the remaining display
+  # codes (`\s` speed, `\>`/`\<`, `\$`) are dropped. `names` may be a Hash or any
+  # object responding to `[]`.
   module Message
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
@@ -45,17 +47,31 @@ module Game
     # `{ text:, color: }`, where `color` is the `\c[n]` palette index in effect
     # for that run (0 = the default colour). `\v[n]` (variable) and `\n[n]`
     # (actor name) are expanded into the text and `\\` yields a literal
-    # backslash; the display-only codes (`\s` speed, `\.`/`\|`/`\!` waits,
-    # `\>`/`\<`, `\^`, `\_`, `\$`) produce no characters and are dropped. Runs
-    # with no text (e.g. a colour change before any character) are omitted, so a
-    # line that renders nothing yields an empty array.
+    # backslash and `\_` a space; the pacing / display codes (`\s` speed,
+    # `\.`/`\|`/`\!` waits, `\>`/`\<`, `\^`, `\$`) produce no characters here (see
+    # #scan for the pacing ones). Runs with no text (e.g. a colour change before
+    # any character) are omitted, so a line that renders nothing yields an empty
+    # array.
     def self.parse(text, variables, names)
-      return [] if text.nil?
+      scan(text, variables, names)[:segments]
+    end
+
+    # One pass over a message line, returning both its colour `:segments` (as
+    # #parse) and the pacing control codes found, positioned in *revealed-
+    # character* coordinates so the typewriter can act on them:
+    #   :pauses  — [{ at:, kind: }] for `\!` (:key, wait for a button), `\.`
+    #              (:quarter) and `\|` (:full) timed holds;
+    #   :auto_close — `\^` (close the window without a keypress once revealed);
+    #   :length  — the visible character count (what the reveal counts).
+    def self.scan(text, variables, names)
       segs = []
+      pauses = []
+      auto_close = false
       cur = ''
       color = 0
+      count = 0 # visible characters emitted so far (pause positions index this)
       i = 0
-      n = text.length
+      n = text.nil? ? 0 : text.length
       while i < n
         ch = text[i]
         if ch == "\\" && i + 1 < n
@@ -63,22 +79,29 @@ module Game
           i += 2
           arg, i = read_bracket(text, i)
           case code
-          when 'v', 'V' then cur << variables[arg.to_i].to_s if arg
-          when 'n', 'N' then cur << (names[arg.to_i] || '').to_s if arg
-          when "\\"     then cur << "\\"
+          when 'v', 'V' then (s = variables[arg.to_i].to_s; cur << s; count += s.length) if arg
+          when 'n', 'N' then (s = (names[arg.to_i] || '').to_s; cur << s; count += s.length) if arg
+          when "\\"     then cur << "\\"; count += 1
+          when '_'      then cur << ' '; count += 1 # half-width space
           when 'c', 'C' # colour change: close the current run, switch colour
             segs << { text: cur, color: color } unless cur.empty?
             cur = ''
             color = arg ? arg.to_i : 0
-          # other display codes produce no characters: dropped.
+          when '.'      then pauses << { at: count, kind: :quarter }
+          when '|'      then pauses << { at: count, kind: :full }
+          when '!'      then pauses << { at: count, kind: :key }
+          when '^'      then auto_close = true
+          # other display codes (`\s` speed, `\>`/`\<`, `\$`) produce no
+          # characters and no pacing here: dropped.
           end
         else
           cur << ch
+          count += 1
           i += 1
         end
       end
       segs << { text: cur, color: color } unless cur.empty?
-      segs
+      { segments: segs, pauses: pauses, auto_close: auto_close, length: count }
     end
 
     # Truncate per-line colour segments to the first `revealed` characters
@@ -185,23 +208,55 @@ module Game
   # window, calls #advance each frame, and #reveal_all to finish instantly when
   # the player presses a button.
   class TextReveal
-    def initialize(lines, revealed = 0)
+    # `pauses` are pacing stops ({ at:, kind: }) in revealed-character
+    # coordinates, sorted ascending; the reveal will not advance past the next
+    # unreleased one until the owner calls #release_pause. `auto_close` is the
+    # `\^` flag (close the window without a keypress once fully revealed).
+    def initialize(lines, revealed = 0, pauses = [], auto_close = false)
       @lines = lines || []
       @total = 0
       @lines.each { |l| @total += l.length }
       @revealed = Game.clamp(revealed, 0, @total)
+      # Sort with an explicit block, not sort_by: this mruby build's gembox
+      # has no Array#sort_by (the native engine aborts on it).
+      @pauses = (pauses || []).sort { |a, b| a[:at] <=> b[:at] }
+      @auto_close = auto_close ? true : false
+      @released = 0 # how many leading pauses the owner has let through
     end
 
     attr_reader :revealed, :total
 
+    def auto_close?; @auto_close; end
     def done?; @revealed >= @total; end
-    def reveal_all; @revealed = @total; end
 
-    # Reveal `n` more characters (default 1), never past the total.
+    # Reveal everything up to the next gating pause (a keypress fast-forwards the
+    # current run but still honours an intervening `\!` / `\.` / `\|`).
+    def reveal_all
+      stop = next_pause
+      @revealed = stop ? stop[:at] : @total
+    end
+
+    # Reveal `n` more characters (default 1), never past the total nor past the
+    # next unreleased pause.
     def advance(n = 1)
       n = 0 if n < 0
-      @revealed = Game.clamp(@revealed + n, 0, @total)
+      stop = next_pause
+      limit = stop ? stop[:at] : @total
+      @revealed = Game.clamp(@revealed + n, 0, limit)
     end
+
+    # The next pause that still gates advancement (unreleased), or nil.
+    def next_pause; @pauses[@released]; end
+
+    # The pause the reveal is currently blocked on — its `at` has been reached
+    # and it has not been released yet — or nil.
+    def pending_pause
+      p = @pauses[@released]
+      p && @revealed >= p[:at] ? p : nil
+    end
+
+    # Let the current pause through so the reveal can continue past it.
+    def release_pause; @released += 1 if pending_pause; end
 
     # The lines truncated to however many characters are currently revealed:
     # earlier lines fill up before later ones start, so the result is a run of
