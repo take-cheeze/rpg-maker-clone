@@ -1178,6 +1178,15 @@ module Game
       @hp
     end
 
+    # The actor's 1-in-N critical-hit chance from the database (0 = never), gated
+    # by `has_critical_rate` with `critical_rate` as the denominator (default 30,
+    # i.e. 1/30). A bare fixture without the fields never crits.
+    def crit_denominator
+      return 0 unless @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
+      n = @db_row.respond_to?(:critical_rate) ? @db_row.critical_rate : 0
+      n && n > 0 ? n : 0
+    end
+
     # Set HP to an absolute value, clamped to [0, max_hp], keeping the death
     # state (戦闘不能) in sync: 0 knocks the actor out, a positive value revives a
     # downed one. Unlike change_hp this is not blocked while dead -- it is the
@@ -2721,7 +2730,18 @@ module Game
       @hidden = hidden ? true : false
       @hp = @max_hp
       @sp = @max_sp
+      # 1-in-N critical-hit chance (0 = never), from the enemy's critical_hit
+      # flag + critical_hit_chance denominator.
+      @crit_denom = if row && row.respond_to?(:critical_hit) && row.critical_hit
+                      n = row.respond_to?(:critical_hit_chance) ? row.critical_hit_chance : 0
+                      n && n > 0 ? n : 0
+                    else
+                      0
+                    end
     end
+
+    attr_reader :crit_denom
+    def crit_denominator; @crit_denom; end
 
     def dead?; @hp <= 0; end
   end
@@ -2773,7 +2793,7 @@ module Game
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor, :states, :state_turns) do
+                           :actor, :states, :state_turns, :crit_denom) do
       def dead?; hp <= 0; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
@@ -2788,16 +2808,22 @@ module Game
     # starts clean.
     def self.actor_states(a); a.respond_to?(:states) ? (a.states || []).dup : []; end
 
+    # A battler's critical-hit denominator (0 when it never crits, or the source
+    # lacks the field).
+    def self.crit_denom_of(b); b.respond_to?(:crit_denominator) ? b.crit_denominator : 0; end
+
     def self.from_actor(a)
       Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
-                    nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a))
+                    nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
+                    nil, crit_denom_of(a))
     end
 
     # Enemies have no source actor (that field stays nil), so the post-battle
     # write-back skips them; they carry no status set into this simple sim.
     def self.from_enemy(e)
       Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
-                    nil, false, e.sp, e.max_sp, e.spi, nil, nil, [])
+                    nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
+                    crit_denom_of(e))
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
@@ -2817,14 +2843,18 @@ module Game
     # battler's afflicted states take effect each turn (slip damage, skip if it
     # cannot act); omitted, states are inert as before.
     # `variance`, when true, applies RPG2000's +/- spread to each basic attack's
-    # damage (a `var` of 4, per EasyRPG's Algo::VarianceAdjustEffect). Off by
-    # default so a seeded fight is exactly reproducible; the live game turns it on.
-    def initialize(allies, enemies, rng = nil, states = nil, variance = false)
+    # damage (a `var` of 4, per EasyRPG's Algo::VarianceAdjustEffect). `criticals`,
+    # when true, lets a basic attack land a 3x critical at the attacker's 1-in-N
+    # `crit_denom` chance. Both off by default so a seeded fight is exactly
+    # reproducible; the live game turns them on.
+    def initialize(allies, enemies, rng = nil, states = nil, variance = false,
+                   criticals = false)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
       @states = states
       @variance = variance
+      @criticals = criticals
       @rounds = 0
       @result = nil
       @log = []      # one entry per landed attack, in order (see #strike)
@@ -3048,14 +3078,27 @@ module Game
     end
 
     # `b` lands a basic attack on `target`: the base damage (optionally spread by
-    # variance), halved (min 1) if the target defends.
+    # variance), tripled on a critical hit, then halved (min 1) if the target
+    # defends. The crit note rides on the log entry.
     def deal_attack(b, target)
       dmg = Battle.attack_damage(b.atk, target.def)
       dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance
+      # No critical on a same-side hit (e.g. a confused ally striking an ally),
+      # matching EasyRPG.
+      crit = critical?(b) && side_of(b) != side_of(target)
+      dmg *= 3 if crit
       dmg = [dmg / 2, 1].max if target.defending
       target.hp -= dmg
-      { attacker: b.name, target: target.name, damage: dmg,
+      { attacker: b.name, target: target.name, damage: dmg, critical: crit,
         target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead? }
+    end
+
+    # Whether `b`'s attack criticals: enabled for the fight, the attacker has a
+    # non-zero 1-in-N `crit_denom`, and a 0..N-1 roll lands on 0.
+    def critical?(b)
+      return false unless @criticals
+      denom = b.crit_denom
+      denom && denom > 0 && @rng.random(denom) == 0
     end
 
     # Spread `base` by a `var` (0-10) amount: an adjustment of `var*base/10` (min

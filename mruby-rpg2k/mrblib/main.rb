@@ -2102,7 +2102,7 @@ class RPG2k
         situations = db.respond_to?(:situation) ? db.situation : nil
         @battle_ui = { phase: :command, req: req, troop: troop,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
-                                                situations, true),
+                                                situations, true, true),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
