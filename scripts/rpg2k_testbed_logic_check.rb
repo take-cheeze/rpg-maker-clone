@@ -726,6 +726,68 @@ def check_terrain(dir)
   end
 end
 
+# 下半身消去 / 半透明表示 — the terrain `bush_depth` that sinks a character's
+# sprite into the tile. Unlike the damage field beside it, this one the test bed
+# really *uses*: Nepheshel names four terrains after the effect and lays two of
+# them across thousands of tiles, so the count below is a count of ground the
+# hero visibly wades through.
+def check_bush(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  terrain = db[DB_TERRAIN]
+  return unless terrain
+
+  bush = {}
+  terrain.each { |id, r| bush[id] = r.bush_depth if (r.bush_depth || 0) > 0 }
+  if bush.empty?
+    puts '   bush: no terrain sinks a sprite'
+    return
+  end
+
+  # How much of the shipped map really stands on one. Sweeping every Map*.lmu
+  # through the same chipset lookup the scene uses is the only way to tell an
+  # authored-and-used field from an authored-and-forgotten one.
+  cache = {}
+  tiles = Hash.new(0)
+  maps = 0
+  Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
+    m = LCF::MapUnit.new(File.open(f, 'rb'))
+    cs = (cache[m.chipset_id] ||= Game::ChipSet.new(db, m.chipset_id))
+    hot = false
+    (m.lower_layer || []).each do |t|
+      tid = cs.terrain(t)
+      next unless bush.key?(tid)
+      tiles[tid] += 1
+      hot = true
+    end
+    maps += 1 if hot
+  end
+  total = tiles.values.reduce(0) { |a, b| a + b }
+  puts format('   bush: %d sinking terrain(s), %d tile(s) across %d map(s)',
+              bush.size, total, maps)
+
+  check "#{name}: every sinking terrain converts to a real pixel split" do
+    bush.each do |id, depth|
+      px = Game::CharSet.bush_pixels(depth)
+      ok px > 0, "terrain ##{id} (#{terrain[id].name}, depth #{depth}) sinks something"
+      ok px <= Game::CharSet::HEIGHT, 'and never more than the whole frame'
+      # RPG_RT's divisor form: depth 1 is a third of the frame, 2 a half, 3 all
+      # of it. Nepheshel's own names say the same thing.
+      eq Game::CharSet::HEIGHT / (4 - depth), px
+    end
+  end
+
+  return if total.zero?
+  check "#{name}: the ground the game actually lays down sinks the hero" do
+    ok maps > 0, 'at least one shipped map places a sinking tile'
+    tiles.each do |id, n|
+      ok n > 0, "terrain ##{id} (#{terrain[id].name}) is on #{n} tile(s)"
+      ok Game::CharSet.bush_pixels(bush[id]) > 0,
+         "and #{n} tile(s) of it would sink the hero"
+    end
+  end
+end
+
 # Curative items, against the real item table. A fixture cannot catch a field
 # read with the wrong polarity — it is written to match whatever the code does —
 # so only a real game's antidotes can say which way round `reverse_state_effect`
@@ -789,6 +851,7 @@ dirs.each do |d|
   check_states(d)
   check_equipment(d)
   check_terrain(d)
+  check_bush(d)
   check_items(d)
 end
 

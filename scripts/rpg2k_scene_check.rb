@@ -46,7 +46,12 @@ module RGSS
     def clear; end
     def fill_rect(*a); (@fill_calls ||= []) << a; end
     attr_reader :fill_calls
-    def blt(*); end
+    # Recorded so the bush-depth checks can assert *how* a character frame was
+    # laid down — one blit or a split pair, and at what opacity — rather than
+    # only that drawing happened.
+    def blt(*a); (@blt_calls ||= []) << a; end
+    attr_reader :blt_calls
+    def clear_blt_calls; @blt_calls = []; end
     def stretch_blt(*); end
     # Record the tone a Flash Sprite pass asks for, so the flash checks can
     # assert the colour actually reached the renderer.
@@ -188,7 +193,7 @@ def fake_map_with_counters(id, events, counters)
                                    upper_layer: upper, events: events))
 end
 
-def fake_db(common = nil, troop_pages = nil, terrain_damage = 0)
+def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
@@ -251,7 +256,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0)
     ) },
     # Every tile of the synthetic map is chip 0, which the fake chipset tags as
     # terrain 42 — so this one row decides whether walking hurts.
-    terrain: { 42 => OpenStruct.new(damage: terrain_damage) },
+    terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -396,8 +401,8 @@ def fake_party(members = [])
 end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
-              members: [], terrain_damage: 0)
-  db = fake_db(common, troop_pages, terrain_damage)
+              members: [], terrain_damage: 0, bush_depth: 0)
+  db = fake_db(common, troop_pages, terrain_damage, bush_depth)
   state = Game::State.new(fake_party(members), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
@@ -3813,6 +3818,126 @@ check 'harmless ground takes nothing' do
   scene = new_scene({}, player: [0, 0], members: [hero])   # damage 0
   walk(scene, 4)
   eq 100, hero.hp
+end
+
+# -- bush depth (下半身消去) ---------------------------------------------------
+
+# Every tile of the synthetic map is terrain 42, so `bush_depth:` sets what the
+# ground under everyone does.
+
+check 'the tile under the party decides how deep the hero sinks' do
+  { 0 => 0, 1 => 10, 2 => 16, 3 => 32 }.each do |depth, px|
+    scene = new_scene({}, player: [1, 1], bush_depth: depth)
+    eq px, scene.send(:player_bush_depth), "terrain bush_depth #{depth}"
+  end
+end
+
+check 'a hero over the tile rather than in it does not sink' do
+  scene = new_scene({}, player: [1, 1], bush_depth: 2)
+  eq 16, scene.send(:player_bush_depth), 'standing in it'
+  scene.instance_variable_set(:@player_jumping, true)
+  eq 0, scene.send(:player_bush_depth), 'mid-jump, over the grass'
+end
+
+check 'a boarded party draws its vehicle, so the hero does not sink' do
+  scene = new_scene({}, player: [1, 1], bush_depth: 3)
+  st = scene.instance_variable_get(:@state)
+  eq 32, scene.send(:player_bush_depth)
+  st.boarded = :boat
+  eq 0, scene.send(:player_bush_depth)
+end
+
+check 'an event sinks only on the hero\'s own layer' do
+  same  = event(1, 1, page(charset_name: 'c', layer: 1))
+  below = event(2, 1, page(charset_name: 'c', layer: 0))
+  above = event(3, 1, page(charset_name: 'c', layer: 2))
+  scene = new_scene({ 1 => same, 2 => below, 3 => above },
+                    player: [5, 4], bush_depth: 1)
+  eh = event_hashes(scene)
+  eq 10, scene.send(:event_bush_depth, eh[1]), 'same layer wades'
+  eq 0, scene.send(:event_bush_depth, eh[2]), 'below-hero is scenery'
+  eq 0, scene.send(:event_bush_depth, eh[3]), 'above-hero is a treetop'
+  eh[1][:jumping] = true
+  eq 0, scene.send(:event_bush_depth, eh[1]), 'and a jumping event clears it'
+end
+
+check 'a tile-graphic event scales the sink to its own 16px frame' do
+  ev = event(1, 1, page(charset_name: '', layer: 1))
+  scene = new_scene({ 1 => ev }, player: [5, 4], bush_depth: 2)
+  eq 8, scene.send(:event_bush_depth, event_hashes(scene)[1], 16)
+end
+
+# The blit itself: one call when nothing sinks, a split pair when part of the
+# frame does, and a single half-opacity call when all of it does.
+check 'blt_bushed lays the frame down in one piece when nothing sinks' do
+  scene = new_scene({})
+  dst = RGSS::Bitmap.new(24, 32)
+  src = RGSS::Bitmap.new(240, 256)
+  dst.clear_blt_calls
+  scene.send(:blt_bushed, dst, 0, 0, src, RGSS::Rect.new(0, 0, 24, 32), 255, 0)
+  eq 1, dst.blt_calls.size
+  eq 255, dst.blt_calls[0][4], 'at full opacity'
+end
+
+check 'blt_bushed splits the frame at the water line' do
+  scene = new_scene({})
+  dst = RGSS::Bitmap.new(24, 32)
+  src = RGSS::Bitmap.new(240, 256)
+  dst.clear_blt_calls
+  # A depth-2 sink on a frame lifted from (48, 64): the top 16 rows stay solid
+  # and the bottom 16 go half-transparent, both from the matching source rows.
+  scene.send(:blt_bushed, dst, 5, 7, src, RGSS::Rect.new(48, 64, 24, 32), 255, 16)
+  eq 2, dst.blt_calls.size
+  top, bottom = dst.blt_calls
+  eq [5, 7], [top[0], top[1]]
+  eq [48, 64, 24, 16], [top[3].x, top[3].y, top[3].width, top[3].height]
+  eq 255, top[4], 'the dry half is untouched'
+  eq [5, 23], [bottom[0], bottom[1]], 'the wet half lands 16px lower'
+  eq [48, 80, 24, 16], [bottom[3].x, bottom[3].y, bottom[3].width, bottom[3].height]
+  eq 128, bottom[4], 'and draws at half opacity'
+end
+
+check 'a frame that sinks entirely is one half-opacity blit, not a split' do
+  scene = new_scene({})
+  dst = RGSS::Bitmap.new(24, 32)
+  src = RGSS::Bitmap.new(240, 256)
+  dst.clear_blt_calls
+  scene.send(:blt_bushed, dst, 0, 0, src, RGSS::Rect.new(0, 0, 24, 32), 255, 32)
+  eq 1, dst.blt_calls.size
+  eq 128, dst.blt_calls[0][4]
+end
+
+check 'an already-translucent event halves again as it wades' do
+  scene = new_scene({})
+  dst = RGSS::Bitmap.new(24, 32)
+  src = RGSS::Bitmap.new(240, 256)
+  dst.clear_blt_calls
+  scene.send(:blt_bushed, dst, 0, 0, src, RGSS::Rect.new(0, 0, 24, 32), 128, 10)
+  eq [128, 64], dst.blt_calls.map { |c| c[4] }
+end
+
+# End to end: the real draw path, not the helper in isolation.
+check 'drawing a same-layer event on a bush tile emits the split pair' do
+  ev = event(1, 1, page(charset_name: 'Villager', layer: 1))
+  scene = new_scene({ 1 => ev }, player: [5, 4], bush_depth: 1)
+  e = event_hashes(scene)[1]
+  buf = scene.send(:event_target_buffer, e)
+  buf.clear_blt_calls
+  scene.send(:draw_event, e, 0, 0)
+  eq 2, buf.blt_calls.size, 'a split pair reached the buffer'
+  eq [255, 128], buf.blt_calls.map { |c| c[4] }
+  eq [22, 10], buf.blt_calls.map { |c| c[3].height }, 'the lower 10 of 32 sink'
+end
+
+check 'drawing the same event on plain ground emits one blit' do
+  ev = event(1, 1, page(charset_name: 'Villager', layer: 1))
+  scene = new_scene({ 1 => ev }, player: [5, 4]) # bush_depth 0
+  e = event_hashes(scene)[1]
+  buf = scene.send(:event_target_buffer, e)
+  buf.clear_blt_calls
+  scene.send(:draw_event, e, 0, 0)
+  eq 1, buf.blt_calls.size
+  eq 255, buf.blt_calls[0][4]
 end
 
 check 'a clear member walks the same ground untouched' do

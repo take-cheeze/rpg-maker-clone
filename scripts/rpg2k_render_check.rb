@@ -409,6 +409,43 @@ check 'the cursor block is the 32x32 patch at (64, 0) of the System image' do
   ok WC::FRAME_Y + WC::SIZE <= MP::Y_OFFSET
 end
 
+# -- bush depth (Game::CharSet.bush_pixels / .bush_opacity) -------------------
+
+CS = Game::CharSet
+
+# RPG_RT stores the depth as a divisor's complement: `4 - depth`, and a divisor
+# above 3 means no effect, so only 1..3 sink anything. On the 32px charset frame
+# that is exactly the thirds and halves Nepheshel's terrain names promise.
+check 'bush depth converts to a pixel split the way RPG_RT does' do
+  eq 0, CS.bush_pixels(0), 'ordinary ground sinks nothing'
+  eq 10, CS.bush_pixels(1), '下半身3/1消去 — the lower third of 32'
+  eq 16, CS.bush_pixels(2), '下半身2/1消去 — the lower half'
+  eq 32, CS.bush_pixels(3), '全身半透明 — the whole frame'
+end
+
+check 'a depth outside 1..3 sinks nothing' do
+  eq 0, CS.bush_pixels(nil)
+  eq 0, CS.bush_pixels(-1)
+  eq 0, CS.bush_pixels(4), 'divisor 0 would be a division by zero, not a sink'
+  eq 0, CS.bush_pixels(9)
+end
+
+check 'the split scales to the frame it is given' do
+  # A tile-graphic event is one 16px tile tall, not a 32px charset frame.
+  eq [0, 5, 8, 16], (0..3).map { |d| CS.bush_pixels(d, 16) }
+end
+
+# RPG_RT's opacity_bottom default: half the top opacity, rounded up. Halving
+# rather than fixing it at 128 is what keeps an already-translucent event
+# fainter still when it wades in.
+check 'the sunken rows draw at half the opacity, rounded up' do
+  eq 128, CS.bush_opacity(255)
+  eq 128, CS.bush_opacity
+  eq 64, CS.bush_opacity(128), 'a translucent event halves again'
+  eq 1, CS.bush_opacity(1)
+  eq 0, CS.bush_opacity(0)
+end
+
 if $failures.zero?
   puts "rpg2k render check: #{$checks} checks passed"
   exit 0
