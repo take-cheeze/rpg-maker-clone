@@ -1943,14 +1943,17 @@ FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost
                        :sp_percent, :power, :physical_rate, :magical_rate,
                        :affect_hp, :affect_sp, :occasion_battle,
                        :state_effects, :reverse_state_effect, :hit, :variance,
-                       :attribute_effects, :switch_id)
+                       :attribute_effects, :switch_id,
+                       # 防御無視: the effect lands undiminished.
+                       :ignore_defense)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
-               variance: 4, attribute_effects: nil, switch_id: 1)
+               variance: 4, attribute_effects: nil, switch_id: 1,
+               ignore_defense: false)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
-                variance, attribute_effects, switch_id)
+                variance, attribute_effects, switch_id, ignore_defense)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -6095,8 +6098,11 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   st = skill_party(skills)
   caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12, maxSP 30
   foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
-  # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
-  eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4,
+  foe.spi = 16
+  # skill_effect = 20 + 40*12/40 = 32. Fire is purely magical (physical_rate 0,
+  # magical_rate 40), so RPG_RT blunts it with the target's *spirit* and not at
+  # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
+  eq({ cost: 6, hp: -24, mp: 0, inflict: [], chance: 100, variance: 4,
        attributes: [], absorb: false },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0 },
@@ -8436,6 +8442,78 @@ check 'an all-party revive skips the members still standing' do
   eq [down], st.party.use_item(4, nil)
   eq 40, up.hp, 'the standing member is passed over'
   ok !down.dead?, 'the fallen one is raised'
+end
+
+# -- the skill damage defence term --------------------------------------------
+# RPG_RT blunts an enemy-scope skill with the *same two rates* that built its
+# effect: physical_rate * def / 40 + magical_rate * spi / 80. A flat def/4 only
+# coincides with that when the skill is purely physical at rate 10.
+
+def defence_party
+  skills = {
+    1 => fake_skill(name: 'Slash', scope: 0, power: 20, prate: 10, mrate: 0),
+    2 => fake_skill(name: 'Bolt',  scope: 0, power: 20, prate: 0,  mrate: 40),
+    3 => fake_skill(name: 'Pierce', scope: 0, power: 20, prate: 10, mrate: 0,
+                    ignore_defense: true),
+    4 => fake_skill(name: 'Mixed', scope: 0, power: 20, prate: 10, mrate: 40),
+  }
+  skill_party(skills)
+end
+
+check 'a physical skill is blunted by armour, scaled by its own rate' do
+  st = defence_party
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # atk 10, spi 12
+  foe = combatant('Foe', 0, 40, 5, 100)
+  foe.spi = 40
+  # effect = 20 + 10*10/20 = 25; term = 10*40/40 + 0 = 10
+  eq(-15, st.party.battle_skill_command(st.party.db_skill(1), caster, foe)[:hp])
+end
+
+# The case a flat def/4 gets most wrong: armour should not blunt a spell at all.
+check 'a magical skill is blunted by spirit, not by armour' do
+  st = defence_party
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 40, 5, 100)
+  foe.spi = 40
+  # effect = 20 + 40*12/40 = 32; term = 0 + 40*40/80 = 20
+  eq(-12, st.party.battle_skill_command(st.party.db_skill(2), caster, foe)[:hp])
+
+  # Doubling the armour changes nothing; doubling the spirit is what bites.
+  armoured = combatant('Foe', 0, 80, 5, 100)
+  armoured.spi = 40
+  eq(-12, st.party.battle_skill_command(st.party.db_skill(2), caster, armoured)[:hp],
+     'armour is irrelevant to a spell')
+  wise = combatant('Foe', 0, 40, 5, 100)
+  wise.spi = 80
+  eq(-1, st.party.battle_skill_command(st.party.db_skill(2), caster, wise)[:hp],
+     'spirit is what resists it (floored at 1)')
+end
+
+check 'a skill with both rates takes both halves of the term' do
+  st = defence_party
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 40, 5, 100)
+  foe.spi = 40
+  # effect = 20 + 10*10/20 + 40*12/40 = 37; term = 10*40/40 + 40*40/80 = 30
+  eq(-7, st.party.battle_skill_command(st.party.db_skill(4), caster, foe)[:hp])
+end
+
+check '防御無視 skips the whole term, armour and spirit alike' do
+  st = defence_party
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 40, 5, 100)
+  foe.spi = 40
+  # effect = 25, and nothing is taken off it
+  eq(-25, st.party.battle_skill_command(st.party.db_skill(3), caster, foe)[:hp])
+end
+
+check 'a target that carries no stats absorbs nothing rather than raising' do
+  st = defence_party
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  bare = combatant('Bare', 0, 0, 5, 100) # spi nil
+  eq(-25, st.party.battle_skill_command(st.party.db_skill(1), caster, bare)[:hp])
+  eq(-32, st.party.battle_skill_command(st.party.db_skill(2), caster, nil)[:hp],
+     'and no target at all takes the full effect')
 end
 
 # -- chipset terrain tags -----------------------------------------------------

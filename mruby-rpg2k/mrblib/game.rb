@@ -2499,6 +2499,36 @@ module Game
         (sk.magical_rate || 0) * caster.int / 40
     end
 
+    # How much of an enemy-scope skill's effect the target's own stats absorb.
+    #
+    # RPG_RT scales the defence by the *same two rates* that built the effect --
+    # `physical_rate * def / 40 + magical_rate * spi / 80` (EasyRPG's
+    # `Algo::CalcSkillEffect`) -- so a physical skill is blunted by armour and a
+    # magical one by the target's spirit. This used to be a flat `def / 4`, which
+    # only coincides with the real term when the skill is purely physical at rate
+    # 10: 211 of Nepheshel's 276 enemy-scope skills and 112 of mtf's 116 differ
+    # from it against a def-40 / spirit-40 target, and 141 and 81 of them are
+    # *purely magical*, so they were being blunted by armour the caster's spell
+    # should not have cared about at all.
+    #
+    # 0 when the skill ignores defence (RPG_RT skips the whole subtraction) or
+    # there is no target to read stats from.
+    def skill_defence_term(sk, target)
+      return 0 if target.nil? || skill_ignores_defence?(sk)
+      dfn = (target.respond_to?(:def) ? target.def : 0) || 0
+      # A battle fixture (and an enemy row that leaves the field out) may carry
+      # no spirit at all; a missing stat absorbs nothing rather than raising.
+      spi = (target.respond_to?(:spi) ? target.spi : 0) || 0
+      (sk.physical_rate || 0) * dfn / 40 + (sk.magical_rate || 0) * spi / 80
+    end
+
+    # 防御無視 (`ignore_defense`): the effect lands undiminished. 13 of
+    # Nepheshel's skills and 7 of mtf's set it, and nothing read it, so every
+    # armour-piercing spell in both games was being blunted like any other.
+    def skill_ignores_defence?(sk)
+      sk.respond_to?(:ignore_defense) ? (sk.ignore_defense ? true : false) : false
+    end
+
     # The actors a field skill affects: the caster (scope 2), a chosen single ally
     # (scope 3), or the whole party (scope 4).
     def skill_targets(sk, caster, target)
@@ -2691,7 +2721,7 @@ module Game
       cost = skill_cost(sk, caster)
       base = skill_effect(sk, caster)
       if sk.scope == 0 || sk.scope == 1 # single or all enemies: an attack skill
-        dmg = base - (target ? target.def / 4 : 0)
+        dmg = base - skill_defence_term(sk, target)
         dmg = 1 if dmg < 1
         { cost: cost, hp: -dmg, mp: 0,
           inflict: skill_state_ids(sk), chance: skill_hit(sk),

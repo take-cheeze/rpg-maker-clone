@@ -399,6 +399,72 @@ end
 # standing -- not even its percentage HP restore, since RPG_RT returns from the
 # item algorithm before both effects. Every such item in both test beds is a
 # revive, which is the only shape that makes the distinction visible.
+# The skill damage defence term, against the real skill table. Only a real game
+# can say how much of its arsenal the old flat `def / 4` got wrong, and that the
+# bulk of it is *purely magical* -- skills a target's armour should not touch.
+def check_skill_defence(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  skills = db[DB_SKILL]
+  return unless skills
+
+  atk = []
+  ignoring = []
+  magical = 0
+  skills.each do |id, sk|
+    next unless sk.scope == 0 || sk.scope == 1
+    atk << id
+    ignoring << id if sk.ignore_defense
+    magical += 1 if (sk.physical_rate || 0).zero? && (sk.magical_rate || 0) > 0
+  end
+  puts format('   skills: %d enemy-scope, %d 防御無視, %d purely magical',
+              atk.size, ignoring.size, magical)
+  return if atk.empty?
+
+  party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+
+  check "#{name}: every enemy-scope skill takes its own two-rate defence term" do
+    foe = combatant('Foe', 0, 40, 5, 1000)
+    foe.spi = 40
+    atk.each do |id|
+      sk = skills[id]
+      want = if sk.ignore_defense
+               0
+             else
+               (sk.physical_rate || 0) * 40 / 40 + (sk.magical_rate || 0) * 40 / 80
+             end
+      eq want, party.send(:skill_defence_term, sk, foe), "skill ##{id} (#{sk.name})"
+    end
+  end
+
+  check "#{name}: a purely magical skill is indifferent to armour" do
+    soft = combatant('Soft', 0, 0, 5, 1000)
+    soft.spi = 40
+    hard = combatant('Hard', 0, 999, 5, 1000)
+    hard.spi = 40
+    n = 0
+    atk.each do |id|
+      sk = skills[id]
+      next unless (sk.physical_rate || 0).zero? && (sk.magical_rate || 0) > 0
+      n += 1
+      eq party.send(:skill_defence_term, sk, soft),
+         party.send(:skill_defence_term, sk, hard),
+         "skill ##{id} (#{sk.name}) reads the same through any armour"
+    end
+    ok n > 0, "#{n} purely magical skill(s) checked"
+  end
+
+  return if ignoring.empty?
+  check "#{name}: a real 防御無視 skill is blunted by nothing at all" do
+    hard = combatant('Hard', 0, 999, 5, 1000)
+    hard.spi = 999
+    ignoring.each do |id|
+      eq 0, party.send(:skill_defence_term, skills[id], hard),
+         "skill ##{id} (#{skills[id].name})"
+    end
+  end
+end
+
 def check_ko_only(dir)
   name = File.basename(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
@@ -1129,6 +1195,7 @@ dirs.each do |d|
   check_terrain(d)
   check_bush(d)
   check_ko_only(d)
+  check_skill_defence(d)
   check_items(d)
 end
 
