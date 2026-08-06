@@ -38,6 +38,14 @@ Two constraints make this more than a one-line change:
    game run"; priority layering additionally introduces new *z-ordered objects*
    and a custom dispose path, so a mistake risks a crash on map load, not just a
    cosmetic glitch. That raises the bar for landing it blind.
+
+   **Partly lifted since.** `scripts/native-build-without-nix.bash` builds the
+   engine on a plain box and runs `scripts/rpgxp_boot_check.bash` under Xvfb, so
+   crash-on-map-load — the failure this called out as worse than cosmetic — is now
+   catchable before review rather than after. What that still does *not* give is
+   the cosmetic half: the XP test bed ships no image assets, so its tilesets load
+   as blank bitmaps. Structure and survival are verifiable; a roof actually
+   occluding a character is not, and wants a project with real graphics.
 2. **The `z` scheme is shared with conventions set elsewhere.** Above-priority
    tiles must interleave with per-row character `z` values yet stay below
    fog/weather. A single flat "above" layer at one fixed `z` cannot satisfy both:
@@ -73,10 +81,28 @@ spread across **per-row `z` strips** so they interleave with character sprites:
   z = (ty + prio) * TILE_SIZE + TILE_SIZE - oy
   ```
 
-  (the exact constant to be confirmed against the testbed `Spriteset_Map`
-  character-`z` formula during in-game verification). Because each strip is at the
-  `z` of its own row, a character one row lower sorts in front of it and a
-  character one row higher sorts behind it — the per-row occlusion RMXP gives.
+  **Confirmed against the test bed's own scripts** (read out of
+  `data/OpenGame.exe/Testbed/XP/Data/Scripts.rxdata`), which is what this
+  originally left open. `Game_Character#screen_z` is:
+
+  ```ruby
+  z = (@real_y - $game_map.display_y + 3) / 4 + 32
+  return z + $game_map.priorities[@tile_id] * 32   if @tile_id > 0
+  ```
+
+  So a character's `z` **is its on-screen pixel y**, and RMXP adds `priority * 32`
+  for a tile — the same term, from the engine's own hand. Substituting the map's
+  units (`real_y = ty * 128`, and `display_y = oy * 4` because `Spriteset_Map`
+  sets `@tilemap.oy = $game_map.display_y / 4`) gives `ty * 32 + 32 - oy` for
+  priority 0, which is the formula above with `TILE_SIZE = 32`. A priority-`n`
+  tile therefore sorts as though it stood `n` rows lower, exactly as a tile event
+  does. `@always_on_top` returns 999 unconditionally, which is the ceiling the
+  strips must stay under.
+
+  Because each strip is at the `z` of its own row, a character one row lower sorts
+  in front of it and a character one row higher sorts behind it — the per-row
+  occlusion RMXP gives. The natural bucket key is `ty + prio` rather than `ty`,
+  since that is what the formula sorts on: one strip per distinct `ty + prio`.
 
 - **Strips are z-ordered companion objects.** Each strip is wrapped as an internal
   mruby data object (`mrb_data_object_alloc(... , &obj_type)`, then the same

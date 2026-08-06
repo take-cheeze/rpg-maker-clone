@@ -3835,10 +3835,22 @@ int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
 // a single flat layer above the characters is only an approximation of RMXP's
 // per-row priority interleaving — it puts *every* priority tile above *every*
 // character, rather than only the ones on lower rows. The full per-row scheme
-// is designed in docs/adr/0022-rpgxp-tilemap-priority-layering.md. This
-// constant is picked to sit above stock character sprites (z ~ screen_y, up to
-// ~512) but below the fog/weather planes (z ~ 1000/3000); confirm it in-game
-// against the testbed Spriteset_Map before treating it as final.
+// is designed in docs/adr/0022-rpgxp-tilemap-priority-layering.md.
+//
+// That ADR's z formula is no longer a guess: RMXP's own Game_Character#screen_z
+// (read out of the test bed's Scripts.rxdata) is
+//
+//     z = (real_y - display_y + 3) / 4 + 32          // the on-screen pixel y
+//     z += priorities[tile_id] * 32                  // ... for a tile
+//
+// so a character's z *is* its screen y, and a priority-n tile sorts as though it
+// stood n rows lower. In map units that is (ty + prio) * 32 + 32 - oy, which is
+// what a per-row strip must use; @always_on_top returns 999, the ceiling those
+// strips have to stay under.
+//
+// The constant below is the interim stand-in: above stock character sprites
+// (z ~ screen_y, up to ~512) but below the fog/weather planes (z ~ 1000/3000),
+// and below the 999 an always-on-top character claims.
 static const mrb_int TILEMAP_ABOVE_Z = 900;
 
 // Redraw the visible part of the map. For each of the three map-data layers,
