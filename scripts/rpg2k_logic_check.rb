@@ -1816,7 +1816,8 @@ end
 # A database row for an actor, and a fake DB exposing just what Game::Party /
 # Game::Actor read (player table + the initial party list).
 FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
-                           :initial_level, :status, :strong_defence)
+                           :initial_level, :status, :strong_defence,
+                           :has_critical_rate, :critical_rate)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -1863,19 +1864,20 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :occasion_battle, :state_set, :reverse_state_effect,
                       :prevent_critical, :attribute_set, :switch_id,
                       :occasion_field2, :occasion_field1,
-                      :dual_attack, :ignore_evasion, :half_sp_cost, :hit)
+                      :dual_attack, :ignore_evasion, :half_sp_cost, :hit,
+                      :critical_hit)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
-              half_sp_cost: false, hit: 0)
+              half_sp_cost: false, hit: 0, critical_hit: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
-               dual_attack, ignore_evasion, half_sp_cost, hit)
+               dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -5180,9 +5182,67 @@ check 'without variance a seeded fight deals exactly the base damage' do
   eq 20, bat.step_action[:damage]                    # exact base, unaffected
 end
 
+check 'Rng#scaled keeps a small threshold honest where a modulus does not' do
+  # The generator's period is prime, so `next_int % 10000` leaves 5537 surplus
+  # values bunched at the bottom of the range — exactly where a "roll under a
+  # small threshold" test reads — and inflates it. #scaled spreads the same
+  # unevenness across the range instead. Pinned because the crit roll depends on
+  # it, and because the failure is a quiet few-percent drift, not a crash.
+  [[30, 333], [20, 500], [3, 3333]].each do |denom, bp|
+    trials = 40_000
+    modulo = Game::Rng.new(1)
+    scaled = Game::Rng.new(1)
+    m = s = 0
+    trials.times do
+      m += 1 if modulo.random(10_000) < bp
+      s += 1 if scaled.scaled(10_000) < bp
+    end
+    want = trials / denom.to_f
+    # The scaled draw lands within 3% (relative) of the true rate; the modulus
+    # overshoots by far more than that.
+    ok (s - want).abs < want * 0.03,
+       "1/#{denom}: scaled gave #{s}, wanted about #{want.round}"
+    ok m > s, "1/#{denom}: the modulus overshoots (#{m} vs #{s})"
+  end
+  eq 0, Game::Rng.new(1).scaled(0), 'a non-positive scale draws 0'
+end
+
+check 'crit chance sums the actor\'s 1-in-N with the best weapon bonus' do
+  # The database stores the actor's chance as a denominator and the weapon's as a
+  # percentage; the two only combine on a common scale, which is why the runtime
+  # carries basis points. 1/20 is 500 bp, a +10% blade adds 1000.
+  row = CurveRow.new('Hero', '', 0, 1, [100, 40, 10, 5, 5, 5])
+  row.has_critical_rate = true
+  row.critical_rate = 20
+  items = { 7 => fake_item(type: 1, atk: 5, critical_hit: 10),
+            8 => fake_item(type: 1, atk: 5, critical_hit: 2),
+            9 => fake_item(type: 3, dfn: 5, critical_hit: 100) } # armour!
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+
+  hero.equip([0, 0, 0, 0, 0])
+  eq 500, hero.crit_chance, 'unarmed: the row alone, 1/20'
+  hero.equip([7, 0, 0, 0, 0])
+  eq 1500, hero.crit_chance, '+10% weapon adds 1000 bp'
+  # Several weapons take the best, not the sum (EasyRPG keeps a running max).
+  hero.equip([8, 0, 0, 0, 0])
+  eq 700, hero.crit_chance, '+2% weapon adds 200 bp'
+  # Armour is ignored: RPG_RT reads the field for weapons only, and Nepheshel's
+  # six +100% items are all armour or accessories.
+  hero.equip([8, 0, 9, 0, 0])
+  eq 700, hero.crit_chance, 'the +100% armour contributes nothing'
+
+  # A row that never criticals stays at zero however good the weapon is.
+  row.has_critical_rate = false
+  bare = Game::Party.new(db).leader
+  bare.equip([7, 0, 0, 0, 0])
+  eq 1000, bare.crit_chance, 'no base, but the weapon still counts'
+end
+
 check 'battle: a critical hit triples the damage when the fight rolls one' do
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_denom = 1                                # 1-in-1 -> always crits
+  hero.crit_chance = Game::Battle::CRIT_SCALE        # 100% -> always crits
   slime = combatant('Slime', 0, 0, 5, 100_000)
   # 6-arg: variance off, criticals on.
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
@@ -5194,7 +5254,7 @@ end
 
 check 'battle: no critical when the fight has criticals off' do
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_denom = 1                                # would always crit, but...
+  hero.crit_chance = Game::Battle::CRIT_SCALE        # would always crit, but...
   slime = combatant('Slime', 0, 0, 5, 100_000)
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))  # 3-arg: crit off
   bat.begin_round
@@ -5203,8 +5263,8 @@ check 'battle: no critical when the fight has criticals off' do
   ok !e[:critical]
 end
 
-check 'battle: a zero crit_denom never criticals even with criticals on' do
-  hero = combatant('Hero', 40, 0, 20, 100)           # crit_denom nil -> never
+check 'battle: a zero crit_chance never criticals even with criticals on' do
+  hero = combatant('Hero', 40, 0, 20, 100)           # crit_chance nil -> never
   slime = combatant('Slime', 0, 0, 5, 100_000)
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
   bat.begin_round
@@ -5215,7 +5275,7 @@ end
 
 check 'battle: gear that prevents criticals blocks the 3x hit' do
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_denom = 1                                # would always crit...
+  hero.crit_chance = Game::Battle::CRIT_SCALE        # would always crit...
   slime = combatant('Slime', 0, 0, 5, 100_000)
   slime.prevents_crit = true                         # ...but the target is guarded
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)

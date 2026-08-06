@@ -534,9 +534,18 @@ The work below is roughly ordered by the critical path to a walkable game
   **damage variance** (a `var` of 4 for attacks, each skill's own `variance` for
   skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
   off for seeded / headless fights. A basic attack can land a **3x critical hit**
-  at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
-  `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
-  the **`prevent_critical`** flag can never be crit. Four more **equipment combat
+  at a chance carried in **basis points** (ADR 0034), summing the row's 1-in-N
+  (actor `critical_rate`, enemy `critical_hit_chance`) with the best equipped
+  **weapon**'s flat `critical_hit` percentage — the two shapes RPG2000 stores,
+  which only combine on a common scale, which is why a denominator could not hold
+  the weapon half and all 75 of Nepheshel's bonuses did nothing. Weapons only:
+  the six items carrying **+100%** are armour and accessories, and RPG_RT skips
+  every armour slot for this field, so reading them would have made gear that
+  crits on every blow. The roll draws through `Rng#scaled` rather than
+  `Rng#random`, because a modulus of the generator's prime period over-represents
+  its low values — harmless at the small `n` everything else uses, but at
+  basis-point scale it reads 1/30 as 3.56%. No crit on a same-side hit.
+  Characters wearing gear with the **`prevent_critical`** flag can never be crit. Four more **equipment combat
   flags** are read now (ADR 0033), each of them previously parsed and used by
   nothing: **二刀流** (`dual_attack`) makes a basic attack swing **twice** — 13 of
   Nepheshel's weapons — skipping the second blow when the first fells the target;
@@ -546,10 +555,9 @@ The work below is roughly ordered by the critical path to a walkable game
   flag ignores is the *target's* evasion; **MP消費半分** (`half_sp_cost`, any
   slot) halves a skill's cost rounding up; and **強力防御** (`strong_defence`, an
   actor-row flag 7 of Nepheshel's 50 actors carry including its hero) halves
-  damage a second time while defending — a quarter, not a half. Still unread: a
-  weapon's **`critical_hit` bonus**, the largest count in that audit at 75 items,
-  which needs the crit model to move from a 1-in-N denominator to RPG_RT's
-  probability (`1/critical_hit_chance` plus the best weapon's percentage);
+  damage a second time while defending — a quarter, not a half. A weapon's
+  **`critical_hit` bonus**, the largest count in that audit at 75 items, is read
+  now too — see the critical-hit paragraph above and ADR 0034. Still unread:
   **`attack_all`** (7 weapons), whose handling is not in EasyRPG's `algo.cpp`
   with the others and is left declared rather than guessed; and **`preemptive`**
   / **`raise_evasion`**, the latter having nowhere to land until the to-hit
