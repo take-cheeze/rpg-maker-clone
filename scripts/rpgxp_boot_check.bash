@@ -107,6 +107,18 @@ run_boot() {
     local log rc=0 marker missing=""
     log="$(mktemp)"
     echo "-- ${label}"
+    # Start from no save files. A game's own Scene_Save writes
+    # `File.open("Save1.rxdata", "wb")` -- a bare relative name, so it lands in
+    # the *current directory*, which under this engine is wherever it was
+    # launched from rather than the game's own folder (where a real RPG Maker
+    # install would put it, because Game.exe runs from there). So the save pass
+    # below leaves a file that the next game in this loop finds: Pray for You's
+    # own title screen enabled Continue on the strength of the editor bed's save,
+    # read it as its own, and died on the mismatch. That is a real engine bug --
+    # saves must not be shared between games -- but the check has to be hermetic
+    # regardless of when it is fixed, since it is its own earlier pass that
+    # plants the file.
+    rm -f Save[0-9]*.rxdata "${game}"/Save[0-9]*.rxdata
     # Each run gets its own display number: xvfb-run -a's probe is not atomic
     # and can steal a display from a concurrent run (see build.yml).
     # shellcheck disable=SC2086 # ${flags} is a deliberate word-split flag list
@@ -143,6 +155,9 @@ run_boot() {
     # ALSA has no device under CI and floods stderr; keep the rest.
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
     rm -f "${log}"
+    # ...and leave none behind either, so a local run does not dirty the tree or
+    # change what the *next* invocation's title screens offer.
+    rm -f Save[0-9]*.rxdata "${game}"/Save[0-9]*.rxdata
     return "${rc}"
 }
 

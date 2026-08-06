@@ -11,3 +11,10 @@
 - **The reserved CI display numbers are now a block.** The XP boot check takes
   112..119 and the RGSSAD A/B 120..121, so adding another probe pass does not
   renumber an unrelated check.
+- **The XP boot check clears save files around every pass.** Its own save pass
+  plants one, and a game's `Scene_Save` writes a bare relative name, so the next
+  game in the loop found it: *Pray for You*'s title screen enabled Continue on
+  the strength of the editor bed's save and died reading it as its own. Saves
+  being shared between games is a real engine bug (gap 0j in
+  `docs/rpgxp-rgss-api-gap.md`) — this only makes the check hermetic while it
+  stands.
