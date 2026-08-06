@@ -2619,6 +2619,30 @@ mrb_value input_push(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
+// Frame pacing state, shared with Graphics.frame_reset below. See the long note
+// in gfx_update for why the deadline is absolute rather than "sleep whatever is
+// left of a frame".
+uint32_t g_next_frame = 0;
+uint32_t g_period_acc = 0;
+bool g_paced = false;
+
+// RGSS Graphics.frame_reset: "resets the screen refresh timing", called after
+// something slow so the game does not then run fast catching up. The pacing
+// below carries an absolute deadline forward, so after a long stall it owes a
+// burst of short frames -- the very thing a game calls this to avoid. It does
+// re-base itself once it is more than a frame behind, which is why a game could
+// get away without this, but only after spending that frame: `Scene_Map#
+// transfer_player` and every map build call frame_reset precisely so the frame
+// they were on is not the one that pays.
+//
+// Dropping the deadline is the whole implementation: the next update sees
+// !g_paced and starts counting from then.
+mrb_value gfx_frame_reset(mrb_state* M, mrb_value self) {
+  (void)M;
+  g_paced = false;
+  return self;
+}
+
 mrb_value gfx_update(mrb_state* M, mrb_value self) {
   const mrb_value rgss_mod = mrb_obj_value(mrb_module_get(M, "RGSS"));
 
@@ -2732,20 +2756,17 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // A frame is 1000/60 ms, which is not an integer, so the deadline steps by
   // 17,17,16,... driven by a 1/60-ms remainder accumulator rather than a flat
   // 16 (which would run 4% fast).
-  static uint32_t next_frame = 0;
-  static uint32_t period_acc = 0;
-  static bool paced = false;
   const uint32_t now = lv_tick_get();
-  period_acc += 1000;
-  const uint32_t period = period_acc / 60;
-  period_acc %= 60;
-  if (!paced ||
-      static_cast<int32_t>(now - next_frame) > static_cast<int32_t>(period)) {
-    next_frame = now;
-    paced = true;
+  g_period_acc += 1000;
+  const uint32_t period = g_period_acc / 60;
+  g_period_acc %= 60;
+  if (!g_paced ||
+      static_cast<int32_t>(now - g_next_frame) > static_cast<int32_t>(period)) {
+    g_next_frame = now;
+    g_paced = true;
   }
-  next_frame += period;
-  const int32_t sleep = static_cast<int32_t>(next_frame - lv_tick_get());
+  g_next_frame += period;
+  const int32_t sleep = static_cast<int32_t>(g_next_frame - lv_tick_get());
   if (sleep > 0) {
     // Report the idle wait so the profiler can subtract it: the frame spans the
     // whole main_loop iteration (see RGSS::Profiler.frame), and we want its
@@ -5801,6 +5822,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // RGSS2+: the rendered screen as a Bitmap. Graphics.freeze/transition are
   // built on it (mrblib/lib.rb), and RGSS.effect_probe measures with it.
   mrb_define_module_function(M, gfx, "snap_to_bitmap", gfx_snap_to_bitmap,
+                             MRB_ARGS_NONE());
+  mrb_define_module_function(M, gfx, "frame_reset", gfx_frame_reset,
                              MRB_ARGS_NONE());
 
   profiler_init(M);

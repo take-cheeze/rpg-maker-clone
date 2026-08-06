@@ -1194,9 +1194,6 @@ module RGSS
         nil
       end
 
-      def frame_reset
-        RGSS.warn_stub("Graphics.frame_reset")
-      end
     end
   end
 
