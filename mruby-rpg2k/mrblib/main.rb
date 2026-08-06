@@ -554,9 +554,11 @@ class RPG2k
         @player_char = nil
         @player_route_timer = 0
 
-        # Player pixel position and step state.
+        # Player pixel position and step state. `player_jumping` marks the slide
+        # as a hop, which is lifted along an arc (see player_jump_offset).
         @moving = false
         @move_count = 0
+        @player_jumping = false
         @dest_x = @state.x
         @dest_y = @state.y
         @tile_colors = {}
@@ -1563,7 +1565,14 @@ class RPG2k
       JUMP_STEP_UNITS = 256              # EasyRPG's SCREEN_TILE_SIZE
       def event_jump_offset(e)
         return 0 unless e[:jumping] && e[:move_count] < TILE
-        remaining = (TILE - e[:move_count]) * (JUMP_STEP_UNITS / TILE)
+        jump_offset_for(e[:move_count])
+      end
+
+      # The arc itself, given how far through the hop the slide is (0..TILE).
+      # Shared by the event sprites and the hero, so a jumping party member and
+      # a jumping NPC rise by the same amount at the same point of the hop.
+      def jump_offset_for(move_count)
+        remaining = (TILE - move_count) * (JUMP_STEP_UNITS / TILE)
         half = JUMP_STEP_UNITS / 2
         h = (remaining > half ? JUMP_STEP_UNITS - remaining : remaining) / 8
         h < 5 ? h * 2 : h + 5
@@ -2124,9 +2133,8 @@ class RPG2k
       end
 
       # Drive the player along a forced route: the player has no Game::Character,
-      # so mirror one, step it against the map world and write the tile back to
-      # the state. Forced player steps snap tile-to-tile (no pixel interpolation)
-      # and suppress input movement while active.
+      # so mirror one, step it against the map world and slide the party after
+      # it. Input movement is suppressed while the route is active.
       def start_player_route(route, freq)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
         @player_char.move_frequency = valid_move_freq(freq) ||
@@ -2135,26 +2143,73 @@ class RPG2k
         @player_route_timer = 0
       end
 
+      # Take one step of the player's forced route, if its pacing timer is up.
+      #
+      # A step in progress has to land before the next one begins: the route
+      # character runs ahead of the party (it is what the route steps), and the
+      # party's own tile only catches up when the slide completes, so stepping
+      # again mid-slide would leave the two more than a tile apart and stretch
+      # one slide over the gap. That also caps a forced route at the walking
+      # pace, which is what it moves at on screen.
       def step_player_route
         return unless @player_route
+        return if @moving
         @player_route_timer -= 1
         return if @player_route_timer > 0
         @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 40
-        was = [@state.x, @state.y]
+        ox = @player_char.x
+        oy = @player_char.y
         @player_route.step(@player_char, @world) unless @player_route.done?
-        @state.x = @player_char.x
-        @state.y = @player_char.y
         @state.direction = @player_char.direction
-        # A forced route walks the party as surely as the player does, so its
-        # moves count as steps too. One per landing, which makes a jump a single
-        # step rather than one per tile cleared. A route command that only turns
-        # or waits moves nothing and counts nothing.
-        note_party_step if [@state.x, @state.y] != was
-        @dest_x = @state.x
-        @dest_y = @state.y
-        @moving = false
-        @move_count = 0
+        if @player_char.x != ox || @player_char.y != oy || @player_char.jumped
+          start_player_slide
+        end
         @player_route = nil if @player_route.done?
+      end
+
+      # Begin the party's slide toward wherever the route character now stands.
+      # The party stays on its own tile until the slide lands (as it does for
+      # ordinary walking), so everything reading @state.x/y sees a character on a
+      # tile rather than between two.
+      def start_player_slide
+        @dest_x = @player_char.x
+        @dest_y = @player_char.y
+        @moving = true
+        @move_count = 0
+        @player_jumping = @player_char.jumped
+      end
+
+      # Advance the party's pixel slide by one frame, landing it on the
+      # destination tile when the slide completes. Returns true while a slide is
+      # still in progress.
+      #
+      # Shared by ordinary movement and by Proceed With Movement, which drives
+      # forced routes while the normal movement step is skipped -- without the
+      # slide progressing there, a forced route would start a step and then wait
+      # for a landing that never came.
+      def advance_player_slide
+        return false unless @moving
+        @move_count += SPEED
+        if @move_count >= TILE
+          @state.x = @dest_x
+          @state.y = @dest_y
+          @moving = false
+          @move_count = 0
+          @player_jumping = false
+          note_party_step
+          follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
+        end
+        # True for the landing frame as well as the ones before it: that frame
+        # is spent finishing the step, not starting the next one.
+        true
+      end
+
+      # How far the party's sprite is lifted off the ground this frame, in
+      # pixels. The event arc, applied to the hero: a forced route is the only
+      # thing that can make the player jump, and RPG_RT hops it the same way.
+      def player_jump_offset
+        return 0 unless @player_jumping && @moving
+        jump_offset_for(@move_count)
       end
 
       # Advance every forced move route in progress one frame — the player's and
@@ -2163,6 +2218,7 @@ class RPG2k
       # Returns true once no forced route remains, so the caller can resume the
       # interpreter. A repeating forced route never reports done, matching RPG_RT.
       def step_forced_movement
+        advance_player_slide
         step_player_route
         @events.each { |e| step_forced_event(e) if e[:forced_route] }
         forced_movement_done?
@@ -4246,6 +4302,10 @@ class RPG2k
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
         build_parallels
+        # Any step in flight is dropped: the party arrives standing on the
+        # destination tile rather than sliding toward one on the map it left.
+        # A forced route can have a step in flight here -- it advances between
+        # events, and an auto-start page can teleport on the very next frame.
         @moving = false
         @move_count = 0
         @last_frame = nil
@@ -4695,18 +4755,7 @@ class RPG2k
       end
 
       def step_movement
-        if @moving
-          @move_count += SPEED
-          if @move_count >= TILE
-            @state.x = @dest_x
-            @state.y = @dest_y
-            @moving = false
-            @move_count = 0
-            note_party_step
-            follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
-          end
-          return
-        end
+        return if advance_player_slide
 
         return if event_busy? # don't start a new move while an event runs
         return if @player_route # a forced route controls the player
@@ -4847,7 +4896,8 @@ class RPG2k
         draw_layers cam_x, cam_y
 
         @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-        @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE)
+        @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
+                           player_jump_offset
         # Reflect the Set Transparent Flag command (and any leader graphic flag)
         # every frame so the hero hides/shows as events toggle it.
         @player_sprite.visible = !player_hidden?
