@@ -58,6 +58,15 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The encounter probe's bounds (see #maybe_encounter_test). It walks on the
+  # bed's *second* map, which is the only one carrying an encounter list — map 1
+  # must stay encounter-free because other probes walk there. The step budget is
+  # far more than the three steps `makeEncounterCount` can ask for, since a step
+  # takes several frames at software-GL speed and the transfer has to land
+  # first.
+  ENCOUNTER_PROBE_FRAMES = 900
+  ENCOUNTER_TROOP_ID = 1
+
   # The common-event probe's bed constants (see #maybe_common_event_test). The
   # bed's common event 1 is parallel, gated on switch 2, and writes variable 3;
   # common event 2 is called by id and writes variable 4.
@@ -322,6 +331,28 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that reads how close the player is to a random encounter, and what
+    # came of it: the map, the step counter `Game_Player.updateEncounterCount`
+    # counts down, the troop `$gameTroop` is holding and whether a battle is
+    # under way.
+    #
+    # `steps` is the diagnosis when nothing happens. A count that never moves
+    # means the player never took a step (or encounters are disabled for the
+    # map); one that counts down and re-arms without a battle means the
+    # encounter fired somewhere else. Neither is distinguishable from the
+    # outside without it.
+    def encounter_state_js
+      "(function(){ var m = (typeof $gameMap !== 'undefined' && $gameMap) ? " \
+      "$gameMap.mapId() : -1; " \
+      "var p = (typeof $gamePlayer !== 'undefined' && $gamePlayer) ? " \
+      "$gamePlayer : null; " \
+      "var t = (typeof $gameTroop !== 'undefined' && $gameTroop && " \
+      "$gameTroop._troopId) ? $gameTroop._troopId : 0; " \
+      "return 'map=' + m + ' steps=' + (p ? p._encounterCount : -1) + " \
+      "' x=' + (p ? p.x : -1) + ' y=' + (p ? p.y : -1) + " \
+      "' troop=' + t; })();"
     end
 
     # JS that starts both kinds of common event the way a game does, through the
@@ -755,6 +786,7 @@ class MZ
     maybe_animation_test # CI: play an animation on the player and log it drew
     maybe_transfer_test # CI: Transfer Player to map 2 and log that it loaded
     maybe_common_event_test # CI: run both kinds of common event and log each
+    maybe_encounter_test # CI: walk on map 2 until a random encounter fights
     maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_menu_play_test # CI: use that menu and log the item healed and was spent
@@ -935,7 +967,8 @@ class MZ
                   audio_test_requested? || message_test_requested? ||
                   menu_test_requested? || save_test_requested? ||
                   animation_test_requested? || battle_test_troop > 0 ||
-                  transfer_test_requested? || common_event_test_requested?
+                  transfer_test_requested? || common_event_test_requested? ||
+                  encounter_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -1224,6 +1257,83 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_encounter_test was requested (a launcher constant set by
+  # main.cxx). Implies New Game, since the walk starts from the map.
+  def encounter_test_requested?
+    (begin
+      MZ_ENCOUNTER_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_encounter_test is set (CI), transfer to the bed's second map and
+  # then just *walk*, until a random encounter starts a battle by itself.
+  #
+  # Every battle up to here was started by a Battle Processing command
+  # (M6.3d/M6.3i) — a game telling the engine to fight. A random encounter is
+  # the engine deciding to: `Game_Player.updateEncounterCount` counts steps down
+  # through `makeEncounterCount`, `canEncounter` gates it, and
+  # `executeEncounter` picks a troop out of the *map's* encounter list and
+  # pushes `Scene_Battle` with no event involved anywhere. Nothing here had ever
+  # taken that path, because the bed's maps carried no encounter list at all.
+  #
+  # The walk happens on map 2 for a reason: map 1 has to stay encounter-free,
+  # since the move probe walks there and a fight breaking out mid-probe would
+  # derail it. That makes this a compound flow — transfer, then walk — which is
+  # also the first time two in-game systems are driven in one run.
+  def maybe_encounter_test
+    return if @enc_test_done
+    return unless encounter_test_requested?
+    return unless @enc_started || current_scene == "Scene_Map"
+
+    @enc_frame ||= 0
+    state = MV::JS.eval(self.class.encounter_state_js)
+    map = MZ.state_field(state, "map")
+
+    if @enc_frame.zero?
+      @enc_started = true
+      $stderr.puts "[MZ] auto encounter test: to map #{TRANSFER_MAP_ID}"
+      MV::JS.eval(
+        self.class.transfer_probe_js(TRANSFER_MAP_ID, TRANSFER_X, TRANSFER_Y)
+      )
+    end
+    @enc_frame += 1
+
+    if state != @enc_last_state
+      @enc_last_state = state
+      $stderr.puts "[MZ-ENC] state #{state} scene=#{current_scene}"
+    end
+
+    # Walk only once the destination is under foot; walking on map 1 would prove
+    # nothing (it has no encounter list) and would move the player out of place
+    # for the transfer that has not landed yet.
+    dirs = [RGSS::Input::UP, RGSS::Input::DOWN, RGSS::Input::LEFT,
+            RGSS::Input::RIGHT]
+    dirs.each { |k| RGSS::Input.release(k) }
+    if map == TRANSFER_MAP_ID && current_scene == "Scene_Map"
+      @enc_steps = (@enc_steps || 0) + 1
+      # Alternate left and right: the map is a cross of walls, so a single
+      # held direction walks into one and stops, and a player who is not
+      # moving never counts a step down.
+      RGSS::Input.press((@enc_steps / 24).even? ? RGSS::Input::LEFT
+                                                : RGSS::Input::RIGHT)
+    end
+
+    fought = current_scene == "Scene_Battle"
+    @enc_troop ||= MZ.state_field(state, "troop") if fought
+    return if !fought && @enc_frame < ENCOUNTER_PROBE_FRAMES
+
+    @enc_test_done = true
+    dirs.each { |k| RGSS::Input.release(k) }
+    $stderr.puts "[MZ-ENC] encountered=#{fought ? true : false} " \
+                 "troop=#{@enc_troop.to_i} map=#{map} " \
+                 "expected_troop=#{ENCOUNTER_TROOP_ID} " \
+                 "scene=#{current_scene} last=[#{state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] encounter test error: #{e.message}"
   end
 
   # Whether --mz_common_event_test was requested (a launcher constant set by
@@ -1660,6 +1770,7 @@ class MZ
     return if battle_test_troop > 0 && !battle_shot_ready?
     return if animation_test_requested? && !animation_shot_ready?
     return if menu_play_requested? && !menu_play_shot_ready?
+    return if encounter_test_requested? && !encounter_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -1715,6 +1826,7 @@ class MZ
       [move_test_requested?, @move_test_done],
       [transfer_test_requested?, @transfer_test_done],
       [common_event_test_requested?, @common_test_done],
+      [encounter_test_requested?, @enc_test_done],
       [message_test_requested?, @msg_test_done],
       [animation_test_requested?, @anim_test_done],
       [menu_test_requested?, @menu_test_done],
@@ -1741,6 +1853,22 @@ class MZ
       ""
     end
     !(path.nil? || path.empty?)
+  end
+
+  # Is this a frame worth photographing for the encounter probe? The fixed delay
+  # lands on whichever map the walk happens to be on; the picture worth keeping
+  # is the battle the encounter started. It also needs the same fade-in grace
+  # the battle probe takes: `Scene_Battle` becomes current while the screen is
+  # still black, and a shot on that frame is a flat fill — which is precisely
+  # what the frame check called out the first time this ran, with the log
+  # reporting a battle nobody could see. Bounded like the others: once the probe
+  # has given up the frame is taken anyway, so a run that never encountered
+  # anything still shows where it was.
+  def encounter_shot_ready?
+    return false unless current_scene == "Scene_Battle" || @enc_test_done
+
+    @enc_shot_frame ||= @frames
+    @frames - @enc_shot_frame >= BATTLE_SHOT_GRACE_FRAMES
   end
 
   # Is this a frame worth photographing for the menu play-out? The fixed delay

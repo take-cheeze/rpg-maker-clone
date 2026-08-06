@@ -792,13 +792,21 @@ second_map_event = {
     ])],
 }
 
+# Map 2 is also the only map that can produce a **random encounter**. Map 1
+# deliberately cannot: several probes walk there (the move test), and an
+# encounter firing mid-probe would derail them. Putting the encounter list on
+# the destination map keeps it out of everyone else's way, and a short
+# encounterStep means a handful of steps is enough — `makeEncounterCount` draws
+# `randomInt(n) + randomInt(n) + 1`, so with n = 2 an encounter is at most three
+# steps away. See ADR 0004 M6.3n.
 write("Map002.json", {
     "autoplayBgm": False, "autoplayBgs": False,
     "bgm": sound(), "bgs": sound(),
     "battleback1Name": "", "battleback2Name": "",
     "data": map2_data,
     "disableDashing": False, "displayName": "",
-    "encounterList": [], "encounterStep": 30,
+    "encounterList": [{"troopId": 1, "weight": 100, "regionSet": []}],
+    "encounterStep": 2,
     "events": [None, second_map_event],
     "height": H, "width": W, "note": "",
     "parallaxLoopX": False, "parallaxLoopY": False, "parallaxName": "",

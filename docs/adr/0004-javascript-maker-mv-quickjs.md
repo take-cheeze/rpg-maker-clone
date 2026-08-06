@@ -690,6 +690,33 @@ JavaScript loads and interprets the JSON.
       front rather than discovered missing, and the parallel event is gated on
       switch 2 so it stays independent of the save probe, which sets switch 1.
 
+    - **M6.3n — a battle nobody asked for (landed).** Every battle up to here
+      was started by a **Battle Processing** command (M6.3d, M6.3i): a game
+      telling the engine to fight. A *random encounter* is the engine deciding
+      to — `Game_Player.updateEncounterCount` counting steps down through
+      `makeEncounterCount`, `canEncounter` gating it, and `executeEncounter`
+      drawing a troop from the **map's** own encounter list and pushing
+      `Scene_Battle` with no event involved anywhere. The bed's maps carried no
+      encounter list, so none of it had run.
+
+      `--mz_encounter_test` (`MZ_MODE=encounter`) transfers to map 2 and then
+      simply walks until a battle starts by itself, asserting `encountered=true`
+      and that the troop came from that map's list. Because the mode issues no
+      Battle Processing command at all, a battle can only have arrived the one
+      way.
+
+      Two choices worth recording. The encounter list is on **map 2**, not the
+      start map: the move probe walks on map 1, and a fight breaking out
+      mid-probe would derail it — so the destination map, which nothing else
+      walks, carries the encounters. That makes this the first mode to drive two
+      in-game systems in one run (transfer, then walk), which is also why it
+      keeps `steps=` in its trace: a counter that never moves means no step was
+      taken, while one that counts down and re-arms without a battle means the
+      encounter fired somewhere else. And the walk alternates left and right,
+      because map 2 is a cross of walls and a single held direction stops
+      against one — a player who is not moving never counts a step down, so a
+      probe that held one key would have waited out its budget against a wall.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

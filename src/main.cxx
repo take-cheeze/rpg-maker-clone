@@ -213,6 +213,15 @@ DEFINE_bool(
     "goes to Effekseer, whose WASM runtime this host does not start. Used in "
     "CI");
 DEFINE_bool(
+    mz_encounter_test,
+    false,
+    "For RPG Maker MZ: transfer to the test bed's second map and walk until a "
+    "*random encounter* starts a battle by itself (implies --mz_new_game to "
+    "reach the map), then log whether one fired and which troop it picked. "
+    "Every other battle here is started by a Battle Processing command — a "
+    "game telling the engine to fight; this is the engine deciding to, through "
+    "the map's own encounter list. Used in CI");
+DEFINE_bool(
     mz_common_event_test,
     false,
     "For RPG Maker MZ: once on the map, turn on the switch the test bed's "
@@ -1060,6 +1069,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
                 mrb_bool_value(FLAGS_mz_animation_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_ENCOUNTER_TEST"),
+                mrb_bool_value(FLAGS_mz_encounter_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_COMMON_EVENT_TEST"),
                 mrb_bool_value(FLAGS_mz_common_event_test));
