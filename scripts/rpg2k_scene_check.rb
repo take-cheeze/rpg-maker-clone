@@ -430,6 +430,93 @@ check 'a custom-route jump clears a tile and stops at the map edge' do
   eq 1, c.y
 end
 
+check 'a jumping event slides across the whole hop instead of snapping' do
+  # A two-tile hop used to jump the sprite straight to the landing tile: only a
+  # single-tile step slid, and a jump is never that. The event is the subject
+  # here because it is what jumps in the real games -- 632 of Nepheshel's 634
+  # Begin Jump blocks drive an event (625 of them a page's own route), against
+  # two that drive the player.
+  ev = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::BEGIN_JUMP, R::MOVE_RIGHT,
+                                           R::MOVE_RIGHT, R::END_JUMP])))
+  scene = new_scene({ 1 => ev }, player: [5, 5])
+  seen = []
+  60.times do
+    scene.update
+    e = scene.instance_variable_get(:@events).first
+    seen << scene.send(:event_pixel, e)[0] if e[:jumping]
+  end
+  ok seen.size >= 4, "the hop was drawn over several frames, got #{seen.size}"
+  ok seen.uniq.size > 1, 'and the sprite actually travelled'
+  ok seen.min >= 0 && seen.max <= 4 * Game::TILE,
+     "the slide stayed between the take-off and landing tiles: #{seen.minmax}"
+end
+
+check 'a jumping sprite is lifted off the ground and comes back down' do
+  ev = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::BEGIN_JUMP, R::MOVE_RIGHT,
+                                           R::MOVE_RIGHT, R::END_JUMP])))
+  scene = new_scene({ 1 => ev }, player: [5, 5])
+  heights = []
+  40.times do
+    scene.update
+    e = scene.instance_variable_get(:@events).first
+    heights << scene.send(:event_jump_offset, e) if e[:jumping]
+  end
+  ok heights.max > 0, 'the sprite left the ground'
+  eq 21, heights.max, "RPG_RT's arc peaks at 21px on a 16px tile"
+  # It is an arc, not a step up: it rises from nothing and returns.
+  peak = heights.index(heights.max)
+  ok peak > 0, 'the hop starts on the ground'
+  ok heights[0...peak] == heights[0...peak].sort,
+     "rises to the peak: #{heights.inspect}"
+end
+
+check 'an event that walks is never lifted' do
+  ev = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::MOVE_RIGHT])))
+  scene = new_scene({ 1 => ev }, player: [5, 5])
+  40.times do
+    scene.update
+    e = scene.instance_variable_get(:@events).first
+    eq false, e[:jumping], 'a walking step is not a hop'
+    eq 0, scene.send(:event_jump_offset, e)
+  end
+end
+
+check 'a jump that lands on its own tile still hops visibly' do
+  # Nothing moves, so the slide cannot be recognised from the displacement --
+  # only the jump flag says the sprite should leave the ground at all.
+  ev = event(2, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::BEGIN_JUMP, R::MOVE_RIGHT,
+                                           R::MOVE_LEFT, R::END_JUMP])))
+  scene = new_scene({ 1 => ev }, player: [5, 5])
+  lifted = 0
+  40.times do
+    scene.update
+    e = scene.instance_variable_get(:@events).first
+    lifted += 1 if scene.send(:event_jump_offset, e) > 0
+  end
+  ok lifted > 0, 'a hop in place still leaves the ground'
+  c = chars(scene)[1]
+  eq [2, 1], [c.x, c.y], 'and it landed back where it started'
+end
+
+check 'Change Event Location does not arc the event it snaps' do
+  # A snap moves an event further than a step, which is exactly the shape that
+  # now slides when it is a jump. It must not be mistaken for one.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [1, 0, 4, 2])]
+  scene = new_scene({ 1 => event(0, 1, page), 2 => event(5, 5, pg) },
+                    player: [5, 0])
+  20.times { scene.update }
+  e = scene.instance_variable_get(:@events).find { |x| x[:id] == 1 }
+  eq [4, 2], [e[:char].x, e[:char].y], 'the snap landed'
+  eq false, e[:jumping], 'a snap is not a hop'
+  eq 0, scene.send(:event_jump_offset, e), 'so the sprite is not lifted'
+end
+
 # -- event page refresh -------------------------------------------------------
 
 # An event with two pages: page 1 unconditional, page 2 gated on switch

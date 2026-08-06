@@ -2728,9 +2728,16 @@ module Game
     # The four cardinal directions, indexable for random selection.
     CARDINALS = [2, 4, 6, 8].freeze
 
-    attr_accessor :x, :y, :direction, :move_speed, :move_frequency
+    attr_accessor :direction, :move_speed, :move_frequency
     attr_accessor :through, :facing_locked, :animation_stopped, :transparency
-    attr_reader :graphic_name, :graphic_index
+    attr_reader :graphic_name, :graphic_index, :x, :y
+
+    # Placing a character outright -- Change Event Location, a page refresh
+    # restoring where an event stood -- is not a move, so it clears #jumped.
+    # Without this a character that had jumped would arc again the next time
+    # something snapped it to a tile.
+    def x=(v); @x = v; @jumped = false; end
+    def y=(v); @y = v; @jumped = false; end
 
     def initialize(x = 0, y = 0, direction = 2)
       @x = x
@@ -2744,6 +2751,7 @@ module Game
       @transparency = 0         # 0 opaque .. 7 fully transparent
       @graphic_name = nil
       @graphic_index = 0
+      @jumped = false
     end
 
     def set_graphic(name, index)
@@ -2768,12 +2776,21 @@ module Game
       @direction = dir unless @facing_locked || dir.nil?
     end
 
+    # Whether the move just made was a jump (a Begin Jump / End Jump block)
+    # rather than a step. The renderer reads it to lift the sprite along an arc
+    # instead of sliding it flat, so it describes the *last* move and every
+    # ordinary move clears it. A jump that lands where it started still sets it:
+    # RPG_RT hops in place, and the flag rather than the distance is what says
+    # so.
+    attr_reader :jumped
+
     # Move one tile in `dir`, updating facing (subject to the lock).
     def move(dir)
       face(dir)
       dx, dy = DIR_DELTA[dir] || [0, 0]
       @x += dx
       @y += dy
+      @jumped = false
     end
 
     # Land on (x, y) in one hop — the move-route Begin Jump / End Jump pair,
@@ -2792,6 +2809,7 @@ module Game
       end
       @x = x
       @y = y
+      @jumped = true
     end
 
     # Move one tile diagonally, combining a horizontal and a vertical direction.
@@ -2802,6 +2820,7 @@ module Game
       _, vy = DIR_DELTA[vertical] || [0, 0]
       @x += hx
       @y += vy
+      @jumped = false
     end
 
     def turn_right;  @direction = TURN_RIGHT[@direction] || @direction; end
