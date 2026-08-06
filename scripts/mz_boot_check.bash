@@ -18,6 +18,8 @@
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
 #   [MZ-MENU]  reached_menu=<bool>
+#   [MZ-MENUPLAY] hp_before=<n> hp_after=<n> items_before=<n> items_after=<n>
+#              healed=<bool> used=<bool> returned=<bool> scene=<scene>
 #   [MZ-ANIM]  data=<bool> mv=<bool> sprites=<n> cells=<n> played=<bool>
 #   [MZ-SAVE]  saved=<bool> exists=<bool> loaded=<bool>
 #   [MZ-BTL]   reached_battle=<bool>
@@ -33,6 +35,7 @@
 #   play      New Game -> map, hold a direction, play an SE  (the default smoke)
 #   message   New Game -> map, show a message
 #   menu      New Game -> map, open the party menu
+#   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
 #   save      New Game -> map, save + load round-trip
 #   battle    New Game -> map, start a battle against MZ_TROOP (default 1)
@@ -56,7 +59,18 @@ TROOP="${MZ_TROOP:-1}"
 # The run has to reach the title, start a New Game, load the map and then play
 # out its probe, all on software GL — so it is given far more in-game time than
 # the MV smokes, which only need to boot.
-TIMEOUT_MS="${MZ_TIMEOUT_MS:-60000}"
+#
+# This is a ceiling, not a running time: the engine now ends the run as soon as
+# every requested probe has reported (MZ#finish_when_probes_done), so a mode
+# that finishes in ten seconds takes ten seconds whatever this says. It only has
+# to be generous enough for the *slowest* host, because the two budgets are in
+# different units — a probe gives up after so many frames, this after so many
+# milliseconds, and a headless software-GL frame costs far more wall clock on a
+# loaded machine. Set too tight, a run is cut off mid-probe and reports nothing,
+# which reads downstream as the thing under test never happening (see the
+# `cut off` diagnostics below). The play-out modes drive several turns / a whole
+# window stack, so they get the most room.
+DEFAULT_TIMEOUT_MS=60000
 
 case "${MODE}" in
     play)
@@ -68,6 +82,10 @@ case "${MODE}" in
     menu)
         FLAGS=(--mz_menu_test)
         DEFAULT_SHOT="ss/mz_menu.png" ;;
+    menu_play)
+        FLAGS=(--mz_menu_test --mz_menu_play)
+        DEFAULT_TIMEOUT_MS=180000
+        DEFAULT_SHOT="ss/mz_menu_play.png" ;;
     animation)
         FLAGS=(--mz_animation_test)
         DEFAULT_SHOT="ss/mz_animation.png" ;;
@@ -81,13 +99,15 @@ case "${MODE}" in
         DEFAULT_SHOT="ss/mz_battle.png" ;;
     battle_play)
         FLAGS=("--mz_battle_test=${TROOP}" --mz_battle_play)
+        DEFAULT_TIMEOUT_MS=280000
         DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|menu|animation|save|battle|battle_play)" >&2
+             "(play|message|menu|menu_play|animation|save|battle|battle_play)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
+TIMEOUT_MS="${MZ_TIMEOUT_MS:-${DEFAULT_TIMEOUT_MS}}"
 
 if [ ! -x "${ENGINE}" ] ; then
     echo "error: ${ENGINE} not built; run cmake --build build first" >&2
@@ -116,7 +136,7 @@ echo "== ${GAME} (mode ${MODE})"
 # path and MZ boots. The SERVER_NUM arg is kept for compatibility but unused.
 # (LVGL v9.5 requires a window; the dummy driver provides one without a display.)
 if ! env -u DISPLAY -u XAUTHORITY SDL_VIDEODRIVER=dummy \
-        timeout 300 "${ENGINE}" \
+        timeout "$(( TIMEOUT_MS / 1000 + 30 ))" "${ENGINE}" \
         --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" \
         "${FLAGS[@]}" \
         --mz_screenshot="${SHOT}" \
@@ -173,6 +193,25 @@ case "${MODE}" in
         grep -q '\[MZ-MENU\] reached_menu=true' "${log}" ||
             fail "the party menu never opened ([MZ-MENU] reached_menu=true)"
         ;;
+    menu_play)
+        grep -q '\[MZ-MENU\] reached_menu=true' "${log}" ||
+            fail "the party menu never opened ([MZ-MENU] reached_menu=true)"
+        # Opening Scene_Menu is the *small* claim — it holds the instant the
+        # scene is pushed. These are the menu being used: `healed=true` means an
+        # item's effect reached an actor's HP through the command window, the
+        # item list and the actor window; `used=true` means the inventory paid
+        # for it (a heal without a spend would mean the item was never really
+        # consumed); `returned=true` means cancel unwound the window stack all
+        # the way back to the map instead of the menu trapping the player.
+        grep -q '\[MZ-MENUPLAY\] hp_before=' "${log}" ||
+            fail "the run ended before the menu walk did — no [MZ-MENUPLAY] report (raise MZ_TIMEOUT_MS)"
+        grep -q '\[MZ-MENUPLAY\].*healed=true' "${log}" ||
+            fail "the item never healed the actor ([MZ-MENUPLAY] healed=true)"
+        grep -q '\[MZ-MENUPLAY\].*used=true' "${log}" ||
+            fail "the item was never consumed ([MZ-MENUPLAY] used=true)"
+        grep -q '\[MZ-MENUPLAY\].*returned=true' "${log}" ||
+            fail "the menu never handed back to the map ([MZ-MENUPLAY] returned=true)"
+        ;;
     animation)
         # Three separate claims, and the last is the one that matters. `mv=true`
         # says the data picked the sprite-sheet animation system rather than
@@ -204,6 +243,11 @@ case "${MODE}" in
         # `ended=true` means the victory sequence ran and handed the scene back
         # to the map, rather than the fight stalling — which is exactly how this
         # mode found the bed's battles frozen (see ADR 0004 M6.3i).
+        # A run cut off by --timeout_ms prints no report at all, and saying
+        # "no attack ever damaged an enemy" about a fight that was still
+        # swinging would be a lie about the cause. Separate the two.
+        grep -q '\[MZ-BTLPLAY\] hp_before=' "${log}" ||
+            fail "the run ended before the fight did — no [MZ-BTLPLAY] report (raise MZ_TIMEOUT_MS)"
         grep -q '\[MZ-BTLPLAY\].*damaged=true' "${log}" ||
             fail "no attack ever damaged an enemy ([MZ-BTLPLAY] damaged=true)"
         grep -q '\[MZ-BTLPLAY\].*ended=true' "${log}" ||
@@ -211,7 +255,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-MENU\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"

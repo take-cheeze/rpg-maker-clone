@@ -598,8 +598,32 @@ write("Troops.json", [None, {
                "span": 0}],
 }])
 
+# --- Items -----------------------------------------------------------------
+# One usable item, so the menu has something to *do*. An empty Items.json is
+# valid and the menu still opens on it — Scene_Item just shows an empty list —
+# which is exactly the hole M6.3j closes: a bed with nothing to use cannot tell
+# a working item path from a broken one.
+#
+# `scope` 7 (one ally) is what puts the actor-selection window in the flow, and
+# `occasion` 0 (always) keeps it usable from the menu. The recovery is flat
+# (`value2`), not a fraction of max HP (`value1`), so the probe can assert an
+# exact figure. Note that a HP-recovery item is only *enabled* in the list while
+# someone is hurt (`Game_Action.testApply` -> `isItemEffectsValid`), so the
+# probe wounds the actor before opening the menu; on a full-HP party the row is
+# greyed out and confirm buzzes.
+POTION_HEAL = 100
+
+write("Items.json", [None, {
+    "id": 1, "name": "Potion", "note": "", "description": "Restores HP.",
+    "iconIndex": 0, "itypeId": 1, "price": 50, "consumable": True,
+    "scope": 7, "occasion": 0, "speed": 0, "successRate": 100, "repeats": 1,
+    "tpGain": 0, "hitType": 0, "animationId": 0,
+    "damage": {"type": 0, "elementId": 0, "formula": "0", "variance": 20,
+               "critical": False},
+    "effects": [{"code": 11, "dataId": 0, "value1": 0, "value2": POTION_HEAL}],
+}])
+
 # --- Empty-but-valid database files ----------------------------------------
-write("Items.json", [None])
 write("Weapons.json", [None])
 write("Armors.json", [None])
 
