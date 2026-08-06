@@ -204,10 +204,15 @@ def fake_db(common = nil, troop_pages = nil)
                                      message_actor: ' falls!',
                                      message_enemy: ' is struck down!',
                                      message_recovery: ' stands up!'),
+                 # Poison also slips on the map, the way mtf-meido-action's does
+                 # (the only state in either test bed that carries the field):
+                 # 1 HP every 4 walked tiles.
                  3 => OpenStruct.new(name: 'Poison', color: 2, priority: 30,
                                      message_actor: ' is poisoned!',
                                      message_enemy: ' looks ill!',
-                                     message_recovery: ' is cured.'),
+                                     message_recovery: ' is cured.',
+                                     hp_change_map_steps: 4,
+                                     hp_change_map_val: 1),
                  4 => OpenStruct.new(name: 'Sleep', color: 4, priority: 80),
                  5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10) },
     # A tiny item table the Open Shop window prices its goods from.
@@ -330,15 +335,54 @@ def fake_parent(db)
   FakeParent.new(db) { |id| fake_map(id, {}) }
 end
 
-def fake_party
-  # `revision` is what the scene watches to know a page condition may have
-  # changed; a test bumps it to ask for a refresh.
-  OpenStruct.new(leader: nil, actors: [], revision: 0)
+# A party member reduced to what map-step slip damage touches. Building a
+# database actor needs a whole row; what these checks want to know is only what
+# walking does to one, so the double answers the same contract
+# Party#apply_map_step_damage calls -- and its own HP floor is deliberately not
+# modelled, so the check reads the floor the *party* applies rather than one the
+# fixture faked.
+class SlipActor
+  attr_reader :states, :hp, :mp
+  # The scene draws whoever leads the party, so the double also answers the
+  # three graphic fields that path reads. A blank charset falls back to the
+  # marker sprite, which is what the rest of these checks already run on.
+  attr_reader :charset_name, :charset_index
+  attr_accessor :transparent
+
+  def initialize(states = [], hp = 100, mp = 20)
+    @states = states
+    @hp = hp
+    @mp = mp
+    @charset_name = ''
+    @charset_index = 0
+    @transparent = false
+  end
+
+  def dead?; @hp <= 0; end
+
+  def change_hp(delta, allow_death = true)
+    floor = allow_death ? 0 : 1
+    @hp = [[@hp + delta, floor].max, 100].min
+  end
+
+  def change_mp(delta); @mp = [@mp + delta, 0].max; end
 end
 
-def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil)
+def fake_party(members = [])
+  # A real Game::Party rather than a stand-in: Scene::Map runs the party through
+  # Party#apply_map_step_damage on every walked tile, so the fixture has to
+  # answer the real interface. It starts empty -- `system.party` is [] and the
+  # movement / event checks have no members to care about -- and takes any it
+  # needs from the caller.
+  party = Game::Party.new(OpenStruct.new(system: OpenStruct.new(party: [])))
+  members.each { |m| party.actors << m }
+  party
+end
+
+def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
+              members: [])
   db = fake_db(common, troop_pages)
-  state = Game::State.new(fake_party, 1, player[0], player[1])
+  state = Game::State.new(fake_party(members), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
 end
@@ -3484,6 +3528,97 @@ check 'the field windows resolve the same condition the battle panel does' do
                          .instance_variable_get(:@status))
   ok texts.include?('Sleep'), 'the significant state wins here as well'
   ok !texts.include?('Silence'), 'and the outranked one is not shown'
+end
+
+# Frames one walked tile takes: TILE / SPEED of movement, plus the frame that
+# starts the step. Walking `n` tiles needs a little slack on top, and the fixture
+# map is 6 wide, so a rightward walk has room for four.
+def walk(scene, tiles, dir = 6)
+  RGSS::Input.dir_value = dir
+  ((RPG2k::Scene::Map::TILE / RPG2k::Scene::Map::SPEED + 1) * tiles + 2).times do
+    scene.update
+  end
+  RGSS::Input.reset
+end
+
+check 'walking slips HP from a poisoned member every fourth tile' do
+  # The fixture's Poison carries mtf-meido-action's map-step fields. Nothing
+  # showed a field ailment doing anything before this: it sat on the actor and
+  # the party walked on untouched.
+  hero = SlipActor.new([3])                             # Poison
+  scene = new_scene({}, player: [0, 0], members: [hero])
+  st = scene.instance_variable_get(:@state)
+
+  walk(scene, 3)
+  eq 3, st.steps, 'three tiles walked'
+  eq 100, hero.hp, 'not a multiple of the interval yet'
+
+  walk(scene, 1)
+  eq 4, st.steps
+  eq 99, hero.hp, 'the fourth tile slips 1 HP'
+end
+
+check 'a clear member walks the same ground untouched' do
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero])
+  st = scene.instance_variable_get(:@state)
+  walk(scene, 4)
+  eq 4, st.steps
+  eq 100, hero.hp, 'no state, no slip'
+  eq false, st.screen.flashing?, 'and nothing flashes'
+end
+
+check 'a step that slips flashes the screen' do
+  # The map shows no HP, so without this the drain would be silent.
+  hero = SlipActor.new([3])
+  scene = new_scene({}, player: [0, 0], members: [hero])
+  st = scene.instance_variable_get(:@state)
+  walk(scene, 3)
+  eq false, st.screen.flashing?, 'a step that drains nothing does not flash'
+  walk(scene, 1)
+  ok st.screen.flashing?, 'the draining step does'
+end
+
+check 'a teleport is not a walked step' do
+  # The party arrives without walking, so RPG_RT does not count it. Counting it
+  # would let an event chain drain a poisoned party by moving it around.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::TELEPORT, [1, 4, 3])]
+  hero = SlipActor.new([3])
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0], members: [hero])
+  st = scene.instance_variable_get(:@state)
+  20.times { scene.update }
+  eq [4, 3], [st.x, st.y], 'the teleport landed'
+  eq 0, st.steps, 'and counted no steps'
+  eq 100, hero.hp
+end
+
+check 'a forced player route walks the party, and its steps count' do
+  # A route moves the party as surely as the player does, so its landings count
+  # too -- an event that walks a poisoned party across a field should drain it.
+  ic = Game::Interpreter::Cmd
+  # target 10001 (player), freq 8, repeat off, skippable on, one step east.
+  route_page = lambda do |cmd|
+    pg = page(trigger: 3)
+    pg.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 0, 1, cmd])]
+    pg
+  end
+
+  scene = new_scene({ 1 => event(3, 3, route_page.call(R::MOVE_RIGHT)) },
+                    player: [0, 0], members: [SlipActor.new([3])])
+  st = scene.instance_variable_get(:@state)
+  40.times { scene.update }
+  eq 1, st.x, 'the route stepped the party one tile east'
+  eq 1, st.steps, 'and that landing counted'
+
+  # A route command that only turns moves nothing, so it counts nothing.
+  scene2 = new_scene({ 1 => event(3, 3, route_page.call(R::FACE_LEFT)) },
+                     player: [0, 0], members: [SlipActor.new([3])])
+  st2 = scene2.instance_variable_get(:@state)
+  40.times { scene2.update }
+  eq [0, 0], [st2.x, st2.y], 'the party did not move'
+  eq 0, st2.steps
 end
 
 check 'a transformed monster is redrawn with its new battler graphic' do

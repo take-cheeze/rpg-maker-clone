@@ -401,13 +401,17 @@ def check_states(dir)
   blinding = []
   waking = []
   sealing = []
+  slipping = []
   states.each do |id, r|
     blinding << id if r.reduce_hit_ratio && r.reduce_hit_ratio < 100
     waking << id if (r.release_by_attack || 0) > 0
     sealing << id if r.restrict_magic || r.restrict_skill
+    slipping << id if (r.hp_change_map_steps || 0) > 0 &&
+                      (r.hp_change_map_val || 0) > 0
   end
-  puts format('   states: %d blinding, %d shaken off by a blow, %d sealing',
-              blinding.size, waking.size, sealing.size)
+  puts format('   states: %d blinding, %d shaken off by a blow, %d sealing, ' \
+              '%d slipping on the map',
+              blinding.size, waking.size, sealing.size, slipping.size)
 
   unless blinding.empty?
     check "#{name}: a blinding state cuts accuracy" do
@@ -467,6 +471,47 @@ def check_states(dir)
            "state ##{sid} (#{states[sid].name}) seals no magic at all"
         eq 0, physical_sealed,
            "state ##{sid} left rate-0 skills alone"
+      end
+    end
+  end
+
+  unless slipping.empty?
+    check "#{name}: a map-slipping state drains on its own step interval" do
+      # The real party, walking the real interval. mtf-meido-action's Poison is
+      # the only state in either test bed that carries the field (1 HP every 4
+      # steps), so this is the check that says the reading is right rather than
+      # merely self-consistent.
+      party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+      ok !party.actors.empty?, 'the initial party has members to poison'
+      slipping.each do |sid|
+        row = states[sid]
+        every = row.hp_change_map_steps
+        amount = row.hp_change_map_val
+        actor = party.actors.first
+        actor.clear_states
+        actor.set_hp(actor.max_hp)
+        actor.add_state(sid)
+
+        # Every step short of the interval leaves it alone ...
+        (1...every).each do |s|
+          eq [], party.apply_map_step_damage(states, s),
+             "state ##{sid} (#{row.name}) drained on step #{s} of #{every}"
+        end
+        # ... and the one that reaches it takes exactly the row's amount.
+        before = actor.hp
+        eq [actor], party.apply_map_step_damage(states, every)
+        eq before - amount, actor.hp,
+           "state ##{sid} (#{row.name}) should drain #{amount} HP every " \
+           "#{every} steps"
+
+        # It never kills: walk far enough to drain the member's whole HP bar
+        # several times over, and it is still standing.
+        laps = actor.max_hp / amount + 5
+        laps.times { |i| party.apply_map_step_damage(states, (i + 1) * every) }
+        eq 1, actor.hp, "state ##{sid} (#{row.name}) wore it below 1 HP"
+        ok !actor.dead?, 'field slip damage must not knock a member out'
+        actor.clear_states
+        actor.set_hp(actor.max_hp)
       end
     end
   end

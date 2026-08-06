@@ -86,13 +86,30 @@ victory/defeat split, the same 1847 and 1726 swings, the same 501 and 708 misses
 The new code only fires when a state carries the field, so an unafflicted battler
 takes exactly the path it did.
 
-Two related gaps stay open and are now stated rather than implied:
+Two related gaps stayed open, and were stated rather than implied. The first is
+now closed:
 
 - **Map-step slip damage** (`hp_change_map_steps` / `hp_change_map_val`) — a
   status that drains HP as the party walks. mtf-meido-action's Poison is the only
   state in either bed that uses it (1 HP every 4 steps) and it needs a step
   counter on `Game::State` plus a hook in `Scene::Map` that nothing else wants
-  yet, so it is left out rather than half-built.
+  yet, so it was left out rather than half-built. **Implemented since** — the
+  counter lives on `Game::State` (`#walk_step`), the drain in
+  `Game::Party#apply_map_step_damage`, and the field reading in
+  `Game::States.map_step_drain`. Three decisions worth recording, none of them
+  visible in the two fields themselves:
+  - **It sums, where the battle side picks.** Every effect above resolves
+    through the *significant* state, so two ailments give one behaviour. The map
+    drain instead adds each afflicted state's due amount, so a doubly-poisoned
+    member loses both.
+  - **It cannot kill.** The drain goes through `change_hp` with death
+    disallowed, flooring at 1 HP. That is RPG_RT's rule, and it is what keeps
+    this off the `check_game_over` path the twelve party-damaging event commands
+    are on — there is no way for walking to wipe the party.
+  - **A teleport is not a step.** A step is counted for the player's own
+    movement and for a forced move route, one per landing (so a jump counts
+    once). A teleport moves the party without walking it; counting it would let
+    an event chain drain a poisoned party by shuffling it between maps.
 - **`affect_type` stat halving / doubling** and the RPG2003-only `avoid_attacks`
   and `reflect_magic` — no state in either test bed sets any of them, so there is
   nothing to measure an implementation against.

@@ -354,8 +354,14 @@ class RPG2k
       # The single place the state table's display side is read, so the battle
       # status panel (which lays its own columns out and needs the pieces) and
       # the field windows (which draw straight) cannot drift apart.
+      # The database's status-condition table (the `situation` array), or nil for
+      # a scene built on a fixture database that has none.
+      def state_table
+        db.respond_to?(:situation) ? db.situation : nil
+      end
+
       def state_display(states)
-        table = db.respond_to?(:situation) ? db.situation : nil
+        table = state_table
         id = Game::States.significant(states, table)
         return [normal_status_term, 0] unless id
         [Game::States.name(id, table) || "state #{id}",
@@ -466,6 +472,13 @@ class RPG2k
       ROWS = SCREEN_H / TILE + 1
       # Pixels moved per frame while stepping between tiles (must divide TILE).
       SPEED = 2
+
+      # The screen flash a step's slip damage fires: a brief red pulse, so the
+      # drain is not silent on a map that shows no HP. Given as the Game::Screen
+      # flash arguments (r, g, b, power, frames) on the 0..255 scale, the same
+      # one the battle-animation flashes reach by scaling their 0..31 database
+      # colours up by 8.
+      STEP_DAMAGE_FLASH = [31 * 8, 10 * 8, 10 * 8, 20 * 8, 6].freeze
 
       # Frames waited between autonomous event steps, keyed by RPG2000 move
       # frequency (1 slowest .. 8 fastest). Placeholder pacing while events are
@@ -2088,10 +2101,16 @@ class RPG2k
         @player_route_timer -= 1
         return if @player_route_timer > 0
         @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 40
+        was = [@state.x, @state.y]
         @player_route.step(@player_char, @world) unless @player_route.done?
         @state.x = @player_char.x
         @state.y = @player_char.y
         @state.direction = @player_char.direction
+        # A forced route walks the party as surely as the player does, so its
+        # moves count as steps too. One per landing, which makes a jump a single
+        # step rather than one per tile cleared. A route command that only turns
+        # or waits moves nothing and counts nothing.
+        note_party_step if [@state.x, @state.y] != was
         @dest_x = @state.x
         @dest_y = @state.y
         @moving = false
@@ -4636,6 +4655,7 @@ class RPG2k
             @state.y = @dest_y
             @moving = false
             @move_count = 0
+            note_party_step
             follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
           end
           return
@@ -4674,6 +4694,23 @@ class RPG2k
         @dest_y = ny
         @moving = true
         @move_count = 0
+      end
+
+      # One tile walked. Advance the party's step counter and let RPG2000's field
+      # slip damage act on it: a status condition carrying a map-step interval
+      # (mtf-meido-action's Poison, 1 HP every 4 steps, is the only one in either
+      # test bed) drains its afflicted members every time the count reaches a
+      # multiple of that interval.
+      #
+      # The drain cannot kill -- Party#apply_map_step_damage floors it at 1 HP --
+      # so unlike the event commands that damage the party this needs no game-over
+      # check. It flashes the screen red instead, because otherwise the HP would
+      # simply fall with nothing on screen saying why: the map has no HP display.
+      def note_party_step
+        steps = @state.walk_step
+        hit = @state.party.apply_map_step_damage(state_table, steps)
+        return if hit.empty?
+        @state.screen.flash(*STEP_DAMAGE_FLASH)
       end
 
       def target_tile(x, y, dir)

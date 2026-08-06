@@ -1910,7 +1910,12 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # after the simulation fields so the positional
                           # constructions above keep working.
                           :name, :color, :priority,
-                          :message_actor, :message_enemy, :message_recovery)
+                          :message_actor, :message_enemy, :message_recovery,
+                          # ... and the map-step slip pair: how many walked tiles
+                          # between drains and how much each drain takes, for HP
+                          # and SP. Appended last, for the same reason.
+                          :hp_change_map_steps, :hp_change_map_val,
+                          :sp_change_map_steps, :sp_change_map_val)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -1918,12 +1923,14 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                reduce_hit_ratio: 100, restrict_skill: false, restrict_skill_level: 0,
                restrict_magic: false, restrict_magic_level: 0,
                name: '', color: Game::States::DEFAULT_COLOR, priority: 50,
-               actor_msg: nil, enemy_msg: nil, recovery_msg: nil)
+               actor_msg: nil, enemy_msg: nil, recovery_msg: nil,
+               hp_map_steps: 0, hp_map_val: 0, sp_map_steps: 0, sp_map_val: 0)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
                    restrict_magic, restrict_magic_level,
-                   name, color, priority, actor_msg, enemy_msg, recovery_msg)
+                   name, color, priority, actor_msg, enemy_msg, recovery_msg,
+                   hp_map_steps, hp_map_val, sp_map_steps, sp_map_val)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -6274,6 +6281,120 @@ check 'a battle log entry records which side the target was on' do
   b2.run_round
   heal = b2.log.find { |e| e[:recover] }
   eq true, heal[:target_ally], 'a party target is an ally'
+end
+
+check 'States.map_step_drain: a slip lands only on a multiple of its interval' do
+  # mtf-meido-action's Poison, the only state in either test bed that slips on
+  # the map: 1 HP every 4 walked tiles.
+  table = { 2 => fake_state(name: 'Poison', hp_map_steps: 4, hp_map_val: 1) }
+  eq [0, 0], Game::States.map_step_drain(2, table, 1)
+  eq [0, 0], Game::States.map_step_drain(2, table, 3)
+  eq [1, 0], Game::States.map_step_drain(2, table, 4)
+  eq [0, 0], Game::States.map_step_drain(2, table, 5)
+  eq [1, 0], Game::States.map_step_drain(2, table, 8)
+  # Step 0 is a multiple of every interval, so it has to be excluded outright --
+  # otherwise standing still on a fresh map would drain on the first frame.
+  eq [0, 0], Game::States.map_step_drain(2, table, 0)
+  # The SP half is the same field pair; nothing in either test bed uses it.
+  sp = { 3 => fake_state(name: 'Drain', sp_map_steps: 2, sp_map_val: 3) }
+  eq [0, 3], Game::States.map_step_drain(3, sp, 2)
+  eq [0, 0], Game::States.map_step_drain(3, sp, 3)
+end
+
+check 'States.map_step_drain: a half-configured row drains nothing' do
+  # A state needs both an interval and an amount. Guarding the interval is also
+  # what keeps the modulo off zero, which is how every ordinary state's row
+  # arrives -- both fields defaulting to 0.
+  table = { 1 => fake_state(name: 'Interval only', hp_map_steps: 4),
+            2 => fake_state(name: 'Amount only', hp_map_val: 5),
+            3 => fake_state(name: 'Ordinary') }
+  eq [0, 0], Game::States.map_step_drain(1, table, 4)
+  eq [0, 0], Game::States.map_step_drain(2, table, 4)
+  eq [0, 0], Game::States.map_step_drain(3, table, 4)
+  eq [0, 0], Game::States.map_step_drain(9, table, 4), 'an id the table lacks'
+  eq [0, 0], Game::States.map_step_drain(1, nil, 4), 'no table at all'
+end
+
+check 'a walked step slips HP from the afflicted and leaves the clear alone' do
+  table = { 2 => fake_state(name: 'Poison', hp_map_steps: 4, hp_map_val: 1) }
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.add_state(2)
+  before_hero = hero.hp
+  before_ally = ally.hp
+
+  eq [], st.party.apply_map_step_damage(table, 3), 'not a multiple: nobody hit'
+  eq before_hero, hero.hp
+
+  hit = st.party.apply_map_step_damage(table, 4)
+  eq [hero], hit, 'only the afflicted member is reported'
+  eq before_hero - 1, hero.hp
+  eq before_ally, ally.hp, 'the clear member does not slip'
+
+  # No table (the seeded harness fixtures) drains nothing rather than raising.
+  eq [], st.party.apply_map_step_damage(nil, 4)
+end
+
+check 'map slip damage cannot kill: it floors at 1 HP' do
+  # RPG_RT wears a poisoned party down and leaves it standing, which is why
+  # nothing on this path re-checks for a game over the way the event commands
+  # that damage the party do.
+  table = { 2 => fake_state(name: 'Poison', hp_map_steps: 1, hp_map_val: 30) }
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  hero.set_hp(20)
+  st.party.apply_map_step_damage(table, 1)
+  eq 1, hero.hp, 'a drain bigger than the remaining HP stops at 1'
+  eq false, hero.dead?
+  st.party.apply_map_step_damage(table, 2)
+  eq 1, hero.hp, 'and walking on keeps it there'
+  eq false, st.party.all_dead?
+
+  # A member already down slips nothing at all.
+  ally = st.party.actor_by_id(2)
+  ally.add_state(2)
+  ally.set_hp(0)
+  eq [hero], st.party.apply_map_step_damage(table, 3)
+end
+
+check 'two slipping states stack rather than the worse one winning' do
+  # The battle-side effects pick a single significant state; the map drain is
+  # summed, so a doubly-afflicted member loses both amounts on a step that is a
+  # multiple of each interval.
+  table = { 2 => fake_state(name: 'Poison', hp_map_steps: 2, hp_map_val: 1),
+            3 => fake_state(name: 'Bleed', hp_map_steps: 3, hp_map_val: 5,
+                            sp_map_steps: 6, sp_map_val: 4) }
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  hero.add_state(3)
+  hp = hero.hp
+  mp = hero.mp
+
+  st.party.apply_map_step_damage(table, 2)
+  eq hp - 1, hero.hp, 'step 2: poison only'
+  st.party.apply_map_step_damage(table, 3)
+  eq hp - 6, hero.hp, 'step 3: bleed only'
+  st.party.apply_map_step_damage(table, 6)
+  eq hp - 12, hero.hp, 'step 6: both, summed'
+  eq mp - 4, hero.mp, 'and the SP half of the same state'
+end
+
+check 'the walked-step count advances and round-trips through the save' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq 0, st.steps, 'a new game has walked nowhere'
+  eq 1, st.walk_step
+  eq 3, (st.walk_step; st.walk_step)
+  eq 3, st.steps
+  eq 3, Game::State.load(db, st.to_h).steps
+  # A save written before the counter existed restores 0 rather than nil, which
+  # would make the modulo raise on the next step.
+  h = st.to_h
+  h.delete(:steps)
+  eq 0, Game::State.load(db, h).steps
 end
 
 check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio' do

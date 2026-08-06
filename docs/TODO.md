@@ -522,11 +522,33 @@ The work below is roughly ordered by the critical path to a walkable game
   Silence silence** — a sealed actor's skills leave the battle menu and a sealed
   enemy's action entry stops firing. Nine of Nepheshel's 25 states and two of
   mtf's ten carry a reduced hit ratio, four and three a release chance, two and
-  one a seal. Still unread: **map-step slip damage**
-  (`hp_change_map_steps`, a status that drains HP as the party walks — only
-  mtf's Poison uses it, and it wants a step counter on `Game::State` nothing else
-  needs yet), and `affect_type` stat halving / doubling plus the RPG2003-only
-  `avoid_attacks` / `reflect_magic`, which no state in either test bed sets.
+  one a seal.
+  **A condition drains the party on the map now, too** — RPG2000's field poison,
+  the last of the 状態 row's simulation fields with a game behind it.
+  `hp_change_map_steps` / `hp_change_map_val` (and the matching SP pair) say how
+  many walked tiles pass between drains and how much each takes; nothing read
+  them, so an ailment defined as wearing the party down between fights did
+  nothing outside a fight. `Game::State` counts walked tiles, and
+  `Game::Party#apply_map_step_damage` drains every afflicted member whenever the
+  count reaches a multiple of that state's own interval — **summed** across two
+  slipping states rather than the worse one winning, which is the opposite of how
+  the battle side picks a single significant state. The drain **cannot kill**: it
+  goes through `change_hp` with death disallowed and floors at 1 HP, which is why
+  this is the one party-damaging path that needs no game-over re-check, and a
+  member already down slips nothing. `Scene::Map` counts a step for the player's
+  own movement **and** for a forced move route (an event that walks a poisoned
+  party across a field should drain it), one per landing so a jump counts once,
+  but **not** for a teleport — the party arrives without walking, and counting it
+  would let an event chain drain the party by shuffling it about. A draining step
+  flashes the screen red, because the map has no HP display for the loss to show
+  up on otherwise. The counter persists in the Marshal save; the `.lsd` keeps its
+  own in the inventory chunk (109), whose step / turn fields are still
+  deliberately undecoded, so a resumed real save starts counting from 0.
+  mtf-meido-action's Poison (1 HP every 4 steps) is the only state in either test
+  bed that carries the field, and `rpg2k_testbed_logic_check.rb` walks the real
+  party through the real interval against it. Still unread: `affect_type` stat
+  halving / doubling plus the RPG2003-only `avoid_attacks` / `reflect_magic`,
+  which no state in either test bed sets.
   **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random
