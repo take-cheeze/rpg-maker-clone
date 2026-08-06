@@ -24,6 +24,12 @@
 #     which is asserted for the editor test bed: its start map is plain and
 #     walkable. A released game opens on a cutscene, so its walk is logged and
 #     not asserted.
+#   * then `--rgss_host_menu_test` presses cancel and reports where the game
+#     went as `[RPGXP-HOST-MENU] scene=.. opened=..`. That is the rung above
+#     walking: a game's menu is the first thing it draws out of its own Window
+#     classes, its own windowskin and its own font, none of which a map scene
+#     touches. Asserted on the editor bed (stock scripts, menu enabled), logged
+#     on the released game.
 #   * a `script host failed` line fails the run: the game's own scripts stopping
 #     is the failure this check exists to catch.
 #
@@ -75,14 +81,17 @@ num="${SERVER_NUM}"
 
 # One headless run of the engine.
 #   $1 game dir, $2 display number, $3 what the run is called in the log,
-#   $4 the marker its log must contain, $5 extra engine flags (may be empty),
-#   $6 how many [RPGXP-HOST-SCENE] lines the game must reach (0 = do not check)
+#   $4 extra engine flags (may be empty),
+#   $5 how many [RPGXP-HOST-SCENE] lines the game must reach (0 = do not check),
+#   $6.. the markers its log must contain (all of them)
 # A run fails when the engine exits non-zero (any uncaught mruby exception aborts
-# it), when its marker is missing, when the script host reported a failure inside
+# it), when a marker is missing, when the script host reported a failure inside
 # the game's own scripts, or when the game never got past its first scene.
 run_boot() {
-    local game="$1" display="$2" label="$3" marker="$4" flags="$5" scenes="${6:-0}"
-    local log rc=0
+    local game="$1" display="$2" label="$3" flags="$4" scenes="${5:-0}"
+    shift 5
+    local markers=("$@")
+    local log rc=0 marker missing=""
     log="$(mktemp)"
     echo "-- ${label}"
     # Each run gets its own display number: xvfb-run -a's probe is not atomic
@@ -93,14 +102,19 @@ run_boot() {
             --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
         echo "FAILED: ${game} (${label}): the engine exited non-zero" >&2
         rc=1
-    elif ! grep -q "${marker}" "${log}" ; then
-        echo "FAILED: ${game} (${label}): ${marker} missing" >&2
+    else
+        for marker in "${markers[@]}" ; do
+            grep -q "${marker}" "${log}" || missing="${missing} ${marker}"
+        done
+    fi
+    if [ "${rc}" -eq 0 ] && [ -n "${missing}" ] ; then
+        echo "FAILED: ${game} (${label}): missing${missing}" >&2
         rc=1
-    elif grep -q 'script host failed' "${log}" ; then
+    elif [ "${rc}" -eq 0 ] && grep -q 'script host failed' "${log}" ; then
         echo "FAILED: ${game} (${label}): the game's own scripts stopped" >&2
         grep 'script host failed' "${log}" >&2
         rc=1
-    elif [ "${scenes}" -gt 0 ] &&
+    elif [ "${rc}" -eq 0 ] && [ "${scenes}" -gt 0 ] &&
              [ "$(grep -c '\[RPGXP-HOST-SCENE\]' "${log}")" -lt "${scenes}" ] ; then
         # One scene means the game drew its title and stayed there: the keypress
         # never reached its own engine, or its first screen could not act on it.
@@ -108,8 +122,10 @@ run_boot() {
              "(wanted ${scenes} scenes)" >&2
         grep '\[RPGXP-HOST-SCENE\]' "${log}" >&2
         rc=1
-    else
-        grep "${marker}" "${log}"
+    elif [ "${rc}" -eq 0 ] ; then
+        for marker in "${markers[@]}" ; do
+            grep "${marker}" "${log}"
+        done
     fi
     # ALSA has no device under CI and floods stderr; keep the rest.
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
@@ -125,15 +141,18 @@ for game in "${GAMES[@]}" ; do
     checked=$((checked + 1))
     echo "== ${game}"
 
-    # The editor test bed opens on a plain walkable map, so its walk is the
-    # assertion; a released game opens on a cutscene, where a walk that does not
-    # happen says nothing about the engine. Both log everything either way.
+    # The editor test bed opens on a plain walkable map with the stock scripts,
+    # so its walk and its menu are both assertions; a released game opens on a
+    # cutscene, where a walk that does not happen and a menu that does not open
+    # say nothing about the engine. Both log everything either way.
     case "${game}" in
-        *Testbed*) marker='\[RPGXP-HOST-MOVE\] .*moved=true' ;;
-        *)         marker='\[RPGXP-HOST-SCENE\]' ;;
+        *Testbed*) markers=('\[RPGXP-HOST-MOVE\] .*moved=true'
+                            '\[RPGXP-HOST-MENU\] .*opened=true') ;;
+        *)         markers=('\[RPGXP-HOST-SCENE\]') ;;
     esac
-    run_boot "${game}" "${num}" "script host" "${marker}" \
-        "--rgss_host_move_test" 2 || failed=$((failed + 1))
+    run_boot "${game}" "${num}" "script host" \
+        "--rgss_host_move_test --rgss_host_menu_test" 2 "${markers[@]}" ||
+        failed=$((failed + 1))
 
     num=$((num + 1))
 done

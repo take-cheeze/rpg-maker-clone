@@ -87,6 +87,15 @@ DEFINE_bool(
     "Used "
     "by scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
+    rgss_host_menu_test,
+    false,
+    "For the RGSS makers under the script host: once the game is on its own "
+    "map (and done walking, if --rgss_host_move_test is on too) press the "
+    "cancel key and log which scene the game went to as [RPGXP-HOST-MENU] "
+    "(implies --rgss_host_new_game). The rung above walking: a game's own menu "
+    "is the first thing it draws out of its own Window classes, its own "
+    "windowskin and its own font. Used by scripts/rpgxp_boot_check.bash");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -811,15 +820,19 @@ int main(int argc, char** argv) {
                 mrb_bool_value(FLAGS_rgss_script_host));
   // Whether the script host taps confirm on the game's own title screen (see
   // RPGXP::ScriptHost.watch_frame).
-  // The move probe implies the confirm tap: it has to get onto a map first,
-  // which means getting off the game's own title screen.
+  // The move and menu probes imply the confirm tap: both have to get onto a map
+  // first, which means getting off the game's own title screen.
   mrb_const_set(
       M, mrb_obj_value(M->object_class),
       mrb_intern_lit(M, "RGSS_HOST_NEW_GAME"),
-      mrb_bool_value(FLAGS_rgss_host_new_game || FLAGS_rgss_host_move_test));
+      mrb_bool_value(FLAGS_rgss_host_new_game || FLAGS_rgss_host_move_test ||
+                     FLAGS_rgss_host_menu_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_MOVE_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_move_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_HOST_MENU_TEST"),
+                mrb_bool_value(FLAGS_rgss_host_menu_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

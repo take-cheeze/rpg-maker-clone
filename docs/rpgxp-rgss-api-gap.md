@@ -170,6 +170,14 @@ as `[RPGXP-HOST-SCENE]` (read from the game's own `$scene` global). Reaching a
 second scene is what `scripts/rpgxp_boot_check.bash` now asserts — the proof that
 a game's engine took a keypress and acted on it, rather than merely drawing.
 
+`--rgss_host_move_test` and `--rgss_host_menu_test` are the two rungs above that,
+run in the same pass: walk the party across the game's own passability
+(`[RPGXP-HOST-MOVE]`), then press cancel and report where the game went
+(`[RPGXP-HOST-MENU]`). The menu is the interesting one for this document — it is
+the first thing a game draws out of its *own* `Window_Base` subclasses, its own
+windowskin, its own font and its own `Bitmap#draw_text`, none of which a map
+scene touches. Whatever it reports is the next entry here.
+
 ### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
 
 With input working, both beds get *into* the game — and stop where every RGSS
