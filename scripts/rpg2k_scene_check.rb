@@ -72,13 +72,21 @@ module RGSS
 
   class Sprite
     attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
-    def initialize(*); end
+    # Which viewport the sprite was built in, so the tone checks can assert that
+    # the map layers share one and the overlays do not.
+    attr_reader :viewport
+    def initialize(viewport = nil, *); @viewport = viewport; end
     def dispose; end
   end
 
   class Viewport
     attr_accessor :z, :visible, :rect
-    def initialize(*); end
+    # The screen tone rides on a viewport (Scene::Map#update_map_tone), so the
+    # stub records what was set on it and how often it was pushed.
+    attr_accessor :tone, :color
+    attr_reader :updates
+    def initialize(*); @updates = 0; end
+    def update; @updates += 1; end
     def dispose; end
   end
 
@@ -523,6 +531,53 @@ check 'Change Event Location does not arc the event it snaps' do
   eq [4, 2], [e[:char].x, e[:char].y], 'the snap landed'
   eq false, e[:jumping], 'a snap is not a hop'
   eq 0, scene.send(:event_jump_offset, e), 'so the sprite is not lifted'
+end
+
+# The map's own sprite layers, in the order they must composite. Events are not
+# here because they are blitted into the two tile-layer buffers rather than
+# owning sprites of their own.
+MAP_LAYER_IVARS = %i[@parallax_sprite @lower_sprite @airship_shadow
+                     @player_sprite @animation_sprite @upper_sprite].freeze
+# ... and everything that draws *over* the map, which the screen tone must not
+# touch: pictures carry their own tone, and the weather / flash / fade overlays
+# are screen effects in their own right.
+ABOVE_MAP_IVARS = %i[@picture_sprite @weather_sprite @flash_sprite
+                     @fade_sprite].freeze
+
+def sprite_z(scene, ivar)
+  s = scene.instance_variable_get(ivar)
+  s && s.z
+end
+
+check 'the map layers composite in a fixed order, under the overlays' do
+  # Pinned because the screen tone moves every one of these into a viewport:
+  # the tone has to reach the map and nothing above it, and the order within the
+  # map has to survive the move.
+  # With a panorama, so the parallax layer is built and pinned too.
+  scene = new_scene({}, parallax: {
+    parallax_flag: true, parallax_name: 'BG',
+    parallax_loop_x: true, parallax_loop_y: true,
+    parallax_autoloop_x: false, parallax_sx: 0,
+    parallax_autoloop_y: false, parallax_sy: 0
+  })
+  zs = MAP_LAYER_IVARS.map { |i| [i, sprite_z(scene, i)] }
+  zs.each { |i, z| ok !z.nil?, "#{i} exists and has a z" }
+  ordered = zs.map { |_i, z| z }
+  eq ordered.sort, ordered, "map layers out of order: #{zs.inspect}"
+
+  top = ordered.max
+  ABOVE_MAP_IVARS.each do |i|
+    z = sprite_z(scene, i)
+    next if z.nil? # a layer this scene has not built
+    ok z > top, "#{i} (z=#{z}) must draw over the map (top z=#{top})"
+  end
+
+  # The three vehicles sit between the shadow and the hero.
+  vs = scene.instance_variable_get(:@vehicle_sprites)
+  vs.each_value do |s|
+    ok s.z > sprite_z(scene, :@airship_shadow), 'a vehicle is over its shadow'
+    ok s.z < sprite_z(scene, :@player_sprite), 'and under a party riding it'
+  end
 end
 
 # -- event page refresh -------------------------------------------------------
@@ -2585,24 +2640,88 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   ok !shadow.visible, 'a boat casts no airship shadow'
 end
 
-check 'Tint Screen darkens the view through a black overlay; neutral clears it' do
+def tint_scene(*params)
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
-  # Tint to (0,0,0) sat 100 instantly (0 tenths), no wait — a full darken.
-  auto.event_commands = [ECmd.new(ic::TINT_SCREEN, [0, 0, 0, 100, 0, 0], indent: 0)]
+  auto.event_commands = [ECmd.new(ic::TINT_SCREEN, params, indent: 0)]
   scene = new_scene({ 1 => event(2, 2, auto) })
-  st = scene.instance_variable_get(:@state)
   5.times { scene.update }
-  tint = scene.instance_variable_get(:@tint_sprite)
-  ok tint.opacity > 200, 'a black tint darkens the screen'
-  # A half-darken (50,50,50) reads as roughly half opacity.
-  st.screen.tint_to(50, 50, 50, 100, 0)
-  scene.update
-  ok tint.opacity > 100 && tint.opacity < 160, 'a partial tint is partly opaque'
-  # Neutral (100,100,100) clears the overlay.
-  st.screen.tint_to(100, 100, 100, 100, 0)
-  scene.update
-  eq 0, tint.opacity, 'a neutral tint clears the overlay'
+  scene
+end
+
+def map_tone(scene)
+  scene.instance_variable_get(:@map_viewport).tone
+end
+
+check 'Tint Screen darkens the map through the viewport tone' do
+  # Tint to (0,0,0) sat 100 instantly (0 tenths), no wait -- a full darken.
+  scene = tint_scene(0, 0, 0, 100, 0, 0)
+  t = map_tone(scene)
+  ok t, 'a tone reached the viewport'
+  eq(-255, t.red, 'a black tint takes every channel to the floor')
+  eq(-255, t.green)
+  eq(-255, t.blue)
+  eq 0, t.gray, 'and leaves saturation alone'
+end
+
+check 'Tint Screen brightens, which the old overlay could not do at all' do
+  # Above neutral. The black overlay approximated only darkening, so this used
+  # to be silently ignored -- the screen simply did not change.
+  scene = tint_scene(200, 200, 200, 100, 0, 0)
+  t = map_tone(scene)
+  eq 255, t.red, 'a full brighten reaches the ceiling'
+  eq 255, t.green
+  eq 255, t.blue
+end
+
+check 'Tint Screen casts a colour, not just a brightness' do
+  # Red up, green and blue down: a red wash. An overlay of one opacity cannot
+  # express this -- it can only darken every channel by the same amount.
+  scene = tint_scene(200, 50, 50, 100, 0, 0)
+  t = map_tone(scene)
+  eq 255, t.red
+  eq(-127, t.green, 'truncating toward zero, as the picture tone does')
+  eq(-127, t.blue)
+  ok t.red > t.green && t.red > t.blue, 'the cast really is red'
+end
+
+check "Tint Screen's saturation inverts into RGSS grey" do
+  # RPG2000 counts saturation *down* from 100 to mean less saturated; RGSS grey
+  # counts up. A fully desaturated tint is therefore full grey.
+  scene = tint_scene(100, 100, 100, 0, 0, 0)
+  t = map_tone(scene)
+  eq 255, t.gray, 'saturation 0 is fully grey'
+  eq 0, t.red, 'with the channels untouched'
+end
+
+check 'a neutral tint leaves the map alone, and is not re-pushed every frame' do
+  scene = tint_scene(100, 100, 100, 100, 0, 0)
+  t = map_tone(scene)
+  eq 0, t.red
+  eq 0, t.gray
+  vp = scene.instance_variable_get(:@map_viewport)
+  before = vp.updates
+  10.times { scene.update }
+  eq before, vp.updates, 'an unchanging tone is set once, not once a frame'
+end
+
+check 'the tone reaches the map layers and nothing above them' do
+  scene = tint_scene(0, 0, 0, 100, 0, 0)
+  vp = scene.instance_variable_get(:@map_viewport)
+  MAP_LAYER_IVARS.each do |i|
+    spr = scene.instance_variable_get(i)
+    next unless spr # a layer this scene did not build
+    ok spr.viewport.equal?(vp), "#{i} is tinted with the map"
+  end
+  ABOVE_MAP_IVARS.each do |i|
+    spr = scene.instance_variable_get(i)
+    next unless spr
+    ok !spr.viewport.equal?(vp),
+       "#{i} must not be tinted -- it draws over the map"
+  end
+  scene.instance_variable_get(:@vehicle_sprites).each_value do |spr|
+    ok spr.viewport.equal?(vp), 'a vehicle is tinted with the map it sits on'
+  end
 end
 
 check 'the choice window plays the cursor and decision system sounds' do

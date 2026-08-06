@@ -92,8 +92,28 @@ The work below is roughly ordered by the critical path to a walkable game
   two animated block-C tiles, and water/animation frame cycling. Falls back to
   the previous solid-colour blocks when the chipset image is missing.
   Passability still drives collision. Geometry is pinned by
-  `scripts/rpg2k_render_check.rb`. Remaining: tile-replacement (Replace Chipset
-  Tiles) substitution and screen-tone tinting of tiles.
+  `scripts/rpg2k_render_check.rb`. **Replace Chipset Tiles** (Tile Substitution,
+  11750) is implemented — the swap is recorded on the `Game::Map` so passability
+  follows it, and the scene rebuilds both cached tile layers.
+  **The screen tone reaches the map** now as well. A Tint Screen used to be
+  approximated by a black overlay whose opacity tracked how far the channels
+  averaged *below* neutral, which left three of the four things the command can
+  ask for doing nothing at all: brightening (above neutral), the colour cast, and
+  saturation. Every map sprite — the parallax, both tile layers, the hero, the
+  vehicles and their shadow, and the battle-animation layer — now lives in one
+  `Viewport`, and `Scene::Map#update_map_tone` sets that viewport's tone from
+  `Game::Screen#tint`. A viewport is what carries a tone in RGSS, and it reaches
+  the sprites inside it and nothing else, which is exactly the line the screen
+  tone needs: the map is tinted while the pictures above it (which carry their
+  own tone), the message window and the weather / flash / fade overlays are not.
+  The channel conversion is the one the pictures already use
+  (`Scene::Map.tone_channel`), saturation included — RPG2000 counts it *down*
+  from 100 to mean less saturated, which inverts into RGSS's grey. The tone is
+  pushed only when it changes, so an untinted map pays nothing.
+  That this reaches the display rather than merely storing values is the point:
+  the earlier attempt did store them and the screen never changed, which is why
+  `RGSS.effect_probe` exists (`--rgss_effect_probe`, run under xvfb in CI) and
+  measures a real frame before and after a viewport tone.
 - ✅ Render parity with the genuine runtime —
   `scripts/compare-nepheshel-wine.bash` boots the real `RPG_RT.exe` under wine
   beside our engine on the same game and diffs the frames (ADR 0021). It first
@@ -176,7 +196,10 @@ The work below is roughly ordered by the critical path to a walkable game
   a single-tile step eases across over `TILE/SPEED` frames while the walk
   animation cycles, and a longer hop snaps. Grounded in the real Nepheshel data
   and pinned by `scripts/rpg2k_render_check.rb` /
-  `scripts/rpg2k_scene_check.rb`. Remaining polish: vehicle sprites
+  `scripts/rpg2k_scene_check.rb`. Vehicle sprites are drawn too: one sprite per
+  vehicle from its System CharSet graphic, hidden unless the vehicle is placed on
+  the current map, the ridden one following the party, and the airship floating
+  above a shadow sprite that marks the ground tile it is over
 - ✅ Movement & collision — grid movement with pixel interpolation, walk
   animation and edge/tile/event collision. Move-route *data* decodes
   (`LCF.parse_move_commands` / `LCF::MoveCommand`, wired into the event-page and
@@ -275,8 +298,8 @@ The work below is roughly ordered by the critical path to a walkable game
   Event) command is now wired up too: it decodes the route packed into the
   command's parameters and applies it as a forced route to the target — a map
   event (including "this event") or the player, overriding page movement until
-  it finishes. Still to come: vehicle targets (boat/ship/airship), which are not
-  modelled yet
+  it finishes. Vehicle targets (boat / ship / airship, 10002-10004) resolve as
+  well, so a route can drive one
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Change

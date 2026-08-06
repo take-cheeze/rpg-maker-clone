@@ -480,6 +480,11 @@ class RPG2k
       # colours up by 8.
       STEP_DAMAGE_FLASH = [31 * 8, 10 * 8, 10 * 8, 20 * 8, 6].freeze
 
+      # Where the map viewport sits against the sprites drawn outside it. Under
+      # the picture layer (250), so pictures, the message window and the
+      # weather / flash / fade overlays all draw over a tinted map.
+      MAP_VIEWPORT_Z = 100
+
       # Frames waited between autonomous event steps, keyed by RPG2000 move
       # frequency (1 slowest .. 8 fastest). Placeholder pacing while events are
       # drawn as markers (no per-step pixel interpolation yet).
@@ -578,7 +583,7 @@ class RPG2k
         close_shop
         close_battle
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
-         @picture_sprite, @fade_sprite, @flash_sprite, @tint_sprite,
+         @picture_sprite, @fade_sprite, @flash_sprite,
          @weather_sprite].each do |s|
           s.dispose if s
         end
@@ -586,6 +591,8 @@ class RPG2k
         (@timer_windows || []).each { |w| w.dispose if w }
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
+        # After the sprites it holds, so nothing is orphaned inside it.
+        @map_viewport.dispose if @map_viewport
         @flash_buffer.dispose if @flash_buffer
         @flash_out_buffer.dispose if @flash_out_buffer
         @chipset_bmp.dispose if @chipset_bmp
@@ -629,17 +636,30 @@ class RPG2k
       private
 
       def setup_sprites
-        @lower_sprite = Sprite.new
+        # Everything the map view is made of lives in one viewport, so RPG2000's
+        # Tint Screen can be applied to all of it at once (see #update_map_tone).
+        # A viewport is what carries a tone in RGSS, and it reaches the sprites
+        # inside it and nothing else -- which is the distinction the screen tone
+        # needs: the map is tinted, while the pictures above it (which carry
+        # their own tone), the message window and the weather / flash / fade
+        # overlays are not.
+        @map_viewport = Viewport.new(0, 0, SCREEN_W, SCREEN_H)
+        # Below the picture layer, so the z values inside keep their meaning
+        # relative to each other while the whole map sits under everything that
+        # draws over it.
+        @map_viewport.z = MAP_VIEWPORT_Z
+
+        @lower_sprite = Sprite.new(@map_viewport)
         @lower_sprite.z = 0
         @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
         @lower_sprite.bitmap = @lower_bmp
 
-        @upper_sprite = Sprite.new
+        @upper_sprite = Sprite.new(@map_viewport)
         @upper_sprite.z = 200
         @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
         @upper_sprite.bitmap = @upper_bmp
 
-        @player_sprite = Sprite.new
+        @player_sprite = Sprite.new(@map_viewport)
         @player_sprite.z = 100
         @player_bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
         @player_sprite.bitmap = @player_bmp
@@ -649,7 +669,7 @@ class RPG2k
         @vehicle_sprites = {}
         @vehicle_bmps = {}
         Game::Vehicle::TYPES.each do |type|
-          spr = Sprite.new
+          spr = Sprite.new(@map_viewport)
           spr.z = 99
           spr.visible = false
           bmp = Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
@@ -659,7 +679,7 @@ class RPG2k
         end
         # The airship floats above the ground; a shadow sprite on the tile below
         # it sells the altitude. A squat translucent dark blob approximates it.
-        @airship_shadow = Sprite.new
+        @airship_shadow = Sprite.new(@map_viewport)
         @airship_shadow.z = 98 # under the vehicles, over the ground / events
         @airship_shadow.visible = false
         shadow = Bitmap.new(TILE, TILE)
@@ -668,7 +688,7 @@ class RPG2k
 
         # A screen-sized layer the Show Battle Animation renderer composites the
         # current frame's cells into, over the map (above the hero).
-        @animation_sprite = Sprite.new
+        @animation_sprite = Sprite.new(@map_viewport)
         @animation_sprite.z = 150
         @animation_sprite.visible = false
         @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
@@ -719,15 +739,6 @@ class RPG2k
         @flash_sprite.opacity = 0
         @flash_rgb = nil
 
-        # Tint Screen: a black overlay whose opacity approximates the tint's
-        # darkening (below flash / fade, over the map and UI). A full tone
-        # (colour cast, brightening, saturation) is native work still to come.
-        @tint_sprite = Sprite.new
-        @tint_sprite.z = 440
-        @tint_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        @tint_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(0, 0, 0, 255)
-        @tint_sprite.bitmap = @tint_bmp
-        @tint_sprite.opacity = 0
 
         # Weather Effects: rain / snow particles drawn on a screen-sized layer
         # (under the flash / fade overlays), animated by @anim_frame.
@@ -745,7 +756,7 @@ class RPG2k
       def update_screen_overlay
         screen = @state.screen
         draw_transition_mask screen
-        @tint_sprite.opacity = tint_overlay_opacity(screen.tint)
+        update_map_tone screen.tint
 
         r, g, b, strength = screen.flash_color
         if strength <= 0
@@ -851,15 +862,34 @@ class RPG2k
         phase < 4 ? phase : 8 - phase
       end
 
-      # Approximate the darkening of a Tint Screen tone (`[r, g, b, sat]`, each
-      # 0..200 with 100 neutral) as the opacity of a black overlay: the further
-      # the channels average below neutral, the darker. Brightening (above 100),
-      # the colour cast and saturation need a real tone and are not applied.
-      def tint_overlay_opacity(tint)
-        r, g, b, = tint
-        avg = (r + g + b) / 3
-        return 0 if avg >= 100
-        (100 - avg) * 255 / 100
+      # Apply a Tint Screen tone (`[r, g, b, sat]`, each 0..200 with 100 neutral)
+      # to the whole map view, by setting it on the viewport every map sprite
+      # lives in.
+      #
+      # This used to be approximated by a black overlay whose opacity tracked how
+      # far the channels averaged *below* neutral, which meant brightening did
+      # nothing at all, a red tint did not read as red, and saturation was
+      # ignored -- three of the four things the command can ask for. A viewport
+      # carries a real tone, so all four work now.
+      #
+      # The channel conversion is the one the pictures already use
+      # (`Scene::Map.tone_channel`), including RPG2000's saturation running the
+      # other way from RGSS's grey: below 100 is *less* saturated, so a value
+      # under neutral becomes positive desaturation. Skipped entirely while the
+      # tone is neutral, so an untinted map never pays for it.
+      def update_map_tone(tint)
+        return unless @map_viewport
+        r, g, b, sat = tint
+        return if @map_tint == tint
+        @map_tint = tint.dup
+        @map_viewport.tone = Tone.new(Scene::Map.tone_channel(r),
+                                      Scene::Map.tone_channel(g),
+                                      Scene::Map.tone_channel(b),
+                                      -Scene::Map.tone_channel(sat))
+        @map_viewport.update if @map_viewport.respond_to?(:update)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] screen tone failed, map drawn untinted: #{e.message}"
+        nil
       end
 
       # Create the buffer that carries the Show Picture layer. Pictures composite
@@ -910,7 +940,7 @@ class RPG2k
         @par_auto_y = cfg[:auto_y] ? true : false
         @par_sx = cfg[:sx] || 0
         @par_sy = cfg[:sy] || 0
-        @parallax_sprite = Sprite.new
+        @parallax_sprite = Sprite.new(@map_viewport)
         @parallax_sprite.z = -1
         @parallax_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
         @parallax_sprite.bitmap = @parallax_bmp
