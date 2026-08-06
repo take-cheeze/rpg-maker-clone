@@ -280,6 +280,14 @@
   before the save, overwritten between the save and the load, and compared after
   it, because a settled promise chain is also what a load that restores nothing
   looks like
+- Messages are **operated**, not just opened: `message_play` mode shows a
+  message and a two-way choice, pages the text through, moves the cursor to the
+  *second* entry and confirms it, then checks which branch of the event ran —
+  each branch writes a different value, so the value names the branch. Moving
+  the cursor is the point: the first entry is the default, so a probe that only
+  tapped confirm would see a choice window, a closed message and a branch having
+  run without a choice ever being made. Show Choices had never run at all before
+  this, so the interpreter's branching was untested
 - MZ **buys things**: `shop` mode opens a shop with a Shop Processing command,
   taps confirm through Buy, the goods list and the quantity window, and asserts
   both that the gold left the purse and that the item arrived — either alone
@@ -336,8 +344,9 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `transfer`, `common`, `encounter`, `shop`,
-  `menu`, `menu_play`, `animation`, `save`, `battle` or `battle_play`, each with its own success line so a probe that
+  key moves the player), `message`, `message_play`, `transfer`, `common`,
+  `encounter`, `shop`, `menu`, `menu_play`, `animation`, `save`, `battle` or
+  `battle_play`, each with its own success line so a probe that
   merely ran cannot pass. A run ends as soon as its probes have reported rather
   than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest
   host instead of the time every run takes — a cut-off run reports nothing at
