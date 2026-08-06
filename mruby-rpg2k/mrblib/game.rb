@@ -4770,6 +4770,39 @@ module Game
       def self.dodge(terms, target_name)
         action(terms, target_name, :dodge)
       end
+
+      # A skill announces itself with its **own** two sentences rather than with
+      # a term, which is why a skill has a voice and a plain attack does not.
+      # `using_message1` follows the caster's name the way every other predicate
+      # does; `using_message2` stands alone as a second line (EasyRPG's
+      # `GetSkillSecondStartMessage2k` returns the field with no name in front),
+      # so a skill can read 「リトは炎を放った！」 / 「あたりが真っ赤に染まる！」.
+      #
+      # Returns [] when the skill sets neither, so the caller keeps its own line.
+      # 351 of the test beds' skills set the first and 18 the second.
+      def self.skill_start(skill_row, caster_name)
+        return [] unless skill_row
+        first = term(skill_row, :using_message1)
+        second = term(skill_row, :using_message2)
+        lines = []
+        lines << "#{caster_name}#{first}" if first
+        lines << second if second
+        lines
+      end
+
+      # A skill that achieved nothing. Which sentence says so is the skill row's
+      # own choice: `failure_message` indexes the three 用語 failure lines, and 3
+      # borrows the dodge line (EasyRPG's `GetSkillFailureMessage`). Worded from
+      # the target's side, like the dodge it can become.
+      FAILURE_TERMS = [:skill_failure_a, :skill_failure_b, :skill_failure_c,
+                       :dodge].freeze
+
+      def self.skill_failure(terms, skill_row, target_name)
+        i = skill_row && skill_row.respond_to?(:failure_message) ?
+              skill_row.failure_message : nil
+        f = FAILURE_TERMS[i || 0]
+        f && action(terms, target_name, f)
+      end
     end
 
     # Map-step slip damage: RPG2000's field poison. A state drains HP every
@@ -5278,8 +5311,9 @@ module Game
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
     # order by #apply_command when the round runs.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
-                      chance: 100, variance: 0, attributes: nil)
+                      chance: 100, variance: 0, attributes: nil, skill_id: nil)
       ally.command = { kind: :skill, target: target, name: name,
+                       skill_id: skill_id,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
                        attributes: attributes || [] }
@@ -5294,9 +5328,9 @@ module Game
     # `attributes` apply to every target. #apply_command produces one log entry
     # per living target, drained one at a time by #step_action.
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
-                          variance: 0, attributes: nil)
+                          variance: 0, attributes: nil, skill_id: nil)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
-                       cost: cost, inflict: inflict || [], chance: chance,
+                       skill_id: skill_id, cost: cost, inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [] }
       ally.action = nil; ally.defending = false
     end
@@ -5691,6 +5725,7 @@ module Game
       cmd = @ai.skill_command(sk, b, targets.first)
       return enemy_fallback_attack(b) unless cmd
       b.command = skill_command_hash(sk, cmd, targets.first)
+      b.command[:skill_id] = act.skill_id
       if targets.size > 1
         # An all-target skill carries one effect per target, since attack damage
         # is computed against each target's own defence.
@@ -6012,7 +6047,8 @@ module Game
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already,
-          target_ally: ally?(target), skill: cmd[:name] }
+          target_ally: ally?(target), skill: cmd[:name],
+          skill_id: cmd[:skill_id] }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -6023,7 +6059,7 @@ module Game
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
         target.states = (target.states || []) - cured unless cured.empty?
         { recover: true, actor: b.name, source: cmd[:name],
-          item_id: cmd[:item_id], target: target.name,
+          item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, target_ally: ally?(target),
           target_hp: target.hp, target_mp: target.mp }

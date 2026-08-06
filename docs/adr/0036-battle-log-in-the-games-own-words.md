@@ -93,3 +93,56 @@ sentences still following the action ones) and by
 `scripts/rpg2k_testbed_logic_check.rb`, which composes every basic action
 sentence in **both real term tables** after a battler's name and checks that the
 two damage sides really are worded differently and take their own particles.
+
+## Addendum: the skill's own voice
+
+Date: 2026-08-06
+
+The first of the two things held back above is now done. A skill does not use a
+term for "attacking" — it carries its **own** two sentences, which is the whole
+reason a spell reads differently from a sword swing:
+
+| | skills with `using_message1` | with `using_message2` |
+|---|---|---|
+| Nepheshel | **229** of 306 | **18** |
+| mtf-meido-action | **122** of 134 | 0 |
+
+They compose differently from each other, and that asymmetry is the rule worth
+recording: `using_message1` follows the caster's name like every other predicate,
+while `using_message2` **stands alone** as a second line (EasyRPG's
+`GetSkillSecondStartMessage2k` returns the field with nothing in front of it). So
+a spell reads 「リトは炎を放った！」 then 「あたりが真っ赤に染まる！」 — a caster and
+then a scene, not the caster twice.
+
+**A skill that achieved nothing takes its own failure sentence** instead of a
+damage line, and which one is again the skill row's choice: `failure_message`
+indexes the three 用語 failure lines, with 3 borrowing the dodge line. All four
+values are in real use — Nepheshel splits 255 / 7 / 1 / 43 and mtf 116 / 8 / 4 /
+6 — so the index-3 case is not a theoretical branch. "Achieved nothing" means a
+miss, or a recovery that restored no HP or SP and cured and inflicted nothing.
+
+Falling back stays all-or-nothing per entry, for the reason the base decision
+gives: a skill row with no sentence keeps the composed English, because the bare
+damage line would lose the only thing naming what was cast. That is what an
+English-release skill table looks like, and 77 of Nepheshel's own skills are in
+it.
+
+Plumbing this needed the skill's **id** on the log entry — the entry carried only
+the skill's name — so `command_skill` / `command_skill_all` take a `skill_id:`,
+the enemy AI path sets it from its own action, and both ride onto the entry.
+
+**An item still keeps its composed line.** Its sentence is the `use_item` term
+rather than a field of its own, and the RPG2000 branch of EasyRPG's
+`GetItemStartMessage2k` is a different shape from everything here; it is left for
+its own change rather than folded in.
+
+Covered by `scripts/rpg2k_logic_check.rb` (both sentences and the asymmetry
+between them, a skill with only the first, a skill with neither, a missing row,
+and each of the four `failure_message` values), by
+`scripts/rpg2k_scene_check.rb` (the log a real `Scene::Map` produces for a skill
+with both sentences, with one, with none, one that missed, a heal that restored
+nothing and one that worked, a skill's states still trailing it, and an item
+keeping its line) and by `scripts/rpg2k_testbed_logic_check.rb`, which composes
+**every** real skill sentence in both games — asserting the second line is not
+prefixed with the caster's name — and checks every skill's `failure_message`
+indexes a 用語 line the table really has.

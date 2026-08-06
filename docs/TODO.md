@@ -797,10 +797,24 @@ The work below is roughly ordered by the critical path to a walkable game
   Defend, Observe, Charge, self-destruct, flee, transform — plus both damage
   sides, no-damage and misses; a blank term drops the **whole** entry back to the
   composed English, because a half-translated line reads worse than an English
-  one. Still held back on purpose: a **skill or item** keeps its composed line
-  until its own `using_message1` / `using_message2` / `use_item` is read (351 and
-  18 skills across the test beds set one), since the bare damage line would lose
-  the only thing naming what was cast; and the **critical** line is left alone
+  one.
+  **A skill says it in its own words**, which is why a spell reads differently
+  from a sword swing: the row carries two sentences of its own, and they compose
+  differently — `using_message1` follows the caster's name like every other
+  predicate while `using_message2` **stands alone** as a second line, so a spell
+  reads 「リトは炎を放った！」 then 「あたりが真っ赤に染まる！」, a caster and then a
+  scene. 229 of Nepheshel's 306 skills and 122 of mtf's 134 set the first, 18 the
+  second. A skill that achieved nothing — a miss, or a recovery that restored and
+  cured nothing — takes its own failure sentence rather than a damage line, picked
+  by the row's `failure_message` from the three 用語 failure lines plus the dodge
+  line at index 3; all four values are in real use (255/7/1/43 and 116/8/4/6).
+  This needed the skill's **id** on the log entry, which carried only its name, so
+  `command_skill` / `command_skill_all` take a `skill_id:` and the enemy AI path
+  sets it from its own action. A skill row with no sentence keeps the composed
+  wording, as a blank term does.
+  Still held back on purpose: an **item** keeps its composed line
+  until the `use_item` term is read — a different shape from everything here —
+  and the **critical** line is left alone
   because which side keys `actor_critical` / `enemy_critical` is genuinely
   unclear — EasyRPG picks `actor_critical` when the *target* is an ally, while
   会心 / 痛恨 read as the *attacker's* side, and both games fill both fields with

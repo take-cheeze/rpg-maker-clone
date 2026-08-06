@@ -3197,7 +3197,7 @@ class RPG2k
         sid, cost = @battle_ui[:skills][@battle_ui[:skill_i]]
         return if current_actor.mp < cost # can't afford: stay on the list
         sk = @state.party.db_skill(sid)
-        @battle_ui[:pending] = { kind: :skill, sk: sk }
+        @battle_ui[:pending] = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
         case @state.party.battle_skill_target(sk)
         when :self
@@ -3221,9 +3221,11 @@ class RPG2k
       # then move to the next actor.
       def apply_pending_skill(target)
         sk = @battle_ui[:pending][:sk]
+        sid = @battle_ui[:pending][:sid]
         c = @state.party.battle_skill_command(sk, current_actor, target)
         @battle_ui[:battle].command_skill(current_actor, target,
-                                          name: sk.name, cost: c[:cost],
+                                          name: sk.name, skill_id: sid,
+                                          cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
                                           variance: c[:variance] || 0,
@@ -3240,13 +3242,15 @@ class RPG2k
       # infliction ride along once.
       def apply_pending_skill_all(targets)
         sk = @battle_ui[:pending][:sk]
+        sid = @battle_ui[:pending][:sid]
         meta = @state.party.battle_skill_command(sk, current_actor, targets.first)
         effects = targets.map do |t|
           c = @state.party.battle_skill_command(sk, current_actor, t)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
         @battle_ui[:battle].command_skill_all(current_actor, effects,
-                                              name: sk.name, cost: meta[:cost],
+                                              name: sk.name, skill_id: sid,
+                                              cost: meta[:cost],
                                               inflict: meta[:inflict], chance: meta[:chance],
                                               variance: meta[:variance] || 0,
                                               attributes: meta[:attributes])
@@ -3661,13 +3665,13 @@ class RPG2k
       # composed English for any field the database leaves blank — an
       # English-release table with half the battle terms empty still reads.
       def battle_action_body(e)
-        # A skill and an item announce themselves with their *own* sentence
-        # (`using_message1` / `using_message2`, `use_item`), which is a separate
-        # unread field and a separate change. Until then they keep the composed
-        # wording, because dropping to the bare damage line would lose the one
-        # thing that names what was cast. Same for "does nothing", which RPG_RT
-        # words from the state that caused it rather than from a term.
-        return [battle_action_line(e)] if e[:recover] || e[:skill] || e[:nothing]
+        # An item announces itself with the `use_item` term, still unread, and
+        # "does nothing" is worded by the state that caused it rather than by a
+        # term — both keep the composed wording. A skill has its own two
+        # sentences and takes the branch below.
+        return [battle_action_line(e)] if e[:nothing]
+        return battle_skill_body(e) if e[:skill_id]
+        return [battle_action_line(e)] if e[:recover] || e[:skill]
         t = db.respond_to?(:term) ? db.term : nil
         want_start = battle_start_field(e)
         want_result = battle_result_wanted?(e)
@@ -3682,6 +3686,57 @@ class RPG2k
         lines << start if start
         lines << result if result
         lines.empty? ? [battle_action_line(e)] : lines
+      end
+
+      # A skill's own two sentences, then what it did. `using_message1` follows
+      # the caster's name and `using_message2` stands alone as a second line, so
+      # a spell reads 「リトは炎を放った！」 / 「あたりが真っ赤に染まる！」 before
+      # 「スライムに 42 のダメージを与えた！」.
+      #
+      # A skill that achieved nothing takes its own failure sentence instead of a
+      # damage line — the skill row's `failure_message` picks which of the three
+      # 用語 failure lines (or the dodge line) says so.
+      #
+      # A skill row that sets no sentence at all keeps the composed wording, for
+      # the same reason a blank term does: the bare damage line would lose the
+      # only thing naming what was cast.
+      def battle_skill_body(e)
+        bt = Game::States::BattleText
+        row = db.respond_to?(:skill) && db.skill ? db.skill[e[:skill_id]] : nil
+        caster = (e[:recover] ? e[:actor] : e[:attacker]).to_s
+        lines = bt.skill_start(row, caster)
+        return [battle_action_line(e)] if lines.empty?
+        t = db.respond_to?(:term) ? db.term : nil
+        rest = battle_skill_result(t, row, e)
+        return [battle_action_line(e)] unless rest
+        lines + rest
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] skill message lookup failed: #{ex.message}"
+        [battle_action_line(e)]
+      end
+
+      # What the skill did: the damage / dodge line for an attack, nothing extra
+      # for a recovery that worked, and the failure sentence for one that did
+      # not. nil when a needed sentence is missing, so the caller falls back
+      # whole rather than printing half of one.
+      def battle_skill_result(t, row, e)
+        bt = Game::States::BattleText
+        return [] if e[:target].nil?
+        if skill_achieved_nothing?(e)
+          line = bt.skill_failure(t, row, e[:target].to_s)
+          return line ? [line] : nil
+        end
+        return [] if e[:recover]
+        return battle_result_line(t, e) ? [battle_result_line(t, e)] : nil
+      end
+
+      # A skill with nothing to show for itself: a heal that restored no HP or SP
+      # and cured nothing, or an attack that was dodged.
+      def skill_achieved_nothing?(e)
+        return true if e[:missed]
+        return false unless e[:recover]
+        (e[:recover_hp] || 0) <= 0 && (e[:recover_mp] || 0) <= 0 &&
+          (e[:cured] || []).empty? && (e[:inflicted] || []).empty?
       end
 
       # Which term words this entry's "so-and-so did a thing" line, or nil when

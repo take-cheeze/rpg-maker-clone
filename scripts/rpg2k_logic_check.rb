@@ -8249,6 +8249,42 @@ check 'a blank or missing term yields nil rather than a bare name' do
      'a table without the field'
 end
 
+# A skill has a voice of its own where a plain attack has only a term.
+FakeSkillMsg = Struct.new(:using_message1, :using_message2, :failure_message)
+
+check 'a skill names itself: the first line takes the caster, the second stands alone' do
+  sk = FakeSkillMsg.new('は炎を放った！', 'あたりが真っ赤に染まる！', 0)
+  eq ['リトは炎を放った！', 'あたりが真っ赤に染まる！'], BT.skill_start(sk, 'リト')
+end
+
+check 'a skill with only a first sentence gives one line' do
+  eq ['リトは炎を放った！'],
+     BT.skill_start(FakeSkillMsg.new('は炎を放った！', '', 0), 'リト')
+end
+
+check 'a skill with no sentence at all gives none' do
+  eq [], BT.skill_start(FakeSkillMsg.new('', '', 0), 'リト')
+  eq [], BT.skill_start(nil, 'リト'), 'and so does a missing row'
+end
+
+# failure_message indexes the three 用語 failure lines; 3 borrows the dodge line.
+check 'a skill picks which failure sentence says it did nothing' do
+  terms = Struct.new(:skill_failure_a, :skill_failure_b, :skill_failure_c, :dodge)
+            .new('には効かなかった！', 'は平気だった！', 'は眠らなかった！',
+                 'は身をかわした！')
+  eq 'スライムには効かなかった！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 0), 'スライム')
+  eq 'スライムは平気だった！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 1), 'スライム')
+  eq 'スライムは眠らなかった！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 2), 'スライム')
+  eq 'スライムは身をかわした！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 3), 'スライム'),
+     'index 3 borrows the dodge line'
+  eq 'スライムには効かなかった！',
+     BT.skill_failure(terms, nil, 'スライム'), 'no row falls to the first line'
+end
+
 # -- chipset terrain tags -----------------------------------------------------
 
 FakeChipsetRow = Struct.new(:name, :chipset_name, :passable_data_lower,
