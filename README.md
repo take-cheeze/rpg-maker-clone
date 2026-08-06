@@ -280,6 +280,12 @@
   before the save, overwritten between the save and the load, and compared after
   it, because a settled promise chain is also what a load that restores nothing
   looks like
+- **Equipment changes what an actor is**: `equip` mode hands the party a weapon
+  through an event command, walks the menu to Equip and puts it on, then asserts
+  the actor's *attack* rose — not merely that the slot filled, since a slot can
+  hold an object while the number the player sees never moves. `Scene_Equip` was
+  the last major scene nothing entered: the bed declared five equip types, a
+  weapon type and an armor type while shipping no weapons or armors at all
 - Messages are **operated**, not just opened: `message_play` mode shows a
   message and a two-way choice, pages the text through, moves the cursor to the
   *second* entry and confirms it, then checks which branch of the event ran —
@@ -345,8 +351,8 @@
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
   key moves the player), `message`, `message_play`, `transfer`, `common`,
-  `encounter`, `shop`, `menu`, `menu_play`, `animation`, `save`, `battle` or
-  `battle_play`, each with its own success line so a probe that
+  `encounter`, `shop`, `equip`, `menu`, `menu_play`, `animation`, `save`,
+  `battle` or `battle_play`, each with its own success line so a probe that
   merely ran cannot pass. A run ends as soon as its probes have reported rather
   than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest
   host instead of the time every run takes — a cut-off run reports nothing at

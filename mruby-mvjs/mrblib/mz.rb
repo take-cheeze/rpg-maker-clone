@@ -58,6 +58,15 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The equip probe's bed constants and bounds (see #maybe_equip_test). The
+  # party is handed the bed's weapon through a Change Weapons command before the
+  # menu opens: `Window_EquipItem` lists what the *party owns*, so an unowned
+  # weapon is not in the list to select.
+  EQUIP_WEAPON_ID = 1
+  EQUIP_MENU_INDEX = 2
+  EQUIP_PROBE_FRAMES = 1200
+  EQUIP_TAP_PERIOD = 12
+
   # The message play-out's bed constants and bounds (see
   # #maybe_message_play_test). The probe shows a two-line message, then a
   # two-way choice whose *second* branch writes `MESSAGE_PLAY_VAR`. Picking the
@@ -360,6 +369,45 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that hands the party the weapon the equip probe will put on, through a
+    # **Change Weapons** command (code 127) on the map interpreter — the same
+    # route a game uses, and the same reason the menu probe arms the party with
+    # an item: `Window_EquipItem` lists what the party *owns*, so a weapon
+    # nobody holds never appears to be chosen.
+    #
+    # `[weaponId, operation, operandType, operand, includeEquipped]`.
+    def equip_setup_js(weapon_id)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:127,indent:0,parameters:[#{weapon_id.to_i},0,0,1,false]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # JS that reads the equip flow back: the actor's attack, what is in the
+    # weapon slot, how many spare weapons the party holds, and which window has
+    # the cursor.
+    #
+    # `atk` is the claim that matters. A slot can hold an object while the
+    # parameter it is supposed to grant never reaches the actor — equipment is
+    # only equipment if `Game_Actor.paramPlus` is summing it — so the probe
+    # watches the number the player would see, not just the slot.
+    def equip_state_js(weapon_id)
+      "(function(){ var a = (typeof $gameActors !== 'undefined' && " \
+      "$gameActors) ? $gameActors.actor(1) : null; " \
+      "var w = (a && a.weapons && a.weapons()[0]) ? a.weapons()[0].id : 0; " \
+      "var held = -1; if (typeof $gameParty !== 'undefined' && $gameParty && " \
+      "typeof $dataWeapons !== 'undefined' && $dataWeapons[#{weapon_id.to_i}]) " \
+      "held = $gameParty.numItems($dataWeapons[#{weapon_id.to_i}]); " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; var win = '', idx = -1; " \
+      "var kids = (s && s._windowLayer) ? s._windowLayer.children : null; " \
+      "if (kids) { for (var i = 0; i < kids.length; i++) { var c = kids[i]; " \
+      "if (c && c.active && c.constructor && c.index) { " \
+      "win = c.constructor.name; idx = c.index(); break; } } } " \
+      "return 'atk=' + (a ? a.atk : -1) + ' weapon=' + w + ' held=' + held + " \
+      "' win=' + (win || '-') + ' idx=' + idx; })();"
     end
 
     # JS that runs the two event commands every RPG is built out of: **Show
@@ -905,6 +953,7 @@ class MZ
     maybe_encounter_test # CI: walk on map 2 until a random encounter fights
     maybe_shop_test # CI: open a shop from the map and buy something in it
     maybe_message_play_test # CI: page a message through and take a choice branch
+    maybe_equip_test # CI: walk the menu to Equip and put the bed's weapon on
     maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_menu_play_test # CI: use that menu and log the item healed and was spent
@@ -1087,7 +1136,7 @@ class MZ
                   animation_test_requested? || battle_test_troop > 0 ||
                   transfer_test_requested? || common_event_test_requested? ||
                   encounter_test_requested? || shop_test_requested? ||
-                  message_play_requested?
+                  message_play_requested? || equip_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -1376,6 +1425,96 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_equip_test was requested (a launcher constant set by main.cxx).
+  # Implies New Game, since the equip screen is reached through the map's menu.
+  def equip_test_requested?
+    (begin
+      MZ_EQUIP_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_equip_test is set (CI), walk the menu to Equip and put the bed's
+  # weapon on: cursor down to the Equip command, confirm into `Scene_Equip`,
+  # confirm through its command and slot windows, pick the weapon, and check
+  # that the actor's attack went up with it.
+  #
+  # `Scene_Equip` was the last major scene nothing entered, and equipment is the
+  # one place a *parameter* is supposed to change because of what an actor is
+  # holding: `Game_Actor.paramPlus` sums the equipped items' `params` into every
+  # stat the rest of the engine reads. The probe therefore watches `atk` rather
+  # than only the slot — a slot can hold an object while the number the player
+  # sees never moves, and that failure would look identical from the slot's side.
+  #
+  # The party is handed the weapon first (see MZ.equip_setup_js), because
+  # `Window_EquipItem` lists what the party owns.
+  def maybe_equip_test
+    return if @equip_test_done
+    return unless equip_test_requested?
+    return unless @equip_started || current_scene == "Scene_Map"
+
+    @equip_frame ||= 0
+    state = MV::JS.eval(self.class.equip_state_js(EQUIP_WEAPON_ID))
+    atk = MZ.state_field(state, "atk")
+    weapon = MZ.state_field(state, "weapon")
+    held = MZ.state_field(state, "held")
+
+    if @equip_frame.zero?
+      @equip_started = true
+      $stderr.puts "[MZ] auto equip test: #{state}"
+      MV::JS.eval(self.class.equip_setup_js(EQUIP_WEAPON_ID))
+    end
+    @equip_frame += 1
+
+    # The opening attack is read once the weapon has been handed over but before
+    # anything is worn, so the rise attributable to equipping is unambiguous.
+    @equip_atk0 = atk if @equip_atk0.nil? && held.to_i.positive? &&
+                         weapon.to_i.zero?
+    # Open the menu the way the menu probe does — Scene_Map's own callMenu —
+    # rather than by pushing the scene from outside.
+    MV::JS.eval(self.class.menu_probe_js) if current_scene == "Scene_Map"
+
+    if state != @equip_last_state
+      @equip_last_state = state
+      $stderr.puts "[MZ-EQUIP] state #{state}"
+    end
+
+    equipped = weapon == EQUIP_WEAPON_ID
+    stronger = equipped && !@equip_atk0.nil? && !atk.nil? && atk > @equip_atk0
+    @equip_atk = atk
+    @equip_state = state
+
+    # In the menu's command window the cursor has to come down to Equip first;
+    # everywhere else confirm advances, and once the weapon is on, cancel walks
+    # back out to the map.
+    keys = [RGSS::Input::C, RGSS::Input::B, RGSS::Input::DOWN]
+    keys.each { |k| RGSS::Input.release(k) }
+    if (@equip_frame % EQUIP_TAP_PERIOD).zero?
+      if stronger
+        RGSS::Input.press(RGSS::Input::B)
+      elsif state.to_s.include?("win=Window_MenuCommand") &&
+            MZ.state_field(state, "idx").to_i < EQUIP_MENU_INDEX
+        RGSS::Input.press(RGSS::Input::DOWN)
+      else
+        RGSS::Input.press(RGSS::Input::C)
+      end
+    end
+
+    returned = stronger && current_scene == "Scene_Map"
+    return if !returned && @equip_frame < EQUIP_PROBE_FRAMES
+
+    @equip_test_done = true
+    keys.each { |k| RGSS::Input.release(k) }
+    $stderr.puts "[MZ-EQUIP] atk_before=#{@equip_atk0} atk_after=#{@equip_atk} " \
+                 "weapon=#{weapon} equipped=#{equipped ? true : false} " \
+                 "stronger=#{stronger ? true : false} " \
+                 "returned=#{returned ? true : false} scene=#{current_scene} " \
+                 "last=[#{@equip_state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] equip test error: #{e.message}"
   end
 
   # Whether --mz_message_play was requested (a launcher constant set by
@@ -2067,6 +2206,7 @@ class MZ
     return if encounter_test_requested? && !encounter_shot_ready?
     return if shop_test_requested? && !shop_shot_ready?
     return if message_play_requested? && !message_play_shot_ready?
+    return if equip_test_requested? && !equip_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -2125,6 +2265,7 @@ class MZ
       [encounter_test_requested?, @enc_test_done],
       [shop_test_requested?, @shop_test_done],
       [message_play_requested?, @msg_play_done],
+      [equip_test_requested?, @equip_test_done],
       [message_test_requested?, @msg_test_done],
       [animation_test_requested?, @anim_test_done],
       [menu_test_requested?, @menu_test_done],
@@ -2151,6 +2292,13 @@ class MZ
       ""
     end
     !(path.nil? || path.empty?)
+  end
+
+  # Is this a frame worth photographing for the equip flow? The equip screen
+  # itself — its slot list and the status window showing the parameter change —
+  # rather than the map the run ends on. Bounded like the others.
+  def equip_shot_ready?
+    @equip_state.to_s.include?("win=Window_Equip") || @equip_test_done
   end
 
   # Is this a frame worth photographing for the message play-out? The choice
