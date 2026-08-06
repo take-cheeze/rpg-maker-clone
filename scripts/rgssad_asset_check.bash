@@ -35,7 +35,10 @@
 #     this check ran in CI: it passed locally, where no wine prefix exists, and
 #     failed there.)
 #   * a loose file next to the working directory, since a bare relative name is
-#     tried first. Both runs use an absolute --game_dir and a scratch cwd.
+#     tried first. Both runs use an absolute --game_dir and a scratch cwd -- the
+#     engine now changes into the game's own directory for an RGSS boot anyway
+#     (gap 0j), which for these runs is the same place, so the cd below only
+#     pins down what would otherwise be left to that.
 #
 # The graphic is loaded by the *game's own* Scene_Title, through
 # `RPG::Cache.title` -- there is no built-in title screen any more (ADR 0030) --
@@ -134,7 +137,9 @@ for which in with without ; do
     # Each run gets its own display: xvfb-run -a's probe is not atomic and can
     # steal a display from a concurrent run (see build.yml). Run from the packed
     # directory so the loader's bare-relative first candidate cannot pick up a
-    # loose file from the repo either.
+    # loose file from the repo either -- which is where the engine puts itself
+    # for an RGSS boot now, so this states the requirement rather than creating
+    # it.
     if ! (cd "${WORK}/${which}" && \
           xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
             --game_dir "${WORK}/${which}" --rgss_host_new_game \
