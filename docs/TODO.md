@@ -400,10 +400,23 @@ The work below is roughly ordered by the critical path to a walkable game
   `add_state` / `remove_state` / `state?`; **Full Recovery clears it**), which
   persists in both the Marshal save and the `.lsd` (chunk 108 fields 81/82,
   previously parsed-but-unused) and is restored by `from_lsd`, so a real save's
-  status ailments survive. The **item menu cures states**: a medicine with
-  `reverse_state_effect` set removes its `state_set` conditions from the target
-  (an antidote / herb — unconditional, matching EasyRPG's item algorithm), and
-  such an item now counts as usable when the target is afflicted even at full HP.
+  status ailments survive. The **item menu cures states**: a medicine's `state_set`
+  names the conditions it **cures**, and using it removes them from the target
+  (unconditional, matching EasyRPG's item algorithm); such an item counts as
+  usable when the target is afflicted even at full HP.
+  That polarity was read backwards at first — curing only when
+  `reverse_state_effect` was *set* — and **no item in either test bed sets it**,
+  so every shipped curative item was inert, in the menu and in a fight alike.
+  Nepheshel has thirteen medicines naming states without the flag
+  (アンチドーテ and ユニコーンの角 name all fifteen states; 気付け薬 /
+  ドラゴンブラッド / ドラゴンハート name 戦闘不能 alone, so they are revives)
+  and mtf-meido-action four. `reverse_state_effect` is what flips a medicine into
+  *inflicting*, exactly as it does for a skill; nothing in either bed sets it, so
+  that half is left unbuilt rather than guessed at. A fixture check cannot catch
+  a polarity error — it is written to match whatever the code does, and four of
+  them encoded the wrong reading quite happily — so
+  `rpg2k_testbed_logic_check.rb` now asserts against the **real** item table that
+  every curative medicine cures exactly the states it names.
   The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
   `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
   (zeroing HP), a downed actor can't be healed by HP changes, and curing the
