@@ -180,7 +180,7 @@ def fake_map_with_counters(id, events, counters)
                                    upper_layer: upper, events: events))
 end
 
-def fake_db(common = nil, troop_pages = nil)
+def fake_db(common = nil, troop_pages = nil, terrain_damage = 0)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
@@ -241,6 +241,9 @@ def fake_db(common = nil, troop_pages = nil)
       timings: { 1 => OpenStruct.new(frame: 1, flash_scope: 2, flash_red: 31,
                                      flash_green: 31, flash_blue: 31, flash_power: 20) }
     ) },
+    # Every tile of the synthetic map is chip 0, which the fake chipset tags as
+    # terrain 42 — so this one row decides whether walking hurts.
+    terrain: { 42 => OpenStruct.new(damage: terrain_damage) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -348,6 +351,8 @@ class SlipActor
   # marker sprite, which is what the rest of these checks already run on.
   attr_reader :charset_name, :charset_index
   attr_accessor :transparent
+  # 地形ダメージ無効 gear, which Party#apply_terrain_damage asks about.
+  attr_accessor :prevents_terrain_damage
 
   def initialize(states = [], hp = 100, mp = 20)
     @states = states
@@ -356,7 +361,10 @@ class SlipActor
     @charset_name = ''
     @charset_index = 0
     @transparent = false
+    @prevents_terrain_damage = false
   end
+
+  def prevents_terrain_damage?; @prevents_terrain_damage; end
 
   def dead?; @hp <= 0; end
 
@@ -380,8 +388,8 @@ def fake_party(members = [])
 end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
-              members: [])
-  db = fake_db(common, troop_pages)
+              members: [], terrain_damage: 0)
+  db = fake_db(common, troop_pages, terrain_damage)
   state = Game::State.new(fake_party(members), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
@@ -3643,6 +3651,49 @@ check 'walking slips HP from a poisoned member every fourth tile' do
   walk(scene, 1)
   eq 4, st.steps
   eq 99, hero.hp, 'the fourth tile slips 1 HP'
+end
+
+check 'walking a damaging terrain takes HP every tile' do
+  # 地形ダメージ: unlike the status slip this is a property of the ground, and it
+  # bites on every tile rather than on an interval. Nepheshel's ダメージ床 set and
+  # mtf-meido-action's Poison Swamp are the real ones, both at 1 HP.
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], terrain_damage: 3)
+  st = scene.instance_variable_get(:@state)
+
+  walk(scene, 1)
+  eq 1, st.steps
+  eq 97, hero.hp, 'the first tile already hurts'
+  walk(scene, 2)
+  eq 91, hero.hp, 'and so does every one after it'
+end
+
+check 'gear flagged 地形ダメージ無効 walks the damaging ground unharmed' do
+  hero = SlipActor.new([])
+  hero.prevents_terrain_damage = true
+  scene = new_scene({}, player: [0, 0], members: [hero], terrain_damage: 3)
+  walk(scene, 4)
+  eq 100, hero.hp, 'the boots blocked all four tiles'
+end
+
+check 'terrain damage cannot kill, and skips a member already down' do
+  hurt = SlipActor.new([], 2)
+  scene = new_scene({}, player: [0, 0], members: [hurt], terrain_damage: 5)
+  walk(scene, 3)
+  eq 1, hurt.hp, 'worn to 1 HP and left standing'
+  ok !hurt.dead?
+
+  down = SlipActor.new([], 0)
+  scene2 = new_scene({}, player: [0, 0], members: [down], terrain_damage: 5)
+  walk(scene2, 2)
+  eq 0, down.hp, 'a member already down is skipped'
+end
+
+check 'harmless ground takes nothing' do
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero])   # damage 0
+  walk(scene, 4)
+  eq 100, hero.hp
 end
 
 check 'a clear member walks the same ground untouched' do
