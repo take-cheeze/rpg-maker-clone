@@ -4,7 +4,7 @@ Date: 2026-08-04
 
 ## Status
 
-Proposed
+Accepted — implemented 2026-08-06.
 
 ## Context
 
@@ -185,13 +185,44 @@ smaller than the worst case. Two levers, neither costed yet:
   available, not some hypothetical one. (One map, 15 rows — a small sample, and
   the only sample there is.)
 
-What remains open is therefore narrower: the strip **height**, and how hard to
-lean on lazy allocation to keep the common case cheap. That is a
-memory-against-redraw trade on `psp` / `wio` hardware that cannot be profiled
-from the environment this was written in, so it is left open rather than guessed
-at.
+**Resolved as five-row strips, pooled and lazily allocated.** A strip is
+`TILEMAP_PRIO_SPAN` (5) rows tall and a tile of priority `p` lands at local row
+`5 - p`, which depends only on the priority and not on the row it came from.
+
+Two things the implementation added on top of the sketch above:
+
+- **Strips are pooled by `bucket % 24`, not keyed on the bucket.** Keyed on the
+  absolute bucket, walking down a 200-row map allocates a strip per row and never
+  releases one — 200 canvases for a map that shows twenty. The modulus only has
+  to exceed the number of buckets that can be visible at once (16 rows + 5 span =
+  21), and a slot is reused in place as the map scrolls rather than reallocated,
+  so scrolling costs nothing. The slot records which bucket it currently carries,
+  since that is what its position and `z` derive from.
+- **Only the XP path moved.** The VX / MV tile model routes on `flags & 0x10` and
+  keeps the single flat above-canvas; this ADR is about RMXP's `priorities`, and
+  widening it would have meant changing a second tile model with no test bed for
+  the priority behaviour.
 
 ## Consequences
+
+Measured on the XP test bed, booted under Xvfb:
+
+- **Four strips, not twenty-one.** The visible map allocates buckets 7, 8, 10 and
+  18 — matching the priorities the survey above found on rows 3..6 — so 1.6 MiB
+  of canvases against the flat layer's 1.17 MiB, rather than the 24.6 MiB the
+  naive reading would have cost.
+- **The `z` values are the formula.** Bucket 7 takes `z = 7*32 + 32 - 0 = 256`,
+  bucket 18 takes 608. A character standing on row 7 computes the same 256 from
+  RMXP's own `screen_z`, which is the point: the two sort against each other
+  because they are on one scale.
+- `--rgss_effect_probe` still passes, and both boot checks still drive real game
+  data to the map — the crash-on-map-load risk this ADR called out as worse than
+  cosmetic.
+
+Still unverified here: that a roof *visually* occludes a character. The XP test
+bed ships no image assets, so its tilesets load as blank bitmaps. Structure,
+placement, `z` and survival are checked; appearance wants a project with real
+graphics.
 
 - **Correct occlusion.** Characters walk behind roofs/tree crowns above them and
   in front of the same tiles below them, the defining RMXP map look, for the
