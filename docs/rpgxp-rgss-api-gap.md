@@ -173,10 +173,29 @@ a game's engine took a keypress and acted on it, rather than merely drawing.
 `--rgss_host_move_test` and `--rgss_host_menu_test` are the two rungs above that,
 run in the same pass: walk the party across the game's own passability
 (`[RPGXP-HOST-MOVE]`), then press cancel and report where the game went
-(`[RPGXP-HOST-MENU]`). The menu is the interesting one for this document — it is
-the first thing a game draws out of its *own* `Window_Base` subclasses, its own
-windowskin, its own font and its own `Bitmap#draw_text`, none of which a map
-scene touches. Whatever it reports is the next entry here.
+(`[RPGXP-HOST-MENU]`). The menu matters here because it is the first thing a game
+draws out of its *own* `Window_Base` subclasses, its own windowskin, its own font
+and its own `Bitmap#draw_text`, none of which a map scene touches. The editor bed
+passed it first time — and then, with the confirm taps still running, walked on
+into its own `Scene_Item`:
+
+```
+[RPGXP-HOST-SCENE] Scene_Map frame=41
+[RPGXP-HOST-MOVE] start=9,7 end=9,8 moved=true frame=221
+[RPGXP-HOST-SCENE] Scene_Menu frame=242
+[RPGXP-HOST-MENU] scene=Scene_Menu opened=true frame=301
+[RPGXP-HOST-SCENE] Scene_Item frame=321
+```
+
+`--rgss_host_battle_test` is the rung above *that*, and takes its own pass: a
+battle is called from the map, and the pass above ends inside the menu. It sets
+the same five `$game_temp` fields the stock `Interpreter#command_301` does — the
+only probe here that writes to a game's globals rather than just reading them,
+because no keypress starts a battle — and reports `[RPGXP-HOST-BATTLE]`. It is
+the biggest surface of the lot: a battle builds the game's own
+`Spriteset_Battle`, so every enemy is a `Sprite_Battler` on top of the
+`RPG::Sprite` in gap 0, whose transitions, damage pop-up and animation playback
+nothing had run before. Whatever it reports is the next entry here.
 
 ### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
 

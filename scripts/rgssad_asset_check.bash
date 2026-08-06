@@ -44,7 +44,7 @@
 # the test.
 #
 # Usage: ./scripts/rgssad_asset_check.bash [server_num] [game_dir]
-#   server_num  xvfb-run --server-num to use (default 113; see the reserved
+#   server_num  xvfb-run --server-num to use (default 115; see the reserved
 #               display numbers in .github/workflows/build.yml)
 #   game_dir    defaults to the repo's RPG Maker XP test bed
 
@@ -52,7 +52,7 @@ set -eu -o pipefail
 
 cd "$(dirname "$0")/.."
 
-SERVER_NUM="${1:-113}"
+SERVER_NUM="${1:-115}"
 GAME="${2:-data/OpenGame.exe/Testbed/XP}"
 ENGINE="${ENGINE:-./build/rpg_maker_clone}"
 TIMEOUT_MS="${RGSSAD_TIMEOUT_MS:-20000}"

@@ -30,6 +30,13 @@
 #     classes, its own windowskin and its own font, none of which a map scene
 #     touches. Asserted on the editor bed (stock scripts, menu enabled), logged
 #     on the released game.
+#   * a second pass over the editor bed calls a battle the way the game's own
+#     Battle Processing command does and reports
+#     `[RPGXP-HOST-BATTLE] scene=.. reached=..`. Its own pass because a battle
+#     is called from the map and the pass above ends inside the menu; the editor
+#     bed only, because a released game's opening is an event sequence a battle
+#     call would land in the middle of. This is the biggest surface of the lot:
+#     every enemy in it is a `Sprite_Battler`, on top of `RPG::Sprite`.
 #   * a `script host failed` line fails the run: the game's own scripts stopping
 #     is the failure this check exists to catch.
 #
@@ -39,7 +46,9 @@
 #
 # Usage: ./scripts/rpgxp_boot_check.bash [server_num] [game_dir...]
 #   server_num  xvfb-run --server-num to use (default 112; see the reserved
-#               display numbers in .github/workflows/build.yml)
+#               display numbers in .github/workflows/build.yml). Each run takes
+#               the next one, so the two beds plus the editor bed's battle pass
+#               use 112..114.
 #   game_dir    defaults to the repo's two RPG Maker XP beds -- the editor-shaped
 #               OpenGame test bed and the released Pray for You
 
@@ -53,10 +62,10 @@ shift || true
 ENGINE="${ENGINE:-./build/rpg_maker_clone}"
 # Wall-clock budget per run. The engine counts it in Graphics.update, but what
 # has to fit inside it is a *frame* count -- the game's own title screen, then
-# the settle and the four held directions of the move probe -- and CI has no GPU,
-# so a 640x480 tilemap redraw is nowhere near the 40 fps RGSS nominally runs at.
-# 20s was enough to reach the map and not to finish the walk; this is sized so
-# the probe still lands at well under ten frames a second.
+# the settle, the four held directions of the move probe and the menu -- and CI
+# has no GPU, so a 640x480 tilemap redraw is nowhere near the 40 fps RGSS
+# nominally runs at. 20s was enough to reach the map and not to finish the walk;
+# this is sized so the probes still land at well under ten frames a second.
 TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-45000}"
 
 GAMES=("$@")
@@ -153,6 +162,21 @@ for game in "${GAMES[@]}" ; do
     run_boot "${game}" "${num}" "script host" \
         "--rgss_host_move_test --rgss_host_menu_test" 2 "${markers[@]}" ||
         failed=$((failed + 1))
+    num=$((num + 1))
+
+    # Battle needs its own pass: it has to be called from the game's own map,
+    # and the pass above deliberately leaves the game inside its menu. Only the
+    # editor bed, whose stock database ships 32 troops -- a released game's
+    # opening is an event sequence that a battle call would land in the middle
+    # of, which says nothing about the engine.
+    case "${game}" in
+        *Testbed*)
+            run_boot "${game}" "${num}" "script host: battle" \
+                "--rgss_host_battle_test" 2 \
+                '\[RPGXP-HOST-BATTLE\] .*reached=true' ||
+                failed=$((failed + 1))
+            ;;
+    esac
 
     num=$((num + 1))
 done
