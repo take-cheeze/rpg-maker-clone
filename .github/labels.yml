@@ -161,3 +161,11 @@
 - name: "dependencies"
   color: "0366d6"
   description: "Dependency updates (used by dependabot)"
+# Dependabot puts these on the pull requests it opens and recreates them if
+# they go missing, so they are listed with the colour and wording it uses.
+- name: "github_actions"
+  color: "000000"
+  description: "Pull requests that update GitHub Actions code"
+- name: "submodules"
+  color: "000000"
+  description: "Pull requests that update submodules code"
