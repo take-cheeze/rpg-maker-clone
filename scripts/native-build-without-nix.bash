@@ -98,7 +98,20 @@ if /bin/sh -c 'command -v rake' >/dev/null 2>&1; then
   echo "rake already reachable from /bin/sh"
 else
   rake_bin="$(command -v rake || true)"
-  [ -n "$rake_bin" ] || { echo "no rake found; gem install rake" >&2; exit 1; }
+  # A version manager (rbenv, asdf, rvm) puts rake in a per-version bin that is
+  # only on an *interactive* PATH, so `command -v` misses it here even though
+  # `rake` works in a terminal -- and "gem install rake" is then both wrong and,
+  # behind a proxy that blocks rubygems, impossible. Ruby knows where its own
+  # gem executables live, so ask it before giving up.
+  if [ -z "$rake_bin" ] && command -v ruby >/dev/null 2>&1; then
+    gem_bin="$(ruby -e 'print Gem.bindir' 2>/dev/null || true)"
+    [ -n "$gem_bin" ] && [ -x "$gem_bin/rake" ] && rake_bin="$gem_bin/rake"
+  fi
+  [ -n "$rake_bin" ] || {
+    echo "no rake found on PATH, and ruby -e 'print Gem.bindir' has none" >&2
+    echo "install it with: gem install rake" >&2
+    exit 1
+  }
   ln -sf "$rake_bin" /usr/local/bin/rake
   echo "linked $rake_bin -> /usr/local/bin/rake"
 fi

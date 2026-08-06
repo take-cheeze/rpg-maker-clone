@@ -213,6 +213,15 @@ DEFINE_bool(
     "goes to Effekseer, whose WASM runtime this host does not start. Used in "
     "CI");
 DEFINE_bool(
+    mz_message_play,
+    false,
+    "For RPG Maker MZ: show a message and a choice on the map and operate "
+    "them — page the text through, move the cursor to the second choice and "
+    "confirm it — then log which branch of the event actually ran. The message "
+    "probe only asserts that a window opened; this covers the window taking "
+    "input, closing again, and the interpreter branching on the answer. "
+    "Used in CI");
+DEFINE_bool(
     mz_shop_test,
     false,
     "For RPG Maker MZ: open a shop from the map with a Shop Processing command "
@@ -1078,6 +1087,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
                 mrb_bool_value(FLAGS_mz_animation_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_MESSAGE_PLAY"),
+                mrb_bool_value(FLAGS_mz_message_play));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_SHOP_TEST"),
                 mrb_bool_value(FLAGS_mz_shop_test));

@@ -434,6 +434,22 @@ jobs:
               MZ_MODE: common
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # The message check above asserts a window opened over the map, which
+          # says nothing about the window taking input, closing again, or the
+          # interpreter doing anything with the answer — the same
+          # scene-was-reached shape that hid the frozen battles. This mode shows
+          # a message and a two-way choice, pages the text through, moves the
+          # cursor to the *second* entry and confirms it, then checks which
+          # branch of the event ran. The first entry is the default, so a run
+          # that never moved the cursor takes the other branch and reports
+          # picked=false: "a choice was made" and "a window appeared" are told
+          # apart. See ADR 0004 M6.3p.
+          - name: MZ message-play smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: message_play
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           - name: MZ menu smoke test
             continue-on-error: true
             env:

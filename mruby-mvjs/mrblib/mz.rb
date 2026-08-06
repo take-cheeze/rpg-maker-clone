@@ -58,6 +58,26 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The message play-out's bed constants and bounds (see
+  # #maybe_message_play_test). The probe shows a two-line message, then a
+  # two-way choice whose *second* branch writes `MESSAGE_PLAY_VAR`. Picking the
+  # second one is the point: the first is the default, so a run that never
+  # moved the cursor would take it, and the branch that ran is what proves the
+  # choice was really made.
+  MESSAGE_PLAY_VAR = 5
+  MESSAGE_PLAY_PICKED = 55
+  MESSAGE_PLAY_UNPICKED = 11
+  MESSAGE_PLAY_FRAMES = 900
+  MESSAGE_PLAY_TAP_PERIOD = 12
+
+  # Frames to sit on the map before starting the sequence. The choice list is
+  # the one frame of this run worth photographing, and it is only up for the
+  # dozen frames between the cursor moving and confirm landing — left to run at
+  # once, it came and went at frame 61 while the screenshot's own settle delay
+  # (SHOT_DELAY_FRAMES) still had it blocked, so the captured picture was a bare
+  # map. Waiting past that delay puts the two in the right order.
+  MESSAGE_PLAY_START_FRAMES = 150
+
   # The shop probe's bed constants and bounds (see #maybe_shop_test). The party
   # is given `SHOP_GOLD` before the shop opens — it starts with none, and
   # `Window_ShopBuy.isEnabled` greys out anything it cannot afford, so a
@@ -340,6 +360,55 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that runs the two event commands every RPG is built out of: **Show
+    # Text** (101 plus its 401 lines) and **Show Choices** (102, its 402
+    # branches and the 404 that ends them), on the map interpreter.
+    #
+    # The choice is the part with teeth. `command102` hands
+    # `$gameMessage.setChoices` a callback that records which entry was taken,
+    # and `command402` compares that record against its own index and skips its
+    # branch when they differ — so a variable written inside one branch and not
+    # the other says exactly which way the interpreter went. Each branch writes
+    # a different value to the same variable, so neither "nothing ran" nor "the
+    # wrong branch ran" can be mistaken for success.
+    def message_play_probe_js(var_id, picked, unpicked, text)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:101,indent:0,parameters:['',0,0,2,'']}," \
+      "{code:401,indent:0,parameters:[#{js_string(text)}]}," \
+      "{code:401,indent:0,parameters:[#{js_string('and a second line')}]}," \
+      "{code:102,indent:0,parameters:[['First','Second'],1,0,2,0]}," \
+      "{code:402,indent:0,parameters:[0,'First']}," \
+      "{code:122,indent:1,parameters:[#{var_id.to_i},#{var_id.to_i},0,0," \
+      "#{unpicked.to_i}]}," \
+      "{code:0,indent:1,parameters:[]}," \
+      "{code:402,indent:0,parameters:[1,'Second']}," \
+      "{code:122,indent:1,parameters:[#{var_id.to_i},#{var_id.to_i},0,0," \
+      "#{picked.to_i}]}," \
+      "{code:0,indent:1,parameters:[]}," \
+      "{code:404,indent:0,parameters:[]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # JS that reads the message play-out back: whether a message is up, how open
+    # its window is, whether the choice list is showing, and the variable the
+    # branches write.
+    def message_play_state_js(var_id)
+      "(function(){ var m = (typeof $gameMessage !== 'undefined' && " \
+      "$gameMessage) ? $gameMessage : null; " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; " \
+      "var mo = (s && s._messageWindow) ? s._messageWindow.openness : -1; " \
+      "var ch = 0; var kids = (s && s._windowLayer) ? s._windowLayer.children " \
+      ": null; if (kids) { for (var i = 0; i < kids.length; i++) { " \
+      "var c = kids[i]; if (c && c.active && c.constructor && " \
+      "c.constructor.name === 'Window_ChoiceList') { ch = 1; break; } } } " \
+      "var v = (typeof $gameVariables !== 'undefined' && $gameVariables) ? " \
+      "$gameVariables.value(#{var_id.to_i}) : -1; " \
+      "return 'busy=' + (m && m.isBusy() ? 1 : 0) + ' mopen=' + mo + " \
+      "' choice=' + ch + ' branch=' + v; })();"
     end
 
     # JS that opens a shop the way a game does: **Change Gold** (code 125) so
@@ -835,6 +904,7 @@ class MZ
     maybe_common_event_test # CI: run both kinds of common event and log each
     maybe_encounter_test # CI: walk on map 2 until a random encounter fights
     maybe_shop_test # CI: open a shop from the map and buy something in it
+    maybe_message_play_test # CI: page a message through and take a choice branch
     maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_menu_play_test # CI: use that menu and log the item healed and was spent
@@ -1016,7 +1086,8 @@ class MZ
                   menu_test_requested? || save_test_requested? ||
                   animation_test_requested? || battle_test_troop > 0 ||
                   transfer_test_requested? || common_event_test_requested? ||
-                  encounter_test_requested? || shop_test_requested?
+                  encounter_test_requested? || shop_test_requested? ||
+                  message_play_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -1305,6 +1376,99 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_message_play was requested (a launcher constant set by
+  # main.cxx). Implies New Game, since the message is shown on the map.
+  def message_play_requested?
+    (begin
+      MZ_MESSAGE_PLAY
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_message_play is set (CI), show a message and then a choice, and
+  # *operate* them: tap confirm to page the text through and close the window,
+  # move the cursor down to the second choice, and confirm it — then check which
+  # branch of the event actually ran.
+  #
+  # The message probe asserts a window opened over the map, which is where every
+  # other in-game system's coverage started and stopped before M6.3i. It says
+  # nothing about the window taking input, closing again, or the interpreter
+  # doing anything with the answer. Those are the parts a game is built out of:
+  # `Window_Message` advancing on confirm, `Window_ChoiceList` moving its cursor
+  # and reporting through `$gameMessage`'s callback, and `command402` skipping
+  # the branch that was not chosen.
+  #
+  # Down-then-confirm rather than confirm alone, because the first entry is the
+  # default: a run that never moved the cursor would take it and still look like
+  # a choice had been made. The second branch writing its own value is what
+  # tells the two apart.
+  def maybe_message_play_test
+    return if @msg_play_done
+    return unless message_play_requested?
+    return unless @msg_play_started || current_scene == "Scene_Map"
+
+    unless @msg_play_started
+      @msg_play_wait = (@msg_play_wait || 0) + 1
+      return if @msg_play_wait < MESSAGE_PLAY_START_FRAMES
+    end
+
+    @msg_play_frame ||= 0
+    if @msg_play_frame.zero?
+      @msg_play_started = true
+      $stderr.puts "[MZ] auto message play: choice branch " \
+                   "#{MESSAGE_PLAY_VAR} -> #{MESSAGE_PLAY_PICKED}"
+      MV::JS.eval(
+        self.class.message_play_probe_js(MESSAGE_PLAY_VAR,
+                                         MESSAGE_PLAY_PICKED,
+                                         MESSAGE_PLAY_UNPICKED,
+                                         MESSAGE_PROBE_TEXT)
+      )
+    end
+    @msg_play_frame += 1
+
+    state = MV::JS.eval(self.class.message_play_state_js(MESSAGE_PLAY_VAR))
+    if state != @msg_play_last_state
+      @msg_play_last_state = state
+      $stderr.puts "[MZ-MSGPLAY] state #{state}"
+    end
+
+    opened = MZ.state_field(state, "mopen").to_i.positive?
+    @msg_play_opened ||= opened
+    choice = MZ.state_field(state, "choice").to_i.positive?
+    @msg_play_choice ||= choice
+    branch = MZ.state_field(state, "branch").to_i
+    @msg_play_branch = branch
+
+    # While the choice list is up the cursor has to move first; everywhere else
+    # confirm is what advances. Both are tapped, not held — rmmz reports a
+    # trigger on the key's edge.
+    keys = [RGSS::Input::C, RGSS::Input::DOWN]
+    keys.each { |k| RGSS::Input.release(k) }
+    if (@msg_play_frame % MESSAGE_PLAY_TAP_PERIOD).zero?
+      if choice && !@msg_play_moved
+        @msg_play_moved = true
+        RGSS::Input.press(RGSS::Input::DOWN)
+      else
+        RGSS::Input.press(RGSS::Input::C)
+      end
+    end
+
+    picked = branch == MESSAGE_PLAY_PICKED
+    closed = @msg_play_opened && !opened
+    return if !(picked && closed) && @msg_play_frame < MESSAGE_PLAY_FRAMES
+
+    @msg_play_done = true
+    keys.each { |k| RGSS::Input.release(k) }
+    $stderr.puts "[MZ-MSGPLAY] opened=#{@msg_play_opened ? true : false} " \
+                 "closed=#{closed ? true : false} " \
+                 "choice_shown=#{@msg_play_choice ? true : false} " \
+                 "branch=#{@msg_play_branch} expected=#{MESSAGE_PLAY_PICKED} " \
+                 "picked=#{picked ? true : false} last=[#{state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] message play error: #{e.message}"
   end
 
   # Whether --mz_shop_test was requested (a launcher constant set by main.cxx).
@@ -1902,6 +2066,7 @@ class MZ
     return if menu_play_requested? && !menu_play_shot_ready?
     return if encounter_test_requested? && !encounter_shot_ready?
     return if shop_test_requested? && !shop_shot_ready?
+    return if message_play_requested? && !message_play_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -1959,6 +2124,7 @@ class MZ
       [common_event_test_requested?, @common_test_done],
       [encounter_test_requested?, @enc_test_done],
       [shop_test_requested?, @shop_test_done],
+      [message_play_requested?, @msg_play_done],
       [message_test_requested?, @msg_test_done],
       [animation_test_requested?, @anim_test_done],
       [menu_test_requested?, @menu_test_done],
@@ -1985,6 +2151,14 @@ class MZ
       ""
     end
     !(path.nil? || path.empty?)
+  end
+
+  # Is this a frame worth photographing for the message play-out? The choice
+  # list, which is the one frame in the run where the window under test is on
+  # screen — by the time the branch has run the message has closed again and the
+  # picture is a bare map. Bounded like the others.
+  def message_play_shot_ready?
+    @msg_play_choice || @msg_play_done
   end
 
   # Is this a frame worth photographing for the shop? The quantity window, one

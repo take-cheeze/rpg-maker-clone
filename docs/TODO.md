@@ -785,7 +785,8 @@ The work below is roughly ordered by the critical path to a walkable game
   **The action lines come from the 用語 table now too** (ADR 0036), which is the
   larger half of the same argument: every round prints an action, where only some
   print a state. The log used to invent its English ("Hero hits Slime for 42");
-  a field-by-field audit found both test beds filling in **126 of the 127 term
+  a field-by-field audit (`ruby scripts/rpg2k_field_audit.rb`, see below) found
+  both test beds filling in **126 of the 127 term
   fields** while the runtime read two of them. `Game::States::BattleText` composes
   them as the predicates they are, and `battle_action_body` prints what the
   battler did and then what it did to the target, the way RPG_RT splits it:
@@ -1346,6 +1347,23 @@ The work below is roughly ordered by the critical path to a walkable game
   which the entry does not carry), the `position` field (whole screen / target /
   above / below — carried but not acted on, so everything draws centred), and
   per-cell tone and scale, which the map path has never had either. See ADR 0037.
+- ✅ **Which fields the games set that the runtime never reads** —
+  `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
+  and always exits 0): for every scalar database field it counts the rows of the
+  real test beds that set it away from its schema default, and reports the ones
+  whose name appears nowhere in `mruby-rpg2k/mrblib`. A field the schema parses
+  and the runtime never mentions is a feature the author paid for and the player
+  does not get, and the row count is a decent proxy for how much of the game that
+  is. Six of this runtime's RPG2000 decisions came out of asking that question
+  (ADRs 0031-0036), and none of them was visible to the fixture suites: in every
+  case the fixtures encoded the same assumption as the code, because they were
+  written to match it. Only a real game's tables disagree. The name search is
+  crude in one direction on purpose — a field named only in a comment counts as
+  read, so the list under-reports and never over-reports. A row is a question,
+  not a defect: the script carries a `NOT_OURS` table of fields checked against
+  EasyRPG and deliberately left alone (`levitate` and `state_chance` are RPG2003
+  only, `message_affected` has no known trigger, and the two critical-hit terms
+  are side-keying-unresolved, ADR 0036), so nobody re-derives them.
 
 ## RPG Maker with RGSS (XP / VX / VXAce)
 

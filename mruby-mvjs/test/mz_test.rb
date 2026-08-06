@@ -530,6 +530,55 @@ assert 'MZ.encounter_state_js reports the step counter, not just the outcome' do
                MV::JS.eval(MZ.encounter_state_js)
 end
 
+assert 'MZ.message_play_probe_js builds a choice with two distinct branches' do
+  MV::JS.eval(
+    "globalThis.$gameMap = { _interpreter: { setup: function (list, id) { " \
+    "this.list = list; this.eventId = id; } } };"
+  )
+  MV::JS.eval(MZ.message_play_probe_js(5, 55, 11, "hello"))
+  list = "$gameMap._interpreter.list"
+  # Show Text, its two lines, then Show Choices.
+  assert_equal 101, MV::JS.eval("#{list}[0].code")
+  assert_equal 401, MV::JS.eval("#{list}[1].code")
+  assert_equal "hello", MV::JS.eval("#{list}[1].parameters[0]")
+  assert_equal 102, MV::JS.eval("#{list}[3].code")
+  assert_equal "First,Second", MV::JS.eval("#{list}[3].parameters[0].join(',')")
+
+  # Two branches, each writing the *same* variable a *different* value: that is
+  # what makes the branch that ran identifiable. A single-branch list could not
+  # tell "the choice was made" from "nothing happened".
+  assert_equal 402, MV::JS.eval("#{list}[4].code")
+  assert_equal 0, MV::JS.eval("#{list}[4].parameters[0]")
+  assert_equal "5,5,0,0,11", MV::JS.eval("#{list}[5].parameters.join(',')")
+  assert_equal 402, MV::JS.eval("#{list}[7].code")
+  assert_equal 1, MV::JS.eval("#{list}[7].parameters[0]")
+  assert_equal "5,5,0,0,55", MV::JS.eval("#{list}[8].parameters.join(',')")
+  # ...closed by the end-of-branches command, then the end of the list.
+  assert_equal 404, MV::JS.eval("#{list}[10].code")
+  assert_equal 0, MV::JS.eval("#{list}[11].code")
+end
+
+assert 'MZ.message_play_state_js sees the choice window and the branch taken' do
+  MV::JS.eval(<<~'JS')
+    function Window_ChoiceList() {}
+    globalThis.$gameMessage = { isBusy: function () { return true; } };
+    globalThis.$gameVariables = { value: function () { return 55; } };
+    globalThis.SceneManager = { _scene: {
+      _messageWindow: { openness: 255 },
+      _windowLayer: { children: [new Window_ChoiceList()] }
+    } };
+    SceneManager._scene._windowLayer.children[0].active = true;
+    SceneManager._scene._windowLayer.children[0].index = function () { return 1; };
+  JS
+  assert_equal "busy=1 mopen=255 choice=1 branch=55",
+               MV::JS.eval(MZ.message_play_state_js(5))
+
+  # A choice window that is not accepting input is not a choice being made.
+  MV::JS.eval("SceneManager._scene._windowLayer.children[0].active = false;")
+  assert_equal "busy=1 mopen=255 choice=0 branch=55",
+               MV::JS.eval(MZ.message_play_state_js(5))
+end
+
 assert 'the MZ probes are inert before the engine defines their globals' do
   # Every probe runs each frame from MZ#main_loop, including the frames before
   # the boot has defined $gameMessage / SceneManager / $gameMap. None may throw.
@@ -543,6 +592,7 @@ assert 'the MZ probes are inert before the engine defines their globals' do
   assert_nothing_raised { MV::JS.eval(MZ.battle_probe_js(1)) }
   assert_nothing_raised { MV::JS.eval(MZ.transfer_probe_js(2, 4, 5)) }
   assert_nothing_raised { MV::JS.eval(MZ.common_event_probe_js(2, 2)) }
+  assert_nothing_raised { MV::JS.eval(MZ.message_play_probe_js(5, 55, 11, "x")) }
   MV::JS.eval("delete globalThis.$gamePlayer; delete globalThis.$gameTroop;")
   assert_equal "map=-1 steps=-1 x=-1 y=-1 troop=0",
                MV::JS.eval(MZ.encounter_state_js)
