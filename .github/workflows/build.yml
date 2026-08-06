@@ -389,6 +389,21 @@ jobs:
               MZ_MODE: message
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # The first thing here that leaves the start map. A bed with one map
+          # never loads a second one, so Transfer Player, Scene_Map re-creating
+          # itself, DataManager.loadMapData for a MapXXX.json that was not read
+          # at boot, and Game_Map.setupEvents for the arriving map all had no
+          # coverage. The bed gained a second map for it. Asserts `moved=true`
+          # (the map id changed), `landed=true` (the player is on the requested
+          # tile) and `arrived=true` — the destination's *own* parallel event
+          # having run, which is what separates the id moving from the map
+          # actually loading. See ADR 0004 M6.3l.
+          - name: MZ transfer smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: transfer
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           - name: MZ menu smoke test
             continue-on-error: true
             env:

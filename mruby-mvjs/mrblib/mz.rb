@@ -58,6 +58,16 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # Where the transfer probe sends the player, and how long it waits for the
+  # destination to load (see #maybe_transfer_test). Map 2 and the tile are the
+  # bed's (scripts/gen-mz-sample.py); the wait covers the fade out, the scene
+  # re-creation, `DataManager.loadMapData` and the fade back in, all at
+  # software-GL speed.
+  TRANSFER_MAP_ID = 2
+  TRANSFER_X = 4
+  TRANSFER_Y = 5
+  TRANSFER_PROBE_FRAMES = 300
+
   # The menu-play probe's setup and bounds (see #maybe_menu_play_test). The
   # party is given `MENU_PLAY_ITEMS` of item `MENU_PLAY_ITEM_ID` and the actor
   # is wounded by `MENU_PLAY_WOUND` HP *before* the menu opens, both through the
@@ -303,6 +313,46 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that leaves the start map the way a game does: a **Transfer Player**
+    # event command (code 201) run through the map interpreter, which is what
+    # reserves the move and puts the interpreter into its `"transfer"` wait
+    # mode. `Scene_Map` then performs it on a later frame — re-creating itself,
+    # asking `DataManager.loadMapData` for the destination and setting up that
+    # map's own events.
+    #
+    # `[designation, mapId, x, y, direction, fade]`, designation 0 = direct
+    # (1 would read the three from variables), direction 0 = keep facing,
+    # fade 0 = black, exactly as the editor emits them.
+    def transfer_probe_js(map_id, x, y)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:201,indent:0,parameters:[0,#{map_id.to_i},#{x.to_i}," \
+      "#{y.to_i},0,0]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # JS that reads the transfer back: which map is loaded, where the player
+    # stands, and the variable the *destination* map's own parallel event
+    # writes.
+    #
+    # That last field is the point. `$gameMap.mapId()` moving proves the id
+    # changed; it does not prove the new map's data was fetched or that its
+    # events were set up. The bed's second map runs a parallel event writing
+    # variable 2, which only ever becomes non-zero if the arriving map really
+    # loaded and its interpreter is running — see scripts/gen-mz-sample.py.
+    def transfer_state_js
+      "(function(){ var m = (typeof $gameMap !== 'undefined' && $gameMap) ? " \
+      "$gameMap.mapId() : -1; " \
+      "var p = (typeof $gamePlayer !== 'undefined' && $gamePlayer) ? " \
+      "$gamePlayer : null; " \
+      "var v = (typeof $gameVariables !== 'undefined' && $gameVariables) ? " \
+      "$gameVariables.value(2) : -1; " \
+      "var ev = (typeof $gameMap !== 'undefined' && $gameMap && " \
+      "$gameMap.events) ? $gameMap.events().length : -1; " \
+      "return 'map=' + m + ' x=' + (p ? p.x : -1) + ' y=' + (p ? p.y : -1) + " \
+      "' arrived=' + v + ' events=' + ev; })();"
     end
 
     # JS that sets the menu-play probe's starting condition the way a game
@@ -654,6 +704,7 @@ class MZ
     maybe_move_test # CI: hold a direction on the map and log that the player moved
     maybe_message_test # CI: show a message on the map and log the window opened
     maybe_animation_test # CI: play an animation on the player and log it drew
+    maybe_transfer_test # CI: Transfer Player to map 2 and log that it loaded
     maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_menu_play_test # CI: use that menu and log the item healed and was spent
@@ -833,7 +884,8 @@ class MZ
     return unless new_game_requested? || move_test_requested? ||
                   audio_test_requested? || message_test_requested? ||
                   menu_test_requested? || save_test_requested? ||
-                  animation_test_requested? || battle_test_troop > 0
+                  animation_test_requested? || battle_test_troop > 0 ||
+                  transfer_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -1122,6 +1174,75 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_transfer_test was requested (a launcher constant set by
+  # main.cxx). Implies New Game, since the transfer starts from the map.
+  def transfer_test_requested?
+    (begin
+      MZ_TRANSFER_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_transfer_test is set (CI), once on the start map run a Transfer
+  # Player command to the bed's second map and log whether the destination
+  # actually loaded.
+  #
+  # This is the first thing in the MZ line that leaves `Map001`. Everything
+  # about arriving somewhere else is its own path — `Game_Player.reserveTransfer`
+  # and the interpreter's `"transfer"` wait, `Scene_Map` tearing itself down and
+  # re-creating, `DataManager.loadMapData` fetching a `MapXXX.json` that was
+  # never read at boot, a fresh `Spriteset_Map` over a different tile layout,
+  # and `Game_Map.setupEvents` for the arriving map's events — and a bed with
+  # one map exercises none of it.
+  #
+  # Three claims, in increasing strength: the map id moved, the player is
+  # standing on the requested tile, and the destination's *own* parallel event
+  # has run (`arrived=`). The last is what separates "the id changed" from "the
+  # map loaded and is running" — see MZ.transfer_state_js.
+  def maybe_transfer_test
+    return if @transfer_test_done
+    return unless transfer_test_requested?
+    return unless @transfer_started || current_scene == "Scene_Map"
+
+    @transfer_frame ||= 0
+    if @transfer_frame.zero?
+      @transfer_started = true
+      @transfer_from = MV::JS.eval(self.class.transfer_state_js)
+      $stderr.puts "[MZ] auto transfer test: from #{@transfer_from}"
+      MV::JS.eval(
+        self.class.transfer_probe_js(TRANSFER_MAP_ID, TRANSFER_X, TRANSFER_Y)
+      )
+    end
+    @transfer_frame += 1
+
+    state = MV::JS.eval(self.class.transfer_state_js)
+    if state != @transfer_last_state
+      @transfer_last_state = state
+      $stderr.puts "[MZ-XFER] state #{state}"
+    end
+
+    map = MZ.state_field(state, "map")
+    x = MZ.state_field(state, "x")
+    y = MZ.state_field(state, "y")
+    arrived = MZ.state_field(state, "arrived")
+    landed = map == TRANSFER_MAP_ID && x == TRANSFER_X && y == TRANSFER_Y
+    # The destination's event needs a frame or two of its own after the
+    # transfer, so the report waits for it rather than latching the moment the
+    # map id moves.
+    return if !(landed && arrived.to_i.positive?) &&
+              @transfer_frame < TRANSFER_PROBE_FRAMES
+
+    @transfer_test_done = true
+    $stderr.puts "[MZ-XFER] from=[#{@transfer_from}] to=[#{state}] " \
+                 "moved=#{map == TRANSFER_MAP_ID ? true : false} " \
+                 "landed=#{landed ? true : false} " \
+                 "arrived=#{arrived.to_i.positive? ? true : false} " \
+                 "scene=#{current_scene}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] transfer test error: #{e.message}"
   end
 
   # Whether --mz_menu_play was requested (a launcher constant set by main.cxx).
@@ -1485,6 +1606,7 @@ class MZ
   def finish_when_probes_done
     pending = [
       [move_test_requested?, @move_test_done],
+      [transfer_test_requested?, @transfer_test_done],
       [message_test_requested?, @msg_test_done],
       [animation_test_requested?, @anim_test_done],
       [menu_test_requested?, @menu_test_done],

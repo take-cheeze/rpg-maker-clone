@@ -632,6 +632,37 @@ JavaScript loads and interprets the JSON.
       No new mode: the existing `save` mode's claim gets stronger, which is
       cheaper than a ninth CI step for what is one flow.
 
+    - **M6.3l — leaving the start map (landed).** Every MZ probe up to here ran
+      on `Map001`, because the bed only had one map. Everything about arriving
+      somewhere else is a separate path and none of it had been executed:
+      `Game_Player.reserveTransfer` and the interpreter's `"transfer"` wait mode,
+      `Scene_Map` tearing itself down and re-creating, `DataManager.loadMapData`
+      fetching a `MapXXX.json` that was never read at boot, a fresh
+      `Spriteset_Map` over a different tile layout, and `Game_Map.setupEvents`
+      for the arriving map's events.
+
+      The bed gains a second map — a wall cross on open floor, so its frame
+      cannot be confused with the first map's bordered room — and
+      `--mz_transfer_test` (`MZ_MODE=transfer`) runs a **Transfer Player**
+      command (code 201) through the map interpreter, the way a game leaves a
+      map. Three claims of increasing strength: `moved=` (the map id changed),
+      `landed=` (the player is on the requested tile) and `arrived=` — the
+      *destination's own* parallel event having run, which is the difference
+      between the id moving and the map having been fetched, built and set
+      running. The frame check gains the matching picture claim (the arrival
+      frame differs from the start map by 35%, measured).
+
+      **The transfer worked; the bed's authoring did not.** The first run came
+      back `moved=true landed=true arrived=false`: map 2 had loaded and its one
+      event was there, but the variable that event writes never moved.
+      `Game_Variables.setValue` silently ignores any id at or past the length of
+      `$dataSystem.variables`, and the bed declared exactly one variable while
+      map 2's event wrote the second. No error, anywhere — the same shape as the
+      empty `battlerName` of M6.3i and the empty `Items.json` of M6.3j: a
+      hand-authored bed can hold values the editor would never write, and the
+      engine's response is silence rather than a complaint. The bed now declares
+      both variables.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into
