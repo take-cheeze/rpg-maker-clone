@@ -3197,7 +3197,7 @@ class RPG2k
         sid, cost = @battle_ui[:skills][@battle_ui[:skill_i]]
         return if current_actor.mp < cost # can't afford: stay on the list
         sk = @state.party.db_skill(sid)
-        @battle_ui[:pending] = { kind: :skill, sk: sk }
+        @battle_ui[:pending] = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
         case @state.party.battle_skill_target(sk)
         when :self
@@ -3221,9 +3221,11 @@ class RPG2k
       # then move to the next actor.
       def apply_pending_skill(target)
         sk = @battle_ui[:pending][:sk]
+        sid = @battle_ui[:pending][:sid]
         c = @state.party.battle_skill_command(sk, current_actor, target)
         @battle_ui[:battle].command_skill(current_actor, target,
-                                          name: sk.name, cost: c[:cost],
+                                          name: sk.name, skill_id: sid,
+                                          cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
                                           variance: c[:variance] || 0,
@@ -3240,13 +3242,15 @@ class RPG2k
       # infliction ride along once.
       def apply_pending_skill_all(targets)
         sk = @battle_ui[:pending][:sk]
+        sid = @battle_ui[:pending][:sid]
         meta = @state.party.battle_skill_command(sk, current_actor, targets.first)
         effects = targets.map do |t|
           c = @state.party.battle_skill_command(sk, current_actor, t)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
         @battle_ui[:battle].command_skill_all(current_actor, effects,
-                                              name: sk.name, cost: meta[:cost],
+                                              name: sk.name, skill_id: sid,
+                                              cost: meta[:cost],
                                               inflict: meta[:inflict], chance: meta[:chance],
                                               variance: meta[:variance] || 0,
                                               attributes: meta[:attributes])
@@ -3650,9 +3654,134 @@ class RPG2k
         end
       end
 
+      # What an action says, in the game's own words. RPG2000 keeps the sentences
+      # in the 用語 table as *predicates* — 「の攻撃！」, 「のダメージを与えた！」 —
+      # and RPG_RT prints the battler's name in front of each. Both test beds
+      # fill 126 of the 127 fields in, so a log that invents its own English is
+      # ignoring text the author wrote.
+      #
+      # RPG_RT says it in more than one line: what the battler did, then what it
+      # did to the target. This returns them in that order, and falls back to the
+      # composed English for any field the database leaves blank — an
+      # English-release table with half the battle terms empty still reads.
+      def battle_action_body(e)
+        # An item announces itself with the `use_item` term, still unread, and
+        # "does nothing" is worded by the state that caused it rather than by a
+        # term — both keep the composed wording. A skill has its own two
+        # sentences and takes the branch below.
+        return [battle_action_line(e)] if e[:nothing]
+        return battle_skill_body(e) if e[:skill_id]
+        return [battle_action_line(e)] if e[:recover] || e[:skill]
+        t = db.respond_to?(:term) ? db.term : nil
+        want_start = battle_start_field(e)
+        want_result = battle_result_wanted?(e)
+        start = want_start && battle_start_line(t, e, want_start)
+        result = want_result && battle_result_line(t, e)
+        # All or nothing per entry: a half-translated line ("スライムの攻撃！"
+        # with no damage sentence under it) reads worse than the composed
+        # English, so a blank term drops the whole entry back to the fallback.
+        return [battle_action_line(e)] if (want_start && !start) ||
+                                          (want_result && !result)
+        lines = []
+        lines << start if start
+        lines << result if result
+        lines.empty? ? [battle_action_line(e)] : lines
+      end
+
+      # A skill's own two sentences, then what it did. `using_message1` follows
+      # the caster's name and `using_message2` stands alone as a second line, so
+      # a spell reads 「リトは炎を放った！」 / 「あたりが真っ赤に染まる！」 before
+      # 「スライムに 42 のダメージを与えた！」.
+      #
+      # A skill that achieved nothing takes its own failure sentence instead of a
+      # damage line — the skill row's `failure_message` picks which of the three
+      # 用語 failure lines (or the dodge line) says so.
+      #
+      # A skill row that sets no sentence at all keeps the composed wording, for
+      # the same reason a blank term does: the bare damage line would lose the
+      # only thing naming what was cast.
+      def battle_skill_body(e)
+        bt = Game::States::BattleText
+        row = db.respond_to?(:skill) && db.skill ? db.skill[e[:skill_id]] : nil
+        caster = (e[:recover] ? e[:actor] : e[:attacker]).to_s
+        lines = bt.skill_start(row, caster)
+        return [battle_action_line(e)] if lines.empty?
+        t = db.respond_to?(:term) ? db.term : nil
+        rest = battle_skill_result(t, row, e)
+        return [battle_action_line(e)] unless rest
+        lines + rest
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] skill message lookup failed: #{ex.message}"
+        [battle_action_line(e)]
+      end
+
+      # What the skill did: the damage / dodge line for an attack, nothing extra
+      # for a recovery that worked, and the failure sentence for one that did
+      # not. nil when a needed sentence is missing, so the caller falls back
+      # whole rather than printing half of one.
+      def battle_skill_result(t, row, e)
+        bt = Game::States::BattleText
+        return [] if e[:target].nil?
+        if skill_achieved_nothing?(e)
+          line = bt.skill_failure(t, row, e[:target].to_s)
+          return line ? [line] : nil
+        end
+        return [] if e[:recover]
+        return battle_result_line(t, e) ? [battle_result_line(t, e)] : nil
+      end
+
+      # A skill with nothing to show for itself: a heal that restored no HP or SP
+      # and cured nothing, or an attack that was dodged.
+      def skill_achieved_nothing?(e)
+        return true if e[:missed]
+        return false unless e[:recover]
+        (e[:recover_hp] || 0) <= 0 && (e[:recover_mp] || 0) <= 0 &&
+          (e[:cured] || []).empty? && (e[:inflicted] || []).empty?
+      end
+
+      # Which term words this entry's "so-and-so did a thing" line, or nil when
+      # RPG2000 has none for it — a skill or an item names itself instead (its
+      # own `using_message` is a separate field, still unread), and "does
+      # nothing" is a state's own sentence rather than a term.
+      def battle_start_field(e)
+        return nil if e[:recover] || e[:skill] || e[:nothing]
+        return :enemy_transform if e[:transform]
+        return :defending if e[:defend]
+        return :observing if e[:observe]
+        return :focus if e[:charge]
+        return :enemy_escape if e[:fled]
+        return :autodestruction if e[:autodestruct]
+        :attacking
+      end
+
+      def battle_start_line(t, e, field)
+        Game::States::BattleText.action(t, e[:attacker].to_s, field)
+      end
+
+      # Does this entry report on a target at all? A Defend, a flee or an
+      # autodestruct that found nobody has no one to report on.
+      def battle_result_wanted?(e)
+        return false if e[:recover] || e[:target].nil?
+        e[:missed] || !e[:damage].nil? ? true : false
+      end
+
+      # What it did to that target: a miss, a blow that got through for nothing,
+      # or the damage.
+      def battle_result_line(t, e)
+        bt = Game::States::BattleText
+        name = e[:target].to_s
+        ally = e[:target_ally] ? true : false
+        return bt.dodge(t, name) if e[:missed]
+        return bt.damage(t, name, e[:damage], ally) if e[:damage] > 0
+        bt.undamaged(t, name, ally)
+      end
+
       # A one-line description of a battle log entry, for the on-screen banner and
       # the console trace. A recovery (heal skill / medicine) reads as a restore;
       # a skill attack names the skill; a plain attack is "A hits B for N".
+      #
+      # This is the fallback now: it words an entry whose terms the database left
+      # blank. `battle_action_body` prefers the game's own sentences.
       def battle_action_line(e)
         if e[:recover]
           parts = []
@@ -3690,7 +3819,7 @@ class RPG2k
       # changed. `log_round` traces all of it and `show_battle_action` banners
       # all of it, so the console and the screen never disagree.
       def battle_action_lines(entry)
-        [battle_action_line(entry)] + battle_state_lines(entry)
+        battle_action_body(entry) + battle_state_lines(entry)
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained

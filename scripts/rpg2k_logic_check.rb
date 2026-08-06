@@ -8185,6 +8185,106 @@ check 'a node missing its fields is treated as inheriting' do
   eq 'Wasteland', Game::Backdrop.name_for(1, { 1 => bare }, 'Wasteland')
 end
 
+# -- battle log terms (Game::States::BattleText) ------------------------------
+
+BT = Game::States::BattleText
+
+# The 用語 table stores predicates, not templates: RPG_RT prints the battler's
+# name and then the field, with one particle rule for the damage line.
+FakeTerms = Struct.new(:attacking, :defending, :observing, :focus,
+                       :autodestruction, :enemy_escape, :enemy_transform,
+                       :enemy_damaged, :actor_damaged,
+                       :enemy_undamaged, :actor_undamaged, :dodge)
+
+def fake_terms
+  FakeTerms.new('の攻撃！', 'は身を守っている', 'は様子を見ている・・・',
+                'は力をためている・・・', 'は自爆した！', 'は逃げてしまった！',
+                'は別のモンスターに変身した！',
+                'のダメージを与えた！', 'のダメージを受けた！',
+                'にダメージを与えられない！', 'はダメージを受けていない！',
+                'は身をかわした！')
+end
+
+check 'an action line is the battler name and the term, nothing else' do
+  t = fake_terms
+  eq 'スライムの攻撃！', BT.action(t, 'スライム', :attacking)
+  eq 'リトは身を守っている', BT.action(t, 'リト', :defending)
+  eq 'リトは様子を見ている・・・', BT.action(t, 'リト', :observing)
+  eq 'スライムは力をためている・・・', BT.action(t, 'スライム', :focus)
+  eq 'スライムは自爆した！', BT.action(t, 'スライム', :autodestruction)
+  eq 'スライムは逃げてしまった！', BT.action(t, 'スライム', :enemy_escape)
+end
+
+# The two damage predicates differ, and so does the particle: RPG_RT says
+# "...に N のダメージを与えた！" of a foe and "...は N のダメージを受けた！" of
+# one of yours.
+check 'the damage line picks its predicate and particle by side' do
+  t = fake_terms
+  eq 'スライムに 42 のダメージを与えた！', BT.damage(t, 'スライム', 42, false)
+  eq 'リトは 42 のダメージを受けた！', BT.damage(t, 'リト', 42, true)
+end
+
+check 'a blow that lands for nothing has no number and no particle' do
+  t = fake_terms
+  eq 'スライムにダメージを与えられない！', BT.undamaged(t, 'スライム', false)
+  eq 'リトはダメージを受けていない！', BT.undamaged(t, 'リト', true)
+end
+
+check 'a miss is worded from the target side, one term for both' do
+  t = fake_terms
+  eq 'スライムは身をかわした！', BT.dodge(t, 'スライム')
+  eq 'リトは身をかわした！', BT.dodge(t, 'リト')
+end
+
+# A database that leaves a battle term blank (an English release often does)
+# must not produce a half-sentence — the caller keeps its own wording instead.
+check 'a blank or missing term yields nil rather than a bare name' do
+  blank = FakeTerms.new('', '', '', '', '', '', '', '', '', '', '', '')
+  eq nil, BT.action(blank, 'リト', :attacking)
+  eq nil, BT.damage(blank, 'リト', 42, true)
+  eq nil, BT.undamaged(blank, 'リト', true)
+  eq nil, BT.dodge(blank, 'リト')
+  eq nil, BT.action(nil, 'リト', :attacking), 'no term table at all'
+  eq nil, BT.action(Struct.new(:nothing).new(0), 'リト', :attacking),
+     'a table without the field'
+end
+
+# A skill has a voice of its own where a plain attack has only a term.
+FakeSkillMsg = Struct.new(:using_message1, :using_message2, :failure_message)
+
+check 'a skill names itself: the first line takes the caster, the second stands alone' do
+  sk = FakeSkillMsg.new('は炎を放った！', 'あたりが真っ赤に染まる！', 0)
+  eq ['リトは炎を放った！', 'あたりが真っ赤に染まる！'], BT.skill_start(sk, 'リト')
+end
+
+check 'a skill with only a first sentence gives one line' do
+  eq ['リトは炎を放った！'],
+     BT.skill_start(FakeSkillMsg.new('は炎を放った！', '', 0), 'リト')
+end
+
+check 'a skill with no sentence at all gives none' do
+  eq [], BT.skill_start(FakeSkillMsg.new('', '', 0), 'リト')
+  eq [], BT.skill_start(nil, 'リト'), 'and so does a missing row'
+end
+
+# failure_message indexes the three 用語 failure lines; 3 borrows the dodge line.
+check 'a skill picks which failure sentence says it did nothing' do
+  terms = Struct.new(:skill_failure_a, :skill_failure_b, :skill_failure_c, :dodge)
+            .new('には効かなかった！', 'は平気だった！', 'は眠らなかった！',
+                 'は身をかわした！')
+  eq 'スライムには効かなかった！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 0), 'スライム')
+  eq 'スライムは平気だった！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 1), 'スライム')
+  eq 'スライムは眠らなかった！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 2), 'スライム')
+  eq 'スライムは身をかわした！',
+     BT.skill_failure(terms, FakeSkillMsg.new('', '', 3), 'スライム'),
+     'index 3 borrows the dodge line'
+  eq 'スライムには効かなかった！',
+     BT.skill_failure(terms, nil, 'スライム'), 'no row falls to the first line'
+end
+
 # -- chipset terrain tags -----------------------------------------------------
 
 FakeChipsetRow = Struct.new(:name, :chipset_name, :passable_data_lower,

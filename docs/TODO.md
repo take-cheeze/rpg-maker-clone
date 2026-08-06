@@ -782,6 +782,43 @@ The work below is roughly ordered by the critical path to a walkable game
   combatant instead of queueing a request, so nothing told the panel it was
   stale — `apply_battle_event_requests` now rebuilds it, and a page that poisons
   the boss changes the screen as well as the fight.
+  **The action lines come from the 用語 table now too** (ADR 0036), which is the
+  larger half of the same argument: every round prints an action, where only some
+  print a state. The log used to invent its English ("Hero hits Slime for 42");
+  a field-by-field audit found both test beds filling in **126 of the 127 term
+  fields** while the runtime read two of them. `Game::States::BattleText` composes
+  them as the predicates they are, and `battle_action_body` prints what the
+  battler did and then what it did to the target, the way RPG_RT splits it:
+  「スライムの攻撃！」 then 「リトは 7 のダメージを受けた！」. The particle is the
+  one part not in the database — に for one of theirs, は for one of yours,
+  pairing with the two `enemy_damaged` / `actor_damaged` predicates (the CP932
+  branch of EasyRPG's `GetDamagedMessage`, and this build decodes every string as
+  CP932 so there is no other branch). Every basic action is covered — attack,
+  Defend, Observe, Charge, self-destruct, flee, transform — plus both damage
+  sides, no-damage and misses; a blank term drops the **whole** entry back to the
+  composed English, because a half-translated line reads worse than an English
+  one.
+  **A skill says it in its own words**, which is why a spell reads differently
+  from a sword swing: the row carries two sentences of its own, and they compose
+  differently — `using_message1` follows the caster's name like every other
+  predicate while `using_message2` **stands alone** as a second line, so a spell
+  reads 「リトは炎を放った！」 then 「あたりが真っ赤に染まる！」, a caster and then a
+  scene. 229 of Nepheshel's 306 skills and 122 of mtf's 134 set the first, 18 the
+  second. A skill that achieved nothing — a miss, or a recovery that restored and
+  cured nothing — takes its own failure sentence rather than a damage line, picked
+  by the row's `failure_message` from the three 用語 failure lines plus the dodge
+  line at index 3; all four values are in real use (255/7/1/43 and 116/8/4/6).
+  This needed the skill's **id** on the log entry, which carried only its name, so
+  `command_skill` / `command_skill_all` take a `skill_id:` and the enemy AI path
+  sets it from its own action. A skill row with no sentence keeps the composed
+  wording, as a blank term does.
+  Still held back on purpose: an **item** keeps its composed line
+  until the `use_item` term is read — a different shape from everything here —
+  and the **critical** line is left alone
+  because which side keys `actor_critical` / `enemy_critical` is genuinely
+  unclear — EasyRPG picks `actor_critical` when the *target* is an ally, while
+  会心 / 痛恨 read as the *attacker's* side, and both games fill both fields with
+  the same two strings so the data cannot settle it.
   The **field windows show a condition too** — the menu party list, the item and
   skill target lists and the status screen (a labelled row of its own), which are
   the three RPG_RT draws one in (`Window_MenuStatus`, `Window_ActorTarget`,
