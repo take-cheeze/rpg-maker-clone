@@ -224,6 +224,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
                                      message_actor: ' is poisoned!',
                                      message_enemy: ' looks ill!',
                                      message_recovery: ' is cured.',
+                                     message_already: ' is already poisoned!',
                                      hp_change_map_steps: 4,
                                      hp_change_map_val: 1),
                  4 => OpenStruct.new(name: 'Sleep', color: 4, priority: 80),
@@ -3637,6 +3638,32 @@ check 'being downed is announced with the death state own sentence' do
                defeated: true, target_ally: true })
   ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
       .include?('Hero falls!'), 'and the actor wording'
+end
+
+check 'a status the target already had is announced, in the state own words' do
+  scene, = battle_at_command
+  scene.send(:show_battle_action,
+             { attacker: 'Slime', target: 'Hero', damage: 3,
+               already: [3], target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero is already poisoned!'),
+     'one wording, whichever side the target is on'
+  scene.send(:show_battle_action,
+             { attacker: 'Hero', target: 'Slime', damage: 3,
+               already: [3], target_ally: false })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Slime is already poisoned!')
+end
+
+check 'an already-carried state with no sentence still gets announced' do
+  scene, = battle_at_command
+  # State 4 (Sleep) has a name but no message_already, which is what an
+  # English-release database looks like.
+  scene.send(:show_battle_action,
+             { attacker: 'Slime', target: 'Hero', damage: 3,
+               already: [4], target_ally: true })
+  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+      .include?('Hero is already Sleep'), 'the scene composes its own wording'
 end
 
 check 'a state the database gives no sentence still gets announced' do

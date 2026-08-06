@@ -3908,6 +3908,13 @@ class RPG2k
           lines << (Game::States.inflict_message(id, table, name, ally) ||
                     "#{name} is #{state_label(id, table)}")
         end
+        # A state the target already carried when the skill tried to inflict it
+        # again. RPG_RT announces it rather than going quiet, in the state's own
+        # words ("はすでに毒に冒されている！"), and reports it as a *success*.
+        (entry[:already] || []).each do |id|
+          lines << (Game::States.already_message(id, table, name) ||
+                    "#{name} is already #{state_label(id, table)}")
+        end
         # `cured` is a medicine or a cure skill lifting a state; `woke` is a blow
         # shaking one off (a state's `release_by_attack`). Both are the state
         # lifting, which has one wording whichever side it happened to.

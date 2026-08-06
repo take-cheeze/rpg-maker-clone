@@ -404,16 +404,54 @@ def check_states(dir)
   waking = []
   sealing = []
   slipping = []
+  already = []
   states.each do |id, r|
     blinding << id if r.reduce_hit_ratio && r.reduce_hit_ratio < 100
     waking << id if (r.release_by_attack || 0) > 0
     sealing << id if r.restrict_magic || r.restrict_skill
     slipping << id if (r.hp_change_map_steps || 0) > 0 &&
                       (r.hp_change_map_val || 0) > 0
+    already << id unless r.message_already.to_s.empty?
   end
   puts format('   states: %d blinding, %d shaken off by a blow, %d sealing, ' \
-              '%d slipping on the map',
-              blinding.size, waking.size, sealing.size, slipping.size)
+              '%d slipping on the map, %d with an "already" sentence',
+              blinding.size, waking.size, sealing.size, slipping.size,
+              already.size)
+
+  unless already.empty?
+    # A fixture cannot say whether the sentence is worded from the speaker's
+    # side (as message_actor / message_enemy are) or shared -- it is written to
+    # match whatever the code does. Only a real game's own text can: every one
+    # of these reads as a complete predicate after the battler's name, and one
+    # sentence serves both sides.
+    check "#{name}: an 'already' sentence composes after either battler's name" do
+      already.each do |sid|
+        row = states[sid]
+        line = Game::States.already_message(sid, states, 'スライム')
+        eq "スライム#{row.message_already}", line,
+           "state ##{sid} (#{row.name})"
+        eq "リト#{row.message_already}",
+           Game::States.already_message(sid, states, 'リト'),
+           'and the same sentence for the other side'
+      end
+    end
+
+    # The rule that makes the field reachable at all: a state the target already
+    # carries reports without rolling, so even a 0%-accuracy skill says so.
+    check "#{name}: a real state already carried reports without a roll" do
+      sid = already.first
+      foe = combatant('Foe', 0, 0, 5, 1000, [sid])
+      bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)], [foe],
+                             Game::Rng.new(1), states)
+      e = bat.send(:apply_skill_hit, bat.allies[0], foe, -1,
+                   0, { name: 'X', inflict: [sid], chance: 0 })
+      eq [], e[:inflicted]
+      eq [sid], e[:already],
+         "state ##{sid} (#{states[sid].name}) is announced at 0% accuracy"
+      ok Game::States.already_message(sid, states, foe.name),
+         'and the database has the sentence to announce it with'
+    end
+  end
 
   unless blinding.empty?
     check "#{name}: a blinding state cuts accuracy" do

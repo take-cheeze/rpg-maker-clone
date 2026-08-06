@@ -607,6 +607,16 @@ The work below is roughly ordered by the critical path to a walkable game
   enemy's action entry stops firing. Nine of Nepheshel's 25 states and two of
   mtf's ten carry a reduced hit ratio, four and three a release chance, two and
   one a seal.
+  **And a status the target already has is announced** rather than going silent,
+  in the state row's own `message_already` (「はすでに毒に冒されている！」, 15 of
+  Nepheshel's states and 7 of mtf's). RPG_RT counts an already-carried state as a
+  *success* and settles that **before** rolling the skill's accuracy, so a Poison
+  Sting on an already-poisoned foe always reports and a 0%-accuracy skill reports
+  too — making the report depend on the roll would be the natural guess and it is
+  wrong. `roll_inflict` returns the already-carried states beside the landed ones
+  and the action banner prints the sentence, one wording for both sides.
+  `message_affected` is deliberately still unread: EasyRPG defines its helper and
+  never calls it from either battle scene, so nothing pins when RPG_RT prints it.
   **A condition drains the party on the map now, too** — RPG2000's field poison,
   the last of the 状態 row's simulation fields with a game behind it.
   `hp_change_map_steps` / `hp_change_map_val` (and the matching SP pair) say how
