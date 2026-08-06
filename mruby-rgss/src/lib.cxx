@@ -3843,10 +3843,10 @@ int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
 //     z = (real_y - display_y + 3) / 4 + 32          // the on-screen pixel y
 //     z += priorities[tile_id] * 32                  // ... for a tile
 //
-// so a character's z *is* its screen y, and a priority-n tile sorts as though it
-// stood n rows lower. In map units that is (ty + prio) * 32 + 32 - oy, which is
-// what a per-row strip must use; @always_on_top returns 999, the ceiling those
-// strips have to stay under.
+// so a character's z *is* its screen y, and a priority-n tile sorts as though
+// it stood n rows lower. In map units that is (ty + prio) * 32 + 32 - oy, which
+// is what a per-row strip must use; @always_on_top returns 999, the ceiling
+// those strips have to stay under.
 //
 // The constant below is the interim stand-in: above stock character sprites
 // (z ~ screen_y, up to ~512) but below the fog/weather planes (z ~ 1000/3000),
