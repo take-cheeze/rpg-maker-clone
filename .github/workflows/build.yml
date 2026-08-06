@@ -1140,7 +1140,18 @@ jobs:
   # deployment" → Source = "GitHub Actions" to be enabled once for the repo.
   deploy-pages:
     needs: wasm
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    # `!cancelled()` is load-bearing, not decoration. A skip propagates down the
+    # whole `needs` chain, not just one link: `preview-gate` is skipped outside
+    # the `/preview` flow, and although `wasm` opts out of that with its own
+    # `!cancelled()` and runs to success, this job inherited the skip through it
+    # and never published. Every condition below was satisfied on those runs —
+    # it never got to evaluate them. A status-check function is what overrides
+    # the inherited skip, so the `wasm` result has to be spelled out explicitly
+    # once it is there (that is what `!cancelled()` gives up).
+    if: >-
+      ${{ !cancelled() && needs.wasm.result == 'success'
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
