@@ -208,7 +208,7 @@ system = {
     # error anywhere. Map 1's parallel event writes `var`, map 2's writes
     # `var2`, which is how the transfer probe tells the destination's events
     # apart from the start map's.
-    "variables": [None, "var", "var2", "var3", "var4"],
+    "variables": [None, "var", "var2", "var3", "var4", "var5"],
     "armorTypes": [None, "General Armor"],
     "weaponTypes": [None, "Dagger"],
     "skillTypes": [None, "Magic"],

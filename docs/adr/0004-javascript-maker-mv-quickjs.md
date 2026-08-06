@@ -753,6 +753,37 @@ JavaScript loads and interprets the JSON.
       on a missing one. Verified directly against the written tables: `'A'` →
       glyph 34, `'×'` → glyph 96, an uncovered `'€'` → glyph 0.
 
+    - **M6.3p — the message, operated (landed).** `[MZ-MSG] busy=true
+      window_open=true` was the last claim of the M6.3i shape: a window is up
+      over the map. It says nothing about the window taking input, closing
+      again, or the interpreter doing anything with an answer — and **Show
+      Choices had never run at all**, so the interpreter's branching was
+      untested.
+
+      `--mz_message_play` (`MZ_MODE=message_play`) shows a two-line message and
+      a two-way choice on the map interpreter, pages the text through with
+      confirm, moves the cursor **down to the second entry** and confirms it,
+      then reads which branch actually ran. Each branch writes a different value
+      to the same variable, so the value identifies the branch: neither "nothing
+      ran" nor "the wrong branch ran" can be mistaken for success.
+
+      Moving the cursor is the whole point. The first entry is the default, so a
+      probe that only tapped confirm would take it and still see a choice
+      window, a closed message and a branch having run. Verified by disabling
+      the cursor move: the run reports `branch=11 picked=false` with
+      `opened=true closed=true choice_shown=true`, and the check fails — the
+      three weaker claims all survive a choice that was never really made.
+
+      It works: `opened=true closed=true choice_shown=true branch=55 picked=true`.
+
+      One wrinkle worth recording. The choice list is the only frame in the run
+      worth photographing and it is up for about a dozen frames; run at once,
+      the sequence came and went at frame 61 while the screenshot's own settle
+      delay (`SHOT_DELAY_FRAMES`, 120) still blocked the capture, so the picture
+      was a bare map. The probe now waits past that delay before starting rather
+      than the capture being made to skip it — the settle delay is there for
+      every other mode's benefit.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

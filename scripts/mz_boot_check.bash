@@ -17,6 +17,8 @@
 #   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
+#   [MZ-MSGPLAY] opened=<bool> closed=<bool> choice_shown=<bool> branch=<n>
+#              picked=<bool>
 #   [MZ-SHOP]  gold_before=<n> gold_after=<n> items_before=<n> items_after=<n>
 #              bought=<bool> returned=<bool> scene=<scene>
 #   [MZ-ENC]   encountered=<bool> troop=<id> map=<id> scene=<scene>
@@ -45,6 +47,7 @@
 #   common    New Game -> map, run a parallel and a called common event
 #   encounter New Game -> map 2, walk until a random encounter fights
 #   shop      New Game -> map, open a shop and buy an item in it
+#   message_play ... and then *operate* it: page it through, take a choice
 #   menu      New Game -> map, open the party menu
 #   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
@@ -90,6 +93,10 @@ case "${MODE}" in
     message)
         FLAGS=(--mz_message_test)
         DEFAULT_SHOT="ss/mz_message.png" ;;
+    message_play)
+        FLAGS=(--mz_message_play)
+        DEFAULT_TIMEOUT_MS=180000
+        DEFAULT_SHOT="ss/mz_message_play.png" ;;
     shop)
         FLAGS=(--mz_shop_test)
         DEFAULT_TIMEOUT_MS=180000
@@ -128,8 +135,8 @@ case "${MODE}" in
         DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|transfer|common|encounter|shop|menu|menu_play" \
-             "|animation|save|battle|battle_play)" >&2
+             "(play|message|message_play|transfer|common|encounter|shop|menu" \
+             "|menu_play|animation|save|battle|battle_play)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
@@ -214,6 +221,22 @@ case "${MODE}" in
         # actually opened over the map.
         grep -q '\[MZ-MSG\] busy=true window_open=true' "${log}" ||
             fail "the message window never opened ([MZ-MSG] busy/window_open)"
+        ;;
+    message_play)
+        # `picked=true` is the whole test: the second branch of the choice ran,
+        # which takes Window_ChoiceList moving its cursor off the default,
+        # $gameMessage's callback recording the answer, and command402 skipping
+        # the branch that was not chosen. The first entry is the default, so a
+        # run that never moved the cursor takes the *other* branch and reports
+        # picked=false with the value that branch wrote. `closed=true` adds that
+        # the message window went away again rather than the map being left
+        # under a window nobody could dismiss. See ADR 0004 M6.3p.
+        grep -q '\[MZ-MSGPLAY\].*choice_shown=true' "${log}" ||
+            fail "the choice list never appeared ([MZ-MSGPLAY] choice_shown=true)"
+        grep -q '\[MZ-MSGPLAY\].*picked=true' "${log}" ||
+            fail "the chosen branch never ran ([MZ-MSGPLAY] picked=true)"
+        grep -q '\[MZ-MSGPLAY\].*closed=true' "${log}" ||
+            fail "the message window never closed ([MZ-MSGPLAY] closed=true)"
         ;;
     shop)
         # Both halves, because either alone would pass on a broken shop: gold
@@ -342,7 +365,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-SHOP\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-SHOP\]|\[MZ-MSGPLAY\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
