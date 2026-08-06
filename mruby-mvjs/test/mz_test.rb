@@ -429,6 +429,48 @@ assert 'MZ.battle_probe_js runs Battle Processing through the map interpreter' d
   assert_equal 0, MV::JS.eval("$gameMap._interpreter.eventId")
 end
 
+assert 'MZ.transfer_probe_js runs Transfer Player through the map interpreter' do
+  # Not $gamePlayer.reserveTransfer() from outside: command 201 is what also
+  # puts the interpreter into its "transfer" wait mode, so the map waits for the
+  # move the way it does in a game rather than running on through it.
+  MV::JS.eval(
+    "globalThis.$gameMap = { _interpreter: { setup: function (list, id) { " \
+    "this.list = list; this.eventId = id; } } };"
+  )
+  MV::JS.eval(MZ.transfer_probe_js(2, 4, 5))
+  assert_equal 201, MV::JS.eval("$gameMap._interpreter.list[0].code")
+  # [designation, mapId, x, y, direction, fade] — 0 is a direct designation
+  # (1 reads the three from variables), direction 0 keeps the facing.
+  assert_equal "0,2,4,5,0,0",
+               MV::JS.eval("$gameMap._interpreter.list[0].parameters.join(',')")
+  assert_equal 0, MV::JS.eval("$gameMap._interpreter.list[1].code")
+end
+
+assert 'MZ.transfer_state_js reports the destination, not just the map id' do
+  # `arrived` is the variable the *destination* map's own parallel event writes.
+  # A map id that changed says the transfer was applied; only this says the new
+  # map's data was fetched and its events set running.
+  MV::JS.eval(<<~'JS')
+    globalThis.$gameMap = {
+      mapId: function () { return 2; },
+      events: function () { return [{}]; }
+    };
+    globalThis.$gamePlayer = { x: 4, y: 5 };
+    globalThis.$gameVariables = { value: function (i) { return i === 2 ? 7 : 0; } };
+  JS
+  assert_equal "map=2 x=4 y=5 arrived=7 events=1",
+               MV::JS.eval(MZ.transfer_state_js)
+
+  # Before the boot has built any of it, the state reads as absent rather than
+  # throwing — every probe runs from the first frame.
+  MV::JS.eval(
+    "delete globalThis.$gameMap; delete globalThis.$gamePlayer; " \
+    "delete globalThis.$gameVariables;"
+  )
+  assert_equal "map=-1 x=-1 y=-1 arrived=-1 events=-1",
+               MV::JS.eval(MZ.transfer_state_js)
+end
+
 assert 'the MZ probes are inert before the engine defines their globals' do
   # Every probe runs each frame from MZ#main_loop, including the frames before
   # the boot has defined $gameMessage / SceneManager / $gameMap. None may throw.
@@ -439,6 +481,7 @@ assert 'the MZ probes are inert before the engine defines their globals' do
   assert_nothing_raised { MV::JS.eval(MZ.message_probe_js("x")) }
   assert_nothing_raised { MV::JS.eval(MZ.menu_probe_js) }
   assert_nothing_raised { MV::JS.eval(MZ.battle_probe_js(1)) }
+  assert_nothing_raised { MV::JS.eval(MZ.transfer_probe_js(2, 4, 5)) }
   assert_equal "busy=false window_open=false", MV::JS.eval(MZ.message_state_js)
   # ...and a save probe with no DataManager says so rather than never settling.
   MV::JS.eval("delete globalThis.DataManager;")
