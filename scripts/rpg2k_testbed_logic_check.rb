@@ -957,6 +957,27 @@ def check_terms(dir)
     end
   end
 
+  if bt.term(terms, :use_item) && bt.term(terms, :hp_recovery)
+    check "#{name}: the item and recovery lines build from the real table" do
+      it = db[DB_ITEM] && db[DB_ITEM][1]
+      if it
+        line = bt.item_start(terms, 'リト', it.name)
+        ok line.start_with?("リトは#{it.name}"),
+           'the caster, は and the item name lead it'
+        ok line.end_with?(terms.use_item), 'and the term closes it'
+      end
+      # The pool name is the table's too, which is why one game reads ＨＰ and
+      # the other HP -- a literal "HP" would be wrong in exactly one of them.
+      %i[hp mp].each do |pool|
+        next unless bt.term(terms, pool)
+        r = bt.recovered(terms, 'リト', 30, pool)
+        ok r.include?(terms.send(pool).to_s), "the #{pool} line names the pool"
+        ok r.include?('30') && r.end_with?(terms.hp_recovery),
+           'with the amount and the term'
+      end
+    end
+  end
+
   return unless bt.term(terms, :enemy_damaged) && bt.term(terms, :actor_damaged)
   check "#{name}: the damage sentence differs by side, and carries the number" do
     foe = bt.damage(terms, 'スライム', 42, false)

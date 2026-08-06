@@ -3671,6 +3671,7 @@ class RPG2k
         # sentences and takes the branch below.
         return [battle_action_line(e)] if e[:nothing]
         return battle_skill_body(e) if e[:skill_id]
+        return battle_item_body(e) if e[:item_id]
         return [battle_action_line(e)] if e[:recover] || e[:skill]
         t = db.respond_to?(:term) ? db.term : nil
         want_start = battle_start_field(e)
@@ -3726,8 +3727,49 @@ class RPG2k
           line = bt.skill_failure(t, row, e[:target].to_s)
           return line ? [line] : nil
         end
-        return [] if e[:recover]
+        return battle_recovery_lines(t, e) if e[:recover]
         return battle_result_line(t, e) ? [battle_result_line(t, e)] : nil
+      end
+
+      # An item borrows the `use_item` term rather than carrying a sentence of
+      # its own -- 「リトはポーションを使った！」 is the only line RPG2000 builds
+      # from two names -- and then says what it restored.
+      def battle_item_body(e)
+        bt = Game::States::BattleText
+        t = db.respond_to?(:term) ? db.term : nil
+        start = bt.item_start(t, e[:actor].to_s, e[:source].to_s)
+        return [battle_action_line(e)] unless start
+        rest =
+          if skill_achieved_nothing?(e)
+            # An item that did nothing has no `failure_message` to choose with,
+            # so RPG2000 has no sentence for it: the composed line still says
+            # more than the bare "used it" would.
+            nil
+          else
+            battle_recovery_lines(t, e)
+          end
+        return [battle_action_line(e)] unless rest
+        [start] + rest
+      rescue StandardError => ex
+        $stderr.puts "[RPG2k] item message lookup failed: #{ex.message}"
+        [battle_action_line(e)]
+      end
+
+      # What a heal restored: one line per pool it filled, in the game's own
+      # words (「リトのＨＰが 30 回復した！」). [] when it restored nothing but
+      # cured something -- the state sentences carry that -- and nil when the
+      # database has no wording, so the caller falls back whole.
+      def battle_recovery_lines(t, e)
+        bt = Game::States::BattleText
+        name = e[:target].to_s
+        lines = []
+        [[:hp, e[:recover_hp]], [:mp, e[:recover_mp]]].each do |pool, amount|
+          next unless amount && amount > 0
+          line = bt.recovered(t, name, amount, pool)
+          return nil unless line
+          lines << line
+        end
+        lines
       end
 
       # A skill with nothing to show for itself: a heal that restored no HP or SP

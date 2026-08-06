@@ -224,7 +224,9 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
                          dodge: 'は身をかわした！',
                          skill_failure_a: 'には効かなかった！',
                          skill_failure_b: 'は平気だった！',
-                         skill_failure_c: 'は眠らなかった！'),
+                         skill_failure_c: 'は眠らなかった！',
+                         use_item: 'を使った！', hp_recovery: '回復した！',
+                         hp: 'ＨＰ', mp: 'ＭＰ'),
     # Skill rows for the battle log: RPG2000 gives each skill its own two
     # sentences. Skill 8 sets both, 9 only the first, 10 neither (an
     # English-release row), and 11 picks the second failure sentence.
@@ -3742,13 +3744,52 @@ check 'a heal that restored nothing reads as a failure' do
                   cured: [], target_ally: true })
 end
 
-check 'a heal that worked says only what it was, not that it failed' do
+check 'a heal that worked says what it restored, in the game own words' do
   scene, = battle_at_command
-  eq ['Heroは光をまとった！'],
+  eq ['Heroは光をまとった！', 'HeroのＨＰが 30 回復した！'],
      scene.send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
                   target: 'Hero', recover_hp: 30, recover_mp: 0,
                   cured: [], target_ally: true })
+end
+
+check 'a heal that filled both pools says so once per pool' do
+  scene, = battle_at_command
+  eq ['Heroは光をまとった！', 'HeroのＨＰが 30 回復した！',
+      'HeroのＭＰが 12 回復した！'],
+     scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
+                  target: 'Hero', recover_hp: 30, recover_mp: 12,
+                  cured: [], target_ally: true })
+end
+
+check 'an item names itself with the caster, the item and the term' do
+  scene, = battle_at_command
+  eq ['HeroはPotionを使った！', 'HeroのＨＰが 30 回復した！'],
+     scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Potion', item_id: 3,
+                  target: 'Hero', recover_hp: 30, recover_mp: 0,
+                  cured: [], target_ally: true })
+end
+
+check 'an item that only cured says so through the state sentence' do
+  scene, = battle_at_command
+  eq ['HeroはAntidoteを使った！', 'Hero is cured.'],
+     scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Antidote', item_id: 5,
+                  target: 'Hero', recover_hp: 0, recover_mp: 0,
+                  cured: [3], target_ally: true })
+end
+
+check 'an item that did nothing keeps the composed line' do
+  scene, = battle_at_command
+  # RPG2000 gives an item no failure sentence to choose from -- unlike a skill,
+  # it has no failure_message -- so the composed wording still says more.
+  ok scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Potion', item_id: 3,
+                  target: 'Hero', recover_hp: 0, recover_mp: 0,
+                  cured: [], target_ally: true })
+     .first.include?('no effect')
 end
 
 check 'a skill still trails the states it landed' do
@@ -3758,14 +3799,6 @@ check 'a skill still trails the states it landed' do
      scene.send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                   skill_id: 8, inflicted: [3], target_ally: false })
-end
-
-check 'an item keeps its composed line: use_item is still unread' do
-  scene, = battle_at_command
-  ok scene.send(:battle_action_lines,
-                { recover: true, actor: 'Hero', source: 'Potion', item_id: 3,
-                  target: 'Hero', recover_hp: 30, target_ally: true })
-     .first.include?('Potion')
 end
 
 check 'the action banner announces the states an action landed and lifted' do

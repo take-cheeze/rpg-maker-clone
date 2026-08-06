@@ -8285,6 +8285,32 @@ check 'a skill picks which failure sentence says it did nothing' do
      BT.skill_failure(terms, nil, 'スライム'), 'no row falls to the first line'
 end
 
+# An item borrows the use_item term rather than carrying a sentence, and is the
+# one line RPG2000 builds from two names.
+check 'an item line is the caster, the item and the term' do
+  t = Struct.new(:use_item).new('を使った！')
+  eq 'リトはポーションを使った！', BT.item_start(t, 'リト', 'ポーション')
+  eq nil, BT.item_start(Struct.new(:use_item).new(''), 'リト', 'ポーション')
+end
+
+# 「リトのＨＰが 30 回復した！」 — name, の, the pool's own 用語 name, が, the
+# amount, the term. Both pool names come from the table too, which is why
+# Nepheshel's read ＨＰ / ＭＰ full-width and mtf's read HP / MP.
+check 'a recovery names the pool from the table, not from a literal' do
+  t = Struct.new(:hp_recovery, :hp, :mp).new('回復した！', 'ＨＰ', 'ＭＰ')
+  eq 'リトのＨＰが 30 回復した！', BT.recovered(t, 'リト', 30, :hp)
+  eq 'リトのＭＰが 12 回復した！', BT.recovered(t, 'リト', 12, :mp)
+  ascii = Struct.new(:hp_recovery, :hp, :mp).new('回復した！', 'HP', 'MP')
+  eq 'リトのHPが 30 回復した！', BT.recovered(ascii, 'リト', 30, :hp)
+end
+
+check 'a recovery with no wording yields nil rather than half a sentence' do
+  no_term = Struct.new(:hp_recovery, :hp, :mp).new('', 'ＨＰ', 'ＭＰ')
+  eq nil, BT.recovered(no_term, 'リト', 30, :hp)
+  no_pool = Struct.new(:hp_recovery, :hp, :mp).new('回復した！', '', '')
+  eq nil, BT.recovered(no_pool, 'リト', 30, :hp), 'the pool name matters too'
+end
+
 # -- chipset terrain tags -----------------------------------------------------
 
 FakeChipsetRow = Struct.new(:name, :chipset_name, :passable_data_lower,
