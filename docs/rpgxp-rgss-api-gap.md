@@ -17,6 +17,25 @@ scripts (all 90 sections), by counting method/`.new`/constant usage — see the
 analysis approach in `scripts/rpgxp_script_host_check.rb`. Frequencies are
 approximate call counts across the bundle.
 
+**One test bed, but measured against the other.** Deriving the list from a single
+project is the obvious weakness of this document, so it was checked rather than
+left as a caveat. `data/PrayforYou` is a *released* game — 103 script sections
+against the bed's 90, including a custom ATB battle system, with its scripts
+inside an encrypted `Game.rgssad` rather than loose in `Data/`. Diffing the RGSS
+surface the two bundles call (the class-method and `.new` usage of `Graphics`,
+`Input`, `Audio`, `RPG::Cache`, `Font`, `Bitmap`, `Sprite`, `Viewport`, `Window`,
+`Plane`, `Tilemap` and the value types):
+
+| | |
+|---|---|
+| called by PrayforYou, not by the bed | **3** — `Font.default_name`, `RPG::Cache.animation`, `Table.new` |
+| called by the bed, not by PrayforYou | **0** |
+
+All three are provided (see the list below), so the released game asks for a
+strict superset of three already-implemented calls. That is evidence the
+single-project derivation is not as narrow as it looks, not proof — two games are
+still two games, and a static scan cannot see a call assembled with `send`.
+
 ## Already provided ✅
 
 These are complete enough for the stock scripts:
