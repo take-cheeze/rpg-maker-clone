@@ -41,6 +41,31 @@ module Game
       by = row * (HEIGHT * 4)
       [bx + pattern * WIDTH, by + (DIR_ROW[dir] || 2) * HEIGHT, WIDTH, HEIGHT]
     end
+
+    # How many pixel rows at the **bottom** of a character frame a tile of the
+    # given terrain `bush_depth` sinks into (RPG2000's 下半身消去 / 半透明表示 —
+    # the tall grass or shallow water a character wades through).
+    #
+    # RPG_RT expresses it as a divisor rather than a fraction: `4 - depth`, and
+    # a divisor above 3 means no effect at all, so only depths 1..3 do anything
+    # (EasyRPG's `Sprite_Character::Draw`). On the standard 32px frame that is
+    # 10, 16 and 32 rows — which is exactly what Nepheshel's own terrain names
+    # promise: 下半身3/1消去 ("erase the lower 1/3") is depth 1, 下半身2/1消去
+    # ("the lower 1/2") is depth 2, and 全身半透明 ("the whole body") is depth 3.
+    def self.bush_pixels(depth, height = HEIGHT)
+      return 0 if depth.nil?
+      split = 4 - depth
+      return 0 if split > 3 || split <= 0
+      height / split
+    end
+
+    # The opacity those sunken rows draw at: half, rounded up, of whatever the
+    # character was already being drawn with (RPG_RT's `opacity_bottom` default
+    # of `(opacity_top + 1) / 2`), so a translucent event wading through grass
+    # ends up fainter still rather than snapping back to a fixed 128.
+    def self.bush_opacity(opacity = 255)
+      (opacity + 1) / 2
+    end
   end
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,

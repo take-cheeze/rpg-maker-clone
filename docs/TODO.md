@@ -607,6 +607,22 @@ The work below is roughly ordered by the critical path to a walkable game
   `boat_pass` / `ship_pass`, and the terrain battle backdrop below never
   resolved. `ChipSet#terrain` answers 1 for a missing table now, and reads the
   first lower tile's terrain for an id the chip index cannot reach.
+  **And characters sink into it** — the terrain row's `bush_depth`
+  (下半身消去 / 半透明表示, ADR 0035). The bottom of a character's sprite draws at
+  half opacity on such a tile, RPG_RT's divisor form: `4 - depth`, a divisor
+  above 3 meaning no effect, so depths 1/2/3 sink the lower 10, 16 and all 32
+  rows of a charset frame. The sunken rows take `(opacity + 1) / 2` rather than a
+  fixed 128, so an already-translucent event wading in goes fainter still.
+  `Scene::Map#blt_bushed` does it as a solid top plus a half-opacity bottom, with
+  the two degenerate cases (nothing sinks, all of it sinks) staying single blits;
+  the hero sinks unless jumping or boarded, an event only on the hero's own layer
+  and not mid-jump, and a tile-graphic event scales its split to its own 16px
+  frame. This is the terrain field the test bed really *uses*: Nepheshel names
+  four terrains after the effect (下半身3/1消去, 下半身2/1消去, 半透明表示,
+  全身半透明) and lays two of them across **9,687 tiles of 28 maps**, every one
+  of which drew the hero fully opaque before. Vehicles are deliberately left out
+  — RPG_RT exempts only the airship, but no water terrain in either test bed
+  carries a depth, so there is nothing to measure a boat's wading against.
   **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random

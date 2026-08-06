@@ -5258,12 +5258,14 @@ class RPG2k
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE) - event_jump_offset(e)
         src = Rect.new(sx, sy, sw, sh)
+        bush = event_bush_depth(e)
         toned = e[:flash] && flashed_charset(charset, src, e[:flash])
         if toned
-          bmp.blt dx, dy, toned,
-                  Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT), opacity
+          blt_bushed bmp, dx, dy, toned,
+                     Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT),
+                     opacity, bush
         else
-          bmp.blt dx, dy, charset, src, opacity
+          blt_bushed bmp, dx, dy, charset, src, opacity, bush
         end
       end
 
@@ -5294,7 +5296,11 @@ class RPG2k
         epx, epy = event_pixel(e)
         dx = epx - cam_x
         dy = epy - cam_y - event_jump_offset(e)
-        bmp.blt dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity
+        # A tile-graphic event wades like any other: RPG_RT sinks the sprite, not
+        # a particular kind of graphic. The depth is scaled off this frame's own
+        # height, which is one tile rather than the 32px charset frame.
+        blt_bushed bmp, dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity,
+                   event_bush_depth(e, sh)
       end
 
       # Blit one map tile from the chipset image into `bmp` at (dx, dy). A plain
@@ -5309,7 +5315,10 @@ class RPG2k
       def draw_player_frame
         return unless @charset
         pat = @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
-        frame = [@state.direction, pat]
+        bush = player_bush_depth
+        # The sunken depth is part of the frame key, so walking into and out of
+        # tall grass redraws the sprite even though the pose has not changed.
+        frame = [@state.direction, pat, bush]
         return if frame == @last_frame
         @last_frame = frame
 
@@ -5321,11 +5330,64 @@ class RPG2k
         toned = @player_flash && flashed_charset(@charset, src, @player_flash)
         @player_bmp.clear
         if toned
-          @player_bmp.blt 0, 0, toned,
-                          Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
+          blt_bushed @player_bmp, 0, 0, toned,
+                     Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT),
+                     255, bush
         else
-          @player_bmp.blt 0, 0, @charset, src
+          blt_bushed @player_bmp, 0, 0, @charset, src, 255, bush
         end
+      end
+
+      # Lay down a character frame with its bottom `bush` pixel rows *sunk* into
+      # the tile: those rows draw at half opacity, which is how RPG2000 shows a
+      # character wading through tall grass or shallow water (下半身消去). A
+      # `bush` of 0 is the ordinary one-blit case, and a depth that swallows the
+      # whole frame (terrain bush_depth 3, 全身半透明) is one blit at the sunken
+      # opacity rather than a split.
+      def blt_bushed(bmp, dx, dy, src_bmp, src, opacity, bush)
+        sunk = Game::CharSet.bush_opacity(opacity)
+        if bush <= 0
+          bmp.blt dx, dy, src_bmp, src, opacity
+        elsif bush >= src.height
+          bmp.blt dx, dy, src_bmp, src, sunk
+        else
+          top = src.height - bush
+          bmp.blt dx, dy, src_bmp, Rect.new(src.x, src.y, src.width, top), opacity
+          bmp.blt dx, dy + top, src_bmp,
+                  Rect.new(src.x, src.y + top, src.width, bush), sunk
+        end
+      end
+
+      # How many pixel rows of the hero's sprite the tile under the party sinks.
+      # A jumping hero is *over* the tile rather than in it, and a boarded party
+      # draws its vehicle instead of the hero, so neither sinks.
+      def player_bush_depth
+        return 0 if @player_jumping || @state.boarded?
+        bush_pixels_at(@state.x, @state.y)
+      end
+
+      # The same for a map event, gated on the hero's own layer: an event drawn
+      # below or above the party is scenery or a treetop rather than something
+      # standing in the grass, which is the layer test RPG_RT makes too.
+      # `height` is the frame the depth is scaled against — the 32px charset
+      # frame for an ordinary event, one tile for a tile-graphic one.
+      def event_bush_depth(e, height = Game::CharSet::HEIGHT)
+        return 0 unless e[:layer] == 1
+        return 0 if e[:jumping]
+        ch = e[:char]
+        Game::CharSet.bush_pixels(bush_depth_at(ch.x, ch.y), height)
+      end
+
+      def bush_pixels_at(x, y)
+        Game::CharSet.bush_pixels(bush_depth_at(x, y))
+      end
+
+      # The terrain `bush_depth` under a tile (0 where the map, the chipset or
+      # the database has no terrain to ask).
+      def bush_depth_at(x, y)
+        row = terrain_row_at(x, y)
+        return 0 unless row && row.respond_to?(:bush_depth)
+        row.bush_depth || 0
       end
 
       # Deterministic, memoised colour for a tile id so distinct tiles read as
