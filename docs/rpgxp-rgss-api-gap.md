@@ -84,12 +84,13 @@ RGSS Reference Manual publishes, on top of the native `mruby-rgss` primitives.
   `.tile` / `.windowskin` call in a game goes through, including cutting a 32x32
   tile out of a tileset and building hue-rotated variants.
 
-Three deliberate deviations, all forced by this engine and listed in the file's
+Two deliberate deviations, both forced by this engine and listed in the file's
 header: colours are re-assigned rather than mutated in place (our compositor
-snapshots on assignment), a hue variant is re-loaded rather than `clone`d (a
-native handle must not be shallow-copied), and an asset that will not load gives
-a blank bitmap with a warning instead of raising (a game whose RTP is missing
-must not die on its first graphic).
+snapshots on assignment), and an asset that will not load gives a blank bitmap
+with a warning instead of raising (a game whose RTP is missing must not die on
+its first graphic). A third — re-loading a bitmap for a hue variant rather than
+`clone`ing the cached one — has since gone, because `Bitmap#clone` learned to
+copy pixels (see the end of gap 0h).
 
 With those three in place the host runs a game's whole bundle — **all 103
 sections of the released *Pray for You*** — and reaches `Main`, where it met the
@@ -195,7 +196,23 @@ because no keypress starts a battle — and reports `[RPGXP-HOST-BATTLE]`. It is
 the biggest surface of the lot: a battle builds the game's own
 `Spriteset_Battle`, so every enemy is a `Sprite_Battler` on top of the
 `RPG::Sprite` in gap 0, whose transitions, damage pop-up and animation playback
-nothing had run before. Whatever it reports is the next entry here.
+nothing had run before. It passed first time, running 119 frames inside the
+game's own battle with the confirm taps driving its party and actor command
+windows:
+
+```
+[RPGXP-HOST-SCENE] Scene_Map frame=41
+[RPGXP-HOST-SCENE] Scene_Battle frame=102
+[RPGXP-HOST-BATTLE] scene=Scene_Battle reached=true frame=221
+```
+
+`--rgss_host_save_test` is the same shape again — `$game_temp.save_calling`, the
+way the game's own Save Screen command sets it — and takes its own pass for the
+same reason. It is the one rung that reads a *file* back: a game's
+`Window_SaveFile` stamps each slot from `File#mtime` and its `Scene_Save` seeds
+the newest-slot search with `Time.at(0)`, which is what made `mruby-time`
+necessary (gap 0i) and is otherwise unexercised. Its own `save_data` then writes
+a real file. Whatever it reports is the next entry here.
 
 ### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
 

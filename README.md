@@ -173,7 +173,9 @@
   open its own menu (`[RPGXP-HOST-MENU]`) — the first thing a game draws out of
   its own `Window` subclasses, windowskin and font — and, in a second pass, to
   fight in its own battle scene (`[RPGXP-HOST-BATTLE]`), where every enemy is one
-  of its own `Sprite_Battler`s on top of `RPG::Sprite`.
+  of its own `Sprite_Battler`s on top of `RPG::Sprite`, and to open its own save
+  screen (`[RPGXP-HOST-SAVE]`), the one place a game reads a file's timestamp
+  back and writes a file of its own.
   `scripts/rpgxp_script_host_check.rb` covers the same ground under CRuby —
   every section of both bundles evaluates, and the RGSS standard library behaves
 - `scripts/compare-rpgxp-wine.bash` diffs our frames against the **genuine RGSS
