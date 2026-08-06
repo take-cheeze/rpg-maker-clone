@@ -272,7 +272,12 @@
   frame inside `Scene_Battle.update`, freezing the fight before the first
   window opened. MZ's save path is a **promise chain** (JsonEx → pako
   → localforage) rather than MV's synchronous call, so the probe starts it and
-  polls until it settles, then re-enters the map the way `Scene_Load` does
+  polls until it settles, then re-enters the map the way `Scene_Load` does —
+  and the state is **checked back**: six fields (gold, a switch, a variable, an
+  actor's HP, the inventory, the player's position) are moved off their defaults
+  before the save, overwritten between the save and the load, and compared after
+  it, because a settled promise chain is also what a load that restores nothing
+  looks like
 - The menu is **used**, not just opened, for the same reason: `menu_play` mode
   hands the party a Potion and wounds the actor through event commands, then
   taps confirm through the command window, the item category, the item list and

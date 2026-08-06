@@ -418,14 +418,73 @@ class MZ
             globalThis.__mzSaveResult =
               "error: " + String((e && e.message) || e);
           };
+
+          // One line covering the save's main contents: the party (gold and
+          // inventory), an actor (HP), the switch and variable tables, and the
+          // player's position on the map. Read before saving and again after
+          // loading; the round-trip is only a round-trip if they match.
+          var sig = function () {
+            var a = $gameActors ? $gameActors.actor(1) : null;
+            var it = (typeof $dataItems !== "undefined") ? $dataItems[1] : null;
+            return "gold=" + $gameParty.gold() +
+              " sw=" + ($gameSwitches.value(1) ? 1 : 0) +
+              " var=" + $gameVariables.value(1) +
+              " hp=" + (a ? a.hp : -1) +
+              " items=" + (it ? $gameParty.numItems(it) : -1) +
+              " pos=" + $gamePlayer.x + "," + $gamePlayer.y;
+          };
+
+          // Move every field off its default *before* saving. Without this the
+          // check would pass on an engine that quietly started a new game
+          // instead of loading one: a fresh game's state and an unwritten
+          // save's state would both read as the defaults. (These are the same
+          // calls the editor's Change Gold / Control Switches / Control
+          // Variables / Change Items / Change HP commands make. Unlike the
+          // menu probe, which drives them through the interpreter because a
+          // game really does hand out its first items from an event, how this
+          // state came to exist has no bearing on whether it serialises.)
+          var arm = function () {
+            $gameParty.gainGold(1234);
+            $gameSwitches.setValue(1, true);
+            $gameVariables.setValue(1, 4321);
+            if (typeof $dataItems !== "undefined" && $dataItems[1]) {
+              $gameParty.gainItem($dataItems[1], 5);
+            }
+            var a = $gameActors ? $gameActors.actor(1) : null;
+            if (a) { a.setHp(Math.max(1, a.mhp - 111)); }
+            $gamePlayer.locate(3, 4);
+          };
+
+          // Overwrite all of it between the save and the load, so a load that
+          // restores nothing cannot be mistaken for one that restored
+          // everything. Every field moves somewhere the armed state is not.
+          var clobber = function () {
+            $gameParty.gainGold(777);
+            $gameSwitches.setValue(1, false);
+            $gameVariables.setValue(1, 9999);
+            if (typeof $dataItems !== "undefined" && $dataItems[1]) {
+              $gameParty.loseItem($dataItems[1], 2);
+            }
+            var a = $gameActors ? $gameActors.actor(1) : null;
+            if (a) { a.setHp(Math.max(1, a.hp - 37)); }
+            $gamePlayer.locate(11, 9);
+          };
+
           try {
             var exists = false;
+            arm();
+            var before = sig();
             DataManager.saveGame(#{slot}).then(function () {
               exists = !!DataManager.savefileExists(#{slot});
+              clobber();
               return DataManager.loadGame(#{slot});
             }).then(function () {
+              var after = sig();
               globalThis.__mzSaveResult =
-                "saved=true exists=" + exists + " loaded=true";
+                "saved=true exists=" + exists + " loaded=true restored=" +
+                (after === before) +
+                (after === before ? "" :
+                  " before=[" + before + "] after=[" + after + "]");
               try {
                 if (typeof SceneManager !== "undefined" &&
                     typeof Scene_Map !== "undefined") {

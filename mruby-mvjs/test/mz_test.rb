@@ -251,16 +251,75 @@ assert 'MZ.menu_probe_js sets the flag Scene_Map acts on, and only there' do
   assert_equal true, MV::JS.eval("SceneManager._scene.menuCalling === undefined")
 end
 
+# A stand-in for the `$game*` objects the save probe's signature reads, plus a
+# DataManager that really does round-trip them: `saveGame` snapshots the state
+# and `loadGame` puts it back. The probe now arms those fields, clobbers them
+# between the save and the load and compares what returns (`restored=`), so a
+# fake that only resolves promises would no longer be testing the probe's actual
+# claim — it would be testing the failure path. That path is covered too, by the
+# spec that hands back a load which restores nothing.
+MZ_SAVE_FAKE_JS = <<~'JS'
+  globalThis.__mzCalls = [];
+  globalThis.__mzSnap = null;
+  globalThis.$gameParty = {
+    _gold: 0, _items: {},
+    gold: function () { return this._gold; },
+    gainGold: function (n) { this._gold += n; },
+    numItems: function (it) { return this._items[it.id] || 0; },
+    gainItem: function (it, n) { this._items[it.id] = (this._items[it.id] || 0) + n; },
+    loseItem: function (it, n) { this.gainItem(it, -n); }
+  };
+  globalThis.$gameSwitches = {
+    _d: {},
+    value: function (i) { return !!this._d[i]; },
+    setValue: function (i, v) { this._d[i] = v; }
+  };
+  globalThis.$gameVariables = {
+    _d: {},
+    value: function (i) { return this._d[i] || 0; },
+    setValue: function (i, v) { this._d[i] = v; }
+  };
+  globalThis.$gameActors = {
+    _a: { hp: 400, mhp: 400, setHp: function (v) { this.hp = v; } },
+    actor: function () { return this._a; }
+  };
+  globalThis.$gamePlayer = {
+    x: 8, y: 6,
+    locate: function (x, y) { this.x = x; this.y = y; }
+  };
+  globalThis.$dataItems = [null, { id: 1, name: 'Potion' }];
+
+  globalThis.__mzDump = function () {
+    return JSON.stringify({
+      gold: $gameParty._gold, items: $gameParty._items,
+      sw: $gameSwitches._d, vars: $gameVariables._d,
+      hp: $gameActors._a.hp, x: $gamePlayer.x, y: $gamePlayer.y
+    });
+  };
+  globalThis.__mzRestore = function (json) {
+    var o = JSON.parse(json);
+    $gameParty._gold = o.gold; $gameParty._items = o.items;
+    $gameSwitches._d = o.sw; $gameVariables._d = o.vars;
+    $gameActors._a.hp = o.hp; $gamePlayer.x = o.x; $gamePlayer.y = o.y;
+  };
+JS
+
 assert 'MZ.save_probe_js round-trips through DataManager across frames' do
   # MZ's save path is a promise chain (unlike MV's synchronous one), so the
   # probe cannot read a return value: it starts the chain and the result lands
   # some pumped frames later. Driven here against the real host with a stand-in
   # DataManager, which is what makes the asynchrony visible.
+  MV::JS.eval(MZ_SAVE_FAKE_JS)
   MV::JS.eval(<<~'JS')
-    globalThis.__mzCalls = [];
     globalThis.DataManager = {
-      saveGame: function (id) { __mzCalls.push('save' + id); return Promise.resolve(0); },
-      loadGame: function (id) { __mzCalls.push('load' + id); return Promise.resolve(0); },
+      saveGame: function (id) {
+        __mzCalls.push('save' + id); __mzSnap = __mzDump();
+        return Promise.resolve(0);
+      },
+      loadGame: function (id) {
+        __mzCalls.push('load' + id); __mzRestore(__mzSnap);
+        return Promise.resolve(0);
+      },
       savefileExists: function (id) { __mzCalls.push('exists' + id); return true; }
     };
     // No scene stack here, so the probe skips the Scene_Map re-entry a real
@@ -273,7 +332,9 @@ assert 'MZ.save_probe_js round-trips through DataManager across frames' do
   assert_equal "", MV::JS.eval(MZ.save_result_js)
 
   5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
-  assert_equal "saved=true exists=true loaded=true",
+  # `restored=true` is the claim that matters: the fields the probe armed came
+  # back after being overwritten. The three before it only say the chain ran.
+  assert_equal "saved=true exists=true loaded=true restored=true",
                MV::JS.eval(MZ.save_result_js)
   # The slot is honoured, and `savefileExists` is read *after* the save resolves
   # — StorageManager only refreshes its key cache at the end of its own chain.
@@ -284,10 +345,11 @@ assert 'MZ.save_probe_js re-enters the map, and keeps its verdict if that fails'
   # A real load throws the $game* objects away and rebuilds them, so the probe
   # finishes the way Scene_Load does — back into Scene_Map — rather than leaving
   # the running scene holding references the load discarded.
+  MV::JS.eval(MZ_SAVE_FAKE_JS)
   MV::JS.eval(<<~'JS')
     globalThis.DataManager = {
-      saveGame: function () { return Promise.resolve(0); },
-      loadGame: function () { return Promise.resolve(0); },
+      saveGame: function () { __mzSnap = __mzDump(); return Promise.resolve(0); },
+      loadGame: function () { __mzRestore(__mzSnap); return Promise.resolve(0); },
       savefileExists: function () { return true; }
     };
     function Scene_Map() {}
@@ -296,7 +358,7 @@ assert 'MZ.save_probe_js re-enters the map, and keeps its verdict if that fails'
   JS
   MV::JS.eval(MZ.save_probe_js(1))
   5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
-  assert_equal "saved=true exists=true loaded=true",
+  assert_equal "saved=true exists=true loaded=true restored=true",
                MV::JS.eval(MZ.save_result_js)
   assert_equal true, MV::JS.eval("SceneManager.went === Scene_Map")
 
@@ -305,11 +367,40 @@ assert 'MZ.save_probe_js re-enters the map, and keeps its verdict if that fails'
   MV::JS.eval("SceneManager.goto = function () { throw new Error('no stack'); };")
   MV::JS.eval(MZ.save_probe_js(1))
   5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
-  assert_equal "saved=true exists=true loaded=true goto_error=no stack",
+  assert_equal "saved=true exists=true loaded=true restored=true " \
+               "goto_error=no stack",
                MV::JS.eval(MZ.save_result_js)
 end
 
+assert 'MZ.save_probe_js catches a load that settles but restores nothing' do
+  # The failure the three older claims cannot see. `loadGame` resolves, so
+  # `saved`/`exists`/`loaded` are all true — and the state it was supposed to
+  # bring back is still the clobbered one. This is what `restored=` is for, and
+  # it is why the probe arms the fields first: a load that quietly started a new
+  # game would leave the defaults, which is only distinguishable from a restored
+  # save if the saved state was never the defaults.
+  MV::JS.eval(MZ_SAVE_FAKE_JS)
+  MV::JS.eval(<<~'JS')
+    globalThis.DataManager = {
+      saveGame: function () { __mzSnap = __mzDump(); return Promise.resolve(0); },
+      loadGame: function () { return Promise.resolve(0); },
+      savefileExists: function () { return true; }
+    };
+    delete globalThis.SceneManager;
+    delete globalThis.Scene_Map;
+  JS
+  MV::JS.eval(MZ.save_probe_js(1))
+  5.times { |i| MV::JS.pump(i * (1000.0 / 60.0)) }
+  res = MV::JS.eval(MZ.save_result_js)
+  assert_equal true, res.include?("loaded=true restored=false")
+  # Both signatures are printed, so the line names the fields that did not come
+  # back rather than only that something did not.
+  assert_equal true, res.include?("before=[gold=1234 sw=1 var=4321")
+  assert_equal true, res.include?("after=[gold=2011 sw=0 var=9999")
+end
+
 assert 'MZ.save_probe_js reports a rejected chain instead of hanging' do
+  MV::JS.eval(MZ_SAVE_FAKE_JS)
   MV::JS.eval(
     "globalThis.DataManager = { saveGame: function () { " \
     "return Promise.reject(new Error('disk full')); } };"
