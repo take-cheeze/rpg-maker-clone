@@ -717,6 +717,42 @@ JavaScript loads and interprets the JSON.
       against one — a player who is not moving never counts a step down, so a
       probe that held one key would have waited out its budget against a wall.
 
+    - **M6.3o — the shop, and a font that crashed on a multiplication sign
+      (landed).** `Scene_Shop` was a whole scene nothing had entered, and the
+      only place the engine spends gold against a price list rather than an
+      event handing items over. `--mz_shop_test` (`MZ_MODE=shop`) opens one with
+      a **Shop Processing** command (code 302, preceded by Change Gold so the
+      party can afford anything — `Window_ShopBuy.isEnabled` greys out what it
+      cannot), taps confirm through Buy, the goods list and the quantity window,
+      then cancels back to the map. Both halves are asserted, because either
+      alone passes on a broken shop: gold can leave the purse without goods
+      arriving, and goods can arrive without being paid for.
+
+      **The first run did not report a failure — it crashed the engine:**
+
+      ```
+      rpg_maker_clone: 3rd/stb/stb_truetype.h:1545: int stbtt_FindGlyphIndex(...):
+        Assertion `unicode_codepoint <= ttUSHORT(data + endCount + 2*item)' failed.
+      ```
+
+      `Window_ShopNumber` draws a multiplication sign (U+00D7) between the item
+      and the quantity — the only character outside ASCII either engine draws,
+      and the first time anything had asked the bed's font for a codepoint above
+      126. The font is ours (`scripts/gen-sample-font.py`), and its cmap format-4
+      header was wrong: `entrySelector` was written as 0 where the spec requires
+      `floor(log2(segCount))` = 1. stb_truetype drives its binary search from
+      those three fields rather than from `segCount`, so the search never
+      advanced past the first segment, landed on the ASCII range for a codepoint
+      above it, and asserted — a hard crash where the answer should have been
+      *no glyph*. Both beds shipped that font, so any game text with a
+      non-ASCII character would have hit it.
+
+      Fixed by computing all three fields from `segCount`, and the font now
+      carries a `×` glyph in a segment of its own — which also exercises the
+      corrected search on a **covered** codepoint above ASCII rather than only
+      on a missing one. Verified directly against the written tables: `'A'` →
+      glyph 34, `'×'` → glyph 96, an uncovered `'€'` → glyph 0.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

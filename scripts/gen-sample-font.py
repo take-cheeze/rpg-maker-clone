@@ -117,7 +117,14 @@ GLYPHS = {
 for _c in "abcdefghijklmnopqrstuvwxyz":
     GLYPHS[_c] = GLYPHS[_c.upper()]
 
-CHARS = [chr(c) for c in range(32, 127)]
+# U+00D7 MULTIPLICATION SIGN, the one character outside ASCII the engines draw:
+# `Window_ShopNumber` puts it between the item and the quantity, so a shop with
+# no glyph for it shows a gap. It is also what caught the malformed cmap header
+# below — nothing had ever asked this font for a codepoint above 126.
+GLYPHS["\u00d7"] = ["     ", "     ", "#   #", " # # ", "  #  ", " # # ",
+                    "#   #"]
+
+CHARS = [chr(c) for c in range(32, 127)] + ["\u00d7"]
 
 
 def glyph_contours(ch):
@@ -210,19 +217,38 @@ def build_sfnt():
                        COLS * ROWS * 4, COLS * ROWS, 0, 0, 2, 0,
                        0, 0, 0, 0, 0, 0, 0)
 
-    # cmap format 4, one segment covering 32..126 plus the required 0xFFFF end.
+    # cmap format 4: one segment for ASCII 32..126, one for the single
+    # multiplication sign, and the required 0xFFFF terminator.
+    #
+    # The three search fields are not decoration: stb_truetype drives its binary
+    # search with them rather than with segCount, so getting them wrong makes
+    # every lookup outside the covered range walk to the wrong segment. With
+    # `entrySelector` at 0 instead of log2(segCount), the search never advanced
+    # past the first segment and `stbtt_FindGlyphIndex` asserted on any
+    # codepoint above 126 — a hard crash where the answer should have been
+    # "no glyph". Nothing asked for one until Window_ShopNumber drew its
+    # multiplication sign (U+00D7). See ADR 0004 M6.3o.
+    #
+    #   searchRange   = 2 * 2^floor(log2(segCount))
+    #   entrySelector = floor(log2(segCount))
+    #   rangeShift    = 2*segCount - searchRange
     first, last = 32, 126
-    seg_count = 2
-    search_range = 2 * (2 ** 0) * seg_count // seg_count * 2  # = 4 for 2 segments
+    times = 0x00D7
+    # Glyph ids follow CHARS order after .notdef: 32 -> 1 ... 126 -> 95, then
+    # the multiplication sign.
+    times_glyph = len(CHARS)
+    seg_count = 3
+    entry_selector = seg_count.bit_length() - 1
+    search_range = 2 * (1 << entry_selector)
     sub = struct.pack(">HHHHHHH", 4, 16 + 8 * seg_count, 0,
-                      seg_count * 2, search_range, 0,
+                      seg_count * 2, search_range, entry_selector,
                       seg_count * 2 - search_range)
-    sub += struct.pack(">HH", last, 0xFFFF)          # endCode[]
-    sub += struct.pack(">H", 0)                      # reservedPad
-    sub += struct.pack(">HH", first, 0xFFFF)         # startCode[]
-    # idDelta maps `first` to glyph 1: delta = 1 - first (mod 65536).
-    sub += struct.pack(">hh", 1 - first, 1)   # idDelta[]: cp 32 -> glyph 1
-    sub += struct.pack(">HH", 0, 0)                  # idRangeOffset[]
+    sub += struct.pack(">HHH", last, times, 0xFFFF)      # endCode[]
+    sub += struct.pack(">H", 0)                          # reservedPad
+    sub += struct.pack(">HHH", first, times, 0xFFFF)     # startCode[]
+    # idDelta maps each segment's start to its glyph: 32 -> 1, 0xD7 -> the last.
+    sub += struct.pack(">hhh", 1 - first, times_glyph - times, 1)  # idDelta[]
+    sub += struct.pack(">HHH", 0, 0, 0)                  # idRangeOffset[]
     cmap = struct.pack(">HHHHI", 0, 1, 3, 1, 12) + sub
 
     def name_record(nid, text):

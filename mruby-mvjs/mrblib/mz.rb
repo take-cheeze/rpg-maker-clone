@@ -58,6 +58,15 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The shop probe's bed constants and bounds (see #maybe_shop_test). The party
+  # is given `SHOP_GOLD` before the shop opens — it starts with none, and
+  # `Window_ShopBuy.isEnabled` greys out anything it cannot afford, so a
+  # penniless party turns the whole scene into a list nobody can select.
+  SHOP_ITEM_ID = 1
+  SHOP_GOLD = 500
+  SHOP_PROBE_FRAMES = 900
+  SHOP_TAP_PERIOD = 12
+
   # The encounter probe's bounds (see #maybe_encounter_test). It walks on the
   # bed's *second* map, which is the only one carrying an encounter list — map 1
   # must stay encounter-free because other probes walk there. The step budget is
@@ -331,6 +340,44 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that opens a shop the way a game does: **Change Gold** (code 125) so
+    # the party can afford something, then **Shop Processing** (code 302) — the
+    # command that builds the goods list and pushes `Scene_Shop` itself. Both on
+    # the map interpreter, in one list, exactly as an event would run them.
+    #
+    # `[operation, operandType, operand]` for 125, and for 302
+    # `[type, dataId, priceType, price, purchaseOnly]` — type 0 = item,
+    # priceType 0 = the item's own price, and `purchaseOnly` false so the Sell
+    # command is present too. (The goods list is the command's own parameters,
+    # with any further entries following as code 605; one entry needs none.)
+    def shop_probe_js(item_id, gold)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:125,indent:0,parameters:[0,0,#{gold.to_i}]}," \
+      "{code:302,indent:0,parameters:[0,#{item_id.to_i},0,0,false]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # JS that reads what the shop is doing: the party's gold, how many of the
+    # traded item it holds, and which window has the cursor — read the same way
+    # the menu probe reads it, by walking the scene's window layer rather than
+    # naming each scene's fields.
+    def shop_state_js(item_id)
+      "(function(){ var g = (typeof $gameParty !== 'undefined' && $gameParty) " \
+      "? $gameParty.gold() : -1; var n = -1; " \
+      "if (typeof $gameParty !== 'undefined' && $gameParty && " \
+      "typeof $dataItems !== 'undefined' && $dataItems[#{item_id.to_i}]) " \
+      "n = $gameParty.numItems($dataItems[#{item_id.to_i}]); " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; var w = '', idx = -1; " \
+      "var kids = (s && s._windowLayer) ? s._windowLayer.children : null; " \
+      "if (kids) { for (var i = 0; i < kids.length; i++) { var c = kids[i]; " \
+      "if (c && c.active && c.constructor && c.index) { " \
+      "w = c.constructor.name; idx = c.index(); break; } } } " \
+      "return 'gold=' + g + ' items=' + n + ' win=' + (w || '-') + " \
+      "' idx=' + idx; })();"
     end
 
     # JS that reads how close the player is to a random encounter, and what
@@ -787,6 +834,7 @@ class MZ
     maybe_transfer_test # CI: Transfer Player to map 2 and log that it loaded
     maybe_common_event_test # CI: run both kinds of common event and log each
     maybe_encounter_test # CI: walk on map 2 until a random encounter fights
+    maybe_shop_test # CI: open a shop from the map and buy something in it
     maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_menu_play_test # CI: use that menu and log the item healed and was spent
@@ -968,7 +1016,7 @@ class MZ
                   menu_test_requested? || save_test_requested? ||
                   animation_test_requested? || battle_test_troop > 0 ||
                   transfer_test_requested? || common_event_test_requested? ||
-                  encounter_test_requested?
+                  encounter_test_requested? || shop_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -1257,6 +1305,88 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_shop_test was requested (a launcher constant set by main.cxx).
+  # Implies New Game, since the shop is opened from the map.
+  def shop_test_requested?
+    (begin
+      MZ_SHOP_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_shop_test is set (CI), open a shop from the map and *buy*
+  # something: tap confirm through the Buy command, the goods list and the
+  # quantity window until the party's gold falls and the item arrives, then
+  # cancel back out to the map.
+  #
+  # `Scene_Shop` is a whole scene nothing here had ever entered. It is also the
+  # only place the engine spends gold and grows the inventory from a price list
+  # rather than an event handing items over, so it exercises `Window_ShopBuy`'s
+  # affordability test, `Window_ShopNumber`'s arithmetic and
+  # `Scene_Shop.doBuy` — none of which the menu's item path touches.
+  #
+  # Same shape as the menu play-out: real key presses rather than calling
+  # `doBuy` directly, because the windows are what is under test; confirm walks
+  # in and cancel walks back out; the report lands the moment the map returns.
+  def maybe_shop_test
+    return if @shop_test_done
+    return unless shop_test_requested?
+    return unless @shop_started || current_scene == "Scene_Map"
+
+    @shop_frame ||= 0
+    state = MV::JS.eval(self.class.shop_state_js(SHOP_ITEM_ID))
+    gold = MZ.state_field(state, "gold")
+    items = MZ.state_field(state, "items")
+
+    if @shop_frame.zero?
+      @shop_started = true
+      $stderr.puts "[MZ] auto shop test: #{state}"
+      MV::JS.eval(self.class.shop_probe_js(SHOP_ITEM_ID, SHOP_GOLD))
+    end
+    @shop_frame += 1
+
+    # The opening balance is read once the gold has been handed over, not on the
+    # first frame: the Change Gold command runs a frame or two after the list is
+    # set up, and a `gold_before` of zero would make any later drop look like a
+    # purchase.
+    @shop_gold0 = gold if @shop_gold0.nil? && gold.to_i >= SHOP_GOLD
+    @shop_items0 = items if @shop_items0.nil? && !gold.nil? && gold.to_i >= SHOP_GOLD
+
+    if state != @shop_last_state
+      @shop_last_state = state
+      $stderr.puts "[MZ-SHOP] state #{state}"
+    end
+    @shop_at_buy ||= state.to_s.include?("win=Window_ShopNumber")
+
+    @shop_gold = gold
+    @shop_items = items
+    @shop_state = state
+    bought = !@shop_gold0.nil? && !@shop_items0.nil? &&
+             !gold.nil? && !items.nil? &&
+             gold < @shop_gold0 && items > @shop_items0
+
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.release(RGSS::Input::B)
+    if (@shop_frame % SHOP_TAP_PERIOD).zero?
+      RGSS::Input.press(bought ? RGSS::Input::B : RGSS::Input::C)
+    end
+
+    returned = bought && current_scene == "Scene_Map"
+    return if !returned && @shop_frame < SHOP_PROBE_FRAMES
+
+    @shop_test_done = true
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.release(RGSS::Input::B)
+    $stderr.puts "[MZ-SHOP] gold_before=#{@shop_gold0} gold_after=#{@shop_gold} " \
+                 "items_before=#{@shop_items0} items_after=#{@shop_items} " \
+                 "bought=#{bought ? true : false} " \
+                 "returned=#{returned ? true : false} scene=#{current_scene} " \
+                 "last=[#{@shop_state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] shop test error: #{e.message}"
   end
 
   # Whether --mz_encounter_test was requested (a launcher constant set by
@@ -1771,6 +1901,7 @@ class MZ
     return if animation_test_requested? && !animation_shot_ready?
     return if menu_play_requested? && !menu_play_shot_ready?
     return if encounter_test_requested? && !encounter_shot_ready?
+    return if shop_test_requested? && !shop_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -1827,6 +1958,7 @@ class MZ
       [transfer_test_requested?, @transfer_test_done],
       [common_event_test_requested?, @common_test_done],
       [encounter_test_requested?, @enc_test_done],
+      [shop_test_requested?, @shop_test_done],
       [message_test_requested?, @msg_test_done],
       [animation_test_requested?, @anim_test_done],
       [menu_test_requested?, @menu_test_done],
@@ -1853,6 +1985,14 @@ class MZ
       ""
     end
     !(path.nil? || path.empty?)
+  end
+
+  # Is this a frame worth photographing for the shop? The quantity window, one
+  # tap before the gold changes hands — the goods list, the party's purse and
+  # the number being bought are all on screen together there. Bounded like the
+  # others.
+  def shop_shot_ready?
+    @shop_at_buy || @shop_test_done
   end
 
   # Is this a frame worth photographing for the encounter probe? The fixed delay

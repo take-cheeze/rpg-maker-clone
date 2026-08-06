@@ -17,6 +17,8 @@
 #   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
+#   [MZ-SHOP]  gold_before=<n> gold_after=<n> items_before=<n> items_after=<n>
+#              bought=<bool> returned=<bool> scene=<scene>
 #   [MZ-ENC]   encountered=<bool> troop=<id> map=<id> scene=<scene>
 #   [MZ-COMMON] parallel=<bool> called=<bool> last=[<state>]
 #   [MZ-XFER]  from=[<state>] to=[<state>] moved=<bool> landed=<bool>
@@ -42,6 +44,7 @@
 #   transfer  New Game -> map, Transfer Player to the bed's second map
 #   common    New Game -> map, run a parallel and a called common event
 #   encounter New Game -> map 2, walk until a random encounter fights
+#   shop      New Game -> map, open a shop and buy an item in it
 #   menu      New Game -> map, open the party menu
 #   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
@@ -87,6 +90,10 @@ case "${MODE}" in
     message)
         FLAGS=(--mz_message_test)
         DEFAULT_SHOT="ss/mz_message.png" ;;
+    shop)
+        FLAGS=(--mz_shop_test)
+        DEFAULT_TIMEOUT_MS=180000
+        DEFAULT_SHOT="ss/mz_shop.png" ;;
     encounter)
         FLAGS=(--mz_encounter_test)
         DEFAULT_TIMEOUT_MS=180000
@@ -121,7 +128,7 @@ case "${MODE}" in
         DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|transfer|common|encounter|menu|menu_play" \
+             "(play|message|transfer|common|encounter|shop|menu|menu_play" \
              "|animation|save|battle|battle_play)" >&2
         exit 1 ;;
 esac
@@ -207,6 +214,19 @@ case "${MODE}" in
         # actually opened over the map.
         grep -q '\[MZ-MSG\] busy=true window_open=true' "${log}" ||
             fail "the message window never opened ([MZ-MSG] busy/window_open)"
+        ;;
+    shop)
+        # Both halves, because either alone would pass on a broken shop: gold
+        # can leave the purse without goods arriving, and an item can arrive
+        # without being paid for. Together they are a purchase — through
+        # Window_ShopBuy's affordability test, Window_ShopNumber's arithmetic
+        # and Scene_Shop.doBuy, none of which the menu's item path touches.
+        # `returned=true` adds that the scene handed back to the map rather
+        # than trapping the player in the shop. See ADR 0004 M6.3o.
+        grep -q '\[MZ-SHOP\].*bought=true' "${log}" ||
+            fail "nothing was bought in the shop ([MZ-SHOP] bought=true)"
+        grep -q '\[MZ-SHOP\].*returned=true' "${log}" ||
+            fail "the shop never handed back to the map ([MZ-SHOP] returned=true)"
         ;;
     encounter)
         # No Battle Processing command is issued anywhere in this mode, so a
@@ -322,7 +342,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-SHOP\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
