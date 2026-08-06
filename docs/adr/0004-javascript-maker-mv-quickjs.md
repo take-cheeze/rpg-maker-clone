@@ -784,6 +784,40 @@ JavaScript loads and interprets the JSON.
       than the capture being made to skip it — the settle delay is there for
       every other mode's benefit.
 
+    - **M6.3q — equipment (landed).** `Scene_Equip` was the last major scene
+      nothing had entered, and equipment is the one place a *parameter* is
+      supposed to change because of what an actor is holding:
+      `Game_Actor.paramPlus` sums the equipped items' `params` into every stat
+      the rest of the engine reads.
+
+      The bed had declared everything *around* it — five `equipTypes`, a
+      `weaponType`, an `armorType`, and the class trait that lets it hold a
+      weapon — while `Weapons.json` and `Armors.json` stayed `[None]`, so no
+      slot ever had anything to hold. The same shape as the empty `Items.json`
+      behind the empty menu (M6.3j): the scaffolding was there and the content
+      was not.
+
+      `--mz_equip_test` (`MZ_MODE=equip`) hands the party the weapon through a
+      **Change Weapons** command (`Window_EquipItem` lists what the party owns),
+      walks the menu's cursor down to Equip, confirms through the equip
+      command and slot windows, and picks the weapon:
+
+      ```
+      [MZ-EQUIP] state atk=30 weapon=0 held=1 win=Window_EquipItem idx=0
+      [MZ-EQUIP] state atk=50 weapon=1 held=0 win=Window_EquipSlot idx=0
+      [MZ-EQUIP] atk_before=30 atk_after=50 weapon=1 equipped=true stronger=true
+      ```
+
+      `equipped=` is only that the slot holds the weapon; `stronger=` is the
+      claim worth making. A slot can fill while the number the player sees never
+      moves, and from the slot's side those two are identical.
+
+      One authoring note, in the same family as M6.3l's undeclared variable:
+      `isEquipWtypeOk`/`isEquipAtypeOk` are plain lookups in the actor's traits,
+      so a piece of equipment whose type nobody allows is simply never
+      selectable, with nothing said about why. The class carried the weapon-type
+      trait (code 51) and not the armor one (code 52); it now has both.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

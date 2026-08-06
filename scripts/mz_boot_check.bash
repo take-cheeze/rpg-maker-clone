@@ -17,6 +17,8 @@
 #   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
+#   [MZ-EQUIP] atk_before=<n> atk_after=<n> weapon=<id> equipped=<bool>
+#              stronger=<bool> returned=<bool>
 #   [MZ-MSGPLAY] opened=<bool> closed=<bool> choice_shown=<bool> branch=<n>
 #              picked=<bool>
 #   [MZ-SHOP]  gold_before=<n> gold_after=<n> items_before=<n> items_after=<n>
@@ -48,6 +50,7 @@
 #   encounter New Game -> map 2, walk until a random encounter fights
 #   shop      New Game -> map, open a shop and buy an item in it
 #   message_play ... and then *operate* it: page it through, take a choice
+#   equip     New Game -> map -> menu -> Equip, put the bed's weapon on
 #   menu      New Game -> map, open the party menu
 #   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
@@ -93,6 +96,10 @@ case "${MODE}" in
     message)
         FLAGS=(--mz_message_test)
         DEFAULT_SHOT="ss/mz_message.png" ;;
+    equip)
+        FLAGS=(--mz_equip_test)
+        DEFAULT_TIMEOUT_MS=180000
+        DEFAULT_SHOT="ss/mz_equip.png" ;;
     message_play)
         FLAGS=(--mz_message_play)
         DEFAULT_TIMEOUT_MS=180000
@@ -135,8 +142,8 @@ case "${MODE}" in
         DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|message_play|transfer|common|encounter|shop|menu" \
-             "|menu_play|animation|save|battle|battle_play)" >&2
+             "(play|message|message_play|transfer|common|encounter|shop|equip" \
+             "|menu|menu_play|animation|save|battle|battle_play)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
@@ -221,6 +228,18 @@ case "${MODE}" in
         # actually opened over the map.
         grep -q '\[MZ-MSG\] busy=true window_open=true' "${log}" ||
             fail "the message window never opened ([MZ-MSG] busy/window_open)"
+        ;;
+    equip)
+        # `equipped=true` is only that the slot holds the weapon. `stronger=true`
+        # is the claim worth making: the actor's attack went up, which takes
+        # Game_Actor.paramPlus summing the equipped item's params into the stat
+        # the rest of the engine reads. A slot can hold an object while the
+        # number the player sees never moves, and from the slot's side those two
+        # look identical. See ADR 0004 M6.3q.
+        grep -q '\[MZ-EQUIP\].*equipped=true' "${log}" ||
+            fail "the weapon never went into the slot ([MZ-EQUIP] equipped=true)"
+        grep -q '\[MZ-EQUIP\].*stronger=true' "${log}" ||
+            fail "equipping did not raise the actor's attack ([MZ-EQUIP] stronger=true)"
         ;;
     message_play)
         # `picked=true` is the whole test: the second branch of the choice ran,
@@ -365,7 +384,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-SHOP\]|\[MZ-MSGPLAY\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-SHOP\]|\[MZ-MSGPLAY\]|\[MZ-EQUIP\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"

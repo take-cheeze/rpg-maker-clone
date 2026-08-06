@@ -75,6 +75,7 @@ DB_STATE = 18
 DB_ACTOR = 11
 DB_TERRAIN = 16
 DB_CHIPSET = 20
+DB_ANIME = 19
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -392,6 +393,51 @@ def combatant(name, atk, dfn, agi, hp, states = [])
   c.state_turns = {}
   c.hit_rate = 90
   c
+end
+
+# 蘇生専用 (`ko_only`): an item that does nothing at all to a target still
+# standing -- not even its percentage HP restore, since RPG_RT returns from the
+# item algorithm before both effects. Every such item in both test beds is a
+# revive, which is the only shape that makes the distinction visible.
+def check_ko_only(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  items = db[DB_ITEM]
+  return unless items
+
+  ko = []
+  items.each { |id, it| ko << id if it.ko_only }
+  puts format('   items: %d 蘇生専用 (revive-only)', ko.size)
+  return if ko.empty?
+
+  check "#{name}: a real revive item is inert on a member still standing" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    hero = party.leader
+    ok hero, 'the game has a party to test with'
+    ko.each do |iid|
+      it = items[iid]
+      # Every one of them restores a *percentage* of max HP, which is what makes
+      # "not even the HP" a different answer from "cures nothing".
+      ok (it.recover_hp_rate || 0) > 0 || (it.recover_hp || 0) > 0,
+         "item ##{iid} (#{it.name}) restores something when it does work"
+      hero.clear_states
+      hero.set_hp(1)
+      eq false, party.item_effective?(iid, hero),
+         "item ##{iid} (#{it.name}) is inert on a standing member"
+      party.gain_item(iid, 1)
+      eq [], party.use_item(iid, hero)
+      eq 1, hero.hp, 'and left the HP alone'
+
+      # ... and does its job on one who has fallen.
+      hero.add_state(Game::Actor::DEATH_STATE)
+      eq true, party.item_effective?(iid, hero),
+         "item ##{iid} works on a fallen member"
+      eq [hero], party.use_item(iid, hero)
+      ok !hero.dead?, 'who is back on their feet'
+    end
+    hero.clear_states
+    hero.set_hp(hero.max_hp)
+  end
 end
 
 def check_states(dir)
@@ -1018,7 +1064,63 @@ def check_terms(dir)
   end
 end
 
+# Every skill and item names a battle animation, and until now none of them
+# played. A fixture cannot say whether the ids resolve -- it defines whatever
+# table it needs -- so this asks the real ones.
+def check_animations(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  anims = db[DB_ANIME]
+  return unless anims
+
+  total = 0
+  named = {}
+  anims.each { |id, _| total += 1 }
+  [[DB_SKILL, :skill], [DB_ITEM, :item]].each do |chunk, label|
+    rows = 0
+    with = 0
+    resolves = 0
+    db[chunk]&.each do |_id, r|
+      rows += 1
+      a = r.animation_id || 0
+      next unless a > 0
+      with += 1
+      resolves += 1 if anims[a]
+    end
+    named[label] = [rows, with, resolves]
+  end
+  puts format('   animations: %d in the table; skills %d/%d name one (%d ' \
+              'resolve), items %d/%d (%d resolve)',
+              total, named[:skill][1], named[:skill][0], named[:skill][2],
+              named[:item][1], named[:item][0], named[:item][2])
+
+  check "#{name}: every animation a skill or item names is a real row" do
+    [[DB_SKILL, 'skill'], [DB_ITEM, 'item']].each do |chunk, label|
+      db[chunk]&.each do |id, r|
+        a = r.animation_id || 0
+        next unless a > 0
+        ok anims[a], "#{label} ##{id} (#{r.name}) names animation ##{a}"
+      end
+    end
+  end
+
+  check "#{name}: a real animation builds a drawable player" do
+    # The first animation with frames: the scene's build_animation is what turns
+    # a row into something the round can play, and a row whose frame table is
+    # empty must not arm one.
+    drawable = 0
+    anims.each do |_id, a|
+      f = a.frames
+      n = 0
+      f&.each { |_i, _fr| n += 1 }
+      drawable += 1 if n > 0
+    end
+    ok drawable > 0, "#{drawable} of #{total} animations carry frames"
+  end
+end
+
 dirs.each do |d|
+  check_animations(d)
   check_terms(d)
   check_game(d)
   check_menus(d)
@@ -1026,6 +1128,7 @@ dirs.each do |d|
   check_equipment(d)
   check_terrain(d)
   check_bush(d)
+  check_ko_only(d)
   check_items(d)
 end
 

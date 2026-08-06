@@ -4,7 +4,7 @@ Date: 2026-08-04
 
 ## Status
 
-Proposed
+Accepted — implemented 2026-08-06.
 
 ## Context
 
@@ -77,6 +77,10 @@ spread across **per-row `z` strips** so they interleave with character sprites:
   it. Give the strip a `z` derived from the RMXP rule — the tile's on-screen foot
   row plus its priority — so it sorts into the character `z` continuum:
 
+  > **How tall a strip is, is not settled here — see "Strip height" below.** It
+  > is the one part of this design that has to be decided before implementing,
+  > because the obvious readings are respectively unaffordable and wrong.
+
   ```
   z = (ty + prio) * TILE_SIZE + TILE_SIZE - oy
   ```
@@ -127,7 +131,98 @@ Priority is looked up as `priorities[id]` for every tile id (autotile ids 48..38
 and regular ids ≥ 384 alike); an out-of-range id or a nil table is treated as
 priority 0.
 
+## Strip height: open
+
+Added 2026-08-06, before any implementation.
+
+"One canvas strip per row" above does not say how tall a strip is, and both
+readings that first suggest themselves fail. The numbers are for XP's viewport,
+which `Spriteset_Map` creates as `Viewport.new(0, 0, 640, 480)` — and the strips
+are sized from the viewport rect, exactly as the current single above-canvas is.
+Sixteen tile rows are visible (15 whole plus a partial) and priorities run 1..5,
+so `ty + prio` takes up to **21** distinct values.
+
+| reading | cost | verdict |
+|---|---|---|
+| a full-screen canvas per bucket, like today's single above layer | 1.17 MiB × 21 = **24.6 MiB** | unaffordable |
+| a one-tile-row strip per bucket | 80 KiB × 21 = 1.6 MiB | **wrong** — see below |
+| a five-row strip per bucket | 400 KiB × 21 = 8.2 MiB | plausible, still heavy |
+
+The one-row reading is not merely tight, it cannot express the layout. A bucket
+is keyed on `ty + prio`, so bucket `B` holds every tile with `ty = B - prio` for
+`prio` in 1..5 — up to **five different map rows**, each drawing at its own
+screen `y`. One row of pixels cannot hold them.
+
+That same arithmetic bounds the strip, which is where the third row of the table
+comes from: a bucket spans rows `B-5 .. B-1`, so a strip five tile rows tall,
+positioned at `(B - 5) * TILE_SIZE - oy`, covers every tile that can land in it.
+
+8.2 MiB is still seven times what the flat layer costs today, and this code is
+shared with the `psp` and `wio` targets, so the worst case wants to be much
+smaller than the worst case. Two levers, neither costed yet:
+
+- **Lazy allocation.** Only buckets that actually hold a tile need a strip. A map
+  whose tileset only uses priority 1 collapses the bucket set to one per row, and
+  a map with no priority tiles allocates nothing — which is also what keeps the
+  no-priority-table path free.
+- **~~Bucketing by row rather than by `ty + prio`~~ — ruled out by the data.**
+  One strip per *row* (16, not 21), one row tall, taking its `z` from the highest
+  priority it holds would be 1.3 MiB and simple. It is also an approximation: two
+  tiles on the same row with different priorities sort together where RMXP sorts
+  them apart. That looked like it might be harmless in practice, so the test bed
+  was asked — and it is not. Of the XP test bed's priority-bearing map rows,
+  **4 of 9 (44%) carry more than one distinct priority**, one of them three at
+  once:
+
+  | row | priorities present |
+  |---|---|
+  | 3 | 4, 5 |
+  | 4 | 3, 4 |
+  | 5 | **2, 3, 5** |
+  | 6 | 2, 4 |
+
+  So row-bucketing would visibly mis-sort the first map of the only XP project
+  available, not some hypothetical one. (One map, 15 rows — a small sample, and
+  the only sample there is.)
+
+**Resolved as five-row strips, pooled and lazily allocated.** A strip is
+`TILEMAP_PRIO_SPAN` (5) rows tall and a tile of priority `p` lands at local row
+`5 - p`, which depends only on the priority and not on the row it came from.
+
+Two things the implementation added on top of the sketch above:
+
+- **Strips are pooled by `bucket % 24`, not keyed on the bucket.** Keyed on the
+  absolute bucket, walking down a 200-row map allocates a strip per row and never
+  releases one — 200 canvases for a map that shows twenty. The modulus only has
+  to exceed the number of buckets that can be visible at once (16 rows + 5 span =
+  21), and a slot is reused in place as the map scrolls rather than reallocated,
+  so scrolling costs nothing. The slot records which bucket it currently carries,
+  since that is what its position and `z` derive from.
+- **Only the XP path moved.** The VX / MV tile model routes on `flags & 0x10` and
+  keeps the single flat above-canvas; this ADR is about RMXP's `priorities`, and
+  widening it would have meant changing a second tile model with no test bed for
+  the priority behaviour.
+
 ## Consequences
+
+Measured on the XP test bed, booted under Xvfb:
+
+- **Four strips, not twenty-one.** The visible map allocates buckets 7, 8, 10 and
+  18 — matching the priorities the survey above found on rows 3..6 — so 1.6 MiB
+  of canvases against the flat layer's 1.17 MiB, rather than the 24.6 MiB the
+  naive reading would have cost.
+- **The `z` values are the formula.** Bucket 7 takes `z = 7*32 + 32 - 0 = 256`,
+  bucket 18 takes 608. A character standing on row 7 computes the same 256 from
+  RMXP's own `screen_z`, which is the point: the two sort against each other
+  because they are on one scale.
+- `--rgss_effect_probe` still passes, and both boot checks still drive real game
+  data to the map — the crash-on-map-load risk this ADR called out as worse than
+  cosmetic.
+
+Still unverified here: that a roof *visually* occludes a character. The XP test
+bed ships no image assets, so its tilesets load as blank bitmaps. Structure,
+placement, `z` and survival are checked; appearance wants a project with real
+graphics.
 
 - **Correct occlusion.** Characters walk behind roofs/tree crowns above them and
   in front of the same tiles below them, the defining RMXP map look, for the

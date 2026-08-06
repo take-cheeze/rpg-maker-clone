@@ -490,6 +490,11 @@ write("Classes.json", [None, {
     "learnings": [{"level": 1, "note": "", "skillId": 1}],
     "traits": [
         {"code": 51, "dataId": 1, "value": 0},   # add weapon type: Dagger
+        # ...and the armor type, which is a separate trait. `isEquipWtypeOk` and
+        # `isEquipAtypeOk` are plain lookups in the actor's traits, so a piece of
+        # equipment whose type nobody allows is simply never selectable — with
+        # no error to say why. See ADR 0004 M6.3q.
+        {"code": 52, "dataId": 1, "value": 0},   # add armor type: General Armor
         {"code": 41, "dataId": 1, "value": 0},   # add skill type: Magic
         # Hit rate, and it is load-bearing rather than flavour. A physical
         # action's chance to connect is `successRate * 0.01 * subject.hit`
@@ -630,9 +635,35 @@ write("Items.json", [None, {
     "effects": [{"code": 11, "dataId": 0, "value1": 0, "value2": POTION_HEAL}],
 }])
 
-# --- Empty-but-valid database files ----------------------------------------
-write("Weapons.json", [None])
-write("Armors.json", [None])
+# --- Equipment -------------------------------------------------------------
+# The bed already declared everything *around* equipment — five equipTypes, a
+# weaponType, an armorType, and the class trait that lets it hold a weapon —
+# while `Weapons.json` and `Armors.json` stayed `[None]`, so `Scene_Equip` had
+# nothing to put in a slot and none of it had ever run. Same shape as the empty
+# `Items.json` behind the empty menu (M6.3j).
+#
+# Two things have to line up for a piece of equipment to be equippable at all,
+# and neither reports anything when it does not: the item's `etypeId` has to
+# match a slot, and the actor has to carry the trait for its *type* —
+# `isEquipWtypeOk`/`isEquipAtypeOk` are a plain lookup in the actor's traits, so
+# an armor whose atype nobody allows is simply never selectable. The class had
+# the weapon trait (code 51) and not the armor one (code 52); it now has both.
+WEAPON_ATK = 20
+ARMOR_DEF = 15
+
+write("Weapons.json", [None, {
+    "id": 1, "name": "Dagger", "note": "", "description": "",
+    "animationId": 1, "etypeId": 1, "wtypeId": 1, "iconIndex": 0, "price": 100,
+    # params are [mhp, mmp, atk, def, mat, mdf, agi, luk] deltas.
+    "params": [0, 0, WEAPON_ATK, 0, 0, 0, 0, 0],
+    "traits": [],
+}])
+write("Armors.json", [None, {
+    "id": 1, "name": "Shield", "note": "", "description": "",
+    "atypeId": 1, "etypeId": 2, "iconIndex": 0, "price": 100,
+    "params": [0, 0, 0, ARMOR_DEF, 0, 0, 0, 0],
+    "traits": [],
+}])
 
 # --- Animations ------------------------------------------------------------
 # One MV-format animation (see gen_animation above for why the format matters).

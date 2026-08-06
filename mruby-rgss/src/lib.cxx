@@ -2,6 +2,7 @@
 #include <mruby/array.h>
 #include <mruby/class.h>
 #include <mruby/data.h>
+#include <mruby/hash.h>
 #include <mruby/string.h>
 #include <mruby/value.h>
 #include <mruby/variable.h>
@@ -26,6 +27,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <dirent.h>
@@ -3874,6 +3876,113 @@ int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
 // and below the 999 an always-on-top character claims.
 static const mrb_int TILEMAP_ABOVE_Z = 900;
 
+// RMXP priorities run 1..5, so the bucket a priority tile sorts into --
+// `ty + prio`, per the formula above -- can be reached from any of five map
+// rows: bucket B holds every tile with `ty = B - prio`, i.e. rows B-5..B-1.
+// A strip is therefore five tile rows tall, positioned at (B-5)*TILE_SIZE - oy,
+// and a tile of priority p lands at local row (5 - p) inside it -- which
+// depends only on the priority, not on the row it came from.
+//
+// Sizing this correctly matters: a full-screen canvas per bucket would be
+// 1.17 MiB x 21 = 24.6 MiB for one map, and a one-row strip cannot hold a
+// bucket at all. See "Strip height" in the ADR.
+static const int TILEMAP_PRIO_SPAN = 5;
+
+// Strips are pooled by `bucket % TILEMAP_STRIP_SLOTS` rather than by the bucket
+// itself, which is what keeps the set bounded on a tall map. Keyed on the
+// absolute bucket, walking down a 200-row map would allocate a strip per row
+// and never let one go -- 200 x 400 KiB of canvases for a map only ever showing
+// twenty of them.
+//
+// The modulus has to exceed the number of buckets that can be visible at once,
+// or two live buckets would collide in one slot: a viewport shows at most
+// (height / TILE_SIZE) + 1 rows, and a bucket reaches TILEMAP_PRIO_SPAN rows
+// further down, so 16 + 5 = 21 for XP's 480px viewport. 24 leaves headroom
+// without materially raising the ceiling, since no more than 21 slots can be
+// occupied at a time whatever the modulus.
+static const int TILEMAP_STRIP_SLOTS = 24;
+
+// Fetch (creating on first use) the canvas strip for priority bucket `b`.
+//
+// Strips live in @_tm_strips, an mruby Hash keyed by bucket, so the GC keeps
+// them alive and tilemap_dispose can walk them. Allocation is lazy and per
+// bucket: a map with no priority tiles allocates nothing, and a tileset using
+// only priority 1 allocates one strip per occupied row rather than 21.
+//
+// Each strip is a z-ordered companion object registered the same way a Sprite
+// is (wrap pattern + register_zobj), so gfx_update's shared z sort interleaves
+// it with the character sprites that share the viewport -- which is the whole
+// point of the exercise.
+Bitmap* tilemap_strip(mrb_state* M, mrb_value self, int b, int w) {
+  mrb_value strips = mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_strips"));
+  if (!mrb_hash_p(strips)) {
+    strips = mrb_hash_new(M);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_strips"), strips);
+  }
+  const int slot =
+      ((b % TILEMAP_STRIP_SLOTS) + TILEMAP_STRIP_SLOTS) % TILEMAP_STRIP_SLOTS;
+  const mrb_value key = mrb_fixnum_value(slot);
+  const mrb_value found = mrb_hash_get(M, strips, key);
+  if (mrb_test(found) && DATA_PTR(found)) {
+    // The slot may have been holding a different bucket before the map
+    // scrolled; it is reused in place rather than reallocated, so record which
+    // bucket it carries now for the placement pass.
+    mrb_iv_set(M, found, mrb_intern_lit(M, "@_bucket"), mrb_fixnum_value(b));
+    return &DataType<Bitmap>::get(
+        M, mrb_iv_get(M, found, mrb_intern_lit(M, "@_bitmap")));
+  }
+  if (w <= 0)
+    return nullptr;
+  // Everything below allocates; keep it out of the GC's way until the strip is
+  // reachable from the hash.
+  const int arena = mrb_gc_arena_save(M);
+  const mrb_value vp = mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport"));
+  const int h = TILEMAP_PRIO_SPAN * TILE_SIZE;
+  lv_obj_t* c = lv_canvas_create(parent_object(M, vp));
+  lv_obj_set_pos(c, 0, 0);
+  const mrb_value obj = mrb_obj_value(
+      mrb_data_object_alloc(M, mrb_obj_class(M, self), c, &obj_type));
+  lv_obj_set_user_data(c, mrb_ptr(obj));
+  lv_obj_add_event_cb(c, on_lv_delete, LV_EVENT_DELETE, nullptr);
+  register_zobj(M, obj);
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value bmp_v =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& bmp = DataType<Bitmap>::get(M, bmp_v);
+  std::fill(bmp.buffer.begin(), bmp.buffer.end(), static_cast<uint8_t>(0));
+  lv_canvas_set_buffer(c, bmp.buffer.data(), w, h, LV_COLOR_FORMAT_ARGB8888);
+  mrb_iv_set(M, obj, mrb_intern_lit(M, "@_bitmap"), bmp_v);
+  mrb_iv_set(M, obj, mrb_intern_lit(M, "@_bucket"), mrb_fixnum_value(b));
+  mrb_hash_set(M, strips, key, obj);
+  mrb_gc_arena_restore(M, arena);
+  return &bmp;
+}
+
+// Every strip currently allocated, as [bucket, obj] pairs. Empty before the
+// first priority tile is drawn.
+using TilemapStrip = std::pair<int, mrb_value>;
+
+std::vector<TilemapStrip> tilemap_strips(mrb_state* M, mrb_value self) {
+  std::vector<TilemapStrip> out;
+  const mrb_value strips =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_strips"));
+  if (!mrb_hash_p(strips))
+    return out;
+  const mrb_value keys = mrb_hash_keys(M, strips);
+  for (mrb_int i = 0; i < RARRAY_LEN(keys); ++i) {
+    const mrb_value k = mrb_ary_ref(M, keys, i);
+    const mrb_value v = mrb_hash_get(M, strips, k);
+    if (!mrb_test(v) || !DATA_PTR(v))
+      continue;
+    // The bucket the slot currently carries, which is what its position and z
+    // are derived from -- not the slot index the hash is keyed by.
+    const mrb_value b = mrb_iv_get(M, v, mrb_intern_lit(M, "@_bucket"));
+    out.push_back({mrb_test(b) ? static_cast<int>(mrb_as_int(M, b)) : 0, v});
+  }
+  return out;
+}
+
 // Redraw the visible part of the map. For each of the three map-data layers,
 // the tiles overlapping the viewport (given ox/oy) are blitted from the tileset
 // (regular tiles, id >= 384) or assembled from the four autotile quads (id
@@ -4105,6 +4214,15 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   const int frame_idx = (anim / 16) % 4;
   bool any_anim = false;
 
+  // Buckets that received a tile this frame. A strip that misses out is hidden
+  // rather than freed, so scrolling back does not reallocate it.
+  std::vector<int> used_buckets;
+  for (const auto& e : tilemap_strips(M, self)) {
+    Bitmap& b = DataType<Bitmap>::get(
+        M, mrb_iv_get(M, e.second, mrb_intern_lit(M, "@_bitmap")));
+    std::fill(b.buffer.begin(), b.buffer.end(), static_cast<uint8_t>(0));
+  }
+
   int tx0 = static_cast<int>(ox) / TILE_SIZE;
   int ty0 = static_cast<int>(oy) / TILE_SIZE;
   if (tx0 < 0)
@@ -4128,14 +4246,29 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
         if (id < 48)  // 0 = empty; 1..47 are the unused blank autotile
           continue;
         const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
-        const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
-        // Priority 0 -> ground canvas; priority >= 1 -> above canvas (when one
-        // exists). An out-of-range id or nil table means priority 0.
+        int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        // Priority 0 -> ground canvas. Priority 1..5 -> the strip for bucket
+        // ty + prio, where it sits at local row (SPAN - prio); the strip itself
+        // is placed and z-sorted below, once the whole map has been walked. An
+        // out-of-range id or nil table means priority 0, and a priority beyond
+        // the 1..5 the editor offers falls back to the ground rather than
+        // indexing off the end of a strip.
         const int prio =
             (pr && id >= 0 && id < static_cast<int>(pr->data.size()))
                 ? pr->data[id]
                 : 0;
-        Bitmap& target = (prio > 0 && above) ? *above : dst;
+        Bitmap* target_p = &dst;
+        if (prio >= 1 && prio <= TILEMAP_PRIO_SPAN) {
+          const int bucket = ty + prio;
+          if (Bitmap* strip = tilemap_strip(M, self, bucket, dst.width)) {
+            target_p = strip;
+            dy0 = (TILEMAP_PRIO_SPAN - prio) * TILE_SIZE;
+            if (std::find(used_buckets.begin(), used_buckets.end(), bucket) ==
+                used_buckets.end())
+              used_buckets.push_back(bucket);
+          }
+        }
+        Bitmap& target = *target_p;
         if (id < 384) {
           // Autotile: id/48 selects autotiles[0..6], id%48 the 48-shape quad
           // assembly. Uses the first animation frame (x offset 0).
@@ -4171,6 +4304,48 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_animated"),
              mrb_bool_value(any_anim));
   tilemap_apply_viewport_tone(M, self, dst, above);
+
+  // Place every strip and give it the z its bucket sorts at. Both depend on oy,
+  // so both are refreshed here rather than once at creation -- this runs on
+  // every scroll, which is exactly when they move.
+  const Tone strip_tone =
+      viewport_tone(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport")));
+  for (const auto& e : tilemap_strips(M, self)) {
+    lv_obj_t* sc = reinterpret_cast<lv_obj_t*>(DATA_PTR(e.second));
+    if (!sc)
+      continue;
+    const bool used = std::find(used_buckets.begin(), used_buckets.end(),
+                                e.first) != used_buckets.end();
+    if (!used) {
+      lv_obj_add_flag(sc, LV_OBJ_FLAG_HIDDEN);
+      continue;
+    }
+    lv_obj_remove_flag(sc, LV_OBJ_FLAG_HIDDEN);
+    const int top_row = e.first - TILEMAP_PRIO_SPAN;
+    lv_obj_set_pos(sc, 0, top_row * TILE_SIZE - static_cast<int>(oy));
+    mrb_iv_set(M, e.second, mrb_intern_lit(M, "@z"),
+               mrb_fixnum_value(e.first * TILE_SIZE + TILE_SIZE -
+                                static_cast<mrb_int>(oy)));
+    Bitmap& sb = DataType<Bitmap>::get(
+        M, mrb_iv_get(M, e.second, mrb_intern_lit(M, "@_bitmap")));
+    if (tone_is_set(strip_tone)) {
+      for (int y = 0; y < sb.height; ++y) {
+        for (int x = 0; x < sb.width; ++x) {
+          int r, g, bl, a;
+          bmp_read(sb, x, y, r, g, bl, a);
+          if (a == 0)
+            continue;
+          apply_tone_px(r, g, bl, strip_tone);
+          bmp_put(sb, x, y, r, g, bl, a);
+        }
+      }
+    }
+    sb.dirty = true;
+    lv_obj_invalidate(sc);
+  }
+  if (!used_buckets.empty())
+    update_z(M);
+
   if (above)
     above->dirty = true;
   lv_obj_invalidate(obj);
@@ -4255,6 +4430,11 @@ mrb_value tilemap_dispose(mrb_state* M, mrb_value self) {
       mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
   if (mrb_test(above) && DATA_PTR(above))
     obj_dispose(M, above);
+  // Each priority strip is its own LVGL object in the z set; disposing the
+  // tilemap alone would leave them on screen and sorting.
+  for (const auto& e : tilemap_strips(M, self))
+    obj_dispose(M, e.second);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_strips"), mrb_nil_value());
   return obj_dispose(M, self);
 }
 

@@ -3395,6 +3395,13 @@ class RPG2k
       # queue empties, settle it and either show the result or re-open commands —
       # so the round plays out action by action rather than all at once.
       def drive_battle_animate
+        # A skill or item that names a battle animation plays it over the target
+        # before the round moves on, so the round is paced by the animation
+        # rather than by the fixed banner timer.
+        if battle_animation_playing?
+          step_map_animation
+          return
+        end
         if @battle_ui[:anim_timer] > 0
           @battle_ui[:anim_timer] -= 1
           return
@@ -3408,10 +3415,61 @@ class RPG2k
           refresh_battle_status
           refresh_battle_sprites
           show_battle_action(entry)
-          @battle_ui[:anim_timer] = BATTLE_ANIM_FRAMES
+          # When an animation plays, it is the wait; otherwise the banner timer
+          # is, exactly as before.
+          @battle_ui[:anim_timer] =
+            start_battle_animation(entry) ? 0 : BATTLE_ANIM_FRAMES
         else
           finish_round_animation
         end
+      end
+
+      def battle_animation_playing?
+        !@map_animation.nil? && @map_animation[:battle]
+      end
+
+      # Play the animation this action names, over its target. RPG2000 keeps the
+      # animation on the **skill** and on the **item**, not on the action -- 557
+      # skill rows and 170 item rows across the test beds name one, and none of
+      # them played. Returns true when one started.
+      #
+      # A plain attack's animation is the equipped weapon's, which the log entry
+      # does not carry, so it is left for a change that plumbs the weapon
+      # through rather than guessed at here.
+      def start_battle_animation(entry)
+        id = battle_animation_id(entry)
+        return false unless id && id > 0
+        tx, ty = battle_animation_pixel(entry)
+        anim = build_animation(id, tx, ty, true)
+        return false unless anim
+        @map_animation = anim
+        fire_animation_flashes(anim) # frame 0 flashes, as the map path does
+        true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle animation failed: #{e.message}"
+        false
+      end
+
+      def battle_animation_id(entry)
+        row =
+          if entry[:skill_id] && db.respond_to?(:skill) && db.skill
+            db.skill[entry[:skill_id]]
+          elsif entry[:item_id] && db.respond_to?(:item) && db.item
+            db.item[entry[:item_id]]
+          end
+        row && row.respond_to?(:animation_id) ? row.animation_id : nil
+      end
+
+      # Where it plays: over the targeted enemy's sprite. RPG2000 draws no sprite
+      # for a party member -- its battle is first-person -- so an action aimed at
+      # one plays over the middle of the screen instead of nowhere.
+      def battle_animation_pixel(entry)
+        i = entry[:target_index]
+        sprites = @battle_ui[:enemy_sprites]
+        spr = i && sprites ? sprites[i] : nil
+        bmp = spr && spr.bitmap
+        return [SCREEN_W / 2, SCREEN_H / 2] unless bmp
+        [spr.x + bmp.width / 2, spr.y + bmp.height / 2]
       end
 
       # Close out an animated round: clear the commands, drop the action banner,
@@ -4346,7 +4404,9 @@ class RPG2k
           @animation_sprite.visible = false
           ma[:sheet].dispose if ma[:sheet].respond_to?(:dispose)
           @map_animation = nil
-          @interpreter.resume
+          # A battle animation is driven by the round rather than by an event
+          # command, so there is no paused interpreter waiting on it.
+          @interpreter.resume unless ma[:battle]
           return
         end
         fire_animation_flashes(ma)
@@ -4366,16 +4426,26 @@ class RPG2k
       # Battle/<name> sheet is missing (then the timed-wait fallback runs).
       def start_map_animation
         req = @interpreter.battle_animation
-        anim = animation_row(req && req[:animation])
+        return nil unless req
+        tx, ty = animation_target_pixel(req[:target])
+        build_animation(req[:animation], tx, ty)
+      end
+
+      # The animation player itself, shared by the map's Show Battle Animation
+      # command and by a battle round. `battle` says the pixel is already a
+      # screen position rather than a map one, and that nothing is waiting on the
+      # animation to finish. nil when the animation is unknown or its
+      # Battle/<name> sheet is missing.
+      def build_animation(id, tx, ty, battle = false)
+        anim = animation_row(id)
         return nil unless anim
         frames = table_entries(anim.frames)
         return nil if frames.empty?
         sheet = animation_sheet(anim.animation_name)
         return nil unless sheet
-        tx, ty = animation_target_pixel(req[:target])
         { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
           position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
-          timer: ANIM_CELL_FRAMES }
+          timer: ANIM_CELL_FRAMES, battle: battle }
       end
 
       def animation_row(id)
@@ -4445,8 +4515,10 @@ class RPG2k
         @animation_bmp.clear
         frame = ma[:frames][ma[:frame_i]]
         return unless frame
-        cx = ma[:tx] - cam_x + TILE / 2
-        cy = ma[:ty] - cam_y + TILE / 2
+        # A map animation is placed in map pixels and follows the camera; a
+        # battle one is already where it belongs on screen.
+        cx = ma[:battle] ? ma[:tx] : ma[:tx] - cam_x + TILE / 2
+        cy = ma[:battle] ? ma[:ty] : ma[:ty] - cam_y + TILE / 2
         table_entries(frame.cells).each do |cell|
           next if cell.respond_to?(:visible) && cell.visible == false
           blit_animation_cell(ma[:sheet], cell, cx, cy)
