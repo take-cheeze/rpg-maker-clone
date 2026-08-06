@@ -804,6 +804,67 @@ assert "RGSS::Bitmap reports a detailed reason when an XYZ fails to decode" do
   end
 end
 
+assert "RGSS::Bitmap reports a missing file as missing, not as the last decoder error" do
+  # A name that matches nothing reaches no decoder, so the only diagnostics
+  # available are the ones an *earlier* image left in stb's (never-cleared)
+  # failure reason. Quoting those is worse than saying nothing: stb tries JPEG
+  # first and its header check fails on a PNG's magic without being cleared by
+  # the PNG's later success, so after any successful PNG the stale reason is
+  # "no SOI" — and every missing asset in a PNG game (a released project's RTP
+  # references, above all) was reported as a JPEG complaint about a file that
+  # was never opened.
+  #
+  # The successful load first is what makes this an A/B: without it there is no
+  # stale reason to leak and the second half passes vacuously.
+  bytes = "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0d\x49\x48\x44\x52" \
+          "\x00\x00\x00\x04\x00\x00\x00\x01\x08\x00\x00\x00\x00\xdc\x57\x50" \
+          "\x11\x00\x00\x00\x0b\x49\x44\x41\x54\x78\x01\x63\x00\x62\x4e\x00" \
+          "\x00\x0e\x00\x0a\x61\xd4\xa9\x6f\x00\x00\x00\x00\x49\x45\x4e\x44" \
+          "\xae\x42\x60\x82"
+  path = "test-stale-reason.png"
+  File.open(path, "wb") { |io| io.write(bytes) }
+  begin
+    RGSS::Bitmap.new(path)
+    stale = RGSS::Bitmap._stbi_error
+    assert_true !stale.empty?, "expected stb to leave a reason behind"
+
+    err = nil
+    begin
+      RGSS::Bitmap.new("Graphics/Characters/023-Gunner01")
+    rescue => e
+      err = e.message
+    end
+    assert_true !err.nil?, "expected a load failure"
+    assert_false RGSS::Bitmap._decoder_ran?, "nothing should have been decoded"
+    assert_true err.include?("not found"), "message: #{err}"
+    # The actionable part: which search root came up empty. Here (and in a
+    # packed release with no RTP installed) that is the RTP.
+    assert_true err.include?("RTP"), "message: #{err}"
+    assert_false err.include?(stale), "message quotes a stale reason: #{err}"
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Bitmap::LoadError carries the path and reason apart" do
+  # RPG::Cache logs the file it is standing a blank bitmap in for, so it needs
+  # the reason without the path in front of it — the two used to be available
+  # only glued together in the message, and the log said the path twice.
+  err = nil
+  begin
+    RGSS::Bitmap.new("Graphics/Characters/023-Gunner01")
+  rescue RGSS::Bitmap::LoadError => e
+    err = e
+  end
+  assert_true !err.nil?, "expected a Bitmap::LoadError"
+  assert_equal "Graphics/Characters/023-Gunner01", err.path
+  assert_true err.reason.include?("not found"), "reason: #{err.reason}"
+  assert_false err.reason.include?(err.path), "reason repeats the path"
+  # Still a RuntimeError, which is what `rescue` clauses around Bitmap.new (and
+  # the assert_raise below) have always caught.
+  assert_true err.kind_of?(RuntimeError)
+end
+
 # ---- Loading assets out of an encrypted archive ---------------------------
 #
 # A released RPG Maker game packs its whole Graphics/ tree into Game.rgssad /

@@ -109,7 +109,14 @@ Two deliberate deviations, both forced by this engine and listed in the file's
 header: colours are re-assigned rather than mutated in place (our compositor
 snapshots on assignment), and an asset that will not load gives a blank bitmap
 with a warning instead of raising (a game whose RTP is missing must not die on
-its first graphic). A third — re-loading a bitmap for a hue variant rather than
+its first graphic). That warning says which of the search roots came up empty —
+`GAME_DIR`, `RTP_DIR`, the encrypted archive — because a released game
+references the RTP's own graphics without packing them, so "no RTP installed
+(`RTP_DIR` is empty)" is the usual answer and names the fix. It used to quote
+whatever decoder error the *previous* image had left in stb's never-cleared
+failure reason instead: always `no SOI`, stb's JPEG header check failing on a
+PNG's magic, about a file that was never opened. A third — re-loading a bitmap
+for a hue variant rather than
 `clone`ing the cached one — has since gone, because `Bitmap#clone` learned to
 copy pixels (see the end of gap 0h).
 

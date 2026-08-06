@@ -560,6 +560,21 @@ mrb_value table_load(mrb_state* M, V self) {
 // subsequent extension attempts.
 static std::string g_bitmap_load_error;
 
+// Whether any decoder was handed bytes at all since the current Bitmap load
+// began. Both diagnostics above are *globals that survive a failed load*: stb
+// keeps its failure reason until the next decode sets one, and
+// g_bitmap_load_error until the next decoder fails. A name that matched no file
+// anywhere -- the RTP asset a released game references but does not pack --
+// runs no decoder, so reporting either of them attributes some earlier file's
+// error to it. Worse, stb's reason after *any* successful PNG is "no SOI": both
+// stbi__load_main and stbi__info_main try JPEG first, and its header check
+// fails on a PNG's magic without clearing the reason on the PNG's later
+// success. Every missing asset in a PNG game therefore came out as
+// "(no SOI)" -- a JPEG complaint about a file that was never opened. This flag
+// lets the Ruby loader say "not found" instead. Reset per load by
+// `Bitmap._begin_load`, read back through `Bitmap._decoder_ran?`.
+static bool g_bitmap_decoder_ran = false;
+
 static void set_bitmap_load_error(const char* fmt, ...) {
   char buf[512];
   va_list ap;
@@ -1072,11 +1087,34 @@ mrb_value bmp_load_error(mrb_state* M, V self) {
 }
 
 // Ruby: Bitmap._stbi_error -> stb_image's raw failure reason for the most
-// recent decode attempt (e.g. "bad dist", "unknown image type").
+// recent decode attempt (e.g. "bad dist", "unknown image type"). Only
+// meaningful when `_decoder_ran?` says this load reached a decoder; stb never
+// clears it, so otherwise it is whatever some earlier image left behind.
 mrb_value bmp_stbi_error(mrb_state* M, V self) {
   (void)self;
   const char* r = stbi_failure_reason();
   return mrb_str_new_cstr(M, r ? r : "");
+}
+
+// Ruby: Bitmap._begin_load -> nil. Drops the diagnostics left by whatever
+// loaded last, so a failure reports this load's reason or none at all. Called
+// once per Bitmap#initialize, before the candidate search -- not per candidate,
+// which would throw away the very message a failed decode is trying to report
+// while the loader goes on to try the remaining extensions.
+mrb_value bmp_begin_load(mrb_state* M, V self) {
+  (void)M;
+  (void)self;
+  g_bitmap_load_error.clear();
+  g_bitmap_decoder_ran = false;
+  return mrb_nil_value();
+}
+
+// Ruby: Bitmap._decoder_ran? -> whether any bytes reached a decoder since
+// `_begin_load` (see g_bitmap_decoder_ran).
+mrb_value bmp_decoder_ran(mrb_state* M, V self) {
+  (void)M;
+  (void)self;
+  return mrb_bool_value(g_bitmap_decoder_ran);
 }
 
 mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
@@ -1216,6 +1254,8 @@ static bool bmp_decode_into(mrb_state* M,
                             const char* label,
                             bool trans) {
   int w, h, c;
+  // Bytes in hand: from here on a failure is a decoder's, and worth reporting.
+  g_bitmap_decoder_ran = true;
   stbi__png_transparent_palette = trans;
   // Every loader here hands back LVGL's B, G, R(, A) byte order (see
   // load_xyz_mem and load_png_tolerant_mem, which build it themselves). stb
@@ -5857,6 +5897,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, bmp, "_begin_load", bmp_begin_load,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, bmp, "_decoder_ran?", bmp_decoder_ran,
                           MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "height", bmp_height, MRB_ARGS_NONE());
