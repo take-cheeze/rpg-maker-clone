@@ -5207,6 +5207,46 @@ check 'without variance a seeded fight deals exactly the base damage' do
   eq 20, bat.step_action[:damage]                    # exact base, unaffected
 end
 
+check 'Rng#scaled pays out a small threshold at its stated rate' do
+  # The generator's period is prime, so `next_int % scale` leaves the lowest
+  # `PERIOD % scale` values over-represented. At the sizes #random is used with
+  # that is invisible; at CRIT_SCALE the surplus is 5537 values sitting exactly
+  # where a roll-under-a-small-threshold test looks, and every such threshold
+  # fires about 7% too often. #scaled spreads it instead.
+  [[333, 30], [500, 20], [3333, 3]].each do |bp, denom|
+    trials = 40_000
+    modulo = Game::Rng.new(1)
+    scaled = Game::Rng.new(1)
+    m = s = 0
+    trials.times do
+      m += 1 if modulo.random(Game::CRIT_SCALE) < bp
+      s += 1 if scaled.scaled(Game::CRIT_SCALE) < bp
+    end
+    want = trials * bp / Game::CRIT_SCALE.to_f
+    ok (s - want).abs < want * 0.03,
+       "1/#{denom}: scaled gave #{s}, wanted about #{want.round}"
+    ok m > want * 1.03,
+       "1/#{denom}: the modulus overshoots by more than 3% (#{m} vs #{want.round})"
+  end
+  eq 0, Game::Rng.new(1).scaled(0), 'a non-positive scale draws 0'
+  ok Game::Rng.new(1).scaled(10).between?(0, 9), 'and a normal one stays in range'
+end
+
+check 'battle: a crit chance is paid out at the rate it states' do
+  # End to end through the real roll, which is what the bias actually reached.
+  chance = Game::CRIT_SCALE / 20                      # 1/20 -> 500 bp
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_chance = chance
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, true)
+  trials = 40_000
+  crits = 0
+  trials.times { crits += 1 if bat.send(:critical?, hero) }
+  want = trials / 20.0
+  ok (crits - want).abs < want * 0.03,
+     "a 1-in-20 chance crit #{crits} times in #{trials}, wanted about #{want.round}"
+end
+
 check 'battle: a critical hit triples the damage when the fight rolls one' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.crit_chance = Game::CRIT_SCALE                # certainty -> always crits
@@ -5325,6 +5365,9 @@ end
 class FixedRng
   def initialize(value); @value = value; end
   def random(n); n <= 0 ? 0 : @value % n; end
+  # The crit roll draws through #scaled; a fixture pinning an exact roll wants
+  # that value handed back untouched rather than rescaled.
+  def scaled(scale); scale <= 0 ? 0 : @value % scale; end
 end
 
 check 'battle: the crit roll is read against the basis-point scale' do
