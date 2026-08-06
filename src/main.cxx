@@ -213,6 +213,14 @@ DEFINE_bool(
     "goes to Effekseer, whose WASM runtime this host does not start. Used in "
     "CI");
 DEFINE_bool(
+    mz_equip_test,
+    false,
+    "For RPG Maker MZ: walk the party menu to Equip and put the test bed's "
+    "weapon on (implies --mz_new_game to reach the map), then log whether the "
+    "actor's attack went up with it. Scene_Equip is the last major scene "
+    "nothing else here enters, and equipment is the one place a parameter is "
+    "meant to change because of what an actor holds. Used in CI");
+DEFINE_bool(
     mz_message_play,
     false,
     "For RPG Maker MZ: show a message and a choice on the map and operate "
@@ -1087,6 +1095,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
                 mrb_bool_value(FLAGS_mz_animation_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_EQUIP_TEST"),
+                mrb_bool_value(FLAGS_mz_equip_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_MESSAGE_PLAY"),
                 mrb_bool_value(FLAGS_mz_message_play));

@@ -579,6 +579,43 @@ assert 'MZ.message_play_state_js sees the choice window and the branch taken' do
                MV::JS.eval(MZ.message_play_state_js(5))
 end
 
+assert 'MZ.equip_setup_js hands the party the weapon through an event command' do
+  MV::JS.eval(
+    "globalThis.$gameMap = { _interpreter: { setup: function (list, id) { " \
+    "this.list = list; this.eventId = id; } } };"
+  )
+  MV::JS.eval(MZ.equip_setup_js(1))
+  assert_equal 127, MV::JS.eval("$gameMap._interpreter.list[0].code")
+  # [weaponId, operation, operandType, operand, includeEquipped] — one Dagger,
+  # gained as a constant. Window_EquipItem lists what the party owns, so an
+  # unowned weapon would never be selectable.
+  assert_equal "1,0,0,1,false",
+               MV::JS.eval("$gameMap._interpreter.list[0].parameters.join(',')")
+  assert_equal 0, MV::JS.eval("$gameMap._interpreter.list[1].code")
+end
+
+assert 'MZ.equip_state_js watches the parameter, not just the slot' do
+  MV::JS.eval(<<~'JS')
+    globalThis.$dataWeapons = [null, { id: 1 }];
+    globalThis.$gameParty = { numItems: function () { return 1; } };
+    globalThis.$gameActors = {
+      _a: { atk: 30, weapons: function () { return []; } },
+      actor: function () { return this._a; }
+    };
+    globalThis.SceneManager = { _scene: { _windowLayer: { children: [] } } };
+  JS
+  assert_equal "atk=30 weapon=0 held=1 win=- idx=-1",
+               MV::JS.eval(MZ.equip_state_js(1))
+
+  # With the weapon on, both the slot and the stat move. Reporting them
+  # separately is the point: a slot that fills while `atk` stays put is the
+  # failure the check is for, and it is invisible if only the slot is read.
+  MV::JS.eval("$gameActors._a.atk = 50; " \
+              "$gameActors._a.weapons = function () { return [{ id: 1 }]; };")
+  assert_equal "atk=50 weapon=1 held=1 win=- idx=-1",
+               MV::JS.eval(MZ.equip_state_js(1))
+end
+
 assert 'the MZ probes are inert before the engine defines their globals' do
   # Every probe runs each frame from MZ#main_loop, including the frames before
   # the boot has defined $gameMessage / SceneManager / $gameMap. None may throw.
@@ -593,6 +630,7 @@ assert 'the MZ probes are inert before the engine defines their globals' do
   assert_nothing_raised { MV::JS.eval(MZ.transfer_probe_js(2, 4, 5)) }
   assert_nothing_raised { MV::JS.eval(MZ.common_event_probe_js(2, 2)) }
   assert_nothing_raised { MV::JS.eval(MZ.message_play_probe_js(5, 55, 11, "x")) }
+  assert_nothing_raised { MV::JS.eval(MZ.equip_setup_js(1)) }
   MV::JS.eval("delete globalThis.$gamePlayer; delete globalThis.$gameTroop;")
   assert_equal "map=-1 steps=-1 x=-1 y=-1 troop=0",
                MV::JS.eval(MZ.encounter_state_js)
