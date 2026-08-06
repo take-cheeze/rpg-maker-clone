@@ -4797,6 +4797,28 @@ module Game
       FAILURE_TERMS = [:skill_failure_a, :skill_failure_b, :skill_failure_c,
                        :dodge].freeze
 
+      # An item has no sentence of its own — it borrows the `use_item` term, and
+      # is the one line RPG2000 builds from *two* names: 「リトはポーションを使っ
+      # た！」 is the caster, は, the item, and the term. (`item.using_message` is
+      # an int selecting a battle animation layout, not a string; no RPG2000 item
+      # carries a sentence.)
+      def self.item_start(terms, caster_name, item_name)
+        t = term(terms, :use_item)
+        t && "#{caster_name}#{ALLY_PARTICLE.strip}#{item_name}#{t}"
+      end
+
+      # 「リトのＨＰが 30 回復した！」 — what a potion or a cure spell restored.
+      # `points` is the 用語 name of the pool (`hp` / `mp`, which Nepheshel writes
+      # full-width as ＨＰ / ＭＰ and mtf-meido-action as HP / MP), and the shape
+      # is EasyRPG's `GetHpSpRecoveredMessage`: name, の, pool, "が ", the amount,
+      # a space, then the term.
+      def self.recovered(terms, target_name, value, points)
+        t = term(terms, :hp_recovery)
+        pool = term(terms, points)
+        return nil unless t && pool
+        "#{target_name}の#{pool}が #{value} #{t}"
+      end
+
       def self.skill_failure(terms, skill_row, target_name)
         i = skill_row && skill_row.respond_to?(:failure_message) ?
               skill_row.failure_message : nil

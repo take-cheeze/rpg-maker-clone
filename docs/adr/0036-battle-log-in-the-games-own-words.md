@@ -146,3 +146,42 @@ keeping its line) and by `scripts/rpg2k_testbed_logic_check.rb`, which composes
 **every** real skill sentence in both games — asserting the second line is not
 prefixed with the caster's name — and checks every skill's `failure_message`
 indexes a 用語 line the table really has.
+
+## Addendum: what the potion did
+
+Date: 2026-08-06
+
+The second held-back item is now done, and with it the line that says what a
+heal actually restored — which the skill addendum above left blank, since a
+working recovery printed its skill sentence and then nothing.
+
+**An item borrows the `use_item` term** rather than carrying a sentence of its
+own, and it is the one line RPG2000 builds from *two* names:
+`caster + は + item + term` → 「リトはポーションを使った！」. (The `using_message`
+field on the item row is an int selecting a battle-animation layout, not a
+string; no RPG2000 item carries a sentence. Both test beds set `use_item` to
+「を使った！」.)
+
+**The recovery line names its pool from the table**: `name + の + pool + が␠ +
+amount + ␠ + hp_recovery` → 「リトのＨＰが 30 回復した！」, EasyRPG's
+`GetHpSpRecoveredMessage`. The pool name is the 用語 `hp` / `mp` field, not a
+literal — Nepheshel writes them full-width as ＨＰ / ＭＰ and mtf-meido-action as
+HP / MP, so a hard-coded "HP" would be wrong in exactly one of the two test beds.
+A heal that filled both pools says so once per pool.
+
+**An item that did nothing keeps the composed line.** Unlike a skill it has no
+`failure_message` to choose a sentence with, so RPG2000 gives it none, and the
+composed wording still says more than a bare 「使った！」 would.
+
+With this the battle log's only remaining invention is the critical-hit line,
+held back for the reason given in the base decision — which is a question about
+what RPG_RT does, not one this runtime can settle by reading more fields.
+
+Covered by `scripts/rpg2k_logic_check.rb` (the item line's two names, the
+recovery line's pool name from the table in both a full-width and an ASCII
+table, and nil rather than half a sentence when either the term or the pool name
+is blank), by `scripts/rpg2k_scene_check.rb` (a heal that filled one pool and one
+that filled both, an item that restored HP, one that only cured — where the state
+sentence carries it — and one that did nothing) and by
+`scripts/rpg2k_testbed_logic_check.rb`, which builds both lines out of each real
+term table.

@@ -812,9 +812,18 @@ The work below is roughly ordered by the critical path to a walkable game
   `command_skill` / `command_skill_all` take a `skill_id:` and the enemy AI path
   sets it from its own action. A skill row with no sentence keeps the composed
   wording, as a blank term does.
-  Still held back on purpose: an **item** keeps its composed line
-  until the `use_item` term is read — a different shape from everything here —
-  and the **critical** line is left alone
+  **And a potion says what it did**: an item borrows the `use_item` term rather
+  than carrying a sentence of its own, and it is the one line RPG2000 builds from
+  *two* names — 「リトはポーションを使った！」 is the caster, は, the item and the
+  term. What a heal restored reads in the game's words too
+  (「リトのＨＰが 30 回復した！」), which the skill sentences had left blank. The
+  pool name comes from the 用語 `hp` / `mp` field rather than a literal —
+  Nepheshel writes them full-width as ＨＰ / ＭＰ and mtf as HP / MP, so a
+  hard-coded "HP" would be wrong in exactly one of the two test beds — and a heal
+  filling both pools says so once per pool. An item that did nothing keeps the
+  composed wording, since unlike a skill it has no `failure_message` to pick a
+  sentence with.
+  Still held back on purpose: the **critical** line is left alone
   because which side keys `actor_critical` / `enemy_critical` is genuinely
   unclear — EasyRPG picks `actor_critical` when the *target* is an ally, while
   会心 / 痛恨 read as the *attacker's* side, and both games fill both fields with
