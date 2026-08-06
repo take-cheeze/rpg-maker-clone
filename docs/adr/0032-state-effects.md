@@ -122,3 +122,48 @@ three against the **real** 状態 tables: every blinding state scales accuracy b
 exactly its own ratio, the game's most-releasable state does come off within 200
 blows, and every sealing state seals some magic while leaving rate-0 skills
 alone.
+
+## Addendum: the sentence for a state that was already there
+
+Date: 2026-08-06
+
+The state row carries a fifth sentence beside the four above: `message_already`,
+for something trying to inflict a state the target is **already** carrying —
+「はすでに毒に冒されている！」. It was parsed and unread, and the runtime went
+silent in exactly that case: `roll_inflict` skipped a state the target had and
+reported nothing.
+
+Silence is the wrong answer, and not for a cosmetic reason. RPG_RT counts an
+already-carried state as a **success**, and it decides that *before* rolling the
+skill's accuracy — EasyRPG's `AddAffectedState(StateEffect::AlreadyInflicted)`
+`continue`s ahead of the `PercentChance`. So a Poison Sting on an already
+poisoned foe always announces itself, where a roll would have gone quiet some of
+the time, and a 0%-accuracy skill announces it too. Making the report depend on
+the roll would have been the natural guess and it is wrong.
+
+`roll_inflict` now returns `[inflicted, already]`, the battle entry carries
+`already:`, and `Scene::Map#battle_state_lines` prints
+`Game::States.already_message` for each — one wording for both sides, like the
+recovery line rather than the split actor/enemy inflict pair. The scene keeps its
+composed fallback for a database that leaves the sentence blank.
+
+15 of Nepheshel's 25 states and 7 of mtf-meido-action's 10 fill the field in,
+against 99 and 40 skills that name at least one state — so this is text the games
+wrote and expected to see.
+
+**`message_affected` is deliberately still unread.** 15 and 4 states fill it in,
+and the wordings (「は眠っている・・・」, 「は麻痺していて動けない！」,
+「は毒で80のダメージを受けた!」) read like the line for a turn a state costs the
+battler. But EasyRPG defines `GetStateAffectedMessage` and never calls it from
+either battle scene, so there is nothing to pin *when* RPG_RT prints it. Guessing
+would put invented text in the battle log, which is the thing this ADR set out to
+stop.
+
+Covered by `scripts/rpg2k_logic_check.rb` (an already-carried state reports
+rather than lands, does so at 0% accuracy, does so for an immune target, does not
+stack, and a clear target reports nothing), by `scripts/rpg2k_scene_check.rb`
+(the sentence reaches the action banner for an ally and an enemy target alike,
+and a state with no sentence still gets announced) and by
+`scripts/rpg2k_testbed_logic_check.rb`, which composes every real
+`message_already` in both games after two different battler names and drives a
+real state through a 0%-accuracy skill.

@@ -4668,6 +4668,15 @@ module Game
       message(battler_name, field(id, table, :message_recovery))
     end
 
+    # ... and for one the target **already** carried when something tried to
+    # inflict it again ("はすでに毒に冒されている！"). One wording for both sides,
+    # like the recovery line. RPG_RT treats this as a result worth announcing
+    # rather than a silent no-op, which is why the field exists at all: 15 of
+    # Nepheshel's 25 states and 7 of mtf-meido-action's 10 fill it in.
+    def self.already_message(id, table, battler_name)
+      message(battler_name, field(id, table, :message_already))
+    end
+
     def self.field(id, table, name)
       r = row(id, table)
       v = r && r.respond_to?(name) ? r.send(name) : nil
@@ -5914,10 +5923,11 @@ module Game
         target.hp -= dmg
         # An attack skill may inflict its states on a surviving target, each
         # rolled against the skill's accuracy.
-        inflicted = target.dead? ? [] : roll_inflict(target, cmd)
+        inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          inflicted: inflicted, target_ally: ally?(target), skill: cmd[:name] }
+          inflicted: inflicted, already: already,
+          target_ally: ally?(target), skill: cmd[:name] }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -5968,19 +5978,30 @@ module Game
 
     # Inflict a skill command's `inflict` states on `target`, each landing only if
     # a 0..99 roll comes in under the skill's `chance` (its accuracy) scaled by
-    # the target's per-state susceptibility. Skips a state the target already
-    # carries. Returns the states actually inflicted.
+    # the target's per-state susceptibility.
+    #
+    # Returns `[inflicted, already]`: the states that landed, and the ones the
+    # target was already carrying. The second list is not a list of failures —
+    # RPG_RT counts a state the target already has as a **success** and says so
+    # ("X is already poisoned!"), *without* rolling the accuracy first
+    # (EasyRPG's `AddAffectedState(... AlreadyInflicted)`, which `continue`s
+    # before the `PercentChance`). A Poison Sting on a poisoned foe therefore
+    # always reports, where a roll would sometimes have gone quiet.
     def roll_inflict(target, cmd)
       chance = cmd[:chance] || 100
       inflicted = []
+      already = []
       (cmd[:inflict] || []).each do |sid|
-        next if target.state?(sid)
+        if target.state?(sid)
+          already << sid
+          next
+        end
         prob = chance * state_susceptibility(target, sid) / 100
         next unless @rng.random(100) < prob
         target.states = (target.states || []) + [sid]
         inflicted << sid
       end
-      inflicted
+      [inflicted, already]
     end
   end
 
