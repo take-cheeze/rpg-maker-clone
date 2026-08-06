@@ -269,6 +269,14 @@
   window opened. MZ's save path is a **promise chain** (JsonEx → pako
   → localforage) rather than MV's synchronous call, so the probe starts it and
   polls until it settles, then re-enters the map the way `Scene_Load` does
+- The menu is **used**, not just opened, for the same reason: `menu_play` mode
+  hands the party a Potion and wounds the actor through event commands, then
+  taps confirm through the command window, the item category, the item list and
+  the actor window until the item heals and is spent, and cancel back out to the
+  map. It asserts the HP rose, the inventory paid for it and the map came back.
+  That walk worked first time — but it found the bed had shipped **no items at
+  all**, so `Scene_Item` had been opening onto an empty list, and `menu` mode
+  reported the same `reached_menu=true` either way
 - All of that is **on screen**, not just in the scene graph: the title and its
   command window, the map with the player sprite and the touch UI, message
   windows with their text, and the party menu over a blurred map background. It
@@ -289,9 +297,13 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `menu`, `animation`, `save`, `battle` or
-  `battle_play`, each with its own success line so a probe that merely ran
-  cannot pass; `ruby
+  key moves the player), `message`, `menu`, `menu_play`, `animation`, `save`,
+  `battle` or `battle_play`, each with its own success line so a probe that
+  merely ran cannot pass. A run ends as soon as its probes have reported rather
+  than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest
+  host instead of the time every run takes — a cut-off run reports nothing at
+  all, which had made a battle that was still swinging look like one that never
+  landed a hit; `ruby
   scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 - Those assertions all read the engine's **log**, which is how the empty frames

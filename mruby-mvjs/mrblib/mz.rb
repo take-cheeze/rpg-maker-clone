@@ -58,6 +58,29 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The menu-play probe's setup and bounds (see #maybe_menu_play_test). The
+  # party is given `MENU_PLAY_ITEMS` of item `MENU_PLAY_ITEM_ID` and the actor
+  # is wounded by `MENU_PLAY_WOUND` HP *before* the menu opens, both through the
+  # map interpreter — a healing item is only selectable while someone is hurt,
+  # and the party starts with nothing (MZ has no starting-inventory field; a
+  # game hands out its first items from an event, which is exactly what the
+  # setup runs).
+  MENU_PLAY_ITEM_ID = 1
+  MENU_PLAY_ITEMS = 3
+  MENU_PLAY_WOUND = 300
+
+  # Frames to give the menu play-out, and how often it taps a key. Same edge
+  # reasoning as the battle probe: rmmz reports a trigger on the key's edge, so
+  # a held key advances one window and then nothing. The bound is generous —
+  # every window in the chain fades in, and a headless software-GL frame is
+  # slower than 60Hz.
+  MENU_PLAY_FRAMES = 900
+  MENU_PLAY_TAP_PERIOD = 12
+
+  # Frames the menu-play setup waits for its event commands to take effect
+  # before reporting that the bed could not be prepared.
+  MENU_PLAY_SETUP_FRAMES = 180
+
   # The animation the animation probe plays, and how long it keeps replaying it
   # (see #maybe_animation_test). The test bed authors animation 1 as an
   # MV-format burst centred on its target; a project without it logs
@@ -280,6 +303,54 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that sets the menu-play probe's starting condition the way a game
+    # does: **Change Items** (code 126) and **Change HP** (code 311) run
+    # through the *map interpreter*, not by reaching into `$gameParty` and
+    # `$gameActors` from outside. Same reasoning as the battle probe's code
+    # 301 — the engine path a real project takes is the one worth driving, and
+    # `command126`/`command311` are where the party inventory and an actor's HP
+    # are actually written.
+    #
+    # `[itemId, operation, operandType, operand]` for 126 and
+    # `[actorSource, actorId, operation, operandType, operand, allowDeath]` for
+    # 311, both with operation 0 = increase / 1 = decrease and operand type
+    # 0 = constant, exactly as the editor emits them.
+    def menu_play_setup_js(item_id, count, wound)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:126,indent:0,parameters:[#{item_id.to_i},0,0,#{count.to_i}]}," \
+      "{code:311,indent:0,parameters:[0,1,1,0,#{wound.to_i},false]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # JS that reads back what the menu play-out is doing: the first actor's HP,
+    # how many of the probe's item the party holds, and which window currently
+    # has the cursor.
+    #
+    # The window is read by walking the scene's own window layer and reporting
+    # the first *active* `Window_Selectable` rather than by naming the fields of
+    # each scene (`_categoryWindow`, `_itemWindow`, `_actorWindow`, …): the
+    # chain crosses two scenes, and a flow that stalls stalls *somewhere* — the
+    # constructor name says where without the probe having to enumerate every
+    # place it could be.
+    def menu_play_state_js(item_id)
+      "(function(){ var hp = -1, mhp = -1, n = -1; " \
+      "if (typeof $gameActors !== 'undefined' && $gameActors) { " \
+      "var a = $gameActors.actor(1); if (a) { hp = a.hp; mhp = a.mhp; } } " \
+      "if (typeof $gameParty !== 'undefined' && $gameParty && " \
+      "typeof $dataItems !== 'undefined' && $dataItems[#{item_id.to_i}]) " \
+      "n = $gameParty.numItems($dataItems[#{item_id.to_i}]); " \
+      "var s = (typeof SceneManager !== 'undefined') ? SceneManager._scene : " \
+      "null; var w = '', idx = -1; " \
+      "var layer = s ? s._windowLayer : null; " \
+      "var kids = layer ? layer.children : null; " \
+      "if (kids) { for (var i = 0; i < kids.length; i++) { var c = kids[i]; " \
+      "if (c && c.active && c.constructor && c.index) { " \
+      "w = c.constructor.name; idx = c.index(); break; } } } " \
+      "return 'hp=' + hp + ' mhp=' + mhp + ' items=' + n + " \
+      "' win=' + (w || '-') + ' idx=' + idx; })();"
     end
 
     # JS that asks for an animation on the player through `$gameTemp`, exactly
@@ -524,13 +595,16 @@ class MZ
     maybe_move_test # CI: hold a direction on the map and log that the player moved
     maybe_message_test # CI: show a message on the map and log the window opened
     maybe_animation_test # CI: play an animation on the player and log it drew
+    maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
+    maybe_menu_play_test # CI: use that menu and log the item healed and was spent
     maybe_save_test # CI: save+load round-trip on the map and log the result
     maybe_audio_test # CI: play an SE through the bridge and log it dispatched
     present
     maybe_screenshot # capture the presented frame once, if requested (CI)
     RGSS::Input.update
     RGSS::Graphics.update
+    finish_when_probes_done # CI: stop once every probe has had its say
   end
 
   private
@@ -965,6 +1039,11 @@ class MZ
   def maybe_menu_test
     return if @menu_test_done
     return unless menu_test_requested?
+    # With --mz_menu_play the menu has to open onto a prepared party, so the
+    # menu waits for #maybe_menu_play_setup. It would not open during the setup
+    # event anyway (`updateCallMenu` disables the menu while an event runs), so
+    # without this the probe would burn its whole frame budget being ignored.
+    return if menu_play_requested? && !@menu_play_ready
     return unless @menu_requested || current_scene == "Scene_Map"
 
     if current_scene == "Scene_Menu"
@@ -984,6 +1063,144 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_menu_play was requested (a launcher constant set by main.cxx).
+  # Implies --mz_menu_test, since the play-out starts from the open menu.
+  def menu_play_requested?
+    (begin
+      MZ_MENU_PLAY
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_menu_play is set (CI), give the party the probe's item and wound
+  # the actor while still on the map, then let the menu open (see
+  # #maybe_menu_test). Both go through the map interpreter as the event commands
+  # a game would use — see MZ.menu_play_setup_js.
+  #
+  # A menu opened onto the bed's untouched party has nothing to do: the party
+  # holds no items, and even holding one, a full-HP actor greys the row out
+  # (`Game_Action.testApply`) and confirm buzzes. The setup is what makes the
+  # play-out a test of the menu rather than of an empty list.
+  #
+  # If the setup never takes it gives up rather than blocking the menu forever;
+  # the play report then lands with `healed=false`, which fails the check
+  # loudly instead of the run timing out with nothing said.
+  def maybe_menu_play_setup
+    return if @menu_play_ready
+    return unless menu_play_requested?
+    return unless current_scene == "Scene_Map"
+
+    @menu_setup_frame ||= 0
+    if @menu_setup_frame.zero?
+      $stderr.puts "[MZ] auto menu play: preparing the party"
+      MV::JS.eval(
+        self.class.menu_play_setup_js(MENU_PLAY_ITEM_ID, MENU_PLAY_ITEMS,
+                                      MENU_PLAY_WOUND)
+      )
+    end
+    @menu_setup_frame += 1
+
+    state = MV::JS.eval(self.class.menu_play_state_js(MENU_PLAY_ITEM_ID))
+    hp = MZ.state_field(state, "hp")
+    mhp = MZ.state_field(state, "mhp")
+    items = MZ.state_field(state, "items")
+
+    if !hp.nil? && !mhp.nil? && hp.positive? && hp < mhp && items.to_i.positive?
+      @menu_play_ready = true
+      @menu_play_hp0 = hp
+      @menu_play_items0 = items
+      $stderr.puts "[MZ-MENUPLAY] setup #{state}"
+      return
+    end
+    return if @menu_setup_frame < MENU_PLAY_SETUP_FRAMES
+
+    @menu_play_ready = true
+    $stderr.puts "[MZ-MENUPLAY] setup never took: #{state}"
+  rescue StandardError => e
+    $stderr.puts "[MZ] menu play setup error: #{e.message}"
+  end
+
+  # When --mz_menu_play is set (CI), once `Scene_Menu` is up, *use* it: tap
+  # confirm through the command window (Item), the item category, the item list
+  # and the actor window until the potion is spent and the actor's HP rises,
+  # then tap cancel back out until the map returns.
+  #
+  # The existing menu probe proves the menu can be **opened**, which is a much
+  # smaller claim than the menu working — it holds the instant `Scene_Menu` is
+  # pushed, before the scene's first update. Everything a player does with the
+  # menu is untested by it: `Window_MenuCommand` taking a command,
+  # `Scene_Item`'s category and item lists, an item's effects reaching an
+  # actor's HP through `Game_Action`, the inventory losing the consumed item,
+  # and cancel unwinding the whole stack back to the map.
+  #
+  # Like the battle play-out this drives real key presses rather than calling
+  # the scenes' methods: the windows *are* what is under test, so reaching past
+  # them into `Game_Party#consumeItem` would test the part that already worked.
+  #
+  # The report is one-shot and lands the moment the map comes back, so a run
+  # that finishes early does not stall.
+  def maybe_menu_play_test
+    return if @menu_play_done
+    return unless menu_play_requested?
+    return unless @menu_play_started || current_scene == "Scene_Menu"
+
+    @menu_play_frame ||= 0
+    state = MV::JS.eval(self.class.menu_play_state_js(MENU_PLAY_ITEM_ID))
+    hp = MZ.state_field(state, "hp")
+    items = MZ.state_field(state, "items")
+
+    if @menu_play_frame.zero?
+      @menu_play_started = true
+      $stderr.puts "[MZ] auto menu play: #{state}"
+    end
+    @menu_play_frame += 1
+    @menu_play_hp = hp
+    @menu_play_items = items
+    @menu_play_state = state
+    @menu_play_healed ||= !hp.nil? && !@menu_play_hp0.nil? &&
+                          hp > @menu_play_hp0
+    @menu_play_used ||= !items.nil? && !@menu_play_items0.nil? &&
+                        items < @menu_play_items0
+    # Latched for the screenshot: the target window is the frame worth keeping
+    # (see #menu_play_shot_ready?).
+    @menu_play_at_actor ||= state.to_s.include?("win=Window_MenuActor")
+
+    # Trace on change rather than on a timer: a menu that is being walked prints
+    # a line per window, and one that is stuck prints nothing after the first —
+    # which is the diagnosis.
+    if state != @menu_play_last_state
+      @menu_play_last_state = state
+      $stderr.puts "[MZ-MENUPLAY] state #{state}"
+    end
+
+    # Confirm walks in; once the item has actually been spent, cancel walks the
+    # window stack back out to the map. Both are tapped, not held, for the same
+    # edge-trigger reason as the battle probe.
+    used = @menu_play_healed && @menu_play_used
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.release(RGSS::Input::B)
+    if (@menu_play_frame % MENU_PLAY_TAP_PERIOD).zero?
+      RGSS::Input.press(used ? RGSS::Input::B : RGSS::Input::C)
+    end
+
+    returned = used && current_scene == "Scene_Map"
+    return if !returned && @menu_play_frame < MENU_PLAY_FRAMES
+
+    @menu_play_done = true
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.release(RGSS::Input::B)
+    $stderr.puts "[MZ-MENUPLAY] hp_before=#{@menu_play_hp0} " \
+                 "hp_after=#{@menu_play_hp} items_before=#{@menu_play_items0} " \
+                 "items_after=#{@menu_play_items} " \
+                 "healed=#{@menu_play_healed ? true : false} " \
+                 "used=#{@menu_play_used ? true : false} " \
+                 "returned=#{returned ? true : false} scene=#{current_scene} " \
+                 "last=[#{@menu_play_state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] menu play error: #{e.message}"
   end
 
   # Whether --mz_save_test was requested (a launcher constant set by main.cxx).
@@ -1155,6 +1372,7 @@ class MZ
     return if @frames < SHOT_DELAY_FRAMES
     return if battle_test_troop > 0 && !battle_shot_ready?
     return if animation_test_requested? && !animation_shot_ready?
+    return if menu_play_requested? && !menu_play_shot_ready?
 
     @shot_taken = true
     handle = mz_gl_handle
@@ -1182,6 +1400,70 @@ class MZ
   # drew still produces the screenshot that shows it.
   def animation_shot_ready?
     @anim_cells_now || @anim_test_done
+  end
+
+  # End the run once every probe that was asked for has reported and the
+  # screenshot has been taken, rather than idling until `--timeout_ms`.
+  #
+  # The two budgets are in different units, and that is the whole problem: a
+  # probe gives up after so many *frames*, the engine after so many
+  # *milliseconds*. A headless software-GL frame costs far more wall clock on a
+  # slow or loaded host than on a fast one, so the same run that reports in half
+  # its budget on one machine is cut off mid-probe on another — and a cut-off
+  # run prints no report at all, which reads downstream as "the thing under test
+  # never happened" rather than "the run ended early". The battle play-out hit
+  # exactly this: the fight was landing damage and cycling turns, and the check
+  # said no attack ever damaged an enemy.
+  #
+  # Finishing when the work is done decouples them: `--timeout_ms` can be set
+  # generously enough for the slowest host without every run on a fast one
+  # taking that long. `RGSS::Timeout` is what the engine itself raises to unwind
+  # the loop (see #start), so this ends the run on the same path.
+  #
+  # Only ever fires when at least one probe was requested — normal play, and
+  # Emscripten (which calls #main_loop directly, outside the rescue), never set
+  # those flags.
+  def finish_when_probes_done
+    pending = [
+      [move_test_requested?, @move_test_done],
+      [message_test_requested?, @msg_test_done],
+      [animation_test_requested?, @anim_test_done],
+      [menu_test_requested?, @menu_test_done],
+      [menu_play_requested?, @menu_play_done],
+      [save_test_requested?, @save_test_done],
+      [battle_test_troop > 0, @battle_test_done],
+      [battle_play_requested?, @btl_play_done],
+      [audio_test_requested?, @audio_test_done],
+    ]
+    requested = pending.select { |asked, _| asked }
+    return if requested.empty?
+    return unless requested.all? { |_, done| done }
+    return if screenshot_requested? && !@shot_taken
+
+    $stderr.puts "[MZ] every probe reported; ending the run"
+    raise RGSS::Timeout, "probes finished"
+  end
+
+  # Whether a screenshot was asked for (a launcher constant set by main.cxx).
+  def screenshot_requested?
+    path = begin
+      MZ_SCREENSHOT
+    rescue StandardError
+      ""
+    end
+    !(path.nil? || path.empty?)
+  end
+
+  # Is this a frame worth photographing for the menu play-out? The fixed delay
+  # alone lands wherever the walk happens to be — including back on the map, if
+  # the setup event is still running — and a map frame proves nothing about the
+  # menu. Waiting for the actor window puts the picture at the deepest point of
+  # the flow: the item list with the target selection over it, one tap before
+  # the item is spent. Bounded the same way the animation's is: once the probe
+  # has finished (@menu_play_done) the frame is taken regardless, so a run that
+  # never got there still produces the screenshot that shows where it stopped.
+  def menu_play_shot_ready?
+    @menu_play_at_actor || @menu_play_done
   end
 
   # The on-screen surface MZ's WebGL frame is presented onto: one full-screen

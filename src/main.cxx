@@ -174,6 +174,15 @@ DEFINE_bool(
     "--mz_new_game to reach the map) and log whether Scene_Menu opened, so a "
     "headless run confirms the menu path works. Used in CI");
 DEFINE_bool(
+    mz_menu_play,
+    false,
+    "For RPG Maker MZ: once the menu --mz_menu_test opens, use it — walk the "
+    "command window to Item, pick the party's healing item, pick the wounded "
+    "actor, and back out to the map — and log whether the item actually "
+    "healed and was consumed. Opening Scene_Menu says the scene was "
+    "constructed, not that the menu works; this covers what lies between. "
+    "Implies --mz_menu_test. Used in CI");
+DEFINE_bool(
     mz_save_test,
     false,
     "For RPG Maker MZ: once on the map, save to a slot and load it back "
@@ -862,6 +871,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_MENU_TEST"),
                 mrb_bool_value(FLAGS_mz_menu_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_MENU_PLAY"),
+                mrb_bool_value(FLAGS_mz_menu_play));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_SAVE_TEST"),
                 mrb_bool_value(FLAGS_mz_save_test));

@@ -391,6 +391,22 @@ jobs:
               MZ_MODE: menu
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # Opening Scene_Menu is the same size of claim as reaching
+          # Scene_Battle was — it holds the instant the scene is pushed, before
+          # its first update — and the step above had been green on a bed whose
+          # item database was empty, where the menu has nothing to do at all.
+          # This mode uses the menu: the party is given a Potion and the actor
+          # is wounded through event commands, then confirm walks the command
+          # window, the item category, the item list and the actor window, and
+          # cancel unwinds back to the map. It asserts `healed=true` (an item's
+          # effect reached an actor's HP), `used=true` (the inventory paid for
+          # it) and `returned=true` (the stack unwound). See ADR 0004 M6.3j.
+          - name: MZ menu-play smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: menu_play
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           # The animation path, which nothing else here touches. MZ picks
           # between two animation systems by data shape: an animation carrying
           # a `frames` array draws as sprites (Sprite_AnimationMV), anything
@@ -430,13 +446,15 @@ jobs:
           # first broken update. This mode plays the fight out — confirm is
           # tapped through the party/actor/target windows until an enemy takes
           # damage and the victory sequence hands back to the map — and asserts
-          # `damaged=true ended=true`. Longer timeout: several turns of software
-          # GL. See ADR 0004 M6.3i.
+          # `damaged=true ended=true`. See ADR 0004 M6.3i. The timeout is left
+          # to the script's per-mode default (this fight needs the most room of
+          # any mode, and an override here is what would silently cut it short
+          # on a slow runner); the run ends as soon as the probe reports, so the
+          # ceiling costs nothing when the fight is quick.
           - name: MZ battle-play smoke test
             continue-on-error: true
             env:
               MZ_MODE: battle_play
-              MZ_TIMEOUT_MS: "120000"
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
           # Run the battle smoke against the real bed (Lunatic-Core): it ships

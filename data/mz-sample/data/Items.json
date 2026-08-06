@@ -1,1 +1,1 @@
-[null]
+[null,{"id":1,"name":"Potion","note":"","description":"Restores HP.","iconIndex":0,"itypeId":1,"price":50,"consumable":true,"scope":7,"occasion":0,"speed":0,"successRate":100,"repeats":1,"tpGain":0,"hitType":0,"animationId":0,"damage":{"type":0,"elementId":0,"formula":"0","variance":20,"critical":false},"effects":[{"code":11,"dataId":0,"value1":0,"value2":100}]}]

@@ -549,6 +549,59 @@ JavaScript loads and interprets the JSON.
         silently in this host, which is worth remembering the next time a scene
         looks alive and does nothing.
 
+    - **M6.3j — the menu, actually used (landed).** M6.3i's finding was about a
+      *shape* of assertion, not about battles: `[MZ-MENU] reached_menu=true` is
+      the same claim `reached_battle=true` was — true the instant the scene is
+      pushed, before its first update — and the menu was the last in-game system
+      still resting on it. `--mz_menu_play` (`MZ_MODE=menu_play`) uses the menu
+      instead: confirm walks `Window_MenuCommand` to Item, the item category,
+      the item list and the actor window; then cancel unwinds the stack back to
+      the map. It asserts `healed=true used=true returned=true` — an item's
+      effect reached an actor's HP, the inventory paid for it, and the menu
+      handed the player back.
+
+      **The menu worked.** Unlike the battle, the walk came out right on the
+      first run (`hp_before=100 hp_after=200 items_before=3 items_after=2`), so
+      this milestone adds coverage rather than a fix. Two things had been hiding
+      behind the old assertion anyway:
+
+      * **The bed had no items at all.** `Items.json` was `[null]`, so
+        `Scene_Item` opened onto an empty list and there was nothing in the
+        project to use, equip or sell. A menu with nothing in it cannot tell a
+        working item path from a broken one, which is why the bed now authors a
+        Potion (`scope` 7 so the actor window is in the flow, flat `value2`
+        recovery so the probe can assert a figure). Running the new mode against
+        the old empty bed fails on `healed=true` — while the old `menu` mode
+        still reports `reached_menu=true` on that same run, which is the whole
+        point.
+      * **A healing item is only selectable while someone is hurt**
+        (`Game_Action.testApply` → `isItemEffectsValid`), and MZ has no
+        starting-inventory field. So the probe arms the party first — Change
+        Items and Change HP, run through the *map interpreter* as the event
+        commands a real project would use, the same way M6.3i's Battle
+        Processing is injected rather than calling `SceneManager.push`.
+
+    - **M6.3j (cont.) — the run budget was in the wrong unit.** Adding the mode
+      surfaced a defect in every mode: a probe gives up after so many *frames*,
+      the engine after so many *milliseconds* (`--timeout_ms`), and a headless
+      software-GL frame costs far more wall clock on a loaded host than on a
+      fast one. On this container the battle play-out — green in CI and locally
+      at M6.3i — now ran out of wall clock mid-fight, having landed 41 damage
+      and cycled several turns, and the check reported **"no attack ever
+      damaged an enemy"**: a cut-off run prints no report at all, and the
+      absence of the line was being read as the thing under test never
+      happening. Exactly the M6.3e/M6.3i failure mode, one layer out.
+
+      Two changes. `MZ#finish_when_probes_done` ends the run as soon as every
+      requested probe has reported and the screenshot is taken (raising
+      `RGSS::Timeout`, the same path the engine's own budget unwinds through),
+      so `--timeout_ms` becomes a true ceiling rather than the running time —
+      the eight modes now take 11–116s each instead of a flat 60s, and
+      `battle_play` completes where it used to be cut off. The two play-out
+      modes then get ceilings sized for the slowest host (180s and 280s), and
+      the checks distinguish "the run ended before the fight did" from "nothing
+      was damaged" so the message names the real cause.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

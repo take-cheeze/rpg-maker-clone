@@ -259,8 +259,10 @@ SAVE_CHANGE_MAX = 15.0
 # Every mode's frame must carry its scene's art, so MAP_DOMINANT_MAX applies to
 # all of them — `menu` included, which draws its windows over a blurred
 # snapshot of the map, and both battle modes, which draw a battler and the
-# status window over the battleback.
-MODES = %w[play message menu save battle battle_play animation].freeze
+# status window over the battleback. `menu_play`'s frame lands deeper in the
+# same stack (the item list with the actor window over it, see M6.3j), so it is
+# held to the same bar.
+MODES = %w[play message menu menu_play save battle battle_play animation].freeze
 
 $failures = 0
 $checks = 0
@@ -393,7 +395,8 @@ else
     end
   end
 
-  { 'menu' => 'Scene_Menu', 'battle' => 'Scene_Battle',
+  { 'menu' => 'Scene_Menu', 'menu_play' => 'Scene_Item',
+    'battle' => 'Scene_Battle',
     'battle_play' => 'Scene_Battle' }.each do |mode, scene|
     next unless (frame = loaded[mode])
 
