@@ -169,7 +169,9 @@
   every scene the game reaches as `[RPGXP-HOST-SCENE]`. Pray for You walks its
   own `Scene_logo → Scene_Title → Scene_Map`; the test bed is then made to walk
   its party (`[RPGXP-HOST-MOVE]`), which is what proves a game's own
-  `Game_Player` is reading input and stepping across its own passability.
+  `Game_Player` is reading input and stepping across its own passability, and to
+  open its own menu (`[RPGXP-HOST-MENU]`) — the first thing a game draws out of
+  its own `Window` subclasses, windowskin and font.
   `scripts/rpgxp_script_host_check.rb` covers the same ground under CRuby —
   every section of both bundles evaluates, and the RGSS standard library behaves
 - `scripts/compare-rpgxp-wine.bash` diffs our frames against the **genuine RGSS

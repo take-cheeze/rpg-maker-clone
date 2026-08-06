@@ -238,14 +238,17 @@ class RPGXP
     #     off the game's own title screen without a keyboard.
     #   * with --rgss_host_move_test, walk the party once the game's own map
     #     scene is up and report whether it moved.
+    #   * with --rgss_host_menu_test, press cancel after that and report which
+    #     scene the game went to — its own menu, if it has one.
     def self.watch_frame
       @frames += 1
       report_scene
-      # While the move probe is holding a direction, stop tapping confirm: a
-      # confirm on a map talks to whatever is in front of the party, and a
-      # message window would swallow the walk.
-      confirm_tap if auto_new_game? && !probing_move?
+      # While a probe is driving the keyboard, stop tapping confirm: a confirm
+      # on a map talks to whatever is in front of the party, and a message
+      # window would swallow the walk — or pick an item out of the menu.
+      confirm_tap if auto_new_game? && !probing_move? && !probing_menu?
       move_probe if move_test?
+      menu_probe if menu_test?
     end
 
     def self.report_scene
@@ -355,6 +358,51 @@ class RPGXP
                       RGSS::Input::RIGHT, RGSS::Input::UP]
     end
 
+    # Press cancel on the game's own map and report where that took it.
+    #
+    # The rung above walking. A game's menu is the first thing it draws out of
+    # its *own* `Window_Base` subclasses — its windowskin, its font, its
+    # `Bitmap#draw_text`, its `Window_Selectable` cursor — none of which a map
+    # scene exercises, and all of which this engine supplies natively. So the
+    # scene name this reports is a one-line answer to "does the class library
+    # hold up once a game starts drawing its own UI".
+    #
+    # Deliberately only the *first* press: the stock `Scene_Map` opens
+    # `Scene_Menu` on `Input.trigger?(Input::B)`, and going deeper would be
+    # picking items out of a menu whose contents differ per game.
+    MENU_SETTLE = 20        # frames after the walk before pressing cancel
+    MENU_HOLD = 4           # frames the cancel key is held
+    MENU_WAIT = 60          # frames to let the game's own menu scene come up
+
+    def self.probing_menu?
+      menu_test? && !@menu_start.nil? && !@menu_done
+    end
+
+    def self.menu_probe
+      return if @menu_done || @map_frame.nil?
+      # Wait for the walk when there is one: a cancel press mid-walk would open
+      # the menu over it and the walk would report nothing.
+      return if move_test? && !@move_done
+      @menu_start ||= @frames
+      step = @frames - @menu_start - MENU_SETTLE
+      return if step < 0
+      RGSS::Input._push(RGSS::Input::B, true) if step.zero?
+      RGSS::Input._push(RGSS::Input::B, false) if step == MENU_HOLD
+      finish_menu_probe if step >= MENU_WAIT
+    end
+
+    def self.finish_menu_probe
+      @menu_done = true
+      scene = $scene
+      name = scene.nil? ? "?" : scene.class.to_s
+      # "Opened" means the game left its map for something else — which is what
+      # cancel does on a stock map, and what a game with its own menu script
+      # does too. A game that disables the menu, or one still in its opening
+      # cutscene, simply stays put and says so.
+      $stderr.puts "[RPGXP-HOST-MENU] scene=#{name} " \
+                   "opened=#{!map_scene?(name)} frame=#{@frames}"
+    end
+
     # The party leader's tile, or nil before the game has one.
     def self.player_tile
       player = $game_player
@@ -380,6 +428,12 @@ class RPGXP
 
     def self.move_test?
       RGSS_HOST_MOVE_TEST
+    rescue StandardError
+      false
+    end
+
+    def self.menu_test?
+      RGSS_HOST_MENU_TEST
     rescue StandardError
       false
     end

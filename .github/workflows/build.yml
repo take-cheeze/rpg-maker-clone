@@ -308,8 +308,9 @@ jobs:
           # catches mruby/CRuby divergence. Each bed runs *its own* engine —
           # there is no reimplemented flow any more (ADR 0030): the check taps
           # confirm on the game's own title screen, logs every scene it reaches
-          # as `[RPGXP-SCRIPTS]`/`[RPGXP-HOST-SCENE]`, and walks the party on the
-          # editor bed's map (`[RPGXP-HOST-MOVE]`). Two beds: the editor-shaped
+          # as `[RPGXP-SCRIPTS]`/`[RPGXP-HOST-SCENE]`, walks the party on the
+          # editor bed's map (`[RPGXP-HOST-MOVE]`) and opens that bed's own menu
+          # (`[RPGXP-HOST-MENU]`). Two beds: the editor-shaped
           # OpenGame test bed and the *released* Pray for You (Game.rgssad only,
           # several maps), on displays 112 and 113 — one per game (see the
           # reserved server-num map above). See
