@@ -1024,6 +1024,30 @@ def check_terms(dir)
     end
   end
 
+  if bt.term(terms, :enemy_hp_absorbed) && bt.term(terms, :hp)
+    drains = []
+    db[DB_SKILL]&.each { |id, sk| drains << id if sk.absorb_damage }
+    puts format('   skills: %d 吸収 (drain)', drains.size)
+    unless drains.empty?
+      check "#{name}: a real 吸収 skill drains what it deals, and no more" do
+        sid = drains.first
+        sk = db[DB_SKILL][sid]
+        mage = combatant('Mage', 20, 0, 10, 100)
+        mage.hp = 40
+        foe = combatant('Foe', 0, 0, 5, 100)
+        foe.hp = 25
+        bat = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+        e = bat.send(:apply_skill_hit, mage, foe, -200, 0,
+                     { name: sk.name, absorb: true })
+        eq 25, e[:damage], "skill ##{sid} (#{sk.name}) is capped by the target"
+        eq 25, e[:absorbed_hp]
+        eq 65, mage.hp
+        ok bt.absorbed(terms, foe.name, 25, :hp, false),
+           'and the database has the sentence to report it with'
+      end
+    end
+  end
+
   return unless bt.term(terms, :enemy_damaged) && bt.term(terms, :actor_damaged)
   check "#{name}: the damage sentence differs by side, and carries the number" do
     foe = bt.damage(terms, 'スライム', 42, false)

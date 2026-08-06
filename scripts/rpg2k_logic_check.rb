@@ -6097,7 +6097,7 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   foe = combatant('Foe', 0, 8, 5, 100)                      # def 8
   # skill_effect = 20 + 40*12/40 = 32; attack dmg = 32 - 8/4 = 30
   eq({ cost: 6, hp: -30, mp: 0, inflict: [], chance: 100, variance: 4,
-       attributes: [] },
+       attributes: [], absorb: false },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
@@ -8312,6 +8312,66 @@ check 'a recovery with no wording yields nil rather than half a sentence' do
   eq nil, BT.recovered(no_term, 'リト', 30, :hp)
   no_pool = Struct.new(:hp_recovery, :hp, :mp).new('回復した！', '', '')
   eq nil, BT.recovered(no_pool, 'リト', 30, :hp), 'the pool name matters too'
+end
+
+# 吸収 — the drain line. Close to the recovery line but not the same shape.
+check 'the absorbed line differs from the recovery line in three places' do
+  t = Struct.new(:enemy_hp_absorbed, :actor_hp_absorbed, :hp_recovery, :hp)
+        .new('奪った！', '奪われた！', '回復した！', 'ＨＰ')
+  eq 'スライムのＨＰを 20 奪った！', BT.absorbed(t, 'スライム', 20, :hp, false)
+  eq 'リトはＨＰを 20 奪われた！', BT.absorbed(t, 'リト', 20, :hp, true)
+  # The recovery line always takes の and follows the pool with が; the drain
+  # picks の / は by side and follows with を, and the two sides differ.
+  eq 'リトのＨＰが 20 回復した！', BT.recovered(t, 'リト', 20, :hp)
+end
+
+check 'a drain with no wording yields nil' do
+  blank = Struct.new(:enemy_hp_absorbed, :actor_hp_absorbed, :hp)
+            .new('', '', 'ＨＰ')
+  eq nil, BT.absorbed(blank, 'スライム', 20, :hp, false)
+  no_pool = Struct.new(:enemy_hp_absorbed, :actor_hp_absorbed, :hp)
+              .new('奪った！', '奪われた！', '')
+  eq nil, BT.absorbed(no_pool, 'スライム', 20, :hp, false)
+end
+
+# The rule that makes a drain more than "damage plus healing": RPG_RT clamps the
+# effect to what the target has *before* applying it, so a big drain on a
+# nearly-dead foe is weaker, not merely capped in what it gives back.
+check 'a drain takes only what the target had, and deals only that much' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 30)
+  mage.hp = 50
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.hp = 30
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'Drain', cost: 0, hp: -200, absorb: true)
+  b.begin_round
+  e = b.step_action
+  eq 30, e[:damage], 'the drain is capped at what was there'
+  eq 30, e[:absorbed_hp]
+  eq 0, foe.hp
+  eq 80, mage.hp, 'and the caster gained exactly that'
+end
+
+check 'a drain cannot push the caster past its maximum' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 30)
+  mage.hp = 95
+  foe = combatant('Foe', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'Drain', cost: 0, hp: -40, absorb: true)
+  b.begin_round
+  eq 40, b.step_action[:absorbed_hp], 'it still took 40 off the foe'
+  eq 100, mage.hp, 'but the caster stops at full'
+end
+
+check 'a skill without the flag drains nothing' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 30)
+  mage.hp = 50
+  foe = combatant('Foe', 0, 0, 5, 100)
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'Fire', cost: 0, hp: -40)
+  b.begin_round
+  eq 0, b.step_action[:absorbed_hp]
+  eq 50, mage.hp
 end
 
 # -- 蘇生専用 items (ko_only) --------------------------------------------------

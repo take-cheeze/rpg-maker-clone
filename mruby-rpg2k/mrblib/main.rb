@@ -3225,6 +3225,7 @@ class RPG2k
         c = @state.party.battle_skill_command(sk, current_actor, target)
         @battle_ui[:battle].command_skill(current_actor, target,
                                           name: sk.name, skill_id: sid,
+                                          absorb: c[:absorb] ? true : false,
                                           cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
@@ -3250,6 +3251,7 @@ class RPG2k
         end
         @battle_ui[:battle].command_skill_all(current_actor, effects,
                                               name: sk.name, skill_id: sid,
+                                              absorb: meta[:absorb] ? true : false,
                                               cost: meta[:cost],
                                               inflict: meta[:inflict], chance: meta[:chance],
                                               variance: meta[:variance] || 0,
@@ -3786,7 +3788,22 @@ class RPG2k
           return line ? [line] : nil
         end
         return battle_recovery_lines(t, e) if e[:recover]
-        return battle_result_line(t, e) ? [battle_result_line(t, e)] : nil
+        line = battle_result_line(t, e)
+        return nil unless line
+        [line] + battle_absorb_lines(t, e)
+      end
+
+      # What a 吸収 skill took from its target, after the damage line. [] when
+      # the skill drained nothing or the database has no wording -- unlike the
+      # damage line this one is additive, so a missing term drops the extra
+      # sentence rather than the whole entry.
+      def battle_absorb_lines(t, e)
+        amount = e[:absorbed_hp] || 0
+        return [] unless amount > 0
+        line = Game::States::BattleText.absorbed(
+          t, e[:target].to_s, amount, :hp, e[:target_ally] ? true : false
+        )
+        line ? [line] : []
       end
 
       # An item borrows the `use_item` term rather than carrying a sentence of
