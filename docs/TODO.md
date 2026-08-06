@@ -1327,6 +1327,26 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG_RT parity comparisons measure — so the fallback is opt-in per maker via
   `RGSS::Font.default_path`. The browser build mounts the font at `/fonts` with
   `-DWASM_DEFAULT_FONT=ON`, at ~1.7 MiB of `index.data`
+- ✅ **Battle animations** — every skill and every item in both test beds names
+  one (306/306 and 1200/1200 in Nepheshel against a 500-row table, 134/134 and
+  100/100 in mtf against 150) and none of them played: a fight was a status
+  panel, a line of text and an HP number going down. The animation was top of
+  `scripts/rpg2k_field_audit.rb` by a wide margin. The frame-by-frame player the
+  map's Show Battle Animation command (11210) already used is now shared —
+  `build_animation(id, tx, ty, battle)` takes an explicit id and target pixel,
+  and `battle` means the two things that differ: the pixel is a screen position
+  rather than a map one (so the draw skips the camera) and nothing is waiting on
+  it (so the step skips `@interpreter.resume`). `drive_battle_animate` paces the
+  round by the animation in place of the fixed banner timer, and reads the id off
+  the skill / item row the entry's `skill_id` / `item_id` names — plumbing ADR
+  0036 already put there. It plays centred on the targeted enemy's sprite, found
+  by the target's **index** so two monsters sharing a name cannot be confused, or
+  over the middle of the screen for an action aimed at a party member, since
+  RPG2000's first-person battle draws no ally sprite. Left for their own changes:
+  a **plain attack's** animation (RPG2000 takes it from the equipped weapon,
+  which the entry does not carry), the `position` field (whole screen / target /
+  above / below — carried but not acted on, so everything draws centred), and
+  per-cell tone and scale, which the map path has never had either. See ADR 0037.
 - ✅ **Which fields the games set that the runtime never reads** —
   `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
   and always exits 0): for every scalar database field it counts the rows of the

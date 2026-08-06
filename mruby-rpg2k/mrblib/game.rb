@@ -6091,7 +6091,7 @@ module Game
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already,
           target_ally: ally?(target), skill: cmd[:name],
-          skill_id: cmd[:skill_id] }
+          skill_id: cmd[:skill_id], target_index: @enemies.index(target) }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -6103,6 +6103,7 @@ module Game
         target.states = (target.states || []) - cured unless cured.empty?
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
+          target_index: @enemies.index(target),
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, target_ally: ally?(target),
           target_hp: target.hp, target_mp: target.mp }
