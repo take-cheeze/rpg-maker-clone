@@ -2170,6 +2170,22 @@ module Game
       out
     end
 
+    # 蘇生専用 (`ko_only`): an item that does nothing at all to a target who is
+    # still standing. RPG_RT returns from the item algorithm *before* the HP and
+    # the state effects are computed (EasyRPG's `Item::vExecute`, whose
+    # `item.ko_only && !IsDead()` branch precedes both), so this is not "cures
+    # nothing" -- the percentage HP restore does not land either.
+    #
+    # Every such item in both test beds is a revive: Nepheshel's ドラゴンブラッド,
+    # ドラゴンハート and 気付け薬 and mtf-meido-action's Stimulant all cure
+    # 戦闘不能 and restore 25 / 100 / 3 / 25 percent of max HP. Reading the flag
+    # as nothing let all four be spent on a living, wounded ally for their HP.
+    def ko_only_blocked?(it, actor)
+      return false unless it.respond_to?(:ko_only) && it.ko_only
+      return false if actor.nil?
+      !actor.dead?
+    end
+
     # Whether using item `id` on `actor` would change anything, so the menu can
     # grey out a no-op. A medicine is effective when the target is below full
     # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
@@ -2180,6 +2196,7 @@ module Game
       return false unless it && actor
       case it.type
       when ITEM_MEDICINE
+        return false if ko_only_blocked?(it, actor)
         hp, mp = item_recovery(it, actor)
         (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
           item_cured_states(it).any? { |s| actor.state?(s) }
@@ -2235,6 +2252,10 @@ module Game
       cured = item_cured_states(it)
       affected = []
       targets.each do |t|
+        # A 蘇生専用 item passes over anyone still standing without touching
+        # them -- not even the HP restore -- which is what keeps an all-party
+        # revive from topping up the members who never fell.
+        next if ko_only_blocked?(it, t)
         changed = false
         # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
         # the HP recovery below lands instead of being blocked as a no-op.
