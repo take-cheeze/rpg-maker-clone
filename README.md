@@ -280,6 +280,13 @@
   before the save, overwritten between the save and the load, and compared after
   it, because a settled promise chain is also what a load that restores nothing
   looks like
+- MZ **buys things**: `shop` mode opens a shop with a Shop Processing command,
+  taps confirm through Buy, the goods list and the quantity window, and asserts
+  both that the gold left the purse and that the item arrived — either alone
+  passes on a broken shop. It found a crash rather than a shop bug: the sample
+  font's cmap search header was malformed, so the first character outside ASCII
+  anything asked for (`Window_ShopNumber`'s `×`) tripped an assertion inside
+  stb_truetype instead of resolving to "no glyph"
 - A battle can also start **because the engine decided to**: `encounter` mode
   walks on the second map until a random encounter fires, and asserts the troop
   came from that map's encounter list. Every other battle here is started by a
@@ -329,8 +336,8 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `transfer`, `common`, `encounter`, `menu`,
-  `menu_play`, `animation`, `save`, `battle` or `battle_play`, each with its own success line so a probe that
+  key moves the player), `message`, `transfer`, `common`, `encounter`, `shop`,
+  `menu`, `menu_play`, `animation`, `save`, `battle` or `battle_play`, each with its own success line so a probe that
   merely ran cannot pass. A run ends as soon as its probes have reported rather
   than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest
   host instead of the time every run takes — a cut-off run reports nothing at

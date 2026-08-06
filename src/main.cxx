@@ -213,6 +213,15 @@ DEFINE_bool(
     "goes to Effekseer, whose WASM runtime this host does not start. Used in "
     "CI");
 DEFINE_bool(
+    mz_shop_test,
+    false,
+    "For RPG Maker MZ: open a shop from the map with a Shop Processing command "
+    "and buy something in it (implies --mz_new_game to reach the map), then "
+    "log whether the gold was spent and the item arrived. Scene_Shop is a "
+    "scene nothing else here enters, and the only place the engine spends "
+    "gold against a price list rather than an event handing items over. "
+    "Used in CI");
+DEFINE_bool(
     mz_encounter_test,
     false,
     "For RPG Maker MZ: transfer to the test bed's second map and walk until a "
@@ -1069,6 +1078,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
                 mrb_bool_value(FLAGS_mz_animation_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_SHOP_TEST"),
+                mrb_bool_value(FLAGS_mz_shop_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ENCOUNTER_TEST"),
                 mrb_bool_value(FLAGS_mz_encounter_test));
