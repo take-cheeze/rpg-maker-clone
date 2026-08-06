@@ -1,0 +1,83 @@
+name: Feature request
+description: Something the engine cannot do yet
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The Engine / Platform / Component pickers below are turned into
+        `engine:*`, `platform:*` and `component:*` labels automatically
+        (`.github/workflows/issue-labels.yml`).
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What should it do
+      description: >
+        The behaviour you want, and — when it exists in the real editor or
+        runtime — what that one does, so there is something to match.
+      placeholder: |
+        Support the 2003 battle system's ATB gauge: RPG_RT fills it from
+        the actor's agility …
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The game or workflow that needs it.
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      description: Which RPG Maker edition this is about.
+      multiple: true
+      options:
+        - RPG Maker 2000
+        - RPG Maker 2003
+        - RPG Maker XP
+        - RPG Maker VX
+        - RPG Maker VX Ace
+        - RPG Maker MV
+        - RPG Maker MZ
+        - Not engine specific / unsure
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Leave empty when it is not target specific.
+      multiple: true
+      options:
+        - Browser / WebAssembly
+        - Terminal (sixel / iTerm2)
+        - Linux (SDL)
+        - Windows
+        - PSP
+        - Wio Terminal
+        - Other platform
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the engine it would land in.
+      multiple: true
+      options:
+        - Graphics / rendering
+        - Audio
+        - Input
+        - mruby runtime
+        - JavaScript runtime (MV/MZ)
+        - Game data / file formats
+        - Save / load
+        - Event interpreter
+        - Scenes / menus / windows
+        - Battle
+        - Build / packaging
+        - CI
+        - Docs
+        - Scripts & test beds
+        - Not sure

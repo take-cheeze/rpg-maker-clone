@@ -1,0 +1,47 @@
+# Keep the repository's labels in step with .github/labels.yml.
+#
+# Runs on every push to master that touches the definitions, so editing the
+# file *is* editing the labels. Nothing is ever deleted automatically: the
+# manual run takes a `prune` box for that, so a label somebody added by hand
+# survives an ordinary sync.
+name: Labels
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/labels.yml'
+      - '.github/workflows/labels.yml'
+      - 'scripts/sync_github_labels.rb'
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: 'Delete labels that .github/labels.yml does not define'
+        type: boolean
+        default: false
+
+permissions:
+  # Labels live on the issues API, and that is all this needs.
+  issues: write
+
+# One sync at a time; a queued run would only fight the one in flight.
+concurrency:
+  group: labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          show-progress: false
+          persist-credentials: false
+
+      # `inputs.prune` is a typed boolean, and empty on a push, so the
+      # expression can only ever expand to `--prune` or nothing.
+      - name: Sync labels
+        run: ruby scripts/sync_github_labels.rb ${{ inputs.prune && '--prune' || '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

@@ -1,0 +1,47 @@
+# Turn the Engine / Platform / Component pickers of an issue form into labels.
+#
+# The form's `labels:` key only covers the fixed one (`type:bug`); everything
+# the reporter picked is text in the issue body until this maps it back —
+# see scripts/issue_form_labels.rb.
+name: Issue labeler
+
+on:
+  issues:
+    types: [ opened, edited ]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: issue-labels-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          show-progress: false
+          persist-credentials: false
+
+      # The body is untrusted input, so it reaches ruby through the
+      # environment, never through the shell command line. The script maps it
+      # against a fixed table and can only ever print labels from that table.
+      - id: map
+        name: Map form answers to labels
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          labels="$(ruby scripts/issue_form_labels.rb | paste -sd, -)"
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
+          echo "mapped: ${labels:-none}"
+
+      - name: Apply labels
+        if: steps.map.outputs.labels != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          LABELS: ${{ steps.map.outputs.labels }}
+        run: gh issue edit "$NUMBER" --add-label "$LABELS"
