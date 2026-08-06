@@ -394,6 +394,51 @@ def combatant(name, atk, dfn, agi, hp, states = [])
   c
 end
 
+# 蘇生専用 (`ko_only`): an item that does nothing at all to a target still
+# standing -- not even its percentage HP restore, since RPG_RT returns from the
+# item algorithm before both effects. Every such item in both test beds is a
+# revive, which is the only shape that makes the distinction visible.
+def check_ko_only(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  items = db[DB_ITEM]
+  return unless items
+
+  ko = []
+  items.each { |id, it| ko << id if it.ko_only }
+  puts format('   items: %d 蘇生専用 (revive-only)', ko.size)
+  return if ko.empty?
+
+  check "#{name}: a real revive item is inert on a member still standing" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    hero = party.leader
+    ok hero, 'the game has a party to test with'
+    ko.each do |iid|
+      it = items[iid]
+      # Every one of them restores a *percentage* of max HP, which is what makes
+      # "not even the HP" a different answer from "cures nothing".
+      ok (it.recover_hp_rate || 0) > 0 || (it.recover_hp || 0) > 0,
+         "item ##{iid} (#{it.name}) restores something when it does work"
+      hero.clear_states
+      hero.set_hp(1)
+      eq false, party.item_effective?(iid, hero),
+         "item ##{iid} (#{it.name}) is inert on a standing member"
+      party.gain_item(iid, 1)
+      eq [], party.use_item(iid, hero)
+      eq 1, hero.hp, 'and left the HP alone'
+
+      # ... and does its job on one who has fallen.
+      hero.add_state(Game::Actor::DEATH_STATE)
+      eq true, party.item_effective?(iid, hero),
+         "item ##{iid} works on a fallen member"
+      eq [hero], party.use_item(iid, hero)
+      ok !hero.dead?, 'who is back on their feet'
+    end
+    hero.clear_states
+    hero.set_hp(hero.max_hp)
+  end
+end
+
 def check_states(dir)
   name = File.basename(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
@@ -1002,6 +1047,7 @@ dirs.each do |d|
   check_equipment(d)
   check_terrain(d)
   check_bush(d)
+  check_ko_only(d)
   check_items(d)
 end
 

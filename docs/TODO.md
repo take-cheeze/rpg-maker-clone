@@ -1344,6 +1344,22 @@ The work below is roughly ordered by the critical path to a walkable game
   EasyRPG and deliberately left alone (`levitate` and `state_chance` are RPG2003
   only, `message_affected` has no known trigger, and the two critical-hit terms
   are side-keying-unresolved, ADR 0036), so nobody re-derives them.
+- ✅ **蘇生専用 items** (the item row's `ko_only`) — unread, and all four items
+  that set it across the test beds are revives that cure 戦闘不能 **and** restore
+  a percentage of max HP (Nepheshel's ドラゴンブラッド 25%, ドラゴンハート 100%,
+  気付け薬 3%; mtf's Stimulant 25%). That shape is what made the field matter:
+  reading it as nothing did not merely let the *cure* fire pointlessly on a
+  living ally — the cure is a no-op there anyway — it let the **HP restore**
+  fire, so all four were wastable as percentage heals and ドラゴンハート was a
+  full heal that way, with the field menu offering them as effective. RPG_RT
+  returns from the item algorithm **before both** the HP and the state effects
+  (EasyRPG's `Item::vExecute` puts the `ko_only && !IsDead()` return ahead of the
+  state loop, with the HP block further down), so the answer is "does nothing at
+  all". `Party#ko_only_blocked?` gates `item_effective?` (the menu greys it out)
+  and `use_medicine` **per target**, so an all-party revive passes over the
+  members who never fell rather than topping them up — the case that reading
+  actually decides, since a single target would be hidden by the menu gate. See
+  ADR 0039.
 
 ## RPG Maker with RGSS (XP / VX / VXAce)
 

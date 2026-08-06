@@ -1921,19 +1921,22 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :occasion_field2, :occasion_field1,
                       :dual_attack, :ignore_evasion, :half_sp_cost, :hit,
                       # 会心必殺: the weapon's own critical-hit percentage.
-                      :critical_hit)
+                      :critical_hit,
+                      # 蘇生専用: does nothing at all to a target still standing.
+                      :ko_only)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
-              half_sp_cost: false, hit: 0, critical_hit: 0)
+              half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
-               dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit)
+               dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
+               ko_only)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -8309,6 +8312,70 @@ check 'a recovery with no wording yields nil rather than half a sentence' do
   eq nil, BT.recovered(no_term, 'リト', 30, :hp)
   no_pool = Struct.new(:hp_recovery, :hp, :mp).new('回復した！', '', '')
   eq nil, BT.recovered(no_pool, 'リト', 30, :hp), 'the pool name matters too'
+end
+
+# -- 蘇生専用 items (ko_only) --------------------------------------------------
+# RPG_RT returns from the item algorithm *before* both the HP and the state
+# effects when the target is still standing, so a revive item is not merely
+# "cures nothing" on a living ally -- its percentage HP restore does not land
+# either. Every ko_only item in both test beds is a revive of exactly that shape.
+
+def revive_party
+  items = { 4 => fake_item(type: 6, rhp_rate: 25, state_set: [1], ko_only: true),
+            5 => fake_item(type: 6, rhp: 50) } # an ordinary medicine
+  item_party(items)
+end
+
+check 'a revive item does nothing to an ally who is still standing' do
+  st = revive_party
+  st.party.gain_item(4, 1)
+  hero = st.party.actor_by_id(1)
+  hero.change_hp(-60) # 40/100, wounded but up
+  eq false, st.party.item_effective?(4, hero), 'the menu greys it out'
+  eq [], st.party.use_item(4, hero)
+  eq 40, hero.hp, 'and not even the 25% HP lands'
+  eq 1, st.party.item_count(4), 'nothing is spent'
+end
+
+check 'the same item revives an ally who is down, HP and all' do
+  st = revive_party
+  st.party.gain_item(4, 1)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(Game::Actor::DEATH_STATE)
+  ok hero.dead?
+  eq true, st.party.item_effective?(4, hero)
+  eq [hero], st.party.use_item(4, hero)
+  ok !hero.dead?, 'back on their feet'
+  # Standing up puts them on 1 HP first (the existing revive path), and the
+  # item's 25% of 100 lands on top of that.
+  eq 26, hero.hp, 'with the 25% the item restores'
+  eq 0, st.party.item_count(4), 'and it was spent'
+end
+
+check 'an ordinary medicine is unaffected by the rule' do
+  st = revive_party
+  st.party.gain_item(5, 1)
+  hero = st.party.actor_by_id(1)
+  hero.change_hp(-60)
+  eq true, st.party.item_effective?(5, hero)
+  eq [hero], st.party.use_item(5, hero)
+  eq 90, hero.hp
+end
+
+# An all-party revive passes over the members who never fell rather than topping
+# them up, which is the case the "not even the HP" reading decides.
+check 'an all-party revive skips the members still standing' do
+  items = { 4 => fake_item(type: 6, scope: 1, rhp_rate: 25, state_set: [1],
+                           ko_only: true) }
+  st = item_party(items)
+  st.party.gain_item(4, 1)
+  up = st.party.actor_by_id(1)
+  down = st.party.actor_by_id(2)
+  up.change_hp(-60)
+  down.add_state(Game::Actor::DEATH_STATE)
+  eq [down], st.party.use_item(4, nil)
+  eq 40, up.hp, 'the standing member is passed over'
+  ok !down.dead?, 'the fallen one is raised'
 end
 
 # -- chipset terrain tags -----------------------------------------------------
