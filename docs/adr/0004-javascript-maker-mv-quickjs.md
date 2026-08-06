@@ -818,6 +818,84 @@ JavaScript loads and interprets the JSON.
       selectable, with nothing said about why. The class carried the weapon-type
       trait (code 51) and not the armor one (code 52); it now has both.
 
+    - **M6.3r — encrypted projects, found by running a real game (landed).**
+      Every check so far ran against beds we author, and they are all plaintext.
+      Pointing the engine at two games downloaded from [freem][freem] — the
+      smallest MV and the smallest MZ release, chosen only for size — showed
+      both stopping dead in `Scene_Boot`:
+
+      ```
+      MZ: [MZ] boot stopped at: LoadError,img/system/Window.png,…
+      MV: [MV] scene: Scene_Boot            (and no further)
+      ```
+
+      Neither ships `img/system/Window.png`. They ship `Window.png_` and
+      `Window.rpgmvp`, because both had **"Encrypt Images"** ticked at
+      deployment — a checkbox a large share of releases use. Encryption changes
+      the loading path completely: nothing is opened by name. The engine XHRs
+      the file as an ArrayBuffer, decrypts it in **its own JavaScript**, and
+
+      ```js
+      const blob = new Blob([arrayBuffer]);
+      image.src = URL.createObjectURL(blob);
+      ```
+
+      Neither global existed in the host, so the first encrypted asset threw.
+      The decryption itself was never our job — only the three capabilities it
+      needs. Two were missing and one was subtly wrong:
+
+      * **`Blob` and `URL.createObjectURL`/`revokeObjectURL`** now exist, kept
+        deliberately small: a Blob holds its bytes, an object URL is a key into
+        a registry the Image loader reads, and revoking really does drop the
+        bytes (MZ revokes as soon as an image decodes, and a registry that
+        ignored it would hold every asset a long session ever loaded).
+      * **`XMLHttpRequest` honours `responseType = "arraybuffer"`**, backed by a
+        new `__mv_readFileBytes`. The existing reader hands back a JS *string*,
+        which is right for `data/*.json` and wrong for anything else — a string
+        carries the bytes through UTF-8 and mangles everything that is not valid
+        text.
+      * **Callback dispatch had to satisfy two opposite habits.** MZ's
+        `DataManager.loadDataFile` attaches `onload` *before* `send()` and
+        depends on our synchronous read firing it inline: it nulls
+        `window[name]` before sending, so any added delay widens the window in
+        which the engine can see a null `$dataMap`. A first attempt at a blanket
+        `requestAnimationFrame` deferral did exactly that and threw
+        `$dataMap.width` out of `Game_Map.width()` mid-save. MV's
+        `Decrypter.decryptImg` does the opposite — `send()` first, `onload`
+        after — so an inline-only dispatch called nothing at all. The dispatch
+        now fires inline when a handler is already there, and otherwise looks
+        again on the next frame for one attached in the meantime. Never twice.
+
+      With those three, the MZ game renders its **full title screen** — artwork,
+      title, command window — and the MV game reaches its opening cutscene, both
+      entirely from encrypted assets.
+
+    - **M6.3r (cont.) — what the bed had been getting away with.** Deriving an
+      encrypted copy of our own bed (`scripts/gen-mz-encrypted.py`) to guard the
+      fix immediately failed differently: the map was reached but *nothing
+      responded* — no movement, no menu, and `[MZ-MSG] busy=true
+      window_open=false`. The frozen-battle signature of M6.3i, and again
+      nothing logged.
+
+      The bed never shipped `img/system/Balloon.png` or `Shadow1.png`, which
+      `Spriteset_Map` **reserves** on every map. It got away with it because a
+      missing image resolves here to a 1x1 transparent bitmap that reports
+      itself *loaded*, so `ImageManager.isReady()` stayed happy. Encrypted, the
+      same absence is a 404 at the XHR instead: `Bitmap._onError` marks the
+      bitmap errored and `ImageManager.isReady()` **throws every frame** —
+      outside any scene update, which is why the trap on `Scene_Base.update`
+      caught nothing. The scene never starts. A browser behaves identically, so
+      this was the bed being unfaithful rather than the host being wrong, and
+      the bed now authors both.
+
+      `scripts/mz_testbed_check.rb` learned the format too, since it is offered
+      as a way to validate *any* project and reported all ten of a real game's
+      assets as missing. A PNG's dimensions survive encryption untouched — only
+      the first 16 bytes are XORed, and IHDR's size fields sit past them — so it
+      reads them straight out of the encrypted file.
+
+[freem]: https://www.freem.ne.jp/
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

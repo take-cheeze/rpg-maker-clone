@@ -352,6 +352,55 @@ def gen_iconset():
 
 gen_iconset()
 
+# `img/system/Balloon.png` and `img/system/Shadow1.png` are **reserved** by
+# Spriteset_Map: MZ asks ImageManager for both while the map scene is being
+# built, whether or not anything ever shows a balloon or an airship. The bed
+# shipped neither, and got away with it only because a missing image resolves
+# here to a 1x1 transparent bitmap (see the Image shim in mvcanvas.cxx) — which
+# reports itself *loaded*, so `ImageManager.isReady()` stays happy.
+#
+# That stops being true the moment a project is encrypted. The asset is then
+# fetched by XHR, a missing file is a 404, `Bitmap._onError` marks the bitmap as
+# errored, and `ImageManager.isReady()` **throws on every frame** — outside any
+# scene update, so nothing logs it. The scene never starts: a black,
+# unresponsive map where the message window will not open, the menu will not
+# open and the player will not move. A browser behaves the same way, so this was
+# the bed being unfaithful rather than the host being wrong. See ADR 0004 M6.3r.
+def gen_balloon():
+    """The balloon icon sheet: 8 frames across, one row per balloon type."""
+    cell, cols, rows = 48, 8, 10
+    c = Canvas(cell * cols, cell * rows)
+    for r in range(rows):
+        for col in range(cols):
+            x0, y0 = col * cell, r * cell
+            # A blob that grows across the frames, so successive cells differ
+            # and a played balloon visibly animates.
+            grow = 6 + (col * 2)
+            for y in range(cell):
+                for x in range(cell):
+                    dx = (x - cell / 2) / float(grow)
+                    dy = (y - cell / 2) / float(grow)
+                    if dx * dx + dy * dy <= 1.0:
+                        c.set(x0 + x, y0 + y, (250, 250, 250, 235))
+    write_png("img/system/Balloon.png", c.w, c.h, c.bytes())
+
+
+def gen_shadow():
+    """The airship/character drop shadow: one soft dark ellipse."""
+    cell = 48
+    c = Canvas(cell, cell)
+    for y in range(cell):
+        for x in range(cell):
+            dx = (x - cell / 2) / 20.0
+            dy = (y - cell / 2) / 10.0
+            if dx * dx + dy * dy <= 1.0:
+                c.set(x, y, (0, 0, 0, 110))
+    write_png("img/system/Shadow1.png", cell, cell, c.bytes())
+
+
+gen_balloon()
+gen_shadow()
+
 
 # --- Animation sheet -------------------------------------------------------
 # MZ ships two animation systems, and only one of them is reachable here.
