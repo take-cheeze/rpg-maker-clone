@@ -403,20 +403,89 @@ if(EMSCRIPTEN)
 
   # Mount the MIDI patch set at /timidity, where src/sdl_audio.cxx looks for it.
   # The TiMidity decoder above is only half of MIDI playback; without these
-  # instrument samples a .mid still plays silence in the browser.
+  # instrument samples the browser does not merely play a .mid quietly, it fails
+  # to load one at all ("Couldn't open timidity.cfg"), so an RPG2000 project --
+  # whose BGM is nearly all .mid -- runs silent.
   #
-  # Off by default because FreePats adds ~32 MiB to index.data, which is a lot
-  # for a web page whose games are mostly OGG. Turn on with
-  # -DWASM_MIDI_PATCHES=ON, having run scripts/download-freepats.bash.
+  # These do NOT go through --preload-file, which would fold them into the one
+  # index.data and push it past Cloudflare Pages' 25 MiB per-file limit, where
+  # `/preview` deploys. scripts/pack-timidity-data.py splits them across as many
+  # timidity*.data packages as the budget needs and emits a single timidity.js
+  # loader for them, which src/shell.html pulls in ahead of the runtime script.
+  # See ADR 0031.
   #
-  # Deliberately not guarded on the directory existing, matching WASM_SAMPLE_DIR
-  # above: the download runs concurrently with this configure and is awaited
-  # before the link, so a configure-time check would race it.
-  option(WASM_MIDI_PATCHES "Preload the MIDI patch set into the wasm build" OFF)
-  if(WASM_MIDI_PATCHES)
-    target_link_options(${PROJECT_NAME} PRIVATE
-                        "--preload-file=${TIMIDITY_ASSET_DIR}@/timidity")
+  # Three settings, because the two callers want opposite things:
+  #
+  # * AUTO (the default) packages the patches once
+  #   scripts/download-freepats.bash has installed them. This is the local flow
+  #   -- fetch, configure, and the page plays MIDI -- and skipping the download
+  #   still gives a page ~32 MiB lighter, with the configure saying so instead
+  #   of leaving it to be found as silence.
+  # * ON packages whether or not the directory is there yet, which is what CI
+  #   needs: it fetches the patches in a background step running *alongside*
+  #   this configure, awaited by a barrier before the build, so a configure-time
+  #   EXISTS check would race the download and lose. WASM_SAMPLE_DIR above has
+  #   the same shape for the same reason.
+  # * OFF never packages, for a deliberately slim page.
+  #
+  # AUTO reads the directory at configure time, so a download landing after this
+  # ran needs a re-configure to be seen -- which is exactly why CI passes ON.
+  set(WASM_MIDI_PATCHES
+      "AUTO"
+      CACHE STRING
+            "Package the MIDI patch set into the wasm build: AUTO, ON or OFF")
+  set_property(CACHE WASM_MIDI_PATCHES PROPERTY STRINGS AUTO ON OFF)
+  string(TOUPPER "${WASM_MIDI_PATCHES}" wasm_midi_patches_mode)
+  if(wasm_midi_patches_mode STREQUAL "AUTO")
+    if(EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
+      set(wasm_midi_patches ON)
+    else()
+      set(wasm_midi_patches OFF)
+      message(
+        STATUS
+          "MIDI: ${TIMIDITY_ASSET_DIR} is empty, so this page will not play "
+          ".mid BGM/ME at all. Run scripts/download-freepats.bash and "
+          "re-configure, or pass -DWASM_MIDI_PATCHES=ON to package it "
+          "regardless (the build then requires the directory to exist).")
+    endif()
+  elseif(wasm_midi_patches_mode MATCHES "^(ON|OFF|TRUE|FALSE|YES|NO|1|0)$")
+    set(wasm_midi_patches ${wasm_midi_patches_mode})
+  else()
+    # An unrecognised value must not quietly mean "off": that is the failure
+    # this setting exists to prevent.
+    message(FATAL_ERROR "WASM_MIDI_PATCHES must be AUTO, ON or OFF, not "
+                        "'${WASM_MIDI_PATCHES}'")
   endif()
+
+  # timidity.js is generated either way: with the patches off it is a comment
+  # saying so, which keeps src/shell.html's script tag unconditional rather than
+  # leaving a 404 on every slim build. The packages themselves are ordinary
+  # build outputs, so they are produced by a target the page depends on, well
+  # after CI's download barrier.
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  get_filename_component(EMSCRIPTEN_TOOLS "${EMSCRIPTEN_ROOT_PATH}/tools"
+                         ABSOLUTE)
+  set(TIMIDITY_LOADER "${CMAKE_CURRENT_BINARY_DIR}/timidity.js")
+  if(wasm_midi_patches)
+    set(timidity_pack_input ${TIMIDITY_ASSET_DIR})
+  else()
+    # A path that cannot exist: the packer then writes only the "no patches"
+    # loader, with no branch of its own for the disabled case.
+    set(timidity_pack_input "${CMAKE_CURRENT_BINARY_DIR}/no-timidity-patches")
+  endif()
+  add_custom_command(
+    OUTPUT ${TIMIDITY_LOADER}
+    COMMAND
+      ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/scripts/pack-timidity-data.py
+      ${timidity_pack_input} ${CMAKE_CURRENT_BINARY_DIR} --file-packager
+      ${EMSCRIPTEN_TOOLS}/file_packager.py
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/pack-timidity-data.py
+    COMMENT "Packaging the MIDI patch set for the browser"
+    VERBATIM)
+  add_custom_target(timidity_data DEPENDS ${TIMIDITY_LOADER})
+  add_dependencies(${PROJECT_NAME} timidity_data)
+  list(APPEND ADDITIONAL_CLEAN_FILES ${TIMIDITY_LOADER})
 
   # Mount the default UI font at /fonts, where the text renderer looks for it
   # (mruby-rgss/src/default_font.cxx). Without it, an XP/VX/MV project that

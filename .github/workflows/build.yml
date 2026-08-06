@@ -810,6 +810,49 @@ jobs:
           ./scripts/nix-develop.bash env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
 
+      # A page that lost its patch set does not fail the build, it just goes
+      # quiet: MIDI is where nearly all RPG2000 BGM lives, and without the
+      # instruments a .mid does not even load. The preload's file table lands in
+      # index.js, so the deployed page can be asked directly whether it carries
+      # them rather than trusting that the flag above still reached the link.
+      - name: Check the page carries the MIDI patch set
+        run: |
+          if ! grep -q '/timidity/timidity.cfg' wasm-build/timidity.js; then
+            echo "::error::the wasm page has no MIDI patch set packaged, so" \
+              "every .mid BGM/ME would be silent. Check the freepats download" \
+              "and -DWASM_MIDI_PATCHES=ON in the cmake step above."
+            exit 1
+          fi
+          echo "MIDI patch set present:"
+          ls -la wasm-build/timidity*.data
+
+      # Cloudflare Pages, where `/preview` deploys, refuses any file over
+      # 25 MiB, and nothing before this notices: the build succeeds, the page
+      # works locally and on GitHub Pages (100 MiB per file), and only the
+      # preview deploy fails — which is how the patch set sat in index.data
+      # breaking every preview for a day. scripts/pack-timidity-data.py splits
+      # the patches to stay under that ceiling; this asserts the result, on
+      # exactly the files the deploy jobs publish.
+      - name: Check no published file exceeds Cloudflare's 25 MiB limit
+        run: |
+          limit=$((25 * 1024 * 1024))
+          status=0
+          for f in wasm-build/index.html wasm-build/index.js \
+                   wasm-build/index.wasm wasm-build/index.wasm.map \
+                   wasm-build/index.data wasm-build/timidity.js \
+                   wasm-build/timidity*.data; do
+            [ -f "$f" ] || continue
+            size="$(stat -c%s "$f")"
+            printf '%-34s %6.1f MiB\n' "${f#wasm-build/}" \
+              "$(echo "$size" | awk '{print $1/1048576}')"
+            if [ "$size" -gt "$limit" ]; then
+              echo "::error::${f#wasm-build/} is over Cloudflare Pages' 25 MiB" \
+                "per-file limit, so /preview cannot deploy this page."
+              status=1
+            fi
+          done
+          exit $status
+
       - name: ccache stats
         if: always()
         # As in the `build` job: this captures stdout into the step summary, so
@@ -840,12 +883,19 @@ jobs:
           # ship. All paths sit under wasm-build/, so the artifact stores them at
           # its root (index.html, index.js, index.wasm[.map]) — ready to publish
           # as-is.
+          #
+          # timidity.js and its timidity*.data packages carry the MIDI patch set
+          # (ADR 0031). The page loads timidity.js ahead of the runtime, so
+          # dropping them here would not fail the deploy — it would just publish
+          # a page whose .mid BGM is silent.
           path: |
             wasm-build/index.html
             wasm-build/index.js
             wasm-build/index.wasm
             wasm-build/index.wasm.map
             wasm-build/index.data
+            wasm-build/timidity.js
+            wasm-build/timidity*.data
 
   wio:
     # Build the Wio Terminal (SAMD51) bring-up firmware with PlatformIO. This is
