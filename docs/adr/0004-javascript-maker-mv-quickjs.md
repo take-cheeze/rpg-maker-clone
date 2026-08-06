@@ -602,6 +602,36 @@ JavaScript loads and interprets the JSON.
       the checks distinguish "the run ended before the fight did" from "nothing
       was damaged" so the message names the real cause.
 
+    - **M6.3k — the save round-trip, verified rather than assumed (landed).**
+      The last assertion of the M6.3i shape was the save probe's: `saved=true
+      exists=true loaded=true` says the promise chain *settled* — the slot
+      deflated, `savefileExists` found it, `loadGame` resolved. All three are
+      true of a load that restores nothing, and of one that quietly starts a new
+      game instead.
+
+      The probe now moves six fields off their defaults before saving (gold, a
+      switch, a variable, an actor's HP, the inventory, the player's position),
+      overwrites every one of them *between* the save and the load, and compares
+      the state read back afterwards against the state read before. `restored=`
+      is that comparison; a mismatch prints both signatures, so the failure
+      names the fields that did not come back.
+
+      Arming the fields first is what makes the check real: a fresh game's state
+      and an unwritten save's state would both read as the defaults, so a probe
+      that saved the defaults could not tell `loadGame` from
+      `setupNewGame`. **The round-trip does work** (`restored=true` on the first
+      run) — but with `loadGame` stubbed to a resolved promise the old three
+      claims all still pass while the new one fails with the diff:
+
+      ```
+      [MZ-SAVE] saved=true exists=true loaded=true restored=false
+                before=[gold=1234 sw=1 var=4321 hp=289 items=5 pos=3,4]
+                after=[gold=2011 sw=0 var=9999 hp=252 items=3 pos=11,9]
+      ```
+
+      No new mode: the existing `save` mode's claim gets stronger, which is
+      cheaper than a ninth CI step for what is one flow.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

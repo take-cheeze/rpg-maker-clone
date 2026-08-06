@@ -21,7 +21,8 @@
 #   [MZ-MENUPLAY] hp_before=<n> hp_after=<n> items_before=<n> items_after=<n>
 #              healed=<bool> used=<bool> returned=<bool> scene=<scene>
 #   [MZ-ANIM]  data=<bool> mv=<bool> sprites=<n> cells=<n> played=<bool>
-#   [MZ-SAVE]  saved=<bool> exists=<bool> loaded=<bool>
+#   [MZ-SAVE]  saved=<bool> exists=<bool> loaded=<bool> restored=<bool>
+#              [before=<state> after=<state>, when they differ]
 #   [MZ-BTL]   reached_battle=<bool>
 #   [MZ-BTLPLAY] hp_before=<n> hp_after=<n> alive=<n> damaged=<bool>
 #              ended=<bool> scene=<scene>
@@ -37,7 +38,7 @@
 #   menu      New Game -> map, open the party menu
 #   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
-#   save      New Game -> map, save + load round-trip
+#   save      New Game -> map, save + load round-trip, state verified back
 #   battle    New Game -> map, start a battle against MZ_TROOP (default 1)
 #   battle_play  ... and then *play that battle out* to its end
 #
@@ -228,6 +229,16 @@ case "${MODE}" in
     save)
         grep -q '\[MZ-SAVE\] saved=true exists=true loaded=true' "${log}" ||
             fail "the save/load round-trip failed ([MZ-SAVE] line)"
+        # `loaded=true` only says the promise chain settled — the slot
+        # decompressed and `extractSaveContents` ran. It is true of a load that
+        # restores nothing, and of one that quietly starts a new game instead.
+        # `restored=true` is the round-trip: gold, a switch, a variable, an
+        # actor's HP, the inventory and the player's position are moved off
+        # their defaults before the save, overwritten between the save and the
+        # load, and read back identical afterwards. A mismatch prints both
+        # states, so the failure names the field that did not come back.
+        grep -q '\[MZ-SAVE\].*restored=true' "${log}" ||
+            fail "the save did not restore the game state ([MZ-SAVE] restored=true)"
         ;;
     battle)
         grep -q '\[MZ-BTL\] reached_battle=true' "${log}" ||
