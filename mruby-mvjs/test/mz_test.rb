@@ -511,6 +511,25 @@ assert 'MZ.common_event_state_js separates the two common event paths' do
                MV::JS.eval(MZ.common_event_state_js(3, 4))
 end
 
+assert 'MZ.encounter_state_js reports the step counter, not just the outcome' do
+  # `steps` is the diagnosis when no encounter happens: a counter that never
+  # moves means no step was ever taken (or encounters are off for the map),
+  # while one that counts down and re-arms without a battle means the encounter
+  # fired somewhere else. Neither is visible from the outside without it.
+  MV::JS.eval(<<~'JS')
+    globalThis.$gameMap = { mapId: function () { return 2; } };
+    globalThis.$gamePlayer = { _encounterCount: 3, x: 5, y: 5 };
+    globalThis.$gameTroop = { _troopId: 1 };
+  JS
+  assert_equal "map=2 steps=3 x=5 y=5 troop=1",
+               MV::JS.eval(MZ.encounter_state_js)
+
+  # No battle yet: $gameTroop exists from the boot but holds no troop.
+  MV::JS.eval("$gameTroop._troopId = 0; $gamePlayer._encounterCount = 0;")
+  assert_equal "map=2 steps=0 x=5 y=5 troop=0",
+               MV::JS.eval(MZ.encounter_state_js)
+end
+
 assert 'the MZ probes are inert before the engine defines their globals' do
   # Every probe runs each frame from MZ#main_loop, including the frames before
   # the boot has defined $gameMessage / SceneManager / $gameMap. None may throw.
@@ -524,6 +543,9 @@ assert 'the MZ probes are inert before the engine defines their globals' do
   assert_nothing_raised { MV::JS.eval(MZ.battle_probe_js(1)) }
   assert_nothing_raised { MV::JS.eval(MZ.transfer_probe_js(2, 4, 5)) }
   assert_nothing_raised { MV::JS.eval(MZ.common_event_probe_js(2, 2)) }
+  MV::JS.eval("delete globalThis.$gamePlayer; delete globalThis.$gameTroop;")
+  assert_equal "map=-1 steps=-1 x=-1 y=-1 troop=0",
+               MV::JS.eval(MZ.encounter_state_js)
   assert_equal "parallel=-1 called=-1 commons=-1 active=0",
                MV::JS.eval(MZ.common_event_state_js(3, 4))
   assert_equal "busy=false window_open=false", MV::JS.eval(MZ.message_state_js)

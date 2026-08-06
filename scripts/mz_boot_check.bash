@@ -17,6 +17,7 @@
 #   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
+#   [MZ-ENC]   encountered=<bool> troop=<id> map=<id> scene=<scene>
 #   [MZ-COMMON] parallel=<bool> called=<bool> last=[<state>]
 #   [MZ-XFER]  from=[<state>] to=[<state>] moved=<bool> landed=<bool>
 #              arrived=<bool> scene=<scene>
@@ -40,6 +41,7 @@
 #   message   New Game -> map, show a message
 #   transfer  New Game -> map, Transfer Player to the bed's second map
 #   common    New Game -> map, run a parallel and a called common event
+#   encounter New Game -> map 2, walk until a random encounter fights
 #   menu      New Game -> map, open the party menu
 #   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
@@ -85,6 +87,10 @@ case "${MODE}" in
     message)
         FLAGS=(--mz_message_test)
         DEFAULT_SHOT="ss/mz_message.png" ;;
+    encounter)
+        FLAGS=(--mz_encounter_test)
+        DEFAULT_TIMEOUT_MS=180000
+        DEFAULT_SHOT="ss/mz_encounter.png" ;;
     common)
         FLAGS=(--mz_common_event_test)
         DEFAULT_SHOT="ss/mz_common.png" ;;
@@ -115,8 +121,8 @@ case "${MODE}" in
         DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|transfer|common|menu|menu_play|animation|save" \
-             "|battle|battle_play)" >&2
+             "(play|message|transfer|common|encounter|menu|menu_play" \
+             "|animation|save|battle|battle_play)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
@@ -201,6 +207,17 @@ case "${MODE}" in
         # actually opened over the map.
         grep -q '\[MZ-MSG\] busy=true window_open=true' "${log}" ||
             fail "the message window never opened ([MZ-MSG] busy/window_open)"
+        ;;
+    encounter)
+        # No Battle Processing command is issued anywhere in this mode, so a
+        # battle can only have come from the map's own encounter list — the
+        # engine deciding to fight rather than a game telling it to. The troop
+        # check is what makes it the *map's* list rather than any battle at all.
+        # See ADR 0004 M6.3n.
+        grep -q '\[MZ-ENC\].*encountered=true' "${log}" ||
+            fail "walking never triggered a random encounter ([MZ-ENC] encountered=true)"
+        grep -q '\[MZ-ENC\].*troop=1 ' "${log}" ||
+            fail "the encounter picked a troop outside the map's list ([MZ-ENC] troop=1)"
         ;;
     common)
         # Two separate engine paths, reported separately because driving one
@@ -305,7 +322,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-ENC\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"

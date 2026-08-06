@@ -412,6 +412,22 @@ jobs:
           # interpreter nested inside the calling one. The bed authors one of
           # each and this step drives both, asserting each ran on its own.
           # See ADR 0004 M6.3m.
+          # A random encounter: the engine deciding to fight, rather than a
+          # game telling it to. Every other battle here is started by a Battle
+          # Processing command; this one comes out of the map's own encounter
+          # list after the player takes a step, through
+          # Game_Player.updateEncounterCount and executeEncounter with no event
+          # involved. The bed's maps carried no encounter list at all, so the
+          # path had never run. It walks on the *second* map — map 1 has to stay
+          # encounter-free because the move probe walks there — which makes this
+          # the first step that drives two systems in one run. See ADR 0004
+          # M6.3n.
+          - name: MZ encounter smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: encounter
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           - name: MZ common event smoke test
             continue-on-error: true
             env:

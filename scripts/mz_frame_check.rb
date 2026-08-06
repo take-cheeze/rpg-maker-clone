@@ -271,8 +271,8 @@ SAVE_CHANGE_MAX = 15.0
 # status window over the battleback. `menu_play`'s frame lands deeper in the
 # same stack (the item list with the actor window over it, see M6.3j), so it is
 # held to the same bar.
-MODES = %w[play message transfer common menu menu_play save battle battle_play
-           animation].freeze
+MODES = %w[play message transfer common encounter menu menu_play save battle
+           battle_play animation].freeze
 
 $failures = 0
 $checks = 0
@@ -406,8 +406,8 @@ else
   end
 
   { 'menu' => 'Scene_Menu', 'menu_play' => 'Scene_Item',
-    'battle' => 'Scene_Battle',
-    'battle_play' => 'Scene_Battle' }.each do |mode, scene|
+    'battle' => 'Scene_Battle', 'battle_play' => 'Scene_Battle',
+    'encounter' => 'Scene_Battle' }.each do |mode, scene|
     next unless (frame = loaded[mode])
 
     check "#{mode}: #{scene} repainted the screen" do
