@@ -1923,20 +1923,23 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # 会心必殺: the weapon's own critical-hit percentage.
                       :critical_hit,
                       # 蘇生専用: does nothing at all to a target still standing.
-                      :ko_only)
+                      :ko_only,
+                      # 両手持ち: a weapon that claims the shield hand too.
+                      :two_handed)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
               state_set: nil, reverse_state: false, prevent_crit: false,
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
-              half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false)
+              half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
+              two_handed: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
-               ko_only)
+               ko_only, two_handed)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -8376,6 +8379,91 @@ check 'an all-party revive skips the members still standing' do
   eq [down], st.party.use_item(4, nil)
   eq 40, up.hp, 'the standing member is passed over'
   ok !down.dead?, 'the fallen one is raised'
+end
+
+# -- 両手持ち weapons (two_handed) --------------------------------------------
+# RPG_RT keeps the weapon and shield slots mutually exclusive whenever either
+# holds a two-handed weapon: filling one clears the other. 35 of Nepheshel's 104
+# weapons are two-handed and 14 of mtf-meido-action's 26.
+
+def two_handed_party
+  items = { 1 => fake_item(type: 1, atk: 20),                     # one-handed
+            2 => fake_item(type: 1, atk: 40, two_handed: 1),      # a claymore
+            3 => fake_item(type: 2, dfn: 10),                     # a shield
+            4 => fake_item(type: 3, dfn: 4) }                     # body armour
+  item_party(items)
+end
+
+check 'a two-handed weapon empties the shield hand' do
+  st = two_handed_party
+  hero = st.party.actor_by_id(1)
+  hero.equip_item(3)
+  eq 3, hero.equipment[1], 'shield on'
+  hero.equip_item(2)
+  eq 2, hero.equipment[0]
+  eq 0, hero.equipment[1], 'and the shield is off'
+end
+
+# The check reads both slots, so it works the other way round too.
+check 'a shield knocks off the two-handed weapon already worn' do
+  st = two_handed_party
+  hero = st.party.actor_by_id(1)
+  hero.equip_item(2)
+  hero.equip_item(3)
+  eq 3, hero.equipment[1]
+  eq 0, hero.equipment[0], 'the claymore had to go'
+end
+
+check 'a one-handed weapon and a shield live together' do
+  st = two_handed_party
+  hero = st.party.actor_by_id(1)
+  hero.equip_item(1)
+  hero.equip_item(3)
+  eq [1, 3], hero.equipment[0, 2]
+end
+
+check 'the rule only touches the two hands' do
+  st = two_handed_party
+  hero = st.party.actor_by_id(1)
+  hero.equip_item(4) # body armour
+  hero.equip_item(2) # claymore
+  eq 4, hero.equipment[2], 'the armour is untouched'
+  eq 2, hero.equipment[0]
+end
+
+# The flag means nothing on a non-weapon: RPG_RT tests the type alongside it.
+check 'a shield carrying the flag does not claim the other hand' do
+  items = { 1 => fake_item(type: 1, atk: 20),
+            3 => fake_item(type: 2, dfn: 10, two_handed: 1) }
+  st = item_party(items)
+  hero = st.party.actor_by_id(1)
+  hero.equip_item(1)
+  hero.equip_item(3)
+  eq [1, 3], hero.equipment[0, 2], 'both stay on'
+end
+
+# The menu swaps through the bag, so the hand it empties must give its item back.
+check 'equipping from the bag returns the emptied hand to the bag' do
+  st = two_handed_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(2, 1)
+  st.party.gain_item(3, 1)
+  ok st.party.equip_from_bag(hero, 3), 'shield on'
+  eq 0, st.party.item_count(3), 'and out of the bag'
+  ok st.party.equip_from_bag(hero, 2), 'now the claymore'
+  eq 2, hero.equipment[0]
+  eq 0, hero.equipment[1]
+  eq 1, st.party.item_count(3), 'the shield came back rather than vanishing'
+  eq 0, st.party.item_count(2)
+end
+
+# Restoring a saved loadout is not an equip action: RPG_RT stores what it stores,
+# and EasyRPG enforces the rule only in ChangeEquipment.
+check 'a bulk equip restores a saved pair as-is' do
+  st = two_handed_party
+  hero = st.party.actor_by_id(1)
+  hero.equip([2, 3, 0, 0, 0])
+  eq [2, 3], hero.equipment[0, 2], 'loaded exactly as saved'
 end
 
 # -- chipset terrain tags -----------------------------------------------------

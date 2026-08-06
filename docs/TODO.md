@@ -1380,6 +1380,25 @@ The work below is roughly ordered by the critical path to a walkable game
   members who never fell rather than topping them up — the case that reading
   actually decides, since a single target would be hidden by the menu gate. See
   ADR 0039.
+- ✅ **両手持ち weapons** (the item row's `two_handed`) — unread, so a claymore
+  and a shield could be worn together and both bonuses counted. Not a rare flag:
+  **35 of Nepheshel's 104 weapons** and **14 of mtf's 26**, more than half that
+  game's arsenal. ADR 0033 audited the equipment *combat* flags and did not reach
+  this one, because it is not a modifier but a constraint on what may be worn at
+  once. The weapon and shield slots are now mutually exclusive whenever **either**
+  holds a two-handed weapon — both slots are tested, so equipping a shield over a
+  claymore drops the claymore just as the claymore drops the shield; reading only
+  the incoming item would let the shield win by going second. The flag counts
+  only on a weapon, as RPG_RT tests the type alongside it (and no non-weapon in
+  either game carries it, which the test-bed check asserts). The emptied hand
+  returns its item to the bag rather than vanishing, since the equip menu swaps
+  through the inventory. A bulk `equip` — loading a save, initial equipment —
+  does **not** enforce it: RPG_RT stores what it stores, and enforcing on load
+  would silently drop a shield the save really held. Left for its own change:
+  `double_hand` (二刀流 on the *actor* row, 4 Nepheshel actors and 1 of mtf's),
+  which turns the shield slot into a second weapon slot — the same pair and the
+  opposite rule, and the menu's candidate list for slot 1 has to change with it.
+  See ADR 0040.
 
 ## RPG Maker with RGSS (XP / VX / VXAce)
 
