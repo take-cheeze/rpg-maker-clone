@@ -232,9 +232,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
     # English-release row), and 11 picks the second failure sentence.
     skill: { 8 => OpenStruct.new(name: 'Fire', using_message1: 'は炎を放った！',
                                  using_message2: 'あたりが真っ赤に染まる！',
-                                 failure_message: 0),
+                                 failure_message: 0, animation_id: 8),
              9 => OpenStruct.new(name: 'Heal', using_message1: 'は光をまとった！',
-                                 using_message2: '', failure_message: 0),
+                                 using_message2: '', failure_message: 0,
+                                 animation_id: 0),
              10 => OpenStruct.new(name: 'Mute', using_message1: '',
                                   using_message2: '', failure_message: 0),
              11 => OpenStruct.new(name: 'Sleep', using_message1: 'は呪文を唱えた！',
@@ -3574,6 +3575,87 @@ def battle_at_command(pages = nil)
     break if ui && ui[:phase] == :command
   end
   [scene, ui]
+end
+
+# -- battle animations ---------------------------------------------------------
+# RPG2000 keeps the animation on the skill and on the item, not on the action.
+# Every skill and item row in both test beds names one and none of them played.
+
+check 'a skill that names an animation plays it over the targeted enemy' do
+  scene, ui = battle_at_command
+  entry = { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+            skill_id: 8, target_index: 0, target_ally: false }
+  ok scene.send(:start_battle_animation, entry), 'an animation started'
+  ma = scene.instance_variable_get(:@map_animation)
+  ok ma, 'the player was armed'
+  ok ma[:battle], 'and flagged as a battle animation'
+  spr = ui[:enemy_sprites][0]
+  eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
+     [ma[:tx], ma[:ty]], 'centred on the enemy sprite'
+end
+
+check 'a skill that names none plays nothing' do
+  scene, = battle_at_command
+  ok !scene.send(:start_battle_animation,
+                 { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Heal',
+                   skill_id: 9, target_index: 0, target_ally: false })
+  eq nil, scene.instance_variable_get(:@map_animation)
+end
+
+# RPG2000's battle is first-person: no sprite is drawn for a party member, so an
+# action aimed at one has nowhere to centre on.
+check 'an action on a party member plays over the middle of the screen' do
+  scene, = battle_at_command
+  entry = { attacker: 'Slime', target: 'Hero', damage: 7, skill: 'Fire',
+            skill_id: 8, target_index: nil, target_ally: true }
+  ok scene.send(:start_battle_animation, entry)
+  ma = scene.instance_variable_get(:@map_animation)
+  eq [RPG2k::Scene::Map::SCREEN_W / 2, RPG2k::Scene::Map::SCREEN_H / 2],
+     [ma[:tx], ma[:ty]]
+end
+
+check 'the round waits for the animation instead of the banner timer' do
+  scene, ui = battle_at_command
+  ui[:phase] = :animate
+  scene.send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ok scene.send(:battle_animation_playing?), 'the round is held'
+  # It plays out frame by frame and clears itself; nothing else advances while
+  # it does, and no interpreter is resumed (a battle animation has no event
+  # waiting on it, unlike the map's Show Battle Animation).
+  200.times do
+    break if scene.instance_variable_get(:@map_animation).nil?
+    scene.send(:drive_battle_animate)
+  end
+  eq nil, scene.instance_variable_get(:@map_animation), 'it finished'
+  ok !scene.send(:battle_animation_playing?)
+end
+
+check 'an item names its animation the same way a skill does' do
+  scene, = battle_at_command
+  eq nil, scene.send(:battle_animation_id,
+                     { item_id: 3, recover: true }),
+     'the fixture Potion names none'
+  eq 8, scene.send(:battle_animation_id, { skill_id: 8 })
+  eq nil, scene.send(:battle_animation_id, { attacker: 'Hero' }),
+     'a plain attack carries no animation yet'
+end
+
+check 'the battle animation draws in screen pixels, not map ones' do
+  scene, = battle_at_command
+  scene.send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ma = scene.instance_variable_get(:@map_animation)
+  bmp = scene.instance_variable_get(:@animation_bmp)
+  bmp.clear_blt_calls
+  # A camera far from the origin must not move a battle animation.
+  scene.send(:draw_map_animation, 500, 400)
+  ok !bmp.blt_calls.empty?, 'a cell was laid down'
+  call = bmp.blt_calls.first
+  eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
+     'placed from the target pixel itself, ignoring the camera'
 end
 
 check 'the battle status window shows each battler condition, or the normal term' do
