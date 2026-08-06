@@ -1058,10 +1058,13 @@ class RPG2k
           # animation phase / counter, a mid-step "moving" flag, and the pixel
           # slide (display origin disp_x/disp_y + move_count 0..TILE) that eases
           # the sprite between tiles. move_count == TILE means "at rest".
+          # `jumping` marks that slide as a hop, which is lifted along an arc
+          # and is the one kind that slides across more than a single tile.
           layer: page_layer(page), translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
-          moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE }
+          moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE,
+          jumping: false }
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
@@ -1449,7 +1452,9 @@ class RPG2k
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir) if dir
         end
-        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+        # A jump that lands where it started still needs the render slide, so
+        # the hop is visible; an ordinary step only when the tile changed.
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy || ch.jumped
       rescue StandardError => ex
         $stderr.puts "[RPG2k] event ##{e[:id]} movement failed: #{ex.message}"
         nil
@@ -1483,8 +1488,11 @@ class RPG2k
       # Whether an event is mid-step: its display origin has not yet caught up to
       # its logical tile (the slide started by reoccupy is still in progress).
       def event_sliding?(e)
-        e[:move_count] < TILE &&
-          (e[:disp_x] != e[:char].x || e[:disp_y] != e[:char].y)
+        return false unless e[:move_count] < TILE
+        # A jump that lands on its own tile moves the sprite nowhere but is
+        # still in progress, so it cannot be recognised by the displacement.
+        e[:jumping] ||
+          e[:disp_x] != e[:char].x || e[:disp_y] != e[:char].y
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
@@ -1515,19 +1523,50 @@ class RPG2k
       end
 
       # Begin a render slide for event `e` that just stepped off (ox, oy): the
-      # sprite eases from that tile to its new one over TILE/SPEED frames. Only
-      # single-tile cardinal steps slide; a longer hop (a jump, or a diagonal of
-      # more than one tile) snaps so the sprite never streaks across the map.
+      # sprite eases from that tile to its new one over TILE/SPEED frames.
+      #
+      # A single-tile cardinal step slides, and so does a **jump**, however far
+      # it goes -- RPG_RT carries the sprite across the whole hop and lifts it
+      # along the way (see event_jump_offset), which is the point of a jump
+      # clearing the tiles between. Anything else -- a multi-tile displacement
+      # that is not a jump -- snaps, so a sprite never streaks across the map.
       def start_event_slide(e, ox, oy)
-        if (e[:char].x - ox).abs + (e[:char].y - oy).abs == 1
+        jumped = e[:char].jumped
+        if jumped || (e[:char].x - ox).abs + (e[:char].y - oy).abs == 1
           e[:disp_x] = ox
           e[:disp_y] = oy
           e[:move_count] = 0
+          e[:jumping] = jumped
         else
           e[:disp_x] = e[:char].x
           e[:disp_y] = e[:char].y
           e[:move_count] = TILE
+          e[:jumping] = false
         end
+      end
+
+      # How far event `e`'s sprite is lifted off the ground this frame, in
+      # pixels: 0 unless a jump is in progress, otherwise RPG_RT's arc.
+      #
+      # A port of EasyRPG's `Game_Character::GetJumpHeight`, kept in its own
+      # 256-per-tile units so the formula reads as it does there: the height
+      # rises and falls linearly with the remaining step, peaking at the
+      # midpoint, and is then stretched -- doubled while small, offset by 5 once
+      # past 4 -- which is what makes the hop leave the ground sharply and hang
+      # near the top. The peak is 21px on a 16px tile, so a jumping sprite
+      # clearly leaves its row.
+      #
+      # The lift is applied where the sprite is blitted, not inside #event_pixel:
+      # RPG_RT raises the drawn character without moving it, so its logical
+      # position -- what the camera follows and what the draw order sorts on --
+      # stays on the ground.
+      JUMP_STEP_UNITS = 256              # EasyRPG's SCREEN_TILE_SIZE
+      def event_jump_offset(e)
+        return 0 unless e[:jumping] && e[:move_count] < TILE
+        remaining = (TILE - e[:move_count]) * (JUMP_STEP_UNITS / TILE)
+        half = JUMP_STEP_UNITS / 2
+        h = (remaining > half ? JUMP_STEP_UNITS - remaining : remaining) / 8
+        h < 5 ? h * 2 : h + 5
       end
 
       # Current position of event `e` in map pixels, interpolated from its
@@ -2140,7 +2179,9 @@ class RPG2k
         oy = ch.y
         e[:forced_route].step(ch, @world) unless e[:forced_route].done?
         e[:forced_route] = nil if e[:forced_route].done?
-        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy
+        # A jump that lands where it started still needs the render slide, so
+        # the hop is visible; an ordinary step only when the tile changed.
+        reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy || ch.jumped
       rescue StandardError => ex
         $stderr.puts "[RPG2k] forced movement failed: #{ex.message}"
         e[:forced_route] = nil # drop a broken route so Proceed does not hang
@@ -2186,6 +2227,12 @@ class RPG2k
       # while jumping, which is what lets a jump clear a wall.
       def char_can_land?(character, x, y)
         return true if character.through
+        # A hop that lands on the tile it left is always allowed: the character
+        # occupies that tile itself, so every occupancy test below would refuse
+        # it and RPG2000's hop-in-place could never happen. Found by drawing the
+        # arc -- the in-place hop was silently impossible before there was
+        # anything on screen to notice it by.
+        return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
         return false if x == @state.x && y == @state.y
         return false if @event_tiles[[x, y]]
@@ -5146,7 +5193,7 @@ class RPG2k
         sx, sy, sw, sh = Game::CharSet.frame_rect(e[:char].graphic_index, dir, col)
         epx, epy = event_pixel(e)
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-        dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE)
+        dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE) - event_jump_offset(e)
         src = Rect.new(sx, sy, sw, sh)
         toned = e[:flash] && flashed_charset(charset, src, e[:flash])
         if toned
@@ -5183,7 +5230,7 @@ class RPG2k
         sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index)
         epx, epy = event_pixel(e)
         dx = epx - cam_x
-        dy = epy - cam_y
+        dy = epy - cam_y - event_jump_offset(e)
         bmp.blt dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity
       end
 

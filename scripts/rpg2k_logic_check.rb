@@ -213,6 +213,55 @@ check 'a jump block hops to its accumulated destination in one step' do
   eq [2, 2], [c.x, c.y]
 end
 
+check 'a character records that its last move was a jump' do
+  # The renderer lifts a jumping sprite along an arc, and needs to be told which
+  # kind of move it is watching. Distance cannot say so: a jump can land one
+  # tile away, or on the tile it left.
+  c = Game::Character.new(0, 0)
+  w = FakeWorld.new
+  eq false, c.jumped, 'a fresh character has not jumped'
+
+  c.move(6)
+  eq false, c.jumped, 'an ordinary step is not a jump'
+
+  R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::END_JUMP)],
+        repeat: false).step(c, w)
+  eq true, c.jumped, 'a one-tile hop is still a jump'
+
+  c.move(6)
+  eq false, c.jumped, 'and the next step clears it'
+
+  c.move_diagonal(6, 2)
+  eq false, c.jumped, 'a diagonal step is not a jump either'
+end
+
+check 'a jump that lands where it started still counts as a jump' do
+  # RPG_RT hops in place, so the flag rather than the displacement is what the
+  # renderer has to go on.
+  c = Game::Character.new(3, 3, 8)
+  R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_LEFT), mc(R::END_JUMP)],
+        repeat: false).step(c, FakeWorld.new)
+  eq [3, 3], [c.x, c.y], 'back where it started'
+  eq true, c.jumped
+  eq 8, c.direction, 'and a jump going nowhere leaves the facing alone'
+end
+
+check 'placing a character outright is not a jump' do
+  # Change Event Location snaps a character to a tile. Without clearing the
+  # flag, an event that had jumped would arc again the next time one moved it.
+  c = Game::Character.new(0, 0)
+  R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::END_JUMP)],
+        repeat: false).step(c, FakeWorld.new)
+  eq true, c.jumped
+  c.x = 5
+  eq false, c.jumped
+  R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_DOWN), mc(R::END_JUMP)],
+        repeat: false).step(c, FakeWorld.new)
+  eq true, c.jumped
+  c.y = 9
+  eq false, c.jumped
+end
+
 check 'a jump faces its dominant axis, not its last move' do
   # Two right, two down: a tie on distance, which RPG_RT settles vertically.
   route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),

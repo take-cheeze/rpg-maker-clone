@@ -204,10 +204,34 @@ The work below is roughly ordered by the critical path to a walkable game
   "may I leave this tile" half of its check while jumping. Nepheshel has 625 jump
   blocks, every one enclosing a runtime-directed move (484 away from the hero,
   188 toward it, 133 forward) rather than a literal direction, and 141 enclose
-  more than one, so those now clear the tile they hop over. Remaining: the visual
-  arc — RPG_RT lifts the sprite along the hop and this build snaps it to the
-  landing tile, which needs the same per-frame sprite offset the walk
-  interpolation already has
+  more than one, so those now clear the tile they hop over.
+  **The hop is drawn as one now, too.** The move happened in a single step and
+  the sprite went with it, so a jump — the move whose whole point is being
+  airborne — was a blink from one tile to another. A jumping event slides across
+  the *whole* hop (the one kind of move that does; anything else longer than a
+  step still snaps rather than streaking) and is lifted along the way by
+  `Scene::Map#event_jump_offset`, a port of EasyRPG's
+  `Game_Character::GetJumpHeight`: the height tracks the remaining step, peaks at
+  the midpoint and is then stretched — doubled while small, offset by 5 past 4 —
+  which is what makes the hop leave the ground sharply and hang near the top. It
+  peaks at 21px on a 16px tile, so a jumping sprite clearly leaves its row. The
+  lift is applied where the sprite is **blitted**, not to its position, so the
+  camera and the y-sorted draw order still see the character on the ground, as
+  RPG_RT does. `Game::Character#jumped` is what tells the renderer which kind of
+  move it is watching, since the distance cannot: a jump can land one tile away
+  or on the tile it left, and every ordinary move (including being *placed* by
+  Change Event Location) clears it.
+  Drawing the arc turned up a hop that could never happen: `char_can_land?`
+  refused a jump onto the character's **own** tile, because that tile is occupied
+  — by the jumper. RPG2000 hops in place, so a character no longer blocks its own
+  landing. It was invisible while there was nothing on screen to notice it by.
+  Events are what jump in the real games: of Nepheshel's 634 Begin Jump blocks,
+  **632 drive an event** (625 of them a page's own autonomous route) and two the
+  player; mtf-meido-action's single block drives the player. The player's own
+  forced-route movement still snaps tile to tile — not only its jumps — which is
+  a separate gap: `step_player_route` sets the position outright where the
+  input path interpolates. Remaining: the player half, once forced player routes
+  interpolate at all
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
