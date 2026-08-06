@@ -58,6 +58,15 @@ class MZ
   # gives up (see #maybe_menu_test).
   MENU_PROBE_FRAMES = 60
 
+  # The common-event probe's bed constants (see #maybe_common_event_test). The
+  # bed's common event 1 is parallel, gated on switch 2, and writes variable 3;
+  # common event 2 is called by id and writes variable 4.
+  COMMON_SWITCH_ID = 2
+  COMMON_CALL_ID = 2
+  COMMON_PARALLEL_VAR = 3
+  COMMON_CALLED_VAR = 4
+  COMMON_PROBE_FRAMES = 240
+
   # Where the transfer probe sends the player, and how long it waits for the
   # destination to load (see #maybe_transfer_test). Map 2 and the tile are the
   # bed's (scripts/gen-mz-sample.py); the wait covers the fade out, the scene
@@ -313,6 +322,46 @@ class MZ
       "(function(){ var s = (typeof SceneManager !== 'undefined') ? " \
       "SceneManager._scene : null; if (s && s.constructor && " \
       "s.constructor.name === 'Scene_Map') s.menuCalling = true; })();"
+    end
+
+    # JS that starts both kinds of common event the way a game does, through the
+    # map interpreter: **Control Switches** (code 121) turns on the switch the
+    # bed's parallel common event is gated on, and **Call Common Event** (code
+    # 117) calls the other one by id.
+    #
+    # The two are different machinery, which is why both are driven. A parallel
+    # common event is not a map event: `Game_CommonEvent` holds an interpreter
+    # of its own that `Game_Map.updateEvents` drives, and it only exists while
+    # `isActive()` — trigger 2 and the switch on. `command117` instead builds a
+    # *child* interpreter inside the calling one, which is the only nesting the
+    # interpreter ever does.
+    #
+    # `[startId, endId, value]` for 121, where value 0 is ON; `[commonEventId]`
+    # for 117.
+    def common_event_probe_js(switch_id, call_id)
+      "(function(){ if (typeof $gameMap === 'undefined' || !$gameMap || " \
+      "!$gameMap._interpreter) return; $gameMap._interpreter.setup([" \
+      "{code:121,indent:0,parameters:[#{switch_id.to_i},#{switch_id.to_i},0]}," \
+      "{code:117,indent:0,parameters:[#{call_id.to_i}]}," \
+      "{code:0,indent:0,parameters:[]}], 0); })();"
+    end
+
+    # JS that reads the two variables the bed's common events write, plus how
+    # many `Game_CommonEvent` objects the map is holding — a parallel common
+    # event that never became active leaves the count at zero, which tells the
+    # two failure modes apart (the event never ran, versus it ran and its write
+    # went nowhere).
+    def common_event_state_js(parallel_var, called_var)
+      "(function(){ var v = (typeof $gameVariables !== 'undefined' && " \
+      "$gameVariables) ? $gameVariables : null; " \
+      "var m = (typeof $gameMap !== 'undefined' && $gameMap) ? $gameMap : null; " \
+      "var ce = (m && m._commonEvents) ? m._commonEvents.length : -1; " \
+      "var live = 0; if (m && m._commonEvents) { " \
+      "for (var i = 0; i < m._commonEvents.length; i++) { " \
+      "if (m._commonEvents[i]._interpreter) live++; } } " \
+      "return 'parallel=' + (v ? v.value(#{parallel_var.to_i}) : -1) + " \
+      "' called=' + (v ? v.value(#{called_var.to_i}) : -1) + " \
+      "' commons=' + ce + ' active=' + live; })();"
     end
 
     # JS that leaves the start map the way a game does: a **Transfer Player**
@@ -705,6 +754,7 @@ class MZ
     maybe_message_test # CI: show a message on the map and log the window opened
     maybe_animation_test # CI: play an animation on the player and log it drew
     maybe_transfer_test # CI: Transfer Player to map 2 and log that it loaded
+    maybe_common_event_test # CI: run both kinds of common event and log each
     maybe_menu_play_setup # CI: arm the party (item + a wound) before the menu
     maybe_menu_test # CI: open the menu on the map and log that Scene_Menu opened
     maybe_menu_play_test # CI: use that menu and log the item healed and was spent
@@ -885,7 +935,7 @@ class MZ
                   audio_test_requested? || message_test_requested? ||
                   menu_test_requested? || save_test_requested? ||
                   animation_test_requested? || battle_test_troop > 0 ||
-                  transfer_test_requested?
+                  transfer_test_requested? || common_event_test_requested?
     return unless current_scene == "Scene_Title"
 
     @new_game_done = true
@@ -1174,6 +1224,63 @@ class MZ
     $stderr.puts "[MZ-MENU] reached_menu=false scene=#{current_scene}"
   rescue StandardError => e
     $stderr.puts "[MZ] menu test error: #{e.message}"
+  end
+
+  # Whether --mz_common_event_test was requested (a launcher constant set by
+  # main.cxx). Implies New Game, since both common events are started from the
+  # map.
+  def common_event_test_requested?
+    (begin
+      MZ_COMMON_EVENT_TEST
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --mz_common_event_test is set (CI), once on the map turn on the switch
+  # the bed's parallel common event is gated on and call the other common event
+  # by id, then log whether each one actually ran.
+  #
+  # Common events are a core feature with no coverage at all until now, because
+  # the bed's `CommonEvents.json` was empty. They are also two separate paths:
+  # the parallel one runs on an interpreter `Game_CommonEvent` owns and
+  # `Game_Map.updateEvents` drives, existing only while its switch is on; the
+  # called one runs on a *child* interpreter nested inside the caller. A probe
+  # that drove only one of them would leave the other untouched, so this drives
+  # both and reports them separately.
+  def maybe_common_event_test
+    return if @common_test_done
+    return unless common_event_test_requested?
+    return unless @common_started || current_scene == "Scene_Map"
+
+    @common_frame ||= 0
+    if @common_frame.zero?
+      @common_started = true
+      $stderr.puts "[MZ] auto common event test: switch #{COMMON_SWITCH_ID}, " \
+                   "call #{COMMON_CALL_ID}"
+      MV::JS.eval(
+        self.class.common_event_probe_js(COMMON_SWITCH_ID, COMMON_CALL_ID)
+      )
+    end
+    @common_frame += 1
+
+    state = MV::JS.eval(
+      self.class.common_event_state_js(COMMON_PARALLEL_VAR, COMMON_CALLED_VAR)
+    )
+    if state != @common_last_state
+      @common_last_state = state
+      $stderr.puts "[MZ-COMMON] state #{state}"
+    end
+
+    parallel = MZ.state_field(state, "parallel").to_i.positive?
+    called = MZ.state_field(state, "called").to_i.positive?
+    return if !(parallel && called) && @common_frame < COMMON_PROBE_FRAMES
+
+    @common_test_done = true
+    $stderr.puts "[MZ-COMMON] parallel=#{parallel ? true : false} " \
+                 "called=#{called ? true : false} last=[#{state}]"
+  rescue StandardError => e
+    $stderr.puts "[MZ] common event test error: #{e.message}"
   end
 
   # Whether --mz_transfer_test was requested (a launcher constant set by
@@ -1607,6 +1714,7 @@ class MZ
     pending = [
       [move_test_requested?, @move_test_done],
       [transfer_test_requested?, @transfer_test_done],
+      [common_event_test_requested?, @common_test_done],
       [message_test_requested?, @msg_test_done],
       [animation_test_requested?, @anim_test_done],
       [menu_test_requested?, @menu_test_done],

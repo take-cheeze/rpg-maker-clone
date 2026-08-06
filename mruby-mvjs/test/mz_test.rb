@@ -471,17 +471,61 @@ assert 'MZ.transfer_state_js reports the destination, not just the map id' do
                MV::JS.eval(MZ.transfer_state_js)
 end
 
+assert 'MZ.common_event_probe_js starts both kinds of common event' do
+  # One command list doing both: Control Switches turns on the switch the
+  # parallel common event is gated on (it has no other way to start — it is not
+  # a map event and nothing calls it), and Call Common Event runs the other.
+  MV::JS.eval(
+    "globalThis.$gameMap = { _interpreter: { setup: function (list, id) { " \
+    "this.list = list; this.eventId = id; } } };"
+  )
+  MV::JS.eval(MZ.common_event_probe_js(2, 2))
+  assert_equal 121, MV::JS.eval("$gameMap._interpreter.list[0].code")
+  # [startId, endId, value] — value 0 is ON, over the single switch 2.
+  assert_equal "2,2,0",
+               MV::JS.eval("$gameMap._interpreter.list[0].parameters.join(',')")
+  assert_equal 117, MV::JS.eval("$gameMap._interpreter.list[1].code")
+  assert_equal "2", MV::JS.eval("$gameMap._interpreter.list[1].parameters.join(',')")
+  assert_equal 0, MV::JS.eval("$gameMap._interpreter.list[2].code")
+end
+
+assert 'MZ.common_event_state_js separates the two common event paths' do
+  # `commons`/`active` are what tell "the parallel event never became active"
+  # apart from "it ran and its write went nowhere" — Game_Map only holds
+  # Game_CommonEvent objects for trigger-2 events, and only an active one has an
+  # interpreter.
+  MV::JS.eval(<<~'JS')
+    globalThis.$gameVariables = {
+      _d: { 3: 11, 4: 22 },
+      value: function (i) { return this._d[i] || 0; }
+    };
+    globalThis.$gameMap = { _commonEvents: [{ _interpreter: {} }] };
+  JS
+  assert_equal "parallel=11 called=22 commons=1 active=1",
+               MV::JS.eval(MZ.common_event_state_js(3, 4))
+
+  # An inactive parallel common event: present in the list, no interpreter.
+  MV::JS.eval("$gameMap._commonEvents = [{ _interpreter: null }]; " \
+              "$gameVariables._d = {};")
+  assert_equal "parallel=0 called=0 commons=1 active=0",
+               MV::JS.eval(MZ.common_event_state_js(3, 4))
+end
+
 assert 'the MZ probes are inert before the engine defines their globals' do
   # Every probe runs each frame from MZ#main_loop, including the frames before
   # the boot has defined $gameMessage / SceneManager / $gameMap. None may throw.
   MV::JS.eval(
     "delete globalThis.$gameMessage; delete globalThis.SceneManager; " \
-    "delete globalThis.$gameMap; delete globalThis.Scene_Map;"
+    "delete globalThis.$gameMap; delete globalThis.Scene_Map; " \
+    "delete globalThis.$gameVariables;"
   )
   assert_nothing_raised { MV::JS.eval(MZ.message_probe_js("x")) }
   assert_nothing_raised { MV::JS.eval(MZ.menu_probe_js) }
   assert_nothing_raised { MV::JS.eval(MZ.battle_probe_js(1)) }
   assert_nothing_raised { MV::JS.eval(MZ.transfer_probe_js(2, 4, 5)) }
+  assert_nothing_raised { MV::JS.eval(MZ.common_event_probe_js(2, 2)) }
+  assert_equal "parallel=-1 called=-1 commons=-1 active=0",
+               MV::JS.eval(MZ.common_event_state_js(3, 4))
   assert_equal "busy=false window_open=false", MV::JS.eval(MZ.message_state_js)
   # ...and a save probe with no DataManager says so rather than never settling.
   MV::JS.eval("delete globalThis.DataManager;")

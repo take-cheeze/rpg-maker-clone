@@ -663,6 +663,33 @@ JavaScript loads and interprets the JSON.
       engine's response is silence rather than a complaint. The bed now declares
       both variables.
 
+    - **M6.3m — common events, both kinds (landed).** `CommonEvents.json` was
+      `[None]`, so a core feature had never executed — and it is two features,
+      not one:
+
+      * A **parallel** common event (trigger 2) is not a map event. It exists
+        only while its switch is on (`Game_CommonEvent.isActive`), and when it
+        does, it carries an interpreter of its own that `Game_Map.updateEvents`
+        drives.
+      * A **called** common event runs through `command117`, which builds a
+        *child* interpreter inside the calling one (`_childInterpreter`,
+        `_depth`) — the only nesting the interpreter ever does.
+
+      The bed authors one of each, and `--mz_common_event_test`
+      (`MZ_MODE=common`) drives both from a single command list run on the map
+      interpreter: Control Switches turns on the switch the parallel event is
+      gated on (nothing else can start it), and Call Common Event runs the
+      other. They are reported separately, because driving one says nothing
+      about the other. The state line also carries `commons=`/`active=` — how
+      many `Game_CommonEvent` objects the map holds and how many have an
+      interpreter — which distinguishes *the parallel event never became
+      active* from *it ran and its write went nowhere*.
+
+      Both worked: `parallel=11 called=22 commons=1 active=1`. Following M6.3l's
+      lesson, the two variables they write were declared in `System.json` up
+      front rather than discovered missing, and the parallel event is gated on
+      switch 2 so it stays independent of the save probe, which sets switch 1.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

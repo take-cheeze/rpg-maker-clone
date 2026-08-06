@@ -201,14 +201,14 @@ system = {
     "startX": 8,
     "startY": 6,
     "editMapId": 1,
-    "switches": [None, "sw"],
+    "switches": [None, "sw", "sw2"],
     # Two variables, not one: `Game_Variables.setValue` silently ignores any id
     # at or past the length of this table (`variableId < $dataSystem.variables
     # .length`), so an event writing an undeclared variable is a no-op with no
     # error anywhere. Map 1's parallel event writes `var`, map 2's writes
     # `var2`, which is how the transfer probe tells the destination's events
     # apart from the start map's.
-    "variables": [None, "var", "var2"],
+    "variables": [None, "var", "var2", "var3", "var4"],
     "armorTypes": [None, "General Armor"],
     "weaponTypes": [None, "Dagger"],
     "skillTypes": [None, "Magic"],
@@ -659,7 +659,6 @@ write("Animations.json", [None, {
     ],
     "timings": [],
 }])
-write("CommonEvents.json", [None])
 
 # --- MapInfos + maps -------------------------------------------------------
 # Two maps, because one map never loads a second one. Everything about leaving
@@ -714,6 +713,40 @@ def event_page(trigger, commands):
         "walkAnime": True,
     }
 
+
+# --- Common events ---------------------------------------------------------
+# Two of them, because an empty CommonEvents.json leaves two distinct engine
+# paths unexecuted, and they are not the same path:
+#
+#   * A **parallel** common event (trigger 2) is only active while its switch is
+#     on, and when it is, `Game_CommonEvent` carries an interpreter of its own
+#     that `Game_Map.updateEvents` drives — nothing to do with the map's events
+#     or their interpreter.
+#   * A **called** common event (trigger 0) runs through `command117`, which
+#     builds a *child* interpreter inside the calling one (`_childInterpreter`,
+#     `_depth`) — the only nesting the interpreter ever does.
+#
+# Each writes a variable of its own so a probe can tell them apart, and the
+# parallel one is gated on switch 2 rather than switch 1 so it stays independent
+# of the save probe (which sets switch 1). See ADR 0004 M6.3m.
+COMMON_PARALLEL_VAR, COMMON_PARALLEL_VALUE = 3, 11
+COMMON_CALLED_VAR, COMMON_CALLED_VALUE = 4, 22
+
+write("CommonEvents.json", [None, {
+    "id": 1, "name": "ParallelCommon", "trigger": 2, "switchId": 2,
+    "list": [
+        command(122, [COMMON_PARALLEL_VAR, COMMON_PARALLEL_VAR, 0, 0,
+                      COMMON_PARALLEL_VALUE]),
+        command(0, []),
+    ],
+}, {
+    "id": 2, "name": "CalledCommon", "trigger": 0, "switchId": 1,
+    "list": [
+        command(122, [COMMON_CALLED_VAR, COMMON_CALLED_VAR, 0, 0,
+                      COMMON_CALLED_VALUE]),
+        command(0, []),
+    ],
+}])
 
 # A parallel-process event (trigger 4) that keeps setting variable 1 = 42 via
 # Control Variables (122). It exercises the interpreter every frame without

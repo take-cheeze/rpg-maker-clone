@@ -17,6 +17,7 @@
 #   [MZ-MOVE]  start <x,y> / end <x,y> moved=<bool>
 #   [MZ-AUDIO] op=<se_play> asset=<audio/se/Beep>
 #   [MZ-MSG]   busy=<bool> window_open=<bool>
+#   [MZ-COMMON] parallel=<bool> called=<bool> last=[<state>]
 #   [MZ-XFER]  from=[<state>] to=[<state>] moved=<bool> landed=<bool>
 #              arrived=<bool> scene=<scene>
 #   [MZ-MENU]  reached_menu=<bool>
@@ -38,6 +39,7 @@
 #   play      New Game -> map, hold a direction, play an SE  (the default smoke)
 #   message   New Game -> map, show a message
 #   transfer  New Game -> map, Transfer Player to the bed's second map
+#   common    New Game -> map, run a parallel and a called common event
 #   menu      New Game -> map, open the party menu
 #   menu_play    ... and then *use that menu*: heal with an item, back out
 #   animation New Game -> map, play an animation on the player
@@ -83,6 +85,9 @@ case "${MODE}" in
     message)
         FLAGS=(--mz_message_test)
         DEFAULT_SHOT="ss/mz_message.png" ;;
+    common)
+        FLAGS=(--mz_common_event_test)
+        DEFAULT_SHOT="ss/mz_common.png" ;;
     transfer)
         FLAGS=(--mz_transfer_test)
         DEFAULT_SHOT="ss/mz_transfer.png" ;;
@@ -110,8 +115,8 @@ case "${MODE}" in
         DEFAULT_SHOT="ss/mz_battle_play.png" ;;
     *)
         echo "error: unknown MZ_MODE '${MODE}'" \
-             "(play|message|transfer|menu|menu_play|animation|save|battle" \
-             "|battle_play)" >&2
+             "(play|message|transfer|common|menu|menu_play|animation|save" \
+             "|battle|battle_play)" >&2
         exit 1 ;;
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
@@ -196,6 +201,18 @@ case "${MODE}" in
         # actually opened over the map.
         grep -q '\[MZ-MSG\] busy=true window_open=true' "${log}" ||
             fail "the message window never opened ([MZ-MSG] busy/window_open)"
+        ;;
+    common)
+        # Two separate engine paths, reported separately because driving one
+        # says nothing about the other. `parallel=true` means a
+        # Game_CommonEvent became active on its switch and its own interpreter
+        # ran; `called=true` means command117 built a child interpreter inside
+        # the map's and ran the called event through it. Both had no coverage
+        # while the bed's CommonEvents.json was empty. See ADR 0004 M6.3m.
+        grep -q '\[MZ-COMMON\].*parallel=true' "${log}" ||
+            fail "the parallel common event never ran ([MZ-COMMON] parallel=true)"
+        grep -q '\[MZ-COMMON\].*called=true' "${log}" ||
+            fail "Call Common Event never ran ([MZ-COMMON] called=true)"
         ;;
     transfer)
         # Three claims, in increasing strength. `moved=true` is only the map id
@@ -288,7 +305,7 @@ case "${MODE}" in
         ;;
 esac
 
-grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
+grep -E '\[MZ-BOOT\]|\[MZ-SCENE\]|\[MZ-MAP\]|\[MZ-MOVE\]|\[MZ-AUDIO\]|\[MZ-MSG\]|\[MZ-XFER\]|\[MZ-COMMON\]|\[MZ-MENU\]|\[MZ-MENUPLAY\]|\[MZ-ANIM\]|\[MZ-SAVE\]|\[MZ-BTL\]|\[MZ-BTLPLAY\]|\[MZ\] screenshot' "${log}"
 # ALSA has no device under CI and floods stderr; keep the rest for context.
 grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -20 || true
 rm -f "${log}"
