@@ -83,7 +83,8 @@ swings, the same 501 and 708 misses. Neither test bed's *starting* party wears
 any of the flagged gear, so the sweep exercises the unchanged path and confirms
 it is unchanged.
 
-Left for a follow-up, and deliberately not guessed at here:
+Left for a follow-up, and deliberately not guessed at here. The first is now
+done:
 
 - **A weapon's `critical_hit` bonus** — 75 of Nepheshel's items carry one, the
   largest count in the audit. It is the one flag that cannot simply be read,
@@ -91,7 +92,7 @@ Left for a follow-up, and deliberately not guessed at here:
   plus the best weapon's `critical_hit` as a percentage) while this build models
   criticals as a 1-in-N denominator. Folding the bonus in means moving that
   representation to a probability, which touches every crit fixture and deserves
-  its own diff and its own before/after.
+  its own diff and its own before/after. **Done since** — see the addendum below.
 - **`attack_all`** (7 weapons) — a normal attack that hits every enemy. Its
   handling is not in `algo.cpp` with the others, and rather than guess at how the
   damage and log entries should read it is left declared.
@@ -108,3 +109,81 @@ leaves; MP消費半分 halves a cost rounding up, and a percentage cost too) and
 and actor tables that every 二刀流 weapon in the game grants two strikes, every
 必中 weapon hits at its own rate against an unhittable target, and every
 MP消費半分 item halves a real skill's cost from the slot its own type names.
+
+## Addendum: the 会心必殺 rate, and criticals as a probability
+
+Date: 2026-08-06
+
+The deferred item above is now implemented, and the reason it was deferred —
+that it forces a representation change — is the whole of the work.
+
+### Criticals became a probability
+
+RPG_RT adds a weapon's own `critical_hit` percentage to the wielder's 1-in-N
+rate. A denominator cannot say "1/30 and 20% more", so the chance is now carried
+as one: `Game::Actor#crit_chance` and `Game::Enemy#crit_chance` return **basis
+points** over `Game::CRIT_SCALE` (10000), `Combatant` carries `crit_chance` in
+place of `crit_denom`, and `Battle#critical?` rolls `random(CRIT_SCALE) <
+chance`.
+
+Basis points rather than a float, to keep the damage path on the integer
+arithmetic the rest of it uses. The base truncates there: a 1/30 row becomes 333
+bp, i.e. 3.33% against a true 3.3333…%, which is one crit fewer in roughly
+300,000 swings.
+
+### Only a weapon grants the bonus
+
+`Actor#weapon_crit_bonus` takes the **best** `critical_hit` among the equipped
+**weapons** (item type 1), the same shape `attack_hit_rate` already uses for the
+`hit` field. Nepheshel's bytes are what settle "weapons only" rather than an
+appeal to how the reference implementation is structured:
+
+| | count | rates |
+|---|---|---|
+| weapons carrying a bonus | **69** | a spread: 2, 5, 8, 10, 15, 20, 25, 30, 40, 60, 100 |
+| non-weapons carrying one | **6** | **100 apiece**, every one, alongside a `hit` of 70 |
+
+The six are four pieces of armour and two accessories. Six pieces of armour that
+critical on every swing is not a design; a uniform 100 sitting next to a `hit` of
+70 — another field the editor shows only for a weapon — is the editor leaving
+weapon fields untouched in the record every item type shares. mtf-meido-action
+carries neither kind, so Nepheshel is the only evidence either way, which is why
+the test-bed check asserts *both* halves: every weapon moves its wielder's rate
+by exactly its own percentage, and every non-weapon leaves it alone.
+
+One case is unobservable and therefore only pinned, not measured: an actor whose
+own `has_critical_rate` is off, wielding a weapon that crits. The two are
+separate additive terms, so the weapon still applies — but all 50 of Nepheshel's
+actors and all 14 of mtf's can crit, so no shipped data exercises it.
+
+### Before and after
+
+Running every troop in both beds with criticals, variance and accuracy on, seeded
+per troop — unlike the four flags above, this one is *meant* to move the
+simulation:
+
+| | fights | wins before | wins after | swings before | swings after |
+|---|---|---|---|---|---|
+| Nepheshel | 157 | 124 | **130** | 1620 | **1442** |
+| mtf-meido-action | 88 | 54 | 54 | 1688 | 1693 |
+
+Nepheshel's starting party wields a weapon carrying +2%, which lifts its hero
+from 500 bp to 700 — a 40% relative increase in how often it criticals. Six more
+fights won and 178 fewer swings to win them is that bonus finally being paid.
+
+mtf-meido-action has **no** weapon with the field and every actor on the plain
+1-in-30, so its drift (five swings, no change of outcome) is not the bonus at
+all: it is the roll changing shape. `random(30) == 0` and `random(10000) < 333`
+are the same rate to two decimal places but map a given RNG value differently, so
+a seeded fight diverges where a crit lands on one and not the other. That is the
+expected cost of the representation change, and it is bounded to 0.3% of swings
+in a game the feature does not otherwise touch.
+
+Covered by `scripts/rpg2k_logic_check.rb` (the row rate alone in basis points;
+a weapon adding its percentage; the best of two wielded weapons rather than their
+sum, and an armour contributing nothing; a weapon arming an actor whose own rate
+is off; a 100% weapon critting on every seed; the roll read against the scale
+with a fixed RNG, which is what distinguishes a probability from a denominator)
+and by `scripts/rpg2k_testbed_logic_check.rb`, which asserts against the **real**
+item table that each of the 69 weapons adds exactly its own rate and each of the
+6 non-weapons adds nothing.

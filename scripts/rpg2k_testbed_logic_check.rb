@@ -530,15 +530,21 @@ def check_equipment(dir)
   dual = []
   sure = []
   half = []
+  crit_weapons = []
+  crit_others = []
   items.each do |id, it|
     dual << id if it.type == 1 && it.dual_attack
     sure << id if it.type == 1 && it.ignore_evasion
     half << id if it.half_sp_cost
+    next unless (it.critical_hit || 0) > 0
+    (it.type == 1 ? crit_weapons : crit_others) << id
   end
   strong = []
   db[DB_ACTOR]&.each { |id, r| strong << id if r.strong_defence }
-  puts format('   equipment: %d 二刀流, %d 必中, %d MP消費半分, %d 強力防御 actor(s)',
-              dual.size, sure.size, half.size, strong.size)
+  puts format('   equipment: %d 二刀流, %d 必中, %d MP消費半分, %d 強力防御 actor(s), ' \
+              '%d 会心必殺 weapon(s) (+%d non-weapon)',
+              dual.size, sure.size, half.size, strong.size,
+              crit_weapons.size, crit_others.size)
 
   unless dual.empty?
     check "#{name}: a 二刀流 weapon makes its wielder swing twice" do
@@ -585,6 +591,49 @@ def check_equipment(dir)
         ok a.half_sp_cost?, "item ##{iid} (#{items[iid].name}) grants MP消費半分"
         eq (full + 1) / 2, party.skill_cost(sk, a),
            "and halves the #{full}-SP skill, rounding up"
+      end
+    end
+  end
+
+  unless crit_weapons.empty?
+    check "#{name}: a 会心必殺 weapon adds its own rate to its wielder's" do
+      aid = first_actor_id(db)
+      # Stripped, not fresh: an actor is built wearing its initial equipment,
+      # which for Nepheshel's first actor is already a 会心必殺 weapon.
+      bare = Game::Actor.new(db, aid)
+      bare.equip([0, 0, 0, 0, 0])
+      base = bare.crit_chance
+      crit_weapons.each do |iid|
+        a = Game::Actor.new(db, aid)
+        a.equip([iid, 0, 0, 0, 0])
+        eq base + items[iid].critical_hit * Game::CRIT_PERCENT, a.crit_chance,
+           "item ##{iid} (#{items[iid].name}) adds #{items[iid].critical_hit}%"
+        ok a.crit_chance > base, 'and the weapon really moves the rate'
+      end
+    end
+  end
+
+  unless crit_others.empty?
+    check "#{name}: a non-weapon's critical_hit field is left alone" do
+      # These are not gear that always criticals -- they are the editor leaving
+      # weapon-only fields untouched in the record every item type shares. Each
+      # one carries exactly 100 alongside a `hit` of 70, another weapon field,
+      # which is the pattern rather than a design.
+      aid = first_actor_id(db)
+      bare = Game::Actor.new(db, aid)
+      bare.equip([0, 0, 0, 0, 0])
+      base = bare.crit_chance
+      crit_others.each do |iid|
+        it = items[iid]
+        slot = it.type - 1
+        next unless slot >= 0 && slot < 5
+        gear = [0, 0, 0, 0, 0]
+        gear[slot] = iid
+        a = Game::Actor.new(db, aid)
+        a.equip(gear)
+        eq base, a.crit_chance,
+           "item ##{iid} (#{it.name}, type #{it.type}, +#{it.critical_hit}) " \
+           'must not arm its wearer'
       end
     end
   end

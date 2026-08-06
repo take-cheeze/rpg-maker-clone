@@ -6,6 +6,14 @@
 # the not-yet-implemented map renderer, and unit-testable on its own.
 module Game
   TILE = 16 # tile size in pixels
+  # Denominator a critical-hit chance is expressed over -- basis points, so
+  # 10000 is certainty and an actor's 1/30 row rate is 333. RPG_RT adds a
+  # weapon's own percentage to the wielder's rate, which a 1-in-N denominator
+  # cannot express, so the chance is carried as a probability and the whole
+  # damage path stays on integer arithmetic. See Actor#crit_chance.
+  CRIT_SCALE = 10_000
+  # ... and what one percentage point of it is worth.
+  CRIT_PERCENT = CRIT_SCALE / 100
   # The RPG2000 screen, in pixels. `RPG2k::WIDTH`/`HEIGHT` are the same numbers
   # on the scene side; the pure-logic half needs them for the screen-transition
   # geometry, which cannot reach the scene.
@@ -1446,13 +1454,47 @@ module Game
       @hp
     end
 
-    # The actor's 1-in-N critical-hit chance from the database (0 = never), gated
-    # by `has_critical_rate` with `critical_rate` as the denominator (default 30,
-    # i.e. 1/30). A bare fixture without the fields never crits.
-    def crit_denominator
-      return 0 unless @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
-      n = @db_row.respond_to?(:critical_rate) ? @db_row.critical_rate : 0
-      n && n > 0 ? n : 0
+    # The actor's critical-hit chance in basis points (0 = never): the row's own
+    # 1-in-`critical_rate` rate, gated by `has_critical_rate`, **plus** the
+    # equipped weapon's `critical_hit` percentage. RPG_RT adds the two, which is
+    # why this is a probability rather than the 1-in-N denominator it used to
+    # be -- there is no denominator that expresses "1/30 and 20% more".
+    #
+    # Basis points (1/10000) rather than a float, to stay with the integer
+    # arithmetic the rest of the damage path uses. The base truncates there: a
+    # 1/30 row is 333 bp, i.e. 3.33% against a true 3.333...%, which is one crit
+    # fewer in roughly 300,000 swings.
+    def crit_chance
+      base = 0
+      if @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
+        n = @db_row.respond_to?(:critical_rate) ? @db_row.critical_rate : 0
+        base = CRIT_SCALE / n if n && n > 0
+      end
+      base + weapon_crit_bonus * CRIT_PERCENT
+    end
+
+    # 会心必殺 -- the best `critical_hit` percentage among the equipped weapons
+    # (item field 18), the bonus #crit_chance adds to the actor's own rate.
+    #
+    # **Weapons only** (item type 1), like #attack_hit_rate and the other attack
+    # modifiers. The field is one the editor shows for a weapon and no other kind
+    # of item, and Nepheshel says so in its bytes: 69 of its 75 items carrying a
+    # non-zero value are weapons with a spread of rates (2..100), while the other
+    # six are armour and accessories carrying **exactly** 100 apiece -- alongside
+    # a `hit` of 70, another weapon-only field. Six pieces of armour that always
+    # critical is not a design; it is the editor leaving weapon fields untouched
+    # in a record every item type shares.
+    def weapon_crit_bonus
+      return 0 unless @db.respond_to?(:item)
+      best = 0
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) && it.type == 1
+        c = it.respond_to?(:critical_hit) ? it.critical_hit : nil
+        best = c if c && c > best
+      end
+      best
     end
 
     # Set HP to an absolute value, clamped to [0, max_hp], keeping the death
@@ -4299,14 +4341,15 @@ module Game
       @hidden = hidden ? true : false
       @hp = @max_hp
       @sp = @max_sp
-      # 1-in-N critical-hit chance (0 = never), from the enemy's critical_hit
-      # flag + critical_hit_chance denominator.
-      @crit_denom = if row && row.respond_to?(:critical_hit) && row.critical_hit
-                      n = row.respond_to?(:critical_hit_chance) ? row.critical_hit_chance : 0
-                      n && n > 0 ? n : 0
-                    else
-                      0
-                    end
+      # Critical-hit chance in basis points (0 = never), from the enemy's
+      # critical_hit flag and its 1-in-`critical_hit_chance` rate. An enemy has
+      # no equipment, so unlike an actor's this is the whole of it.
+      @crit_chance = if row && row.respond_to?(:critical_hit) && row.critical_hit
+                       n = row.respond_to?(:critical_hit_chance) ? row.critical_hit_chance : 0
+                       n && n > 0 ? CRIT_SCALE / n : 0
+                     else
+                       0
+                     end
       # Per-attribute defence ranks ({ attribute_id => rank 0..4 }) from the
       # enemy's attribute_ranks byte array, so an elemental attack scales its
       # damage by this monster's resistance. Captured now since `row` isn't kept.
@@ -4331,8 +4374,7 @@ module Game
     # This enemy's action pattern (Game::EnemyAction list, possibly empty).
     attr_reader :actions
 
-    attr_reader :crit_denom, :attribute_ranks, :state_ranks
-    def crit_denominator; @crit_denom; end
+    attr_reader :crit_chance, :attribute_ranks, :state_ranks
 
     # Base to-hit percentage for this enemy's normal attack (70 when the "miss"
     # flag is set, otherwise 90); fed into the battle's to-hit roll.
@@ -4588,7 +4630,7 @@ module Game
     # stat the skill formulas read as `int`.
     Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
                            :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor, :states, :state_turns, :crit_denom,
+                           :actor, :states, :state_turns, :crit_chance,
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
                            :hit_rate, :state_ranks, :hidden, :battle_turn,
                            :actions, :charged, :enemy_id, :battler_name,
@@ -4634,9 +4676,9 @@ module Game
     # starts clean.
     def self.actor_states(a); a.respond_to?(:states) ? (a.states || []).dup : []; end
 
-    # A battler's critical-hit denominator (0 when it never crits, or the source
-    # lacks the field).
-    def self.crit_denom_of(b); b.respond_to?(:crit_denominator) ? b.crit_denominator : 0; end
+    # A battler's critical-hit chance in basis points (0 when it never crits, or
+    # the source lacks the field).
+    def self.crit_chance_of(b); b.respond_to?(:crit_chance) ? b.crit_chance : 0; end
 
     # Whether a battler's gear guards against critical hits.
     def self.prevents_crit_of(b); b.respond_to?(:prevents_critical?) && b.prevents_critical?; end
@@ -4660,7 +4702,7 @@ module Game
     def self.from_actor(a)
       c = Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
-                    nil, crit_denom_of(a), prevents_crit_of(a),
+                    nil, crit_chance_of(a), prevents_crit_of(a),
                     attr_ranks_of(a), atk_attrs_of(a), nil, hit_rate_of(a),
                     state_ranks_of(a))
       c.strikes = flag_of(a, :dual_attack?) ? 2 : 1
@@ -4678,7 +4720,7 @@ module Game
     def self.from_enemy(e)
       c = Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
                         nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
-                        crit_denom_of(e), prevents_crit_of(e),
+                        crit_chance_of(e), prevents_crit_of(e),
                         attr_ranks_of(e), atk_attrs_of(e), nil, hit_rate_of(e),
                         state_ranks_of(e))
       # A member the troop flagged invisible starts out of play until a Show
@@ -4712,8 +4754,8 @@ module Game
     # cannot act); omitted, states are inert as before.
     # `variance`, when true, applies RPG2000's +/- spread to each basic attack's
     # damage (a `var` of 4, per EasyRPG's Algo::VarianceAdjustEffect). `criticals`,
-    # when true, lets a basic attack land a 3x critical at the attacker's 1-in-N
-    # `crit_denom` chance. `accuracy`, when true, rolls each basic attack's
+    # when true, lets a basic attack land a 3x critical at the attacker's
+    # `crit_chance` (basis points). `accuracy`, when true, rolls each basic attack's
     # to-hit chance so it can miss (see #to_hit). All three are off by default so
     # a seeded fight is exactly reproducible; the live game turns them on.
     # `first_strike`, when true, gives the party a pre-emptive opening round: the
@@ -5514,7 +5556,7 @@ module Game
       b.max_hp = into.max_hp; b.max_mp = into.max_sp
       b.hp = b.hp > into.max_hp ? into.max_hp : b.hp
       b.mp = (b.mp || 0) > into.max_sp ? into.max_sp : b.mp
-      b.crit_denom = Battle.crit_denom_of(into)
+      b.crit_chance = Battle.crit_chance_of(into)
       b.attr_ranks = Battle.attr_ranks_of(into)
       b.state_ranks = Battle.state_ranks_of(into)
       b.hit_rate = Battle.hit_rate_of(into)
@@ -5618,11 +5660,12 @@ module Game
     end
 
     # Whether `b`'s attack criticals: enabled for the fight, the attacker has a
-    # non-zero 1-in-N `crit_denom`, and a 0..N-1 roll lands on 0.
+    # non-zero `crit_chance`, and a 0..9999 roll lands under it. A chance at or
+    # above CRIT_SCALE always crits, which is what a weapon carrying 100% means.
     def critical?(b)
       return false unless @criticals
-      denom = b.crit_denom
-      denom && denom > 0 && @rng.random(denom) == 0
+      chance = b.crit_chance
+      chance && chance > 0 && @rng.random(CRIT_SCALE) < chance
     end
 
     # Whether `attacker`'s basic attack lands on `target`: a 0..99 roll under the

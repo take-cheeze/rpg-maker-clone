@@ -568,10 +568,30 @@ The work below is roughly ordered by the critical path to a walkable game
   flag ignores is the *target's* evasion; **MP消費半分** (`half_sp_cost`, any
   slot) halves a skill's cost rounding up; and **強力防御** (`strong_defence`, an
   actor-row flag 7 of Nepheshel's 50 actors carry including its hero) halves
-  damage a second time while defending — a quarter, not a half. Still unread: a
-  weapon's **`critical_hit` bonus**, the largest count in that audit at 75 items,
-  which needs the crit model to move from a 1-in-N denominator to RPG_RT's
-  probability (`1/critical_hit_chance` plus the best weapon's percentage);
+  damage a second time while defending — a quarter, not a half.
+  A weapon's **会心必殺 rate** (`critical_hit`) is read now as well — the largest
+  count in that audit at **75 items** — and it is the one that could not simply
+  be read, because RPG_RT *adds* the weapon's percentage to the wielder's own
+  1-in-N rate and no denominator says "1/30 and 20% more". So criticals moved to
+  a **probability**: `Game::Actor#crit_chance` / `Game::Enemy#crit_chance` return
+  basis points over `Game::CRIT_SCALE` (10000), `Combatant` carries
+  `crit_chance`, and `Battle#critical?` rolls against it. Integer basis points
+  rather than a float keeps the damage path on the arithmetic the rest of it
+  uses; the cost is that a 1/30 row reads 333 bp (3.33% against 3.3333…%), one
+  crit fewer in ~300,000 swings. Only a **weapon** grants the bonus — the best
+  among those equipped, the same shape `attack_hit_rate` uses — and Nepheshel's
+  own bytes are what settle that rather than an appeal to EasyRPG's structure:
+  69 of the 75 are weapons with a spread of rates (2..100), while the other six
+  are armour and accessories carrying **exactly 100 apiece** next to a `hit` of
+  70, another weapon-only field. That is the editor leaving weapon fields
+  untouched in the record every item type shares, not six pieces of armour that
+  critical every swing. Unlike the four flags above this one is *meant* to move
+  the simulation, and it does: over every troop in both beds, Nepheshel goes from
+  124 wins in 157 fights to **130**, and from 1620 swings to **1442** — its
+  starting party wields a +2% weapon, lifting its hero from 500 bp to 700.
+  mtf-meido-action, which has no such weapon and puts every actor on the plain
+  1-in-30, drifts by five swings with no change of outcome: that is the roll
+  changing shape, not the bonus. Still unread:
   **`attack_all`** (7 weapons), whose handling is not in EasyRPG's `algo.cpp`
   with the others and is left declared rather than guessed; and **`preemptive`**
   / **`raise_evasion`**, the latter having nowhere to land until the to-hit
