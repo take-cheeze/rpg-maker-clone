@@ -271,7 +271,7 @@ SAVE_CHANGE_MAX = 15.0
 # status window over the battleback. `menu_play`'s frame lands deeper in the
 # same stack (the item list with the actor window over it, see M6.3j), so it is
 # held to the same bar.
-MODES = %w[play message transfer menu menu_play save battle battle_play
+MODES = %w[play message transfer common menu menu_play save battle battle_play
            animation].freeze
 
 $failures = 0

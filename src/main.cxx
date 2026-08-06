@@ -200,6 +200,16 @@ DEFINE_bool(
     "goes to Effekseer, whose WASM runtime this host does not start. Used in "
     "CI");
 DEFINE_bool(
+    mz_common_event_test,
+    false,
+    "For RPG Maker MZ: once on the map, turn on the switch the test bed's "
+    "parallel common event is gated on and call its other common event by id "
+    "(implies --mz_new_game to reach the map), then log whether each one ran. "
+    "They are separate engine paths — a parallel common event runs on an "
+    "interpreter Game_CommonEvent owns, a called one on a child interpreter "
+    "nested inside the caller — and an empty CommonEvents.json left both "
+    "unexercised. Used in CI");
+DEFINE_bool(
     mz_transfer_test,
     false,
     "For RPG Maker MZ: once on the map, run a Transfer Player command to the "
@@ -931,6 +941,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
                 mrb_bool_value(FLAGS_mz_animation_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_COMMON_EVENT_TEST"),
+                mrb_bool_value(FLAGS_mz_common_event_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_TRANSFER_TEST"),
                 mrb_bool_value(FLAGS_mz_transfer_test));

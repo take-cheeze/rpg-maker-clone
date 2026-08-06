@@ -280,6 +280,12 @@
   before the save, overwritten between the save and the load, and compared after
   it, because a settled promise chain is also what a load that restores nothing
   looks like
+- **Common events** run too, and they are two separate things: a *parallel*
+  common event is not a map event — it exists only while its switch is on and
+  carries its own interpreter — while *Call Common Event* nests a child
+  interpreter inside the calling one. `common` mode drives both from one command
+  list and reports them separately, since driving one proves nothing about the
+  other. Neither had ever executed: the bed's `CommonEvents.json` was empty
 - MZ also **leaves the start map**: `transfer` mode runs a Transfer Player
   command through the map interpreter to the bed's second map and asserts the
   map id changed, the player landed on the requested tile, and the destination
@@ -316,7 +322,7 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `transfer`, `menu`, `menu_play`,
+  key moves the player), `message`, `transfer`, `common`, `menu`, `menu_play`,
   `animation`, `save`, `battle` or `battle_play`, each with its own success line so a probe that
   merely ran cannot pass. A run ends as soon as its probes have reported rather
   than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest

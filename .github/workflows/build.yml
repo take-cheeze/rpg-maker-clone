@@ -404,6 +404,20 @@ jobs:
               MZ_MODE: transfer
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
+          # Common events, which had no coverage at all: the bed's
+          # CommonEvents.json was empty, and the two kinds are separate
+          # machinery. A parallel common event runs on an interpreter
+          # Game_CommonEvent owns and Game_Map.updateEvents drives, and only
+          # while its switch is on; Call Common Event instead builds a child
+          # interpreter nested inside the calling one. The bed authors one of
+          # each and this step drives both, asserting each ran on its own.
+          # See ADR 0004 M6.3m.
+          - name: MZ common event smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: common
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
           - name: MZ menu smoke test
             continue-on-error: true
             env:
