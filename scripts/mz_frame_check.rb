@@ -252,6 +252,15 @@ ANIM_BOX_MIN = 15.0
 # screen flash, a scrolled map or a scene swap would move this too.
 ANIM_OUTSIDE_MAX = 5.0
 
+# The transfer frame is a *different map* — the bed's second map is a wall cross
+# on open floor where the first is a bordered room — so it must differ from the
+# plain map by more than noise. It is not held to SCENE_CHANGE_MIN: a scene
+# change repaints everything, while an arrival still draws the same tileset and
+# player at the same scale, and only the tiles that differ between the two
+# layouts change. Measured: 35.0% (56 perimeter tiles plus a 29-tile cross, out
+# of 221).
+TRANSFER_CHANGE_MIN = 20.0
+
 # The save probe re-enters the map the way Scene_Load does, so its frame is the
 # map again. Measured: 0.2% (the player stands where the move probe left it).
 SAVE_CHANGE_MAX = 15.0
@@ -262,7 +271,8 @@ SAVE_CHANGE_MAX = 15.0
 # status window over the battleback. `menu_play`'s frame lands deeper in the
 # same stack (the item list with the actor window over it, see M6.3j), so it is
 # held to the same bar.
-MODES = %w[play message menu menu_play save battle battle_play animation].freeze
+MODES = %w[play message transfer common menu menu_play save battle battle_play
+           animation].freeze
 
 $failures = 0
 $checks = 0
@@ -406,6 +416,18 @@ else
              format('only %.1f%% of the frame differs from the map ' \
                     '(need >= %.1f%%) — %s was entered but the map is still ' \
                     'what is on screen', changed, SCENE_CHANGE_MIN, scene))
+      puts format('       %.1f%% changed', changed)
+    end
+  end
+
+  if (transfer = loaded['transfer'])
+    check 'transfer: a different map is on screen' do
+      changed = transfer.band_change(play, 0, height)
+      expect(changed >= TRANSFER_CHANGE_MIN,
+             format('only %.1f%% of the frame differs from the start map ' \
+                    '(need >= %.1f%%) — the transfer reported itself done but ' \
+                    'the destination never reached the screen', changed,
+                    TRANSFER_CHANGE_MIN))
       puts format('       %.1f%% changed', changed)
     end
   end

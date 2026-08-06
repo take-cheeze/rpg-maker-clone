@@ -29,6 +29,12 @@ directly. Before opening one:
 - **Add a changelog fragment.** Drop one `changelog.d/<slug>.<category>.md` file
   per change instead of editing `CHANGELOG.md` (see the Documentation
   Requirements above and `changelog.d/README.md`).
+- **Check the labels.** A pull request is labelled from its changed paths
+  automatically (`.github/labeler.yml`), but the rules skip the mixed files —
+  add the `engine:`, `platform:`, `component:` and `type:` labels the diff
+  really carries. `docs/labels.md` explains the taxonomy; the labels themselves
+  are defined in `.github/labels.yml`, and adding one there is a normal part of
+  a pull request.
 - **Record an ADR when the change is architectural.** New dependencies,
   patterns, integrations or schema changes get a `docs/adr/` entry (see below),
   and user-facing capabilities get matching `/docs` and `README.md` updates.

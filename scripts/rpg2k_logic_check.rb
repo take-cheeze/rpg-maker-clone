@@ -6200,6 +6200,53 @@ check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
   ok results.any?(&:empty?), 'and sometimes is resisted'
 end
 
+# A state the target already carries is not a silent no-op: RPG_RT reports it as
+# a success in the state's own words, and it does so *without* rolling the
+# skill's accuracy first.
+check 'battle: a status the target already has reports "already", not a landing' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [3]
+  e = poison_cast(foe)
+  eq [], e[:inflicted], 'nothing new landed'
+  eq [3], e[:already], 'but the attempt is announced'
+  ok foe.state?(3), 'and the state is still there, once'
+  eq 1, foe.states.count { |s| s == 3 }, 'not stacked'
+end
+
+check 'battle: "already" is reported even at 0% accuracy' do
+  skills = { 7 => fake_skill(name: 'Dud', scope: 0, sp_cost: 3, power: 20,
+                             mrate: 40, state_effects: [0, 0, 1], hit: 0) }
+  st = skill_party(skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [3]
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, foe)
+  eq 0, c[:chance]
+  bat = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  bat.command_skill(mage, foe, name: 'Dud', cost: c[:cost], hp: c[:hp], mp: c[:mp],
+                    inflict: c[:inflict], chance: c[:chance])
+  bat.begin_round
+  eq [3], bat.step_action[:already], 'the roll is skipped, so it always reports'
+end
+
+check 'battle: an immune target that already has the state still reports it' do
+  # Susceptibility gates the *roll*, and there is no roll for a state already
+  # carried -- a rank-E foe that is somehow already poisoned still says so.
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 4 }
+  foe.states = [3]
+  e = poison_cast(foe)
+  eq [], e[:inflicted]
+  eq [3], e[:already]
+end
+
+check 'battle: a clear target reports nothing as already' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  e = poison_cast(foe)
+  eq [3], e[:inflicted]
+  eq [], e[:already]
+end
+
 check 'Battle command_skill resolves an attack skill: damage lands, SP is spent' do
   mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
   foe  = combatant('Foe', 0, 0, 5, 100)

@@ -5,9 +5,10 @@ Our MZ support runs the game's own JavaScript (the fetched `rmmz_*` corescript
 on PIXI v5, see docs/adr/0004-javascript-maker-mv-quickjs.md M6), so the test bed
 needs a valid MZ `data/*.json` database plus the system art the engine hard-
 requires. Rather than depend on a third-party game — MZ has no redistributable
-project — this authors a tiny, fully-controlled MZ project we own: one walkable
-map with a parallel test event, a one-actor party, and enough database and art
-for the engine to boot through `Scene_Title` and, on New Game, into `Scene_Map`.
+project — this authors a tiny, fully-controlled MZ project we own: two walkable
+maps (the start map and a Transfer Player destination), each with a parallel
+test event, a one-actor party, one usable item, and enough database and art for
+the engine to boot through `Scene_Title` and, on New Game, into `Scene_Map`.
 The engine itself is fetched separately by scripts/download-mz-corescript.bash;
 only this authored data is committed.
 
@@ -200,8 +201,14 @@ system = {
     "startX": 8,
     "startY": 6,
     "editMapId": 1,
-    "switches": [None, "sw"],
-    "variables": [None, "var"],
+    "switches": [None, "sw", "sw2"],
+    # Two variables, not one: `Game_Variables.setValue` silently ignores any id
+    # at or past the length of this table (`variableId < $dataSystem.variables
+    # .length`), so an event writing an undeclared variable is a no-op with no
+    # error anywhere. Map 1's parallel event writes `var`, map 2's writes
+    # `var2`, which is how the transfer probe tells the destination's events
+    # apart from the start map's.
+    "variables": [None, "var", "var2", "var3", "var4"],
     "armorTypes": [None, "General Armor"],
     "weaponTypes": [None, "Dagger"],
     "skillTypes": [None, "Magic"],
@@ -652,11 +659,22 @@ write("Animations.json", [None, {
     ],
     "timings": [],
 }])
-write("CommonEvents.json", [None])
 
-# --- MapInfos + Map001 -----------------------------------------------------
+# --- MapInfos + maps -------------------------------------------------------
+# Two maps, because one map never loads a second one. Everything about leaving
+# the start map is a separate path — Transfer Player reserves the move,
+# `Scene_Map` re-creates itself, `DataManager.loadMapData` fetches the new
+# `MapXXX.json`, and the arriving map's own events are set up — and with a
+# single-map bed none of it ran. Map 2 is laid out differently on purpose (a
+# cross rather than a border room) so the captured frame cannot be confused
+# with map 1's, and it carries its own parallel event writing a different
+# variable, which is how the probe tells "the map id changed" from "the new
+# map actually loaded and is running". See ADR 0004 M6.3l.
 write("MapInfos.json", [None, {
     "id": 1, "name": "Sample Map", "order": 1, "parentId": 0,
+    "expanded": False, "scrollX": 0, "scrollY": 0,
+}, {
+    "id": 2, "name": "Second Map", "order": 2, "parentId": 0,
     "expanded": False, "scrollX": 0, "scrollY": 0,
 }])
 
@@ -696,6 +714,40 @@ def event_page(trigger, commands):
     }
 
 
+# --- Common events ---------------------------------------------------------
+# Two of them, because an empty CommonEvents.json leaves two distinct engine
+# paths unexecuted, and they are not the same path:
+#
+#   * A **parallel** common event (trigger 2) is only active while its switch is
+#     on, and when it is, `Game_CommonEvent` carries an interpreter of its own
+#     that `Game_Map.updateEvents` drives — nothing to do with the map's events
+#     or their interpreter.
+#   * A **called** common event (trigger 0) runs through `command117`, which
+#     builds a *child* interpreter inside the calling one (`_childInterpreter`,
+#     `_depth`) — the only nesting the interpreter ever does.
+#
+# Each writes a variable of its own so a probe can tell them apart, and the
+# parallel one is gated on switch 2 rather than switch 1 so it stays independent
+# of the save probe (which sets switch 1). See ADR 0004 M6.3m.
+COMMON_PARALLEL_VAR, COMMON_PARALLEL_VALUE = 3, 11
+COMMON_CALLED_VAR, COMMON_CALLED_VALUE = 4, 22
+
+write("CommonEvents.json", [None, {
+    "id": 1, "name": "ParallelCommon", "trigger": 2, "switchId": 2,
+    "list": [
+        command(122, [COMMON_PARALLEL_VAR, COMMON_PARALLEL_VAR, 0, 0,
+                      COMMON_PARALLEL_VALUE]),
+        command(0, []),
+    ],
+}, {
+    "id": 2, "name": "CalledCommon", "trigger": 0, "switchId": 1,
+    "list": [
+        command(122, [COMMON_CALLED_VAR, COMMON_CALLED_VAR, 0, 0,
+                      COMMON_CALLED_VALUE]),
+        command(0, []),
+    ],
+}])
+
 # A parallel-process event (trigger 4) that keeps setting variable 1 = 42 via
 # Control Variables (122). It exercises the interpreter every frame without
 # blocking on UI, so a headless boot proves the map and its interpreter run.
@@ -715,6 +767,39 @@ write("Map001.json", {
     "disableDashing": False, "displayName": "",
     "encounterList": [], "encounterStep": 30,
     "events": [None, test_event],
+    "height": H, "width": W, "note": "",
+    "parallaxLoopX": False, "parallaxLoopY": False, "parallaxName": "",
+    "parallaxShow": True, "parallaxSx": 0, "parallaxSy": 0,
+    "scrollType": 0, "specifyBattleback": False, "tilesetId": 1,
+})
+
+# Map 2: the transfer destination. A wall cross through an open floor, so a
+# frame from here is unmistakably not map 1.
+map2_data = [0] * (W * H * 6)
+for _y in range(H):
+    for _x in range(W):
+        cross = _x == W // 2 or _y == H // 2
+        map2_data[(0 * H + _y) * W + _x] = WALL_ID if cross else FLOOR_ID
+
+# The arriving map's own parallel event. It writes variable 2 (map 1's writes
+# variable 1), so the probe can assert the destination's events were loaded and
+# are running rather than only that `$gameMap.mapId()` moved.
+second_map_event = {
+    "id": 1, "name": "ArrivalTest", "note": "", "x": 1, "y": 1,
+    "pages": [event_page(4, [
+        command(122, [2, 2, 0, 0, 7]),  # var[2] = 7
+        command(0, []),
+    ])],
+}
+
+write("Map002.json", {
+    "autoplayBgm": False, "autoplayBgs": False,
+    "bgm": sound(), "bgs": sound(),
+    "battleback1Name": "", "battleback2Name": "",
+    "data": map2_data,
+    "disableDashing": False, "displayName": "",
+    "encounterList": [], "encounterStep": 30,
+    "events": [None, second_map_event],
     "height": H, "width": W, "note": "",
     "parallaxLoopX": False, "parallaxLoopY": False, "parallaxName": "",
     "parallaxShow": True, "parallaxSx": 0, "parallaxSy": 0,

@@ -108,6 +108,7 @@ class RPGXP
         return false
       end
       install_kernel(db)
+      seed_random
       # RGSS exposes the loaded sections as $RGSS_SCRIPTS ([id, name, source]);
       # some scripts read it (e.g. to hot-reload). Mirror that shape.
       idx = -1
@@ -142,6 +143,37 @@ class RPGXP
         end
       end
       true
+    end
+
+    # Pin the random number generator, when a headless run asked for it.
+    #
+    # mruby seeds from the clock and a game's own engine rolls constantly — the
+    # encounter count as the party is placed, damage variance, and the order the
+    # battlers act in — so two runs of the same check drive two different games.
+    # That is fine for a player and useless for a check: the battle probe passed
+    # twice and then failed inside the game's own `make_action_orders`, and there
+    # was no way to ask for that run back.
+    #
+    # Seeded here rather than in the native boot because this is the last moment
+    # before the game's own code runs, so nothing of ours can consume a value
+    # first and shift every roll the game makes.
+    def self.seed_random
+      seed = random_seed
+      return if seed.nil? || seed.zero?
+      $stderr.puts "[RPGXP-SCRIPTS] random seed #{seed}"
+      srand(seed)
+    rescue StandardError
+      # An mruby without Kernel#srand would be a build without mruby-random,
+      # which a game cannot run anyway; it is not this method's job to say so.
+      nil
+    end
+
+    # `--rgss_random_seed`, published by src/main.cxx. 0 (and the absent
+    # constant, under the CRuby harnesses) means "leave the clock seed alone".
+    def self.random_seed
+      RGSS_RANDOM_SEED
+    rescue StandardError
+      nil
     end
 
     # Whether this exception is the run *ending* rather than the game breaking.

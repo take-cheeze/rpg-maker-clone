@@ -1,0 +1,262 @@
+# Path-based labels for pull requests, applied by actions/labeler
+# (.github/workflows/labeler.yml). Every label used here must exist in
+# .github/labels.yml — scripts/label_config_check.rb enforces that.
+#
+# The rules only cover paths whose engine / platform / component is
+# unambiguous. The big mixed files (mruby-rpg2k/mrblib/game.rb holds the
+# chipset, the message window, the battle and the weather) deliberately get no
+# component label: the labeler never removes labels (`sync-labels: false`), so
+# whatever a human adds by hand stays put.
+#
+# Note: this config is read from `master`, because the workflow runs on
+# `pull_request_target` so that pull requests from forks can be labelled. A
+# change to the rules below therefore only takes effect once it is merged.
+
+# --- engine ----------------------------------------------------------------
+
+"engine:rpg2k":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rpg2k/**"
+          - "mruby-lcf/**"
+          - "scripts/rpg2k*"
+          - "scripts/lcf_*"
+          - "scripts/gen-rpg2k-save.rb"
+          - "scripts/gen-lcf-save-wine.bash"
+          - "scripts/*nepheshel*"
+          - "scripts/download-prayforyou.bash"
+          - "scripts/rtp_install.bash"
+          - "scripts/analyze_game.rb"
+          - "docs/rpg2000-sample-analysis.md"
+
+"engine:rpg2k3":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*rpg2k3*"
+          - "**/*rpg2003*"
+
+"engine:xp":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rpgxp/**"
+          - "scripts/rpgxp*"
+          - "scripts/compare-rpgxp-wine.bash"
+          - "scripts/download-opengame-xp.bash"
+          - "scripts/rtp_xp_install.bash"
+          - "scripts/rgssad_asset_check.bash"
+          - "docs/rpgxp-rgss-api-gap.md"
+
+# VX and VX Ace share one data layer (mruby-rpgvx serves RGSS2 and RGSS3, see
+# ADR 0024), so a change there lands on both editions.
+"engine:vx":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rpgvx/**"
+          - "scripts/rpgvx*"
+          - "docs/rpgvx-rgss-api-gap.md"
+
+"engine:vxace":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rpgvx/**"
+          - "scripts/rpgvx*"
+          - "docs/rpgvx-rgss-api-gap.md"
+          - "**/*vxace*"
+          - "**/*rgss3*"
+
+"engine:mv":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-mvjs/mrblib/mv.rb"
+          - "mruby-mvjs/test/mv_test.rb"
+          - "data/mv-sample/**"
+          - "scripts/*mv*"
+
+"engine:mz":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-mvjs/mrblib/mz.rb"
+          - "mruby-mvjs/test/mz_test.rb"
+          - "data/mz-sample/**"
+          - "scripts/*mz*"
+
+# --- platform --------------------------------------------------------------
+# platform:linux has no rules: the SDL sources it would match are the shared
+# desktop path, so it is added by hand when a problem is Linux specific.
+
+"platform:wasm":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/shell.html"
+          - "src/wasm_keypad.cxx"
+          - "cors-proxy/**"
+          - "cmake/emscripten-probe-cache.cmake"
+          - "scripts/*emscripten*"
+          - "scripts/serve.py"
+          - "docs/deploy.md"
+          - "docs/cors-proxy.md"
+
+"platform:terminal":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rgss/src/sixel.cxx"
+          - "mruby-rgss/src/terminal.cxx"
+          - "mruby-rgss/src/iterm.cxx"
+          - "include/sixel.hxx"
+          - "include/terminal.hxx"
+          - "include/iterm.hxx"
+          - "include/log_console.hxx"
+          - "src/log_console.cxx"
+
+"platform:windows":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/setup.iss"
+          - "scripts/*wine*"
+
+"platform:psp":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/psp/**"
+          - "mruby-rgss/src/psp*.cxx"
+          - "include/psp.hxx"
+
+"platform:wio":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/wio/**"
+          - "mruby-rgss/src/wio*.cxx"
+          - "include/wio.hxx"
+          - "include/lv_conf.h"
+          - "platformio.ini"
+
+# --- component -------------------------------------------------------------
+
+"component:graphics":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rgss/mrblib/lib.rb"
+          - "mruby-rgss/src/lib.cxx"
+          - "mruby-rgss/src/sixel.cxx"
+          - "mruby-rgss/src/terminal.cxx"
+          - "mruby-rgss/src/iterm.cxx"
+          - "mruby-rgss/src/default_font.cxx"
+          - "mruby-rgss/gen_shinonome_data.rb"
+          - "include/rgss_bitmap.hxx"
+          - "include/default_font.hxx"
+          - "mruby-mvjs/src/mvgl.*"
+          - "mruby-mvjs/src/mvwebgl.cxx"
+          - "mruby-mvjs/src/mvcanvas.cxx"
+          - "assets/fonts/**"
+          - "scripts/*font*"
+          - "scripts/*render*"
+          - "scripts/*frame_check*"
+
+"component:audio":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rgss/src/audio.cxx"
+          - "include/rgss_audio.hxx"
+          - "src/sdl_audio.cxx"
+          - "assets/timidity/**"
+          - "scripts/*timidity*"
+          - "scripts/download-freepats.bash"
+          - "scripts/quiet_alsa.bash"
+          - "mruby-mvjs/test/audio_test.rb"
+
+"component:input":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rgss/src/*input*.cxx"
+          - "src/sdl_input.cxx"
+          - "src/wasm_keypad.cxx"
+          - "mruby-mvjs/test/input_test.rb"
+          - "mruby-mvjs/test/touch_test.rb"
+
+"component:runtime-mruby":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "build_config.rb"
+          - "build_config.rb.lock"
+          - "**/mrbgem.rake"
+
+"component:runtime-js":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-mvjs/src/**"
+          - "mruby-mvjs/test/js_test.rb"
+          - "mruby-mvjs/test/host_test.rb"
+          - "mruby-mvjs/test/gl_test.rb"
+          - "mruby-mvjs/test/canvas_test.rb"
+          - "scripts/skip-quickjs-test262.bash"
+
+"component:data":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-lcf/**"
+          - "mruby-rpgxp/mrblib/rgss_data.rb"
+          - "mruby-rpgxp/mrblib/rgssad.rb"
+          - "mruby-rpgvx/mrblib/*data*.rb"
+          - "data/**"
+          - "scripts/*testbed*"
+          - "scripts/gen-mv-sample.py"
+          - "scripts/gen-mz-sample.py"
+          - "scripts/analyze_game.rb"
+
+"component:save":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*save*"
+          - "**/*lsd*"
+
+"component:events":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rpg2k/mrblib/interpreter.rb"
+          - "scripts/rpg2k_command_soak.rb"
+          - "scripts/rpg2k_logic_check.rb"
+
+"component:scenes":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-rpg2k/mrblib/main.rb"
+          - "scripts/*scene*"
+          - "scripts/*menu*"
+
+"component:battle":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*battle*"
+
+"component:build":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "CMakeLists.txt"
+          - "**/CMakeLists.txt"
+          - "cmake/**"
+          - "flake.nix"
+          - "flake.lock"
+          - "platformio.ini"
+          - ".gitmodules"
+          - "3rd/**"
+          - "scripts/Dockerfile"
+          - "scripts/setup.iss"
+          - "scripts/nix-develop.bash"
+
+"component:ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - ".pre-commit-config.yaml"
+
+"component:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"
+          - "changelog.d/**"
+
+"component:tooling":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/**"

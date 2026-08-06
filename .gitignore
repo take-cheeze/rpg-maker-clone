@@ -31,3 +31,9 @@
 # see src/error_dump.cxx). Running the engine from the source tree drops one
 # here; it belongs in a bug report, not in the repository.
 /error-report.md
+
+# Unicode mapping tables scripts/native-build-without-nix.bash downloads (the
+# flake supplies these through $cp932_table / $jis0208_table instead). They are
+# build inputs fetched on demand and checked against flake.nix's hashes, not
+# sources.
+/.native-build-tables

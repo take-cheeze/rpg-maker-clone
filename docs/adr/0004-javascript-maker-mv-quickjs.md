@@ -632,6 +632,64 @@ JavaScript loads and interprets the JSON.
       No new mode: the existing `save` mode's claim gets stronger, which is
       cheaper than a ninth CI step for what is one flow.
 
+    - **M6.3l — leaving the start map (landed).** Every MZ probe up to here ran
+      on `Map001`, because the bed only had one map. Everything about arriving
+      somewhere else is a separate path and none of it had been executed:
+      `Game_Player.reserveTransfer` and the interpreter's `"transfer"` wait mode,
+      `Scene_Map` tearing itself down and re-creating, `DataManager.loadMapData`
+      fetching a `MapXXX.json` that was never read at boot, a fresh
+      `Spriteset_Map` over a different tile layout, and `Game_Map.setupEvents`
+      for the arriving map's events.
+
+      The bed gains a second map — a wall cross on open floor, so its frame
+      cannot be confused with the first map's bordered room — and
+      `--mz_transfer_test` (`MZ_MODE=transfer`) runs a **Transfer Player**
+      command (code 201) through the map interpreter, the way a game leaves a
+      map. Three claims of increasing strength: `moved=` (the map id changed),
+      `landed=` (the player is on the requested tile) and `arrived=` — the
+      *destination's own* parallel event having run, which is the difference
+      between the id moving and the map having been fetched, built and set
+      running. The frame check gains the matching picture claim (the arrival
+      frame differs from the start map by 35%, measured).
+
+      **The transfer worked; the bed's authoring did not.** The first run came
+      back `moved=true landed=true arrived=false`: map 2 had loaded and its one
+      event was there, but the variable that event writes never moved.
+      `Game_Variables.setValue` silently ignores any id at or past the length of
+      `$dataSystem.variables`, and the bed declared exactly one variable while
+      map 2's event wrote the second. No error, anywhere — the same shape as the
+      empty `battlerName` of M6.3i and the empty `Items.json` of M6.3j: a
+      hand-authored bed can hold values the editor would never write, and the
+      engine's response is silence rather than a complaint. The bed now declares
+      both variables.
+
+    - **M6.3m — common events, both kinds (landed).** `CommonEvents.json` was
+      `[None]`, so a core feature had never executed — and it is two features,
+      not one:
+
+      * A **parallel** common event (trigger 2) is not a map event. It exists
+        only while its switch is on (`Game_CommonEvent.isActive`), and when it
+        does, it carries an interpreter of its own that `Game_Map.updateEvents`
+        drives.
+      * A **called** common event runs through `command117`, which builds a
+        *child* interpreter inside the calling one (`_childInterpreter`,
+        `_depth`) — the only nesting the interpreter ever does.
+
+      The bed authors one of each, and `--mz_common_event_test`
+      (`MZ_MODE=common`) drives both from a single command list run on the map
+      interpreter: Control Switches turns on the switch the parallel event is
+      gated on (nothing else can start it), and Call Common Event runs the
+      other. They are reported separately, because driving one says nothing
+      about the other. The state line also carries `commons=`/`active=` — how
+      many `Game_CommonEvent` objects the map holds and how many have an
+      interpreter — which distinguishes *the parallel event never became
+      active* from *it ran and its write went nowhere*.
+
+      Both worked: `parallel=11 called=22 commons=1 active=1`. Following M6.3l's
+      lesson, the two variables they write were declared in `System.json` up
+      front rather than discovered missing, and the parallel event is gated on
+      switch 2 so it stays independent of the save probe, which sets switch 1.
+
   **Concrete boot map (verified by running the engine on the host).** MZ's boot
   differs from MV's in more than the renderer. Driving the shared host through a
   real MZ project (`MZ#boot_probe`) turned the earlier source-read guesses into

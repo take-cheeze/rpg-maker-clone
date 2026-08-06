@@ -1,0 +1,99 @@
+name: Bug report
+description: The engine does something the real RPG Maker runtime does not
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The Engine / Platform / Component pickers below are turned into
+        `engine:*`, `platform:*` and `component:*` labels automatically
+        (`.github/workflows/issue-labels.yml`). Pick what you know and leave
+        the rest — a maintainer can always add the missing ones.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What the engine did, and what the real runtime does instead.
+      placeholder: |
+        Walking into the chest on the first map plays the SE twice.
+        RPG_RT plays it once.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        The command line you ran, the game data used, and the steps to get
+        there. A `scripts/*_check.rb` invocation that fails is ideal.
+      placeholder: |
+        ./scripts/nix-develop.bash ./build/rpg_maker_clone --rpg2k_new_game data/Nepheshel
+        1. New Game
+        2. Walk two tiles up
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      description: Which RPG Maker edition's game data shows the problem.
+      multiple: true
+      options:
+        - RPG Maker 2000
+        - RPG Maker 2003
+        - RPG Maker XP
+        - RPG Maker VX
+        - RPG Maker VX Ace
+        - RPG Maker MV
+        - RPG Maker MZ
+        - Not engine specific / unsure
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where you saw it. Leave empty when it is not target specific.
+      multiple: true
+      options:
+        - Browser / WebAssembly
+        - Terminal (sixel / iTerm2)
+        - Linux (SDL)
+        - Windows
+        - PSP
+        - Wio Terminal
+        - Other platform
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the engine you think it lives in.
+      multiple: true
+      options:
+        - Graphics / rendering
+        - Audio
+        - Input
+        - mruby runtime
+        - JavaScript runtime (MV/MZ)
+        - Game data / file formats
+        - Save / load
+        - Event interpreter
+        - Scenes / menus / windows
+        - Battle
+        - Build / packaging
+        - CI
+        - Docs
+        - Scripts & test beds
+        - Not sure
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, error dump
+      description: >
+        Anything the engine printed, plus a screenshot when it is a rendering
+        problem. Rendered as code, so no backticks needed.
+      render: text

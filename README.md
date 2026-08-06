@@ -280,6 +280,20 @@
   before the save, overwritten between the save and the load, and compared after
   it, because a settled promise chain is also what a load that restores nothing
   looks like
+- **Common events** run too, and they are two separate things: a *parallel*
+  common event is not a map event — it exists only while its switch is on and
+  carries its own interpreter — while *Call Common Event* nests a child
+  interpreter inside the calling one. `common` mode drives both from one command
+  list and reports them separately, since driving one proves nothing about the
+  other. Neither had ever executed: the bed's `CommonEvents.json` was empty
+- MZ also **leaves the start map**: `transfer` mode runs a Transfer Player
+  command through the map interpreter to the bed's second map and asserts the
+  map id changed, the player landed on the requested tile, and the destination
+  map's *own* parallel event ran — the last being what separates the id moving
+  from the map actually being fetched, built and set running. Nothing before it
+  had ever loaded a second map, so `DataManager.loadMapData` and `Scene_Map`
+  re-creating itself were uncovered. It also caught the bed writing an
+  undeclared variable, which `Game_Variables.setValue` ignores in silence
 - The menu is **used**, not just opened, for the same reason: `menu_play` mode
   hands the party a Potion and wounds the actor through event commands, then
   taps confirm through the command window, the item category, the item list and
@@ -308,8 +322,8 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `menu`, `menu_play`, `animation`, `save`,
-  `battle` or `battle_play`, each with its own success line so a probe that
+  key moves the player), `message`, `transfer`, `common`, `menu`, `menu_play`,
+  `animation`, `save`, `battle` or `battle_play`, each with its own success line so a probe that
   merely ran cannot pass. A run ends as soon as its probes have reported rather
   than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest
   host instead of the time every run takes — a cut-off run reports nothing at
@@ -408,6 +422,26 @@
   `RGSS::Profiler.trace_start("trace.json")` / `RGSS::Profiler.trace_stop`. The
   stream stays loadable even if the process is killed mid-run, so it is safe to
   trace a long session and stop it with `Ctrl-C`
+
+### Build natively without Nix
+
+- The supported build is the Nix flake (`nix develop`), which pins every
+  dependency. On a plain Debian/Ubuntu box that has a C++ toolchain but no Nix —
+  an agent container, a bare CI image — `scripts/native-build-without-nix.bash`
+  gets to the same place:
+
+  ```sh
+  scripts/native-build-without-nix.bash            # -> ./build/rpg_maker_clone
+  VERIFY=0 scripts/native-build-without-nix.bash   # build only, skip the checks
+  ```
+
+  It installs the SDL2 headers, initialises the `3rd/` submodules (empty in a
+  plain clone), puts `rake` where `/bin/sh` can find it — mruby builds itself
+  with it — and fetches the two Unicode mapping tables the flake supplies through
+  `$cp932_table` / `$jis0208_table`, checking each against flake.nix's own
+  sha256 so the build consumes the bytes Nix would hand it. It then proves the
+  result works rather than just linking: `--rgss_effect_probe` under Xvfb, which
+  measures real pixels, followed by both game boot checks on real project data.
 
 ### Play in the browser (WebAssembly)
 

@@ -404,16 +404,54 @@ def check_states(dir)
   waking = []
   sealing = []
   slipping = []
+  already = []
   states.each do |id, r|
     blinding << id if r.reduce_hit_ratio && r.reduce_hit_ratio < 100
     waking << id if (r.release_by_attack || 0) > 0
     sealing << id if r.restrict_magic || r.restrict_skill
     slipping << id if (r.hp_change_map_steps || 0) > 0 &&
                       (r.hp_change_map_val || 0) > 0
+    already << id unless r.message_already.to_s.empty?
   end
   puts format('   states: %d blinding, %d shaken off by a blow, %d sealing, ' \
-              '%d slipping on the map',
-              blinding.size, waking.size, sealing.size, slipping.size)
+              '%d slipping on the map, %d with an "already" sentence',
+              blinding.size, waking.size, sealing.size, slipping.size,
+              already.size)
+
+  unless already.empty?
+    # A fixture cannot say whether the sentence is worded from the speaker's
+    # side (as message_actor / message_enemy are) or shared -- it is written to
+    # match whatever the code does. Only a real game's own text can: every one
+    # of these reads as a complete predicate after the battler's name, and one
+    # sentence serves both sides.
+    check "#{name}: an 'already' sentence composes after either battler's name" do
+      already.each do |sid|
+        row = states[sid]
+        line = Game::States.already_message(sid, states, 'スライム')
+        eq "スライム#{row.message_already}", line,
+           "state ##{sid} (#{row.name})"
+        eq "リト#{row.message_already}",
+           Game::States.already_message(sid, states, 'リト'),
+           'and the same sentence for the other side'
+      end
+    end
+
+    # The rule that makes the field reachable at all: a state the target already
+    # carries reports without rolling, so even a 0%-accuracy skill says so.
+    check "#{name}: a real state already carried reports without a roll" do
+      sid = already.first
+      foe = combatant('Foe', 0, 0, 5, 1000, [sid])
+      bat = Game::Battle.new([combatant('A', 10, 0, 10, 100)], [foe],
+                             Game::Rng.new(1), states)
+      e = bat.send(:apply_skill_hit, bat.allies[0], foe, -1,
+                   0, { name: 'X', inflict: [sid], chance: 0 })
+      eq [], e[:inflicted]
+      eq [sid], e[:already],
+         "state ##{sid} (#{states[sid].name}) is announced at 0% accuracy"
+      ok Game::States.already_message(sid, states, foe.name),
+         'and the database has the sentence to announce it with'
+    end
+  end
 
   unless blinding.empty?
     check "#{name}: a blinding state cuts accuracy" do
@@ -726,6 +764,68 @@ def check_terrain(dir)
   end
 end
 
+# 下半身消去 / 半透明表示 — the terrain `bush_depth` that sinks a character's
+# sprite into the tile. Unlike the damage field beside it, this one the test bed
+# really *uses*: Nepheshel names four terrains after the effect and lays two of
+# them across thousands of tiles, so the count below is a count of ground the
+# hero visibly wades through.
+def check_bush(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  terrain = db[DB_TERRAIN]
+  return unless terrain
+
+  bush = {}
+  terrain.each { |id, r| bush[id] = r.bush_depth if (r.bush_depth || 0) > 0 }
+  if bush.empty?
+    puts '   bush: no terrain sinks a sprite'
+    return
+  end
+
+  # How much of the shipped map really stands on one. Sweeping every Map*.lmu
+  # through the same chipset lookup the scene uses is the only way to tell an
+  # authored-and-used field from an authored-and-forgotten one.
+  cache = {}
+  tiles = Hash.new(0)
+  maps = 0
+  Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
+    m = LCF::MapUnit.new(File.open(f, 'rb'))
+    cs = (cache[m.chipset_id] ||= Game::ChipSet.new(db, m.chipset_id))
+    hot = false
+    (m.lower_layer || []).each do |t|
+      tid = cs.terrain(t)
+      next unless bush.key?(tid)
+      tiles[tid] += 1
+      hot = true
+    end
+    maps += 1 if hot
+  end
+  total = tiles.values.reduce(0) { |a, b| a + b }
+  puts format('   bush: %d sinking terrain(s), %d tile(s) across %d map(s)',
+              bush.size, total, maps)
+
+  check "#{name}: every sinking terrain converts to a real pixel split" do
+    bush.each do |id, depth|
+      px = Game::CharSet.bush_pixels(depth)
+      ok px > 0, "terrain ##{id} (#{terrain[id].name}, depth #{depth}) sinks something"
+      ok px <= Game::CharSet::HEIGHT, 'and never more than the whole frame'
+      # RPG_RT's divisor form: depth 1 is a third of the frame, 2 a half, 3 all
+      # of it. Nepheshel's own names say the same thing.
+      eq Game::CharSet::HEIGHT / (4 - depth), px
+    end
+  end
+
+  return if total.zero?
+  check "#{name}: the ground the game actually lays down sinks the hero" do
+    ok maps > 0, 'at least one shipped map places a sinking tile'
+    tiles.each do |id, n|
+      ok n > 0, "terrain ##{id} (#{terrain[id].name}) is on #{n} tile(s)"
+      ok Game::CharSet.bush_pixels(bush[id]) > 0,
+         "and #{n} tile(s) of it would sink the hero"
+    end
+  end
+end
+
 # Curative items, against the real item table. A fixture cannot catch a field
 # read with the wrong polarity — it is written to match whatever the code does —
 # so only a real game's antidotes can say which way round `reverse_state_effect`
@@ -789,6 +889,7 @@ dirs.each do |d|
   check_states(d)
   check_equipment(d)
   check_terrain(d)
+  check_bush(d)
   check_items(d)
 end
 

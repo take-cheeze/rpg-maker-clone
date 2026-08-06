@@ -44,8 +44,19 @@ teleport), open a menu, save, and continue. The remaining work is mostly **the
 parts that need the native build + real game assets to develop and verify**:
 authentic chipset/charset rendering, audio, and the battle system. Everything
 landed so far is exercised by unit tests (`mruby-lcf/test`) and by host harnesses
-that load the pure-Ruby sources under CRuby, since the full SDL/mruby binary
-can't be built or run in this environment. `scripts/rpg2k_command_soak.rb` adds
+that load the pure-Ruby sources under CRuby.
+**The native binary can be built and run without Nix after all** —
+`scripts/native-build-without-nix.bash` does it on a plain Debian/Ubuntu box, and
+this line used to say it could not. Nothing exotic was in the way: SDL2 headers,
+the `3rd/` submodules (empty in a plain clone), `rake` reachable from `/bin/sh`
+(mruby builds itself with it) and the two Unicode mapping tables the flake
+supplies through `$cp932_table` / `$jis0208_table` — downloaded and checked
+against flake.nix's own sha256 hashes, so the build consumes the bytes Nix would
+hand it. That matters because the CRuby harnesses cannot see mruby/CRuby
+divergence (ADR 0021's `module_function` and `Enumerable#none?` bugs both shipped
+through green checks) and cannot see rendering at all, while the native build
+reaches both: `--rgss_effect_probe` measures real pixels under Xvfb, and the two
+boot checks drive real game data to the map. `scripts/rpg2k_command_soak.rb` adds
 the other half of that coverage: it runs **every event command of every
 downloaded test-bed** (371,762 of them) through the interpreter and fails if one
 raises or reaches a handler's "I do not know this" arm, which is the parameter
@@ -596,6 +607,16 @@ The work below is roughly ordered by the critical path to a walkable game
   enemy's action entry stops firing. Nine of Nepheshel's 25 states and two of
   mtf's ten carry a reduced hit ratio, four and three a release chance, two and
   one a seal.
+  **And a status the target already has is announced** rather than going silent,
+  in the state row's own `message_already` (「はすでに毒に冒されている！」, 15 of
+  Nepheshel's states and 7 of mtf's). RPG_RT counts an already-carried state as a
+  *success* and settles that **before** rolling the skill's accuracy, so a Poison
+  Sting on an already-poisoned foe always reports and a 0%-accuracy skill reports
+  too — making the report depend on the roll would be the natural guess and it is
+  wrong. `roll_inflict` returns the already-carried states beside the landed ones
+  and the action banner prints the sentence, one wording for both sides.
+  `message_affected` is deliberately still unread: EasyRPG defines its helper and
+  never calls it from either battle scene, so nothing pins when RPG_RT prints it.
   **A condition drains the party on the map now, too** — RPG2000's field poison,
   the last of the 状態 row's simulation fields with a game behind it.
   `hp_change_map_steps` / `hp_change_map_val` (and the matching SP pair) say how
@@ -643,6 +664,22 @@ The work below is roughly ordered by the critical path to a walkable game
   `boat_pass` / `ship_pass`, and the terrain battle backdrop below never
   resolved. `ChipSet#terrain` answers 1 for a missing table now, and reads the
   first lower tile's terrain for an id the chip index cannot reach.
+  **And characters sink into it** — the terrain row's `bush_depth`
+  (下半身消去 / 半透明表示, ADR 0035). The bottom of a character's sprite draws at
+  half opacity on such a tile, RPG_RT's divisor form: `4 - depth`, a divisor
+  above 3 meaning no effect, so depths 1/2/3 sink the lower 10, 16 and all 32
+  rows of a charset frame. The sunken rows take `(opacity + 1) / 2` rather than a
+  fixed 128, so an already-translucent event wading in goes fainter still.
+  `Scene::Map#blt_bushed` does it as a solid top plus a half-opacity bottom, with
+  the two degenerate cases (nothing sinks, all of it sinks) staying single blits;
+  the hero sinks unless jumping or boarded, an event only on the hero's own layer
+  and not mid-jump, and a tile-graphic event scales its split to its own 16px
+  frame. This is the terrain field the test bed really *uses*: Nepheshel names
+  four terrains after the effect (下半身3/1消去, 下半身2/1消去, 半透明表示,
+  全身半透明) and lays two of them across **9,687 tiles of 28 maps**, every one
+  of which drew the hero fully opaque before. Vehicles are deliberately left out
+  — RPG_RT exempts only the airship, but no water terrain in either test bed
+  carries a depth, so there is nothing to measure a boat's wading against.
   **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random

@@ -41,6 +41,31 @@ module Game
       by = row * (HEIGHT * 4)
       [bx + pattern * WIDTH, by + (DIR_ROW[dir] || 2) * HEIGHT, WIDTH, HEIGHT]
     end
+
+    # How many pixel rows at the **bottom** of a character frame a tile of the
+    # given terrain `bush_depth` sinks into (RPG2000's 下半身消去 / 半透明表示 —
+    # the tall grass or shallow water a character wades through).
+    #
+    # RPG_RT expresses it as a divisor rather than a fraction: `4 - depth`, and
+    # a divisor above 3 means no effect at all, so only depths 1..3 do anything
+    # (EasyRPG's `Sprite_Character::Draw`). On the standard 32px frame that is
+    # 10, 16 and 32 rows — which is exactly what Nepheshel's own terrain names
+    # promise: 下半身3/1消去 ("erase the lower 1/3") is depth 1, 下半身2/1消去
+    # ("the lower 1/2") is depth 2, and 全身半透明 ("the whole body") is depth 3.
+    def self.bush_pixels(depth, height = HEIGHT)
+      return 0 if depth.nil?
+      split = 4 - depth
+      return 0 if split > 3 || split <= 0
+      height / split
+    end
+
+    # The opacity those sunken rows draw at: half, rounded up, of whatever the
+    # character was already being drawn with (RPG_RT's `opacity_bottom` default
+    # of `(opacity_top + 1) / 2`), so a translucent event wading through grass
+    # ends up fainter still rather than snapping back to a fixed 128.
+    def self.bush_opacity(opacity = 255)
+      (opacity + 1) / 2
+    end
   end
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
@@ -4668,6 +4693,15 @@ module Game
       message(battler_name, field(id, table, :message_recovery))
     end
 
+    # ... and for one the target **already** carried when something tried to
+    # inflict it again ("はすでに毒に冒されている！"). One wording for both sides,
+    # like the recovery line. RPG_RT treats this as a result worth announcing
+    # rather than a silent no-op, which is why the field exists at all: 15 of
+    # Nepheshel's 25 states and 7 of mtf-meido-action's 10 fill it in.
+    def self.already_message(id, table, battler_name)
+      message(battler_name, field(id, table, :message_already))
+    end
+
     def self.field(id, table, name)
       r = row(id, table)
       v = r && r.respond_to?(name) ? r.send(name) : nil
@@ -5914,10 +5948,11 @@ module Game
         target.hp -= dmg
         # An attack skill may inflict its states on a surviving target, each
         # rolled against the skill's accuracy.
-        inflicted = target.dead? ? [] : roll_inflict(target, cmd)
+        inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          inflicted: inflicted, target_ally: ally?(target), skill: cmd[:name] }
+          inflicted: inflicted, already: already,
+          target_ally: ally?(target), skill: cmd[:name] }
       else
         before_hp = target.hp
         before_mp = target.mp || 0
@@ -5968,19 +6003,30 @@ module Game
 
     # Inflict a skill command's `inflict` states on `target`, each landing only if
     # a 0..99 roll comes in under the skill's `chance` (its accuracy) scaled by
-    # the target's per-state susceptibility. Skips a state the target already
-    # carries. Returns the states actually inflicted.
+    # the target's per-state susceptibility.
+    #
+    # Returns `[inflicted, already]`: the states that landed, and the ones the
+    # target was already carrying. The second list is not a list of failures —
+    # RPG_RT counts a state the target already has as a **success** and says so
+    # ("X is already poisoned!"), *without* rolling the accuracy first
+    # (EasyRPG's `AddAffectedState(... AlreadyInflicted)`, which `continue`s
+    # before the `PercentChance`). A Poison Sting on a poisoned foe therefore
+    # always reports, where a roll would sometimes have gone quiet.
     def roll_inflict(target, cmd)
       chance = cmd[:chance] || 100
       inflicted = []
+      already = []
       (cmd[:inflict] || []).each do |sid|
-        next if target.state?(sid)
+        if target.state?(sid)
+          already << sid
+          next
+        end
         prob = chance * state_susceptibility(target, sid) / 100
         next unless @rng.random(100) < prob
         target.states = (target.states || []) + [sid]
         inflicted << sid
       end
-      inflicted
+      [inflicted, already]
     end
   end
 

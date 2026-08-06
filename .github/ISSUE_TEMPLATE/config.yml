@@ -1,0 +1,10 @@
+# Blank issues stay on: a one-line note about a wrong pixel should not have to
+# go through a form. The forms exist so the common reports carry their labels.
+blank_issues_enabled: true
+contact_links:
+  - name: Label taxonomy
+    url: https://github.com/take-cheeze/rpg-maker-clone/blob/master/docs/labels.md
+    about: What engine:*, platform:*, component:*, type:* and status:* mean.
+  - name: Contributor guide
+    url: https://github.com/take-cheeze/rpg-maker-clone/blob/master/AGENTS.md
+    about: Branch, changelog fragment, ADR and pull request conventions.

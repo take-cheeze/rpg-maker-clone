@@ -20,6 +20,15 @@ repos:
       entry: cmake-format -i
       language: system
       files: ".*\\.cmake|CMakeLists.txt"
+    # The label taxonomy is spread over three files that have to agree
+    # (definitions, path rules, issue forms) and only fails in production, on
+    # a real issue or pull request. Check it here instead.
+    - id: label-config
+      name: label config
+      entry: ruby scripts/label_config_check.rb
+      language: system
+      pass_filenames: false
+      files: "^(\\.github/(labels|labeler)\\.yml|\\.github/ISSUE_TEMPLATE/.*|scripts/(issue_form_labels|label_config_check)\\.rb)$"
     # - id: ls
     #   name: show files
     #   language: system
