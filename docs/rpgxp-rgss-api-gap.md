@@ -84,12 +84,13 @@ RGSS Reference Manual publishes, on top of the native `mruby-rgss` primitives.
   `.tile` / `.windowskin` call in a game goes through, including cutting a 32x32
   tile out of a tileset and building hue-rotated variants.
 
-Three deliberate deviations, all forced by this engine and listed in the file's
+Two deliberate deviations, both forced by this engine and listed in the file's
 header: colours are re-assigned rather than mutated in place (our compositor
-snapshots on assignment), a hue variant is re-loaded rather than `clone`d (a
-native handle must not be shallow-copied), and an asset that will not load gives
-a blank bitmap with a warning instead of raising (a game whose RTP is missing
-must not die on its first graphic).
+snapshots on assignment), and an asset that will not load gives a blank bitmap
+with a warning instead of raising (a game whose RTP is missing must not die on
+its first graphic). A third — re-loading a bitmap for a hue variant rather than
+`clone`ing the cached one — has since gone, because `Bitmap#clone` learned to
+copy pixels (see the end of gap 0h).
 
 With those three in place the host runs a game's whole bundle — **all 103
 sections of the released *Pray for You*** — and reaches `Main`, where it met the
@@ -195,7 +196,51 @@ because no keypress starts a battle — and reports `[RPGXP-HOST-BATTLE]`. It is
 the biggest surface of the lot: a battle builds the game's own
 `Spriteset_Battle`, so every enemy is a `Sprite_Battler` on top of the
 `RPG::Sprite` in gap 0, whose transitions, damage pop-up and animation playback
-nothing had run before. Whatever it reports is the next entry here.
+nothing had run before. It passed first time, running 119 frames inside the
+game's own battle with the confirm taps driving its party and actor command
+windows:
+
+```
+[RPGXP-HOST-SCENE] Scene_Map frame=41
+[RPGXP-HOST-SCENE] Scene_Battle frame=102
+[RPGXP-HOST-BATTLE] scene=Scene_Battle reached=true frame=221
+```
+
+`--rgss_host_save_test` is the same shape again — `$game_temp.save_calling`, the
+way the game's own Save Screen command sets it — and takes its own pass for the
+same reason. It is the one rung that reads a *file* back: a game's
+`Window_SaveFile` stamps each slot from `File#mtime` and its `Scene_Save` seeds
+the newest-slot search with `Time.at(0)`, which is what made `mruby-time`
+necessary (gap 0i) and is otherwise unexercised. Its own `save_data` then writes
+a real file — and that is what it found:
+
+### 0j. A game's saves land in the launch directory ❌ (open)
+
+The save probe reached the screen (`[RPGXP-HOST-SAVE] reached=true`) and wrote a
+file, and then the *next* game in the boot check died:
+
+```
+[RGSS] script host: section "Main" raised TypeError: Array cannot be converted to String
+[RGSS] script host:   from menu:2033:in text_size
+[RGSS] script host:   from AS_ATST_CG:619:in command_continue
+```
+
+Not a class-library gap. Stock `Scene_Save` writes
+`File.open("Save#{n}.rxdata", "wb")` and stock `Scene_Title` asks
+`FileTest.exist?("Save#{n}.rxdata")` — both **bare relative names**, so both
+resolve against the current directory. A real RPG Maker install runs `Game.exe`
+*from the game's own folder*, so that directory is the game's; this engine is
+launched from anywhere with `--game_dir` pointing elsewhere, so every game's
+saves land in one shared place. *Pray for You*'s own title screen therefore
+enabled Continue on the strength of the editor bed's save, read it as its own,
+and its `Window_SaveFile` got an `Array` where it expected a `String`.
+
+Two games sharing a save file is a real bug, not a test artifact: it would
+overwrite one game's progress with another's the first time a player ran two.
+The fix is for an RGSS boot to resolve the game's relative file I/O against the
+game's own directory, the way the runtime it imitates does. The boot check is
+hermetic in the meantime — it clears `Save*.rxdata` around every pass, since it
+is its own earlier pass that plants the file.
 
 ### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
 

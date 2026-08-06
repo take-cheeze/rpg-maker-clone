@@ -173,7 +173,9 @@
   open its own menu (`[RPGXP-HOST-MENU]`) — the first thing a game draws out of
   its own `Window` subclasses, windowskin and font — and, in a second pass, to
   fight in its own battle scene (`[RPGXP-HOST-BATTLE]`), where every enemy is one
-  of its own `Sprite_Battler`s on top of `RPG::Sprite`.
+  of its own `Sprite_Battler`s on top of `RPG::Sprite`, and to open its own save
+  screen (`[RPGXP-HOST-SAVE]`), the one place a game reads a file's timestamp
+  back and writes a file of its own.
   `scripts/rpgxp_script_host_check.rb` covers the same ground under CRuby —
   every section of both bundles evaluates, and the RGSS standard library behaves
 - `scripts/compare-rpgxp-wine.bash` diffs our frames against the **genuine RGSS
@@ -272,7 +274,20 @@
   frame inside `Scene_Battle.update`, freezing the fight before the first
   window opened. MZ's save path is a **promise chain** (JsonEx → pako
   → localforage) rather than MV's synchronous call, so the probe starts it and
-  polls until it settles, then re-enters the map the way `Scene_Load` does
+  polls until it settles, then re-enters the map the way `Scene_Load` does —
+  and the state is **checked back**: six fields (gold, a switch, a variable, an
+  actor's HP, the inventory, the player's position) are moved off their defaults
+  before the save, overwritten between the save and the load, and compared after
+  it, because a settled promise chain is also what a load that restores nothing
+  looks like
+- MZ also **leaves the start map**: `transfer` mode runs a Transfer Player
+  command through the map interpreter to the bed's second map and asserts the
+  map id changed, the player landed on the requested tile, and the destination
+  map's *own* parallel event ran — the last being what separates the id moving
+  from the map actually being fetched, built and set running. Nothing before it
+  had ever loaded a second map, so `DataManager.loadMapData` and `Scene_Map`
+  re-creating itself were uncovered. It also caught the bed writing an
+  undeclared variable, which `Game_Variables.setValue` ignores in silence
 - The menu is **used**, not just opened, for the same reason: `menu_play` mode
   hands the party a Potion and wounds the actor through event commands, then
   taps confirm through the command window, the item category, the item list and
@@ -301,8 +316,8 @@
   `scripts/download-mz-corescript.bash` fetches the engine at build time.
   `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
-  key moves the player), `message`, `menu`, `menu_play`, `animation`, `save`,
-  `battle` or `battle_play`, each with its own success line so a probe that
+  key moves the player), `message`, `transfer`, `menu`, `menu_play`,
+  `animation`, `save`, `battle` or `battle_play`, each with its own success line so a probe that
   merely ran cannot pass. A run ends as soon as its probes have reported rather
   than idling out its `--timeout_ms`, so the budget is a ceiling for the slowest
   host instead of the time every run takes — a cut-off run reports nothing at

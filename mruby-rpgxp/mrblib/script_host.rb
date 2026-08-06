@@ -242,6 +242,8 @@ class RPGXP
     #     scene the game went to — its own menu, if it has one.
     #   * with --rgss_host_battle_test, call a battle the way the game's own
     #     Battle Processing command does and report whether it came up.
+    #   * with --rgss_host_save_test, the same for its save screen, which is the
+    #     one place a game reads a file's timestamp back.
     def self.watch_frame
       @frames += 1
       report_scene
@@ -252,6 +254,7 @@ class RPGXP
       move_probe if move_test?
       menu_probe if menu_test?
       battle_probe if battle_test?
+      save_probe if save_test?
     end
 
     def self.report_scene
@@ -262,6 +265,12 @@ class RPGXP
       @scene_name = name
       # Remember when the map first appeared; the move probe waits for it.
       @map_frame = @frames if @map_frame.nil? && map_scene?(name)
+      # Every scene the game has been through, for the probes that ask "did it
+      # get there" about somewhere it does not *stay* — a save screen hands
+      # control back to the map once the file is written, so reading `$scene`
+      # when the probe reports would answer Scene_Map either way.
+      @scenes_seen ||= []
+      @scenes_seen.push(name)
       # The frame number is the diagnostic that matters when a headless run ends
       # on its timeout: it is the only way to tell "the game stalled" from "the
       # frames were slower than the budget" (an unaccelerated CI display renders
@@ -394,6 +403,56 @@ class RPGXP
       finish_menu_probe if step >= MENU_WAIT
     end
 
+    # Whether the game has been through a scene whose name contains `needle`.
+    def self.been_through?(needle)
+      seen = @scenes_seen
+      return false if seen.nil?
+      seen.any? { |name| name.include?(needle) }
+    end
+
+    # Open the game's own save screen and report whether it got there.
+    #
+    # Called the way the game's own Save Screen event command does
+    # (`Interpreter#command_352` sets `$game_temp.save_calling` and lets
+    # `Scene_Map#update` switch scenes), for the same reason the battle probe
+    # does: no keypress reaches it from the map, and the alternative — counting
+    # cursor presses down a menu — depends on that menu's item order, which every
+    # game with a custom menu changes.
+    #
+    # This is the rung that runs the *save* half of a game's own engine: its
+    # `Scene_Save`, its `Window_SaveFile` — which stamps each slot from
+    # `File#mtime` and seeds its newest-save search with `Time.at(0)` — and, once
+    # the confirm taps pick a slot, its own `save_data` writing a real file. The
+    # scene is reported from the scenes the game has *been through*, because a
+    # save screen returns to the map as soon as it has written.
+    SAVE_SETTLE = 60        # frames on the map before opening the save screen
+    SAVE_WAIT = 120         # frames to let it come up and take a confirm
+
+    def self.save_probe
+      return if @save_done || @map_frame.nil?
+      elapsed = @frames - @map_frame
+      return if elapsed < SAVE_SETTLE
+      if elapsed == SAVE_SETTLE
+        call_save
+        return
+      end
+      finish_save_probe if elapsed >= SAVE_SETTLE + SAVE_WAIT
+    end
+
+    def self.call_save
+      temp = $game_temp
+      return if temp.nil? || !temp.respond_to?(:save_calling=)
+      temp.save_calling = true
+    end
+
+    def self.finish_save_probe
+      @save_done = true
+      scene = $scene
+      name = scene.nil? ? "?" : scene.class.to_s
+      $stderr.puts "[RPGXP-HOST-SAVE] scene=#{name} " \
+                   "reached=#{been_through?("Scene_Save")} frame=#{@frames}"
+    end
+
     # Start a battle in the game's own engine and report where that got it.
     #
     # The rung above the menu, and the biggest surface left: a battle builds the
@@ -494,6 +553,12 @@ class RPGXP
 
     def self.battle_test?
       RGSS_HOST_BATTLE_TEST
+    rescue StandardError
+      false
+    end
+
+    def self.save_test?
+      RGSS_HOST_SAVE_TEST
     rescue StandardError
       false
     end

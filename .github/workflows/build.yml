@@ -214,9 +214,9 @@ jobs:
       # tests in CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
       # the RPG2k
       # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
-      # real-game boot smoke=112..114 (one per game, plus the editor bed's
-      # second pass for the battle probe) and the RGSSAD
-      # packed-asset smoke=115..116
+      # real-game boot smoke=112..119 (one per game, plus a pass per extra
+      # probe on the editor bed -- a block, so adding a probe does not renumber
+      # anything else) and the RGSSAD packed-asset smoke=120..121
       # (two runs, one per arm of its A/B) below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
@@ -311,8 +311,9 @@ jobs:
           # confirm on the game's own title screen, logs every scene it reaches
           # as `[RPGXP-SCRIPTS]`/`[RPGXP-HOST-SCENE]`, walks the party on the
           # editor bed's map (`[RPGXP-HOST-MOVE]`), opens that bed's own menu
-          # (`[RPGXP-HOST-MENU]`) and, in a second pass, fights in its own
-          # battle scene (`[RPGXP-HOST-BATTLE]`). Two beds: the editor-shaped
+          # (`[RPGXP-HOST-MENU]`) and, in a pass each, fights in its own
+          # battle scene (`[RPGXP-HOST-BATTLE]`) and opens its own save screen
+          # (`[RPGXP-HOST-SAVE]`). Two beds: the editor-shaped
           # OpenGame test bed and the *released* Pray for You (Game.rgssad only,
           # several maps), on displays 112 and 113 — one per game (see the
           # reserved server-num map above). See
@@ -327,7 +328,7 @@ jobs:
           # in the archive — and asserts the engine finds it only when it is
           # there, which is what makes the check non-vacuous. Displays 114-115.
           - name: RGSSAD packed-asset smoke test
-            run: ./scripts/nix-develop.bash ./scripts/rgssad_asset_check.bash 115
+            run: ./scripts/nix-develop.bash ./scripts/rgssad_asset_check.bash 120
 
           - name: MV boot smoke test
             continue-on-error: true
@@ -386,6 +387,21 @@ jobs:
             continue-on-error: true
             env:
               MZ_MODE: message
+            run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
+
+          # The first thing here that leaves the start map. A bed with one map
+          # never loads a second one, so Transfer Player, Scene_Map re-creating
+          # itself, DataManager.loadMapData for a MapXXX.json that was not read
+          # at boot, and Game_Map.setupEvents for the arriving map all had no
+          # coverage. The bed gained a second map for it. Asserts `moved=true`
+          # (the map id changed), `landed=true` (the player is on the requested
+          # tile) and `arrived=true` — the destination's *own* parallel event
+          # having run, which is what separates the id moving from the map
+          # actually loading. See ADR 0004 M6.3l.
+          - name: MZ transfer smoke test
+            continue-on-error: true
+            env:
+              MZ_MODE: transfer
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
 
           - name: MZ menu smoke test

@@ -37,6 +37,10 @@
 #     bed only, because a released game's opening is an event sequence a battle
 #     call would land in the middle of. This is the biggest surface of the lot:
 #     every enemy in it is a `Sprite_Battler`, on top of `RPG::Sprite`.
+#   * a third pass opens the game's own save screen the same way
+#     (`--rgss_host_save_test`, `[RPGXP-HOST-SAVE]`). That is the one place a
+#     game reads a file's timestamp back — its `Window_SaveFile` stamps each
+#     slot from `File#mtime` — and where its own `save_data` writes a real file.
 #   * a `script host failed` line fails the run: the game's own scripts stopping
 #     is the failure this check exists to catch.
 #
@@ -47,8 +51,8 @@
 # Usage: ./scripts/rpgxp_boot_check.bash [server_num] [game_dir...]
 #   server_num  xvfb-run --server-num to use (default 112; see the reserved
 #               display numbers in .github/workflows/build.yml). Each run takes
-#               the next one, so the two beds plus the editor bed's battle pass
-#               use 112..114.
+#               the next one, and build.yml reserves 112..119 for this check so
+#               another probe can be added without renumbering anything else.
 #   game_dir    defaults to the repo's two RPG Maker XP beds -- the editor-shaped
 #               OpenGame test bed and the released Pray for You
 
@@ -103,6 +107,18 @@ run_boot() {
     local log rc=0 marker missing=""
     log="$(mktemp)"
     echo "-- ${label}"
+    # Start from no save files. A game's own Scene_Save writes
+    # `File.open("Save1.rxdata", "wb")` -- a bare relative name, so it lands in
+    # the *current directory*, which under this engine is wherever it was
+    # launched from rather than the game's own folder (where a real RPG Maker
+    # install would put it, because Game.exe runs from there). So the save pass
+    # below leaves a file that the next game in this loop finds: Pray for You's
+    # own title screen enabled Continue on the strength of the editor bed's save,
+    # read it as its own, and died on the mismatch. That is a real engine bug --
+    # saves must not be shared between games -- but the check has to be hermetic
+    # regardless of when it is fixed, since it is its own earlier pass that
+    # plants the file.
+    rm -f Save[0-9]*.rxdata "${game}"/Save[0-9]*.rxdata
     # Each run gets its own display number: xvfb-run -a's probe is not atomic
     # and can steal a display from a concurrent run (see build.yml).
     # shellcheck disable=SC2086 # ${flags} is a deliberate word-split flag list
@@ -139,6 +155,9 @@ run_boot() {
     # ALSA has no device under CI and floods stderr; keep the rest.
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
     rm -f "${log}"
+    # ...and leave none behind either, so a local run does not dirty the tree or
+    # change what the *next* invocation's title screens offer.
+    rm -f Save[0-9]*.rxdata "${game}"/Save[0-9]*.rxdata
     return "${rc}"
 }
 
@@ -174,6 +193,15 @@ for game in "${GAMES[@]}" ; do
             run_boot "${game}" "${num}" "script host: battle" \
                 "--rgss_host_battle_test" 2 \
                 '\[RPGXP-HOST-BATTLE\] .*reached=true' ||
+                failed=$((failed + 1))
+            num=$((num + 1))
+
+            # And the save screen, its own pass for the same reason. This is the
+            # only place a game reads a file's timestamp back, and the only one
+            # that writes a file of its own.
+            run_boot "${game}" "${num}" "script host: save" \
+                "--rgss_host_save_test" 2 \
+                '\[RPGXP-HOST-SAVE\] .*reached=true' ||
                 failed=$((failed + 1))
             ;;
     esac

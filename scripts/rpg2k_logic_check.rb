@@ -2965,9 +2965,11 @@ check 'use_item restores MP and item_effective? tracks the SP deficit' do
   eq 0, st.party.item_count(6)
 end
 
-check 'a cure medicine (reverse_state_effect) removes only its listed states' do
+check 'a cure medicine removes only its listed states' do
   # state_set: byte per state, index i -> state id i+1; states 3 and 7 marked.
-  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1, 0, 0, 0, 1], reverse_state: true) }
+  # No reverse flag -- that is what a real curative item looks like, and every
+  # one in both test beds leaves it unset.
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1, 0, 0, 0, 1]) }
   st = item_party(items)
   st.party.gain_item(5, 2)
   hero = st.party.leader
@@ -2981,7 +2983,7 @@ check 'a cure medicine (reverse_state_effect) removes only its listed states' do
 end
 
 check 'a cure medicine on an unafflicted, full target does nothing / not consumed' do
-  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1]) }
   st = item_party(items)
   st.party.gain_item(5, 1)
   hero = st.party.leader                        # full HP, no states
@@ -2991,7 +2993,7 @@ check 'a cure medicine on an unafflicted, full target does nothing / not consume
 end
 
 check 'a heal+cure item counts either the heal or the cure as a use' do
-  items = { 5 => fake_item(type: 6, rhp: 40, state_set: [0, 0, 1], reverse_state: true) }
+  items = { 5 => fake_item(type: 6, rhp: 40, state_set: [0, 0, 1]) }
   st = item_party(items)
   st.party.gain_item(5, 3)
   hero = st.party.leader
@@ -3005,10 +3007,16 @@ check 'a heal+cure item counts either the heal or the cure as a use' do
   eq 1, st.party.item_count(5)
 end
 
-check 'a non-reverse item lists no cured states (infliction is battle-only)' do
+check 'a reverse medicine cures nothing: inflicting is deliberately unbuilt' do
+  # The flag flips a medicine from curing to inflicting, the same way it does for
+  # a skill. No item in either test bed sets it, so there is nothing to measure
+  # an implementation of the inflict half against and it is left unbuilt -- but
+  # such an item must not be treated as a cure either.
   st = item_party({})
-  it = fake_item(type: 6, state_set: [0, 0, 1], reverse_state: false)
+  it = fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true)
   eq [], st.party.item_cured_states(it)
+  eq [3], st.party.item_cured_states(fake_item(type: 6, state_set: [0, 0, 1])),
+     'the same row without the flag does cure'
 end
 
 check 'field_items includes skill books alongside medicines' do
@@ -6271,8 +6279,8 @@ check 'battle_items lists battle medicines; battle_item_command recovers' do
 end
 
 check 'a battle item cures the target status; states carry out via apply_to_party' do
-  # An antidote (reverse item curing state 3) used in battle on a poisoned ally.
-  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  # An antidote (a medicine curing state 3) used in battle on a poisoned ally.
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1]) }
   st = item_party(items)
   st.party.gain_item(5, 1)
   ally = st.party.actor_by_id(1)

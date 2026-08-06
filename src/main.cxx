@@ -107,6 +107,18 @@ DEFINE_bool(
     "this writes to the game's globals, because no keypress starts a battle. "
     "Used by scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
+    rgss_host_save_test,
+    false,
+    "For the RGSS makers under the script host: once the game is on its own "
+    "map, open its save screen the way its own Save Screen event command does "
+    "(setting $game_temp.save_calling) and log whether it got there as "
+    "[RPGXP-HOST-SAVE] (implies --rgss_host_new_game). This is the one place a "
+    "game reads a file's timestamp back -- its Window_SaveFile stamps each "
+    "slot "
+    "from File#mtime -- and where its own save_data writes a real file. Used "
+    "by "
+    "scripts/rpgxp_boot_check.bash");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -187,6 +199,15 @@ DEFINE_bool(
     "a `frames` array draws as sprites (Sprite_AnimationMV), anything else "
     "goes to Effekseer, whose WASM runtime this host does not start. Used in "
     "CI");
+DEFINE_bool(
+    mz_transfer_test,
+    false,
+    "For RPG Maker MZ: once on the map, run a Transfer Player command to the "
+    "test bed's second map (implies --mz_new_game to reach the map) and log "
+    "whether the destination actually loaded — its map id, the tile the player "
+    "landed on, and whether the arriving map's own events are running. A bed "
+    "with one map never loads a second one, so nothing else here covers "
+    "DataManager.loadMapData or Scene_Map re-creating itself. Used in CI");
 DEFINE_bool(
     mz_menu_test,
     false,
@@ -857,7 +878,8 @@ int main(int argc, char** argv) {
       M, mrb_obj_value(M->object_class),
       mrb_intern_lit(M, "RGSS_HOST_NEW_GAME"),
       mrb_bool_value(FLAGS_rgss_host_new_game || FLAGS_rgss_host_move_test ||
-                     FLAGS_rgss_host_menu_test || FLAGS_rgss_host_battle_test));
+                     FLAGS_rgss_host_menu_test || FLAGS_rgss_host_battle_test ||
+                     FLAGS_rgss_host_save_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_MOVE_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_move_test));
@@ -867,6 +889,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_BATTLE_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_battle_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_HOST_SAVE_TEST"),
+                mrb_bool_value(FLAGS_rgss_host_save_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));
@@ -906,6 +931,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_ANIMATION_TEST"),
                 mrb_bool_value(FLAGS_mz_animation_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MZ_TRANSFER_TEST"),
+                mrb_bool_value(FLAGS_mz_transfer_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MZ_MENU_TEST"),
                 mrb_bool_value(FLAGS_mz_menu_test));

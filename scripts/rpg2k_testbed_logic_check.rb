@@ -788,9 +788,71 @@ def check_bush(dir)
   end
 end
 
+# Curative items, against the real item table. A fixture cannot catch a field
+# read with the wrong polarity — it is written to match whatever the code does —
+# so only a real game's antidotes can say which way round `reverse_state_effect`
+# goes. Nepheshel's アンチドーテ and ユニコーンの角 name all fifteen states and
+# 気付け薬 names 戦闘不能 alone; none of them sets the flag.
+def check_items(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  items = db[DB_ITEM]
+  return unless items
+
+  curative = []
+  reversed = []
+  items.each do |id, it|
+    next unless it.type == 6 # medicine
+    set = it.state_set
+    next unless set.respond_to?(:each_index)
+    ids = []
+    set.each_index { |i| ids << (i + 1) if set[i] && set[i] != 0 }
+    next if ids.empty?
+    (it.reverse_state_effect ? reversed : curative) << [id, ids]
+  end
+  puts format('   items: %d curative medicine(s), %d with reverse_state_effect',
+              curative.size, reversed.size)
+  return if curative.empty?
+
+  check "#{name}: every curative medicine actually cures what it names" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    actor = party.leader
+    ok actor, 'the initial party has a leader to heal'
+    curative.each do |iid, ids|
+      row = items[iid]
+      eq ids, party.item_cured_states(row),
+         "item ##{iid} (#{row.name}) should cure #{ids.size} state(s)"
+
+      # ... and using it really lifts them, including from a downed actor: a
+      # medicine naming state 1 is a revive, and several of these name only it.
+      # HP first, then the states: set_hp with a positive value *clears* the
+      # death state, so afflicting before healing would quietly undo state 1 --
+      # and state 1 is the only one several of these name.
+      actor.clear_states
+      actor.set_hp(actor.max_hp)
+      ids.each { |sid| actor.add_state(sid) }
+      party.gain_item(iid, 1)
+      ok party.item_effective?(iid, actor),
+         "item ##{iid} (#{row.name}) is offered to an afflicted target"
+      party.use_item(iid, actor)
+      ids.each do |sid|
+        eq false, actor.state?(sid),
+           "item ##{iid} (#{row.name}) left state #{sid} on"
+      end
+    end
+    actor.clear_states
+    actor.set_hp(actor.max_hp)
+  end
+end
+
 dirs.each do |d|
-  check_game(d); check_menus(d); check_states(d); check_equipment(d)
-  check_terrain(d); check_bush(d)
+  check_game(d)
+  check_menus(d)
+  check_states(d)
+  check_equipment(d)
+  check_terrain(d)
+  check_bush(d)
+  check_items(d)
 end
 
 if $failures.zero?
