@@ -221,7 +221,22 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
                          actor_damaged: 'のダメージを受けた！',
                          enemy_undamaged: 'にダメージを与えられない！',
                          actor_undamaged: 'はダメージを受けていない！',
-                         dodge: 'は身をかわした！'),
+                         dodge: 'は身をかわした！',
+                         skill_failure_a: 'には効かなかった！',
+                         skill_failure_b: 'は平気だった！',
+                         skill_failure_c: 'は眠らなかった！'),
+    # Skill rows for the battle log: RPG2000 gives each skill its own two
+    # sentences. Skill 8 sets both, 9 only the first, 10 neither (an
+    # English-release row), and 11 picks the second failure sentence.
+    skill: { 8 => OpenStruct.new(name: 'Fire', using_message1: 'は炎を放った！',
+                                 using_message2: 'あたりが真っ赤に染まる！',
+                                 failure_message: 0),
+             9 => OpenStruct.new(name: 'Heal', using_message1: 'は光をまとった！',
+                                 using_message2: '', failure_message: 0),
+             10 => OpenStruct.new(name: 'Mute', using_message1: '',
+                                  using_message2: '', failure_message: 0),
+             11 => OpenStruct.new(name: 'Sleep', using_message1: 'は呪文を唱えた！',
+                                  using_message2: '', failure_message: 2) },
     # The state table the battle status window and action banner read: a name, a
     # palette colour, the priority that decides which one a battler shows, and
     # RPG2000's own sentences for it landing and lifting. State 5 deliberately
@@ -3683,6 +3698,74 @@ check 'the state sentences still follow the action ones' do
                      { attacker: 'Slime', target: 'Hero', damage: 7,
                        inflicted: [3], target_ally: true })
   eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！', 'Hero is poisoned!'], lines
+end
+
+check 'a skill announces itself with its own two sentences, then the damage' do
+  scene, = battle_at_command
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
+      'Slimeに 42 のダメージを与えた！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 42, skill: 'Fire',
+                  skill_id: 8, target_ally: false })
+end
+
+check 'a skill with only a first sentence gives one line before the damage' do
+  scene, = battle_at_command
+  eq ['Heroは光をまとった！', 'Slimeに 5 のダメージを与えた！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 5, skill: 'Heal',
+                  skill_id: 9, target_ally: false })
+end
+
+check 'a skill row with no sentence keeps the composed line' do
+  scene, = battle_at_command
+  eq ["Hero's Mute hits Slime for 5"],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 5, skill: 'Mute',
+                  skill_id: 10, target_ally: false })
+end
+
+check 'a skill that misses takes its own failure sentence, not the damage line' do
+  scene, = battle_at_command
+  eq ['Heroは呪文を唱えた！', 'Slimeは眠らなかった！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 0, missed: true,
+                  skill: 'Sleep', skill_id: 11, target_ally: false })
+end
+
+check 'a heal that restored nothing reads as a failure' do
+  scene, = battle_at_command
+  eq ['Heroは光をまとった！', 'Heroには効かなかった！'],
+     scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
+                  target: 'Hero', recover_hp: 0, recover_mp: 0,
+                  cured: [], target_ally: true })
+end
+
+check 'a heal that worked says only what it was, not that it failed' do
+  scene, = battle_at_command
+  eq ['Heroは光をまとった！'],
+     scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
+                  target: 'Hero', recover_hp: 30, recover_mp: 0,
+                  cured: [], target_ally: true })
+end
+
+check 'a skill still trails the states it landed' do
+  scene, = battle_at_command
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
+      'Slimeに 7 のダメージを与えた！', 'Slime looks ill!'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+                  skill_id: 8, inflicted: [3], target_ally: false })
+end
+
+check 'an item keeps its composed line: use_item is still unread' do
+  scene, = battle_at_command
+  ok scene.send(:battle_action_lines,
+                { recover: true, actor: 'Hero', source: 'Potion', item_id: 3,
+                  target: 'Hero', recover_hp: 30, target_ally: true })
+     .first.include?('Potion')
 end
 
 check 'the action banner announces the states an action landed and lifted' do
