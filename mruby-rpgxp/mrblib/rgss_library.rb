@@ -211,6 +211,13 @@ module RPG
     # boot carries on.
     def self.load_file(path)
       RGSS::Bitmap.new(path)
+    rescue RGSS::Bitmap::LoadError => e
+      # The loader's own reason -- a decoder's complaint, or which of the search
+      # roots came up empty. Taken off the exception rather than out of its
+      # message, which spells the path out again in front of it.
+      $stderr.puts "[RGSS] RPG::Cache: #{path} did not load (#{e.reason}); " \
+                   "using a blank bitmap"
+      nil
     rescue StandardError => e
       $stderr.puts "[RGSS] RPG::Cache: #{path} did not load (#{e.message}); " \
                    "using a blank bitmap"

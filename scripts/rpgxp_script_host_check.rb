@@ -74,10 +74,23 @@ module RGSS
   # Records draws instead of rasterising. A path containing "Missing" stands in
   # for an asset that will not load, so the cache's fallback can be checked.
   class Bitmap
+    # Mirrors the native RGSS::Bitmap::LoadError (mruby-rgss/mrblib/lib.rb):
+    # RPG::Cache rescues it by name to log the reason without the path, so the
+    # stand-in has to carry the same class and readers.
+    class LoadError < RuntimeError
+      def initialize(path, reason)
+        @path = path
+        @reason = reason
+        super("Failed to init bitmap: #{path} (#{reason})")
+      end
+
+      attr_reader :path, :reason
+    end
+
     attr_reader :width, :height, :texts, :hue, :path
     def initialize(a, b = nil)
       if a.is_a?(String)
-        raise "Failed to init bitmap: #{a}" if a.include?("Missing")
+        raise LoadError.new(a, "not found") if a.include?("Missing")
         @path = a
         @width = @height = 64
       else

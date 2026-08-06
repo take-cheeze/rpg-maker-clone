@@ -507,8 +507,27 @@ module RGSS
     # the extension are just more candidates.
     EXTENSIONS = [:png, :jpg, :jpeg, :xyz, :bmp].freeze
 
+    # Raised when a String load resolves to nothing loadable. Carries the two
+    # halves of the message separately so a caller that already names the file
+    # -- RPG::Cache logs every asset it stands a blank in for -- can report just
+    # the reason instead of printing the path twice. A RuntimeError, which is
+    # what `raise "..."` used to produce here, so `rescue` clauses around
+    # Bitmap.new keep working.
+    class LoadError < RuntimeError
+      def initialize(path, reason)
+        @path = path
+        @reason = reason
+        super("Failed to init bitmap: #{path} (#{reason})")
+      end
+
+      attr_reader :path, :reason
+    end
+
     def initialize f, s = nil
       if f.kind_of? String
+        # Forget the previous load's diagnostics, so a failure below reports
+        # this file's reason rather than some earlier image's.
+        Bitmap._begin_load
         i = self._init_file(f, s)
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
@@ -521,17 +540,48 @@ module RGSS
         # archive with nothing loose on disk, so try that last — loose files
         # shadow the archive, which is what RGSS itself does.
         i = init_from_archive(f, s) unless i
-        # Surface the decoder's own reason (e.g. an XYZ "bad dist" zlib error)
-        # so failures are diagnosable instead of a bare "Failed to init bitmap".
-        unless i
-          detail = Bitmap._load_error
-          detail = Bitmap._stbi_error if detail.nil? || detail.empty?
-          detail = detail.nil? || detail.empty? ? "" : " (#{detail})"
-          raise "Failed to init bitmap: #{f}#{detail}"
-        end
+        raise LoadError.new(f, Bitmap.failure_reason(f)) unless i
       else
         self._init_size(f, s)
       end
+    end
+
+    # Why the load of `f` failed, for the exception #initialize raises.
+    #
+    # Two quite different failures used to read the same way. A file that was
+    # found and rejected by a decoder has a real reason to report — an XYZ's
+    # "bad dist" zlib error, say — and that is what `_load_error` /
+    # `_stbi_error` carry. A name that matched nothing anywhere never reached a
+    # decoder, and reporting those globals then quotes some *earlier* image's
+    # failure: in practice always stb's "no SOI", because stb tries JPEG first
+    # and leaves that complaint behind after every successful PNG. Released
+    # games are full of this case — they reference the RTP's graphics without
+    # packing them — so a missing RTP looked like a corrupt JPEG.
+    #
+    # `_decoder_ran?` tells the two apart; when nothing was decoded, name the
+    # places that were searched instead, since which of them is empty is the
+    # actual diagnosis.
+    def self.failure_reason(f)
+      if _decoder_ran?
+        detail = _load_error
+        detail = _stbi_error if detail.nil? || detail.empty?
+        return detail unless detail.nil? || detail.empty?
+        return "no decoder recognised the file"
+      end
+
+      where = []
+      where << "GAME_DIR \"#{GAME_DIR}\"" unless GAME_DIR.nil? || GAME_DIR.empty?
+      where << if RTP_DIR.nil? || RTP_DIR.empty?
+                 "no RTP installed (RTP_DIR is empty)"
+               else
+                 "RTP_DIR \"#{RTP_DIR}\""
+               end
+      where << if RGSS.asset_archive.nil?
+                 "no encrypted archive registered"
+               else
+                 "not in the encrypted archive"
+               end
+      "not found (tried .#{EXTENSIONS.join("/.")}): #{where.join("; ")}"
     end
 
     # Font used by #draw_text. Created lazily from the current defaults.
@@ -1257,6 +1307,10 @@ module RGSS
       def _transition_map(filename)
         return nil if filename.nil? || filename.empty?
         Bitmap.new(filename)
+      rescue Bitmap::LoadError => e
+        RGSS.warn_once("Graphics.transition: #{filename} did not load " \
+                       "(#{e.reason}); fading instead")
+        nil
       rescue StandardError => e
         RGSS.warn_once("Graphics.transition: #{filename} did not load " \
                        "(#{e.message}); fading instead")
