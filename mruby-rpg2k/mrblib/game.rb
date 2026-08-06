@@ -2119,13 +2119,25 @@ module Game
     end
 
     # The status-condition ids a medicine cures. RPG2000 items list affected
-    # states in `state_set` (a 0/1 byte per state, index i -> state id i+1); when
-    # `reverse_state_effect` is set the item *removes* them (an antidote / herb),
-    # which is the only item-state effect the field menu applies -- an item that
-    # would *inflict* states (the non-reverse case, rolled against state_chance) is
-    # left to battle. Curing is unconditional, matching EasyRPG's item algorithm.
+    # states in `state_set` (a 0/1 byte per state, index i -> state id i+1), and a
+    # medicine **cures** them; `reverse_state_effect` is what flips it into
+    # inflicting them, exactly as it does for a skill (see #skill_state_ids).
+    # Curing is unconditional, matching EasyRPG's item algorithm.
+    #
+    # The polarity used to be read the other way round -- cures only when the
+    # flag is *set* -- which meant no shipped curative item cured anything.
+    # Neither test bed sets the flag on any item at all, while Nepheshel has 13
+    # medicines naming states without it and mtf-meido-action one: アンチドーテ
+    # and ユニコーンの角 name all fifteen states, and 気付け薬 / ドラゴンブラッド
+    # name state 1 alone, which is 戦闘不能 -- they are revives. Reading those as
+    # "cures nothing" made every antidote and every revive item in both games
+    # inert, in the menu and in a fight alike.
+    #
+    # A medicine that really does *inflict* (the flag set) is left unbuilt rather
+    # than guessed at: no item in either bed sets it, so there is nothing to
+    # measure an implementation against.
     def item_cured_states(it)
-      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      return [] if it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
       set = it.state_set
       return [] unless set
       out = []
