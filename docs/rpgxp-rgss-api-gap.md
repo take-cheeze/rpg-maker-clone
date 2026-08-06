@@ -385,6 +385,49 @@ need it. The rest of the sweep came back clean: `Marshal` (mruby-marshal),
 neither bundle touches `Dir`, `Struct`, `Set`, `ObjectSpace` or the metaprogramming
 gems.
 
+### 0k. `Array#sort!` with a comparator that answers -2 ✅ (every battle turn)
+
+The battle probe reached phase 4 and the game died there:
+
+```
+[RGSS] script host: section "Main" raised ArgumentError: comparison failed
+[RGSS] script host:   from Scene_Battle 4:65:in sort!
+[RGSS] script host:   from Scene_Battle 4:65:in make_action_orders
+[RGSS] script host:   from Scene_Battle 4:42:in start_phase4
+```
+
+Not a missing method — an **mruby bug**. `sort_cmp` (`3rd/mruby/src/array.c`)
+uses `-2` as its "the block did not answer with a number" sentinel and assigns
+the block's own answer to the same variable, so a comparator that legitimately
+answers `-2` is indistinguishable from a broken one. Ruby only ever specifies
+the *sign* of a comparator, and RGSS's scripts return a **difference**:
+
+```ruby
+@action_battlers.sort! {|a, b|
+  b.current_action.speed - a.current_action.speed }
+```
+
+`Scene_Battle#make_action_orders`, which every RPG Maker XP game runs at the
+start of every battle turn. Any two battlers whose speeds differ by exactly two,
+in that order, end the game. An instrumented run showed it plainly — speeds
+`59, 56, 66, 62, 60, 57`, every one a valid Integer, and the comparison that
+raised was `62 - 60`.
+
+`mruby-rgss/mrblib/array_sort.rb` normalises a comparator's answer to -1/0/1,
+which makes the sentinel unreachable while keeping mruby's C sort underneath. An
+answer that is genuinely unusable still raises mruby's own "comparison failed".
+Engine-wide rather than RGSS-only: it is mruby's arithmetic, and the RPG2000
+runtime sorts with difference blocks too.
+
+**Worth recording how it was caught**, because nothing static would have found
+it: the failure was random — six battlers give fifteen pairs, so about half of
+all runs contain one differing by two — and mruby seeds from the clock, so CI
+passed and failed by turns. Pinning the seed (`--rgss_random_seed`) made it
+reproducible, and being able to build the engine without Nix made it
+reproducible *locally*, where the sort block could be instrumented to print what
+it actually returned. Every static reading of `agi`, `rand` and `Integer()` said
+the speeds were Integers, and they were.
+
 ### 1. `Sprite` extended properties ✅ (opacity/zoom/angle/mirror/tone/color/src_rect/blend_type/bush_depth/flash all rendered)
 
 `mruby-rgss` `Sprite` has `bitmap`/`bitmap=`, `x`/`x=`, `y`/`y=`, `z`/`z=`,
