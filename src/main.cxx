@@ -96,6 +96,17 @@ DEFINE_bool(
     "is the first thing it draws out of its own Window classes, its own "
     "windowskin and its own font. Used by scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
+    rgss_host_battle_test,
+    false,
+    "For the RGSS makers under the script host: once the game is on its own "
+    "map, start a battle the way its own Battle Processing event command does "
+    "(setting the same five $game_temp fields) and log which scene the game "
+    "reached as [RPGXP-HOST-BATTLE] (implies --rgss_host_new_game). The rung "
+    "above the menu: a battle builds the game's own Spriteset_Battle, so every "
+    "enemy is a Sprite_Battler on top of RPG::Sprite. Unlike the other probes "
+    "this writes to the game's globals, because no keypress starts a battle. "
+    "Used by scripts/rpgxp_boot_check.bash");
+DEFINE_bool(
     mv_new_game,
     false,
     "For RPG Maker MV: once the title screen appears, auto-select New Game so "
@@ -837,13 +848,16 @@ int main(int argc, char** argv) {
       M, mrb_obj_value(M->object_class),
       mrb_intern_lit(M, "RGSS_HOST_NEW_GAME"),
       mrb_bool_value(FLAGS_rgss_host_new_game || FLAGS_rgss_host_move_test ||
-                     FLAGS_rgss_host_menu_test));
+                     FLAGS_rgss_host_menu_test || FLAGS_rgss_host_battle_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_MOVE_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_move_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_MENU_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_menu_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_HOST_BATTLE_TEST"),
+                mrb_bool_value(FLAGS_rgss_host_battle_test));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

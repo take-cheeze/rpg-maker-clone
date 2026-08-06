@@ -240,6 +240,8 @@ class RPGXP
     #     scene is up and report whether it moved.
     #   * with --rgss_host_menu_test, press cancel after that and report which
     #     scene the game went to — its own menu, if it has one.
+    #   * with --rgss_host_battle_test, call a battle the way the game's own
+    #     Battle Processing command does and report whether it came up.
     def self.watch_frame
       @frames += 1
       report_scene
@@ -249,6 +251,7 @@ class RPGXP
       confirm_tap if auto_new_game? && !probing_move? && !probing_menu?
       move_probe if move_test?
       menu_probe if menu_test?
+      battle_probe if battle_test?
     end
 
     def self.report_scene
@@ -391,6 +394,57 @@ class RPGXP
       finish_menu_probe if step >= MENU_WAIT
     end
 
+    # Start a battle in the game's own engine and report where that got it.
+    #
+    # The rung above the menu, and the biggest surface left: a battle builds the
+    # game's own `Spriteset_Battle`, so every enemy is a `Sprite_Battler` —
+    # a subclass of the `RPG::Sprite` this gem supplies (rgss_library.rb), whose
+    # whiten/appear/collapse transitions, damage pop-up and animation playback
+    # nothing had ever run — on top of the battle status and command windows.
+    #
+    # Unlike the other probes this *writes* to the game's globals rather than
+    # only reading them. There is no keypress that starts a battle: the stock
+    # `Interpreter#command_301` (Battle Processing) sets exactly these five
+    # fields on `$game_temp` and lets `Scene_Map#update` do the rest, so this
+    # sets the same five. Walking into a random encounter would be the
+    # keypress-only alternative, and it is not deterministic enough for a check.
+    # Guarded on the setter existing, since a game may ship its own Game_Temp.
+    #
+    # Confirm taps keep running through the battle on purpose: that is what
+    # advances the game's own party and actor command windows once it is up.
+    BATTLE_SETTLE = 60      # frames on the map before calling the battle
+    BATTLE_WAIT = 120       # frames to let the game's own battle scene come up
+    BATTLE_TROOP_ID = 1
+
+    def self.battle_probe
+      return if @battle_done || @map_frame.nil?
+      elapsed = @frames - @map_frame
+      return if elapsed < BATTLE_SETTLE
+      if elapsed == BATTLE_SETTLE
+        call_battle
+        return
+      end
+      finish_battle_probe if elapsed >= BATTLE_SETTLE + BATTLE_WAIT
+    end
+
+    def self.call_battle
+      temp = $game_temp
+      return if temp.nil? || !temp.respond_to?(:battle_calling=)
+      temp.battle_troop_id = BATTLE_TROOP_ID
+      temp.battle_can_escape = true
+      temp.battle_can_lose = true
+      temp.battle_proc = nil
+      temp.battle_calling = true
+    end
+
+    def self.finish_battle_probe
+      @battle_done = true
+      scene = $scene
+      name = scene.nil? ? "?" : scene.class.to_s
+      $stderr.puts "[RPGXP-HOST-BATTLE] scene=#{name} " \
+                   "reached=#{name.include?("Scene_Battle")} frame=#{@frames}"
+    end
+
     def self.finish_menu_probe
       @menu_done = true
       scene = $scene
@@ -434,6 +488,12 @@ class RPGXP
 
     def self.menu_test?
       RGSS_HOST_MENU_TEST
+    rescue StandardError
+      false
+    end
+
+    def self.battle_test?
+      RGSS_HOST_BATTLE_TEST
     rescue StandardError
       false
     end
