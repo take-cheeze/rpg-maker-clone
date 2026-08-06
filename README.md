@@ -409,6 +409,26 @@
   stream stays loadable even if the process is killed mid-run, so it is safe to
   trace a long session and stop it with `Ctrl-C`
 
+### Build natively without Nix
+
+- The supported build is the Nix flake (`nix develop`), which pins every
+  dependency. On a plain Debian/Ubuntu box that has a C++ toolchain but no Nix —
+  an agent container, a bare CI image — `scripts/native-build-without-nix.bash`
+  gets to the same place:
+
+  ```sh
+  scripts/native-build-without-nix.bash            # -> ./build/rpg_maker_clone
+  VERIFY=0 scripts/native-build-without-nix.bash   # build only, skip the checks
+  ```
+
+  It installs the SDL2 headers, initialises the `3rd/` submodules (empty in a
+  plain clone), puts `rake` where `/bin/sh` can find it — mruby builds itself
+  with it — and fetches the two Unicode mapping tables the flake supplies through
+  `$cp932_table` / `$jis0208_table`, checking each against flake.nix's own
+  sha256 so the build consumes the bytes Nix would hand it. It then proves the
+  result works rather than just linking: `--rgss_effect_probe` under Xvfb, which
+  measures real pixels, followed by both game boot checks on real project data.
+
 ### Play in the browser (WebAssembly)
 
 - The runtime cross-compiles to WebAssembly with Emscripten and ships a page
