@@ -4756,8 +4756,21 @@ class RPG2k
       def note_party_step
         steps = @state.walk_step
         hit = @state.party.apply_map_step_damage(state_table, steps)
+        # RPG2000's 地形ダメージ on top of it: the terrain the tile just stepped
+        # onto belongs to may take HP off everyone not wearing gear that blocks
+        # it. Read after the status slip and flashed together, since both are the
+        # same "your HP just fell and the map has nowhere to say so" moment.
+        hit = hit + terrain_step_damage
         return if hit.empty?
         @state.screen.flash(*STEP_DAMAGE_FLASH)
+      end
+
+      # Apply the damage of the terrain under the party, returning the actors it
+      # hit ([] when the tile is harmless or the database has no terrain table).
+      def terrain_step_damage
+        row = terrain_row_at(@state.x, @state.y)
+        return [] unless row && row.respond_to?(:damage)
+        @state.party.apply_terrain_damage(row.damage)
       end
 
       def target_tile(x, y, dir)

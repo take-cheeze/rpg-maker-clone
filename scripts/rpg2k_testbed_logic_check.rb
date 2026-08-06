@@ -73,6 +73,8 @@ DB_SKILL = 12
 DB_ITEM = 13
 DB_STATE = 18
 DB_ACTOR = 11
+DB_TERRAIN = 16
+DB_CHIPSET = 20
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -645,7 +647,88 @@ def first_actor_id(db)
   1
 end
 
-dirs.each { |d| check_game(d); check_menus(d); check_states(d); check_equipment(d) }
+# 地形ダメージ against the real terrain table, and the gear that blocks it.
+# A damaging tile that takes nothing is a floor with no teeth; gear sold to
+# survive it that does not is worse.
+def check_terrain(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  terrain = db[DB_TERRAIN]
+  return unless terrain
+
+  # RPG_RT omits a chipset's whole terrain array when every one of its tiles is
+  # terrain 1, and that is what nearly every chipset in a real game does. Reading
+  # the absence as terrain 0 left those tiles naming no terrain row at all.
+  bare = []
+  total_cs = 0
+  db[DB_CHIPSET]&.each do |id, c|
+    total_cs += 1
+    bare << id if c.terrain_data.nil? || c.terrain_data.empty?
+  end
+  puts format('   chipsets: %d of %d store no terrain table at all',
+              bare.size, total_cs)
+  unless bare.empty?
+    check "#{name}: a chipset with no terrain table still names a terrain row" do
+      bare.each do |id|
+        cs = Game::ChipSet.new(db, id)
+        # One tile id out of each lower block, plus an id no block claims.
+        [0, 1000, 3000, 4000, 5000, -1].each do |tile|
+          eq 1, cs.terrain(tile), "chipset ##{id} (#{db[DB_CHIPSET][id].name}) tile #{tile}"
+        end
+        ok terrain[1], 'and terrain #1 is a row the database really has'
+      end
+    end
+  end
+
+  damaging = []
+  terrain.each { |id, r| damaging << id if (r.damage || 0) > 0 }
+  blockers = []
+  db[DB_ITEM]&.each { |id, it| blockers << id if it.no_terrain_damage }
+  puts format('   terrain: %d damaging tile type(s), %d item(s) that block them',
+              damaging.size, blockers.size)
+  return if damaging.empty?
+
+  check "#{name}: a damaging terrain takes HP, and cannot kill" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    leader = party.leader
+    ok leader, 'the game has a party to hurt'
+    damaging.each do |tid|
+      amount = terrain[tid].damage
+      leader.hp = leader.max_hp
+      hit = party.apply_terrain_damage(amount)
+      ok hit.include?(leader),
+         "terrain ##{tid} (#{terrain[tid].name}, #{amount} HP) hit the leader"
+      eq leader.max_hp - amount, leader.hp
+      # However long the party stands in it, it is worn down rather than killed.
+      (leader.max_hp / amount + 2).times { party.apply_terrain_damage(amount) }
+      eq 1, leader.hp, "terrain ##{tid} floors at 1 HP instead of killing"
+      ok !leader.dead?
+    end
+  end
+
+  return if blockers.empty?
+  check "#{name}: gear flagged 地形ダメージ無効 blocks it" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    leader = party.leader
+    worst = damaging.map { |tid| terrain[tid].damage }.max
+    blockers.each do |iid|
+      slot = db[DB_ITEM][iid].type - 1
+      next unless slot >= 0 && slot < 5
+      gear = [0, 0, 0, 0, 0]
+      gear[slot] = iid
+      leader.equip(gear)
+      ok leader.prevents_terrain_damage?,
+         "item ##{iid} (#{db[DB_ITEM][iid].name}) grants the immunity"
+      leader.hp = leader.max_hp
+      eq [], party.apply_terrain_damage(worst), 'and nothing gets through'
+      eq leader.max_hp, leader.hp
+    end
+  end
+end
+
+dirs.each do |d|
+  check_game(d); check_menus(d); check_states(d); check_equipment(d); check_terrain(d)
+end
 
 if $failures.zero?
   puts "rpg2k test-bed logic check: #{$checks} checks passed"

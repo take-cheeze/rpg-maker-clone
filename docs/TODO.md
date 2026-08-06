@@ -573,6 +573,27 @@ The work below is roughly ordered by the critical path to a walkable game
   party through the real interval against it. Still unread: `affect_type` stat
   halving / doubling plus the RPG2003-only `avoid_attacks` / `reflect_magic`,
   which no state in either test bed sets.
+  **The ground drains it too** — RPG2000's 地形ダメージ, the 地形 row's `damage`
+  field (ADR 0034). Stepping onto a tile whose terrain carries one takes that
+  much HP off every member who is not already down and is not wearing gear
+  flagged 地形ダメージ無効 (`Actor#prevents_terrain_damage?`, read through the
+  same `equipment_flag?` helper as the combat flags, so any slot grants it —
+  mtf's is a pair of boots, Nepheshel's four include a swimsuit). It shares the
+  step counter, the "cannot kill, floors at 1 HP" rule and the one red flash with
+  the status slip above, so a step drains at most once from each and a teleport
+  drains nothing. Both test beds define damaging terrain — Nepheshel's ダメージ床
+  １/２ at 1 and 10 HP, mtf's Poison Swamp and Damage Floor at 1 and 2 — but a
+  sweep of all 543 and 13 shipped maps finds **no map that places one**, so this
+  is the rare rule the real data proves by its definition rather than its use.
+  The same work fixed the terrain **tag**, which the whole terrain table hangs
+  off: RPG_RT omits a chipset's 162-entry terrain array when every tile of it is
+  terrain 1, and 96 of Nepheshel's 100 chipsets and 92 of mtf's do exactly that.
+  Reading the absence as terrain 0 left 414,993 of Nepheshel's lower-layer tiles
+  (and 1,530 of mtf's) naming an id no row matches — Store Terrain ID stored 0,
+  boats and ships fell back to on-foot passability instead of the terrain's
+  `boat_pass` / `ship_pass`, and the terrain battle backdrop below never
+  resolved. `ChipSet#terrain` answers 1 for a missing table now, and reads the
+  first lower tile's terrain for an id the chip index cannot reach.
   **Forced-action restrictions** work too: a
   `restriction` of 2 (berserk) forces a basic attack on a random enemy even when
   the battler was told to defend, and 3 (confused) sends the attack at a random

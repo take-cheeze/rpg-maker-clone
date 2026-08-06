@@ -460,13 +460,24 @@ module Game
     end
 
     # Terrain id of a lower-layer tile (for the Store Terrain ID command), looked
-    # up through the same chip index as passability. Returns 0 when the chipset
-    # carries no terrain table or the tile is out of range.
+    # up through the same chip index as passability.
+    #
+    # **A missing table means terrain 1, not terrain 0.** RPG_RT omits the whole
+    # 162-entry array when every tile of the chipset is terrain 1, which is the
+    # overwhelmingly common case: 96 of Nepheshel's 100 chipsets and 92 of
+    # mtf-meido-action's ship without one. Reading that as 0 left almost every
+    # tile in both games with no terrain row at all, so Store Terrain ID answered
+    # 0, boats and ships fell back to on-foot passability, and the terrain battle
+    # backdrop never resolved. EasyRPG's `Game_Map::GetTerrainTag` documents the
+    # same optimisation and answers 1.
+    #
+    # An id the chip index cannot reach reads the **first** lower tile's terrain,
+    # as RPG_RT does for out-of-bounds coordinates.
     def terrain(tile_id)
-      return 0 if @terrain.nil?
+      return 1 if @terrain.nil? || @terrain.empty?
       idx = ChipSet.lower_index(tile_id)
-      return 0 if idx.nil? || idx < 0 || idx >= @terrain.size
-      @terrain[idx] || 0
+      idx = 0 if idx.nil? || idx < 0 || idx >= @terrain.size
+      @terrain[idx] || 1
     end
   end
 
@@ -1339,6 +1350,11 @@ module Game
     # the weapon (Nepheshel's 賢者の指輪 is an accessory).
     def half_sp_cost?; equipment_flag?(:half_sp_cost); end
 
+    # 地形ダメージ無効 — gear that makes its wearer immune to the damage a tile's
+    # terrain deals as they walk over it (Party#apply_terrain_damage). Any slot:
+    # mtf-meido-action's is a pair of boots, Nepheshel's four include a swimsuit.
+    def prevents_terrain_damage?; equipment_flag?(:no_terrain_damage); end
+
     # 強力防御 — an actor whose Defend halves damage a *second* time (a quarter
     # rather than a half, per EasyRPG's `AdjustDamageForDefend`). This one is a
     # property of the actor row (field 24), not of gear, and an RPG2003 class can
@@ -1922,6 +1938,32 @@ module Game
         next if hp.zero? && sp.zero?
         actor.change_hp(-hp, false) if hp > 0
         actor.change_mp(-sp) if sp > 0
+        hit << actor
+      end
+      hit
+    end
+
+    # Damage every standing member for walking onto a damaging tile: RPG2000's
+    # 地形ダメージ, the `damage` field on the terrain a tile's chip belongs to.
+    #
+    # Like the status slip above it **cannot kill** — `change_hp` with death
+    # disallowed, so a party crossing a lava floor is worn to 1 HP and left
+    # standing — which is again why nothing here re-checks for a game over.
+    #
+    # A member wearing gear flagged `no_terrain_damage` is exempt, which is the
+    # only reason that flag exists: Nepheshel puts it on four items and
+    # mtf-meido-action on its Safety Boots, against damage floors of 1 HP a step
+    # (Nepheshel's ダメージ床 set, mtf's Poison Swamp).
+    #
+    # Returns the actors that actually lost HP, so the scene can flash only when
+    # there is something to report.
+    def apply_terrain_damage(amount)
+      return [] unless amount && amount > 0
+      hit = []
+      @actors.each do |actor|
+        next if actor.nil? || actor.dead?
+        next if actor.prevents_terrain_damage?
+        actor.change_hp(-amount, false)
         hit << actor
       end
       hit

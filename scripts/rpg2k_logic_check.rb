@@ -8130,6 +8130,46 @@ check 'a node missing its fields is treated as inheriting' do
   eq 'Wasteland', Game::Backdrop.name_for(1, { 1 => bare }, 'Wasteland')
 end
 
+# -- chipset terrain tags -----------------------------------------------------
+
+FakeChipsetRow = Struct.new(:name, :chipset_name, :passable_data_lower,
+                            :passable_data_upper, :terrain_data,
+                            :animation_type, :animation_speed)
+
+def chipset_with(terrain_data)
+  db = Struct.new(:chipset).new(
+    { 1 => FakeChipsetRow.new('cs', 'cs', nil, nil, terrain_data, 0, 0) }
+  )
+  Game::ChipSet.new(db, 1)
+end
+
+# RPG_RT drops the whole 162-entry terrain array when every tile of the chipset
+# is terrain 1, and that is what nearly every real chipset does. Reading the
+# absence as terrain 0 leaves the tile with no terrain row at all.
+check 'a chipset that stores no terrain table reads terrain 1' do
+  cs = chipset_with(nil)
+  eq 1, cs.terrain(0), 'the first lower tile'
+  eq 1, cs.terrain(4000), 'a block-E tile'
+  cs = chipset_with([])
+  eq 1, cs.terrain(0), 'an empty table is the same absence'
+end
+
+check 'a chipset that stores one reads it' do
+  td = Array.new(162, 3)
+  td[0] = 7
+  cs = chipset_with(td)
+  eq 7, cs.terrain(0)
+  eq 3, cs.terrain(4000)
+end
+
+# RPG_RT reads the first lower tile's terrain for anything it cannot index,
+# rather than answering with a terrain id no row can match.
+check 'an unindexable tile reads the first lower tile' do
+  td = Array.new(162, 3)
+  td[0] = 7
+  eq 7, chipset_with(td).terrain(-1)
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
