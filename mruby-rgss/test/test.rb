@@ -243,6 +243,46 @@ end
 # game runs at the start of every battle turn — so two battlers whose speeds
 # differed by exactly two ended the game. The speeds below are the ones a real
 # battle produced when it did.
+# Collects what a stub would have written, for the frame_reset test below.
+# Defined before the assert that uses it: mrbtest runs a block as it meets it,
+# so a helper declared further down the file is not there yet.
+class FrameResetErr
+  def initialize(lines); @lines = lines; end
+  def puts(*args); args.flatten.each { |a| @lines << a.to_s }; end
+  def write(s); @lines << s.to_s; end
+  def print(*args); args.each { |a| @lines << a.to_s }; end
+  def flush; end
+end
+
+# RGSS Graphics.frame_reset "resets the screen refresh timing": a game calls it
+# after something slow so the frames that follow are not shortened to catch up.
+# It used to be a warn_stub, which meant every booted game printed
+# "not implemented yet" on its way to the title screen -- noise in the one log
+# that is meant to be the bug list. The pacing it drives is a real absolute
+# deadline (gfx_update), so this is a real method now; what a unit test can see
+# is that it is native, callable and harmless.
+assert "RGSS::Graphics.frame_reset is a real method, not a stub" do
+  assert_true RGSS::Graphics.respond_to?(:frame_reset)
+  # Answers the module, and is safe to call before any frame has been drawn --
+  # a game's Scene_Title calls it before its first Graphics.update.
+  assert_equal RGSS::Graphics, RGSS::Graphics.frame_reset
+  assert_equal RGSS::Graphics, RGSS::Graphics.frame_reset
+
+  # And it says nothing. A stub announces itself once through RGSS.warn_stub;
+  # capturing stderr is how the harnesses check that, and here there must be
+  # nothing to capture.
+  said = []
+  captured = $stderr
+  begin
+    $stderr = FrameResetErr.new(said)
+    RGSS::Graphics.frame_reset
+  ensure
+    $stderr = captured
+  end
+  assert_equal [], said
+end
+
+
 assert "Array#sort survives a comparator that answers -2" do
   speeds = [59, 56, 66, 62, 60, 57]  # 62 and 60 are the pair that killed it
   assert_equal [66, 62, 60, 59, 57, 56], speeds.sort { |a, b| b - a }

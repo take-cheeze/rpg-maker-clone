@@ -34,7 +34,9 @@ These are complete enough for the stock scripts:
   [VX gap](rpgvx-rgss-api-gap.md), where it landed — the code is shared).
   `transition`'s `filename`/`vague` form dissolves through the transition
   graphic, so a battle transition is the shape its author drew rather than a
-  fade. _`frame_reset` is still a `warn_stub` no-op._
+  fade. `frame_reset` drops the pacing deadline, which is what a game calls it
+  for — after something slow, so the frames that follow are not shortened to
+  catch up. **No stub warning is left in a clean boot log.**
 - **`Input`** — all key constants (`A`/`B`/`C`/`X`/`Y`/`Z`/`L`/`R`/`UP`…`F9`),
   `update`, `press?`, `trigger?` (~68), `repeat?` (~34), `press`/`release`,
   `dir4`/`dir8`.
