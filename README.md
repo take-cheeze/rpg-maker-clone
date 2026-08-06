@@ -545,13 +545,18 @@ part that explains it). Nothing else is collected.
 - **MIDI works in the browser too.** Emscripten's SDL2_mixer port compiles one
   decoder per requested format and defaults to OGG-only, so the build asks for
   `-sSDL2_MIXER_FORMATS=ogg,mid` to get the TiMidity decoder, and the page
-  carries the patch set as ~32 MiB of `index.data`. That happens on its own:
+  carries the patch set as ~32 MiB of packaged data. That happens on its own:
   `-DWASM_MIDI_PATCHES` defaults to `AUTO`, which packages the patches whenever
   `scripts/download-freepats.bash` has already run — so download first, then
   configure. Pass `ON` to require them regardless (what CI does, because its
   download runs alongside the configure), or `OFF` for a slimmer page whose
   `.mid` playback is silent. A page without them says so in its on-screen log
   rather than just going quiet
+- The patches ride in their own `timidity*.data` packages rather than the
+  runtime's `index.data`, split to keep every published file under Cloudflare
+  Pages' 25 MiB per-file limit so PR previews can deploy
+  (`scripts/pack-timidity-data.py`, ADR 0031). Serving the page means serving
+  `timidity.js` and those packages alongside `index.*`
 
 ## TODO
 - Editor with [imgui](https://github.com/ocornut/imgui)
