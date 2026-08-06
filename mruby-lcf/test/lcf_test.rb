@@ -10,6 +10,24 @@ assert 'Read BER number' do
   end
 end
 
+assert 'Read BER number folds the sign without pack' do
+  # Every value with bit 31 set overflows a 32-bit `mrb_int` while it is being
+  # accumulated, so on the browser/Emscripten build (and Wio, and PSP) it is a
+  # bignum by the time the sign is folded in. Folding it with
+  # `[ret].pack('L').unpack1('l')` raised `RangeError: integer out of range`
+  # there -- New Game died on the first command list carrying a -1 parameter,
+  # which is every real project -- so the fold is plain arithmetic instead.
+  assert_equal(-1, LCF.read_ber(StringIO.new("\x8f\xff\xff\xff\x7f")))
+  assert_equal(-2, LCF.read_ber(StringIO.new("\x8f\xff\xff\xff\x7e")))
+  # The extremes of the signed 32-bit range the format stores.
+  assert_equal(-2147483648, LCF.read_ber(StringIO.new("\x88\x80\x80\x80\x00")))
+  assert_equal(2147483647, LCF.read_ber(StringIO.new("\x87\xff\xff\xff\x7f")))
+  # Only the low 32 bits are significant, exactly as the pack fold behaved: a
+  # (malformed) encoding wider than five groups keeps its bottom 32 bits rather
+  # than growing without bound.
+  assert_equal 1, LCF.read_ber(StringIO.new("\x81\x80\x80\x80\x80\x01"))
+end
+
 assert "cp932 to unicode" do
   assert_equal "あ", LCF.cp932_to_utf8("\x82\xa0")
   assert_equal "あああ", LCF.cp932_to_utf8("\x82\xa0\x82\xa0\x82\xa0")
