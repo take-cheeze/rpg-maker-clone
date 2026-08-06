@@ -226,7 +226,9 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
                          skill_failure_b: 'は平気だった！',
                          skill_failure_c: 'は眠らなかった！',
                          use_item: 'を使った！', hp_recovery: '回復した！',
-                         hp: 'ＨＰ', mp: 'ＭＰ'),
+                         hp: 'ＨＰ', mp: 'ＭＰ',
+                         enemy_hp_absorbed: '奪った！',
+                         actor_hp_absorbed: '奪われた！'),
     # Skill rows for the battle log: RPG2000 gives each skill its own two
     # sentences. Skill 8 sets both, 9 only the first, 10 neither (an
     # English-release row), and 11 picks the second failure sentence.
@@ -3790,6 +3792,33 @@ check 'an item that did nothing keeps the composed line' do
                   target: 'Hero', recover_hp: 0, recover_mp: 0,
                   cured: [], target_ally: true })
      .first.include?('no effect')
+end
+
+check 'a drain adds its own line after the damage' do
+  scene, = battle_at_command
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
+      'Slimeに 20 のダメージを与えた！', 'SlimeのＨＰを 20 奪った！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 20, skill: 'Fire',
+                  skill_id: 8, absorbed_hp: 20, target_ally: false })
+end
+
+check 'a drain on a party member is worded from their side' do
+  scene, = battle_at_command
+  eq ['Slimeは炎を放った！', 'あたりが真っ赤に染まる！',
+      'Heroは 20 のダメージを受けた！', 'HeroはＨＰを 20 奪われた！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Slime', target: 'Hero', damage: 20, skill: 'Fire',
+                  skill_id: 8, absorbed_hp: 20, target_ally: true })
+end
+
+check 'a skill that drained nothing adds no line' do
+  scene, = battle_at_command
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
+      'Slimeに 20 のダメージを与えた！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 20, skill: 'Fire',
+                  skill_id: 8, absorbed_hp: 0, target_ally: false })
 end
 
 check 'a skill still trails the states it landed' do

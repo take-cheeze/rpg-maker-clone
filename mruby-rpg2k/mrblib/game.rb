@@ -2633,6 +2633,13 @@ module Game
 
     # A skill's state-infliction accuracy (its `hit` field, default 100), used as
     # the per-state roll when an attack skill inflicts its `state_effects`.
+    # 吸収 (`absorb_damage`): the caster gains the HP the skill takes. 13 of
+    # Nepheshel's skills and 5 of mtf-meido-action's set it, and nothing read it,
+    # so every drain spell in both games was a plain attack spell.
+    def skill_absorbs?(sk)
+      sk.respond_to?(:absorb_damage) ? (sk.absorb_damage ? true : false) : false
+    end
+
     def skill_hit(sk)
       sk.respond_to?(:hit) ? (sk.hit || 100) : 100
     end
@@ -2667,7 +2674,12 @@ module Game
         dmg = 1 if dmg < 1
         { cost: cost, hp: -dmg, mp: 0,
           inflict: skill_state_ids(sk), chance: skill_hit(sk),
-          variance: skill_variance(sk), attributes: skill_attributes(sk) }
+          variance: skill_variance(sk), attributes: skill_attributes(sk),
+          # 吸収 — the caster takes what the target loses. RPG_RT reads the flag
+          # only on an *offensive* skill (EasyRPG's `skill.absorb_damage &&
+          # !IsPositive()`), so it rides only on this branch: a healing skill
+          # that sets it drains nothing.
+          absorb: skill_absorbs?(sk) }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
       end
@@ -4819,6 +4831,18 @@ module Game
         "#{target_name}の#{pool}が #{value} #{t}"
       end
 
+      # 「スライムのＨＰを 20 奪った！」 / 「リトはＨＰを 20 奪われた！」 — what a
+      # 吸収 skill took. Close to the recovery line but not the same shape: the
+      # particle before the pool name is の for one of theirs and は for one of
+      # yours (the recovery line always takes の), the pool is followed by を
+      # rather than が, and the two sides have their own predicate.
+      def self.absorbed(terms, target_name, value, points, ally)
+        t = term(terms, ally ? :actor_hp_absorbed : :enemy_hp_absorbed)
+        pool = term(terms, points)
+        return nil unless t && pool
+        "#{target_name}#{ally ? 'は' : 'の'}#{pool}を #{value} #{t}"
+      end
+
       def self.skill_failure(terms, skill_row, target_name)
         i = skill_row && skill_row.respond_to?(:failure_message) ?
               skill_row.failure_message : nil
@@ -5333,9 +5357,10 @@ module Game
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
     # order by #apply_command when the round runs.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
-                      chance: 100, variance: 0, attributes: nil, skill_id: nil)
+                      chance: 100, variance: 0, attributes: nil, skill_id: nil,
+                      absorb: false)
       ally.command = { kind: :skill, target: target, name: name,
-                       skill_id: skill_id,
+                       skill_id: skill_id, absorb: absorb,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
                        attributes: attributes || [] }
@@ -5350,9 +5375,10 @@ module Game
     # `attributes` apply to every target. #apply_command produces one log entry
     # per living target, drained one at a time by #step_action.
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
-                          variance: 0, attributes: nil, skill_id: nil)
+                          variance: 0, attributes: nil, skill_id: nil,
+                          absorb: false)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
-                       skill_id: skill_id, cost: cost, inflict: inflict || [], chance: chance,
+                       skill_id: skill_id, absorb: absorb, cost: cost, inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [] }
       ally.action = nil; ally.defending = false
     end
@@ -5768,6 +5794,7 @@ module Game
     # Wrap the party's cast numbers in the command hash #apply_command consumes.
     def skill_command_hash(sk, cmd, target)
       { kind: :skill, target: target, name: skill_name_of(sk),
+        absorb: cmd[:absorb] ? true : false,
         cost: cmd[:cost] || 0, hp: cmd[:hp] || 0, mp: cmd[:mp] || 0,
         inflict: cmd[:inflict] || [], chance: cmd[:chance] || 100,
         variance: cmd[:variance] || 0, attributes: cmd[:attributes] || [] }
@@ -6062,7 +6089,18 @@ module Game
         dmg = dmg * attr_multiplier(cmd[:attributes], target) / 100
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
+        # 吸収: the caster takes what the target loses, and can take no more than
+        # the target has. EasyRPG clamps the effect to the target's current HP
+        # *before* applying it ("Only absorb the hp that were left"), so a
+        # 200-damage drain on a 30 HP foe deals 30 and returns 30 -- the drain is
+        # weaker against a nearly-dead target, not merely capped in what it gives.
+        absorbed = 0
+        if cmd[:absorb] && dmg > 0
+          dmg = target.hp if dmg > target.hp
+          absorbed = dmg
+        end
         target.hp -= dmg
+        b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
         # An attack skill may inflict its states on a surviving target, each
         # rolled against the skill's accuracy.
         inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
@@ -6070,7 +6108,7 @@ module Game
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already,
           target_ally: ally?(target), skill: cmd[:name],
-          skill_id: cmd[:skill_id] }
+          skill_id: cmd[:skill_id], absorbed_hp: absorbed }
       else
         before_hp = target.hp
         before_mp = target.mp || 0

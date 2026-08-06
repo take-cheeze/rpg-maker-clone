@@ -1344,6 +1344,25 @@ The work below is roughly ordered by the critical path to a walkable game
   EasyRPG and deliberately left alone (`levitate` and `state_chance` are RPG2003
   only, `message_affected` has no known trigger, and the two critical-hit terms
   are side-keying-unresolved, ADR 0036), so nobody re-derives them.
+- ✅ **Drain skills** (吸収, the skill row's `absorb_damage`) — 13 of Nepheshel's
+  306 skills and 5 of mtf's 134 set it and nothing read it, so every drain spell
+  in both games was an ordinary attack spell, and the two 用語 sentences that
+  report one (`enemy_hp_absorbed` 「奪った！」 / `actor_hp_absorbed` 「奪われた！」,
+  filled in in both) had nothing to report. The rule that matters is the **clamp
+  order**: RPG_RT limits the effect to the target's current HP *before* applying
+  it ("Only absorb the hp that were left"), so a 200-damage drain on a 30 HP foe
+  **deals 30 and returns 30** — the drain is weaker against a nearly-dead target,
+  not merely capped in what it gives back, and reading it the other way round
+  (full damage, capped healing) is the natural implementation and the wrong one.
+  The caster still stops at its maximum. Only offensive skills drain, as RPG_RT
+  gates it, so a healing skill that sets the flag drains nothing. The log line is
+  close to the recovery line and differs in three places — の / は by side where
+  recovery always takes の, を rather than が after the pool name, and a separate
+  predicate per side — and it is **additive**: a database with no drain wording
+  drops that sentence rather than the whole entry, since the damage line above it
+  still reads. SP drain is left out: an RPG2000 skill has one flag rather than a
+  pair and neither test bed has a negative-SP skill to measure it against, and the
+  stat drains EasyRPG also supports are RPG2003. See ADR 0038.
 
 ## RPG Maker with RGSS (XP / VX / VXAce)
 
