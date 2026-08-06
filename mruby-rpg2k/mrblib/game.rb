@@ -1849,6 +1849,42 @@ module Game
     # Whether the whole party is knocked out (戦闘不能) -- the game-over condition.
     def all_dead?; !any_alive?; end
 
+    # RPG2000 field slip damage: apply every afflicted member's map-step drain
+    # for a party that has now walked `steps` tiles. Each state a member carries
+    # is asked for its due HP / SP loss (Game::States.map_step_drain) and the
+    # totals are applied once, so two slipping states stack rather than the
+    # worse one winning -- unlike the battle-side effects, which pick a single
+    # significant state.
+    #
+    # The HP drain **cannot kill**: it goes through change_hp with death
+    # disallowed, so a poisoned party is worn down to 1 HP and left standing.
+    # That is RPG_RT's rule, and it is why nothing on this path has to re-check
+    # for a game over the way the twelve event commands that *can* wipe the party
+    # do. A member who is already down slips nothing at all.
+    #
+    # `table` is the database `situation` array; a caller without one (the seeded
+    # harness fixtures) drains nothing. Returns the actors that actually lost
+    # something, so the scene can flash the screen only when there is something
+    # to report.
+    def apply_map_step_damage(table, steps)
+      hit = []
+      @actors.each do |actor|
+        next if actor.nil? || actor.dead?
+        hp = 0
+        sp = 0
+        actor.states.each do |id|
+          dhp, dsp = States.map_step_drain(id, table, steps)
+          hp += dhp
+          sp += dsp
+        end
+        next if hp.zero? && sp.zero?
+        actor.change_hp(-hp, false) if hp > 0
+        actor.change_mp(-sp) if sp > 0
+        hit << actor
+      end
+      hit
+    end
+
     # Put an actor in the party. The actor comes from the roster, so one who has
     # been in the party before rejoins with the level, EXP, gear, skills, statuses
     # and name they left with rather than a fresh database row.
@@ -4500,6 +4536,39 @@ module Game
       return nil unless predicate
       "#{battler_name}#{predicate}"
     end
+
+    # Map-step slip damage: RPG2000's field poison. A state drains HP every
+    # `hp_change_map_steps` tiles the party walks, by `hp_change_map_val` --
+    # and SP through the matching `sp_change_map_steps` / `sp_change_map_val`
+    # pair. Returns `[hp_loss, sp_loss]` for a party that has now walked `steps`
+    # tiles: each is the state's own amount when this step lands on a multiple of
+    # its interval, and 0 otherwise.
+    #
+    # Both halves need a positive interval *and* a positive amount. A row
+    # carrying one without the other is not configured for slip at all (every
+    # state in both test beds leaves both at 0 bar one), and guarding the
+    # interval is also what keeps the modulo off zero. `steps` of 0 drains
+    # nothing, so the counter must be advanced before this is asked -- otherwise
+    # the party's very first frame on a map would be a multiple of every
+    # interval.
+    def self.map_step_drain(id, table, steps)
+      r = row(id, table)
+      return [0, 0] if r.nil? || steps.nil? || steps <= 0
+      [drain(r, steps, :hp_change_map_steps, :hp_change_map_val),
+       drain(r, steps, :sp_change_map_steps, :sp_change_map_val)]
+    end
+
+    def self.drain(row, steps, steps_field, val_field)
+      interval = int_field(row, steps_field)
+      amount = int_field(row, val_field)
+      return 0 if interval <= 0 || amount <= 0
+      (steps % interval).zero? ? amount : 0
+    end
+
+    def self.int_field(row, name)
+      v = row.respond_to?(name) ? row.send(name) : nil
+      v.nil? ? 0 : v
+    end
   end
 
   # resolution. It works on Combatant snapshots, so the caller can resolve a
@@ -5973,6 +6042,15 @@ module Game
     # a command overrides it (the map's own rate then applies). No encounter
     # subsystem consumes it yet — kept for save fidelity.
     attr_accessor :encounter_rate
+    # How many tiles the party has walked. RPG2000 divides this into each
+    # status condition's own step interval to decide when a field ailment slips
+    # HP / SP (see Party#apply_map_step_damage), which is the only thing reading
+    # it so far -- the encounter system that would share it is not built. It
+    # persists in the Marshal save; the `.lsd` keeps its step counter in the
+    # inventory chunk (109), whose step / turn fields are deliberately still
+    # undecoded (see LCF::Schema::SAVE_INVENTORY), so a resumed real save starts
+    # its count from 0.
+    attr_accessor :steps
     # Running tallies RPG2000 keeps and exposes through the Control Variables
     # "Other" operand: how many times the game was saved, and how many battles
     # were fought / won / lost / escaped. All persist in the save.
@@ -6024,6 +6102,7 @@ module Game
       @bgm_looped = false
       @player_transparent = false
       @encounter_rate = nil
+      @steps = 0
       @save_count = 0
       @battle_count = 0
       @win_count = 0
@@ -6082,6 +6161,13 @@ module Game
 
     # Whether the party is aboard a vehicle.
     def boarded?; !@boarded.nil?; end
+
+    # Record one walked tile and return the new step count. Called by Scene::Map
+    # whenever the party lands on a new tile under its own movement -- a step the
+    # player took, or one a forced move route made it take. A teleport is not a
+    # step: the party arrives without walking, so RPG_RT does not count it and
+    # neither does this.
+    def walk_step; @steps += 1; end
 
     # Show (or replace) picture `id` with the given Picture options hash.
     def show_picture(id, opts)
@@ -6204,6 +6290,7 @@ module Game
         player_transparent: @player_transparent, weather: @weather.to_h,
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
+        steps: @steps,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
         escape_count: @escape_count,
@@ -6581,6 +6668,7 @@ module Game
       # Registries default empty / unset; a save written before these existed
       # simply restores nothing.
       state.encounter_rate = h[:encounter_rate]
+      state.steps = h[:steps] || 0
       state.save_count = h[:save_count] || 0
       state.battle_count = h[:battle_count] || 0
       state.win_count = h[:win_count] || 0
