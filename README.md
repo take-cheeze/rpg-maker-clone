@@ -450,6 +450,15 @@
   result works rather than just linking: `--rgss_effect_probe` under Xvfb, which
   measures real pixels, followed by both game boot checks on real project data.
 
+- **Formatting is checked by `build`, not by a lint job** — pre-commit runs there
+  as a background step, so a formatting slip fails `build` with no compile error
+  in the log. Locally, `clang-format --dry-run --Werror <file>`, run **from
+  inside the repository**: clang-format finds `.clang-format` by walking up from
+  the file's own directory, so checking a copy under `/tmp` quietly falls back to
+  LLVM defaults and invents a diff of hundreds of unrelated lines. The script's
+  header notes the two smaller traps as well — a genuine but narrow clang-format
+  version difference, and why a line-length grep is not a substitute.
+
 ### Play in the browser (WebAssembly)
 
 - The runtime cross-compiles to WebAssembly with Emscripten and ships a page
