@@ -203,6 +203,7 @@ module RGSS
     bitmap.dispose
     viewport.dispose
     ok = false unless window_probe
+    ok = false unless windowskin_rect_probe
     $stderr.puts "[RGSS-PROBE] #{ok ? "ok" : "failed"}"
     ok
   end
@@ -312,6 +313,74 @@ module RGSS
       unless toned[0] > drawn[0] + 20
         $stderr.puts "[RGSS-PROBE] FAIL Window#tone did not tint the background"
         ok = false
+      end
+    end
+    win.dispose
+    skin.dispose
+    ok
+  end
+
+  # Prove the RMXP windowskin *source rectangles* are the right ones.
+  #
+  # window_probe above deliberately uses a flat skin, so it measures area and
+  # nothing else — every source rect could be wrong and it would still pass.
+  # The constants they encode were best-effort until a real game exercised them,
+  # and a game with a real windowskin still would not say *which* rect was
+  # misread: a wrong corner offset looks like a slightly odd border.
+  #
+  # So paint each source region its own primary and read back where it landed.
+  # RMXP's layout, as the native drawing reads it: the 128x128 background tile
+  # at (0,0), and a 64x64 frame at (128,0) 9-sliced with 16px corners — so the
+  # frame's four corners sit at (128,0), (176,0), (128,48) and (176,48), and its
+  # top edge is the 32px-wide strip between them at (144,0).
+  def self.windowskin_rect_probe
+    w = 320
+    h = 240
+    b = 16
+    skin = Bitmap.new(192, 128)
+    skin.fill_rect(0, 0, 128, 128, Color.new(0, 255, 0, 255))     # background
+    skin.fill_rect(128, 0, b, b, Color.new(255, 0, 0, 255))       # frame TL
+    skin.fill_rect(176, 0, b, b, Color.new(0, 0, 255, 255))       # frame TR
+    skin.fill_rect(128, 48, b, b, Color.new(255, 255, 255, 255))  # frame BL
+    skin.fill_rect(176, 48, b, b, Color.new(255, 255, 0, 255))    # frame BR
+    skin.fill_rect(144, 0, 32, b, Color.new(255, 0, 255, 255))    # frame top
+
+    win = Window.new(0, 0, w, h)
+    win.windowskin = skin
+    Graphics.update
+
+    # Each region of the drawn window, and the colour its source rect should
+    # have put there.
+    # Sample inside the corner, so a one-off cannot average two regions.
+    c = b - 2
+    want = [
+      ['top-left', frame_mean(1, 1, c, c), [255, 0, 0]],
+      ['top-right', frame_mean(w - b + 1, 1, c, c), [0, 0, 255]],
+      ['bottom-left', frame_mean(1, h - b + 1, c, c), [255, 255, 255]],
+      ['bottom-right', frame_mean(w - b + 1, h - b + 1, c, c), [255, 255, 0]],
+      ['top edge', frame_mean(w / 2, 1, 32, c), [255, 0, 255]],
+      ['background', frame_mean(w / 2, h / 2, 32, 32), [0, 255, 0]],
+    ]
+    ok = true
+    want.each do |name, got, exp|
+      if got.nil?
+        $stderr.puts "[RGSS-PROBE] windowskin: no frame to sample"
+        ok = false
+        break
+      end
+      $stderr.puts "[RGSS-PROBE] windowskin #{name}=#{got.inspect} " \
+                   "want~#{exp.inspect}"
+      # Generous: the check is which source rect landed here, and the six
+      # answers are far apart in colour space, so a loose threshold cannot
+      # confuse two of them.
+      3.times do |i|
+        hi = exp[i] > 127
+        if hi ? got[i] < 128 : got[i] > 127
+          $stderr.puts "[RGSS-PROBE] FAIL windowskin #{name} drew " \
+                       "#{got.inspect}, expected about #{exp.inspect} — the " \
+                       'source rect for that region is wrong'
+          ok = false
+        end
       end
     end
     win.dispose

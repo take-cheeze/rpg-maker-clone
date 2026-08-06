@@ -490,10 +490,18 @@ text, selection cursor and message pause. The content blit already clips to the
 content area (its source rect is the content-area size, so taller `contents` are
 cropped and scrolled, not overflowed). `stretch=` picks between the stretched
 (default) windowskin background and a tiled one (the 128×128 tile repeated at 1:1
-across the window). **Remaining:** the RMXP windowskin source-rect constants are
-best-effort until a game exercises them.
+across the window). The RMXP windowskin **source rectangles are measured**, not
+best-effort as they were: `RGSS.windowskin_rect_probe`
+(`--rgss_effect_probe`, run under Xvfb) paints each source region of a synthetic
+skin its own primary — background, the four frame corners, the top edge — renders
+a window from it and reads back which colour landed where. `window_probe` beside
+it cannot do this: it uses a deliberately flat skin, so it measures area and
+every source rect could be wrong while it still passed. Confirmed to catch a
+wrong rect, not merely to pass: pointing the top-right corner at the top-left
+one, and the background at the frame, each fail the probe with the region
+named.
 
-### 3. `Tilemap` ⚠️ (tiles + animated autotiles + interim priority split rendered)
+### 3. `Tilemap` ✅ (tiles + animated autotiles + per-row priority interleaving)
 
 `Tilemap` is now **native** (`mruby-rgss/src/lib.cxx`): `Tilemap.new` creates an
 `lv_canvas` the size of the viewport (or screen) and `tilemap_refresh` draws the
