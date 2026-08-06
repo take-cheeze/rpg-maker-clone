@@ -233,6 +233,39 @@ assert "RGSS::Bitmap#_transition_alpha dissolves in the shape of a map" do
   end
 end
 
+# mruby's Array#sort / #sort! use -2 as the "the block did not answer with a
+# number" sentinel *and* assign the block's own answer to the same variable
+# (3rd/mruby/src/array.c, sort_cmp), so a comparator that legitimately answers
+# -2 raised `ArgumentError: comparison failed`. Ruby only specifies the *sign* of
+# a comparator, and RGSS's own scripts return a difference:
+# `Scene_Battle#make_action_orders` sorts the battlers by
+# `b.current_action.speed - a.current_action.speed`, which every RPG Maker XP
+# game runs at the start of every battle turn — so two battlers whose speeds
+# differed by exactly two ended the game. The speeds below are the ones a real
+# battle produced when it did.
+assert "Array#sort survives a comparator that answers -2" do
+  speeds = [59, 56, 66, 62, 60, 57]  # 62 and 60 are the pair that killed it
+  assert_equal [66, 62, 60, 59, 57, 56], speeds.sort { |a, b| b - a }
+
+  in_place = speeds.dup
+  in_place.sort! { |a, b| b - a }
+  assert_equal [66, 62, 60, 59, 57, 56], in_place
+
+  # The sentinel itself, and its mirror, on the smallest array that reaches it.
+  assert_equal [3, 1], [1, 3].sort { |a, b| b - a }
+  assert_equal [1, 3], [3, 1].sort { |a, b| a - b }
+
+  # Sorting without a block is untouched.
+  assert_equal [1, 2, 3], [3, 1, 2].sort
+  plain = [3, 1, 2]
+  plain.sort!
+  assert_equal [1, 2, 3], plain
+
+  # And a comparator with no usable answer still fails the way it always did.
+  assert_raise(ArgumentError) { [1, 2].sort { |_a, _b| nil } }
+  assert_raise(ArgumentError) { [1, 2].sort! { |_a, _b| "no" } }
+end
+
 assert "RGSS::Table drops out-of-range writes without reading the value" do
   t = RGSS::Table.new(2, 2)
   t[0, 0] = 5
