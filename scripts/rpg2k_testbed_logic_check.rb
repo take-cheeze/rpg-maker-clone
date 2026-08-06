@@ -75,6 +75,7 @@ DB_STATE = 18
 DB_ACTOR = 11
 DB_TERRAIN = 16
 DB_CHIPSET = 20
+DB_ANIME = 19
 CHANGE_PARTY = Game::Interpreter::Cmd::CHANGE_PARTY
 
 # Commands that name one actor by a fixed id rather than acting on the party.
@@ -1039,7 +1040,63 @@ def check_terms(dir)
   end
 end
 
+# Every skill and item names a battle animation, and until now none of them
+# played. A fixture cannot say whether the ids resolve -- it defines whatever
+# table it needs -- so this asks the real ones.
+def check_animations(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  anims = db[DB_ANIME]
+  return unless anims
+
+  total = 0
+  named = {}
+  anims.each { |id, _| total += 1 }
+  [[DB_SKILL, :skill], [DB_ITEM, :item]].each do |chunk, label|
+    rows = 0
+    with = 0
+    resolves = 0
+    db[chunk]&.each do |_id, r|
+      rows += 1
+      a = r.animation_id || 0
+      next unless a > 0
+      with += 1
+      resolves += 1 if anims[a]
+    end
+    named[label] = [rows, with, resolves]
+  end
+  puts format('   animations: %d in the table; skills %d/%d name one (%d ' \
+              'resolve), items %d/%d (%d resolve)',
+              total, named[:skill][1], named[:skill][0], named[:skill][2],
+              named[:item][1], named[:item][0], named[:item][2])
+
+  check "#{name}: every animation a skill or item names is a real row" do
+    [[DB_SKILL, 'skill'], [DB_ITEM, 'item']].each do |chunk, label|
+      db[chunk]&.each do |id, r|
+        a = r.animation_id || 0
+        next unless a > 0
+        ok anims[a], "#{label} ##{id} (#{r.name}) names animation ##{a}"
+      end
+    end
+  end
+
+  check "#{name}: a real animation builds a drawable player" do
+    # The first animation with frames: the scene's build_animation is what turns
+    # a row into something the round can play, and a row whose frame table is
+    # empty must not arm one.
+    drawable = 0
+    anims.each do |_id, a|
+      f = a.frames
+      n = 0
+      f&.each { |_i, _fr| n += 1 }
+      drawable += 1 if n > 0
+    end
+    ok drawable > 0, "#{drawable} of #{total} animations carry frames"
+  end
+end
+
 dirs.each do |d|
+  check_animations(d)
   check_terms(d)
   check_game(d)
   check_menus(d)
