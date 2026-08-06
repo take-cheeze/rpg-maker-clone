@@ -1010,6 +1010,11 @@ module Game
     # Equipment slots, in save/database order: weapon, shield, armour, helmet,
     # accessory.
     EQUIP_ORDER = [:weapon, :shield, :armor, :helmet, :accessory].freeze
+    # The two slots 両手持ち makes mutually exclusive, and the item type the flag
+    # is read on.
+    WEAPON_SLOT = 0
+    SHIELD_SLOT = 1
+    ITEM_WEAPON = 1
 
     # The equipped item ids, one per EQUIP_ORDER slot (0 = an empty slot), the
     # ids of the skills the actor knows, and the ids of the status conditions
@@ -1211,7 +1216,47 @@ module Game
       slot = it.type - 1
       return unless slot >= 0 && slot < EQUIP_ORDER.size
       @equipment[slot] = item_id
+      freed = free_two_handed_slot(slot)
       recompute_stats
+      freed
+    end
+
+    # 両手持ち — a weapon that needs both hands. RPG_RT keeps the weapon and the
+    # shield slots mutually exclusive whenever either of them holds a two-handed
+    # *weapon*: filling one clears the other (EasyRPG's `Game_Actor::
+    # ChangeEquipment`, which does `ChangeEquipment(other_slot, 0)` after the
+    # slot is written). 35 of Nepheshel's 104 weapons are two-handed and 14 of
+    # mtf-meido-action's 26 -- more than half of that game's arsenal -- and
+    # nothing read the field, so a claymore and a shield could be worn together
+    # and both bonuses counted.
+    #
+    # `slot` is the one just filled; only the weapon (0) and shield (1) pair is
+    # affected, and the check reads *both* of them because equipping a shield
+    # over a two-handed weapon has to drop the weapon just as equipping the
+    # weapon drops the shield.
+    # Returns the item id it displaced, or nil -- the equip menu swaps through
+    # the bag, so what the other hand was holding has to go back there rather
+    # than vanish.
+    def free_two_handed_slot(slot)
+      return nil unless slot == WEAPON_SLOT || slot == SHIELD_SLOT
+      other = slot == WEAPON_SLOT ? SHIELD_SLOT : WEAPON_SLOT
+      held = @equipment[other]
+      return nil if held.nil? || held == 0
+      return nil unless two_handed?(@equipment[slot]) || two_handed?(held)
+      @equipment[other] = 0
+      held
+    end
+
+    # Is `item_id` a two-handed weapon? The flag only means anything on a weapon
+    # (type 1): RPG_RT tests the type alongside it, so a shield that happens to
+    # carry the bit does not claim the other hand.
+    def two_handed?(item_id)
+      return false if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
+      it = @db.item[item_id]
+      return false unless it && it.type == ITEM_WEAPON
+      it.respond_to?(:two_handed) ? ((it.two_handed || 0) != 0) : false
+    rescue StandardError
+      false
     end
 
     # Clear an equipment slot: 0..4 empties that one slot, EQUIP_ORDER.size (5)
@@ -2340,9 +2385,12 @@ module Game
       slot = equip_slot_for(item_id)
       return false if slot.nil?
       previous = actor.equipment[slot]
-      actor.equip_item(item_id)
+      # A 両手持ち weapon empties the other hand; whatever it was holding comes
+      # back to the bag alongside the item this slot displaced.
+      freed = actor.equip_item(item_id)
       lose_item(item_id, 1)
       gain_item(previous, 1) if previous && previous != 0
+      gain_item(freed, 1) if freed && freed != 0
       true
     end
 

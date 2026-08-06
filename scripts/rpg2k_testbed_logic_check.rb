@@ -440,6 +440,53 @@ def check_ko_only(dir)
   end
 end
 
+# 両手持ち — a weapon that claims the shield hand too. A fixture cannot say what
+# fraction of a real arsenal is two-handed, nor that the flag never lands on a
+# shield; both matter, because the rule reads the item's *type* alongside it.
+def check_two_handed(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  items = db[DB_ITEM]
+  return unless items
+
+  two = []
+  weapons = 0
+  shields = 0
+  odd = []
+  items.each do |id, it|
+    weapons += 1 if it.type == 1
+    shields += 1 if it.type == 2
+    next if (it.two_handed || 0) == 0
+    two << id
+    odd << id unless it.type == 1
+  end
+  puts format('   items: %d 両手持ち of %d weapon(s), %d shield(s)',
+              two.size, weapons, shields)
+  return if two.empty? || shields.zero?
+
+  check "#{name}: every real two-handed weapon empties the shield hand" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    hero = party.leader
+    ok hero, 'the game has someone to equip'
+    shield = nil
+    items.each { |id, it| shield ||= id if it.type == 2 }
+    two.each do |wid|
+      hero.equip([0, 0, 0, 0, 0])
+      hero.equip_item(shield)
+      eq shield, hero.equipment[1], 'the shield went on'
+      hero.equip_item(wid)
+      eq wid, hero.equipment[0], "weapon ##{wid} (#{items[wid].name}) went on"
+      eq 0, hero.equipment[1], 'and took the shield hand with it'
+    end
+    hero.equip([0, 0, 0, 0, 0])
+  end
+
+  check "#{name}: the flag never lands on something that is not a weapon" do
+    eq [], odd,
+       'a non-weapon carrying the bit would claim a hand it has no business in'
+  end
+end
+
 def check_states(dir)
   name = File.basename(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
@@ -1129,6 +1176,7 @@ dirs.each do |d|
   check_terrain(d)
   check_bush(d)
   check_ko_only(d)
+  check_two_handed(d)
   check_items(d)
 end
 
