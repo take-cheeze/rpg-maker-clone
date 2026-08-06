@@ -227,11 +227,24 @@ The work below is roughly ordered by the critical path to a walkable game
   landing. It was invisible while there was nothing on screen to notice it by.
   Events are what jump in the real games: of Nepheshel's 634 Begin Jump blocks,
   **632 drive an event** (625 of them a page's own autonomous route) and two the
-  player; mtf-meido-action's single block drives the player. The player's own
-  forced-route movement still snaps tile to tile — not only its jumps — which is
-  a separate gap: `step_player_route` sets the position outright where the
-  input path interpolates. Remaining: the player half, once forced player routes
-  interpolate at all
+  player; mtf-meido-action's single block drives the player.
+  **The player's forced routes interpolate now too**, which was the separate gap
+  that left: `step_player_route` wrote the destination tile straight onto the
+  state, so a cutscene walking the hero across a room teleported it a tile at a
+  time while the same hero, walking on input, slid smoothly. It shares the
+  machinery ordinary walking already had — `advance_player_slide` moves the party
+  a frame at a time and lands it — so a forced **jump** arcs the hero through the
+  same curve an event jumps through (`jump_offset_for`, one implementation for
+  both, so a jumping party member and a jumping NPC cannot rise differently).
+  Two rules fell out of it. A step in flight has to **land before the next
+  begins**: the route character runs ahead of the party (it is what the route
+  steps) and the party only catches up when the slide completes, so stepping
+  again mid-slide would leave the two more than a tile apart and stretch one
+  slide over the gap — which also caps a forced route at the walking pace it is
+  drawn at. And **Proceed With Movement drives the slide itself**, because the
+  normal movement step is skipped while the interpreter waits on it; without
+  that the route starts a step and then waits forever for a landing nothing is
+  advancing
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented

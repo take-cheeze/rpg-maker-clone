@@ -3681,6 +3681,125 @@ check 'a teleport is not a walked step' do
   eq 100, hero.hp
 end
 
+# A page that forces a route on the player: target 10001, freq 8, repeat off,
+# skippable on, then the route's own commands.
+def player_route_page(*cmds)
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(Game::Interpreter::Cmd::MOVE_EVENT,
+                                [10001, 8, 0, 1, *cmds])]
+  pg
+end
+
+check 'a forced player route slides the party instead of snapping it' do
+  # It used to write the tile straight onto the state, so a cutscene walking the
+  # hero across a room teleported it a tile at a time while its own input-driven
+  # walking interpolated. The party is drawn between tiles now.
+  scene = new_scene({ 1 => event(3, 3, player_route_page(R::MOVE_RIGHT)) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  between = 0
+  30.times do
+    scene.update
+    px, = scene.send(:player_pixel)
+    between += 1 unless (px % Game::TILE).zero?
+  end
+  ok between > 0, 'the party was drawn part-way between two tiles'
+  eq 1, st.x, 'and it still arrives on the destination tile'
+  eq 0, st.y
+end
+
+check 'a forced route step lands before the next one starts' do
+  # The route character runs ahead of the party -- it is what the route steps --
+  # so a second step taken mid-slide would leave the two more than a tile apart
+  # and stretch one slide across the gap.
+  scene = new_scene({ 1 => event(3, 3, player_route_page(R::MOVE_RIGHT,
+                                                         R::MOVE_RIGHT)) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  60.times do
+    scene.update
+    dest = scene.instance_variable_get(:@dest_x)
+    ok (dest - st.x).abs <= 1,
+       "the slide never spans more than a tile (#{st.x} -> #{dest})"
+  end
+  eq 2, st.x, 'both steps ran'
+end
+
+check 'a forced player jump arcs the hero the way it arcs an event' do
+  scene = new_scene({ 1 => event(3, 3, player_route_page(R::BEGIN_JUMP,
+                                                         R::MOVE_RIGHT,
+                                                         R::MOVE_RIGHT,
+                                                         R::END_JUMP)) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  heights = []
+  40.times do
+    scene.update
+    h = scene.send(:player_jump_offset)
+    heights << h if scene.instance_variable_get(:@player_jumping)
+  end
+  eq 2, st.x, 'the hop cleared two tiles'
+  eq 21, heights.max, 'and rose to the same peak an event does'
+  peak = heights.index(heights.max)
+  ok heights[0...peak] == heights[0...peak].sort,
+     "rises to the peak: #{heights.inspect}"
+  # The ends of the arc, read off the shared curve rather than off a sampling
+  # frame -- the first frame after an update is already two pixels into the step.
+  eq 0, scene.send(:jump_offset_for, 0), 'the hop begins on the ground'
+  eq 0, scene.send(:jump_offset_for, Game::TILE), 'and ends on it'
+  eq 0, scene.send(:player_jump_offset), 'and the hero is back on it once landed'
+end
+
+check 'a forced player walk is never lifted' do
+  scene = new_scene({ 1 => event(3, 3, player_route_page(R::MOVE_RIGHT)) },
+                    player: [0, 0])
+  30.times do
+    scene.update
+    eq 0, scene.send(:player_jump_offset), 'a step is not a hop'
+  end
+end
+
+check 'a teleport lands the party on its tile, not mid-slide' do
+  # A teleport can land while a forced route has a step in flight: the route
+  # advances between events, and an auto-start page can fire on the very next
+  # frame. The party must arrive standing on the destination, not still sliding
+  # toward the tile it was walking to on the old map.
+  scene = new_scene({ 1 => event(3, 3, player_route_page(R::MOVE_RIGHT)) },
+                    player: [0, 0])
+  40.times do
+    break if scene.instance_variable_get(:@moving)
+    scene.update
+  end
+  ok scene.instance_variable_get(:@moving), 'a step really is in flight'
+
+  scene.send(:perform_teleport, [1, 4, 3, 0])
+  st = scene.instance_variable_get(:@state)
+  eq [4, 3], [st.x, st.y], 'the teleport landed'
+  eq false, scene.instance_variable_get(:@moving), 'and nothing is still sliding'
+  eq [4, 3], scene.send(:player_pixel).map { |v| v / Game::TILE },
+     'the sprite is drawn on that tile'
+  eq 0, scene.send(:player_jump_offset)
+end
+
+check 'Proceed With Movement finishes a sliding player route' do
+  # The interpreter parks on :movement until every forced route has finished,
+  # and the normal movement step is skipped while it waits -- so that path has to
+  # advance the slide itself. Without it the route starts a step, then waits
+  # forever for a landing nothing is driving, and the event never resumes.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [
+    ECmd.new(ic::MOVE_EVENT, [10001, 8, 0, 1, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 9, 9, 0]),
+  ]
+  scene = new_scene({ 1 => event(3, 3, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  120.times { scene.update }
+  eq 2, st.x, 'the route walked the party two tiles east'
+  ok st.switches[9], 'and the event resumed once the movement was done'
+end
+
 check 'a forced player route walks the party, and its steps count' do
   # A route moves the party as surely as the player does, so its landings count
   # too -- an event that walks a poisoned party across a field should drain it.
