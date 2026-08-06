@@ -90,6 +90,26 @@ present:
   `build_config.rb` (`rpg_maker_gems`) — but the gem-level `add_dependency` is
   the part that keeps the tests honest, so prefer to always add it there.
 
+### `mrb_int` is 32-bit on the cross targets — keep bignums out of C conversions
+
+The native build's `mrb_int` is 64-bit, but the Emscripten (browser), Wio and
+PSP builds are 32-bit, so anything past `0x7fff_ffff` becomes an mruby-bigint
+there. Arithmetic on a bignum is fine; **handing one back to a C function that
+needs an `mrb_int` is not** — that raises `RangeError: integer out of range`.
+`Array#pack` is the trap this hit: `[ret].pack('L')` is the natural way to
+reinterpret 32 bits as signed, works on the 64-bit build and CI, and raised on
+every negative LCF number in the browser (see `LCF.read_ber`). Do the masking
+and the wrap with plain arithmetic instead:
+
+```ruby
+v &= 0xffff_ffff
+v >= 0x8000_0000 ? v - 0x1_0000_0000 : v
+```
+
+Nothing in CI runs a 32-bit-`mrb_int` build, so these bugs pass every check and
+only show up in the deployed page. When you touch a codec, reason about the
+32-bit case by hand.
+
 ## Error Handling
 
 - Do not silence errors. Never swallow an exception (or ignore a failing

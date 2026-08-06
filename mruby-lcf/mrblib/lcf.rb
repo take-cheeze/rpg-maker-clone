@@ -24,7 +24,19 @@ module LCF
       ret = (ret << 7) | (b & 0x7f)
       break if (b & 0x80) == 0
     end
-    [ret].pack('L').unpack1('l')
+    # RPG_RT writes a negative number as its 32-bit two's-complement form (-1 is
+    # the five bytes 8f ff ff ff 7f), so the low 32 bits are reinterpreted as
+    # signed. Done arithmetically rather than with `[ret].pack('L').unpack1('l')`
+    # because on a target whose `mrb_int` is 32-bit -- the browser/Emscripten
+    # build, Wio, PSP -- `ret` is already a bignum here, and pack has to convert
+    # it back to an `mrb_int` to write it: it raised `RangeError: integer out of
+    # range` on every value with the high bit set, i.e. on every negative
+    # parameter. That is one command list into any real project, so New Game
+    # failed for every RPG2000 game in the browser ("Failed to start new game:
+    # integer out of range"). The subtraction below reduces the bignum back into
+    # `mrb_int` range instead, which is exactly what pack could not do.
+    ret &= 0xffff_ffff
+    ret >= 0x8000_0000 ? ret - 0x1_0000_0000 : ret
   end
 
   # Inverse of read_ber: encode an integer as a base-128 (BER) big-endian byte

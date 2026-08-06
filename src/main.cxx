@@ -10,6 +10,7 @@
 #include <lvgl.h>
 #include <mruby.h>
 #include <mruby/array.h>
+#include <mruby/error.h>
 #include <mruby/string.h>
 #include <mruby/variable.h>
 
@@ -538,6 +539,33 @@ extern "C" void rgss_sdl_input_init(void);
 extern "C" void rgss_audio_init(void);
 extern "C" void rgss_audio_shutdown(void);
 
+// Whether the pending mruby exception is the game ending on purpose rather than
+// failing: `exit` raises SystemExit, which mruby tags with MRB_EXC_EXIT. Both
+// built-in title screens offer a Shutdown entry that calls it, and RMXP's own
+// Interpreter uses it to abort a runaway common event.
+//
+// It is checked before every report because SystemExit is an Exception, not a
+// StandardError, so none of the runtime's own `rescue` clauses stop it: picking
+// Shutdown reached the top of the frame loop and printed a full crash report,
+// telling a player who had just quit that the engine had died and asking them
+// to file a bug (which is how this was found).
+//
+// True when that is what is pending, with the status `exit` was given written
+// to *status (EXIT_SUCCESS for a plain `exit`); false for a real error, and for
+// no exception at all.
+static bool pending_exit(mrb_state* M, int* status) {
+  if (M->exc == nullptr || !MRB_EXC_EXIT_P(M->exc))
+    return false;
+  // `exit` stores the status it was given in the exception's @status. Read it
+  // directly rather than through MRB_EXC_EXIT_STATUS, whose mrb_as_int would
+  // raise on a hand-raised SystemExit carrying something else -- while an
+  // exception is already pending.
+  const mrb_value v =
+      mrb_iv_get(M, mrb_obj_value(M->exc), mrb_intern_lit(M, "status"));
+  *status = mrb_integer_p(v) ? static_cast<int>(mrb_integer(v)) : EXIT_SUCCESS;
+  return true;
+}
+
 // Report an mruby exception and bail out of main(). Preferred over ng-log's
 // CHECK: it reports the actual mruby error detail, and under Emscripten
 // ng-log's fatal path traps anyway (it formats through std::ios callbacks that
@@ -638,7 +666,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
   main_loop_ = [M, game_obj]() {
     mrb_funcall(M, game_obj, "main_loop", 0);
     if (M->exc) {
-      error_dump_report(M, "the frame loop");
+      int status = EXIT_SUCCESS;
+      if (pending_exit(M, &status)) {
+        // The player quit (the title screen's Shutdown entry). Drop the pending
+        // SystemExit and stop driving frames; the tab keeps the last frame on
+        // the canvas, since there is no process to end here.
+        M->exc = nullptr;
+        std::fprintf(stderr, "The game exited (status %d).\n", status);
+      } else {
+        error_dump_report(M, "the frame loop");
+      }
       emscripten_cancel_main_loop();
     }
   };
@@ -1040,8 +1077,16 @@ int main(int argc, char** argv) {
   mrb_funcall(M, game_obj, "start", 0);
   // The game ran to its end or died in it; either way this is the last chance
   // to report, so the exception goes out as a full report rather than as a
-  // backtrace plus an ng-log abort.
+  // backtrace plus an ng-log abort. A SystemExit is the exception: the player
+  // chose Shutdown, so the process ends with the status `exit` was given.
   if (M->exc) {
+    int status = EXIT_SUCCESS;
+    if (pending_exit(M, &status)) {
+      M->exc = nullptr;
+      rgss_audio_shutdown();
+      gflags::ShutDownCommandLineFlags();
+      return status;
+    }
     error_dump_report(M, "the running game");
     rgss_audio_shutdown();
     gflags::ShutDownCommandLineFlags();
