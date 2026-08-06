@@ -3650,9 +3650,83 @@ class RPG2k
         end
       end
 
+      # What an action says, in the game's own words. RPG2000 keeps the sentences
+      # in the 用語 table as *predicates* — 「の攻撃！」, 「のダメージを与えた！」 —
+      # and RPG_RT prints the battler's name in front of each. Both test beds
+      # fill 126 of the 127 fields in, so a log that invents its own English is
+      # ignoring text the author wrote.
+      #
+      # RPG_RT says it in more than one line: what the battler did, then what it
+      # did to the target. This returns them in that order, and falls back to the
+      # composed English for any field the database leaves blank — an
+      # English-release table with half the battle terms empty still reads.
+      def battle_action_body(e)
+        # A skill and an item announce themselves with their *own* sentence
+        # (`using_message1` / `using_message2`, `use_item`), which is a separate
+        # unread field and a separate change. Until then they keep the composed
+        # wording, because dropping to the bare damage line would lose the one
+        # thing that names what was cast. Same for "does nothing", which RPG_RT
+        # words from the state that caused it rather than from a term.
+        return [battle_action_line(e)] if e[:recover] || e[:skill] || e[:nothing]
+        t = db.respond_to?(:term) ? db.term : nil
+        want_start = battle_start_field(e)
+        want_result = battle_result_wanted?(e)
+        start = want_start && battle_start_line(t, e, want_start)
+        result = want_result && battle_result_line(t, e)
+        # All or nothing per entry: a half-translated line ("スライムの攻撃！"
+        # with no damage sentence under it) reads worse than the composed
+        # English, so a blank term drops the whole entry back to the fallback.
+        return [battle_action_line(e)] if (want_start && !start) ||
+                                          (want_result && !result)
+        lines = []
+        lines << start if start
+        lines << result if result
+        lines.empty? ? [battle_action_line(e)] : lines
+      end
+
+      # Which term words this entry's "so-and-so did a thing" line, or nil when
+      # RPG2000 has none for it — a skill or an item names itself instead (its
+      # own `using_message` is a separate field, still unread), and "does
+      # nothing" is a state's own sentence rather than a term.
+      def battle_start_field(e)
+        return nil if e[:recover] || e[:skill] || e[:nothing]
+        return :enemy_transform if e[:transform]
+        return :defending if e[:defend]
+        return :observing if e[:observe]
+        return :focus if e[:charge]
+        return :enemy_escape if e[:fled]
+        return :autodestruction if e[:autodestruct]
+        :attacking
+      end
+
+      def battle_start_line(t, e, field)
+        Game::States::BattleText.action(t, e[:attacker].to_s, field)
+      end
+
+      # Does this entry report on a target at all? A Defend, a flee or an
+      # autodestruct that found nobody has no one to report on.
+      def battle_result_wanted?(e)
+        return false if e[:recover] || e[:target].nil?
+        e[:missed] || !e[:damage].nil? ? true : false
+      end
+
+      # What it did to that target: a miss, a blow that got through for nothing,
+      # or the damage.
+      def battle_result_line(t, e)
+        bt = Game::States::BattleText
+        name = e[:target].to_s
+        ally = e[:target_ally] ? true : false
+        return bt.dodge(t, name) if e[:missed]
+        return bt.damage(t, name, e[:damage], ally) if e[:damage] > 0
+        bt.undamaged(t, name, ally)
+      end
+
       # A one-line description of a battle log entry, for the on-screen banner and
       # the console trace. A recovery (heal skill / medicine) reads as a restore;
       # a skill attack names the skill; a plain attack is "A hits B for N".
+      #
+      # This is the fallback now: it words an entry whose terms the database left
+      # blank. `battle_action_body` prefers the game's own sentences.
       def battle_action_line(e)
         if e[:recover]
           parts = []
@@ -3690,7 +3764,7 @@ class RPG2k
       # changed. `log_round` traces all of it and `show_battle_action` banners
       # all of it, so the console and the screen never disagree.
       def battle_action_lines(entry)
-        [battle_action_line(entry)] + battle_state_lines(entry)
+        battle_action_body(entry) + battle_state_lines(entry)
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained

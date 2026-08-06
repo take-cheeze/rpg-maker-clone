@@ -782,6 +782,29 @@ The work below is roughly ordered by the critical path to a walkable game
   combatant instead of queueing a request, so nothing told the panel it was
   stale — `apply_battle_event_requests` now rebuilds it, and a page that poisons
   the boss changes the screen as well as the fight.
+  **The action lines come from the 用語 table now too** (ADR 0036), which is the
+  larger half of the same argument: every round prints an action, where only some
+  print a state. The log used to invent its English ("Hero hits Slime for 42");
+  a field-by-field audit found both test beds filling in **126 of the 127 term
+  fields** while the runtime read two of them. `Game::States::BattleText` composes
+  them as the predicates they are, and `battle_action_body` prints what the
+  battler did and then what it did to the target, the way RPG_RT splits it:
+  「スライムの攻撃！」 then 「リトは 7 のダメージを受けた！」. The particle is the
+  one part not in the database — に for one of theirs, は for one of yours,
+  pairing with the two `enemy_damaged` / `actor_damaged` predicates (the CP932
+  branch of EasyRPG's `GetDamagedMessage`, and this build decodes every string as
+  CP932 so there is no other branch). Every basic action is covered — attack,
+  Defend, Observe, Charge, self-destruct, flee, transform — plus both damage
+  sides, no-damage and misses; a blank term drops the **whole** entry back to the
+  composed English, because a half-translated line reads worse than an English
+  one. Still held back on purpose: a **skill or item** keeps its composed line
+  until its own `using_message1` / `using_message2` / `use_item` is read (351 and
+  18 skills across the test beds set one), since the bare damage line would lose
+  the only thing naming what was cast; and the **critical** line is left alone
+  because which side keys `actor_critical` / `enemy_critical` is genuinely
+  unclear — EasyRPG picks `actor_critical` when the *target* is an ally, while
+  会心 / 痛恨 read as the *attacker's* side, and both games fill both fields with
+  the same two strings so the data cannot settle it.
   The **field windows show a condition too** — the menu party list, the item and
   skill target lists and the status screen (a labelled row of its own), which are
   the three RPG_RT draws one in (`Window_MenuStatus`, `Window_ActorTarget`,

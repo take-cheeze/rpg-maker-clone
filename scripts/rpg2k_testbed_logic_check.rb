@@ -883,7 +883,54 @@ def check_items(dir)
   end
 end
 
+# The 用語 (term) table's battle sentences, against the real thing. Both test
+# beds fill in 126 of the 127 fields; a fixture cannot say whether a field is a
+# predicate the name goes in front of or a whole sentence, because it is written
+# to match whatever the code does. Only the games' own text can.
+DB_TERM = 21
+BASIC_TERMS = [:attacking, :defending, :observing, :focus, :autodestruction,
+               :enemy_escape, :enemy_transform].freeze
+
+def check_terms(dir)
+  name = File.basename(dir)
+  db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
+  terms = db[DB_TERM]
+  return unless terms
+  bt = Game::States::BattleText
+
+  filled = BASIC_TERMS.select { |f| bt.term(terms, f) }
+  puts format('   terms: %d of %d basic action sentences, damage %s, dodge %s',
+              filled.size, BASIC_TERMS.size,
+              bt.term(terms, :enemy_damaged) ? 'yes' : 'no',
+              bt.term(terms, :dodge) ? 'yes' : 'no')
+  return if filled.empty?
+
+  check "#{name}: every basic action sentence composes after a battler's name" do
+    filled.each do |f|
+      line = bt.action(terms, 'スライム', f)
+      eq "スライム#{terms.send(f)}", line, "term #{f}"
+      ok line.length > terms.send(f).length, 'the name really is in front of it'
+    end
+  end
+
+  return unless bt.term(terms, :enemy_damaged) && bt.term(terms, :actor_damaged)
+  check "#{name}: the damage sentence differs by side, and carries the number" do
+    foe = bt.damage(terms, 'スライム', 42, false)
+    ally = bt.damage(terms, 'リト', 42, true)
+    ok foe.include?('42') && ally.include?('42'), 'both name the amount'
+    ok foe.include?(terms.enemy_damaged), 'the foe predicate'
+    ok ally.include?(terms.actor_damaged), 'the ally predicate'
+    ok foe != ally.sub('リト', 'スライム'),
+       'the two sides really are worded differently'
+    # The particle is what makes them read as Japanese rather than as two names
+    # glued to numbers, and it is the one part not in the database.
+    ok foe.start_with?('スライムに '), 'a foe takes に'
+    ok ally.start_with?('リトは '), 'one of yours takes は'
+  end
+end
+
 dirs.each do |d|
+  check_terms(d)
   check_game(d)
   check_menus(d)
   check_states(d)

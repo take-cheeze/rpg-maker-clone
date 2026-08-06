@@ -4713,6 +4713,65 @@ module Game
       "#{battler_name}#{predicate}"
     end
 
+    # The 用語 (term) table's battle sentences, composed the way RPG2000 does.
+    #
+    # Every one of these fields is a *predicate*, not a template: the database
+    # stores 「の攻撃！」 and RPG_RT puts the battler's name in front of it. The
+    # `%S`-style placeholders EasyRPG supports are an RPG2003 / 2k3E feature, so
+    # this side of it is pure concatenation with one Japanese particle.
+    #
+    # Both test beds fill in 126 of the 127 term fields, and until now the
+    # runtime read two of them (`gold`, `normal_status`): the battle log spoke
+    # invented English while the game's own words sat unread in the table.
+    #
+    # Each builder returns nil when the field is blank, so the caller can keep
+    # its composed English for a database that leaves one out.
+    module BattleText
+      # The particle between a battler's name and the number of a damage line.
+      # RPG_RT picks it by side -- は for one of yours, に for one of theirs --
+      # and follows the number with a space. This is the CP932 branch of
+      # EasyRPG's `GetDamagedMessage`; the Western-encoding branch uses a plain
+      # space for both, and this build decodes every string as CP932 (see
+      # LCF.cp932_to_utf8), so there is no second branch to take.
+      ALLY_PARTICLE = 'は '.freeze
+      ENEMY_PARTICLE = 'に '.freeze
+
+      def self.term(terms, name)
+        v = terms && terms.respond_to?(name) ? terms.send(name) : nil
+        v.nil? || v.to_s.empty? ? nil : v.to_s
+      end
+
+      # `name + predicate` — the shape of every "so-and-so did a thing" line:
+      # the attack itself (`attacking`), Defend (`defending`), Observe
+      # (`observing`), Charge (`focus`), an enemy blowing itself up
+      # (`autodestruction`), one fleeing (`enemy_escape`) and one transforming
+      # (`enemy_transform`).
+      def self.action(terms, battler_name, field)
+        t = term(terms, field)
+        t && "#{battler_name}#{t}"
+      end
+
+      # 「スライムに 42 のダメージを与えた！」 / 「リトは 42 のダメージを受けた！」
+      # — the same sentence from the two sides, which is why the table holds two
+      # predicates and one particle rule rather than two whole templates.
+      def self.damage(terms, target_name, value, ally)
+        t = term(terms, ally ? :actor_damaged : :enemy_damaged)
+        return nil unless t
+        "#{target_name}#{ally ? ALLY_PARTICLE : ENEMY_PARTICLE}#{value} #{t}"
+      end
+
+      # A blow that got through for nothing: no number and no particle.
+      def self.undamaged(terms, target_name, ally)
+        action(terms, target_name, ally ? :actor_undamaged : :enemy_undamaged)
+      end
+
+      # A miss. RPG2000 words it from the target's side ("...は身をかわした！"),
+      # which is why one term serves both sides.
+      def self.dodge(terms, target_name)
+        action(terms, target_name, :dodge)
+      end
+    end
+
     # Map-step slip damage: RPG2000's field poison. A state drains HP every
     # `hp_change_map_steps` tiles the party walks, by `hp_change_map_val` --
     # and SP through the matching `sp_change_map_steps` / `sp_change_map_val`
@@ -5611,7 +5670,8 @@ module Game
         dmg = [dmg / 2, 1].max if t.defending && dmg > 0
         t.hp -= dmg
         { attacker: b.name, target: t.name, damage: dmg, critical: false,
-          autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead? }
+          autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
+          target_ally: ally?(t) }
       end
       # The blast kills the caster whether or not it found anyone to hit.
       b.hp = 0
@@ -5729,7 +5789,7 @@ module Game
       if @accuracy && !hits?(b, target)
         return { attacker: b.name, target: target.name, damage: 0, missed: true,
                  critical: false, target_hp: target.hp < 0 ? 0 : target.hp,
-                 defeated: false }
+                 defeated: false, target_ally: ally?(target) }
       end
       dmg = Battle.attack_damage(b.atk, target.def)
       # An elemental weapon scales its damage by the target's resistance before

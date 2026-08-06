@@ -208,7 +208,20 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
     # Terms the Show Inn window reads; blank greeting fields exercise the
     # scene's English fallbacks. `normal_status` is what the battle status
     # window shows for a battler carrying no state.
-    term: OpenStruct.new(gold: 'G', normal_status: 'Normal'),
+    # The battle sentences RPG_RT keeps in the 用語 table, as *predicates* the
+    # battler's name goes in front of. `observing` is deliberately left blank so
+    # the scene's fallback wording is exercised.
+    term: OpenStruct.new(gold: 'G', normal_status: 'Normal',
+                         attacking: 'の攻撃！', defending: 'は身を守っている',
+                         observing: '', focus: 'は力をためている・・・',
+                         autodestruction: 'は自爆した！',
+                         enemy_escape: 'は逃げてしまった！',
+                         enemy_transform: 'は変身した！',
+                         enemy_damaged: 'のダメージを与えた！',
+                         actor_damaged: 'のダメージを受けた！',
+                         enemy_undamaged: 'にダメージを与えられない！',
+                         actor_undamaged: 'はダメージを受けていない！',
+                         dodge: 'は身をかわした！'),
     # The state table the battle status window and action banner read: a name, a
     # palette colour, the priority that decides which one a battler shows, and
     # RPG2000's own sentences for it landing and lifting. State 5 deliberately
@@ -3588,6 +3601,88 @@ check 'Change Monster Condition on a battle page shows on the status window' do
   # ...and the panel says so without waiting for the next action to redraw it.
   ok window_texts(ui[:status_win]).include?('Poison'),
      'the status window was rebuilt after the page ran'
+end
+
+# -- the battle log in the game's own words ------------------------------------
+
+check 'a plain attack reads as RPG_RT words it: the attack, then the damage' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Hero', target: 'Slime', damage: 42,
+                       target_ally: false })
+  eq ['Heroの攻撃！', 'Slimeに 42 のダメージを与えた！'], lines
+end
+
+check 'and from the other side, with the other predicate and particle' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Slime', target: 'Hero', damage: 7,
+                       target_ally: true })
+  eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！'], lines
+end
+
+check 'a miss reads as the target dodging' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Hero', target: 'Slime', damage: 0,
+                       missed: true, target_ally: false })
+  eq ['Heroの攻撃！', 'Slimeは身をかわした！'], lines
+end
+
+check 'a blow that gets through for nothing says so' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Hero', target: 'Slime', damage: 0,
+                       target_ally: false })
+  eq ['Heroの攻撃！', 'Slimeにダメージを与えられない！'], lines
+end
+
+check 'the basic actions with no target are one line each' do
+  scene, = battle_at_command
+  eq ['Slimeは身を守っている'],
+     scene.send(:battle_action_lines, { attacker: 'Slime', defend: true })
+  eq ['Slimeは力をためている・・・'],
+     scene.send(:battle_action_lines, { attacker: 'Slime', charge: true })
+  eq ['Slimeは逃げてしまった！'],
+     scene.send(:battle_action_lines, { attacker: 'Slime', fled: true })
+  eq ['Slimeは変身した！'],
+     scene.send(:battle_action_lines, { attacker: 'Slime', transform: true,
+                                        target: 'Bat' })
+end
+
+check 'an autodestruct names itself and then the damage it did' do
+  scene, = battle_at_command
+  eq ['Slimeは自爆した！', 'Heroは 20 のダメージを受けた！'],
+     scene.send(:battle_action_lines,
+                { attacker: 'Slime', target: 'Hero', damage: 20,
+                  autodestruct: true, target_ally: true })
+end
+
+# A database that leaves a battle term blank must not produce a half-sentence.
+check 'a blank term drops the whole entry back to the composed wording' do
+  scene, = battle_at_command
+  # `observing` is blank in the fixture, so Observe cannot be worded from the
+  # table and the entry falls back whole rather than printing a bare name.
+  eq ['Slime watches closely'],
+     scene.send(:battle_action_lines, { attacker: 'Slime', observe: true })
+end
+
+check 'a skill keeps its composed line until its own sentence is read' do
+  scene, = battle_at_command
+  # using_message1 / use_item are still unread; dropping to the bare damage line
+  # would lose the only thing naming what was cast.
+  eq ["Hero's Venom hits Slime for 7"],
+     scene.send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Venom',
+                  target_ally: false })
+end
+
+check 'the state sentences still follow the action ones' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Slime', target: 'Hero', damage: 7,
+                       inflicted: [3], target_ally: true })
+  eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！', 'Hero is poisoned!'], lines
 end
 
 check 'the action banner announces the states an action landed and lifted' do
