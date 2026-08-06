@@ -67,7 +67,29 @@ NOT_OURS = {
                   'attacker; both test beds fill both fields with the same two ' \
                   'strings, so the data cannot settle it (ADR 0036)',
   enemy_critical: 'see actor_critical',
+  footstep: 'RPG2003 only — EasyRPG plays it from Game_Player::BeginMove ' \
+            'behind an IsRPG2k3() gate',
+  hp_change_type: 'RPG2003 only — the schema marks it so, and RPG2000 has one ' \
+                  'flat/percentage reading rather than a selector',
+  sp_change_type: 'see hp_change_type',
 }.freeze
+
+# `maker_version` is written only by RPG2003 (RPG2000 omits the chunk), so a run
+# that includes one of each can say something the row counts cannot: a field
+# **no RPG2000 game sets** is a candidate for being RPG2003-only, which is the
+# single most common reason a high-ranked row turns out not to be work.
+#
+# It is a filter, not a proof, in either direction. An RPG2000 editor still
+# writes fields RPG_RT ignores — `levitate` and `state_chance` in NOT_OURS above
+# are both set by Nepheshel and both 2k3-only — so an unmarked field can still be
+# 2k3-only, and a marked one can still be a real RPG2000 feature the 2000 test
+# bed simply never used.
+def maker_of(db)
+  v = db[22] && db[22].maker_version
+  v == 2003 ? :rpg2k3 : :rpg2k
+rescue StandardError
+  :rpg2k
+end
 
 # Array-length companions of a packed array. They are set whenever the array is,
 # and mean nothing on their own.
@@ -110,6 +132,8 @@ runtime = Dir[File.join(ROOT, 'mruby-rpg2k/mrblib/*.rb')]
 dbs = dirs.map do |d|
   [File.basename(d), LCF::Database.new(File.open(File.join(d, 'RPG_RT.ldb'), 'rb'))]
 end
+makers = dbs.map { |label, db| [label, maker_of(db)] }.to_h
+mixed = makers.values.uniq.size > 1
 
 rows = []
 LCF::Schema::DATABASE[:elements].each do |cid, spec|
@@ -138,15 +162,18 @@ LCF::Schema::DATABASE[:elements].each do |cid, spec|
     end
     total = counts.values.reduce(0) { |a, b| a + b }
     next if total.zero?
+    # Set by an RPG2003 game and by no RPG2000 one: suspect until checked.
+    only_2k3 = mixed && counts.all? { |label, n| makers[label] == :rpg2k3 || n.zero? }
     rows << { total: total, chunk: spec[:name], field: name, counts: counts,
-              named: runtime.include?(name.to_s) }
+              named: runtime.include?(name.to_s), only_2k3: only_2k3 }
   end
 end
 
 unread = rows.reject { |r| r[:named] }.sort_by { |r| -r[:total] }
 read = rows.size - unread.size
 
-puts "rpg2k database field audit — #{dirs.size} game(s): #{dbs.map(&:first).join(', ')}"
+puts 'rpg2k database field audit — ' +
+     makers.map { |label, m| "#{label} (#{m == :rpg2k3 ? '2k3' : '2k'})" }.join(', ')
 puts
 puts format('%d scalar field(s) are set by at least one game; the runtime names ' \
             '%d of them and never names %d.', rows.size, read, unread.size)
@@ -157,8 +184,18 @@ known, fresh = unread.partition { |r| NOT_OURS.key?(r[:field]) }
 puts "-- set by a real game, never named by the runtime ------------------------"
 puts format('   %-16s %-28s %6s  %s', 'chunk', 'field', 'rows', 'per game')
 fresh.each do |r|
-  puts format('   %-16s %-28s %6d  %s', r[:chunk], r[:field], r[:total],
-              r[:counts].map { |k, v| "#{k}=#{v}" }.join(' '))
+  puts format('   %-16s %-28s %6d  %s%s', r[:chunk], r[:field], r[:total],
+              r[:counts].map { |k, v| "#{k}=#{v}" }.join(' '),
+              r[:only_2k3] ? '  [2k3 only?]' : '')
+end
+if mixed
+  n = fresh.count { |r| r[:only_2k3] }
+  puts
+  puts format('   [2k3 only?] marks the %d field(s) an RPG2003 game sets and no ' \
+              'RPG2000 one does — check whether RPG_RT reads it on RPG2000 at', n)
+  puts '   all before building it. A filter, not a proof, in either direction:'
+  puts '   an RPG2000 editor still writes fields RPG_RT ignores, so a field both'
+  puts '   makers set can be 2k3-only too (levitate and state_chance below are).'
 end
 
 unless known.empty?
