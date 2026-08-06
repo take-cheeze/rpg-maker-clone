@@ -1,0 +1,30 @@
+# Label pull requests from the paths they touch, per .github/labeler.yml.
+#
+# `pull_request_target` rather than `pull_request` so a pull request from a
+# fork can be labelled too (the `/preview` flow in build.yml already expects
+# fork branches). Nothing from the pull request is checked out or run here —
+# the action only reads the changed file list and the rules on master — so the
+# write-scoped token never meets the branch's code.
+name: PR labeler
+
+on:
+  pull_request_target:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          # Add only. A label a maintainer put on by hand stays on even when no
+          # path matches it any more.
+          sync-labels: false

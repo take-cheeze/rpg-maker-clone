@@ -1,0 +1,163 @@
+# The repository's issue / pull-request label taxonomy.
+#
+# This file is the source of truth: `scripts/sync_github_labels.rb` (run by
+# `.github/workflows/labels.yml` on every push to master that touches it)
+# creates and updates the labels below on GitHub. Deleting a label here does
+# *not* delete it on GitHub unless the sync is run with `--prune`.
+#
+# Four groups, each `<group>:<value>` and each its own colour:
+#
+#   engine:*     which RPG Maker family the issue is about
+#   platform:*   which build target it shows up on
+#   component:*  which part of the engine it lives in
+#   type:*       what kind of work it is
+#   status:*     why it is not moving
+#
+# An issue or PR normally carries one `type:`, plus whichever engine /
+# platform / component labels actually apply — several of each is fine (a
+# tilemap fix can be `engine:xp` + `engine:vx` + `component:graphics`).
+#
+# See docs/labels.md for what each label means in practice.
+
+# --- engine ----------------------------------------------------------------
+# The RPG Maker edition whose games or runtime behaviour is at stake. Use the
+# edition the *game data* comes from, not the code that happens to implement
+# it: an LCF schema fix that only matters for 2003 data is `engine:rpg2k3`.
+- name: "engine:rpg2k"
+  color: "6f42c1"
+  description: "RPG Maker 2000 games (LCF data, RPG_RT parity)"
+- name: "engine:rpg2k3"
+  color: "6f42c1"
+  description: "RPG Maker 2003 specifics (battle system, 2003-only data)"
+- name: "engine:xp"
+  color: "6f42c1"
+  description: "RPG Maker XP games (RGSS1, RGSSAD)"
+- name: "engine:vx"
+  color: "6f42c1"
+  description: "RPG Maker VX games (RGSS2)"
+- name: "engine:vxace"
+  color: "6f42c1"
+  description: "RPG Maker VX Ace games (RGSS3)"
+- name: "engine:mv"
+  color: "6f42c1"
+  description: "RPG Maker MV games (JS corescript, MV plugins)"
+- name: "engine:mz"
+  color: "6f42c1"
+  description: "RPG Maker MZ games (MZ corescript, effekseer)"
+
+# --- platform --------------------------------------------------------------
+# The build target the problem is specific to. Leave all of these off when the
+# change is target independent — that is the common case.
+- name: "platform:wasm"
+  color: "0e8a16"
+  description: "Emscripten / browser build, GitHub Pages, cors-proxy"
+- name: "platform:terminal"
+  color: "0e8a16"
+  description: "Terminal rendering: sixel, iTerm2 inline images, log console"
+- name: "platform:linux"
+  color: "0e8a16"
+  description: "Native SDL desktop build on Linux"
+- name: "platform:windows"
+  color: "0e8a16"
+  description: "Windows build and installer (scripts/setup.iss), wine harnesses"
+- name: "platform:psp"
+  color: "0e8a16"
+  description: "PlayStation Portable port (app/psp)"
+- name: "platform:wio"
+  color: "0e8a16"
+  description: "Wio Terminal / PlatformIO embedded port (app/wio)"
+- name: "platform:other"
+  color: "0e8a16"
+  description: "A target with no label of its own yet"
+
+# --- component -------------------------------------------------------------
+# Which part of the engine the work lands in. Mostly assigned automatically
+# from the changed paths on pull requests (see .github/labeler.yml).
+- name: "component:graphics"
+  color: "1d76db"
+  description: "Rendering: bitmaps, tilemaps, sprites, windows, fonts"
+- name: "component:audio"
+  color: "1d76db"
+  description: "BGM/BGS/SE playback, MIDI, timidity patches"
+- name: "component:input"
+  color: "1d76db"
+  description: "Key/pad/touch input and the per-platform input bridges"
+- name: "component:runtime-mruby"
+  color: "1d76db"
+  description: "mruby VM, mrbgems, mruby/CRuby divergence"
+- name: "component:runtime-js"
+  color: "1d76db"
+  description: "QuickJS host for MV/MZ: JS bindings, canvas, WebGL"
+- name: "component:data"
+  color: "1d76db"
+  description: "Game data and file formats: LCF, RGSS marshal, RGSSAD, MV/MZ JSON"
+- name: "component:save"
+  color: "1d76db"
+  description: "Save/load: LSD read & write, save schema, continue"
+- name: "component:events"
+  color: "1d76db"
+  description: "Event interpreter, event commands, move routes"
+- name: "component:scenes"
+  color: "1d76db"
+  description: "Scenes and UI flow: title, map, menus, message windows"
+- name: "component:battle"
+  color: "1d76db"
+  description: "Battle scenes and combat maths"
+- name: "component:build"
+  color: "1d76db"
+  description: "CMake, nix flake, PlatformIO, submodules, packaging"
+- name: "component:ci"
+  color: "1d76db"
+  description: "GitHub Actions workflows, caching, deploys"
+- name: "component:docs"
+  color: "1d76db"
+  description: "README, /docs, ADRs, changelog fragments"
+- name: "component:tooling"
+  color: "1d76db"
+  description: "scripts/, test beds, parity harnesses, download helpers"
+
+# --- type ------------------------------------------------------------------
+- name: "type:bug"
+  color: "d93f0b"
+  description: "Something behaves differently from the real RPG Maker runtime"
+- name: "type:feature"
+  color: "d93f0b"
+  description: "Support something the engine cannot do yet"
+- name: "type:parity"
+  color: "d93f0b"
+  description: "Match RPG_RT / corescript behaviour pixel- or rule-for-rule"
+- name: "type:refactor"
+  color: "d93f0b"
+  description: "Internal cleanup with no behaviour change"
+- name: "type:chore"
+  color: "d93f0b"
+  description: "Dependencies, housekeeping, repository plumbing"
+- name: "type:question"
+  color: "d93f0b"
+  description: "A question about the project rather than a change to it"
+
+# --- status ----------------------------------------------------------------
+- name: "status:blocked"
+  color: "fbca04"
+  description: "Waiting on something else before it can move"
+- name: "status:needs-info"
+  color: "fbca04"
+  description: "Needs a repro, a game, or a log before it can be worked on"
+
+# --- GitHub defaults worth keeping ------------------------------------------
+# Listed so `--prune` does not sweep them away.
+- name: "good first issue"
+  color: "7057ff"
+  description: "A small, self-contained place to start"
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is welcome here"
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "Already tracked somewhere else"
+- name: "wontfix"
+  color: "ffffff"
+  description: "Deliberately not being worked on"
+- name: "dependencies"
+  color: "0366d6"
+  description: "Dependency updates (used by dependabot)"
