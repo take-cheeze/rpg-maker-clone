@@ -44,8 +44,19 @@ teleport), open a menu, save, and continue. The remaining work is mostly **the
 parts that need the native build + real game assets to develop and verify**:
 authentic chipset/charset rendering, audio, and the battle system. Everything
 landed so far is exercised by unit tests (`mruby-lcf/test`) and by host harnesses
-that load the pure-Ruby sources under CRuby, since the full SDL/mruby binary
-can't be built or run in this environment. `scripts/rpg2k_command_soak.rb` adds
+that load the pure-Ruby sources under CRuby.
+**The native binary can be built and run without Nix after all** —
+`scripts/native-build-without-nix.bash` does it on a plain Debian/Ubuntu box, and
+this line used to say it could not. Nothing exotic was in the way: SDL2 headers,
+the `3rd/` submodules (empty in a plain clone), `rake` reachable from `/bin/sh`
+(mruby builds itself with it) and the two Unicode mapping tables the flake
+supplies through `$cp932_table` / `$jis0208_table` — downloaded and checked
+against flake.nix's own sha256 hashes, so the build consumes the bytes Nix would
+hand it. That matters because the CRuby harnesses cannot see mruby/CRuby
+divergence (ADR 0021's `module_function` and `Enumerable#none?` bugs both shipped
+through green checks) and cannot see rendering at all, while the native build
+reaches both: `--rgss_effect_probe` measures real pixels under Xvfb, and the two
+boot checks drive real game data to the map. `scripts/rpg2k_command_soak.rb` adds
 the other half of that coverage: it runs **every event command of every
 downloaded test-bed** (371,762 of them) through the interpreter and fails if one
 raises or reaches a handler's "I do not know this" arm, which is the parameter
