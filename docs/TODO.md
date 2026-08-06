@@ -1399,6 +1399,24 @@ The work below is roughly ordered by the critical path to a walkable game
   members who never fell rather than topping them up — the case that reading
   actually decides, since a single target would be hidden by the menu gate. See
   ADR 0039.
+- ✅ **The skill damage defence term** (ADR 0041) — an enemy-scope skill's damage
+  was `skill_effect - target.def / 4`. The effect half was already RPG_RT's; the
+  defence half was invented here. RPG_RT blunts the skill with the **same two
+  rates that built the effect**: `physical_rate * def / 40 + magical_rate * spi /
+  80`, so a physical skill is stopped by armour and a magical one by the target's
+  spirit (and the divisors differ — spirit is worth half as much per point in
+  defence as in offence). The flat term coincides with that only for a purely
+  physical skill at rate 10: **211 of Nepheshel's 276 enemy-scope skills and 112
+  of mtf's 116** differ from it against a def-40/spirit-40 target. The column that
+  matters most is the **222 purely magical** skills across the two games — every
+  one was being blunted by the target's *armour*, a stat RPG_RT does not let them
+  see, so a plated knight resisted fire with his plate. `ignore_defense` (防御無視,
+  13 and 7 skills) is read at the same time and skips the **whole** subtraction,
+  not just the physical half. A missing stat absorbs nothing rather than raising,
+  and a skill costed against no target takes the full effect. Left alone: the
+  `dmg = 1 if dmg < 1` floor, where RPG_RT floors the effect at 0 and lets a 0
+  land as a "no damage" line — a separate divergence, visible in the log rather
+  than the formula, and folding it in would have hidden this change inside it.
 - ✅ **両手持ち weapons** (the item row's `two_handed`) — unread, so a claymore
   and a shield could be worn together and both bonuses counted. Not a rare flag:
   **35 of Nepheshel's 104 weapons** and **14 of mtf's 26**, more than half that
