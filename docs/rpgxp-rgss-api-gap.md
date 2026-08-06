@@ -32,8 +32,9 @@ These are complete enough for the stock scripts:
   `freeze` / `transition`: the scene transition draws, as RGSS's default
   dissolve of the frozen still over the incoming scene (see item 3 of the
   [VX gap](rpgvx-rgss-api-gap.md), where it landed — the code is shared).
-  _`transition`'s `filename` form (dissolving through a transition image) runs as
-  a plain fade of the same length; `frame_reset` is still a `warn_stub` no-op._
+  `transition`'s `filename`/`vague` form dissolves through the transition
+  graphic, so a battle transition is the shape its author drew rather than a
+  fade. _`frame_reset` is still a `warn_stub` no-op._
 - **`Input`** — all key constants (`A`/`B`/`C`/`X`/`Y`/`Z`/`L`/`R`/`UP`…`F9`),
   `update`, `press?`, `trigger?` (~68), `repeat?` (~34), `press`/`release`,
   `dir4`/`dir8`.

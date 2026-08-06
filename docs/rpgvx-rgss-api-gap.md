@@ -171,8 +171,14 @@ come back in the byte order `Bitmap` already uses, so they copy straight across.
 and `transition` puts it on a full-screen sprite above everything (`z` at
 `Graphics::TRANSITION_Z`) whose opacity is stepped to zero over `duration`
 frames, so the next scene builds itself behind a fading still of the last one —
-RGSS's default dissolve. The `filename`/`vague` form (dissolving *through* a
-transition image) still runs as a plain fade of the same length and says so once.
+RGSS's default dissolve. The `filename`/`vague` form dissolves *through* the
+transition graphic instead: its brightness says when each pixel gives way — dark
+first, light last — and `vague` how soft the boundary between the two is, which
+is what makes a battle transition the shape its author drew. The shader-based
+players evaluate `clamp((t - prog) / vague, 0, 1)` on the GPU; there is none
+here, so `Bitmap#_transition_alpha` rewrites the snapshot's alpha channel once
+per frame. A graphic that will not load falls back to the plain fade and says so
+once.
 
 Not covered: `play_movie` (there is no video decoder in the build).
 
@@ -187,6 +193,13 @@ ctest under xvfb, and it is the check that catches *the effect code runs and the
 screen does not change* — the failure mode that hid the RPG2000 screen tint
 (`docs/TODO.md`). Measured: `base=[128,128,128] color=[191,63,63]
 tone=[128,128,255] cleared=[0,0,0] mid=[94,94,94] after=[0,0,0]`.
+
+The transition graphic is measured there too, and it needs a different kind of
+assertion: a dissolve that ignored its map would still change the frame, just
+uniformly. So the probe half-dissolves a solid red still through a left-to-right
+gradient and means the quarter-screen at each edge separately — the dark side
+has to be gone while the light side is still standing. A flat fade moves both
+together, which is exactly the bug a whole-frame mean cannot see.
 
 ### 4. Window open/close animates, and `Window#tone` is applied ✅
 

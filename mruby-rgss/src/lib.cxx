@@ -1122,6 +1122,66 @@ mrb_value bmp_init_copy(mrb_state* M, V self) {
   return self;
 }
 
+// One frame of RGSS's Graphics.transition(duration, filename, vague) with a
+// transition *graphic*: a greyscale image whose brightness at each pixel says
+// when that pixel gives way to the new screen. Dark areas go first, light ones
+// last, and `vague` is how soft the boundary between the two is -- which is how
+// a game gets a spiral wipe, a shatter, or the pentagram RMXP ships as its
+// default battle transition, instead of a flat fade.
+//
+// `self` is the frozen frame (Graphics.freeze's snapshot, which the transition
+// draws over the new screen); this rewrites its **alpha** so it dissolves in
+// the shape of the map, and the caller shows it through an ordinary Sprite. Per
+// pixel, with t the map's brightness and prog the frame's progress, both 0..1:
+//
+//     keep = clamp((t - prog) / vague, 0, 1)
+//
+// which is the same expression the shader-based players evaluate on the GPU;
+// there is no shader here, so it runs over the buffer once per frame. `keep`
+// only ever falls as prog advances, so the snapshot can be rewritten in place.
+// A `vague` of 0 is the hard-edged wipe RGSS gives that argument.
+//
+// The map is sampled nearest-neighbour, so a transition graphic that is not the
+// screen's size still covers it (RGSS's own are 640x480, but community ones are
+// not always). Greyscale means any one channel will do; red, as the shader
+// players read.
+mrb_value bmp_transition_alpha(mrb_state* M, V self) {
+  V map_v;
+  mrb_float prog, vague;
+  mrb_get_args(M, "off", &map_v, &prog, &vague);
+  Bitmap& dst = DataType<Bitmap>::get(M, self);
+  const Bitmap& map = DataType<Bitmap>::get(M, map_v);
+  const unsigned bpp = lv_color_format_get_size(dst.format);
+  const unsigned map_bpp = lv_color_format_get_size(map.format);
+  // Without an alpha channel on the still there is nothing to dissolve, and
+  // without colour channels on the map there is no brightness to read. Either
+  // way the caller's plain fade is a better answer than a no-op.
+  if (bpp < 4 || map_bpp < 3 || dst.width <= 0 || dst.height <= 0 ||
+      map.width <= 0 || map.height <= 0)
+    return mrb_false_value();
+  for (int32_t y = 0; y < dst.height; ++y) {
+    const int32_t my =
+        static_cast<int32_t>(static_cast<int64_t>(y) * map.height / dst.height);
+    uint8_t* row = dst.buffer.data() + static_cast<size_t>(y) * dst.width * bpp;
+    const uint8_t* map_row =
+        map.buffer.data() + static_cast<size_t>(my) * map.width * map_bpp;
+    for (int32_t x = 0; x < dst.width; ++x) {
+      const int32_t mx =
+          static_cast<int32_t>(static_cast<int64_t>(x) * map.width / dst.width);
+      const double t = map_row[static_cast<size_t>(mx) * map_bpp + 2] / 255.0;
+      double keep = vague <= 0.0 ? (t > prog ? 1.0 : 0.0) : (t - prog) / vague;
+      if (keep < 0.0)
+        keep = 0.0;
+      else if (keep > 1.0)
+        keep = 1.0;
+      row[static_cast<size_t>(x) * bpp + 3] =
+          static_cast<uint8_t>(keep * 255.0 + 0.5);
+    }
+  }
+  dst.dirty = true;
+  return mrb_true_value();
+}
+
 // Read a whole file. Answers false when it cannot be opened or read fully, so
 // the caller can fall through to the next candidate path in silence.
 static bool slurp_file(const char* f, std::vector<uint8_t>& out) {
@@ -5577,6 +5637,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   // #clone / #dup: a real pixel copy, which RPG::Cache's hue variants need.
   mrb_define_method(M, bmp, "initialize_copy", bmp_init_copy, MRB_ARGS_REQ(1));
+  // One frame of Graphics.transition's transition-graphic form; answers false
+  // when this bitmap cannot carry the dissolve, so the caller can plain-fade.
+  mrb_define_method(M, bmp, "_transition_alpha", bmp_transition_alpha,
+                    MRB_ARGS_REQ(3));
   mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
