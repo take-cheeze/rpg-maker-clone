@@ -118,6 +118,18 @@ DEFINE_bool(
     "from File#mtime -- and where its own save_data writes a real file. Used "
     "by "
     "scripts/rpgxp_boot_check.bash");
+DEFINE_int64(
+    rgss_random_seed,
+    0,
+    "For the RGSS makers under the script host: seed the random number "
+    "generator with this value before the game's own scripts run, so a "
+    "headless "
+    "run drives the same game every time. mruby seeds from the clock, and a "
+    "game's own engine rolls constantly -- encounter counts, damage variance, "
+    "and the action order of a battle -- so without this a check that gets as "
+    "far as a fight is a different fight on every run. 0 leaves the clock seed "
+    "alone, which is what a player wants. Used by "
+    "scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
     mv_new_game,
     false,
@@ -528,11 +540,20 @@ extern "C" void* mrb_basic_alloc_func(void* p, size_t size) {
 // Probed at run time, never at configure time, matching the MIDI patch set: the
 // download is independent of the configure, so an EXISTS check would freeze
 // whichever order the two happened to run in.
-void init_default_font() {
+void init_default_font(const std::string& launch_dir) {
   // Installed layout first, then the source tree, the same order sdl_audio.cxx
   // probes for the patch set.
   rgss::add_default_font_dir(RGSS_DEFAULT_FONT_INSTALL_DIR);
   rgss::add_default_font_dir(RGSS_DEFAULT_FONT_SOURCE_DIR);
+  // The font search's last resort is the *relative* "assets/fonts", for a run
+  // from the source tree or from beside an unpacked build. An RGSS boot has
+  // since moved into the game's own directory (see the chdir in main), where
+  // that would look for the game's fonts instead, so the launch directory is
+  // added here as an absolute path -- after the configure-time ones, which keep
+  // their priority.
+  if (!launch_dir.empty())
+    rgss::add_default_font_dir(
+        (fs::path(launch_dir) / "assets" / "fonts").string());
 
   const std::string& path = rgss::default_font_path();
   if (path.empty()) {
@@ -694,6 +715,16 @@ int main(int argc, char** argv) {
     FLAGS_game_dir = fs::current_path();
 #endif
   }
+  // Resolve it to an absolute path before anything reads it. Everything
+  // downstream treats the game directory as a base -- the data loaders, the
+  // asset search, the archive, the GAME_DIR constant handed to Ruby -- and the
+  // chdir below would otherwise pull a relative one out from under them.
+  {
+    std::error_code ec;
+    const fs::path absolute = fs::absolute(FLAGS_game_dir, ec);
+    if (!ec)
+      FLAGS_game_dir = absolute.lexically_normal().string();
+  }
   nglog::InitializeLogging(argv[0]);
 
 #ifdef __EMSCRIPTEN__
@@ -714,9 +745,9 @@ int main(int argc, char** argv) {
   // below: VX first (its archives, .rgss2a / .rgss3a, are *not* XP markers),
   // then Game.ini plus either a loose Data/System.rxdata or an XP archive,
   // since a packed release ships no loose Data/ folder.
+  const bool xp_game = is_xp_game(FLAGS_game_dir);
+  const bool vx_game = is_rpgvx_game(FLAGS_game_dir);
   {
-    const bool xp_game = is_xp_game(FLAGS_game_dir);
-    const bool vx_game = is_rpgvx_game(FLAGS_game_dir);
     gflags::CommandLineFlagInfo w_info, h_info;
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);
@@ -731,10 +762,58 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Where the engine was launched from, captured before the chdir below: the
+  // font search's relative fallback is resolved against it (init_default_font).
+  std::string launch_dir;
+  {
+    std::error_code ec;
+    const fs::path cwd = fs::current_path(ec);
+    if (!ec)
+      launch_dir = cwd.string();
+  }
+
+  // Run an RGSS game from its own directory, as the runtime it imitates does.
+  //
+  // A game's own scripts do relative file I/O and nothing tells them where they
+  // are: the stock Scene_Save writes `File.open("Save1.rxdata", "wb")` and the
+  // stock Scene_Title asks `FileTest.exist?("Save1.rxdata")` -- bare names,
+  // resolved against the working directory. RGSS104E.dll never has to think
+  // about it because Game.exe is launched from the game's folder, so that
+  // directory *is* the game's. This engine is launched from anywhere with
+  // --game_dir pointing elsewhere, so without this every game's saves land in
+  // one shared place; scripts/rpgxp_boot_check.bash caught the consequence when
+  // Pray for You's own title screen offered Continue on the strength of the
+  // editor test bed's save file, read it as its own and died on the mismatch
+  // (docs/rpgxp-rgss-api-gap.md, gap 0j). Two games overwriting each other's
+  // progress is the same bug with a player in the chair.
+  //
+  // The RGSS makers only. The MV/MZ smokes write screenshots to paths relative
+  // to wherever they were invoked, and an LCF game's saves are written by this
+  // engine's own code against the game directory already, so neither needs it
+  // and both would be disturbed by it.
+  if (xp_game || vx_game) {
+    std::error_code ec;
+    fs::current_path(fs::path(FLAGS_game_dir), ec);
+    if (ec)
+      LOG(WARNING) << "could not run from the game directory '"
+                   << FLAGS_game_dir << "': " << ec.message()
+                   << "; the game's saves will land in the working directory "
+                      "instead, where another game may find them";
+  }
+
   // Everything a crash report should say about this run but cannot work out
   // for itself. Recorded before anything can fail, so even a failure during
   // start-up carries it (see include/error_dump.hxx).
   error_dump_set_context("game dir", FLAGS_game_dir);
+  // Where relative paths in this run resolve — the game's own directory for an
+  // RGSS boot (see the chdir above), which is also where its saves and this
+  // report land, so a report can be found rather than guessed at.
+  {
+    std::error_code ec;
+    const fs::path cwd = fs::current_path(ec);
+    if (!ec)
+      error_dump_set_context("working dir", cwd.string());
+  }
   error_dump_set_context("screen", std::to_string(FLAGS_width) + "x" +
                                        std::to_string(FLAGS_height));
   error_dump_set_context("display backend", FLAGS_sixel   ? "sixel terminal"
@@ -802,7 +881,7 @@ int main(int argc, char** argv) {
   rgss_audio_init();
 
   // Before any game runs, so the first window drawn already has its font.
-  init_default_font();
+  init_default_font(launch_dir);
 
 #ifdef __EMSCRIPTEN__
   // mruby uses word boxing, which stores the type tag in the low 3 bits of each
@@ -902,6 +981,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_SAVE_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_save_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_RANDOM_SEED"),
+                mrb_fixnum_value(FLAGS_rgss_random_seed));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));

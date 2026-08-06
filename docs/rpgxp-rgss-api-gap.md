@@ -214,7 +214,7 @@ the newest-slot search with `Time.at(0)`, which is what made `mruby-time`
 necessary (gap 0i) and is otherwise unexercised. Its own `save_data` then writes
 a real file — and that is what it found:
 
-### 0j. A game's saves land in the launch directory ❌ (open)
+### 0j. A game's saves landed in the launch directory ✅
 
 The save probe reached the screen (`[RPGXP-HOST-SAVE] reached=true`) and wrote a
 file, and then the *next* game in the boot check died:
@@ -237,10 +237,21 @@ and its `Window_SaveFile` got an `Array` where it expected a `String`.
 
 Two games sharing a save file is a real bug, not a test artifact: it would
 overwrite one game's progress with another's the first time a player ran two.
-The fix is for an RGSS boot to resolve the game's relative file I/O against the
-game's own directory, the way the runtime it imitates does. The boot check is
-hermetic in the meantime — it clears `Save*.rxdata` around every pass, since it
-is its own earlier pass that plants the file.
+
+An RGSS boot now **runs from the game's own directory** — `--game_dir` is
+resolved to an absolute path and the engine `chdir`s into it, so a game's
+relative file I/O resolves where the runtime it imitates would put it. Only the
+RGSS makers: the MV/MZ smokes write screenshots relative to wherever they were
+invoked, and an LCF game's saves are written by this engine's own code against
+the game directory already. The font search's last-resort relative
+`assets/fonts` is given the launch directory explicitly so a source-tree run
+still finds it.
+
+The boot check asserts the outcome rather than the mechanism: after the save
+pass, `Save1.rxdata` has to exist **in the bed's own directory**. It still
+clears save files around every pass, because a title screen offers Continue when
+it finds one and that changes which command the confirm taps pick — hermeticity,
+not the bug.
 
 ### 0e. `Kernel#Integer()` ✅ (the first thing New Game runs)
 

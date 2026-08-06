@@ -41,6 +41,9 @@
 #     (`--rgss_host_save_test`, `[RPGXP-HOST-SAVE]`). That is the one place a
 #     game reads a file's timestamp back — its `Window_SaveFile` stamps each
 #     slot from `File#mtime` — and where its own `save_data` writes a real file.
+#     Where that file lands is asserted too: the stock `Scene_Save` writes a
+#     bare `"Save1.rxdata"`, so it proves the engine ran the game from its own
+#     directory rather than from wherever it was launched (gap 0j).
 #   * a `script host failed` line fails the run: the game's own scripts stopping
 #     is the failure this check exists to catch.
 #
@@ -71,6 +74,14 @@ ENGINE="${ENGINE:-./build/rpg_maker_clone}"
 # nominally runs at. 20s was enough to reach the map and not to finish the walk;
 # this is sized so the probes still land at well under ten frames a second.
 TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-45000}"
+# Pin the random number generator, so every run of this check drives the *same*
+# game. mruby seeds from the clock and a game's own engine rolls constantly --
+# the encounter count as the party is placed, damage variance, and the order the
+# battlers act in -- so without this the battle pass is a different fight every
+# time, and it showed: it passed twice and then failed inside the game's own
+# make_action_orders with no way to ask for that run back. Override to hunt a
+# failure that only some seeds reach.
+RANDOM_SEED="${RPGXP_RANDOM_SEED:-20260806}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
@@ -107,23 +118,19 @@ run_boot() {
     local log rc=0 marker missing=""
     log="$(mktemp)"
     echo "-- ${label}"
-    # Start from no save files. A game's own Scene_Save writes
-    # `File.open("Save1.rxdata", "wb")` -- a bare relative name, so it lands in
-    # the *current directory*, which under this engine is wherever it was
-    # launched from rather than the game's own folder (where a real RPG Maker
-    # install would put it, because Game.exe runs from there). So the save pass
-    # below leaves a file that the next game in this loop finds: Pray for You's
-    # own title screen enabled Continue on the strength of the editor bed's save,
-    # read it as its own, and died on the mismatch. That is a real engine bug --
-    # saves must not be shared between games -- but the check has to be hermetic
-    # regardless of when it is fixed, since it is its own earlier pass that
-    # plants the file.
+    # Start from no save files. The save pass below leaves one, and a title
+    # screen offers Continue when it finds one -- which changes what the confirm
+    # taps pick, so a later pass (or a second invocation) would drive a different
+    # game. The repo root is swept too: it is where a save used to land before
+    # the engine learned to run from the game's own directory, and a stale one
+    # left over from then would still be found by a game launched from here.
     rm -f Save[0-9]*.rxdata "${game}"/Save[0-9]*.rxdata
     # Each run gets its own display number: xvfb-run -a's probe is not atomic
     # and can steal a display from a concurrent run (see build.yml).
     # shellcheck disable=SC2086 # ${flags} is a deliberate word-split flag list
     if ! xvfb-run --server-num="${display}" timeout 180 "${ENGINE}" \
             --game_dir "${game}" ${flags} \
+            --rgss_random_seed="${RANDOM_SEED}" \
             --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
         echo "FAILED: ${game} (${label}): the engine exited non-zero" >&2
         rc=1
@@ -155,9 +162,6 @@ run_boot() {
     # ALSA has no device under CI and floods stderr; keep the rest.
     grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
     rm -f "${log}"
-    # ...and leave none behind either, so a local run does not dirty the tree or
-    # change what the *next* invocation's title screens offer.
-    rm -f Save[0-9]*.rxdata "${game}"/Save[0-9]*.rxdata
     return "${rc}"
 }
 
@@ -199,15 +203,37 @@ for game in "${GAMES[@]}" ; do
             # And the save screen, its own pass for the same reason. This is the
             # only place a game reads a file's timestamp back, and the only one
             # that writes a file of its own.
-            run_boot "${game}" "${num}" "script host: save" \
-                "--rgss_host_save_test" 2 \
-                '\[RPGXP-HOST-SAVE\] .*reached=true' ||
+            if run_boot "${game}" "${num}" "script host: save" \
+                    "--rgss_host_save_test" 2 \
+                    '\[RPGXP-HOST-SAVE\] .*reached=true' ; then
+                # ...and it has to land in the *game's* directory. The stock
+                # Scene_Save writes a bare "Save1.rxdata", so where that file
+                # ends up is the whole of what the engine's run-from-the-game's-
+                # directory behaviour is worth: before it, the file landed
+                # wherever the engine was launched from and the next game found
+                # it (Pray for You offered Continue on the strength of the
+                # editor bed's save and died reading it as its own).
+                if [ ! -f "${game}/Save1.rxdata" ] ; then
+                    echo "FAILED: ${game} (script host: save): the game's own" \
+                         "save did not land in its own directory" >&2
+                    ls -1 Save[0-9]*.rxdata 2>/dev/null >&2 || true
+                    failed=$((failed + 1))
+                fi
+            else
                 failed=$((failed + 1))
+            fi
             ;;
     esac
 
     num=$((num + 1))
 done
+
+# The save pass leaves a real save file in the bed it ran on; take it back out
+# so a local run does not dirty the tree.
+for game in "${GAMES[@]}" ; do
+    rm -f "${game}"/Save[0-9]*.rxdata
+done
+rm -f Save[0-9]*.rxdata
 
 if [ "${checked}" -eq 0 ] ; then
     echo "FAILED: none of the requested game directories is present, so nothing" \
@@ -221,4 +247,4 @@ if [ "${failed}" -ne 0 ] ; then
 fi
 
 echo "rpgxp boot check: ${checked} game(s) ran their own scripts, off their own" \
-     "title screens and onto their own maps"
+     "title screens and onto their own maps (random seed ${RANDOM_SEED})"
