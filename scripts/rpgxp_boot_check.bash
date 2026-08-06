@@ -74,6 +74,14 @@ ENGINE="${ENGINE:-./build/rpg_maker_clone}"
 # nominally runs at. 20s was enough to reach the map and not to finish the walk;
 # this is sized so the probes still land at well under ten frames a second.
 TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-45000}"
+# Pin the random number generator, so every run of this check drives the *same*
+# game. mruby seeds from the clock and a game's own engine rolls constantly --
+# the encounter count as the party is placed, damage variance, and the order the
+# battlers act in -- so without this the battle pass is a different fight every
+# time, and it showed: it passed twice and then failed inside the game's own
+# make_action_orders with no way to ask for that run back. Override to hunt a
+# failure that only some seeds reach.
+RANDOM_SEED="${RPGXP_RANDOM_SEED:-20260806}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
@@ -122,6 +130,7 @@ run_boot() {
     # shellcheck disable=SC2086 # ${flags} is a deliberate word-split flag list
     if ! xvfb-run --server-num="${display}" timeout 180 "${ENGINE}" \
             --game_dir "${game}" ${flags} \
+            --rgss_random_seed="${RANDOM_SEED}" \
             --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
         echo "FAILED: ${game} (${label}): the engine exited non-zero" >&2
         rc=1
@@ -238,4 +247,4 @@ if [ "${failed}" -ne 0 ] ; then
 fi
 
 echo "rpgxp boot check: ${checked} game(s) ran their own scripts, off their own" \
-     "title screens and onto their own maps"
+     "title screens and onto their own maps (random seed ${RANDOM_SEED})"

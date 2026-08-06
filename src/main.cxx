@@ -118,6 +118,18 @@ DEFINE_bool(
     "from File#mtime -- and where its own save_data writes a real file. Used "
     "by "
     "scripts/rpgxp_boot_check.bash");
+DEFINE_int64(
+    rgss_random_seed,
+    0,
+    "For the RGSS makers under the script host: seed the random number "
+    "generator with this value before the game's own scripts run, so a "
+    "headless "
+    "run drives the same game every time. mruby seeds from the clock, and a "
+    "game's own engine rolls constantly -- encounter counts, damage variance, "
+    "and the action order of a battle -- so without this a check that gets as "
+    "far as a fight is a different fight on every run. 0 leaves the clock seed "
+    "alone, which is what a player wants. Used by "
+    "scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
     mv_new_game,
     false,
@@ -950,6 +962,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RGSS_HOST_SAVE_TEST"),
                 mrb_bool_value(FLAGS_rgss_host_save_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RGSS_RANDOM_SEED"),
+                mrb_fixnum_value(FLAGS_rgss_random_seed));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_SCREENSHOT"),
                 mrb_str_new_cstr(M, FLAGS_mv_screenshot.c_str()));
