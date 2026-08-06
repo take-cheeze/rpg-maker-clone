@@ -39,17 +39,25 @@ module RGSS
   # cannot snapshot. This is the measurement ADR 0021 used to prove the RPG2000
   # fade reached the display, available to any caller now that
   # Graphics.snap_to_bitmap exists.
-  def self.frame_mean
+  #
+  # With a region it means only that part of the frame, which is what tells a
+  # *shaped* change from a uniform one: a flat fade moves every region together,
+  # a wipe does not.
+  def self.frame_mean(x0 = 0, y0 = 0, width = nil, height = nil)
     bmp = Graphics.snap_to_bitmap
     return nil if bmp.nil?
+    x1 = width.nil? ? bmp.width : x0 + width
+    y1 = height.nil? ? bmp.height : y0 + height
+    x1 = bmp.width if x1 > bmp.width
+    y1 = bmp.height if y1 > bmp.height
     r = 0
     g = 0
     b = 0
     n = 0
-    y = 0
-    while y < bmp.height
-      x = 0
-      while x < bmp.width
+    y = y0
+    while y < y1
+      x = x0
+      while x < x1
         c = bmp.get_pixel(x, y)
         r += c.red.to_i
         g += c.green.to_i
@@ -139,9 +147,21 @@ module RGSS
     mid = $rgss_probe_mid
     after = frame_mean
 
+    # The transition-*graphic* form: a still that gives way in the shape of a
+    # map rather than fading flat, which is what a game's battle transition and
+    # Pray for You's opening use. Driven at the pixel level — Bitmap#
+    # _transition_alpha is exactly what Graphics.transition calls once per frame
+    # — because the thing that has to be proved is that the per-pixel alpha it
+    # writes reaches the display, and a flat fade would move the whole frame
+    # together. Half a screen apart is the measurement: dark map values give way
+    # first, so at the halfway point the dark side is gone and the light side is
+    # still standing.
+    wipe_left, wipe_right = transition_shape_probe(w, h)
+
     $stderr.puts "[RGSS-PROBE] base=#{base.inspect} color=#{colored.inspect} " \
                  "tone=#{toned.inspect} cleared=#{cleared.inspect} " \
-                 "mid=#{mid.inspect} after=#{after.inspect}"
+                 "mid=#{mid.inspect} after=#{after.inspect} " \
+                 "wipe=#{wipe_left.inspect}/#{wipe_right.inspect}"
 
     ok = true
     # A half-opaque red overlay pushes red up and the other channels down.
@@ -171,12 +191,53 @@ module RGSS
         ok = false
       end
     end
+    # The still is red and the screen behind it is not, so the side still
+    # covered reads far redder than the side already given way. Equal halves
+    # would mean the map was ignored and this dissolved uniformly.
+    unless wipe_left && wipe_right && wipe_right[0] > wipe_left[0] + 40
+      $stderr.puts "[RGSS-PROBE] FAIL Graphics.transition's transition graphic " \
+                   "did not shape the dissolve"
+      ok = false
+    end
     sprite.dispose
     bitmap.dispose
     viewport.dispose
     ok = false unless window_probe
     $stderr.puts "[RGSS-PROBE] #{ok ? "ok" : "failed"}"
     ok
+  end
+
+  # Half-dissolve a solid still through a left-to-right gradient and answer the
+  # mean of the quarter-screen at each edge. Called by effect_probe; kept
+  # separate because it is a self-contained little scene of its own.
+  #
+  # The gradient is the simplest transition graphic there is — black on the left
+  # (gives way first), white on the right (last) — which makes the expected
+  # result a statement rather than a threshold: at the halfway point one edge is
+  # gone and the other is not.
+  def self.transition_shape_probe(w, h)
+    still = Bitmap.new(w, h)
+    still.fill_rect(0, 0, w, h, Color.new(255, 0, 0, 255))
+    map = Bitmap.new(w, h)
+    x = 0
+    while x < w
+      shade = w > 1 ? 255 * x / (w - 1) : 0
+      map.fill_rect(x, 0, 1, h, Color.new(shade, shade, shade, 255))
+      x += 1
+    end
+    shaped = still._transition_alpha(map, 0.5, 40 / 255.0)
+    cover = Sprite.new
+    cover.bitmap = still
+    cover.z = Graphics::TRANSITION_Z
+    Graphics.update
+    edge = w / 4
+    left = shaped ? frame_mean(0, 0, edge, h) : nil
+    right = shaped ? frame_mean(w - edge, 0, edge, h) : nil
+    cover.dispose
+    still.dispose
+    map.dispose
+    Graphics.update
+    [left, right]
   end
 
   # Prove RGSS::Window is the native widget and that it draws.
@@ -1074,9 +1135,13 @@ module RGSS
       # full-screen sprite above everything (z at the maximum) whose opacity is
       # stepped to zero — which is exactly RGSS's default fade.
       #
-      # The `filename`/`vague` form (dissolve through a transition *image*) is
-      # not modelled; such a transition still runs, as a plain fade over the same
-      # number of frames, and says so once.
+      # Given a `filename`, the still dissolves in the *shape* of that transition
+      # graphic instead: its brightness says when each pixel gives way, and
+      # `vague` how soft the boundary is. That is what makes RMXP's default
+      # battle transition a pentagram rather than a fade, and it is the form a
+      # released game reaches for (Pray for You opens with one). The pixel work
+      # is Bitmap#_transition_alpha; a graphic that will not load, or a snapshot
+      # with no alpha channel to dissolve, falls back to the plain fade.
       def freeze
         # nil when the backend cannot snapshot (it says so itself, once);
         # transition copes by falling back to a plain wait.
@@ -1085,21 +1150,47 @@ module RGSS
       end
 
       def transition(duration = 8, filename = nil, vague = 40)
-        RGSS.warn_stub("Graphics.transition with a transition image") if filename
         frozen = @frozen
         @frozen = nil
         @brightness = 255
         return wait(duration) if frozen.nil? || duration <= 0
 
+        map = _transition_map(filename)
         sprite = Sprite.new
         sprite.bitmap = frozen
         sprite.z = TRANSITION_Z
+        # `vague` is on the transition graphic's own 0..255 brightness scale.
+        softness = (vague.nil? ? 0 : vague) / 255.0
         duration.times do |i|
-          sprite.opacity = 255 - (255 * (i + 1) / duration)
+          if map
+            # One refusal is enough: a snapshot that cannot carry the dissolve
+            # will not start carrying it on a later frame, so drop the map and
+            # let the rest of the run fade.
+            unless frozen._transition_alpha(map, (i + 1).to_f / duration, softness)
+              map.dispose
+              map = nil
+            end
+          end
+          sprite.opacity = 255 - (255 * (i + 1) / duration) if map.nil?
           update
         end
+        map.dispose if map
         sprite.dispose
         frozen.dispose
+        nil
+      end
+
+      # The transition graphic, or nil to fade. RGSS is handed a project-relative
+      # path ("Graphics/Transitions/" + name, which is what the stock scenes
+      # build), so Bitmap's own search — loose file, RTP, then the encrypted
+      # archive — is the right resolver. A graphic that is not there must not end
+      # a scene change, so the failure is reported once and the fade stands in.
+      def _transition_map(filename)
+        return nil if filename.nil? || filename.empty?
+        Bitmap.new(filename)
+      rescue StandardError => e
+        RGSS.warn_once("Graphics.transition: #{filename} did not load " \
+                       "(#{e.message}); fading instead")
         nil
       end
 

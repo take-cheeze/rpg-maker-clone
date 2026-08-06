@@ -90,5 +90,6 @@ does not run.
   exists and stays. This decision is about makers whose games *are* their scripts:
   XP, VX and VX Ace (the VX side never had a built-in flow to remove).
 - **Follow-up.** `docs/rpgxp-rgss-api-gap.md` is now the whole XP roadmap: the
-  open items are `Bitmap#clone`, `Graphics.transition` with a transition image,
-  and whatever the next boot check reports.
+  open item is whatever the next boot check reports. (`Bitmap#clone` and
+  `Graphics.transition` with a transition image, the two named here when this was
+  written, are both closed.)

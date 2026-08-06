@@ -143,4 +143,4 @@ into an **opt-out**.
 - **Follow-up.** The frame driver has still never been verified in a real browser
   (the browser check was removed with ADR 0025), so the web build boots the host
   on the strength of the native runs alone. The two tilemap polish items in the
-  VX gap doc and the `Graphics.transition` image form remain open.
+  VX gap doc remain open; the `Graphics.transition` image form has since landed.

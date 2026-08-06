@@ -149,6 +149,90 @@ assert "RGSS value types survive #clone and #dup" do
   assert_equal 7, table[1, 1], "the original table shares its copy's storage"
 end
 
+# RGSS's own RPG::Cache builds a hue variant with `@cache[path].clone` followed
+# by `hue_change`, so one decode serves every hue a game asks for. That only
+# works if the copy owns its pixels: hue_change rewrites the buffer in place, so
+# a shallow copy would recolour the cached original along with the variant, and a
+# copy with no payload at all — what mruby's clone gives a data object without
+# initialize_copy — raises on first use.
+assert "RGSS::Bitmap#clone copies pixels, not the handle" do
+  bmp = RGSS::Bitmap.new(4, 3)
+  bmp.set_pixel(0, 0, RGSS::Color.new(255, 0, 0, 255))
+  bmp.set_pixel(3, 2, RGSS::Color.new(0, 255, 0, 255))
+
+  [bmp.clone, bmp.dup].each do |copy|
+    assert_equal 4, copy.width
+    assert_equal 3, copy.height
+    assert_equal 255, copy.get_pixel(0, 0).red.to_i
+    assert_equal 255, copy.get_pixel(3, 2).green.to_i
+
+    # Writing the copy must not reach the original — the case RPG::Cache hits
+    # the moment a second hue is asked for.
+    copy.set_pixel(0, 0, RGSS::Color.new(0, 0, 255, 255))
+    assert_equal 255, copy.get_pixel(0, 0).blue.to_i
+    assert_equal 255, bmp.get_pixel(0, 0).red.to_i,
+                 "the original bitmap shares its copy's pixels"
+    assert_equal 0, bmp.get_pixel(0, 0).blue.to_i
+
+    # ...and neither must its font, which the scripts set per draw.
+    copy.font.size = 9
+    assert_equal 9, copy.font.size
+    assert_not_equal 9, bmp.font.size
+  end
+
+  # The whole point, in the shape RPG::Cache uses it.
+  variant = bmp.clone
+  variant.hue_change(120)
+  assert_equal 255, bmp.get_pixel(0, 0).red.to_i,
+               "hue_change on a clone recoloured the cached original"
+end
+
+# Graphics.transition's transition-*graphic* form: the frozen frame gives way in
+# the shape of a greyscale map — dark first, light last — with `vague` setting how
+# soft the boundary is. That is what makes RMXP's default battle transition a
+# pentagram rather than a fade. The shader-based players evaluate
+# `clamp((t - prog) / vague, 0, 1)` on the GPU; there is none here, so it runs over
+# the buffer, and this is where the arithmetic is pinned down. Whether the alpha
+# it writes reaches the display is the separate job of RGSS.effect_probe.
+assert "RGSS::Bitmap#_transition_alpha dissolves in the shape of a map" do
+  still = RGSS::Bitmap.new(4, 1)
+  still.fill_rect(0, 0, 4, 1, RGSS::Color.new(255, 0, 0, 255))
+  # A left-to-right ramp: 0.0, 0.33, 0.67, 1.0 of the way through the wipe.
+  map = RGSS::Bitmap.new(4, 1)
+  [0, 85, 170, 255].each_with_index do |v, i|
+    map.set_pixel(i, 0, RGSS::Color.new(v, v, v, 255))
+  end
+  vague = 40 / 255.0 # RGSS's default, on the map's own 0..255 scale
+
+  # Alpha is how much of the still *remains*, so a pixel at 0 has given way.
+  assert_true still._transition_alpha(map, 0.5, vague)
+  assert_equal 0, still.get_pixel(0, 0).alpha.to_i, "the darkest pixel went first"
+  assert_equal 0, still.get_pixel(1, 0).alpha.to_i
+  assert_equal 255, still.get_pixel(2, 0).alpha.to_i
+  assert_equal 255, still.get_pixel(3, 0).alpha.to_i,
+               "the lightest pixel should go last"
+  # Only the coverage changes; the still's colours are left alone.
+  assert_equal 255, still.get_pixel(3, 0).red.to_i
+
+  # `vague` is the width of the band in between, so a pixel inside it is part
+  # way out rather than all or nothing...
+  still._transition_alpha(map, 0.62, vague)
+  edge = still.get_pixel(2, 0).alpha.to_i
+  assert_true edge > 0 && edge < 255, "vague did not soften the boundary (#{edge})"
+
+  # ...and a vague of 0 is the hard-edged wipe RGSS gives that argument: at the
+  # same point in the same map, that pixel is all or nothing.
+  still._transition_alpha(map, 0.62, 0.0)
+  assert_equal 255, still.get_pixel(2, 0).alpha.to_i
+  assert_equal 0, still.get_pixel(1, 0).alpha.to_i
+
+  # And at the end of the wipe nothing of the still is left, whatever the map.
+  still._transition_alpha(map, 1.0, vague)
+  4.times do |i|
+    assert_equal 0, still.get_pixel(i, 0).alpha.to_i, "pixel #{i} survived the wipe"
+  end
+end
+
 assert "RGSS::Table drops out-of-range writes without reading the value" do
   t = RGSS::Table.new(2, 2)
   t[0, 0] = 5
