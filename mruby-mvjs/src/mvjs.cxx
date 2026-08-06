@@ -105,6 +105,35 @@ JSValue js_read_file(JSContext* ctx,
   return JS_NewStringLen(ctx, data.data(), data.size());
 }
 
+// __mv_readFileBytes(path) -> the file's bytes as an ArrayBuffer.
+//
+// The binary twin of __mv_readFileSync, which hands back a JS *string*: that is
+// right for `data/*.json` and the save store, and wrong for anything else,
+// because a string carries the bytes through UTF-8 and mangles the ones that
+// are not valid text. An encrypted asset is exactly that case — the engine
+// XHRs it with `responseType = "arraybuffer"`, decrypts it and hands the
+// plaintext to an Image, so every byte has to survive the trip. See ADR 0004
+// M6.3r.
+JSValue js_read_file_bytes(JSContext* ctx,
+                           JSValueConst,
+                           int argc,
+                           JSValueConst* argv) {
+  if (argc < 1)
+    return JS_ThrowTypeError(ctx, "__mv_readFileBytes: a path is required");
+  const char* path = JS_ToCString(ctx, argv[0]);
+  if (!path)
+    return JS_EXCEPTION;
+  const std::string resolved = mv_resolve_path(path);
+  JS_FreeCString(ctx, path);
+  std::string data;
+  if (!read_file(resolved.c_str(), data)) {
+    return JS_ThrowReferenceError(ctx, "__mv_readFileBytes: cannot open '%s'",
+                                  resolved.c_str());
+  }
+  return JS_NewArrayBufferCopy(
+      ctx, reinterpret_cast<const uint8_t*>(data.data()), data.size());
+}
+
 // Create every parent directory of `path` (mkdir -p of its dirname). Best
 // effort: existing directories and races are ignored. MV's save code expects
 // the save/ folder to be created on demand, so writes root their own dir.
@@ -205,6 +234,7 @@ const char* kHostPreamble = R"MVJS(
     this.status = 0;
     this.responseText = '';
     this.response = '';
+    this.responseType = '';
     this.onload = null;
     this.onerror = null;
     this._path = '';
@@ -217,18 +247,142 @@ const char* kHostPreamble = R"MVJS(
   XMLHttpRequest.prototype.overrideMimeType = function () {};
   XMLHttpRequest.prototype.send = function () {
     try {
-      this.responseText = g.__mv_readFileSync(this._path);
-      this.response = this.responseText;
+      // `responseType = 'arraybuffer'` has to come back as real bytes, not as
+      // text: this is how the engine reads an *encrypted* asset before
+      // decrypting it in JavaScript, and routing those through a string would
+      // corrupt every byte that is not valid UTF-8.
+      if (this.responseType === 'arraybuffer') {
+        this.response = g.__mv_readFileBytes(this._path);
+        this.responseText = '';
+      } else {
+        this.responseText = g.__mv_readFileSync(this._path);
+        this.response = this.responseText;
+      }
       this.status = 200;
       this.readyState = 4;
-      if (typeof this.onload === 'function') this.onload();
+      this._dispatch('onload');
     } catch (e) {
       this.status = 404;
       this.readyState = 4;
-      if (typeof this.onerror === 'function') this.onerror(e);
+      this._dispatch('onerror', e);
+    }
+  };
+  // Callback dispatch, which has to satisfy two opposite habits in the same
+  // engines.
+  //
+  // Our XHR reads the file synchronously, so a handler attached *before*
+  // send() has always been called inline, and MZ's `DataManager.loadDataFile`
+  // depends on that timing: it nulls `window[name]` before sending and refills
+  // it in onload, so any extra delay widens the window in which the rest of the
+  // engine can see a null `$dataMap` — which is exactly what a first attempt at
+  // a blanket rAF deferral did, throwing `$dataMap.width` out of
+  // `Game_Map.width()` mid-save.
+  //
+  // But MV's `Decrypter.decryptImg` does the opposite:
+  //
+  //     requestFile.send();
+  //     requestFile.onload = function () { ...decrypt... };
+  //
+  // The handler is attached *after* send returns, so an inline-only dispatch
+  // called nothing at all and every encrypted image silently never arrived —
+  // the boot then sat in Scene_Boot forever waiting for art.
+  //
+  // So: fire inline when a handler is already there (timing unchanged for
+  // everyone who had one), and otherwise look again on the next frame for a
+  // handler that was attached in the meantime. Never twice. See ADR 0004
+  // M6.3r.
+  XMLHttpRequest.prototype._dispatch = function (which, arg) {
+    var self = this;
+    self._fired = false;
+    var fire = function () {
+      if (self._fired) return;
+      var fn = self[which];
+      if (typeof fn !== 'function') return;
+      self._fired = true;
+      fn.call(self, arg);
+    };
+    fire();
+    if (!self._fired && typeof g.requestAnimationFrame === 'function') {
+      g.requestAnimationFrame(fire);
     }
   };
   g.XMLHttpRequest = XMLHttpRequest;
+
+  // --- Blob + object URLs --------------------------------------------------
+  //
+  // The pair an encrypted project cannot boot without. RPG Maker's deployment
+  // can encrypt every image, and the engine's own code is what undoes it:
+  // `Bitmap._startDecrypting` (MZ) / `Decrypter.decryptImg` (MV) XHRs the file
+  // as an ArrayBuffer, decrypts it in JavaScript, then does
+  //
+  //     const blob = new Blob([arrayBuffer]);
+  //     image.src = URL.createObjectURL(blob);
+  //
+  // Neither global existed here, so the first encrypted image threw and the
+  // boot stopped at Scene_Boot — a black screen for any game shipped with
+  // "Encrypt Images" ticked. Both are kept deliberately small: a Blob holds
+  // its bytes and nothing else, and an object URL is a key into a registry the
+  // Image loader knows how to read (see the canvas preamble's ImageEl). No
+  // slicing, typing or streaming, because nothing in either engine asks for it.
+  //
+  // `revokeObjectURL` really does drop the bytes — MZ revokes as soon as the
+  // image has decoded, and a registry that ignored it would hold every asset a
+  // long session ever loaded.
+  (function () {
+    var blobs = {};
+    var next = 1;
+
+    function concat(parts) {
+      var total = 0;
+      var i;
+      var views = [];
+      for (i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        var v = null;
+        if (p instanceof ArrayBuffer) v = new Uint8Array(p);
+        else if (p && p.buffer instanceof ArrayBuffer) {
+          v = new Uint8Array(p.buffer, p.byteOffset || 0, p.byteLength);
+        } else if (p && p.__mvBlobBytes) v = p.__mvBlobBytes;
+        else if (typeof p === 'string') {
+          // Only ASCII shows up here (the engines never build a text Blob on
+          // the asset path); anything else would need a real encoder.
+          v = new Uint8Array(p.length);
+          for (var k = 0; k < p.length; k++) v[k] = p.charCodeAt(k) & 0xff;
+        }
+        if (!v) continue;
+        views.push(v);
+        total += v.length;
+      }
+      var out = new Uint8Array(total);
+      var off = 0;
+      for (i = 0; i < views.length; i++) {
+        out.set(views[i], off);
+        off += views[i].length;
+      }
+      return out;
+    }
+
+    function Blob(parts, options) {
+      this.__mvBlobBytes = concat(parts || []);
+      this.size = this.__mvBlobBytes.length;
+      this.type = (options && options.type) || '';
+    }
+    g.Blob = Blob;
+
+    g.URL = g.URL || {};
+    g.URL.createObjectURL = function (blob) {
+      var id = 'blob:mv/' + next++;
+      blobs[id] = blob && blob.__mvBlobBytes ? blob.__mvBlobBytes
+                                             : new Uint8Array(0);
+      return id;
+    };
+    g.URL.revokeObjectURL = function (url) { delete blobs[url]; };
+    // How the Image loader gets from an object URL back to the bytes.
+    g.__mv_blobBytes = function (url) {
+      var b = blobs[url];
+      return b ? b : null;
+    };
+  })();
 
   // --- passive globals MV touches at boot ----------------------------------
   g.navigator = {
@@ -443,6 +597,9 @@ void install_host_globals(JSContext* ctx) {
 
   JS_SetPropertyStr(ctx, global, "__mv_readFileSync",
                     JS_NewCFunction(ctx, js_read_file, "__mv_readFileSync", 1));
+  JS_SetPropertyStr(
+      ctx, global, "__mv_readFileBytes",
+      JS_NewCFunction(ctx, js_read_file_bytes, "__mv_readFileBytes", 1));
   JS_SetPropertyStr(
       ctx, global, "__mv_writeFileSync",
       JS_NewCFunction(ctx, js_write_file, "__mv_writeFileSync", 2));

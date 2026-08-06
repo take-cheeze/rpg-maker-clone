@@ -444,6 +444,18 @@ jobs:
           # that never moved the cursor takes the other branch and reports
           # picked=false: "a choice was made" and "a window appeared" are told
           # apart. See ADR 0004 M6.3p.
+          # The same bed with its assets **encrypted**, which is a different
+          # loading path rather than a variation on one: nothing is opened by
+          # name, the engine XHRs each asset, decrypts it in its own JavaScript
+          # and hands a Blob object URL to an Image. Both real games sampled
+          # while testing this shipped that way, and neither could load a single
+          # asset before M6.3r — a black screen in Scene_Boot. The encrypted
+          # project is derived here rather than committed, so the plain bed stays
+          # the one source of truth for its contents.
+          - name: MZ encrypted-assets smoke test
+            continue-on-error: true
+            run: ./scripts/nix-develop.bash ./scripts/mz_encrypted_check.bash 113
+
           - name: MZ message-play smoke test
             continue-on-error: true
             env:

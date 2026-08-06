@@ -54,9 +54,44 @@ MZ_MIN_COMMAND_TERMS = 23
 # Read a PNG's pixel size straight out of its IHDR chunk, so the asset checks
 # need no image library. Returns [width, height], or nil if the file is missing
 # or is not a PNG.
-def png_size(path)
+# A deployed project may ship its art **encrypted** — both games sampled from
+# freem did — in which case `img/x.png` is on disk as `img/x.png_`, carrying a
+# 16-byte "RPGMV" header and with the original's first 16 bytes XORed against
+# `System.encryptionKey`. Without this, every asset check below reports a real
+# game's art as missing. See ADR 0004 M6.3r.
+#
+# `key` is the 16 key bytes, or nil for a plaintext project.
+def encryption_key(system)
+  return nil unless system.is_a?(Hash) && system["hasEncryptedImages"]
+  hex = system["encryptionKey"].to_s
+  return nil unless hex.length >= 32
+
+  [hex[0, 32]].pack("H*").bytes
+end
+
+# The path an image really lives at: the plain name, or its encrypted twin.
+def image_path(dir, *parts)
+  plain = File.join(dir, *parts)
+  return plain if File.file?(plain)
+  enc = "#{plain}_"
+  File.file?(enc) ? enc : plain
+end
+
+def png_size(path, key = nil)
   return nil unless File.file?(path)
-  head = File.binread(path, 24)
+  if path.end_with?("_")
+    # Only the first 16 bytes of the original are scrambled, and IHDR's width
+    # and height sit at bytes 16..24 — past the scrambled run — so the size is
+    # readable either way; the key is only needed to confirm the signature.
+    return nil unless key
+    raw = File.binread(path, 40)
+    return nil unless raw && raw.bytesize == 40
+    body = raw.byteslice(16, 24).bytes
+    16.times { |i| body[i] ^= key[i] }
+    head = body.pack("C*")
+  else
+    head = File.binread(path, 24)
+  end
   return nil unless head && head.bytesize == 24
   return nil unless head[0, 8] == "\x89PNG\r\n\x1a\n".b
   return nil unless head[12, 4] == "IHDR".b
@@ -109,7 +144,7 @@ class Checker
     check_advanced(system, dir)
     check_terms(system)
     check_actors(dir, actors, classes, system)
-    check_system_images(dir)
+    check_system_images(dir, encryption_key(system))
     start_id = system["startMapId"]
     check_start_map(dir, start_id, tilesets, mapinfos, system) if start_id.is_a?(Integer)
   rescue => e # a truly unexpected failure should surface, not abort the sweep
@@ -228,7 +263,7 @@ class Checker
       next unless a
       name = a["characterName"]
       next unless name.is_a?(String) && !name.empty?
-      path = File.join(dir, "img", "characters", "#{name}.png")
+      path = image_path(dir, "img", "characters", "#{name}.png")
       expect(File.file?(path),
              "actor #{aid} characterName #{name.inspect} has no " \
              "img/characters/#{name}.png")
@@ -257,14 +292,14 @@ class Checker
   # The system art the MZ boot and its scenes hard-require. Scene_Boot preloads
   # the windowskin and the icon sheet; every window with a scrollbar or a cancel
   # button builds a Sprite_Button off ButtonSet, whose size it *asserts*.
-  def check_system_images(dir)
-    window = File.join(dir, "img", "system", "Window.png")
-    expect(png_size(window),
+  def check_system_images(dir, key = nil)
+    window = image_path(dir, "img", "system", "Window.png")
+    expect(png_size(window, key),
            "img/system/Window.png is missing or not a PNG (ColorManager reads " \
            "the text colours out of it and every window draws its frame from it)")
 
-    buttons = File.join(dir, "img", "system", "ButtonSet.png")
-    size = png_size(buttons)
+    buttons = image_path(dir, "img", "system", "ButtonSet.png")
+    size = png_size(buttons, key)
     if size
       want_w = MZ_BUTTON_BLOCK * MZ_BUTTON_BLOCKS
       want_h = MZ_BUTTON_BLOCK * 2
@@ -279,7 +314,7 @@ class Checker
       fail("img/system/ButtonSet.png is missing or not a PNG — MZ's touch UI " \
            "builds buttons from it in every scrollable window")
     end
-    puts "  system images: Window#{png_size(window)&.join('x')} " \
+    puts "  system images: Window#{png_size(window, key)&.join('x')} " \
          "ButtonSet#{size&.join('x')}"
   end
 
@@ -334,7 +369,7 @@ class Checker
              "(got #{names.length})")
       names.each do |n|
         next unless n.is_a?(String) && !n.empty?
-        expect(File.file?(File.join(dir, "img", "tilesets", "#{n}.png")),
+        expect(File.file?(image_path(dir, "img", "tilesets", "#{n}.png")),
                "tileset #{tid} names #{n.inspect} but img/tilesets/#{n}.png " \
                "is missing")
       end

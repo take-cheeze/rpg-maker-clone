@@ -294,6 +294,16 @@
   tapped confirm would see a choice window, a closed message and a branch having
   run without a choice ever being made. Show Choices had never run at all before
   this, so the interpreter's branching was untested
+- **Encrypted projects run.** Most released MV/MZ games tick "Encrypt Images" at
+  deployment, which changes the loading path entirely: nothing is opened by
+  name, and the engine XHRs each asset, decrypts it in its own JavaScript and
+  hands a `Blob` object URL to an `Image`. The host now provides the three
+  things that needs — `Blob`, `URL.createObjectURL`/`revokeObjectURL` and an
+  `arraybuffer` XHR — so real games boot; before, the first encrypted asset
+  threw and the boot died in `Scene_Boot` with a black screen. `MZ_MODE` has no
+  `encrypted` mode: `scripts/mz_encrypted_check.bash` *derives* an encrypted
+  copy of the bed and runs `play` against it, so the plain bed stays the single
+  source of truth for what the bed contains
 - MZ **buys things**: `shop` mode opens a shop with a Shop Processing command,
   taps confirm through Buy, the goods list and the quantity window, and asserts
   both that the gold left the purse and that the item arrived — either alone

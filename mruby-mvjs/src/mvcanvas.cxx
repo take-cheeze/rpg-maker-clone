@@ -1050,6 +1050,42 @@ JSValue js_image_load(JSContext* ctx,
   return JS_NewInt32(ctx, static_cast<int>(g_canvases.size()));
 }
 
+// __mv_imageLoadBytes(arrayBuffer) -> a canvas handle holding the decoded
+// image (0 on failure), the in-memory twin of __mv_imageLoad above.
+//
+// This is what makes an **encrypted** project loadable. RPG Maker's deployment
+// can encrypt every image (`img/**/*.png_` on MZ, `*.rpgmvp` on MV), and the
+// engine's own code is what undoes it: it XHRs the file as an ArrayBuffer,
+// decrypts it in JavaScript, wraps the plaintext in a Blob and hands the
+// resulting object URL to an Image. Nothing reaches the filesystem by name at
+// that point, so a loader that can only open a path cannot see the result. See
+// ADR 0004 M6.3r.
+JSValue js_image_load_bytes(JSContext* ctx,
+                            JSValueConst,
+                            int argc,
+                            JSValueConst* argv) {
+  if (argc < 1)
+    return JS_NewInt32(ctx, 0);
+  size_t len = 0;
+  uint8_t* bytes = JS_GetArrayBuffer(ctx, &len, argv[0]);
+  if (!bytes || len == 0)
+    return JS_NewInt32(ctx, 0);
+
+  int w = 0, h = 0, comp = 0;
+  unsigned char* data =
+      stbi_load_from_memory(bytes, static_cast<int>(len), &w, &h, &comp, 4);
+  if (!data)
+    return JS_NewInt32(ctx, 0);
+
+  Canvas* c = new Canvas();
+  c->resize(w, h);
+  std::memcpy(c->px.data(), data,
+              static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+  stbi_image_free(data);
+  g_canvases.push_back(c);
+  return JS_NewInt32(ctx, static_cast<int>(g_canvases.size()));
+}
+
 // The Canvas2D JavaScript shim: document, HTMLCanvasElement and the 2D context.
 const char* kCanvasPreamble = R"MVJS(
 (function (g) {
@@ -1574,7 +1610,18 @@ const char* kCanvasPreamble = R"MVJS(
       var self = this;
       this._src = v;
       this.complete = false;
-      var h = g.__mv_imageLoad(v);
+      // An object URL carries decrypted bytes rather than naming a file: it is
+      // what the engines hand us for an encrypted asset, after decrypting it in
+      // their own JavaScript. Nothing on disk answers to that name, so it is
+      // decoded from the registry instead (see the Blob shim in mvjs.cxx).
+      var h;
+      if (typeof v === 'string' && v.lastIndexOf('blob:', 0) === 0 &&
+          typeof g.__mv_blobBytes === 'function') {
+        var bytes = g.__mv_blobBytes(v);
+        h = bytes ? g.__mv_imageLoadBytes(bytes.buffer) : 0;
+      } else {
+        h = g.__mv_imageLoad(v);
+      }
       g.requestAnimationFrame(function () {
         // A missing or undecodable image resolves as a 1x1 transparent bitmap
         // (via onload), not an error. MV reserves system art (Window, IconSet,
@@ -1641,6 +1688,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasFillPolygon", js_fill_polygon, 8);
   install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
+  install(ctx, global, "__mv_imageLoadBytes", js_image_load_bytes, 1);
   JS_FreeValue(ctx, global);
 
   JSValue r = JS_Eval(ctx, kCanvasPreamble, std::strlen(kCanvasPreamble),
