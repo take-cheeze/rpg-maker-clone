@@ -602,7 +602,19 @@ The work below is roughly ordered by the critical path to a walkable game
   `crit_chance`, and `Battle#critical?` rolls against it. Integer basis points
   rather than a float keeps the damage path on the arithmetic the rest of it
   uses; the cost is that a 1/30 row reads 333 bp (3.33% against 3.3333…%), one
-  crit fewer in ~300,000 swings. Only a **weapon** grants the bonus — the best
+  crit fewer in ~300,000 swings. Rounding was **not** the only cost, though, and
+  the other one was three orders of magnitude larger: the roll draws through
+  `Rng#scaled`, not `Rng#random`, because the generator's period is prime and
+  `next_int % 10000` therefore leaves its lowest 5537 values over-represented —
+  precisely the range a roll-under-a-small-threshold test reads. Measured through
+  the real `Battle#critical?`, that paid **every** crit chance out about 7% more
+  often than its number said (a 333 bp chance landing 3.56%, a 3333 bp chance
+  35.6%). `#scaled` multiplies across the period instead of taking a modulus of
+  it, which is monotonic and so spreads the unevenness rather than piling it
+  under the threshold; the same measurement then reads 3.335% and 33.338%.
+  `#random` is untouched — every other caller passes a small `n` where it is
+  correct enough, and changing it would reshuffle every seeded result for no
+  gain. Only a **weapon** grants the bonus — the best
   among those equipped, the same shape `attack_hit_rate` uses — and Nepheshel's
   own bytes are what settle that rather than an appeal to EasyRPG's structure:
   69 of the 75 are weapons with a spread of rates (2..100), while the other six
