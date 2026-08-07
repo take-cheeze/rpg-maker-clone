@@ -1110,7 +1110,7 @@ jobs:
       PPSSPP_TAG: v1.17.1
     steps:
       - name: Download EBOOT
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: psp-eboot
           path: eboot
@@ -1276,17 +1276,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Download wasm page
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: wasm
           path: site
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   # Publish a Cloudflare Pages preview deployment on request, so a pull request's
   # build gets a shareable URL before it merges. Comment `/preview` on the PR to
@@ -1331,7 +1331,7 @@ jobs:
       # else.
       - name: Report the missing setup on the PR
         if: steps.creds.outputs.configured != 'true'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: cloudflare-preview
           number: ${{ github.event.issue.number }}
@@ -1343,14 +1343,14 @@ jobs:
             `docs/deploy.md` for the one-time setup.
       - name: Download wasm page
         if: steps.creds.outputs.configured == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: wasm
           path: site
       - name: Deploy preview to Cloudflare Pages
         id: cf
         if: steps.creds.outputs.configured == 'true'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -1367,7 +1367,7 @@ jobs:
             --commit-dirty=true
       - name: Comment preview URL on the PR
         if: ${{ steps.cf.outputs.deployment-url != '' }}
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: cloudflare-preview
           number: ${{ github.event.issue.number }}

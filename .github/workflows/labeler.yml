@@ -23,7 +23,7 @@ jobs:
   label:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/labeler@v5
+      - uses: actions/labeler@v7
         with:
           # Add only. A label a maintainer put on by hand stays on even when no
           # path matches it any more.
