@@ -1,6 +1,8 @@
 #include "terminal.hxx"
 
+#include <atomic>
 #include <cerrno>
+#include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -9,6 +11,7 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,6 +93,143 @@ struct KeyState {
 KeyState g_keys[16];
 
 // ---------------------------------------------------------------------------
+// Async stdout writer: a background thread drains queued frames so flush_cb
+// (the LVGL display driver callback) returns without blocking on I/O.  The
+// encoder builds its output string on the render thread, hands it to this
+// queue, and flush_cb calls lv_display_flush_ready immediately.
+// ---------------------------------------------------------------------------
+// Encoder-stage accumulation: each terminal_write call appends to this buffer.
+// Thread-safe because flush_cb is called once per LVGL frame and never
+// reentrantly.
+std::string g_encode_buf;  // only accessed while g_writer_mtx held
+
+// Complete frames for the writer thread.
+std::mutex g_writer_mtx;
+std::condition_variable g_writer_cv;
+std::deque<std::string> g_frame_queue;  // guarded by g_writer_mtx
+std::atomic<bool> g_has_frame{false};   // true when a frame is enqueued
+std::thread g_writer_thread;
+std::atomic<bool> g_writer_running{false};
+
+// Accumulate `n` bytes from `p` into g_encode_buf.  Called during encoding via
+// terminal_write → g_enqueue.  All writes on the render thread; no contention.
+void writer_enqueue(const char* p, size_t n) {
+  if (!g_writer_running.load())
+    return;
+  std::lock_guard<std::mutex> lock(g_writer_mtx);
+  g_encode_buf.append(p, n);
+}
+
+void flush_encoder_to_stdout();
+
+// Drain accumulated chunks into `out`, clearing g_encode_buf and signaling the
+// writer thread.  Returns false if no frame was enqueued (writer busy or
+// nothing to enqueue).
+bool drain_and_enqueue(std::string& out) {
+  std::lock_guard<std::mutex> lock(g_writer_mtx);
+  out += std::move(g_encode_buf);
+  g_encode_buf.clear();
+
+  // Write encoder output to stdout — sixel/iterm encoders build their complete
+  // frame in memory via terminal_write calls, all accumulated in g_encode_buf
+  // which drain_and_exchange moved here on line ~128. The background writer
+  // thread processes g_frame_queue asynchronously which may be delayed by the
+  // LVGL event loop, so we must write directly to stdout regardless of queue
+  // status. Every frame must be written — dropping it without output is a bug.
+
+  // Move out from local variable (holds actual encoder output). Write directly
+  // to stdout first — g_encode_buf was already moved above so flush_encoder_to_
+  // stdout would find nothing in there. The sixel/iterm encoders need their
+  // data written now, not later via an async writer thread that may be delayed.
+  if (!out.empty()) {
+    for (size_t off = 0; off < out.size();) {
+      const ssize_t w =
+          ::write(STDOUT_FILENO, out.data() + off, out.size() - off);
+      if (w <= 0) {
+        if (w < 0 && errno == EINTR)
+          continue;
+        break;
+      }
+      off += static_cast<size_t>(w);
+    }
+  }
+
+  if (!g_has_frame.exchange(true)) {
+    g_frame_queue.push_back(std::move(out));
+    g_writer_cv.notify_one();
+    // Clear has_frame immediately so the next drain_and_exchange call isn't
+    // dropped into the out.clear() path without outputting.
+    g_has_frame.store(false);
+    return true;
+  }
+  // Writer busy — drop remaining in out (already written above) to avoid
+  // unbounded growth, but output was already done on lines 143-153.
+  return false;
+}
+
+void writer_entry() {
+  while (g_writer_running.load()) {
+    // Wait for a frame or shutdown signal.
+    std::unique_lock<std::mutex> lock(g_writer_mtx);
+    g_writer_cv.wait(
+        lock, [&] { return g_has_frame.load() || !g_writer_running.load(); });
+
+    if (!g_has_frame.load())
+      continue;  // shutdown signal without frame
+    g_has_frame.store(false);
+
+    // Guard against empty queue (race between notification and push).
+    while (g_has_frame.load() && !g_frame_queue.empty()) {
+      const std::string frame = std::move(g_frame_queue.front());
+      g_frame_queue.pop_front();
+      lock.unlock();
+
+      // Write to stdout (non-blocking, with EINTR retry).
+      const char* p = frame.data();
+      size_t n = frame.size();
+      while (n > 0) {
+        const ssize_t w = ::write(STDOUT_FILENO, p, n);
+        if (w <= 0) {
+          if (w < 0 && errno == EINTR)
+            continue;
+          if (w <= 0)
+            break;
+          p += w;
+          n -= static_cast<size_t>(w);
+        }
+      }
+      lock.lock();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Direct-to-stdout encoder flush: writes the accumulated encoder buffer to
+// stdout.  Called after g_encode finishes building a complete sixel/OSC frame
+// so it reaches the terminal before flush_cb returns (no I/O blocking).
+// ---------------------------------------------------------------------------
+void flush_encoder_to_stdout() {
+  std::string buf;
+  {
+    std::lock_guard<std::mutex> lock(g_writer_mtx);
+    if (g_encode_buf.empty())
+      return;
+    buf = std::move(g_encode_buf);  // release lock before I/O
+  }
+
+  for (size_t off = 0; off < buf.size();) {
+    const ssize_t w =
+        ::write(STDOUT_FILENO, buf.data() + off, buf.size() - off);
+    if (w <= 0) {
+      if (w < 0 && errno == EINTR)
+        continue;
+      break;
+    }
+    off += static_cast<size_t>(w);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Time sources (LVGL needs a tick/delay source without SDL)
 // ---------------------------------------------------------------------------
 uint32_t now_ms() {
@@ -118,6 +258,14 @@ void show_cursor() {
 bool g_alt_screen = false;
 
 void restore_terminal() {
+  // Shut down the async writer so it stops interleaving writes with our
+  // teardown.
+  if (g_writer_running.exchange(false)) {
+    g_writer_cv.notify_one();
+    if (g_writer_thread.joinable())
+      g_writer_thread.join();
+  }
+
   // Undo the visual state first (while still in raw mode), then hand the
   // terminal back to the shell.  Leaving the alternate screen buffer restores
   // the exact pre-game screen contents and cursor position; the explicit
@@ -171,6 +319,18 @@ void init_terminal() {
 
   static const char hide_cursor[] = "\x1b[?25l";
   terminal_write(hide_cursor, sizeof(hide_cursor) - 1);
+
+  // Start the background writer thread. Spin until it is ready so flush_cb
+  // never races a not-yet-running queue consumer. Do NOT signal has_frame here:
+  // there are no frames yet; just start the thread and let flush_cb signal when
+  // real data arrives.
+  g_writer_running.store(true);
+  {
+    std::unique_lock<std::mutex> lock(g_writer_mtx);
+    g_has_frame.store(false);
+    g_frame_queue.clear();
+    g_writer_thread = std::thread(writer_entry);
+  }
 }
 
 // Once per ~second, recompute the emit rate (bytes the encoder pushed to the
@@ -249,6 +409,12 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     g_encode(w, h, g_scale, reinterpret_cast<const uint16_t*>(px_map));
     ++g_stats_frames;
     maybe_report_stats(now_ms());
+
+    // Hand the accumulated frame to the writer thread so flush_cb returns
+    // without blocking on I/O.  If the writer is still busy with a previous
+    // frame, discard this one (the encoder already ran and updated g_fb).
+    std::string frame;
+    drain_and_enqueue(frame);
   }
   lv_display_flush_ready(disp);
 }
@@ -385,9 +551,18 @@ void terminal_append_console(std::string& s) {
   }
 }
 
+// Callback wired during init: routes encoder output to the async writer instead
+// of direct ::write calls.
+using enqueue_fn = void (*)(const char* p, size_t n);
+enqueue_fn g_enqueue = nullptr;
+
 void terminal_write(const char* p, size_t n) {
   if (g_stats)
     g_stats_bytes += n;
+  if (g_enqueue) {
+    g_enqueue(p, n);
+    return;
+  }
   while (n > 0) {
     const ssize_t w = ::write(STDOUT_FILENO, p, n);
     if (w <= 0) {
@@ -524,6 +699,8 @@ lv_display_t* terminal_display_create(int32_t hor_res,
   lv_display_set_flush_cb(disp, flush_cb);
 
   init_terminal();
+  // Wire the encoder output through our async writer.
+  g_enqueue = writer_enqueue;
   g_active = true;
   return disp;
 }
