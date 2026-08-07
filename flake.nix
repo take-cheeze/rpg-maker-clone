@@ -31,7 +31,13 @@
             ret = f system;
           in
           builtins.foldl' (
-            acc': key: acc' // { ${key} = (acc'.${key} or { }) // { ${system} = ret.${key}; }; }
+            acc': key:
+            acc'
+            // {
+              ${key} = (acc'.${key} or { }) // {
+                ${system} = ret.${key};
+              };
+            }
           ) acc (builtins.attrNames ret)
         ) { } systems;
     in

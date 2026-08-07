@@ -1,17 +1,17 @@
 #include "terminal.hxx"
 
+#include <atomic>
 #include <cerrno>
+#include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <atomic>
 #include <utility>
 #include <vector>
 
@@ -99,7 +99,8 @@ KeyState g_keys[16];
 // queue, and flush_cb calls lv_display_flush_ready immediately.
 // ---------------------------------------------------------------------------
 // Encoder-stage accumulation: each terminal_write call appends to this buffer.
-// Thread-safe because flush_cb is called once per LVGL frame and never reentrantly.
+// Thread-safe because flush_cb is called once per LVGL frame and never
+// reentrantly.
 std::string g_encode_buf;  // only accessed while g_writer_mtx held
 
 // Complete frames for the writer thread.
@@ -113,7 +114,8 @@ std::atomic<bool> g_writer_running{false};
 // Accumulate `n` bytes from `p` into g_encode_buf.  Called during encoding via
 // terminal_write → g_enqueue.  All writes on the render thread; no contention.
 void writer_enqueue(const char* p, size_t n) {
-  if (!g_writer_running.load()) return;
+  if (!g_writer_running.load())
+    return;
   std::lock_guard<std::mutex> lock(g_writer_mtx);
   g_encode_buf.append(p, n);
 }
@@ -121,8 +123,8 @@ void writer_enqueue(const char* p, size_t n) {
 void flush_encoder_to_stdout();
 
 // Drain accumulated chunks into `out`, clearing g_encode_buf and signaling the
-// writer thread.  Returns false if no frame was enqueued (writer busy or nothing
-// to enqueue).
+// writer thread.  Returns false if no frame was enqueued (writer busy or
+// nothing to enqueue).
 bool drain_and_enqueue(std::string& out) {
   std::lock_guard<std::mutex> lock(g_writer_mtx);
   out += std::move(g_encode_buf);
@@ -137,13 +139,15 @@ bool drain_and_enqueue(std::string& out) {
 
   // Move out from local variable (holds actual encoder output). Write directly
   // to stdout first — g_encode_buf was already moved above so flush_encoder_to_
-  // stdout would find nothing in there. The sixel/iterm encoders need their data
-  // written now, not later via an async writer thread that may be delayed.
+  // stdout would find nothing in there. The sixel/iterm encoders need their
+  // data written now, not later via an async writer thread that may be delayed.
   if (!out.empty()) {
     for (size_t off = 0; off < out.size();) {
-      const ssize_t w = ::write(STDOUT_FILENO, out.data() + off, out.size() - off);
+      const ssize_t w =
+          ::write(STDOUT_FILENO, out.data() + off, out.size() - off);
       if (w <= 0) {
-        if (w < 0 && errno == EINTR) continue;
+        if (w < 0 && errno == EINTR)
+          continue;
         break;
       }
       off += static_cast<size_t>(w);
@@ -167,9 +171,11 @@ void writer_entry() {
   while (g_writer_running.load()) {
     // Wait for a frame or shutdown signal.
     std::unique_lock<std::mutex> lock(g_writer_mtx);
-    g_writer_cv.wait(lock, [&] { return g_has_frame.load() || !g_writer_running.load(); });
+    g_writer_cv.wait(
+        lock, [&] { return g_has_frame.load() || !g_writer_running.load(); });
 
-    if (!g_has_frame.load()) continue;  // shutdown signal without frame
+    if (!g_has_frame.load())
+      continue;  // shutdown signal without frame
     g_has_frame.store(false);
 
     // Guard against empty queue (race between notification and push).
@@ -184,8 +190,10 @@ void writer_entry() {
       while (n > 0) {
         const ssize_t w = ::write(STDOUT_FILENO, p, n);
         if (w <= 0) {
-          if (w < 0 && errno == EINTR) continue;
-          if (w <= 0) break;
+          if (w < 0 && errno == EINTR)
+            continue;
+          if (w <= 0)
+            break;
           p += w;
           n -= static_cast<size_t>(w);
         }
@@ -204,14 +212,17 @@ void flush_encoder_to_stdout() {
   std::string buf;
   {
     std::lock_guard<std::mutex> lock(g_writer_mtx);
-    if (g_encode_buf.empty()) return;
+    if (g_encode_buf.empty())
+      return;
     buf = std::move(g_encode_buf);  // release lock before I/O
   }
 
   for (size_t off = 0; off < buf.size();) {
-    const ssize_t w = ::write(STDOUT_FILENO, buf.data() + off, buf.size() - off);
+    const ssize_t w =
+        ::write(STDOUT_FILENO, buf.data() + off, buf.size() - off);
     if (w <= 0) {
-      if (w < 0 && errno == EINTR) continue;
+      if (w < 0 && errno == EINTR)
+        continue;
       break;
     }
     off += static_cast<size_t>(w);
@@ -247,7 +258,8 @@ void show_cursor() {
 bool g_alt_screen = false;
 
 void restore_terminal() {
-  // Shut down the async writer so it stops interleaving writes with our teardown.
+  // Shut down the async writer so it stops interleaving writes with our
+  // teardown.
   if (g_writer_running.exchange(false)) {
     g_writer_cv.notify_one();
     if (g_writer_thread.joinable())
