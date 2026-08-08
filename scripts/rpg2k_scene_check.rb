@@ -4,7 +4,7 @@
 # Integration smoke-test for the map scene's event-movement wiring.
 #
 # Unlike scripts/rpg2k_logic_check.rb (which exercises the pure Game:: logic in
-# isolation), this loads the *actual* Scene::Map from mruby-rpg2k/mrblib/main.rb
+# isolation), this loads the *actual* Scene::Map from mruby-rpg2k/mrblib/scene/
 # behind small RGSS stubs and a synthetic map, then ticks it like the game loop
 # would. It catches the wiring the pure checks can't: method visibility (the
 # MapWorld adapter calling back into the scene), the LCF page field names
@@ -142,6 +142,7 @@ lib = File.expand_path('../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
 load File.join(lib, 'interpreter.rb')
 load File.join(lib, 'main.rb')
+Dir[File.join(lib, 'scene', '*.rb')].sort.each { |path| load path }
 
 # -- tiny test framework ------------------------------------------------------
 
