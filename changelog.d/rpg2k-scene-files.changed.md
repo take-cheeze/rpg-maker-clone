@@ -1,0 +1,1 @@
+- Split the RPG2000 runtime scene subclasses into focused source files.
