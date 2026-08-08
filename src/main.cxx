@@ -1203,11 +1203,7 @@ int main(int argc, char** argv) {
     std::ifstream ifs(FLAGS_script);
     CHECK(ifs) << "file open failed: " << FLAGS_script;
     std::string str((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-    mrb_value a = mrb_ary_new_capa(M, argc);
-    for (int i = 1; i < argc; ++i) {
-      mrb_ary_push(M, a, mrb_str_new_cstr(M, argv[i]));
-    }
-    mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "ARGV"), a);
+    mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "ARGV"), args);
     mrb_gv_set(M, mrb_intern_lit(M, "$0"), mrb_str_new_cstr(M, argv[0]));
     mrb_load_string(M, str.c_str());
     CHECK_NO_EXC(M);
