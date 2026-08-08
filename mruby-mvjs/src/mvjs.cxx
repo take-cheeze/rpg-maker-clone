@@ -48,6 +48,7 @@ namespace {
 // `MV::JS.base_dir=` at boot; while empty, paths pass through untouched (so the
 // host specs, which read fixtures by their own paths, are unaffected).
 std::string g_base_dir;
+int g_base_dir_version = 0;
 
 // Read a whole file into `out`. Returns false if it cannot be opened.
 bool read_file(const char* path, std::string& out) {
@@ -204,7 +205,16 @@ mrb_value js_set_base_dir(mrb_state* mrb, mrb_value self) {
   g_base_dir.assign(p, static_cast<size_t>(len));
   while (!g_base_dir.empty() && g_base_dir.back() == '/')
     g_base_dir.pop_back();
+  ++g_base_dir_version;
   return mrb_nil_value();
+}
+
+// __mv_baseDirVersion() -> base-dir generation, or -1 when game-relative writes
+// are not rooted at a game dir. Tests that exercise the host without booting a
+// game leave the base dir empty; in that mode localStorage should stay in
+// memory instead of creating save/ artifacts in the test working directory.
+JSValue js_base_dir_version(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+  return JS_NewInt32(ctx, g_base_dir.empty() ? -1 : g_base_dir_version);
 }
 
 // The host-global bootstrap, evaluated once when the context is created. Kept
@@ -412,9 +422,18 @@ const char* kHostPreamble = R"MVJS(
   (function () {
     var FILE = 'save/websave.json';
     var store = null;
+    var loadedVersion = null;
+    function storageVersion() {
+      return typeof g.__mv_baseDirVersion === 'function'
+        ? g.__mv_baseDirVersion() : -1;
+    }
+    function persistent() { return storageVersion() >= 0; }
     function load() {
-      if (store) return;
+      var version = storageVersion();
+      if (store && loadedVersion === version) return;
+      loadedVersion = version;
       store = {};
+      if (!persistent()) return;
       try {
         if (g.__mv_existsSync(FILE)) {
           var txt = g.__mv_readFileSync(FILE);
@@ -423,6 +442,7 @@ const char* kHostPreamble = R"MVJS(
       } catch (e) { store = {}; }
     }
     function persist() {
+      if (!persistent()) return;
       try { g.__mv_writeFileSync(FILE, JSON.stringify(store)); } catch (e) {}
     }
     g.localStorage = {
@@ -605,6 +625,9 @@ void install_host_globals(JSContext* ctx) {
       JS_NewCFunction(ctx, js_write_file, "__mv_writeFileSync", 2));
   JS_SetPropertyStr(ctx, global, "__mv_existsSync",
                     JS_NewCFunction(ctx, js_file_exists, "__mv_existsSync", 1));
+  JS_SetPropertyStr(
+      ctx, global, "__mv_baseDirVersion",
+      JS_NewCFunction(ctx, js_base_dir_version, "__mv_baseDirVersion", 0));
   JS_FreeValue(ctx, global);
 
   JSValue r = JS_Eval(ctx, kHostPreamble, std::strlen(kHostPreamble),
