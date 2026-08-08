@@ -10,6 +10,7 @@
 #include <lvgl.h>
 #include <mruby.h>
 #include <mruby/array.h>
+#include <mruby/compile.h>
 #include <mruby/error.h>
 #include <mruby/string.h>
 #include <mruby/variable.h>
@@ -381,6 +382,9 @@ DEFINE_string(profile_trace,
               "",
               "Stream a Chrome trace (chrome://tracing / Perfetto JSON) of "
               "every frame and section to this file. Implies --profile");
+DEFINE_string(script,
+              "",
+              "Runs ruby script directly as entry point");
 
 namespace {
 
@@ -1148,6 +1152,7 @@ int main(int argc, char** argv) {
   // that build still "just runs" with no interaction.
   //
   // These handles must outlive main(); EXIT_RUNTIME=0 keeps the module alive.
+  CHECK(!FLAGS_script.empty()) << "--script not supported on emscripten";
   em_mrb = mrb;
   em_display = display;
   em_args = args;
@@ -1194,7 +1199,20 @@ int main(int argc, char** argv) {
   mrb_value game_obj;
   // Record the detected maker for the crash report before the runtime is built
   // (see the same dispatch in rpg_start_game above).
-  if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
+  if (!FLAGS_script.empty()) {
+    std::ifstream ifs(FLAGS_script);
+    CHECK(ifs) << "file open failed: " << FLAGS_script;
+    std::string str((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+    mrb_value a = mrb_ary_new_capa(M, argc);
+    for (int i = 1; i < argc; ++i) {
+      mrb_ary_push(M, a, mrb_str_new_cstr(M, argv[i]));
+    }
+    mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "ARGV"), a);
+    mrb_gv_set(M, mrb_intern_lit(M, "$0"), mrb_str_new_cstr(M, argv[0]));
+    mrb_load_string(M, str.c_str());
+    CHECK_NO_EXC(M);
+    return EXIT_SUCCESS;
+  } else if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
     error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
   } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
