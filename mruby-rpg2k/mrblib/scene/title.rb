@@ -55,12 +55,14 @@ class RPG2k
       end
 
       def update
-        if Input.trigger?(Input::DOWN) && @selected_index < @menu_items.length - 1
+        if Input.trigger?(Input::DOWN)
           @selected_index += 1
+          @selected_index %= 3
           play_cursor_se
           refresh_cursor
-        elsif Input.trigger?(Input::UP) && @selected_index > 0
+        elsif Input.trigger?(Input::UP)
           @selected_index -= 1
+          @selected_index %= 3
           play_cursor_se
           refresh_cursor
         end
