@@ -66,6 +66,7 @@ class RPG2k
         end
 
         if Input.trigger?(Input::C) || auto_select?
+          Audio.bgm_stop
           case @selected_index
           when 0  # New Game
             parent.start_new_game
