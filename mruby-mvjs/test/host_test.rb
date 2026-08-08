@@ -122,11 +122,19 @@ assert 'MV host provides navigator/location/performance' do
 end
 
 assert 'MV host localStorage stores and retrieves values in memory' do
-  MV::JS.eval("localStorage.setItem('save1', 'data')")
-  assert_equal "data", MV::JS.eval("localStorage.getItem('save1')")
-  assert_nil MV::JS.eval("localStorage.getItem('missing')")
-  MV::JS.eval("localStorage.removeItem('save1')")
-  assert_nil MV::JS.eval("localStorage.getItem('save1')")
+  File.delete("save/websave.json") if File.exist?("save/websave.json")
+  begin
+    MV::JS.base_dir = ""
+    MV::JS.eval("localStorage.setItem('save1', 'data')")
+    assert_equal "data", MV::JS.eval("localStorage.getItem('save1')")
+    assert_nil MV::JS.eval("localStorage.getItem('missing')")
+    assert_equal false, File.exist?("save/websave.json")
+    MV::JS.eval("localStorage.removeItem('save1')")
+    assert_nil MV::JS.eval("localStorage.getItem('save1')")
+    assert_equal false, File.exist?("save/websave.json")
+  ensure
+    File.delete("save/websave.json") if File.exist?("save/websave.json")
+  end
 end
 
 assert 'MV host require("path") provides join/dirname/basename/extname' do
