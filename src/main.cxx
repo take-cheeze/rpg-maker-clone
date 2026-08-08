@@ -382,9 +382,7 @@ DEFINE_string(profile_trace,
               "",
               "Stream a Chrome trace (chrome://tracing / Perfetto JSON) of "
               "every frame and section to this file. Implies --profile");
-DEFINE_string(script,
-              "",
-              "Runs ruby script directly as entry point");
+DEFINE_string(script, "", "Runs ruby script directly as entry point");
 
 namespace {
 
@@ -1202,8 +1200,10 @@ int main(int argc, char** argv) {
   if (!FLAGS_script.empty()) {
     std::ifstream ifs(FLAGS_script);
     CHECK(ifs) << "file open failed: " << FLAGS_script;
-    std::string str((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-    mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "ARGV"), args);
+    std::string str((std::istreambuf_iterator<char>(ifs)),
+                    (std::istreambuf_iterator<char>()));
+    mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "ARGV"),
+                  args);
     mrb_gv_set(M, mrb_intern_lit(M, "$0"), mrb_str_new_cstr(M, argv[0]));
     mrb_load_string(M, str.c_str());
     CHECK_NO_EXC(M);
