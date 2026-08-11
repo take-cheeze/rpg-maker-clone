@@ -7,6 +7,7 @@
 #include <regex>
 #include <string>
 
+#include <SDL2/SDL.h>
 #include <lvgl.h>
 #include <mruby.h>
 #include <mruby/array.h>
@@ -937,6 +938,14 @@ int main(int argc, char** argv) {
         [](lv_display_t*) {});
     CHECK(display);
   } else {
+    // RPG2000/2003, XP, VX(Ace) and MV all draw through LVGL's own software
+    // rasteriser (LV_SDL_ACCELERATED 0 in lv_conf.h already asks SDL for
+    // SDL_RENDERER_SOFTWARE, not SDL_RENDERER_ACCELERATED); only MZ's WebGL
+    // backend needs a real GL context, and that is a wholly separate
+    // off-screen EGL context in mruby-mvjs/src/mvgl.cxx, never this window.
+    // Set the hint explicitly anyway, so this window is guaranteed GLX-free
+    // even on an X server with no OpenGL support at all -- see issue #449.
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
     display = std::shared_ptr<lv_display_t>(
         lv_sdl_window_create(FLAGS_width, FLAGS_height),
         [](lv_display_t*) { lv_sdl_quit(); });
