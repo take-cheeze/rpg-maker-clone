@@ -6,6 +6,10 @@
 - Displays the title image from the game's data
 - Shows a menu with options for New Game, Continue, and Shutdown
 - Supports keyboard navigation (up/down) and selection (enter/Z)
+- Understands `RPG_RT.exe`'s own legacy CLI arguments — the bare `TestPlay`,
+  `HideTitle` and `Window` words the RPG2000/2003 editor's Test Play button
+  launches the game with. `HideTitle` skips the title picture and centres the
+  command window, matching RPG_RT
 
 ### Map exploration
 - "New Game" builds the initial party from the database, reads the start

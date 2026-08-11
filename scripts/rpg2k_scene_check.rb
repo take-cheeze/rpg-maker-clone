@@ -3197,6 +3197,42 @@ check 'neither flag set leaves the title screen waiting for input' do
   ok !scene.send(:auto_select?), 'no auto-select without a flag'
 end
 
+# -- RPG_RT.exe legacy CLI arg: HideTitle --------------------------------------
+#
+# RPG_RT.exe (and the RPG2000/2003 editor's own Test Play button) is launched
+# with bare positional words -- `Game.exe TestPlay HideTitle Window` -- rather
+# than --flag=value ones. RPG2k#initialize parses them off the args it is
+# already handed and exposes HideTitle as `hide_title?`; Scene::Title reads
+# that to skip the title picture and centre the command window instead of
+# docking it near where the picture would have sat. A full Scene::Title can be
+# built here (unlike RPG2k itself, which needs a real RPG_RT.ldb/.lmt) with a
+# minimal stand-in parent that only answers what Scene::Title reads.
+TitleParent = Struct.new(:db, :map_tree, :hide_title_flag) do
+  def hide_title?; hide_title_flag; end
+end
+
+check 'HideTitle hides the title picture and centres the command window' do
+  parent = TitleParent.new(fake_db, nil, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  title = scene.instance_variable_get(:@title)
+  window = scene.instance_variable_get(:@window)
+  ok title.bitmap.nil?, 'no title picture is drawn'
+  eq (RPG2k::HEIGHT - window.height) / 2, window.y,
+     'the command window is centred vertically'
+end
+
+check 'without HideTitle the picture shows and the window docks near its foot' do
+  parent = TitleParent.new(fake_db, nil, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  title = scene.instance_variable_get(:@title)
+  window = scene.instance_variable_get(:@window)
+  ok !title.bitmap.nil?, 'the title picture is drawn'
+  bottom_num = RPG2k::Scene::Title::BOTTOM_NUM
+  bottom_den = RPG2k::Scene::Title::BOTTOM_DEN
+  eq RPG2k::HEIGHT * bottom_num / bottom_den - window.height, window.y,
+     'the command window docks near the picture, as RPG_RT does'
+end
+
 # -- screen fade / flash overlays ---------------------------------------------
 #
 # Erase/Show Screen and Flash Screen are drawn as two full-screen colour sprites

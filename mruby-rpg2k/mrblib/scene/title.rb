@@ -17,8 +17,12 @@ class RPG2k
       def initialize parent
         super parent
 
+        # HideTitle (RPG_RT.exe's own legacy CLI arg, parsed in RPG2k#initialize):
+        # no title picture, and the command window moves from RPG_RT's usual dock
+        # near the picture's bottom edge to the centre of the screen, since there
+        # is no picture left to dock against.
         @title = Sprite.new
-        @title.bitmap = Bitmap.new "Title/#{db.system.title}"
+        @title.bitmap = Bitmap.new "Title/#{db.system.title}" unless hide_title?
 
         @menu_items =
           [db.term.new_game, db.term.continue, db.term.shutdown].map(&:to_s)
@@ -34,7 +38,12 @@ class RPG2k
         window_height = content_h + Window::BORDER * 2
 
         window_x = (WIDTH - window_width) / 2
-        window_y = HEIGHT * BOTTOM_NUM / BOTTOM_DEN - window_height
+        window_y =
+          if hide_title?
+            (HEIGHT - window_height) / 2
+          else
+            HEIGHT * BOTTOM_NUM / BOTTOM_DEN - window_height
+          end
 
         @window = Window.new window_x, window_y, window_width, window_height
         skin = load_windowskin
@@ -125,6 +134,16 @@ class RPG2k
 
       def auto_continue?
         RPG2K_CONTINUE
+      rescue StandardError
+        false
+      end
+
+      # HideTitle, as RPG2k#initialize parsed it off RPG_RT.exe's legacy CLI
+      # arguments. Guarded the same way as the two flags above: a bare instance
+      # built without a real parent (see scripts/rpg2k_scene_check.rb's
+      # title_selector) answers false rather than raising.
+      def hide_title?
+        parent.hide_title?
       rescue StandardError
         false
       end
