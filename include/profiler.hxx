@@ -54,6 +54,13 @@ void profiler_frame_end();
 // time so the profiler reports CPU cost rather than time spent sleeping.
 void profiler_note_idle(uint32_t idle_ms);
 
+// Record a dropped frame: the fps-cap pacing in Graphics.update missed its
+// deadline by more than one frame period and had to rebase, i.e. a frame the
+// game could not keep up with. Aggregated per interval and included in the
+// summary line, `RGSS::Profiler.stats`, and (when tracing) an instant marker
+// in the Chrome trace. No-op when profiling is disabled.
+void profiler_note_frame_drop();
+
 // Named-section timing primitives. profiler_section_begin() returns an opaque
 // start stamp to hand back to profiler_section_end(); the elapsed time is
 // aggregated under `name` for the current interval. `name` must outlive the

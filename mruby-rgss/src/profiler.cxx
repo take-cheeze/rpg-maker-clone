@@ -53,6 +53,7 @@ struct FrameAgg {
   double work_ns_sum = 0.0;  // CPU work: frame span minus reported idle
   double work_ns_max = 0.0;
   double period_ns_sum = 0.0;  // full frame span, including idle (drives fps)
+  uint32_t drops = 0;  // frames that missed the fps-cap deadline and rebased
 };
 
 struct SectionAgg {
@@ -206,6 +207,21 @@ void trace_counter(const char* name, uint64_t ns, const std::string& args) {
   trace_raw(ev);
 }
 
+// A thread-scoped instant ("i") event, for marking one-off occurrences (e.g. a
+// dropped frame) on the main-loop track without a duration.
+void trace_instant(const char* name, uint64_t ns) {
+  if (!g_trace_file)
+    return;
+  char num[64];
+  std::string ev = "{\"ph\":\"i\",\"pid\":1,\"tid\":1,\"s\":\"t\",\"name\":\"";
+  ev += json_escape(name);
+  ev += "\"";
+  std::snprintf(num, sizeof(num), ",\"ts\":%.3f", trace_us(ns));
+  ev += num;
+  ev += "}";
+  trace_raw(ev);
+}
+
 // ---- Reporting -----------------------------------------------------------
 
 // Format and print the interval summary to stderr, then open a fresh interval.
@@ -223,9 +239,10 @@ void report(uint64_t now) {
   std::string line = "[profiler] ";
   char buf[128];
 
-  std::snprintf(buf, sizeof(buf),
-                "fps=%.1f frame(work) avg=%.2fms max=%.2fms n=%u | mem rss=",
-                fps, avg_ms, max_ms, g_frames.frames);
+  std::snprintf(
+      buf, sizeof(buf),
+      "fps=%.1f frame(work) avg=%.2fms max=%.2fms n=%u drops=%u | mem rss=",
+      fps, avg_ms, max_ms, g_frames.frames, g_frames.drops);
   line += buf;
   const double rss = static_cast<double>(read_rss_bytes());
   append_bytes(line, buf, sizeof(buf), rss);
@@ -372,6 +389,14 @@ void profiler_note_idle(uint32_t idle_ms) {
     g_frame_idle_ns += static_cast<uint64_t>(idle_ms) * 1'000'000ULL;
 }
 
+void profiler_note_frame_drop() {
+  if (!g_enabled)
+    return;
+  ++g_frames.drops;
+  if (g_trace_file)
+    trace_instant("frame_drop", now_ns());
+}
+
 void profiler_frame_end() {
   if (!g_enabled)
     return;
@@ -489,6 +514,8 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
                mrb_float_value(M, avg_ms));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_max_ms")),
                mrb_float_value(M, g_frames.work_ns_max / 1e6));
+  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "frame_drops")),
+               mrb_fixnum_value(static_cast<mrb_int>(g_frames.drops)));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "rss_bytes")),
                mrb_fixnum_value(static_cast<mrb_int>(read_rss_bytes())));
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "live_blocks")),
