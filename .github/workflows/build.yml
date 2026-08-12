@@ -222,10 +222,12 @@ jobs:
       # tests in CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
       # the RPG2k
       # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
-      # real-game boot smoke=112..119 (one per game, plus a pass per extra
-      # probe on the editor bed -- a block, so adding a probe does not renumber
-      # anything else) and the RGSSAD packed-asset smoke=120..121
-      # (two runs, one per arm of its A/B) below. Every
+      # real-game boot smoke=112..119 (one per pass -- script host/battle/save
+      # on the editor bed plus script host on Pray for You, each its own step
+      # and its own display so they run concurrently rather than the four of
+      # them serially in one step; 116..119 stays free for another pass to be
+      # added without renumbering anything else) and the RGSSAD packed-asset
+      # smoke=120..121 (two runs, one per arm of its A/B) below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -321,14 +323,45 @@ jobs:
           # editor bed's map (`[RPGXP-HOST-MOVE]`), opens that bed's own menu
           # (`[RPGXP-HOST-MENU]`) and, in a pass each, fights in its own
           # battle scene (`[RPGXP-HOST-BATTLE]`) and opens its own save screen
-          # (`[RPGXP-HOST-SAVE]`). Two beds: the editor-shaped
-          # OpenGame test bed and the *released* Pray for You (Game.rgssad only,
-          # several maps), on displays 112 and 113 — one per game (see the
-          # reserved server-num map above). See
+          # (`[RPGXP-HOST-SAVE]`). Two beds: the editor-shaped OpenGame test bed
+          # (script host, battle and save passes) and the *released* Pray for
+          # You (Game.rgssad only, several maps; script host pass only — see
+          # rpgxp_boot_check.bash). Each pass is a full headless engine boot on
+          # CI's unaccelerated renderer, and running the four of them serially
+          # in one step used to be this smoke's whole cost. RPGXP_BOOT_PASS
+          # (see that script's usage comment) lets each run as its own step
+          # here instead, on its own reserved display (112..115 — see the
+          # reserved server-num map above), so they overlap with each other
+          # and with every other step in this group rather than adding up. See
           # docs/adr/0025-rpgxp-cross-runtime-testing.md and
           # docs/adr/0030-rgss-only-the-games-own-engine.md.
-          - name: RPG XP real-game boot smoke test
-            run: ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112
+          - name: RPG XP real-game boot smoke test (script host, editor bed)
+            env:
+              RPGXP_BOOT_PASS: script_host
+            run: |
+              ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 112 \
+                data/OpenGame.exe/Testbed/XP
+
+          - name: RPG XP real-game boot smoke test (battle, editor bed)
+            env:
+              RPGXP_BOOT_PASS: battle
+            run: |
+              ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 113 \
+                data/OpenGame.exe/Testbed/XP
+
+          - name: RPG XP real-game boot smoke test (save, editor bed)
+            env:
+              RPGXP_BOOT_PASS: save
+            run: |
+              ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 114 \
+                data/OpenGame.exe/Testbed/XP
+
+          - name: RPG XP real-game boot smoke test (script host, Pray for You)
+            env:
+              RPGXP_BOOT_PASS: script_host
+            run: |
+              ./scripts/nix-develop.bash ./scripts/rpgxp_boot_check.bash 115 \
+                data/PrayforYou
 
           # A released game keeps its Graphics/ inside the encrypted archive with
           # nothing loose, so the native asset loaders have to read through it.
