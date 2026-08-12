@@ -943,9 +943,17 @@ int main(int argc, char** argv) {
     // SDL_RENDERER_SOFTWARE, not SDL_RENDERER_ACCELERATED); only MZ's WebGL
     // backend needs a real GL context, and that is a wholly separate
     // off-screen EGL context in mruby-mvjs/src/mvgl.cxx, never this window.
-    // Set the hint explicitly anyway, so this window is guaranteed GLX-free
-    // even on an X server with no OpenGL support at all -- see issue #449.
+    // SDL_HINT_RENDER_DRIVER alone is not enough on SDL3 (reached here via
+    // sdl2-compat): lv_sdl_sw.c's software renderer still calls
+    // SDL_GetWindowSurface() to present, and that call spins up its own
+    // *second*, GPU-accelerated companion renderer via SDL_CreateWindowTexture
+    // -- ignoring the driver hint above -- which tries "opengl" first and
+    // crashed with a fatal X_GLXMakeCurrent (GLXBadContext) error on an X
+    // server with no working GLX. SDL_HINT_FRAMEBUFFER_ACCELERATION=0 turns
+    // that companion renderer off, so SDL_GetWindowSurface() falls back to a
+    // plain CPU blit instead -- see issue #449.
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
     display = std::shared_ptr<lv_display_t>(
         lv_sdl_window_create(FLAGS_width, FLAGS_height),
         [](lv_display_t*) { lv_sdl_quit(); });
