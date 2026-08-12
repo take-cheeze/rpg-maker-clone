@@ -8272,6 +8272,63 @@ check 'a node missing its fields is treated as inheriting' do
   eq 'Wasteland', Game::Backdrop.name_for(1, { 1 => bare }, 'Wasteland')
 end
 
+# -- menu Save access resolution (map tree save field, 33) --------------------
+
+# One map-tree node's Save setting.
+class FakeSaveNode
+  attr_accessor :save, :parent_map_id
+  def initialize(save, parent = 0)
+    @save = save; @parent_map_id = parent
+  end
+end
+
+check 'save type 1 (Allow) lets the menu Save command through' do
+  props = { 1 => FakeSaveNode.new(1) }
+  eq true, Game::MapAccess.save_allowed?(1, props)
+end
+
+check 'save type 2 (Forbid) blocks the menu Save command' do
+  props = { 1 => FakeSaveNode.new(2) }
+  eq false, Game::MapAccess.save_allowed?(1, props)
+end
+
+check 'save type 0 inherits from the parent map' do
+  props = { 1 => FakeSaveNode.new(2), 2 => FakeSaveNode.new(0, 1) }
+  eq false, Game::MapAccess.save_allowed?(2, props), 'the parent pins Forbid'
+end
+
+check 'save inheritance walks more than one level' do
+  props = { 1 => FakeSaveNode.new(2),
+            2 => FakeSaveNode.new(0, 1),
+            3 => FakeSaveNode.new(0, 2) }
+  eq false, Game::MapAccess.save_allowed?(3, props)
+end
+
+check 'a map inheriting from the root defaults to Allow' do
+  props = { 1 => FakeSaveNode.new(0, 0) }   # parent 0 = the tree root
+  eq true, Game::MapAccess.save_allowed?(1, props)
+end
+
+check 'an unknown map id defaults to Allow' do
+  eq true, Game::MapAccess.save_allowed?(7, { 1 => FakeSaveNode.new(2) })
+  eq true, Game::MapAccess.save_allowed?(1, nil), 'and so does having no tree'
+end
+
+check 'a looping map tree ends at Allow instead of hanging' do
+  props = { 1 => FakeSaveNode.new(0, 2),
+            2 => FakeSaveNode.new(0, 1) }   # 1 -> 2 -> 1 -> ...
+  eq true, Game::MapAccess.save_allowed?(1, props)
+end
+
+check 'a map that parents itself defaults to Allow' do
+  eq true, Game::MapAccess.save_allowed?(1, { 1 => FakeSaveNode.new(0, 1) })
+end
+
+check 'a node missing its save field defaults to Allow' do
+  bare = Struct.new(:nothing).new(0)
+  eq true, Game::MapAccess.save_allowed?(1, { 1 => bare })
+end
+
 # -- battle log terms (Game::States::BattleText) ------------------------------
 
 BT = Game::States::BattleText
