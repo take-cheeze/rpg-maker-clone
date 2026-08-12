@@ -3106,6 +3106,7 @@ class RPG2k
           refresh_battle_status
           refresh_battle_sprites
           show_battle_action(entry)
+          play_battle_action_se(entry)
           # When an animation plays, it is the wait; otherwise the banner timer
           # is, exactly as before.
           @battle_ui[:anim_timer] =
@@ -3838,6 +3839,23 @@ class RPG2k
         lines = battle_action_lines(entry)
         y = SCREEN_H - lines.length * BATTLE_LINE_H - Window::BORDER * 2 - 6
         @battle_ui[:action_win] = battle_text_window(lines, y, 340)
+      end
+
+      # The system SFX a landed action plays, alongside its banner. Each check
+      # is independent rather than an elsif chain -- RPG_RT plays its own cue
+      # for each thing that happened to the same hit, not one sound standing in
+      # for all of them: a killing blow plays the damage sound and then the
+      # death cry, and an item that lands a hit plays the item's own cue
+      # alongside the hit's (EasyRPG's Scene_Battle_Rpg2k fires
+      # SFX_EnemyDamage / SFX_AllyDamage and, on top of a kill, SFX_EnemyKill,
+      # as separate calls rather than one replacing another).
+      def play_battle_action_se(entry)
+        play_system_se(SFX_DODGE) if entry[:missed]
+        if entry[:damage] && entry[:damage] > 0
+          play_system_se(entry[:target_ally] ? SFX_ACTOR_DAMAGE : SFX_ENEMY_DAMAGE)
+        end
+        play_system_se(SFX_ENEMY_DEATH) if entry[:defeated] && !entry[:target_ally]
+        play_system_se(SFX_ITEM) if entry[:item_id]
       end
 
       # The conditions the action just landed or lifted, one sentence each under
@@ -4668,9 +4686,34 @@ class RPG2k
       # runs from a fight (Force Flee, 1006).
       SFX_BATTLE = 4
       SFX_ESCAPE = 5
+      # The rest of that same run of fields (47..52): the per-hit sounds a fight
+      # itself plays. Slot numbers keep counting up through the database's own
+      # field order (field - 41) even for the one left unplayed below, since a
+      # Change System SFX command's slot argument is that same raw index and has
+      # to land on the right entry whichever slot it names -- skipping a number
+      # here would silently mis-target every slot after it.
+      SFX_ENEMY_ATTACK = 6
+      SFX_ENEMY_DAMAGE = 7
+      SFX_ACTOR_DAMAGE = 8
+      SFX_DODGE = 9
+      SFX_ENEMY_DEATH = 10
+      SFX_ITEM = 11
       DB_SE_FIELD = { SFX_CURSOR => :cursor_se, SFX_DECISION => :decision_se,
                       SFX_CANCEL => :cancel_se, SFX_BUZZER => :buzzer_se,
-                      SFX_BATTLE => :battle_se, SFX_ESCAPE => :escape_se }.freeze
+                      SFX_BATTLE => :battle_se, SFX_ESCAPE => :escape_se,
+                      SFX_ENEMY_ATTACK => :enemy_attack_se,
+                      SFX_ENEMY_DAMAGE => :enemy_damaged_se,
+                      SFX_ACTOR_DAMAGE => :actor_damaged_se,
+                      SFX_DODGE => :dodge_se, SFX_ENEMY_DEATH => :enemy_death_se,
+                      SFX_ITEM => :item_se }.freeze
+      # `enemy_attack_se` (slot 6) is declared above so the slot numbering and
+      # Change System SFX overrides both land correctly, but nothing calls
+      # `play_system_se(SFX_ENEMY_ATTACK)` yet: RPG_RT plays it at the start of
+      # an enemy's swing, before the hit lands, and this build's round animation
+      # has no separate wind-up moment to hang that on -- a plain attack is one
+      # step (land the hit, then banner and pace by it), not a swing-then-impact
+      # pair. Playing it at the same moment as the impact sound would be a
+      # different, unverified timing rather than a faithful one.
 
       # Play a system sound effect by slot, preferring a Change System SFX
       # override held on the game state and falling back to the database's own

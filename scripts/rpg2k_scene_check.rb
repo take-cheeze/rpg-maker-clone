@@ -204,6 +204,12 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                            airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
                            cursor_se: OpenStruct.new(file: 'Cursor1', volume: 100, pitch: 100),
                            decision_se: OpenStruct.new(file: 'Decision1', volume: 100, pitch: 100),
+                           # The battle per-hit sounds (Scene::Map::DB_SE_FIELD).
+                           enemy_damaged_se: OpenStruct.new(file: 'EnemyHit', volume: 100, pitch: 100),
+                           actor_damaged_se: OpenStruct.new(file: 'ActorHit', volume: 100, pitch: 100),
+                           dodge_se: OpenStruct.new(file: 'Dodge1', volume: 100, pitch: 100),
+                           enemy_death_se: OpenStruct.new(file: 'EnemyKill', volume: 100, pitch: 100),
+                           item_se: OpenStruct.new(file: 'ItemUse', volume: 100, pitch: 100),
                            gameover_name: 'GameOver1',
                            gameover_music: OpenStruct.new(file: 'GameOverBGM', volume: 90, pitch: 100)),
     # A second chipset (id 2) so Change Map Tileset has somewhere to swap to.
@@ -2545,9 +2551,12 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   st.instance_variable_set(:@party, BattleStubParty.new)
   scene.update # opens the per-actor command menu (Attack / Defend)
   eq 0, st.party.gold, 'no rewards mid-battle'
+  RGSS::Audio.reset_se
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
   eq 20, st.party.gold, 'gained the troop gold (2 Slimes x 10)'
   eq 10, st.party.actors.first.exp, 'gained the troop EXP (2 Slimes x 5)'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyKill' },
+     'both fallen Slimes played the enemy-death SE'
   ok !st.switches[1], 'showing the Victory result'
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss result
   scene.update
@@ -3466,9 +3475,11 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   eq :animate, ui[:phase], 'the commanded round now plays out as an animation'
   eq 0, ui[:battle].log.length, 'no hit has landed the instant the round starts'
 
+  RGSS::Audio.reset_se
   scene.update # lands exactly the first action of the round
   eq 1, ui[:battle].log.length, 'one attack landed on the first animation step'
   ok ui[:action_win], 'and it is bannered on screen'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyHit' }, 'and its damage SE played'
   # The timer holds the next action back, so a mid-timer frame lands nothing more.
   scene.update
   eq 1, ui[:battle].log.length, 'the next action waits out BATTLE_ANIM_FRAMES'
@@ -3571,9 +3582,11 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   eq 2, st.party.item_count(5), 'the potion is not spent until the action lands'
 
   hp_before = ui[:allies].first.hp
+  RGSS::Audio.reset_se
   scene.update                          # the Hero uses the Potion first
   eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
   eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
 end
 
 check 'Enemy Encounter scene: the command and target cursors wrap around' do
