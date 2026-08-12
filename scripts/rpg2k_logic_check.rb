@@ -1952,7 +1952,9 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # weapon slot (Actor#double_hand?). Appended last for
                            # the same reason: every existing positional
                            # construction keeps working with it defaulting nil.
-                           :double_hand)
+                           :double_hand,
+                           # 装備固定 -- Actor#equipment_fixed?. Same reasoning.
+                           :equipment_fixed)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -8906,6 +8908,46 @@ check 'a two-handed second weapon still empties the shield-turned-weapon hand\'s
   ok st.party.equip_from_bag(hero, 4, Game::Actor::SHIELD_SLOT), 'the claymore, into the second hand'
   eq 4, hero.equipment[1]
   eq 0, hero.equipment[0], 'the two-handed claymore still claims the other hand'
+end
+
+# -- 装備固定 actors (equipment_fixed) -----------------------------------------
+# An actor (or RPG2003 class) trait meaning the field cannot change their
+# equipment at all. EasyRPG gates this at the equip *scene* -- confirming a
+# slot refuses to even open the item list for such an actor -- rather than in
+# Game_Actor::ChangeEquipment or Game_Party's bag-swapping helpers, which
+# neither check it (a Change Equipment event command, unlike the menu, is not
+# gated by this at all). So Game::Party's own equip API stays usable here on
+# purpose; #equipment_fixed? exists for Scene::EquipMenu to read before
+# opening its item list, which is exercised at that layer in
+# scripts/rpg2k_scene_check.rb.
+
+check 'Actor#equipment_fixed? reads the row flag, including an RPG2003 class override' do
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 10 })
+  row.equipment_fixed = true
+  db = FakeActorDB.new({ 1 => row }, [1])
+  hero = Game::Party.new(db).leader
+  ok hero.equipment_fixed?, 'the row carries the flag'
+
+  plain = FakePlayerRow.new('Ally', '', 0, 5, { max_hp: 10 })
+  db2 = FakeActorDB.new({ 1 => plain }, [1])
+  ok !Game::Party.new(db2).leader.equipment_fixed?, 'unset by default'
+end
+
+check 'equipment_fixed? does not itself block Party#equip_from_bag / #unequip_to_bag' do
+  # The gate belongs to the equip menu, not the bag-swap logic -- RPG_RT's own
+  # ChangeEquipment does not consult it either, so a caller that already knows
+  # better (an event command, this test) is not refused here.
+  items = { 1 => fake_item(type: 1, atk: 20) }
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 10 })
+  row.equipment_fixed = true
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  ok st.party.equip_from_bag(hero, 1)
+  eq 1, hero.equipment[0]
+  ok st.party.unequip_to_bag(hero, 0) != 0
+  eq 0, hero.equipment[0]
 end
 
 # -- chipset terrain tags -----------------------------------------------------
