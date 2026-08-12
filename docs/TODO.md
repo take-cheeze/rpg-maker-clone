@@ -2010,9 +2010,20 @@ not yet verified:
   transfer, unlike the dedicated Change Graphic event commands. (Already
   fixed for the hero this session; vehicles and, per one source, non-hero
   page-level graphic reverts on leave/return too, are not yet checked.)
-- Move Frequency set via a page always **reasserts itself** once a Move
-  Route's own route finishes — the page's own frequency wins going
-  forward, not the route's last-set value.
+- ✅ **Move Frequency set via a page now reasserts itself once a forced Move
+  Route finishes** — the page's own frequency wins going forward, not
+  whatever a Frequency Up/Down sub-command left it at. `Scene::Map#step_event`
+  set an event's `move_frequency` from its page only when the page was
+  (re)built, so a Move Event's route bumping frequency via `Frequency Up`/
+  `Frequency Down` leaked into whatever paced the event afterwards — an
+  autonomous move type, or a later route with no explicit override. The
+  moment a forced route finishes (`e[:forced_route] = nil`, already the
+  "revert to page movement" point), `move_frequency` is now reset from the
+  page too. Scoped to a forced route only — a page's *own* custom route
+  (`move_type: CUSTOM`) reasserting nothing is a different, unverified
+  question, since there is no separate "page movement" for it to revert to.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check, confirmed to fail
+  against the pre-fix code before the fix.
 - "Cancel All Designated Moves" aborts in-progress routes without
   unwinding side effects: a route cancelled mid-"Through Mode: Begin"
   leaves the character stuck pass-through; cancelling during an active

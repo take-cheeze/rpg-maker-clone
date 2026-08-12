@@ -1407,6 +1407,25 @@ check 'Move Event with "this event" moves the running event itself' do
   eq 2, c.x, 'it stayed on its column'
 end
 
+check 'Move Frequency reasserts the page value once a forced route finishes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target event 2, freq 8 (route pacing), repeat off, skippable on: bump
+  # frequency twice then take one step, so the route finishes rather than
+  # looping forever.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+    [2, 8, 0, 1, R::FREQ_UP, R::FREQ_UP, R::MOVE_RIGHT])]
+  target_page = page(frequency: 3) # the page's own configured frequency
+  mover = event(1, 1, target_page)
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => mover }, player: [5, 0])
+  eq 3, chars(scene)[2].move_frequency, 'starts at the page frequency'
+  40.times { scene.update }
+  ok chars(scene)[2].x > 1, 'the forced route ran and moved the event'
+  eq 3, chars(scene)[2].move_frequency,
+     'the page frequency reasserts itself once the forced route finishes, ' \
+     'not the Frequency Up value the route left it at'
+end
+
 check 'a forced player route suppresses input while it runs' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
