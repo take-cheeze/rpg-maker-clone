@@ -1745,10 +1745,18 @@ Everything below is unverified against the codebase.
   built-in command. (Party caps at 4, Change Party Member no-ops past that —
   now fixed, see above.)
 - **Processing order** — map/common events process in ascending id order;
-  "Get Event ID at coordinates" on overlapping events returns the
-  **highest** id, not lowest/topmost-drawn; only one event/parallel-process
-  advances per tick engine-wide (round robin, not true concurrency) — a
-  process that hits Wait/Show-Text yields to the others that tick.
+  only one event/parallel-process advances per tick engine-wide (round
+  robin, not true concurrency) — a process that hits Wait/Show-Text yields
+  to the others that tick. **"Get Event ID at coordinates" on overlapping
+  events resolving to the highest id is confirmed already correct**:
+  `Scene::Map#build_events` walks the map's event table (`LCF::Array2D`,
+  always ascending id — a plain Ruby Array iterated low to high) into
+  `@events` in that order, and `#rebuild_event_tiles` writes
+  `@event_tiles[[x, y]]` once per event in that same order, so the *last*
+  write — the highest id — is what ends up on a shared tile and what
+  `event_id_at` reads back; nothing sorts by draw order or picks the
+  lowest/topmost. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (two events sharing a tile, `Store Event ID` resolves to the higher one).
 - **Battle Animation** — only one can display at once (second supersedes);
   each frame is exactly 1/30s; targeting a Vehicle position reads that
   vehicle's live x/y even from a different map than the one shown.
