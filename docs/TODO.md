@@ -1795,11 +1795,14 @@ Everything below is unverified against the codebase.
 - **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
-  here — no "map data changed since save" concept); a runtime Change
-  Tileset override does not survive save/load, reverting to the map's own
-  configured tileset (**worth checking** — `apply_tileset_request`/
-  `@tileset_id` currently only resets on teleport per the code read this
-  session; unclear whether it also resets on save/load).
+  here — no "map data changed since save" concept). **A runtime Change
+  Tileset override not surviving save/load is confirmed already correct**:
+  `@tileset_id` is a `Scene::Map` instance variable, not a `Game::State`
+  field — `to_h`/`to_lsd` have nothing named `tileset`/`chipset` at all — and
+  `RPG2k#continue_game` always builds a **fresh** `Scene::Map` from the
+  loaded state, so the override cannot follow it even though nothing
+  explicitly clears it the way `perform_teleport` does. Regression-covered
+  by a new `scripts/rpg2k_scene_check.rb` check.
 
 #### Full-site sweep (all remaining ~457 pages, 34 batches)
 
