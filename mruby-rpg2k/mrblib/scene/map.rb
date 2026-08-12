@@ -787,8 +787,16 @@ class RPG2k
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
         if it.waiting?
+          wait_kind = it.wait_kind
           drive_parallel_wait(p, it)
-        elsif it.running?
+          # A plain Wait resolves the instant its timer elapses; keep spending
+          # this same frame's step budget instead of losing a frame to the
+          # resume, matching drive_event's foreground handling (see there for
+          # why: Wait 0.0 sec must cost exactly one frame). Other wait kinds
+          # keep their old one-frame-per-call pacing.
+          return apply_interpreter_requests(it, p[:event]) unless wait_kind == :wait && !it.waiting?
+        end
+        if it.running?
           it.update
         else
           it.start(p[:commands]) # loop the process
@@ -1862,15 +1870,24 @@ class RPG2k
       # Collision test for an event stepping one tile in `dir`: in bounds,
       # passable per the chipset, and not onto the hero or another event that
       # shares its collision layer. A "through" character ignores all of this.
-      # Only the destination tile is tested, so a character never blocks itself
-      # (it stands on its own tile, not the one ahead).
       #
-      # Layer gates both checks the same way RPG_RT's priority type does: the
-      # hero is always a "normal character", so a below/above-characters event
-      # (LAYER_BELOW / LAYER_ABOVE) walks straight through it and vice versa;
-      # two events only collide when they share the same layer (below blocks
-      # below, above blocks above, same blocks same) — different layers pass
-      # through each other too.
+      # Layer gates the occupancy half the same way RPG_RT's priority type
+      # does: the hero is always a "normal character", so a below/above-
+      # characters event (LAYER_BELOW / LAYER_ABOVE) walks straight through it
+      # and vice versa; two events only collide when they share the same
+      # layer (below blocks below, above blocks above, same blocks same) —
+      # different layers pass through each other too.
+      #
+      # The chipset half asks **both** tiles at the boundary, each from its
+      # own side, as RPG2000's per-direction passability does: the tile a
+      # character is leaving must allow exit toward `dir`, and the tile it is
+      # entering must allow entry from the opposite side (its own passability
+      # bit for `TURN_180[dir]`). A wall painted on either tile blocks the
+      # crossing — checking only the destination (as this used to) missed a
+      # chip whose *own* tile disallowed stepping off it, which is how
+      # one-way ledges and railings are authored. The upper layer gets the
+      # same two-sided check: an obstacle drawn on top of the ground (a
+      # boulder, a shop counter) is exactly as solid as a lower-layer wall.
       def char_passable?(character, dir)
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
@@ -1879,17 +1896,23 @@ class RPG2k
         blocker = @event_tiles[[nx, ny]]
         return false if blocker && blocker[:layer] == character.layer
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(nx, ny), dir)
+        @chipset.passable_tile?(@map.lower(character.x, character.y),
+                                 @map.upper(character.x, character.y), dir) &&
+          @chipset.passable_tile?(@map.lower(nx, ny), @map.upper(nx, ny),
+                                   Game::Character::TURN_180[dir] || dir)
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
 
-      # Collision test for a jump landing on (x, y): the same rules as a step —
-      # in bounds, not onto the player or another event, passable per the chipset
-      # — but applied to an arbitrary tile rather than the one ahead, and entered
-      # from the jump's dominant direction. The tiles the jump passes over are
-      # deliberately not tested: RPG_RT skips the "may I leave" half of its check
-      # while jumping, which is what lets a jump clear a wall.
+      # Collision test for a jump landing on (x, y): the same occupancy rules as
+      # a step — in bounds, not onto the player or another event — applied to an
+      # arbitrary tile rather than the one ahead. The tiles the jump passes over
+      # are deliberately not tested, and neither is the tile it leaves: RPG_RT
+      # skips the "may I leave" half of its check while jumping, which is what
+      # lets a jump clear a wall. Landing itself only fails on a tile blocked in
+      # *every* direction — a jump does not arrive "from" a particular side the
+      # way a step does, so the landing tile is asked whether it permits passage
+      # at all rather than from one specific direction.
       def char_can_land?(character, x, y)
         return true if character.through
         # A hop that lands on the tile it left is always allowed: the character
@@ -1904,22 +1927,9 @@ class RPG2k
         blocker = @event_tiles[[x, y]]
         return false if blocker && blocker[:layer] == character.layer
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(x, y), jump_entry_direction(character, x, y))
+        @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
       public :char_can_land?
-
-      # The direction a jump from the character's tile enters (x, y) by: its
-      # dominant axis, vertical winning a tie, matching the facing Character#jump
-      # lands on.
-      def jump_entry_direction(character, x, y)
-        dx = x - character.x
-        dy = y - character.y
-        if dy.abs >= dx.abs
-          dy >= 0 ? 2 : 8
-        else
-          dx >= 0 ? 6 : 4
-        end
-      end
 
       # Terrain id of the lower-layer tile at (x, y), for the Store Terrain ID
       # command (0 when out of bounds or no chipset). Queried by the interpreter
@@ -1959,13 +1969,20 @@ class RPG2k
       end
 
       def drive_event
-        if @message
-          drive_message
+        # An Input Number that followed a Show Text draws its digit cells
+        # inside the still-open message window (see #open_number_input) --
+        # check it first so it takes over from the finished text reveal.
+        if @number_input
+          drive_number_input
           return
         end
 
-        if @number_input
-          drive_number_input
+        # A message window with a pending Show Choices / Input Number followup
+        # has finished typing and is just waiting on the interpreter to reach
+        # that next command (see #drive_text_message) -- fall through to the
+        # `waiting?` dispatch below instead of driving it as a live message.
+        if @message && !@message[:awaiting_followup]
+          drive_message
           return
         end
 
@@ -1978,7 +1995,17 @@ class RPG2k
           when :inn then drive_inn
           when :shop then drive_shop
           when :battle then drive_battle
-          when :wait then drive_wait
+          when :wait
+            drive_wait
+            # RPG_RT resumes a Wait the instant its timer elapses and keeps
+            # spending that same frame's step budget -- Wait 0.0 sec is
+            # documented as costing exactly one frame (1/60s), not two, so the
+            # command right after it must not wait for a second frame here.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+            return
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?
@@ -4272,7 +4299,14 @@ class RPG2k
       end
 
       def open_message(lines, choice)
-        return if @message
+        if @message
+          # A Show Choices that directly follows a Show Text keeps the same
+          # window: append the choice list below the text already on screen
+          # instead of building a new window (see #drive_text_message).
+          return unless choice && @message[:awaiting_followup] == :choice
+          append_choice_lines(lines)
+          return
+        end
         names = ->(id) { actor_name(id) }
         raw = (lines || [])
         raw = [''] if raw.empty?
@@ -4324,8 +4358,8 @@ class RPG2k
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
         @message = { window: win, choice: choice, count: plain.length,
-                     reveal: reveal, contents: contents, inner_w: inner_w,
-                     seg_lines: seg_lines, face: face,
+                     choice_start: 0, reveal: reveal, contents: contents,
+                     inner_w: inner_w, seg_lines: seg_lines, face: face,
                      face_index: cfg.face_index,
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
                      text_x: text_x, text_w: text_w, gold_window: gold_window }
@@ -4333,6 +4367,32 @@ class RPG2k
         win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
+      end
+
+      # Append a Show Choices block's labels to the still-open message window
+      # from a Show Text that immediately preceded it (RPG_RT keeps one window
+      # for the pair: text on top, choices below). Reuses the existing window,
+      # contents bitmap and text layout; only the reveal and line list grow.
+      def append_choice_lines(labels)
+        @message[:awaiting_followup] = nil
+        names = ->(id) { actor_name(id) }
+        raw = (labels || [])
+        raw = [''] if raw.empty?
+        scans = raw.map { |l| Game::Message.scan(l.to_s, @state.variables, names) }
+        new_seg_lines = scans.map { |s| s[:segments] }
+        @message[:choice_start] = @message[:seg_lines].length
+        @message[:seg_lines] = @message[:seg_lines] + new_seg_lines
+        @message[:choice] = true
+        @message[:count] = new_seg_lines.length
+        # Choice lists appear at once, same as a standalone choice window; the
+        # text lines above are already fully revealed.
+        plain = @message[:seg_lines].map { |segs| segs.map { |s| s[:text] }.join }
+        reveal = Game::TextReveal.new(plain)
+        reveal.reveal_all
+        @message[:reveal] = reveal
+        draw_message_contents
+        @choice_index = 0
+        set_choice_cursor
       end
 
       # Vertical position of a `win_h`-tall message window for the configured
@@ -4450,8 +4510,9 @@ class RPG2k
 
       def set_choice_cursor
         return unless @message
+        offset = @message[:choice_start] || 0
         @message[:window].cursor_rect =
-          Rect.new(0, @choice_index * MSG_LINE_H,
+          Rect.new(0, (offset + @choice_index) * MSG_LINE_H,
                    @message[:window].contents.width, MSG_LINE_H)
       end
 
@@ -4558,7 +4619,15 @@ class RPG2k
         end
         # `\^` closes the finished window on its own; otherwise wait for a button.
         if reveal.auto_close? || pressed
-          close_message
+          followup = @interpreter.message_followup
+          if followup
+            # A Show Choices / Input Number immediately follows this Show Text:
+            # RPG_RT keeps the same window up, with the choices / digit entry
+            # appended below the text already shown, instead of closing it.
+            @message[:awaiting_followup] = followup
+          else
+            close_message
+          end
           @interpreter.resume
         else
           @message[:window].pause = true
@@ -4593,12 +4662,23 @@ class RPG2k
       # Pixels per digit cell in the Input Number widget.
       NUM_CELL = 16
 
-      # Open a digit-entry window for the Input Number command. A compact panel
-      # near the bottom of the screen shows `digits` cells with an editable
-      # cursor; the interpreter is resumed with the entered value on confirm.
+      # Open a digit-entry widget for the Input Number command. When it directly
+      # follows a Show Text (RPG_RT keeps one window for the pair -- see
+      # #drive_text_message), the cells are drawn into the still-open message
+      # window below the text already shown; otherwise a standalone compact
+      # panel opens near the bottom of the screen. Either way the interpreter
+      # is resumed with the entered value on confirm.
       def open_number_input(digits)
         return if @number_input
         model = Game::NumberInput.new(digits || 1)
+        if @message && @message[:awaiting_followup] == :number
+          @message[:awaiting_followup] = nil
+          x = @message[:inner_w] - model.digits * NUM_CELL
+          y = @message[:seg_lines].length * MSG_LINE_H
+          @number_input = { model: model, embedded: true, x: x, y: y }
+          draw_number_input
+          return
+        end
         inner_w = model.digits * NUM_CELL
         inner_h = MSG_LINE_H
         win_w = inner_w + Window::BORDER * 2
@@ -4616,15 +4696,24 @@ class RPG2k
         ni = @number_input
         return unless ni
         model = ni[:model]
-        c = ni[:contents]
-        c.clear
+        if ni[:embedded]
+          c = @message[:contents]
+          x0 = ni[:x]
+          y0 = ni[:y]
+          c.fill_rect x0, y0, model.digits * NUM_CELL, MSG_LINE_H, Color.new(0, 0, 0, 0)
+        else
+          c = ni[:contents]
+          x0 = 0
+          y0 = 0
+          c.clear
+        end
         (0...model.digits).each do |i|
-          x = i * NUM_CELL
+          x = x0 + i * NUM_CELL
           if i == model.cursor
-            c.fill_rect x, 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
+            c.fill_rect x, y0 + 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
           end
           c.font.color = Color.new(255, 255, 255, 255)
-          c.draw_text x, 0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
+          c.draw_text x, y0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
         end
       end
 
@@ -4645,14 +4734,16 @@ class RPG2k
           draw_number_input
         elsif Input.trigger?(Input::C)
           value = model.value
+          embedded = ni[:embedded]
           close_number_input
+          close_message if embedded
           @interpreter.resume_number(value)
         end
       end
 
       def close_number_input
         return unless @number_input
-        @number_input[:window].dispose
+        @number_input[:window].dispose if @number_input[:window]
         @number_input = nil
       end
 
@@ -4734,6 +4825,12 @@ class RPG2k
         end
       end
 
+      # The player's own step check: (x, y) is the tile ahead, `dir` the
+      # direction of travel from the player's current tile. Like
+      # `char_passable?`, both sides of the boundary must agree — the tile
+      # under the player's feet must allow exit toward `dir`, and (x, y) must
+      # allow entry from the opposite side — and the upper layer at each tile
+      # gets the same say as the lower one.
       def passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
         blocker = @event_tiles[[x, y]]
@@ -4742,7 +4839,10 @@ class RPG2k
         # decoration it walks straight over (see the LAYER_* comment).
         return false if blocker && blocker[:layer] == LAYER_SAME
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(x, y), dir)
+        @chipset.passable_tile?(@map.lower(@state.x, @state.y),
+                                 @map.upper(@state.x, @state.y), dir) &&
+          @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
+                                   Game::Character::TURN_180[dir] || dir)
       end
 
       # Current player position in map pixels, interpolated during a step.
@@ -5120,10 +5220,18 @@ class RPG2k
       #   * same-layer events (layer 1) go under the player when they stand
       #     behind him (smaller y) and over him when in front (larger-or-equal
       #     y), the y-sort RPG2000 applies within the character layer.
+      # Within whichever buffer an event lands in, draw order still has to obey
+      # that same y-sort against every *other* event sharing it — RPG_RT sorts
+      # all same-tier characters by screen y (then x, then event id) before
+      # painting, not just each one against the hero. `event_target_buffer`
+      # only decides lower-vs-upper; without this sort two events on the same
+      # side of the hero would layer in event-array order instead, so whichever
+      # was defined later in the map always drew on top regardless of position.
       # A translucent page is blitted at half opacity. Events with no graphic
       # (empty CharSet name and no tile substitution) draw nothing.
       def draw_events(cam_x, cam_y)
-        @events.each { |e| draw_event e, cam_x, cam_y }
+        ordered = @events.sort_by { |e| [e[:char].y, e[:char].x, e[:id]] }
+        ordered.each { |e| draw_event e, cam_x, cam_y }
       end
 
       def draw_event(e, cam_x, cam_y)

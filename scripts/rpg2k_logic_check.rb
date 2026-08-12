@@ -1091,6 +1091,81 @@ check 'a self-calling common event terminates instead of hanging' do
   ok !it.running?, 'recursion was bounded and the process ended'
 end
 
+# A resolver that counts every Call Event lookup instead of answering with
+# real commands, so a Call Event round trip stays a one-command no-op (the
+# empty-target early return in do_call_event) whose count is still visible.
+class CountingResolver
+  attr_reader :calls
+  def initialize
+    @calls = 0
+  end
+
+  def common_event_commands(_id)
+    @calls += 1
+    []
+  end
+
+  def map_event_commands(_id, _page); nil; end
+end
+
+check 'a single update spends its 10000-step budget at the documented per-command cost' do
+  # RPG_RT's own timing measurements give most commands one step, but a Loop's
+  # End Loop marker and a Call Event round trip cost two -- see the event
+  # command spec. These two checks pin that MAX_STEPS (10000) is spent at
+  # those weights, not a flat one step per command.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::LOOP, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 1, 0, 1], indent: 0), # variable 1 += 1
+    FakeCmd.new(IC::END_LOOP, [], indent: 0),
+  ])
+  it.update
+  eq 3333, st.variables[1],
+     '10000 steps / (1 for the add + 2 for the loop-back) per iteration'
+
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.resolver = CountingResolver.new
+  it2.start(Array.new(6000) { FakeCmd.new(IC::CALL_EVENT, [0, 1, 0]) })
+  it2.update
+  eq 5000, it2.resolver.calls, '10000 steps / 2 per Call Event round trip'
+end
+
+check 'a Conditional Branch costs one step when matched, two when not' do
+  # Per the event command spec, a Conditional Branch evaluation is one step
+  # when it matches (falling through into the true body) and two when it does
+  # not. A block here is a bare [Conditional Branch, End Branch] pair (no
+  # body), which also exercises the asymmetry in how each path reaches End
+  # Branch: a match falls through to it as an ordinary next command (so it is
+  # separately dispatched and pays its own two-step cost, for 1+2=3 per
+  # block); a miss jumps straight past it via #skip_to/#consume inside the
+  # same do_conditional call, so it is never independently dispatched (just
+  # the 2-step miss, for 2 per block) -- cheaper overall despite costing more
+  # to evaluate.
+  st = new_state
+  st.switches[1] = true
+  matched = Game::Interpreter.new(st)
+  matched.start(Array.new(4000) {
+    [FakeCmd.new(IC::CONDITIONAL, [0, 1, 0], indent: 0), # switch 1 == on
+     FakeCmd.new(IC::END_BRANCH, [], indent: 0)]
+  }.flatten)
+  matched.update
+  eq 3333, matched.instance_variable_get(:@index) / 2,
+     '10000 steps / (1 to match + 2 for the End Branch it falls through to) per block'
+
+  st2 = new_state
+  st2.switches[1] = false
+  unmatched = Game::Interpreter.new(st2)
+  unmatched.start(Array.new(6000) {
+    [FakeCmd.new(IC::CONDITIONAL, [0, 1, 0], indent: 0), # switch 1 == on (it is not)
+     FakeCmd.new(IC::END_BRANCH, [], indent: 0)]
+  }.flatten)
+  unmatched.update
+  eq 5000, unmatched.instance_variable_get(:@index) / 2,
+     '10000 steps / 2 per miss, with no separate End Branch dispatch to pay for'
+end
+
 check 'Call Event with no resolver set is a safe no-op' do
   st = new_state
   it = Game::Interpreter.new(st)
@@ -8642,6 +8717,113 @@ check 'an unindexable tile reads the first lower tile' do
   td = Array.new(162, 3)
   td[0] = 7
   eq 7, chipset_with(td).terrain(-1)
+end
+
+# -- chipset directional passability ------------------------------------------
+
+def chipset_with_passable(passable_data)
+  db = Struct.new(:chipset).new(
+    { 1 => FakeChipsetRow.new('cs', 'cs', passable_data, nil, nil, 0, 0) }
+  )
+  Game::ChipSet.new(db, 1)
+end
+
+check 'passable? reads exactly the requested direction bit' do
+  data = Array.new(162, 0)
+  data[0] = Game::ChipSet::DIR_BIT[2] | Game::ChipSet::DIR_BIT[6] # Down, Right
+  cs = chipset_with_passable(data)
+  ok cs.passable?(0, 2), 'Down is set'
+  ok cs.passable?(0, 6), 'Right is set'
+  ok !cs.passable?(0, 4), 'Left is clear'
+  ok !cs.passable?(0, 8), 'Up is clear'
+end
+
+# RPG_RT ORs a jump's landing tile across all four direction bits rather than
+# asking one specific side, since a jump does not arrive "from" anywhere the
+# way a step does; it only refuses a tile blocked on every side.
+check 'landable? accepts a tile passable from any single side' do
+  data = Array.new(162, 0)
+  data[0] = Game::ChipSet::DIR_BIT[8] # Up only
+  cs = chipset_with_passable(data)
+  ok cs.landable?(0), 'one open direction is enough to land'
+  data[0] = 0
+  ok !chipset_with_passable(data).landable?(0), 'blocked on every side refuses the landing'
+end
+
+# -- upper-layer chipset passability -------------------------------------------
+
+def chipset_with_upper(lower_data, upper_data)
+  db = Struct.new(:chipset).new(
+    { 1 => FakeChipsetRow.new('cs', 'cs', lower_data, upper_data, nil, 0, 0) }
+  )
+  Game::ChipSet.new(db, 1)
+end
+
+BLOCK_F = Game::ChipsetLayout::BLOCK_F
+ABOVE = Game::ChipSet::ABOVE_BIT
+COUNTER = Game::ChipSet::COUNTER_BIT
+
+# No upper tile at all (id 0, or a chipset with no upper table): the upper
+# layer has nothing to say, so passability falls straight through to the
+# lower layer exactly as before the upper check existed.
+check 'passable_tile? with no upper tile falls through to the lower layer' do
+  lower = Array.new(162, 0)
+  lower[0] = Game::ChipSet::DIR_BIT[6]
+  cs = chipset_with_upper(lower, Array.new(144, 0))
+  ok cs.passable_tile?(0, 0, 6), 'lower allows Right, no upper tile'
+  ok !cs.passable_tile?(0, 0, 2), 'lower refuses Down, no upper tile'
+
+  cs_no_table = chipset_with_upper(lower, nil)
+  ok cs_no_table.passable_tile?(0, BLOCK_F, 6), 'no upper table at all defers to lower too'
+end
+
+# A solid object on the upper layer (all direction bits clear, ABOVE_BIT
+# clear) blocks movement outright, regardless of what the lower layer says --
+# this is the counter tiles fix generalised: a boulder or fence post is just
+# as impassable as a shop counter, and neither defers to the ground beneath.
+check 'passable_tile? refuses a solid upper-layer obstacle even over open ground' do
+  lower = Array.new(162, Game::ChipSet::ALL_DIRS) # wide open lower ground
+  upper = Array.new(144, 0)
+  upper[0] = 0 # blocked on every side, ABOVE_BIT clear
+  cs = chipset_with_upper(lower, upper)
+  ok !cs.passable_tile?(0, BLOCK_F, 2), 'a solid upper tile blocks Down'
+  ok !cs.passable_tile?(0, BLOCK_F, 6), 'and Right'
+
+  # A shop/inn counter is exactly this case, plus the counter flag.
+  upper[0] = COUNTER
+  ok !chipset_with_upper(lower, upper).passable_tile?(0, BLOCK_F, 6),
+     'a counter (blocked + COUNTER_BIT) is impassable to walk onto'
+end
+
+# ABOVE_BIT set: the upper tile permits the direction, but is "see-through"
+# ground, so the lower layer's own passability still gets the final word --
+# a decorative overlay does not override a wall painted underneath it.
+check 'passable_tile? with ABOVE_BIT still checks the lower layer' do
+  lower = Array.new(162, 0) # lower blocks everything
+  upper = Array.new(144, 0)
+  upper[0] = Game::ChipSet::ALL_DIRS | ABOVE
+  cs = chipset_with_upper(lower, upper)
+  ok !cs.passable_tile?(0, BLOCK_F, 6), 'upper allows Right, but the lower wall still refuses it'
+
+  lower[0] = Game::ChipSet::DIR_BIT[6]
+  ok chipset_with_upper(lower, upper).passable_tile?(0, BLOCK_F, 6),
+     'both layers now agree: passable'
+end
+
+check 'landable_tile? applies the same solid-vs-see-through rule to jumps' do
+  lower = Array.new(162, 0) # lower blocks every side
+  upper = Array.new(144, 0)
+  upper[0] = Game::ChipSet::DIR_BIT[8] # one open side, ABOVE_BIT clear
+  cs = chipset_with_upper(lower, upper)
+  ok cs.landable_tile?(0, BLOCK_F), 'a solid object open on one side is still landable'
+
+  upper[0] = 0
+  ok !chipset_with_upper(lower, upper).landable_tile?(0, BLOCK_F),
+     'blocked on every side refuses the landing'
+
+  upper[0] = Game::ChipSet::DIR_BIT[8] | ABOVE
+  ok !chipset_with_upper(lower, upper).landable_tile?(0, BLOCK_F),
+     'ABOVE_BIT set defers to the lower layer, which is fully blocked'
 end
 
 # -- summary ------------------------------------------------------------------
