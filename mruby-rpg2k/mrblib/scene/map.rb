@@ -312,6 +312,12 @@ class RPG2k
         # Whether the overlay currently holds a transition mask rather than the
         # solid black the opacity-only fade needs (see #draw_transition_mask).
         @fade_masked = false
+        # The screen snapshot a captured transition (scroll / combine /
+        # division, see Game::Transition::CAPTURED) composites from, and the
+        # transition object it was taken for -- so a second frame of the same
+        # transition reuses it instead of re-snapshotting every frame.
+        @transition_capture = nil
+        @captured_transition = nil
 
         @flash_sprite = Sprite.new
         @flash_sprite.z = 450
@@ -366,9 +372,13 @@ class RPG2k
       # stripes, a closing window) instead paints the bitmap: opaque black
       # everywhere, then the regions of the live scene still showing through
       # punched back out to fully transparent. `fill_rect` overwrites alpha, so
-      # the holes really are holes.
+      # the holes really are holes. A *captured* transition (scroll, combine /
+      # division) paints real pixels instead of holes -- see
+      # #draw_captured_transition.
       def draw_transition_mask(screen)
         tr = screen.transition
+        return draw_captured_transition(tr) if tr && tr.captured?
+        release_transition_capture
         if tr.nil? || tr.uniform?
           reset_fade_bitmap if @fade_masked
           @fade_sprite.opacity = screen.fade_level
@@ -383,6 +393,46 @@ class RPG2k
         # to the plain fade level, which still lands on the right end state.
         $stderr.puts "[RPG2k] screen transition draw failed: #{e.message}"
         @fade_sprite.opacity = screen.fade_level
+      end
+
+      # Paint a captured-style transition: the whole overlay is filled black,
+      # then each of the transition's #capture_ops pastes a piece of a screen
+      # snapshot at its sliding position, so a piece not yet in place just
+      # leaves the black behind it. The snapshot is taken once, the first frame
+      # this particular Game::Transition instance is drawn (identity, not
+      # value, so a same-style transition right after it still re-snapshots).
+      def draw_captured_transition(tr)
+        unless @captured_transition.equal?(tr)
+          @transition_capture.dispose if @transition_capture
+          @transition_capture = Graphics.snap_to_bitmap
+          @captured_transition = tr
+        end
+        cap = @transition_capture
+        unless cap
+          # The backend cannot snapshot (Wio/PSP, or a headless test double) --
+          # fall back to a plain fade, same as every style this build does not
+          # paint for real.
+          @fade_sprite.opacity = tr.black_alpha
+          return
+        end
+        @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        tr.capture_ops.each do |dx, dy, sx, sy, sw, sh|
+          @fade_bmp.blt dx, dy, cap, Rect.new(sx, sy, sw, sh)
+        end
+        @fade_masked = true
+        @fade_sprite.opacity = 255
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] screen transition capture draw failed: #{e.message}"
+        @fade_sprite.opacity = tr.black_alpha
+      end
+
+      # Drop the held snapshot once no captured transition needs it -- holding
+      # a 320x240 bitmap between transitions would be a pointless leak.
+      def release_transition_capture
+        return unless @transition_capture
+        @transition_capture.dispose
+        @transition_capture = nil
+        @captured_transition = nil
       end
 
       # Restore the overlay to solid black after a shaped transition, so the

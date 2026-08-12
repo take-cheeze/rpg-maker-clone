@@ -119,6 +119,11 @@ module RGSS
   module Graphics
     def self.frame_rate; 60; end
     def self.update; end
+    # A captured-transition check swaps this out for a Bitmap instance it can
+    # inspect (or nil, to exercise the "backend cannot snapshot" fallback);
+    # other checks never call it, since only a captured transition does.
+    class << self; attr_accessor :snapshot; end
+    def self.snap_to_bitmap; @snapshot; end
   end
 
   module Audio
@@ -4080,6 +4085,136 @@ check 'a shaped transition paints a mask into the fade layer' do
   scene.update
   eq 1, (fade.bitmap.fill_calls || []).length, 'repainted solid for the fade path'
   eq 255, fade.opacity, 'and the screen stays erased'
+end
+
+# A captured transition's blt calls are [dx, dy, src, src_rect]; this is the
+# [dx, dy] destination alone, which is what the geometry checks below compare.
+def blt_dest(call); call[0, 2]; end
+
+check 'a captured transition snapshots the screen once and blits it sliding into place' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  # Show is a no-op on an already-visible screen (#show / #erase both settle
+  # instantly onto their own target), so erase first -- same as a real Show
+  # Screen always follows some earlier Erase.
+  st.screen.erase(Game::Transition::FADE_OUT, 1)
+  2.times { scene.update }
+
+  snap = RGSS::Bitmap.new(320, 240)
+  RGSS::Graphics.snapshot = snap
+  st.screen.show(Game::Transition::SCROLL_UP_IN)
+  fade.bitmap.clear_blt_calls
+  scene.update
+  eq 255, fade.opacity, 'a captured style paints, so it is fully opaque like a mask'
+  blts = fade.bitmap.blt_calls || []
+  eq 1, blts.length, 'scroll pastes the whole capture in one piece'
+  dx, dy, src, rect = blts.first
+  eq 0, dx, 'scrolling up only moves along y'
+  ok dy > 0, 'frame 0 of scroll-up-in starts below the screen'
+  ok src.equal?(snap), 'blitted from the captured snapshot, not a fresh bitmap'
+  eq [0, 0, 320, 240], [rect.x, rect.y, rect.width, rect.height],
+     'the whole capture is the source, for a plain scroll'
+
+  # Advancing to the last frame the transition is still alive on settles it at
+  # (0, 0) -- flush, not still sliding. (One update further and Game::Screen
+  # nils the transition entirely, same as any other style once it completes;
+  # #update already spent one call above, hence frames - 3 here.)
+  mid = Game::Transition.default_frames(Game::Transition::SCROLL_UP_IN) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_blt_calls
+  scene.update
+  eq [0, 0], blt_dest(fade.bitmap.blt_calls.first), 'lands flush on the last live frame'
+
+  # The snapshot is taken exactly once per transition instance, not every frame.
+  st.screen.erase(Game::Transition::VERTICAL_DIVISION)
+  first_snap = RGSS::Bitmap.new(320, 240)
+  RGSS::Graphics.snapshot = first_snap
+  scene.update
+  RGSS::Graphics.snapshot = RGSS::Bitmap.new(320, 240) # a second snapshot, unused if caching works
+  fade.bitmap.clear_blt_calls
+  scene.update
+  ok fade.bitmap.blt_calls.all? { |c| c[2].equal?(first_snap) },
+     're-uses the snapshot taken when this transition started'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
+check 'vertical division splits the capture into two pieces sliding apart' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  RGSS::Graphics.snapshot = RGSS::Bitmap.new(320, 240)
+
+  st.screen.erase(Game::Transition::VERTICAL_DIVISION)
+  fade.bitmap.clear_blt_calls
+  scene.update
+  blts = fade.bitmap.blt_calls
+  eq 2, blts.length, 'top half and bottom half, each their own piece'
+  top, bottom = blts
+  # Frame 1 (the first rendered frame -- #update already advanced once before
+  # drawing): barely split apart yet, close to the still-combined origin.
+  eq [0, -3], blt_dest(top), 'top half has only just started sliding up'
+  eq [0, 123], blt_dest(bottom), 'bottom half has only just started sliding down'
+  eq [0, 0, 320, 120], [top[3].x, top[3].y, top[3].width, top[3].height],
+     "the top half's own share of the capture"
+  eq [0, 120, 320, 120], [bottom[3].x, bottom[3].y, bottom[3].width, bottom[3].height],
+     "the bottom half's own share"
+
+  mid = Game::Transition.default_frames(Game::Transition::VERTICAL_DIVISION) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_blt_calls
+  scene.update
+  top, bottom = fade.bitmap.blt_calls
+  eq [0, -120], blt_dest(top), 'finished: the top half has slid fully off the top edge'
+  eq [0, 240], blt_dest(bottom), 'and the bottom half fully off the bottom edge'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
+check 'cross combine assembles four quadrants from the screen corners' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # show is a no-op unless erased first
+  2.times { scene.update }
+  RGSS::Graphics.snapshot = RGSS::Bitmap.new(320, 240)
+
+  st.screen.show(Game::Transition::CROSS_COMBINE)
+  fade.bitmap.clear_blt_calls
+  scene.update
+  blts = fade.bitmap.blt_calls
+  eq 4, blts.length, 'top-left/top-right/bottom-left/bottom-right'
+  dests = blts.map { |c| blt_dest(c) }
+  # Frame 1: each quadrant has only just started sliding in from its corner.
+  eq [[-156, -117], [316, -117], [-156, 237], [316, 237]], dests,
+     'each quadrant is still almost entirely off-screen past its own corner'
+
+  mid = Game::Transition.default_frames(Game::Transition::CROSS_COMBINE) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_blt_calls
+  scene.update
+  dests = fade.bitmap.blt_calls.map { |c| blt_dest(c) }
+  eq [[0, 0], [160, 0], [0, 120], [160, 120]], dests,
+     'finished: the four quadrants tile the screen exactly'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
+check 'a captured transition falls back to a plain fade when the backend cannot snapshot' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+
+  RGSS::Graphics.snapshot = nil # e.g. the Wio/PSP builds, LV_USE_SNAPSHOT off
+  st.screen.erase(Game::Transition::SCROLL_LEFT_OUT, 4)
+  4.times { scene.update }
+  eq 255, fade.opacity, 'still lands on the right end state via the fade fallback'
+  ok (fade.bitmap.blt_calls || []).empty?, 'nothing to blit without a snapshot'
 end
 
 check 'Flash Screen drives the flash layer, and refills only on a colour change' do
