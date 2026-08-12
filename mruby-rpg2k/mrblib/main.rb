@@ -574,7 +574,15 @@ class RPG2k
 
   def main_loop
     RGSS::Profiler.frame do
-      RGSS::Profiler.section("scene.update") { @scenes.last.update }
+      RGSS::Profiler.section("scene.update") do
+        # F12 is RPG_RT's "return to title" hotkey: it works from any scene
+        # (map, menu, game over, ...), not just ones that offer it as a menu
+        # command, so it is checked here rather than in an individual scene.
+        # Reuses the same teardown/rebuild return_to_title already does for
+        # the "End Game" menu command and the Game Over screen.
+        return_to_title if Input.trigger?(Input::F12)
+        @scenes.last.update
+      end
       RGSS::Profiler.section("input.update") { Input.update }
       Graphics.update
     end

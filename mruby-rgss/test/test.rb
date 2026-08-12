@@ -1436,7 +1436,7 @@ assert "RGSS::Input accepts RGSS2/RGSS3 symbol keys" do
 
     # Every RGSS3 key name maps, and an unknown one reads as unpressed instead
     # of raising out of the game loop.
-    assert_equal 20, RGSS::Input::SYMBOL_KEYS.size
+    assert_equal 21, RGSS::Input::SYMBOL_KEYS.size
     RGSS::Input::SYMBOL_KEYS.each do |name, index|
       assert_equal index, RGSS::Input.key_index(name), "key #{name} maps wrong"
     end

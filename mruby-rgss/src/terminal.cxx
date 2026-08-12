@@ -37,6 +37,7 @@ enum Key {
   KEY_A = 4,
   KEY_B = 5,
   KEY_C = 6,
+  KEY_F12 = 20,
 };
 
 // Terminals do not report key-release events, so a key is considered held for
@@ -95,7 +96,8 @@ struct KeyState {
   bool pressed = false;
   uint32_t expiry = 0;
 };
-KeyState g_keys[16];
+// Sized to KEY_F12 + 1 -- the highest key id this backend can produce.
+KeyState g_keys[21];
 
 // ---------------------------------------------------------------------------
 // Async stdout writer: a background thread drains queued frames so flush_cb
@@ -610,6 +612,30 @@ void terminal_poll(mrb_state* M) {
   for (size_t i = 0; i < buf.size();) {
     const unsigned char c = static_cast<unsigned char>(buf[i]);
     if (c == 0x1b && i + 2 < buf.size() && buf[i + 1] == '[') {
+      // F12 -- RPG_RT's return-to-title hotkey (RGSS::Input::F12, read by
+      // mruby-rpg2k's main_loop) -- arrives as a multi-digit CSI sequence
+      // terminated by '~' (`ESC [ 24 ~` in xterm and its descendants: foot,
+      // alacritty, kitty, gnome-terminal, wezterm, tmux, ...), unlike the
+      // single-letter arrow sequences below.
+      if (buf[i + 2] >= '0' && buf[i + 2] <= '9') {
+        size_t j = i + 2;
+        int value = 0;
+        while (j < buf.size() && buf[j] >= '0' && buf[j] <= '9') {
+          value = value * 10 + (buf[j] - '0');
+          ++j;
+        }
+        if (j < buf.size() && buf[j] == '~') {
+          if (value == 24)
+            hold_key(M, KEY_F12, now);
+          i = j + 1;
+        } else {
+          // No terminating '~' buffered yet; drop the digits read so far
+          // rather than replaying them through the plain-character switch.
+          i = j;
+        }
+        continue;
+      }
+
       switch (buf[i + 2]) {
         case 'A':
           hold_key(M, KEY_UP, now);
