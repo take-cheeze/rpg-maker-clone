@@ -1556,6 +1556,25 @@ check 'Change Map Tileset rebuilds the map chipset from the new id' do
   eq 2, scene.instance_variable_get(:@tileset_id), 'the override id is recorded'
 end
 
+check 'Change Map Tileset override does not survive save/Continue' do
+  # Continue reconstructs a fresh Scene::Map from the saved Game::State alone
+  # (RPG2k#continue_game); the override lives only on the old scene's
+  # @tileset_id, which Game::State#to_h/#to_lsd have no field for, so it
+  # cannot follow into the new scene -- the destination reverts to the map's
+  # own configured tileset, matching RPG_RT.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::CHANGE_MAP_TILESET, [2])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  5.times { scene.update }
+  eq 'cs2', scene.instance_variable_get(:@chipset).name, 'the override took effect'
+
+  fresh = RPG2k::Scene::Map.new(scene.parent, scene.instance_variable_get(:@state))
+  eq nil, fresh.instance_variable_get(:@tileset_id), 'no override on the fresh scene'
+  eq 'cs', fresh.instance_variable_get(:@chipset).name,
+     "the fresh scene rebuilds the chipset from the map's own tileset id"
+end
+
 check 'Input Number opens a widget; confirming stores the entered value' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
