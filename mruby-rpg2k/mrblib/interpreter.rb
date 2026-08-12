@@ -1226,8 +1226,13 @@ module Game
     def do_control_vars(cmd)
       a, b = range(cmd)
       op = cmd.param(3)  # 0 =, 1 +, 2 -, 3 *, 4 /, 5 %
-      val = operand_value(cmd)
-      (a..b).each { |id| variables[id] = apply(op, variables[id], val) }
+      # A random operand (type 3) rolls independently for each variable in the
+      # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
+      # separate dice, not one roll broadcast to all five. Every other operand
+      # type is evaluated once up front, as before.
+      random = cmd.param(4) == 3
+      val = operand_value(cmd) unless random
+      (a..b).each { |id| variables[id] = apply(op, variables[id], random ? operand_value(cmd) : val) }
     end
 
     def operand_value(cmd)
