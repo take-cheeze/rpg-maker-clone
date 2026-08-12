@@ -4074,6 +4074,22 @@ check 'Tile Substitution rewrites the map the scene walks on' do
   eq 41, scene.instance_variable_get(:@state).map.lower(3, 3)
 end
 
+check 'Tile Substitution does not survive leaving and returning to the map' do
+  # RPG_RT re-reads the map fresh on every Teleport (see #perform_teleport's
+  # own chipset/parallax/pan comments for the sibling per-visit overrides this
+  # matches); a substitution recorded on the old Game::Map object does not
+  # follow the new one it builds, even when the destination is the same map.
+  cmds = [ECmd.new(IC2::TILE_SUBSTITUTION, [0, 0, 41])]
+  scene = new_scene(parallel_event(cmds), player: [0, 0])
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  eq 41, st.map.lower(3, 3), 'the substitution took on the original map'
+
+  scene.send(:perform_teleport, [st.map_id, 0, 0, 0]) # leave and return to the same map
+  eq 0, st.map.lower(3, 3),
+     'a fresh map load on Teleport drops the substitution'
+end
+
 check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
   cmds = [ECmd.new(IC2::ENTER_EXIT_VEHICLE, [])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])

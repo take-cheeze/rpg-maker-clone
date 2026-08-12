@@ -1837,12 +1837,21 @@ not yet verified:
 - **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
-  source — Save/Teleport/Escape Prohibition changes. This codebase's
-  `perform_teleport` already resets several of these (tileset, parallax,
-  pan) on a *map change*; yado.tk's phrasing ("leaving and returning to
-  the map") is consistent with that, but Encounter Steps and Tile
-  Replacement specifically aren't confirmed reset anywhere in the code
-  read this session — worth checking.
+  source — Save/Teleport/Escape Prohibition changes. `perform_teleport`
+  resets tileset/parallax/pan on a *map change*, and Save/Teleport/Escape
+  Prohibition are confirmed correct above (`apply_map_access`). **Tile
+  Replacement is confirmed correct too**, for a different reason than the
+  other three: a Tile Substitution is recorded directly on the live
+  `Game::Map` object (`Game::Map#substitute_tile`), and `perform_teleport`
+  always rebuilds `@map` from scratch (`@parent.load_map`, which re-parses
+  the destination's `.lmu` fresh) rather than reusing or caching one — so
+  a substitution cannot survive a Teleport, including one back to the same
+  map, without any explicit reset code needed. Regression-covered by a new
+  `scripts/rpg2k_scene_check.rb` check. **Encounter Steps Change is not
+  actionable yet**: `Game::State#encounter_rate` records the override and
+  round-trips through the save, but no random-encounter system reads it at
+  all (see the Screen effects section) — there is nothing to reset until
+  that system exists.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**
