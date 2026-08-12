@@ -35,11 +35,13 @@ class RPG2k
         party = @state.party.actors
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::RIGHT) && @actor_index < party.size - 1
+        elsif Input.trigger?(Input::RIGHT)
           @actor_index += 1
+          @actor_index %= party.size
           build_window
-        elsif Input.trigger?(Input::LEFT) && @actor_index > 0
+        elsif Input.trigger?(Input::LEFT)
           @actor_index -= 1
+          @actor_index %= party.size
           build_window
         end
       end

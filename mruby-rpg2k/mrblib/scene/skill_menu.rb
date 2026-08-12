@@ -55,17 +55,21 @@ class RPG2k
         party = @state.party.actors
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN) && @skill_index < skills.size - 1
+        elsif Input.trigger?(Input::DOWN) && !skills.empty?
           @skill_index += 1
+          @skill_index %= skills.size
           refresh_skill_cursor
-        elsif Input.trigger?(Input::UP) && @skill_index > 0
+        elsif Input.trigger?(Input::UP) && !skills.empty?
           @skill_index -= 1
+          @skill_index %= skills.size
           refresh_skill_cursor
-        elsif Input.trigger?(Input::RIGHT) && @caster_index < party.size - 1
+        elsif Input.trigger?(Input::RIGHT)
           @caster_index += 1
+          @caster_index %= party.size
           switch_caster
-        elsif Input.trigger?(Input::LEFT) && @caster_index > 0
+        elsif Input.trigger?(Input::LEFT)
           @caster_index -= 1
+          @caster_index %= party.size
           switch_caster
         elsif Input.trigger?(Input::C)
           choose_skill
@@ -100,11 +104,13 @@ class RPG2k
         party = @state.party.actors
         if Input.trigger?(Input::B)
           leave_target
-        elsif Input.trigger?(Input::DOWN) && @target_index < party.size - 1
+        elsif Input.trigger?(Input::DOWN)
           @target_index += 1
+          @target_index %= party.size
           refresh_target_cursor
-        elsif Input.trigger?(Input::UP) && @target_index > 0
+        elsif Input.trigger?(Input::UP)
           @target_index -= 1
+          @target_index %= party.size
           refresh_target_cursor
         elsif Input.trigger?(Input::C)
           apply_skill(@pending_skill, party[@target_index])
