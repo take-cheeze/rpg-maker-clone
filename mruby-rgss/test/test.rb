@@ -1043,6 +1043,9 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     assert_equal 3, st[:frames]
     assert_true st[:fps] >= 0.0
     assert_true st[:frame_avg_ms] >= 0.0
+    # No frame missed its fps-cap deadline here (there is no Graphics.update
+    # pacing in this standalone test binary), so the drop count stays at 0.
+    assert_equal 0, st[:frame_drops]
 
     sections = st[:sections]
     assert_true sections.is_a?(Hash)

@@ -2793,7 +2793,9 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // deadline forward instead makes the next frame's sleep absorb the previous
   // one's overshoot. If we fall more than one frame behind (a slow map build,
   // a breakpoint), the deadline is re-based on now so we do not then spin
-  // through a burst of catch-up frames.
+  // through a burst of catch-up frames -- that rebase is counted as a dropped
+  // frame for RGSS::Profiler's stats (frame_reset's deliberate reset below is
+  // not, since nothing was actually missed).
   //
   // A frame is 1000/60 ms, which is not an integer, so the deadline steps by
   // 17,17,16,... driven by a 1/60-ms remainder accumulator rather than a flat
@@ -2802,8 +2804,11 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   g_period_acc += 1000;
   const uint32_t period = g_period_acc / 60;
   g_period_acc %= 60;
-  if (!g_paced ||
-      static_cast<int32_t>(now - g_next_frame) > static_cast<int32_t>(period)) {
+  const bool overrun = g_paced && static_cast<int32_t>(now - g_next_frame) >
+                                      static_cast<int32_t>(period);
+  if (!g_paced || overrun) {
+    if (overrun)
+      profiler_note_frame_drop();
     g_next_frame = now;
     g_paced = true;
   }
