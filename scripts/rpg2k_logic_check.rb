@@ -8675,6 +8675,82 @@ check 'landable? accepts a tile passable from any single side' do
   ok !chipset_with_passable(data).landable?(0), 'blocked on every side refuses the landing'
 end
 
+# -- upper-layer chipset passability -------------------------------------------
+
+def chipset_with_upper(lower_data, upper_data)
+  db = Struct.new(:chipset).new(
+    { 1 => FakeChipsetRow.new('cs', 'cs', lower_data, upper_data, nil, 0, 0) }
+  )
+  Game::ChipSet.new(db, 1)
+end
+
+BLOCK_F = Game::ChipsetLayout::BLOCK_F
+ABOVE = Game::ChipSet::ABOVE_BIT
+COUNTER = Game::ChipSet::COUNTER_BIT
+
+# No upper tile at all (id 0, or a chipset with no upper table): the upper
+# layer has nothing to say, so passability falls straight through to the
+# lower layer exactly as before the upper check existed.
+check 'passable_tile? with no upper tile falls through to the lower layer' do
+  lower = Array.new(162, 0)
+  lower[0] = Game::ChipSet::DIR_BIT[6]
+  cs = chipset_with_upper(lower, Array.new(144, 0))
+  ok cs.passable_tile?(0, 0, 6), 'lower allows Right, no upper tile'
+  ok !cs.passable_tile?(0, 0, 2), 'lower refuses Down, no upper tile'
+
+  cs_no_table = chipset_with_upper(lower, nil)
+  ok cs_no_table.passable_tile?(0, BLOCK_F, 6), 'no upper table at all defers to lower too'
+end
+
+# A solid object on the upper layer (all direction bits clear, ABOVE_BIT
+# clear) blocks movement outright, regardless of what the lower layer says --
+# this is the counter tiles fix generalised: a boulder or fence post is just
+# as impassable as a shop counter, and neither defers to the ground beneath.
+check 'passable_tile? refuses a solid upper-layer obstacle even over open ground' do
+  lower = Array.new(162, Game::ChipSet::ALL_DIRS) # wide open lower ground
+  upper = Array.new(144, 0)
+  upper[0] = 0 # blocked on every side, ABOVE_BIT clear
+  cs = chipset_with_upper(lower, upper)
+  ok !cs.passable_tile?(0, BLOCK_F, 2), 'a solid upper tile blocks Down'
+  ok !cs.passable_tile?(0, BLOCK_F, 6), 'and Right'
+
+  # A shop/inn counter is exactly this case, plus the counter flag.
+  upper[0] = COUNTER
+  ok !chipset_with_upper(lower, upper).passable_tile?(0, BLOCK_F, 6),
+     'a counter (blocked + COUNTER_BIT) is impassable to walk onto'
+end
+
+# ABOVE_BIT set: the upper tile permits the direction, but is "see-through"
+# ground, so the lower layer's own passability still gets the final word --
+# a decorative overlay does not override a wall painted underneath it.
+check 'passable_tile? with ABOVE_BIT still checks the lower layer' do
+  lower = Array.new(162, 0) # lower blocks everything
+  upper = Array.new(144, 0)
+  upper[0] = Game::ChipSet::ALL_DIRS | ABOVE
+  cs = chipset_with_upper(lower, upper)
+  ok !cs.passable_tile?(0, BLOCK_F, 6), 'upper allows Right, but the lower wall still refuses it'
+
+  lower[0] = Game::ChipSet::DIR_BIT[6]
+  ok chipset_with_upper(lower, upper).passable_tile?(0, BLOCK_F, 6),
+     'both layers now agree: passable'
+end
+
+check 'landable_tile? applies the same solid-vs-see-through rule to jumps' do
+  lower = Array.new(162, 0) # lower blocks every side
+  upper = Array.new(144, 0)
+  upper[0] = Game::ChipSet::DIR_BIT[8] # one open side, ABOVE_BIT clear
+  cs = chipset_with_upper(lower, upper)
+  ok cs.landable_tile?(0, BLOCK_F), 'a solid object open on one side is still landable'
+
+  upper[0] = 0
+  ok !chipset_with_upper(lower, upper).landable_tile?(0, BLOCK_F),
+     'blocked on every side refuses the landing'
+
+  upper[0] = Game::ChipSet::DIR_BIT[8] | ABOVE
+  ok !chipset_with_upper(lower, upper).landable_tile?(0, BLOCK_F),
+     'ABOVE_BIT set defers to the lower layer, which is fully blocked'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

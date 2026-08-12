@@ -914,6 +914,20 @@ check 'the reach stops after three counters, and at a non-counter tile' do
   ok !st2.switches[4], 'four counters is past the three-tile reach'
 end
 
+# A shop/inn counter is an impassable upper-layer tile, not just a talk-across
+# one: nothing in the chipset's lower table refuses the tile (fake_chipset has
+# none), so before Game::ChipSet read the upper passage table during movement
+# too, a walking party could step straight onto — and through — the counter.
+check 'a shop counter blocks walking onto it, not only the action button' do
+  scene = counter_scene({}, [[1, 0]], player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.dir_value = 6
+  10.times { scene.update }
+  eq 0, st.x, 'the party never left its tile'
+  eq 0, st.y
+end
+
 check 'an action event under the player answers the action button' do
   ic = Game::Interpreter::Cmd
   pg = page(trigger: 0)
