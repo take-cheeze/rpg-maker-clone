@@ -1584,6 +1584,18 @@ following this paragraph as the original record.
   event selection: `Game::BattlePage.select_all` runs **every** satisfied
   page once per turn, lower page number first, vs. `Game::EventPage.select`
   picking only the single highest-numbered page for map/common events.
+- **A Parallel Process that reaches its own end already costs exactly one
+  frame before its next lap starts.** `Scene::Map#step_parallel` only
+  restarts a finished process (`it.start` + `it.update`) the *next* time it
+  is called — one real game frame later than the frame whose `#update` made
+  `it.running?` go false — rather than restarting within the same call, so
+  there is always exactly one idle frame between a lap ending and the next
+  one's first command. Already covered by the existing `scripts/
+  rpg2k_scene_check.rb` checks `'parallel (trigger 4): a background event
+  runs every frame'` and `'Wait 0.0 sec doubles a parallel process lap gap
+  to two frames'` (the latter's own comment names this exact one-frame gap);
+  this bullet only records that the yado.tk claim is the same fact, not a
+  new one.
 - **Jump to Label already matches the three documented yado.tk facts.**
   `Game::Interpreter#do_jump_label` does a linear scan of `@list` (the
   current page/common-event's own flat command array) from index 0 and
@@ -1764,8 +1776,7 @@ Everything below is unverified against the codebase.
   one; dropping files directly into asset folders bypasses size/transparent-
   colour-index validation.
 - **Parallel Process** — yields to others during its own Wait/Show-Text
-  pause; restarting after reaching its own end always costs exactly one
-  frame; appearance condition going false mid-run only stops at the next
+  pause; appearance condition going false mid-run only stops at the next
   yield point, not instantly (same fact as the `09_bug` item above); a
   Transfer Player command inside one lets subsequent commands run while the
   new map is still loading (needs a Wait:0.0s after it) — for a **map**
