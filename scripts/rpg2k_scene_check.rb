@@ -4232,6 +4232,38 @@ def window_texts(win)
   ((c.draw_calls || []) + (c.blend_calls || [])).map { |a| a[4] }
 end
 
+check 'Enemy Encounter scene: the result window shows the database Victory term' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.victory = '戦いに勝利した！' # left blank in fake_db's own term table
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, BattleStubParty.new)
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  ok texts.any? { |t| t.include?('戦いに勝利した！') }, 'the database term is shown'
+  ok !texts.any? { |t| t.include?('Victory!') }, 'not the composed English fallback'
+end
+
+check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to English' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, second_switch_code: ic::DEFEAT_HANDLER)
+  scene = new_scene({ 1 => event(2, 2, auto) }) # fake_db leaves term.defeat blank
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  ok texts.any? { |t| t.include?('The party was defeated...') },
+     'a blank database term still falls back to the composed English'
+end
+
 # Open a battle and run it up to the command phase, answering [scene, ui].
 def battle_at_command(pages = nil)
   scene, = battle_scene_with_pages(pages)
