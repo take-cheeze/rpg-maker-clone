@@ -1239,6 +1239,39 @@ check 'Call Event on "this event" from a common event is a no-op' do
   eq true, st.switches[1], 'and the caller carries on'
 end
 
+check 'Call Event has no indirect mode for a common event id (target 0 stays literal)' do
+  # yado.tk: "a variable can't pick the called common-event id directly (needs
+  # a dispatcher chain)" -- resolve_call's mode 0 (common event) arm always
+  # reads cmd.param(1) literally; there is no mode that reads a common-event
+  # id out of a variable the way mode 2 does for a map event (below). A
+  # variable holding a different id must not steer which common event runs.
+  st = new_state
+  st.variables[1] = 6 # if this leaked into the id, common event 6 would run
+  called5 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  called6 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: { 5 => called5, 6 => called6 })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0])]) # mode 0, literal id 5
+  it.update
+  eq true, st.switches[5], 'the literal id (5) ran'
+  eq false, st.switches[6], 'the id sitting in variable 1 (6) was never consulted'
+end
+
+check 'Call Event mode 2 picks a map event and page indirectly through variables' do
+  # The map-event target genuinely does support indirect addressing (mode 2:
+  # "ids taken indirectly from variables"), unlike the common-event target
+  # above -- the asymmetry the yado.tk quirk describes.
+  st = new_state
+  st.variables[1] = 7 # event id
+  st.variables[2] = 2 # page number
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [2, 1, 2])]) # mode 2, ids from var 1 / var 2
+  it.update
+  eq true, st.switches[9], 'the event/page named by the variables ran'
+end
+
 check 'Erase Event sets a one-shot request without pausing the interpreter' do
   st = new_state
   it = Game::Interpreter.new(st)
