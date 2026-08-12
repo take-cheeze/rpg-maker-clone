@@ -1611,6 +1611,18 @@ following this paragraph as the original record.
   event selection: `Game::BattlePage.select_all` runs **every** satisfied
   page once per turn, lower page number first, vs. `Game::EventPage.select`
   picking only the single highest-numbered page for map/common events.
+- **Call Event has no indirect mode for a common-event id, matching
+  RPG2000's own editor.** `Game::Interpreter#resolve_call`'s mode 0 (common
+  event) arm always reads `cmd.param(1)` literally; only mode 2 (map event)
+  reads its ids out of variables (`map_event_call(variables[cmd.param(1)],
+  variables[cmd.param(2)])`). RPG2000's Call Event dialog genuinely offers
+  no "select the common event indirectly" option, so a designer wanting a
+  variable-selected common event has to build an if/elsif dispatcher chain
+  of literal Call Events — this codebase's command format already mirrors
+  that constraint rather than working around it. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a variable holding a different id
+  never steers mode 0's target; mode 2 genuinely does resolve both the event
+  and the page indirectly, making the asymmetry explicit).
 - **A Parallel Process that reaches its own end already costs exactly one
   frame before its next lap starts.** `Scene::Map#step_parallel` only
   restarts a finished process (`it.start` + `it.update`) the *next* time it
@@ -1724,12 +1736,13 @@ Everything below is unverified against the codebase.
   fine; "has item X" was the actual gap, now fixed, see above.)
 - **Call Event** — doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
-  once the callee finishes/cancels; a variable can't pick the called
-  common-event id directly (needs a dispatcher chain); calling a bad
-  event/page id raises specific distinct error dialogs; nesting caps at
-  1000; under heavy nested-Call-Event + multi-parallel-process load,
-  processing can freeze (workaround: a Wait:0.0s before the call). Battle
-  Events can't use Call Event through the normal editor at all.
+  once the callee finishes/cancels; calling a bad event/page id raises
+  specific distinct error dialogs; nesting caps at 1000; under heavy
+  nested-Call-Event + multi-parallel-process load, processing can freeze
+  (workaround: a Wait:0.0s before the call). Battle Events can't use Call
+  Event through the normal editor at all. ("A variable can't pick the
+  called common-event id directly" is confirmed already correct — see
+  below.)
 - **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
   above).
