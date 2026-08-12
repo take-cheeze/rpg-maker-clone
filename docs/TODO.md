@@ -1576,6 +1576,19 @@ following this paragraph as the original record.
   join; leaving and rejoining once a slot frees up still works, and nothing
   about `remove_actor` or the roster's rejoin-with-preserved-state changed.
   Covered by a new `scripts/rpg2k_logic_check.rb` check.
+- ✅ **A batch (range) Control Variables random-assign now rolls
+  independently per variable**, not once for the whole group.
+  `Game::Interpreter#do_control_vars` computed its operand value a single
+  time before the range loop and applied that one value to every id in the
+  range — harmless for a constant or a variable/item/actor read, but wrong
+  for a random operand (type 3), where `Var[1..5] = random 1~6` must be five
+  separate dice, not one roll broadcast to all five. The random case is now
+  re-evaluated per id inside the loop; every other operand type keeps its
+  existing once-up-front evaluation, since nothing establishes RPG_RT
+  re-reads a *non-random* source per id (a self-referential range reading a
+  variable inside its own write range is a different, unverified question).
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (a wide-range batch
+  assign must not produce the same value in every variable).
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -2010,8 +2023,8 @@ not yet verified:
 - **Batch (range) operations require ascending order or silently no-op** —
   for both switches and variables, if the high end of a `[a〜b]` range is
   smaller than the low end, the whole command does nothing (no error).
-  A batch **random-assign** rolls *independently per variable* in the
-  range, not once for the whole group.
+  (A batch **random-assign** rolling independently per variable, not once
+  for the whole group, used to be a real gap here — now fixed, see below.)
 - The built-in random-number operand is a genuine non-seeded RNG (two New
   Games produce different sequences) and accepts negative ranges.
 - `\N[]`/`\V[]` control codes can nest (`\N[\V[1]]`), but only on

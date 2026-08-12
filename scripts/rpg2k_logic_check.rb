@@ -3628,6 +3628,22 @@ check 'Control Variables random operand stays within its range' do
   end
 end
 
+check 'Control Variables batch random-assign rolls independently per variable' do
+  # RPG_RT rolls a fresh random value for each variable in a range assign,
+  # not once for the whole batch -- a range [1..5] = random 1~1000000 is five
+  # separate dice, not one broadcast value. A wide range makes two equal
+  # rolls astronomically unlikely, so any duplicate across the batch would
+  # mean the same draw got copied everywhere instead of being reused.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # mode 1 (range): ids 1..5, op 0 (set), operand type 3 (random), [1, 1000000].
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [1, 1, 5, 0, 3, 1, 1_000_000])])
+  it.update
+  vals = (1..5).map { |id| st.variables[id] }
+  ok vals.all? { |v| v >= 1 && v <= 1_000_000 }, "a value fell outside the range: #{vals}"
+  ok vals.uniq.size > 1, "every variable in the batch got the same roll: #{vals}"
+end
+
 check 'Control Variables reads party gold and the timer (operand type 7)' do
   st = new_state
   st.party.gain_gold(500)
