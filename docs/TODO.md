@@ -1690,6 +1690,8 @@ Everything below is unverified against the codebase.
   `@tileset_id` currently only resets on teleport per the code read this
   session; unclear whether it also resets on save/load).
 
+## RPG Maker with RGSS (XP / VX / VXAce)
+
 An RPG Maker XP project stores its whole database as Ruby `Marshal` dumps
 (`Data/*.rxdata`) and its game logic as ~90 zlib-deflated RGSS (Ruby 1.8)
 scripts in `Data/Scripts.rxdata`. The graphics/audio/value primitives already
