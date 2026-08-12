@@ -300,9 +300,33 @@ class RPG2k
   HEIGHT = 240
 
 
-  attr_reader :db, :map_tree
+  attr_reader :db, :map_tree, :test_play
+  # Whether the title screen's background picture and command-window position
+  # should follow HideTitle (see Scene::Title). Named with a `?` since it
+  # answers a question, unlike the plain `test_play` value above.
+  def hide_title?; @hide_title; end
 
+  # RPG_RT.exe (and the RPG2000/2003 editor's own Test Play button) is launched
+  # with bare positional words instead of --flag=value ones, e.g.
+  # `Game.exe TestPlay HideTitle Window`. None of those look like a flag, so
+  # src/main.cxx's gflags parsing leaves them untouched and they arrive here as
+  # ordinary constructor args instead -- this is the one place that receives
+  # them, so it is the one place that has to understand them:
+  #
+  # - TestPlay: the editor is running the game, not a player. Recorded on
+  #   `test_play` for scenes to read; nothing here changes behaviour on it yet.
+  # - HideTitle: read by Scene::Title, which skips the title picture and
+  #   centres the command window instead of docking it to where the picture
+  #   would have been.
+  # - Window: RPG_RT defaults to fullscreen and this switches it to windowed.
+  #   This build's SDL backend has no fullscreen mode to begin with (see the
+  #   Toggle Fullscreen event command in interpreter.rb), so the word is
+  #   accepted -- it must not be treated as an unknown/invalid argument -- but
+  #   there is nothing left for it to switch.
   def initialize args
+    @test_play = args.include?('TestPlay')
+    @hide_title = args.include?('HideTitle')
+
     @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
     @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
     @scenes = []
