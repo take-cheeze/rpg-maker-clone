@@ -249,6 +249,7 @@ class RPG2k
         # sits on top). Hidden unless the vehicle is placed on the current map.
         @vehicle_sprites = {}
         @vehicle_bmps = {}
+        @vehicle_last_frame = {}
         Game::Vehicle::TYPES.each do |type|
           spr = Sprite.new(@map_viewport)
           spr.z = 99
@@ -5271,8 +5272,14 @@ class RPG2k
         end
       end
 
-      # Blit the vehicle's CharSet cell into its sprite buffer (standing pattern).
+      # Blit the vehicle's CharSet cell into its sprite buffer (standing pattern),
+      # skipping the redraw when the graphic/index/direction haven't changed since
+      # the last frame — mirrors draw_player_frame's @last_frame memo.
       def draw_vehicle_frame(type, v, charset)
+        frame = [v.charset_index, v.direction, charset.object_id]
+        return if frame == @vehicle_last_frame[type]
+        @vehicle_last_frame[type] = frame
+
         rx, ry, rw, rh = Game::CharSet.frame_rect(v.charset_index, v.direction, 1)
         bmp = @vehicle_bmps[type]
         bmp.clear
