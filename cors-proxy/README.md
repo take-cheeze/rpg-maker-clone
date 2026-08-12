@@ -9,7 +9,9 @@ CORS headers.
   server-side, and re-serves the bytes with `Access-Control-Allow-Origin: *`.
 - [`wrangler.toml`](wrangler.toml) — Worker config. Three opt-in vars keep it
   from being an open proxy: `ALLOWED_HOSTS` (target hosts), `AUTH_KEY` (a shared
-  secret — the "only me" lock), and `ALLOWED_ORIGINS` (calling web pages).
+  secret — the "only me" lock), and `ALLOWED_ORIGINS` (calling web pages). An
+  optional R2 bucket binding caches fetched archives so repeat loads skip the
+  origin fetch entirely.
 
 ## Deploy
 
