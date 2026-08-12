@@ -1167,7 +1167,7 @@ int main(int argc, char** argv) {
   // that build still "just runs" with no interaction.
   //
   // These handles must outlive main(); EXIT_RUNTIME=0 keeps the module alive.
-  CHECK(!FLAGS_script.empty()) << "--script not supported on emscripten";
+  CHECK(FLAGS_script.empty()) << "--script not supported on emscripten";
   em_mrb = mrb;
   em_display = display;
   em_args = args;
