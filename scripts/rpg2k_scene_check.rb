@@ -326,13 +326,15 @@ end
 # One event page. Defaults: an action-trigger, stationary event with no route.
 def page(x_move_type: Game::MoveType::STATIONARY, route: nil, trigger: 0,
          frequency: 6, direction: 2, charset_name: '', charset_index: 0,
-         layer: 0, pattern: 1, animation_type: 0, translucent: false)
+         layer: 0, pattern: 1, animation_type: 0, translucent: false,
+         overlap_forbidden: false)
   OpenStruct.new(
     condition: nil, direction: direction, move_type: x_move_type, move_speed: 3,
     move_frequency: frequency, charset_name: charset_name,
     charset_index: charset_index, trigger: trigger, event_commands: nil,
     move_route: route, layer: layer, pattern: pattern,
-    animation_type: animation_type, translucent: translucent
+    animation_type: animation_type, translucent: translucent,
+    overlap_forbidden: overlap_forbidden
   )
 end
 
@@ -833,6 +835,32 @@ check 'events on different layers pass through each other via Move Route' do
   40.times { scene.update }
   eq [3, 2], [ch.x, ch.y],
      "an above-layer mover should cross a below-layer event, got #{[ch.x, ch.y]}"
+end
+
+check 'a below-characters event with overlap_forbidden still blocks the hero' do
+  # The "doesn't overlap" page flag (LCF field 35) is a second, independent
+  # collision axis: it forces the block even though the layer alone would not.
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW, overlap_forbidden: true)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, toward the event at (1,0)
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'overlap_forbidden blocks the hero despite the mismatched layer'
+end
+
+check 'events on different layers no longer pass through when overlap_forbidden is set' do
+  # Same setup as the pass-through check above, but the below-layer event now
+  # carries overlap_forbidden — the above-layer mover must stop at its tile.
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW, overlap_forbidden: true))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_ABOVE))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [2, 2], [ch.x, ch.y],
+     "overlap_forbidden should stop the mover short of the blocker, got #{[ch.x, ch.y]}"
 end
 
 # Each tile's four passability bits mark whether *that tile's own* north/

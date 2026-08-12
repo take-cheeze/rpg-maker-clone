@@ -1555,6 +1555,20 @@ following this paragraph as the original record.
   custom route on one side) still restarts, matching RPG_RT. Covered by two
   new `scripts/rpg2k_scene_check.rb` checks (identical route keeps its place;
   a changed route restarts).
+- ✅ **The page-level "doesn't overlap another event" flag now gates
+  collision** (`overlap_forbidden`, LCF page field 35 — parsed since it was
+  added to the schema but never read). It is a *fourth*, independent
+  collision axis on top of priority type: a blocker with it set collides
+  regardless of the mover's layer (a below-characters "pen gate" still blocks
+  a same-layer NPC wandering through it), and a mover with it set likewise
+  collides with a blocker of any layer — wired into all five call sites that
+  already gated on layer (`passable?`, `char_passable?`, `char_can_land?`,
+  `vehicle_passable?`, `airship_landable?`), the same set the priority-type
+  fix above touches. `Game::Character` gained a matching `overlap_forbidden`
+  accessor, set from the active page in `build_event` alongside `layer`.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (a below-characters
+  blocker with the flag set still stops the hero; two events on different
+  layers no longer pass through each other when the blocker sets it).
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -1783,15 +1797,6 @@ triage, the same as the rest of this backlog.
 **Flagged for priority triage** — these look most likely to be genuine,
 actionable gaps based on this session's own reading of the current code,
 not yet verified:
-- The page-level **"doesn't overlap another event" flag** (`overlap_forbidden`
-  in `mruby-lcf/mrblib/schema.rb`) is parsed but — as far as a search of
-  `mruby-rpg2k/mrblib/scene/map.rb`'s passability code turned up — never
-  read by `passable?`/`char_passable?`. Per yado.tk this is a *fourth*,
-  independent collision axis on top of priority type: it forces collision
-  with events of *any* priority type, not just the same one (e.g. a
-  below-characters "pen gate" that must still block a same-layer NPC from
-  wandering through it). If genuinely unwired, this is a direct extension
-  of the priority-type collision fix already shipped this session.
 - **Parallel processes may be paused too broadly.** This codebase's
   `step_parallels` only runs when `!event_busy?`, and `event_busy?` is true
   for any foreground interpreter activity including an ordinary Show Text
