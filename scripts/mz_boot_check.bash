@@ -178,6 +178,7 @@ echo "== ${GAME} (mode ${MODE})"
 if ! env -u DISPLAY -u XAUTHORITY SDL_VIDEODRIVER=dummy \
         timeout "$(( TIMEOUT_MS / 1000 + 30 ))" "${ENGINE}" \
         --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" --test_play \
+        --no_render_wait \
         "${FLAGS[@]}" \
         --mz_screenshot="${SHOT}" \
         >"${log}" 2>&1 ; then

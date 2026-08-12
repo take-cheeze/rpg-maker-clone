@@ -54,6 +54,16 @@ DEFINE_string(
     "For RPG Maker MV: write a PNG of the rendered frame to this path "
     "after boot, then keep running (used to capture output in CI)");
 DEFINE_bool(
+    no_render_wait,
+    false,
+    "Skip RGSS::Graphics.update's real-time frame-pacing sleep (the wait "
+    "that throttles the run to wall-clock 60fps), so a headless test-play "
+    "run advances frames back-to-back as fast as the CPU allows instead of "
+    "at real-play speed. Game logic is timed off Graphics.frame_count, not "
+    "the wall clock, so this only removes idle wall-clock wait -- it does "
+    "not change what any frame does. Used by the MV/MZ/RPG2k/XP boot-check "
+    "smokes, which only need the frames to happen, not to happen on time.");
+DEFINE_bool(
     rpg2k_new_game,
     false,
     "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
@@ -847,6 +857,7 @@ static void disable_non_test_play_flags() {
   reset_bool(FLAGS_mv_save_test, "mv_save_test");
   reset_bool(FLAGS_mv_audio_test, "mv_audio_test");
   reset_string(FLAGS_mv_screenshot, "mv_screenshot");
+  reset_bool(FLAGS_no_render_wait, "no_render_wait");
   reset_bool(FLAGS_mz_new_game, "mz_new_game");
   reset_bool(FLAGS_mz_move_test, "mz_move_test");
   reset_bool(FLAGS_mz_audio_test, "mz_audio_test");
@@ -1166,6 +1177,12 @@ int main(int argc, char** argv) {
   // `Utils.isOptionValid('test')` would.
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TEST_PLAY"), mrb_bool_value(is_test_mode));
+  // See --no_render_wait above: read once here, the same way TIMEOUT_MS is,
+  // by RGSS::Graphics.update (mruby-rgss/src/lib.cxx) to skip its real-time
+  // frame-pacing sleep.
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "NO_RENDER_WAIT"),
+                mrb_bool_value(FLAGS_no_render_wait));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpg2k_new_game));

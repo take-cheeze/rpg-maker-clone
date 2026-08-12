@@ -2800,26 +2800,39 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   // A frame is 1000/60 ms, which is not an integer, so the deadline steps by
   // 17,17,16,... driven by a 1/60-ms remainder accumulator rather than a flat
   // 16 (which would run 4% fast).
-  const uint32_t now = lv_tick_get();
-  g_period_acc += 1000;
-  const uint32_t period = g_period_acc / 60;
-  g_period_acc %= 60;
-  const bool overrun = g_paced && static_cast<int32_t>(now - g_next_frame) >
-                                      static_cast<int32_t>(period);
-  if (!g_paced || overrun) {
-    if (overrun)
-      profiler_note_frame_drop();
-    g_next_frame = now;
-    g_paced = true;
-  }
-  g_next_frame += period;
-  const int32_t sleep = static_cast<int32_t>(g_next_frame - lv_tick_get());
-  if (sleep > 0) {
-    // Report the idle wait so the profiler can subtract it: the frame spans the
-    // whole main_loop iteration (see RGSS::Profiler.frame), and we want its
-    // "work" figure to measure CPU cost, not the time spent sleeping here.
-    profiler_note_idle(sleep);
-    lv_delay_ms(sleep);
+  //
+  // --no_render_wait (src/main.cxx) skips this whole block: it exists to make
+  // a *played* game feel right (see above), which a headless smoke test never
+  // watches. Every timer that block protects is driven off frame_count, not
+  // the wall clock, so the frames that run are identical either way -- this
+  // only removes the idle wait between them, which is most of a headless
+  // run's wall-clock time (each frame's own work is a few ms; the wait pads
+  // it to a full 1/60s regardless).
+  if (!mrb_const_defined(M, mrb_obj_value(M->object_class),
+                         mrb_intern_lit(M, "NO_RENDER_WAIT")) ||
+      !mrb_test(mrb_const_get(M, mrb_obj_value(M->object_class),
+                              mrb_intern_lit(M, "NO_RENDER_WAIT")))) {
+    const uint32_t now = lv_tick_get();
+    g_period_acc += 1000;
+    const uint32_t period = g_period_acc / 60;
+    g_period_acc %= 60;
+    const bool overrun = g_paced && static_cast<int32_t>(now - g_next_frame) >
+                                        static_cast<int32_t>(period);
+    if (!g_paced || overrun) {
+      if (overrun)
+        profiler_note_frame_drop();
+      g_next_frame = now;
+      g_paced = true;
+    }
+    g_next_frame += period;
+    const int32_t sleep = static_cast<int32_t>(g_next_frame - lv_tick_get());
+    if (sleep > 0) {
+      // Report the idle wait so the profiler can subtract it: the frame spans
+      // the whole main_loop iteration (see RGSS::Profiler.frame), and we want
+      // its "work" figure to measure CPU cost, not the time spent sleeping.
+      profiler_note_idle(sleep);
+      lv_delay_ms(sleep);
+    }
   }
 
   return mrb_nil_value();
