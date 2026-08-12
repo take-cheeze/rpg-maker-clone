@@ -7,7 +7,16 @@ class RPG2k
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
-      COMMANDS = ["Item", "Skill", "Equip", "Status", "Save", "End Game"].freeze
+      # Command keys in menu order, paired with the database term (and its
+      # RPG_RT-standard English fallback) that names each on screen.
+      COMMAND_KEYS = [
+        [:item, :battle_item, "Item"],
+        [:skill, :battle_skill, "Skill"],
+        [:equip, :battle_equipment, "Equip"],
+        [:status, :status, "Status"],
+        [:save, :battle_save, "Save"],
+        [:end_game, :battle_end_game, "End Game"]
+      ].freeze
 
       def initialize parent, state
         super parent
@@ -15,6 +24,9 @@ class RPG2k
         @index = 0
         @message = nil
         @skin = make_windowskin
+        @commands = COMMAND_KEYS.map { |key, term_name, fallback|
+          [key, term(term_name, fallback)]
+        }
         build_windows
       end
 
@@ -27,7 +39,7 @@ class RPG2k
       def update
         return drive_message if @message
 
-        if Input.trigger?(Input::DOWN) && @index < COMMANDS.size - 1
+        if Input.trigger?(Input::DOWN) && @index < @commands.size - 1
           @index += 1
           refresh_cursor
         elsif Input.trigger?(Input::UP) && @index > 0
@@ -44,13 +56,13 @@ class RPG2k
 
       def build_windows
         cw = 108
-        @command = Window.new(0, 0, cw, COMMANDS.size * LINE_H + Window::BORDER * 2)
+        @command = Window.new(0, 0, cw, @commands.size * LINE_H + Window::BORDER * 2)
         @command.z = 400
         @command.windowskin = @skin
-        cc = Bitmap.new(cw - Window::BORDER * 2, COMMANDS.size * LINE_H)
+        cc = Bitmap.new(cw - Window::BORDER * 2, @commands.size * LINE_H)
         cc.font.color = Color.new(255, 255, 255, 255)
-        COMMANDS.each_with_index do |c, i|
-          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, c
+        @commands.each_with_index do |(_key, label), i|
+          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, label
         end
         @command.contents = cc
         refresh_cursor
@@ -68,7 +80,9 @@ class RPG2k
           # this panel is only 196px wide, so it goes where there is room.
           draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
           sc.draw_text 0, y + 16, sc.width, 14,
-                       "Lv #{a.level}  HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+                       "#{term(:level_short, 'Lv')} #{a.level}  " \
+                       "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
+                       "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
         end
         @status.contents = sc
       end
@@ -79,25 +93,26 @@ class RPG2k
       end
 
       def select_command
-        case COMMANDS[@index]
-        when "Item"
+        key, label = @commands[@index]
+        case key
+        when :item
           @parent.push Scene::ItemMenu.new(@parent, @state)
-        when "Skill"
+        when :skill
           @parent.push Scene::SkillMenu.new(@parent, @state)
-        when "Equip"
+        when :equip
           @parent.push Scene::EquipMenu.new(@parent, @state)
-        when "Status"
+        when :status
           @parent.push Scene::StatusMenu.new(@parent, @state)
-        when "Save"
+        when :save
           if @state.save_access
             show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
           else
             show_message("You cannot save right now.")
           end
-        when "End Game"
+        when :end_game
           show_message("Returning to title...", :end_game)
         else
-          show_message("#{COMMANDS[@index]} is not implemented yet.")
+          show_message("#{label} is not implemented yet.")
         end
       end
 

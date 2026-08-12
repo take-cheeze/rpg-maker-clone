@@ -197,7 +197,8 @@ class RPG2k
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
-                      "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
+                      "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
         end
         @target_window.contents = c
         refresh_target_cursor

@@ -164,14 +164,15 @@ class RPG2k
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         a = caster
-        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   SP #{a.mp}/#{a.max_mp}"
+        mp_term = term(:mp_short, 'MP')
+        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   #{mp_term} #{a.mp}/#{a.max_mp}"
         if rows.empty?
           c.draw_text 0, head_h, inner_w, LINE_H, "No skills"
         else
           rows.each_with_index do |(sid, cost), i|
             y = head_h + i * LINE_H
             c.draw_text 0, y, inner_w - 40, LINE_H, skill_name(sid)
-            c.draw_text inner_w - 40, y, 40, LINE_H, "#{cost} SP"
+            c.draw_text inner_w - 40, y, 40, LINE_H, "#{cost} #{mp_term}"
           end
         end
         @skill_window.contents = c
@@ -204,7 +205,8 @@ class RPG2k
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
-                      "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
+                      "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
         end
         @target_window.contents = c
         refresh_target_cursor

@@ -80,9 +80,24 @@ class RPG2k
       # leaving the column blank), or a plain English stand-in for a database
       # that leaves the term unset.
       def normal_status_term
+        term(:normal_status, 'Normal')
+      end
+
+      # `db.term.<name>`, or `fallback` when the field is blank or the scene is
+      # built on a fixture database that carries no term table at all. Shared by
+      # every scene that draws vocabulary the database lets a project rename
+      # (menu commands, stat abbreviations, equipment slots, ...), so a bare or
+      # partially-filled database still reads as English rather than blank.
+      def term(name, fallback)
         t = db.respond_to?(:term) ? db.term : nil
-        s = t && t.respond_to?(:normal_status) ? t.normal_status : nil
-        s.nil? || s.to_s.empty? ? 'Normal' : s
+        s = t && t.respond_to?(name) ? t.send(name) : nil
+        nonblank(s, fallback)
+      end
+
+      # `s`, or `fallback` when `s` is nil/empty once stringified.
+      def nonblank(s, fallback)
+        s = s.to_s
+        s.empty? ? fallback : s
       end
     end
 
