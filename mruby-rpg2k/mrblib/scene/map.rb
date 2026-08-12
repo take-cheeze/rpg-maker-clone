@@ -661,6 +661,12 @@ class RPG2k
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
         layer = page_layer(page)
         ch.layer = layer # collision (see #char_passable?) follows priority type too
+        # The page's "doesn't overlap" flag (LCF field 35) is a second,
+        # independent collision axis on top of priority type: it forces
+        # collision against a mover/blocker of *any* layer, not just a
+        # matching one (see #char_passable?/#char_can_land?/#passable?).
+        overlap_forbidden = page_overlap_forbidden(page)
+        ch.overlap_forbidden = overlap_forbidden
         move_type = page_move_type(page)
         route = move_type == Game::MoveType::CUSTOM ?
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
@@ -675,7 +681,8 @@ class RPG2k
           # the sprite between tiles. move_count == TILE means "at rest".
           # `jumping` marks that slide as a hop, which is lifted along an arc
           # and is the one kind that slides across more than a single tile.
-          layer: layer, translucent: page_translucent(page),
+          layer: layer, overlap_forbidden: overlap_forbidden,
+          translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
           moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE,
@@ -723,6 +730,7 @@ class RPG2k
       def page_charset_name(page); page_field(:charset_name, nil) { page.charset_name }; end
       def page_charset_index(page); page_field(:charset_index, 0) { page.charset_index || 0 }; end
       def page_layer(page); page_field(:layer, 0) { page.layer || 0 }; end
+      def page_overlap_forbidden(page); page_field(:overlap_forbidden, false) { page.overlap_forbidden ? true : false }; end
       def page_pattern(page); page_field(:pattern, 1) { p = page.pattern; (0..2).include?(p) ? p : 1 }; end
       def page_anim_type(page); page_field(:anim_type, 0) { page.animation_type || 0 }; end
       def page_translucent(page); page_field(:translucent, false) { page.translucent ? true : false }; end
@@ -1002,7 +1010,7 @@ class RPG2k
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
         blocker = @event_tiles[[x, y]]
-        return false if blocker && blocker[:layer] == LAYER_SAME
+        return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
         row = terrain_row_at(x, y)
         return true if row.nil?
         row.airship_land ? true : false
@@ -1076,7 +1084,7 @@ class RPG2k
           return row.airship_pass ? true : false
         end
         blocker = @event_tiles[[x, y]]
-        return false if blocker && blocker[:layer] == LAYER_SAME
+        return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
       end
@@ -1348,16 +1356,26 @@ class RPG2k
       # rather than snapping back to its spawn tile. Erased events stay erased,
       # and the parallel processes are rebuilt because a page change can add or
       # remove one.
+      #
+      # A custom move route in progress also carries its **execution state**
+      # across, but only when the old and new page describe the byte-identical
+      # route (`Game::MoveRoute.same_route?`) — RPG_RT restarts the route from
+      # the top on any other page switch, custom-route or not.
       def rebuild_events_preserving_positions
         placed = {}
-        @events.each { |e| placed[e[:id]] = e[:char] }
+        @events.each { |e| placed[e[:id]] = e }
         build_events
         @events.each do |e|
           old = placed[e[:id]]
           next unless old
-          e[:char].x = old.x
-          e[:char].y = old.y
-          e[:char].direction = old.direction
+          e[:char].x = old[:char].x
+          e[:char].y = old[:char].y
+          e[:char].direction = old[:char].direction
+          next unless e[:move_type] == Game::MoveType::CUSTOM &&
+                      old[:move_type] == Game::MoveType::CUSTOM
+          if Game::MoveRoute.same_route?(page_move_route(old[:page]), page_move_route(e[:page]))
+            e[:route] = old[:route]
+          end
         end
         rebuild_event_tiles
         build_parallels
@@ -1946,9 +1964,11 @@ class RPG2k
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
         return false unless @map.in_bounds?(nx, ny)
-        return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
+        if nx == @state.x && ny == @state.y
+          return false if character.layer == LAYER_SAME || character.overlap_forbidden
+        end
         blocker = @event_tiles[[nx, ny]]
-        return false if blocker && blocker[:layer] == character.layer
+        return false if blocker && (blocker[:layer] == character.layer || blocker[:overlap_forbidden])
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
                                  @map.upper(character.x, character.y), dir) &&
@@ -1977,9 +1997,11 @@ class RPG2k
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
         # Same layer-gated occupancy rule as #char_passable? (see its comment).
-        return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
+        if x == @state.x && y == @state.y
+          return false if character.layer == LAYER_SAME || character.overlap_forbidden
+        end
         blocker = @event_tiles[[x, y]]
-        return false if blocker && blocker[:layer] == character.layer
+        return false if blocker && (blocker[:layer] == character.layer || blocker[:overlap_forbidden])
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
@@ -5057,8 +5079,10 @@ class RPG2k
         blocker = @event_tiles[[x, y]]
         # The hero is always a "normal character" for collision purposes: only
         # a same-layer event blocks it, a below/above-characters one is a
-        # decoration it walks straight over (see the LAYER_* comment).
-        return false if blocker && blocker[:layer] == LAYER_SAME
+        # decoration it walks straight over (see the LAYER_* comment) —
+        # unless that event's own "doesn't overlap" flag forces the block
+        # regardless of layer (LCF page field 35, #overlap_forbidden).
+        return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(@state.x, @state.y),
                                  @map.upper(@state.x, @state.y), dir) &&

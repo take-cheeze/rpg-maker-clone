@@ -2160,7 +2160,16 @@ module Game
     end
 
     def item_count(id); @items[id] || 0; end
-    def has_item?(id); item_count(id) > 0; end
+
+    # RPG_RT's item-possession test (Conditional Branch's item condition and an
+    # event page's item appearance condition, both routed through here) also
+    # counts a copy currently equipped on any party member — even though
+    # equipping an item removes it from the bag `item_count` reports. The
+    # numeric "item possession count" operand (Control Variables, item_operand
+    # above) stays bag-only, matching RPG_RT's own split between the two reads.
+    def has_item?(id)
+      item_count(id) > 0 || @actors.any? { |a| a.equipment.include?(id) }
+    end
 
     def gain_item(id, n = 1)
       c = item_count(id) + n
@@ -3146,7 +3155,7 @@ module Game
 
     attr_accessor :direction, :move_speed, :move_frequency
     attr_accessor :through, :facing_locked, :animation_stopped, :transparency
-    attr_accessor :layer
+    attr_accessor :layer, :overlap_forbidden
     attr_reader :graphic_name, :graphic_index, :x, :y
 
     # Placing a character outright -- Change Event Location, a page refresh
@@ -3170,6 +3179,7 @@ module Game
       @graphic_index = 0
       @jumped = false
       @layer = 1                # priority type: same as normal characters
+      @overlap_forbidden = false # LCF page field 35: collide regardless of layer
     end
 
     def set_graphic(name, index)
@@ -3349,6 +3359,32 @@ module Game
     rescue StandardError => e
       $stderr.puts "[RPG2k] move route parse failed, event uses no custom route: #{e.message}"
       nil
+    end
+
+    # True when two event pages' raw `move_route` fields (as read by
+    # #from_page — commands/repeat/skippable) describe the byte-identical
+    # route. This is RPG_RT's own test for whether a route executing when an
+    # event's active page switches continues seamlessly from where it left
+    # off (identical route) or restarts from the top (anything else,
+    # including no custom route at all).
+    def self.same_route?(a, b)
+      return true if a.nil? && b.nil?
+      return false if a.nil? || b.nil?
+      return false unless a.repeat == b.repeat && a.skippable == b.skippable
+      ca = a.commands || []
+      cb = b.commands || []
+      return false unless ca.size == cb.size
+      ca.each_index do |i|
+        x = ca[i]; y = cb[i]
+        return false unless x.command_id == y.command_id &&
+                             x.parameter_string == y.parameter_string &&
+                             x.parameter_a == y.parameter_a &&
+                             x.parameter_b == y.parameter_b &&
+                             x.parameter_c == y.parameter_c
+      end
+      true
+    rescue StandardError
+      false
     end
 
     # Run the command under the cursor against `character`. Returns a status
