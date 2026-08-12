@@ -1589,6 +1589,20 @@ following this paragraph as the original record.
   variable inside its own write range is a different, unverified question).
   Covered by a new `scripts/rpg2k_logic_check.rb` check (a wide-range batch
   assign must not produce the same value in every variable).
+- ✅ **Indirect ("pointer") target addressing now no-ops on a resolved id
+  ≤0**, instead of writing switch/variable slot 0 or a negative one.
+  `Game::Interpreter#range`'s mode-2 (indirect) branch resolves the pointer
+  variable's value with no bounds check at all, and `Switches`/`Variables`
+  are plain Hash-backed with no guard in their write path either — so a
+  `Control Variables`/`Control Switches` command addressed indirectly
+  through a pointer variable holding 0 or a negative number was writing to
+  that bogus key rather than doing nothing, the way RPG_RT's target-role
+  indirect addressing does (the **operand**-role read side already handled
+  this correctly, via `Variables`/`Switches`' own missing-key default).
+  `range` now returns an already-empty range for a ≤0 resolved index,
+  reusing the same "does nothing" mechanism a descending batch range
+  already relies on. Covered by a new `scripts/rpg2k_logic_check.rb` check,
+  confirmed to fail against the pre-fix code before the fix.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -2018,8 +2032,9 @@ not yet verified:
   past the configured max (used deliberately, though the site warns large
   indices measurably slow opening the Save screen — corroborated by an
   entire `09_bug/` page on the topic). Indirect addressing's failure mode
-  on an index ≤0 differs by role: the **target** form is a no-op, the
-  **operand** form resolves to 0.
+  on an index ≤0 differs by role: the **operand** form already resolved to
+  0 (`Variables`/`Switches`' own default for a missing key); the **target**
+  form is fixed now too, see below.
 - ✅ **Batch (range) operations requiring ascending order or silently no-op is
   confirmed already correct.** `Game::Interpreter#range` returns a batch's
   two ends verbatim with no ordering check, and Ruby's `(a..b).each` on a
