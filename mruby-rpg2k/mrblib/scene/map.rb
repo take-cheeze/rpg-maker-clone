@@ -4407,6 +4407,9 @@ class RPG2k
       end
 
       def drive_message
+        # Advances the blink/pause animation each frame so the pause arrow
+        # (set below) actually flashes instead of sitting on one frame.
+        @message[:window].update
         if @message[:choice]
           if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
             @choice_index += 1
@@ -4490,6 +4493,10 @@ class RPG2k
         pressed = Input.trigger?(Input::C) || Input.trigger?(Input::B)
         unless reveal.done?
           pause = reveal.pending_pause
+          # The blinking pause arrow only stands for a player-input wait
+          # (`\!`, or the fully-revealed message below) -- not the timed
+          # `\.` / `\|` holds, which clear on their own.
+          @message[:window].pause = pause ? pause[:kind] == :key : false
           if pause
             drive_message_pause(reveal, pause, pressed)
           elsif pressed
@@ -4504,6 +4511,8 @@ class RPG2k
         if reveal.auto_close? || pressed
           close_message
           @interpreter.resume
+        else
+          @message[:window].pause = true
         end
       end
 
