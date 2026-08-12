@@ -847,13 +847,25 @@ class RPG2k
         return unless Input.trigger?(Input::C)
         # An action event **under the player** fires too: RPG_RT checks the tile
         # the party is standing on before the one it faces, which is how a
-        # trigger-0 event on a doorway tile answers the action button.
+        # trigger-0 event on a doorway tile answers the action button. Overlap
+        # answers the button regardless of priority type, so this check alone
+        # is how a below/above-characters action event (see below) is ever
+        # reachable at all.
         here = event_at(@state.x, @state.y)
         return start_event(here, true) if actionable?(here)
 
+        # The faced tile only answers the button for a LAYER_SAME event: RPG_RT
+        # ties this to priority type the same way it ties collision to it
+        # (yado.tk's 決定キーを押してもマップイベントが実行しない) — a
+        # below/above-characters action event (typically one whose graphic is
+        # an upper-layer chip, which defaults to LAYER_BELOW) does not answer
+        # the button from an adjacent facing tile, only from standing on it via
+        # the overlap check above. A same-layer event never has that option
+        # (it blocks the party from ever standing on it), so facing it is its
+        # only way in.
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        return start_event(ev, true) if actionable?(ev)
+        return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
 
         # Nothing on the faced tile: if it is a **counter** — a shop or inn
         # counter, marked in the chipset's upper-layer passage table — look
@@ -862,7 +874,7 @@ class RPG2k
           break unless counter_tile?(fx, fy)
           fx, fy = target_tile(fx, fy, @state.direction)
           ev = event_at(fx, fy)
-          return start_event(ev, true) if actionable?(ev)
+          return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
         end
         nil
       end

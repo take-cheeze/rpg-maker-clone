@@ -865,7 +865,10 @@ end
 
 check 'the action button reaches across a shop counter' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 0)
+  # Same-as-characters: a facing (not overlapping) action check only answers a
+  # LAYER_SAME event — see 'the action button does not answer a below/above
+  # -characters event from an adjacent facing tile' below.
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
   # Player at (0,0) facing east; (1,0) is the counter, the keeper is at (2,0).
   scene = counter_scene({ 1 => event(2, 0, pg) }, [[1, 0]], player: [0, 0])
@@ -880,7 +883,7 @@ end
 
 check 'the reach stops after three counters, and at a non-counter tile' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 0)
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
   # (1,0) is a counter but (2,0) is not, so the event at (3,0) is out of reach.
   scene = counter_scene({ 1 => event(3, 0, pg) }, [[1, 0]], player: [0, 0])
@@ -917,6 +920,25 @@ check 'an action event under the player answers the action button' do
   RGSS::Input.reset
   5.times { scene.update }
   ok st.switches[4], 'the event under the party ran'
+end
+
+# yado.tk: 決定キーを押してもマップイベントが実行しない (「決定キーを押しても
+# マップイベントが実行しない」バグ・エラーページ) — a below/above-characters
+# action event only answers the button by overlap (see the check above), never
+# by facing it from an adjacent tile; only LAYER_SAME does that (its own tile
+# is unreachable, since it blocks the party from ever standing there).
+check 'a below-characters action event does not answer the button from an adjacent tile' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6 # face the event at (1,0) without stepping onto it
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'a below-characters event must not answer the button while merely faced'
 end
 
 # CONTROL_VARS params to add `by` to variable `id`:
@@ -3482,7 +3504,7 @@ check 'a BGM position that jumps backwards counts as one play-through' do
 end
 
 check 'the action key marks the event it started for the type-8 branch' do
-  pg = page(trigger: 0)
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [
     ECmd.new(IC2::CONDITIONAL, [8], indent: 0),
     ECmd.new(Game::Interpreter::Cmd::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 1),
