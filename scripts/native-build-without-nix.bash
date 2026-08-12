@@ -158,7 +158,7 @@ say "render check: --rgss_effect_probe under Xvfb"
 # rather than merely storing its values -- the failure an earlier screen-tint
 # attempt shipped with. It prints [RGSS-PROBE] ok only when the measured frame
 # moved for every effect.
-xvfb-run -a "$build_dir/rpg_maker_clone" --rgss_effect_probe
+xvfb-run -a "$build_dir/rpg_maker_clone" --test_play --rgss_effect_probe
 
 say "boot checks: real game data to the map"
 ENGINE="$build_dir/rpg_maker_clone" xvfb-run -a bash "$root/scripts/rpg2k_boot_check.bash"

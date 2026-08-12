@@ -29,7 +29,7 @@ body:
         The command line you ran, the game data used, and the steps to get
         there. A `scripts/*_check.rb` invocation that fails is ideal.
       placeholder: |
-        ./scripts/nix-develop.bash ./build/rpg_maker_clone --rpg2k_new_game data/Nepheshel
+        ./scripts/nix-develop.bash ./build/rpg_maker_clone --test_play --rpg2k_new_game data/Nepheshel
         1. New Game
         2. Walk two tiles up
     validations:

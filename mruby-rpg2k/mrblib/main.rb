@@ -402,8 +402,15 @@ class RPG2k
   #   Toggle Fullscreen event command in interpreter.rb), so the word is
   #   accepted -- it must not be treated as an unknown/invalid argument -- but
   #   there is nothing left for it to switch.
+  #
+  # `test_play` is also true when src/main.cxx resolved this run as test play
+  # some other way -- the project's own Game.ini `[Game] Test=1`, or an
+  # explicit --test_play -- since a RPG_RT.exe launched by the real editor
+  # always carries the TestPlay word too; TEST_PLAY only exists when this is
+  # the native binary (see scripts/rpg2k_scene_check.rb, which loads this file
+  # under plain CRuby and never defines it).
   def initialize args
-    @test_play = args.include?('TestPlay')
+    @test_play = args.include?('TestPlay') || native_test_play?
     @hide_title = args.include?('HideTitle')
 
     @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
@@ -411,6 +418,14 @@ class RPG2k
     @scenes = []
     push Scene::Title.new self
   end
+
+  # See the TEST_PLAY comment on #initialize above.
+  def native_test_play?
+    TEST_PLAY
+  rescue StandardError
+    false
+  end
+  private :native_test_play?
 
   def push scene
     @scenes.push scene

@@ -61,7 +61,7 @@ for game in "${GAMES[@]}" ; do
     # Each game gets its own display number: xvfb-run -a's probe is not atomic
     # and can steal a display from a concurrent run (see build.yml).
     if ! xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
-            --game_dir "${game}" --rpg2k_new_game \
+            --game_dir "${game}" --test_play --rpg2k_new_game \
             --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
         echo "FAILED: ${game}: the engine exited non-zero" >&2
         failed=$((failed + 1))

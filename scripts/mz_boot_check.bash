@@ -177,7 +177,7 @@ echo "== ${GAME} (mode ${MODE})"
 # (LVGL v9.5 requires a window; the dummy driver provides one without a display.)
 if ! env -u DISPLAY -u XAUTHORITY SDL_VIDEODRIVER=dummy \
         timeout "$(( TIMEOUT_MS / 1000 + 30 ))" "${ENGINE}" \
-        --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" \
+        --game_dir "${GAME}" --timeout_ms="${TIMEOUT_MS}" --test_play \
         "${FLAGS[@]}" \
         --mz_screenshot="${SHOT}" \
         >"${log}" 2>&1 ; then
