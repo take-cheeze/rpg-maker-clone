@@ -2766,15 +2766,19 @@ class RPG2k
       end
 
       # Escape command (cancel on the first actor's menu): roll the party's
-      # agility-based escape chance. On success flee the fight; on a failed roll
-      # the party forfeits the round — every member skips and only the enemies
-      # act — and the next attempt is likelier (Game::Battle#attempt_escape).
+      # agility-based escape chance. On success show the result window (the
+      # database's own `escape_success` wording, like a victory or defeat) and
+      # flee once it is dismissed; on a failed roll the party forfeits the
+      # round — every member skips and only the enemies act, bannered with
+      # `escape_failure` the same way a landed hit is — and the next attempt is
+      # likelier (Game::Battle#attempt_escape).
       def try_battle_escape
         battle = @battle_ui[:battle]
         if battle.attempt_escape
-          finish_battle(:escape)
+          enter_battle_result(:escape)
         else
           $stderr.puts '[RPG2k battle] escape failed'
+          show_battle_banner([term(:escape_failure, "Couldn't escape!")])
           living_allies.each { |a| battle.command_skip(a) }
           start_round_animation
         end
@@ -3647,6 +3651,7 @@ class RPG2k
       # rather than guessed at, the same call this project already makes for a
       # handful of other under-specified 用語 fields.
       def battle_result_lines(result, troop)
+        return [term(:escape_success, 'Escaped!')] if result == :escape
         return [term(:defeat, 'The party was defeated...')] unless result == :victory
         exp = troop.total_exp
         gold = troop.total_gold
@@ -3835,8 +3840,15 @@ class RPG2k
       # reads on screen as well as its HP tick. Replaced by the next action's
       # banner and dropped when the round settles.
       def show_battle_action(entry)
+        show_battle_banner(battle_action_lines(entry))
+      end
+
+      # The low action banner itself, shared by a landed hit (#show_battle_action)
+      # and a failed Escape attempt: both are transient status text over the
+      # still-running fight, replaced by whatever banners next and dropped when
+      # the round settles.
+      def show_battle_banner(lines)
         @battle_ui[:action_win].dispose if @battle_ui[:action_win]
-        lines = battle_action_lines(entry)
         y = SCREEN_H - lines.length * BATTLE_LINE_H - Window::BORDER * 2 - 6
         @battle_ui[:action_win] = battle_text_window(lines, y, 340)
       end

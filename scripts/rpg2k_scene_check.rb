@@ -2620,6 +2620,12 @@ check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
   RGSS::Input.triggered = [RGSS::Input::B] # Flee (cancel on the first actor)
   scene.update
   RGSS::Input.triggered = []
+  ui = scene.instance_variable_get(:@battle_ui)
+  eq :result, ui[:phase], 'a successful flee shows the result window too, like a win or a loss'
+  ok !st.switches[2], 'the Escape handler has not run yet -- the result is still up'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result
+  scene.update
+  RGSS::Input.triggered = []
   3.times { scene.update } # interpreter resumes -> Escape handler
   eq 0, st.party.gold, 'fleeing grants nothing'
   ok !st.switches[1], 'the Victory handler was skipped'
@@ -4275,6 +4281,24 @@ check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to
   texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
   ok texts.any? { |t| t.include?('The party was defeated...') },
      'a blank database term still falls back to the composed English'
+end
+
+check 'Enemy Encounter scene: a successful Flee shows the database escape_success term' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  2.times { scene.update }
+  RGSS::Input.triggered = [RGSS::Input::B] # Flee
+  scene.update
+  RGSS::Input.triggered = []
+  ui = scene.instance_variable_get(:@battle_ui)
+  eq :result, ui[:phase]
+  texts = window_texts(ui[:result_win])
+  ok texts.any? { |t| t.include?('Escaped!') },
+     'fake_db leaves escape_success blank, so this is the composed English fallback'
 end
 
 # Open a battle and run it up to the command phase, answering [scene, ui].
