@@ -3644,6 +3644,29 @@ check 'Control Variables batch random-assign rolls independently per variable' d
   ok vals.uniq.size > 1, "every variable in the batch got the same roll: #{vals}"
 end
 
+check 'a descending batch range silently no-ops for both Switches and Variables' do
+  # yado.tk: a batch (range) Control Switches/Variables whose high end is
+  # below its low end does nothing at all, no error. range(cmd) returns the
+  # two ends verbatim with no ordering check, and Ruby's (a..b).each on a
+  # descending range already iterates zero times, so this holds without any
+  # dedicated guard -- confirmed here rather than assumed.
+  st = new_state
+  st.variables[2] = 7
+  st.variables[3] = 7
+  st.switches[2] = false
+  st.switches[3] = false
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [1, 5, 2, 0, 0, 99]),  # mode 1, a=5, b=2 (descending): set 99
+    FakeCmd.new(IC::CONTROL_SWITCHES, [1, 5, 2, 0]),     # mode 1, a=5, b=2 (descending): turn on
+  ])
+  it.update
+  eq 7, st.variables[2], 'variable 2 untouched by the descending-range batch'
+  eq 7, st.variables[3], 'variable 3 untouched by the descending-range batch'
+  eq false, st.switches[2], 'switch 2 untouched by the descending-range batch'
+  eq false, st.switches[3], 'switch 3 untouched by the descending-range batch'
+end
+
 check 'Control Variables reads party gold and the timer (operand type 7)' do
   st = new_state
   st.party.gain_gold(500)
