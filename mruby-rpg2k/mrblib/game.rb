@@ -431,6 +431,8 @@ module Game
     # Only the counter flag is read so far: it marks a tile you may talk *across*
     # — the shop counter an NPC stands behind.
     COUNTER_BIT = 0x40
+    # Every directional bit ORed together, for a jump's any-side landing check.
+    ALL_DIRS = (DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]).freeze
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
 
@@ -469,6 +471,20 @@ module Game
       flags = @passable_lower[idx]
       return true if flags.nil?
       (flags & (DIR_BIT[dir] || 0)) != 0
+    end
+
+    # Can a character land on a tile with the given lower-layer id, jumping in
+    # from any side? A jump's landing check has no single direction of entry
+    # the way an ordinary step does, so RPG_RT only refuses a tile the chipset
+    # blocks from *every* direction — the four direction bits ORed together,
+    # not one specific bit.
+    def landable?(tile_id)
+      return true if @passable_lower.nil?
+      idx = ChipSet.lower_index(tile_id)
+      return true if idx.nil? || idx < 0 || idx >= @passable_lower.size
+      flags = @passable_lower[idx]
+      return true if flags.nil?
+      (flags & ALL_DIRS) != 0
     end
 
     # Is this an upper-layer **counter** tile — one the action button reaches

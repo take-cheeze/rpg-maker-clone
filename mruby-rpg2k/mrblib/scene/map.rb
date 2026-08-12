@@ -1837,9 +1837,16 @@ class RPG2k
 
       # Collision test for an event stepping one tile in `dir`: in bounds, not
       # onto the player or another event, and passable per the chipset. A
-      # "through" character ignores all of this. Only the destination tile is
-      # tested, so a character never blocks itself (it stands on its own tile,
-      # not the one ahead).
+      # "through" character ignores all of this.
+      #
+      # **Both** tiles at the boundary are asked, each from its own side, as
+      # RPG2000's per-direction passability does: the tile a character is
+      # leaving must allow exit toward `dir`, and the tile it is entering must
+      # allow entry from the opposite side (its own passability bit for
+      # `TURN_180[dir]`). A wall painted on either tile blocks the crossing —
+      # checking only the destination (as this used to) missed a chip whose
+      # *own* tile disallowed stepping off it, which is how one-way ledges and
+      # railings are authored.
       def char_passable?(character, dir)
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
@@ -1847,17 +1854,21 @@ class RPG2k
         return false if nx == @state.x && ny == @state.y
         return false if @event_tiles[[nx, ny]]
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(nx, ny), dir)
+        @chipset.passable?(@map.lower(character.x, character.y), dir) &&
+          @chipset.passable?(@map.lower(nx, ny), Game::Character::TURN_180[dir] || dir)
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
 
-      # Collision test for a jump landing on (x, y): the same rules as a step —
-      # in bounds, not onto the player or another event, passable per the chipset
-      # — but applied to an arbitrary tile rather than the one ahead, and entered
-      # from the jump's dominant direction. The tiles the jump passes over are
-      # deliberately not tested: RPG_RT skips the "may I leave" half of its check
-      # while jumping, which is what lets a jump clear a wall.
+      # Collision test for a jump landing on (x, y): the same occupancy rules as
+      # a step — in bounds, not onto the player or another event — applied to an
+      # arbitrary tile rather than the one ahead. The tiles the jump passes over
+      # are deliberately not tested, and neither is the tile it leaves: RPG_RT
+      # skips the "may I leave" half of its check while jumping, which is what
+      # lets a jump clear a wall. Landing itself only fails on a tile blocked in
+      # *every* direction — a jump does not arrive "from" a particular side the
+      # way a step does, so the landing tile is asked whether it permits passage
+      # at all rather than from one specific direction.
       def char_can_land?(character, x, y)
         return true if character.through
         # A hop that lands on the tile it left is always allowed: the character
@@ -1870,22 +1881,9 @@ class RPG2k
         return false if x == @state.x && y == @state.y
         return false if @event_tiles[[x, y]]
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(x, y), jump_entry_direction(character, x, y))
+        @chipset.landable?(@map.lower(x, y))
       end
       public :char_can_land?
-
-      # The direction a jump from the character's tile enters (x, y) by: its
-      # dominant axis, vertical winning a tie, matching the facing Character#jump
-      # lands on.
-      def jump_entry_direction(character, x, y)
-        dx = x - character.x
-        dy = y - character.y
-        if dy.abs >= dx.abs
-          dy >= 0 ? 2 : 8
-        else
-          dx >= 0 ? 6 : 4
-        end
-      end
 
       # Terrain id of the lower-layer tile at (x, y), for the Store Terrain ID
       # command (0 when out of bounds or no chipset). Queried by the interpreter
@@ -4693,11 +4691,17 @@ class RPG2k
         end
       end
 
+      # The player's own step check: (x, y) is the tile ahead, `dir` the
+      # direction of travel from the player's current tile. Like
+      # `char_passable?`, both sides of the boundary must agree — the tile
+      # under the player's feet must allow exit toward `dir`, and (x, y) must
+      # allow entry from the opposite side.
       def passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
         return false if @event_tiles[[x, y]]
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(x, y), dir)
+        @chipset.passable?(@map.lower(@state.x, @state.y), dir) &&
+          @chipset.passable?(@map.lower(x, y), Game::Character::TURN_180[dir] || dir)
       end
 
       # Current player position in map pixels, interpolated during a step.
@@ -5075,10 +5079,18 @@ class RPG2k
       #   * same-layer events (layer 1) go under the player when they stand
       #     behind him (smaller y) and over him when in front (larger-or-equal
       #     y), the y-sort RPG2000 applies within the character layer.
+      # Within whichever buffer an event lands in, draw order still has to obey
+      # that same y-sort against every *other* event sharing it — RPG_RT sorts
+      # all same-tier characters by screen y (then x, then event id) before
+      # painting, not just each one against the hero. `event_target_buffer`
+      # only decides lower-vs-upper; without this sort two events on the same
+      # side of the hero would layer in event-array order instead, so whichever
+      # was defined later in the map always drew on top regardless of position.
       # A translucent page is blitted at half opacity. Events with no graphic
       # (empty CharSet name and no tile substitution) draw nothing.
       def draw_events(cam_x, cam_y)
-        @events.each { |e| draw_event e, cam_x, cam_y }
+        ordered = @events.sort_by { |e| [e[:char].y, e[:char].x, e[:id]] }
+        ordered.each { |e| draw_event e, cam_x, cam_y }
       end
 
       def draw_event(e, cam_x, cam_y)
