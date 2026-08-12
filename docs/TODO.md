@@ -1577,6 +1577,21 @@ following this paragraph as the original record.
   event selection: `Game::BattlePage.select_all` runs **every** satisfied
   page once per turn, lower page number first, vs. `Game::EventPage.select`
   picking only the single highest-numbered page for map/common events.
+- **Change Menu Prohibit already persists across map transfers; Change Save
+  Prohibit and Teleport/Escape Prohibit already do not** (yado.tk: a real,
+  asymmetric rule across three similar-sounding commands). Confirmed by
+  reading `Scene::Map#apply_map_access`, which re-derives `save_access` /
+  `teleport_access` / `escape_access` from the map tree's own per-map
+  tri-states (LMT `map_properties` fields 33/31/32) on the initial map load
+  and on every Teleport, while `menu_access` is untouched there — and the map
+  tree schema (`mruby-lcf/mrblib/schema.rb`) confirms *why*: RPG2000 never
+  offers a per-map Menu setting at all, only Save/Teleport/Escape, so there
+  is nothing for Menu access to be re-derived from. A `Control Menu/Save/
+  Teleport/Escape Access` event command can still override any of the four
+  for the rest of the current visit; only the next map load or Teleport
+  recomputes the three that have a map-tree setting. Regression-covered by
+  extending an existing `scripts/rpg2k_scene_check.rb` check to also assert
+  Save access resets with Teleport/Escape and Menu access does not.
 
 #### Confirmed genuine gaps, not yet fixed
 - **Common-event Parallel Process state should survive map changes and
@@ -1822,17 +1837,21 @@ not yet verified:
 - **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
-  source — Save/Teleport/Escape Prohibition changes. This codebase's
-  `perform_teleport` already resets several of these (tileset, parallax,
-  pan) on a *map change*; yado.tk's phrasing ("leaving and returning to
-  the map") is consistent with that, but Encounter Steps and Tile
-  Replacement specifically aren't confirmed reset anywhere in the code
-  read this session — worth checking.
-- **Change Menu Prohibit persists across map transfers; Change Save
-  Prohibit and Teleport/Escape Prohibit do not** (revert to the destination
-  map's own configured setting on the next transfer) — a real, asymmetric
-  rule across three very similar-sounding commands, worth getting right
-  rather than treating all three the same.
+  source — Save/Teleport/Escape Prohibition changes. `perform_teleport`
+  resets tileset/parallax/pan on a *map change*, and Save/Teleport/Escape
+  Prohibition are confirmed correct above (`apply_map_access`). **Tile
+  Replacement is confirmed correct too**, for a different reason than the
+  other three: a Tile Substitution is recorded directly on the live
+  `Game::Map` object (`Game::Map#substitute_tile`), and `perform_teleport`
+  always rebuilds `@map` from scratch (`@parent.load_map`, which re-parses
+  the destination's `.lmu` fresh) rather than reusing or caching one — so
+  a substitution cannot survive a Teleport, including one back to the same
+  map, without any explicit reset code needed. Regression-covered by a new
+  `scripts/rpg2k_scene_check.rb` check. **Encounter Steps Change is not
+  actionable yet**: `Game::State#encounter_rate` records the override and
+  round-trips through the save, but no random-encounter system reads it at
+  all (see the Screen effects section) — there is nothing to reset until
+  that system exists.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**

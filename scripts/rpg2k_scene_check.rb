@@ -4074,6 +4074,22 @@ check 'Tile Substitution rewrites the map the scene walks on' do
   eq 41, scene.instance_variable_get(:@state).map.lower(3, 3)
 end
 
+check 'Tile Substitution does not survive leaving and returning to the map' do
+  # RPG_RT re-reads the map fresh on every Teleport (see #perform_teleport's
+  # own chipset/parallax/pan comments for the sibling per-visit overrides this
+  # matches); a substitution recorded on the old Game::Map object does not
+  # follow the new one it builds, even when the destination is the same map.
+  cmds = [ECmd.new(IC2::TILE_SUBSTITUTION, [0, 0, 41])]
+  scene = new_scene(parallel_event(cmds), player: [0, 0])
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  eq 41, st.map.lower(3, 3), 'the substitution took on the original map'
+
+  scene.send(:perform_teleport, [st.map_id, 0, 0, 0]) # leave and return to the same map
+  eq 0, st.map.lower(3, 3),
+     'a fresh map load on Teleport drops the substitution'
+end
+
 check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
   cmds = [ECmd.new(IC2::ENTER_EXIT_VEHICLE, [])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])
@@ -5149,21 +5165,30 @@ def fake_map_tree(props)
   Struct.new(:map_properties).new(props)
 end
 
-check 'Scene::Map re-derives Teleport/Escape access from the map tree on load and on Teleport' do
+check 'Scene::Map re-derives Save/Teleport/Escape access from the map tree ' \
+     'on load and on Teleport, but leaves Menu access alone' do
   parent = fake_parent(fake_db)
   parent.map_tree = fake_map_tree(
-    1 => FakeAccessNode.new(1, 2, 1), # map 1: teleport forbidden, escape allowed
-    2 => FakeAccessNode.new(1, 1, 2)  # map 2: teleport allowed, escape forbidden
+    1 => FakeAccessNode.new(2, 2, 1), # map 1: save+teleport forbidden, escape allowed
+    2 => FakeAccessNode.new(1, 1, 2)  # map 2: save+teleport allowed, escape forbidden
   )
   state = Game::State.new(fake_party, 1, 0, 0)
   state.map = fake_map(1, {})
   scene = RPG2k::Scene::Map.new(parent, state)
+  eq false, state.save_access, 'map 1 forbids Save'
   eq false, state.teleport_access, 'map 1 forbids Teleport'
   eq true, state.escape_access, 'map 1 allows Escape'
 
+  # A Control Menu Access override mid-visit -- unlike Save/Teleport/Escape,
+  # Menu access has no map-tree setting at all (RPG2000 never offers one) and
+  # so is never re-derived; it must still read false after the transfer below.
+  state.menu_access = false
   scene.send(:perform_teleport, [2, 0, 0, 0])
+  eq true, state.save_access, 'map 2 allows Save'
   eq true, state.teleport_access, 'map 2 allows Teleport'
   eq false, state.escape_access, 'map 2 forbids Escape'
+  eq false, state.menu_access,
+     'Menu access is not re-derived from the tree; it persists across the transfer'
 end
 
 check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do
