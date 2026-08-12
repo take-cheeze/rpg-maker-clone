@@ -201,6 +201,7 @@ def check_game(dir)
   state.save_access = false
   state.teleport_access = true
   state.escape_access = true
+  state.save_count = 7
   if state.party.leader
     state.party.leader.set_charset('HeroAlt', 5)
     state.party.leader.name = 'Renamed'
@@ -217,7 +218,7 @@ def check_game(dir)
   state.vehicle(:airship).x = 15
   state.vehicle(:airship).y = 7
 
-  round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd.to_lcf)))
+  round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd(state.save_count).to_lcf)))
   eq state.map_id, round.map_id, 'to_lsd: map id'
   eq state.x, round.x, 'to_lsd: hero x'
   eq state.y, round.y, 'to_lsd: hero y'
@@ -276,6 +277,7 @@ def check_game(dir)
   eq false, round.save_access, 'to_lsd: save_access'
   eq true, round.teleport_access, 'to_lsd: teleport_access'
   eq true, round.escape_access, 'to_lsd: escape_access'
+  eq 7, round.save_count, 'to_lsd: save_count'
   if round.party.leader
     eq 'HeroAlt', round.party.leader.charset_name, 'to_lsd: leader sprite override'
     eq 5, round.party.leader.charset_index, 'to_lsd: leader sprite index'

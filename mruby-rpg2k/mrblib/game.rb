@@ -7065,6 +7065,9 @@ module Game
       state.escape_access = sys.escape_allowed unless sys.escape_allowed.nil?
       state.save_access = sys.save_allowed unless sys.save_allowed.nil?
       state.menu_access = sys.menu_allowed unless sys.menu_allowed.nil?
+      # How many times the menu's Save command has been used (RPG_RT increments
+      # this on every save; see #to_lsd's sys[131] write above).
+      state.save_count = sys.save_count unless sys.save_count.nil?
       # Screen-transition slots (chunks 111..116). A slot the save left
       # un-overridden comes back out of range rather than as a setting, and
       # #seed_screen_transitions refills those from the database below.
