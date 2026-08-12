@@ -4175,6 +4175,10 @@ class RPG2k
         @started_common = {}
         @active_event = nil
         @player_route = nil # a forced player route does not survive a teleport
+        # ... nor does a Set Move Route "Change Graphic" override on the hero
+        # (see #player_draw_charset): RPG_RT reverts it on Transfer Player,
+        # unlike the dedicated Change Hero Graphic command.
+        @player_char = nil
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
@@ -5214,29 +5218,49 @@ class RPG2k
         end
       end
 
+      # Which CharSet bitmap + index currently draw the player: ordinarily the
+      # party leader's own (@charset/@charset_index), but a Set Move Route
+      # "Change Graphic" targeting the hero overrides it in place on the
+      # forced-route mirror character (@player_char) -- distinct from, and not
+      # persisted like, the dedicated Change Hero Graphic command (see
+      # perform_teleport, which drops the override on Transfer Player the same
+      # way a fresh Scene::Map drops it on save-load, by clearing @player_char).
+      # Reuses the event-charset cache: it is the exact same "CharSet/<name>"
+      # load a map event's own graphic already goes through.
+      def player_draw_charset
+        if @player_char && @player_char.graphic_name
+          [event_charset(@player_char.graphic_name), @player_char.graphic_index]
+        else
+          [@charset, @charset_index]
+        end
+      end
+
       def draw_player_frame
-        return unless @charset
+        charset, charset_index = player_draw_charset
+        return unless charset
         pat = @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
         bush = player_bush_depth
         # The sunken depth is part of the frame key, so walking into and out of
         # tall grass redraws the sprite even though the pose has not changed.
-        frame = [@state.direction, pat, bush]
+        # The bitmap identity + index are too, so a move-route graphic change
+        # forces a redraw even when direction/pose/bush all stay the same.
+        frame = [@state.direction, pat, bush, charset.object_id, charset_index]
         return if frame == @last_frame
         @last_frame = frame
 
-        rx, ry, rw, rh = Game::CharSet.frame_rect(@charset_index, @state.direction, pat)
+        rx, ry, rw, rh = Game::CharSet.frame_rect(charset_index, @state.direction, pat)
         src = Rect.new(rx, ry, rw, rh)
         # A Flash Sprite aimed at the hero tones the frame as it is laid down
         # (update_sprite_flashes invalidates @last_frame each frame it runs, so
         # the fading colour is re-applied rather than baked in once).
-        toned = @player_flash && flashed_charset(@charset, src, @player_flash)
+        toned = @player_flash && flashed_charset(charset, src, @player_flash)
         @player_bmp.clear
         if toned
           blt_bushed @player_bmp, 0, 0, toned,
                      Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT),
                      255, bush
         else
-          blt_bushed @player_bmp, 0, 0, @charset, src, 255, bush
+          blt_bushed @player_bmp, 0, 0, charset, src, 255, bush
         end
       end
 

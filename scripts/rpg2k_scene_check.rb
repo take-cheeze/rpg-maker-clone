@@ -4512,6 +4512,35 @@ check 'a forced player walk is never lifted' do
   end
 end
 
+# yado.tk: move-route "Change Graphic" (hero or vehicle) applies visibly but
+# does not persist like the dedicated Change Hero Graphic command — it reverts
+# on Transfer Player (and, being scene-only state, on save/load too, since
+# Continue always builds a fresh Scene::Map).
+check 'a forced route Change Graphic overrides the hero sprite, reverting on Transfer Player' do
+  ic = Game::Interpreter::Cmd
+  name = 'other'
+  # Move Event params: target 10001, freq 8, repeat off, skippable on, then the
+  # packed move command -- Change Graphic carries its filename length + the
+  # graphic index, with the filename bytes in the command's own string field
+  # (see Interpreter#decode_move_route).
+  params = [10001, 8, 0, 1, R::CHANGE_GRAPHIC, name.length, 3]
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::MOVE_EVENT, params, string: name)]
+  scene = new_scene({ 1 => event(3, 3, pg) }, player: [0, 0])
+  5.times { scene.update }
+  charset, index = scene.send(:player_draw_charset)
+  ok charset, 'the overridden charset bitmap loaded'
+  eq 3, index, 'the overridden graphic index applied'
+  ok !charset.equal?(scene.instance_variable_get(:@charset)),
+     'the override bitmap is not the leader\'s own charset'
+
+  scene.send(:perform_teleport, [1, 0, 0, 0])
+  charset2, index2 = scene.send(:player_draw_charset)
+  eq scene.instance_variable_get(:@charset), charset2,
+     'Transfer Player reverted to the leader\'s own charset'
+  eq scene.instance_variable_get(:@charset_index), index2
+end
+
 check 'a teleport lands the party on its tile, not mid-slide' do
   # A teleport can land while a forced route has a step in flight: the route
   # advances between events, and an auto-start page can fire on the very next
