@@ -188,6 +188,12 @@ module Game
       @move_route_requests = []
       @location_requests = []
       @sprite_flash_requests = []
+      # Also reset by #start/#stop; set here too so #resume's unconditional
+      # drain (see #resume) is safe even before this interpreter has ever run a
+      # command list -- a fresh map's Scene::Map now reaches it the moment an
+      # Escape/Teleport field skill queues a warp with no event having started
+      # the interpreter yet (see Game::State#pending_teleport).
+      @pending_messages = []
       @erase_requested = false
       @halt_movement_requested = false
       @actor_graphic_changed = false

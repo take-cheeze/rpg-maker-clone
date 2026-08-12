@@ -439,6 +439,15 @@ class RPG2k
     scene.dispose if scene.respond_to?(:dispose)
   end
 
+  # Pop every scene down to (and stopping at) the base `Scene::Map`, disposing
+  # each in turn. Mirrors EasyRPG's `Scene::PopUntil(Scene::Map)`: casting an
+  # Escape / Teleport field skill closes the whole menu stack in one step
+  # rather than leaving the player to cancel out of it manually, matching
+  # RPG_RT's own "warp closes the menu" behaviour.
+  def pop_to_map
+    pop while @scenes.size > 1
+  end
+
   # Tear down all scenes and return to a fresh title screen.
   def return_to_title
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }

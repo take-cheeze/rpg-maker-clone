@@ -3210,6 +3210,62 @@ check 'a switch skill is cast for its switch, and only where its flags allow' do
   ok st.party.cast_switch_skill(hero, 99).nil?
 end
 
+check 'an Escape skill is hidden with no runtime state, then gated on access ' \
+      'and a registered target, and warps there for free -- but not while flying' do
+  skills = { 6 => fake_skill(name: 'Escape', type: Game::Party::SKILL_ESCAPE,
+                             sp_cost: 4) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(6)
+  # No state at all -- the bare #field_skill?(sk) a fixture check would call --
+  # reads exactly like the old "not built" behaviour.
+  eq [], st.party.field_skills(hero), 'unsupported with no state to gate on'
+  ok st.party.unsupported_field_skill?(st.party.db_skill(6))
+  ok st.party.cast_escape_skill(hero, 6, nil).nil?
+  # State present, but access off (the RPG2000 default) and no target set.
+  eq [], st.party.field_skills(hero, st)
+  st.escape_access = true
+  eq [], st.party.field_skills(hero, st), 'access alone is not enough -- no target yet'
+  st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
+  eq [[6, 4]], st.party.field_skills(hero, st)
+  before = hero.mp
+  eq({ map_id: 3, x: 4, y: 5 }, st.party.cast_escape_skill(hero, 6, st))
+  eq before - 4, hero.mp, "the warp costs the skill's SP like any other cast"
+  # Flying (boarded the airship) bars it even with access and a target set --
+  # EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::IsFlying.
+  st.boarded = :airship
+  eq [], st.party.field_skills(hero, st), 'the airship blocks it'
+  ok st.party.cast_escape_skill(hero, 6, st).nil?
+  st.boarded = nil
+  # A skill that is not Escape casts nothing through the Escape path.
+  ok st.party.cast_escape_skill(hero, 99, st).nil?
+end
+
+check 'a Teleport skill lists every registered destination and warps to the ' \
+      'one chosen' do
+  skills = { 7 => fake_skill(name: 'Warp', type: Game::Party::SKILL_TELEPORT,
+                             sp_cost: 3) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  eq [], st.party.field_skills(hero, st), 'no targets registered yet'
+  st.teleport_access = true
+  st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
+  st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
+  eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target offers it'
+  before = hero.mp
+  eq({ map_id: 5, x: 8, y: 9 }, st.party.cast_teleport_skill(hero, 7, st, 5))
+  eq before - 3, hero.mp
+  # An id that was never registered casts nothing and spends nothing.
+  before = hero.mp
+  ok st.party.cast_teleport_skill(hero, 7, st, 999).nil?
+  eq before, hero.mp, 'an unknown destination spends no SP'
+  # Riding the airship bars Teleport the same way it bars Escape.
+  st.boarded = :airship
+  eq [], st.party.field_skills(hero, st)
+  ok st.party.cast_teleport_skill(hero, 7, st, 5).nil?
+end
+
 check 'a special item invokes its skill, free of SP and without knowing it' do
   # Type 9 is 特殊: the item names a skill in skill_id and casting it is what
   # using the item does. Nepheshel's whole thrown-bomb line works this way.
