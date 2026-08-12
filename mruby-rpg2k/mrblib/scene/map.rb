@@ -3632,14 +3632,26 @@ class RPG2k
 
       # The result window's text: the outcome, and on a win the EXP / gold gained
       # (granted here). RPG2000 shows this after the fight before returning to the
-      # map.
+      # map. The headline is the database's own wording -- the 用語 table's
+      # `victory` / `defeat` fields, the same table (and the same "falls back to
+      # composed English when the database leaves it blank" rule)
+      # Game::States::BattleText already reads every per-action line from, just
+      # two fields that table never touches. The two previously-hardcoded
+      # English sentences are now exactly that fallback rather than the only
+      # wording a game ever showed. The EXP / gold / item lines stay composed:
+      # their own terms (`exp_received`, the `gold_received_a` / `_b` pair,
+      # `item_received`) are two- or three-part sentences with the number or
+      # name sandwiched between literal halves, and nothing here confirms which
+      # half is which without a real database to check against -- left declared
+      # rather than guessed at, the same call this project already makes for a
+      # handful of other under-specified 用語 fields.
       def battle_result_lines(result, troop)
-        return ['The party was defeated...'] unless result == :victory
+        return [term(:defeat, 'The party was defeated...')] unless result == :victory
         exp = troop.total_exp
         gold = troop.total_gold
         @state.party.actors.each { |a| a.gain_exp(exp) }
         @state.party.gain_gold(gold)
-        lines = ['Victory!']
+        lines = [term(:victory, 'Victory!')]
         lines << "Gained #{exp} EXP." if exp > 0
         lines << "Found #{gold} gold." if gold > 0
         # Each defeated enemy may drop its treasure item (rolled on the battle's
