@@ -1166,6 +1166,43 @@ check 'a Conditional Branch costs one step when matched, two when not' do
      '10000 steps / 2 per miss, with no separate End Branch dispatch to pay for'
 end
 
+check 'Jump to Label targets the first (topmost) occurrence of a duplicate label' do
+  # do_jump_label scans @list from the top and returns on the first match, so
+  # a duplicate label id always resolves to the earlier one -- confirmed by
+  # having a Jump to Label choose between two Label 1 markers and checking
+  # which side's variable write actually ran.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::JUMP_TO_LABEL, [1], indent: 0),               # 0: jump to label 1
+    FakeCmd.new(IC::LABEL, [1], indent: 0),                       # 1: first label 1 (correct target)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 0), # 2: variable 1 = 1
+    FakeCmd.new(IC::JUMP_TO_LABEL, [9], indent: 0),               # 3: skip past the duplicate
+    FakeCmd.new(IC::LABEL, [1], indent: 0),                       # 4: duplicate label 1 (must never be the target)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 99], indent: 0), # 5: would prove the duplicate ran
+    FakeCmd.new(IC::LABEL, [9], indent: 0),                       # 6: end marker
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 0, 1], indent: 0), # 7: variable 2 = 1 (reached the end)
+  ])
+  it.update
+  eq 1, st.variables[1], 'landed on the first Label 1, not the duplicate'
+  eq 1, st.variables[2], 'execution continued on to complete normally'
+end
+
+check 'Jump to Label works from any position in the block, not just the start' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 5], indent: 0),  # 0: variable 1 = 5 (runs before the jump)
+    FakeCmd.new(IC::JUMP_TO_LABEL, [7], indent: 0),                # 1: jump to label 7, mid-block
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 999], indent: 0), # 2: dead code, must be skipped
+    FakeCmd.new(IC::LABEL, [7], indent: 0),                        # 3: label 7
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 0, 1], indent: 0),  # 4: variable 2 = 1
+  ])
+  it.update
+  eq 5, st.variables[1], 'the jump skipped the dead command instead of falling through to it'
+  eq 1, st.variables[2], 'and landed on the label to run what follows it'
+end
+
 check 'Call Event with no resolver set is a safe no-op' do
   st = new_state
   it = Game::Interpreter.new(st)
