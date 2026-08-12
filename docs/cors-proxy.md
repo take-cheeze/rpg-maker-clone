@@ -173,6 +173,35 @@ Only whole-file downloads populate the cache (the loader only ever does plain
 miss, but *is* served from R2 once an entry exists, computed from the cached
 bytes.
 
+### Using it from CI
+
+CI downloads a handful of third-party test-bed archives and assets on every
+run (`scripts/download-nepheshel.bash`, `download-prayforyou.bash`,
+`download-freepats.bash`, `download-default-font.bash`) — the ones that are a
+plain URL fetch rather than a `git clone`. Those are already cached across
+runs by an `actions/cache` step keyed on the download scripts, so this rarely
+matters; it's a fallback for when that cache misses (a new runner, an evicted
+cache, a changed script), so CI falls back to R2 instead of hammering a small
+third-party host (`til.sakura.ne.jp`, `dl.fgamearchives.com`) on every cold
+cache.
+
+Set the **`CORS_PROXY_URL`** repository secret (Settings → Secrets and
+variables → Actions) to your proxy prefix, in either style — the same value
+you'd put in the loader's *CORS proxy prefix* field, `?key=…&url=` included if
+`AUTH_KEY` is set. `scripts/cors-proxy-url.bash` rewrites each download's URL
+through it; leave the secret unset (the default, including on forks) and
+every download script behaves exactly as it does without this section.
+
+It must be a **secret**, not a repository **variable**, if it carries a key:
+the download scripts run under `set -x`, so the resolved URL — prefix and all
+— lands in the step's trace output, and only a value sourced from
+`secrets.*` gets GitHub's automatic log masking applied to it.
+
+If your proxy sets `ALLOWED_ORIGINS`, note that CI won't satisfy it: `wget`
+and `curl` send no `Origin` header, so an origin-restricted proxy 403s every
+CI request regardless of `CORS_PROXY_URL`. `AUTH_KEY` and/or `ALLOWED_HOSTS`
+are the controls compatible with CI use.
+
 ## Updating
 
 Edit [`cors-proxy/worker.js`](../cors-proxy/worker.js) and run
