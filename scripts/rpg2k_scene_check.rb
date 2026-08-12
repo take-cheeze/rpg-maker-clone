@@ -2036,6 +2036,23 @@ check 'Store Terrain / Event ID query the map through the scene' do
   eq 0, st.variables[3], 'no event at the empty tile'
 end
 
+check 'Store Event ID resolves two events on the same tile to the highest id' do
+  # A real map's event table is id-indexed and always iterates ascending
+  # (LCF::Array2D#each), so #rebuild_event_tiles -- last write to a shared
+  # tile wins -- always leaves the *highest*-id event as what a query
+  # resolves to, matching yado.tk's "Get Event ID at coordinates on
+  # overlapping events returns the highest id, not lowest/topmost-drawn".
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::STORE_EVENT_ID, [0, 3, 1, 2])]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(3, 1, page),
+                      5 => event(3, 1, page) },
+                    player: [5, 5])
+  10.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq 5, st.variables[2], 'the higher-id event wins the shared tile, not the lower one'
+end
+
 check 'Proceed With Movement holds the interpreter until a forced route finishes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
