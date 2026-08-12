@@ -2947,6 +2947,7 @@ module Game
 
     attr_accessor :direction, :move_speed, :move_frequency
     attr_accessor :through, :facing_locked, :animation_stopped, :transparency
+    attr_accessor :layer
     attr_reader :graphic_name, :graphic_index, :x, :y
 
     # Placing a character outright -- Change Event Location, a page refresh
@@ -2969,6 +2970,7 @@ module Game
       @graphic_name = nil
       @graphic_index = 0
       @jumped = false
+      @layer = 1                # priority type: same as normal characters
     end
 
     def set_graphic(name, index)

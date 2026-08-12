@@ -730,6 +730,55 @@ check 'two events do not stack on the same tile' do
   ok (ca.x - cb.x).abs == 1, "expected adjacency, got a=#{ca.x} b=#{cb.x}"
 end
 
+# Priority type (the page `layer` field) gates collision the same way it gates
+# draw order: only LAYER_SAME (1) — "same as normal characters" — is solid.
+# LAYER_BELOW (0) and LAYER_ABOVE (2) are decorations the hero, vehicles and
+# other events all walk straight through. See the LAYER_* comment in map.rb.
+check 'a below-characters event does not block the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW) # action trigger, not touch
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, through the event at (1,0)
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, "expected the hero to walk onto/through (1,0), stuck at x=#{st.x}"
+end
+
+check 'an above-characters event does not block the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_ABOVE)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, "expected the hero to walk onto/through (1,0), stuck at x=#{st.x}"
+end
+
+check 'a same-layer event still blocks the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'a same-layer event still blocks like a normal character'
+end
+
+check 'events on different layers pass through each other via Move Route' do
+  # A below-layer event sits at (3,2); an above-layer event runs a custom
+  # route straight through its column. Only a matching layer collides (see
+  # #char_passable?), so the mover reaches the far side instead of stopping.
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_ABOVE))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [3, 2], [ch.x, ch.y],
+     "an above-layer mover should cross a below-layer event, got #{[ch.x, ch.y]}"
+end
+
 check 'an autostart event Calls a call-only common event through the scene' do
   ic = Game::Interpreter::Cmd
   # A common event with start_term 5 (call-only): auto-start/parallel never runs
@@ -2552,8 +2601,9 @@ check 'boarding a boat and disembarking onto the shore' do
 end
 
 check 'the airship flies over a tile blocked on foot, and follows the party' do
-  # An event occupies (1, 0): impassable on foot, but the airship flies over it.
-  scene = new_scene({ 1 => event(1, 0, page) }, player: [0, 0])
+  # A same-layer event occupies (1, 0): impassable on foot, but the airship
+  # flies over it regardless of layer.
+  scene = new_scene({ 1 => event(1, 0, page(layer: 1)) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   air = st.vehicle(:airship)
   air.map_id = st.map_id

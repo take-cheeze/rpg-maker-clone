@@ -50,6 +50,15 @@ class RPG2k
       TRIGGER_AUTO_START   = 3 # runs automatically once on the map
       TRIGGER_PARALLEL     = 4 # runs continuously in the background
 
+      # Event-page priority type (the page `layer` field): where the event
+      # draws relative to normal characters, and — RPG_RT ties the two together
+      # — which of them it collides with. Only LAYER_SAME blocks movement: a
+      # "below"/"above characters" event is a decoration the hero, vehicles and
+      # other events all walk straight through (see #passable?, #char_passable?).
+      LAYER_BELOW = 0
+      LAYER_SAME  = 1
+      LAYER_ABOVE = 2
+
       # Move Event (Set Move Route) target ids: the player, the three vehicles
       # and "this event" (the event running the command). Any other id is a map
       # event id. Vehicles are not modelled yet, so those targets are ignored.
@@ -625,6 +634,8 @@ class RPG2k
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
+        layer = page_layer(page)
+        ch.layer = layer # collision (see #char_passable?) follows priority type too
         move_type = page_move_type(page)
         route = move_type == Game::MoveType::CUSTOM ?
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
@@ -639,7 +650,7 @@ class RPG2k
           # the sprite between tiles. move_count == TILE means "at rest".
           # `jumping` marks that slide as a hop, which is lifted along an arc
           # and is the one kind that slides across more than a single tile.
-          layer: page_layer(page), translucent: page_translucent(page),
+          layer: layer, translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
           moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE,
@@ -989,7 +1000,8 @@ class RPG2k
       def vehicle_passable?(x, y, dir, type)
         return false unless @map.in_bounds?(x, y)
         return true if type == :airship
-        return false if @event_tiles[[x, y]]
+        blocker = @event_tiles[[x, y]]
+        return false if blocker && blocker[:layer] == LAYER_SAME
         row = terrain_row_at(x, y)
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
@@ -1835,17 +1847,25 @@ class RPG2k
         (f && f >= 1 && f <= 8) ? f : nil
       end
 
-      # Collision test for an event stepping one tile in `dir`: in bounds, not
-      # onto the player or another event, and passable per the chipset. A
-      # "through" character ignores all of this. Only the destination tile is
-      # tested, so a character never blocks itself (it stands on its own tile,
-      # not the one ahead).
+      # Collision test for an event stepping one tile in `dir`: in bounds,
+      # passable per the chipset, and not onto the hero or another event that
+      # shares its collision layer. A "through" character ignores all of this.
+      # Only the destination tile is tested, so a character never blocks itself
+      # (it stands on its own tile, not the one ahead).
+      #
+      # Layer gates both checks the same way RPG_RT's priority type does: the
+      # hero is always a "normal character", so a below/above-characters event
+      # (LAYER_BELOW / LAYER_ABOVE) walks straight through it and vice versa;
+      # two events only collide when they share the same layer (below blocks
+      # below, above blocks above, same blocks same) — different layers pass
+      # through each other too.
       def char_passable?(character, dir)
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
         return false unless @map.in_bounds?(nx, ny)
-        return false if nx == @state.x && ny == @state.y
-        return false if @event_tiles[[nx, ny]]
+        return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
+        blocker = @event_tiles[[nx, ny]]
+        return false if blocker && blocker[:layer] == character.layer
         return true if @chipset.nil?
         @chipset.passable?(@map.lower(nx, ny), dir)
       end
@@ -1867,8 +1887,10 @@ class RPG2k
         # anything on screen to notice it by.
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
-        return false if x == @state.x && y == @state.y
-        return false if @event_tiles[[x, y]]
+        # Same layer-gated occupancy rule as #char_passable? (see its comment).
+        return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
+        blocker = @event_tiles[[x, y]]
+        return false if blocker && blocker[:layer] == character.layer
         return true if @chipset.nil?
         @chipset.passable?(@map.lower(x, y), jump_entry_direction(character, x, y))
       end
@@ -4698,7 +4720,11 @@ class RPG2k
 
       def passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
-        return false if @event_tiles[[x, y]]
+        blocker = @event_tiles[[x, y]]
+        # The hero is always a "normal character" for collision purposes: only
+        # a same-layer event blocks it, a below/above-characters one is a
+        # decoration it walks straight over (see the LAYER_* comment).
+        return false if blocker && blocker[:layer] == LAYER_SAME
         return true if @chipset.nil?
         @chipset.passable?(@map.lower(x, y), dir)
       end
