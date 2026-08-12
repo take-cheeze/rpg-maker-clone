@@ -1803,14 +1803,14 @@ Everything below is unverified against the codebase.
 - **Battle Event** — separate command set from Map/Common events entirely;
   no Pictures on the battle screen; Parallel Process can't run in battle;
   no further pages run once battle ends.
-- **Picture** — 50 independent slots, higher id draws on top; map/characters
-  always draw below all Pictures, Battle Animation + text window always
-  above; none show on Menu/Battle screens; halted entirely while a text
+- **Picture** — none show on Menu/Battle screens; halted entirely while a text
   window is up; **changing maps clears all Pictures — except via Teleport
   or Escape (skill/item), which don't clear them**; semi-transparent
   (1-99%) opacity costs noticeably more than fully opaque/transparent;
   Erase Picture is instant (no fade) — a gradual fade needs Move Picture to
-  the same spot at 0% opacity instead.
+  the same spot at 0% opacity instead. (50 slots with the higher id always
+  drawing on top, independent of show order, is confirmed already correct —
+  see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
   cases: (a) the event has already logically started moving into its next
   tile (hit-test uses the target tile, even if the sprite still visually
@@ -2020,10 +2020,18 @@ not yet verified:
   `\S[]` clamps).
 
 **Pictures**
-- 50 concurrent picture slots; **higher id always draws on top**,
-  independent of show order. Map/characters always draw below all
-  pictures; Battle Animation and the text window always above all
-  pictures.
+- ✅ **50 concurrent picture slots; higher id always draws on top,
+  independent of show order — confirmed already correct.**
+  `Scene::Map#draw_pictures` composites `@state.pictures.keys.sort`, so the
+  lowest id is always drawn first and the highest id lands on top of it
+  regardless of the order Show Picture commands ran in; nothing sorts by
+  show/insertion order. The text window sits above the picture layer too
+  (`@picture_sprite.z = 250`, the message window's `z = 300`), already
+  covered by an existing check. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (two pictures shown out of id order,
+  asserting the composite draws the lower id first). Still open: Battle
+  Animation drawing above the picture layer specifically, and "map/
+  characters always draw below all pictures" as its own assertion.
 - Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
   (multiply corroborated).

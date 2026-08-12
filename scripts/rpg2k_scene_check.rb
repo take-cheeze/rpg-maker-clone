@@ -52,7 +52,11 @@ module RGSS
     def blt(*a); (@blt_calls ||= []) << a; end
     attr_reader :blt_calls
     def clear_blt_calls; @blt_calls = []; end
-    def stretch_blt(*); end
+    # Recorded so the picture layering check can assert *which order* sources
+    # were composited in, not only that drawing happened.
+    def stretch_blt(*a); (@stretch_calls ||= []) << a; end
+    attr_reader :stretch_calls
+    def clear_stretch_calls; @stretch_calls = []; end
     # Record the tone a Flash Sprite pass asks for, so the flash checks can
     # assert the colour actually reached the renderer.
     def tone_blt(src, tone); (@tone_calls ||= []) << [src, tone]; self; end
@@ -2283,6 +2287,27 @@ check 'a shown picture renders through the scene and its move advances' do
   6.times { scene.update }
   ok !st.pictures_moving?, 'the move completed under the scene loop'
   eq 60, st.pictures[1].y, 'the picture reached its target'
+end
+
+check 'pictures composite in ascending id order, independent of show order' do
+  # yado.tk: 50 concurrent picture slots, higher id always draws on top,
+  # independent of show order. Shown here in the opposite order (2 then 1) so
+  # a pass that composited by show/insertion order instead of by id would
+  # fail this.
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(2, name: 'picB', x: 160, y: 120, zoom: 100, opacity: 255)
+  st.show_picture(1, name: 'picA', x: 160, y: 120, zoom: 100, opacity: 255)
+  bmp = scene.instance_variable_get(:@picture_bmp)
+  bmp.clear_stretch_calls
+  scene.update
+  srcs = bmp.stretch_calls.map { |c| c[1] } # stretch_blt(dest, src, src_rect, opacity)
+  eq 2, srcs.size, 'both pictures drew'
+  # Picture 1 (id 1) composites first, so picture 2 (higher id) ends up on top.
+  pic_a_src = scene.send(:picture_src, 'picA', false)
+  pic_b_src = scene.send(:picture_src, 'picB', false)
+  eq [pic_a_src, pic_b_src], srcs,
+     'lower id drawn first, higher id drawn last (on top), regardless of show order'
 end
 
 check 'a toned picture is tinted before it is composited' do
