@@ -2804,9 +2804,8 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
   g_period_acc += 1000;
   const uint32_t period = g_period_acc / 60;
   g_period_acc %= 60;
-  const bool overrun =
-      g_paced &&
-      static_cast<int32_t>(now - g_next_frame) > static_cast<int32_t>(period);
+  const bool overrun = g_paced && static_cast<int32_t>(now - g_next_frame) >
+                                      static_cast<int32_t>(period);
   if (!g_paced || overrun) {
     if (overrun)
       profiler_note_frame_drop();
