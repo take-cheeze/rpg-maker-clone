@@ -3003,6 +3003,33 @@ check 'the choice window plays the cursor and decision system sounds' do
   ok !scene.instance_variable_get(:@message), 'the choice window closed on confirm'
 end
 
+check 'the choice window cursor wraps around, like Scene::Title (98dad9b)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'Yes'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'No'),
+    ECmd.new(ic::CHOICE_OPTION, [2], indent: 0, string: 'Maybe'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
+  ok(msg && msg[:choice], 'choice window opened')
+  eq 0, scene.instance_variable_get(:@choice_index), 'starts on the first choice'
+  # Up on the first choice wraps to the last, instead of clamping at 0.
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@choice_index), 'Up from the first choice wraps to the last'
+  # Down on the last choice wraps back to the first, instead of clamping.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@choice_index), 'Down from the last choice wraps to the first'
+end
+
 check 'character_screen_position measures against the live camera' do
   # A map small enough that the camera cannot scroll, so screen position is just
   # the map position: the offsets RPG_RT applies are then visible on their own.
