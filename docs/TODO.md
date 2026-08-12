@@ -1543,6 +1543,18 @@ following this paragraph as the original record.
   held; the numeric "item possession count" operand (Control Variables) stays
   bag-only, matching RPG_RT's own split between the two reads. Covered by new
   `scripts/rpg2k_logic_check.rb` checks.
+- ✅ **Move route continuation across a page switch.** `build_event` used to
+  always build a fresh `Game::MoveRoute` on every page (re)selection, so a
+  custom route in progress restarted from the top on *any* page switch, even
+  one that changed nothing about the route. `Game::MoveRoute.same_route?`
+  compares two pages' raw `move_route` fields (commands, repeat, skippable)
+  byte-for-byte, and `Scene::Map#rebuild_events_preserving_positions` now
+  carries the **old route object** — index and done-ness included — across
+  the rebuild when both the old and new page are on a custom route and the
+  two describe the identical route; anything else (a different route, or no
+  custom route on one side) still restarts, matching RPG_RT. Covered by two
+  new `scripts/rpg2k_scene_check.rb` checks (identical route keeps its place;
+  a changed route restarts).
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -1553,13 +1565,6 @@ following this paragraph as the original record.
   picking only the single highest-numbered page for map/common events.
 
 #### Confirmed genuine gaps, not yet fixed
-- **Move route continuation across a page switch.** Real RPG_RT: if a map
-  event's active page switches while its move route is executing, the route
-  restarts from the top — *unless* the old and new page's move-route
-  settings are byte-identical, in which case it continues seamlessly.
-  `build_event` always builds a fresh `Game::MoveRoute` on every page
-  (re)selection with no such comparison. Self-contained, no save-format
-  impact — a reasonable next pick.
 - **Common-event Parallel Process state should survive map changes and
   saves, unlike a map event's.** Within one map visit this is already
   modelled correctly (`step_parallel`'s `gate_switch` resumes the same

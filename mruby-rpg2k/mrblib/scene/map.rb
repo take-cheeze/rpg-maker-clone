@@ -1348,16 +1348,26 @@ class RPG2k
       # rather than snapping back to its spawn tile. Erased events stay erased,
       # and the parallel processes are rebuilt because a page change can add or
       # remove one.
+      #
+      # A custom move route in progress also carries its **execution state**
+      # across, but only when the old and new page describe the byte-identical
+      # route (`Game::MoveRoute.same_route?`) — RPG_RT restarts the route from
+      # the top on any other page switch, custom-route or not.
       def rebuild_events_preserving_positions
         placed = {}
-        @events.each { |e| placed[e[:id]] = e[:char] }
+        @events.each { |e| placed[e[:id]] = e }
         build_events
         @events.each do |e|
           old = placed[e[:id]]
           next unless old
-          e[:char].x = old.x
-          e[:char].y = old.y
-          e[:char].direction = old.direction
+          e[:char].x = old[:char].x
+          e[:char].y = old[:char].y
+          e[:char].direction = old[:char].direction
+          next unless e[:move_type] == Game::MoveType::CUSTOM &&
+                      old[:move_type] == Game::MoveType::CUSTOM
+          if Game::MoveRoute.same_route?(page_move_route(old[:page]), page_move_route(e[:page]))
+            e[:route] = old[:route]
+          end
         end
         rebuild_event_tiles
         build_parallels

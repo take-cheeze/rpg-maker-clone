@@ -3360,6 +3360,32 @@ module Game
       nil
     end
 
+    # True when two event pages' raw `move_route` fields (as read by
+    # #from_page — commands/repeat/skippable) describe the byte-identical
+    # route. This is RPG_RT's own test for whether a route executing when an
+    # event's active page switches continues seamlessly from where it left
+    # off (identical route) or restarts from the top (anything else,
+    # including no custom route at all).
+    def self.same_route?(a, b)
+      return true if a.nil? && b.nil?
+      return false if a.nil? || b.nil?
+      return false unless a.repeat == b.repeat && a.skippable == b.skippable
+      ca = a.commands || []
+      cb = b.commands || []
+      return false unless ca.size == cb.size
+      ca.each_index do |i|
+        x = ca[i]; y = cb[i]
+        return false unless x.command_id == y.command_id &&
+                             x.parameter_string == y.parameter_string &&
+                             x.parameter_a == y.parameter_a &&
+                             x.parameter_b == y.parameter_b &&
+                             x.parameter_c == y.parameter_c
+      end
+      true
+    rescue StandardError
+      false
+    end
+
     # Run the command under the cursor against `character`. Returns a status
     # symbol: :moved, :blocked, :turned, :waited, :effect or :done. A blocked
     # move on a non-skippable route stays on the same command so the next `step`

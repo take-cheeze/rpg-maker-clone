@@ -690,6 +690,41 @@ check 'a page change keeps the event where it stands' do
   eq 1, chars(scene)[1].y
 end
 
+check 'an identical custom move route continues its progress across a page switch' do
+  route_cmds = [R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]
+  p1 = page(x_move_type: Game::MoveType::CUSTOM,
+           route: move_route(route_cmds, repeat: false), charset_name: 'A')
+  p2 = page(x_move_type: Game::MoveType::CUSTOM,
+           route: move_route(route_cmds, repeat: false), charset_name: 'A')
+  scene = new_scene({ 1 => two_page_event(0, 1, 3, p1, p2) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update }
+  idx = event_hashes(scene)[1][:route].index
+  ok idx > 0, "expected progress before the switch (got #{idx})"
+  ok !event_hashes(scene)[1][:route].done?, 'not finished yet'
+
+  st.switches[3] = true
+  scene.update
+  eq idx, event_hashes(scene)[1][:route].index,
+     'the identical route kept its place instead of restarting'
+end
+
+check 'a different custom move route restarts from the top on a page switch' do
+  p1 = page(x_move_type: Game::MoveType::CUSTOM,
+           route: move_route([R::MOVE_RIGHT] * 5, repeat: false), charset_name: 'A')
+  p2 = page(x_move_type: Game::MoveType::CUSTOM,
+           route: move_route([R::MOVE_LEFT] * 5, repeat: false), charset_name: 'A')
+  scene = new_scene({ 1 => two_page_event(0, 1, 3, p1, p2) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update }
+  idx = event_hashes(scene)[1][:route].index
+  ok idx > 0, "expected progress before the switch (got #{idx})"
+
+  st.switches[3] = true
+  scene.update
+  eq 0, event_hashes(scene)[1][:route].index, 'a changed route restarts from the top'
+end
+
 check 'a refresh does not resurrect an erased event' do
   ic = Game::Interpreter::Cmd
   p1 = page(trigger: 3) # auto-start: erase myself
