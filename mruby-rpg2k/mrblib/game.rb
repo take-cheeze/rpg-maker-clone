@@ -1517,6 +1517,25 @@ module Game
       row.respond_to?(:double_hand) ? (row.double_hand ? true : false) : false
     end
 
+    # 装備固定 — an actor (or RPG2003 class) whose equipment cannot be changed
+    # from the field. Same class-row-then-player-row lookup as #strong_defence?
+    # / #double_hand? (liblcf's `job` table carries the same field id, 22).
+    # EasyRPG's `Game_Actor::IsEquipmentFixed` is `data.lock_equipment ||
+    # (check_states && a currently-inflicted state is 呪い/cursed)` -- the
+    # state-curse half has no test-bed evidence in either game (neither names
+    # a `cursed` state) and is left unbuilt rather than guessed at; this reads
+    # only the row's own flag, which is the half both games actually set.
+    # `Scene::EquipMenu` is what has to act on it (`scene_equip.cpp`'s
+    # `UpdateEquipSelection` refuses to even open the slot's item list, rather
+    # than opening it and rejecting a choice), so nothing in `Game::Party`
+    # reads this -- the bag-swapping methods stay usable for a caller that
+    # already knows better, the same way they do not re-check `menu_access`.
+    def equipment_fixed?
+      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row ||= @db_row
+      row.respond_to?(:equipment_fixed) ? (row.equipment_fixed ? true : false) : false
+    end
+
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
     def normalize_equipment(spec)

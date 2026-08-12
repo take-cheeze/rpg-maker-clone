@@ -4692,6 +4692,8 @@ class MenuStubActor
   end
   def exp_to_next; 120; end
   def add_state(id); @states.push(id) unless @states.include?(id); end
+  attr_accessor :equipment_fixed_flag
+  def equipment_fixed?; !!@equipment_fixed_flag; end
 end
 
 class MenuStubParty
@@ -5015,6 +5017,26 @@ check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around'
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@cand_index), 'Down from the last candidate wraps to the first'
+end
+
+check 'Scene::EquipMenu: 装備固定 refuses to open the item list for that actor' do
+  state = wrap_menu_state
+  state.party.actors.first.equipment_fixed_flag = true
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :slots, scene.instance_variable_get(:@mode), 'the slot list stays up, not the item list'
+
+  # The second party member is not locked -- switching to them and pressing C
+  # opens the list as normal, so the gate really is per-actor.
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
 end
 
 check 'the status screen gives the condition a labelled row' do
