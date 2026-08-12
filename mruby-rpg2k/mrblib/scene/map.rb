@@ -923,10 +923,20 @@ class RPG2k
         play_vehicle_bgm(type)
       end
 
-      # Step off the ridden vehicle onto the tile ahead when it is walkable on
-      # foot, leaving the vehicle on the tile the party vacates. A no-op when the
-      # way ahead is blocked (the party stays aboard).
+      # Step off the ridden vehicle. A boat / ship disembarks onto the tile
+      # ahead when it is walkable on foot, leaving the vehicle on the tile the
+      # party vacates; the airship instead lands in place — RPG_RT tests the
+      # terrain directly under it, not the tile ahead, since it has no "shore"
+      # to step onto. Either way a no-op when the landing spot is blocked (the
+      # party stays aboard).
       def disembark_vehicle
+        if @state.boarded == :airship
+          return unless airship_landable?(@state.x, @state.y)
+          follow_vehicle # the airship is left where it touched down
+          @state.boarded = nil
+          restore_pre_vehicle_bgm # the map BGM resumes
+          return
+        end
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         return unless passable?(fx, fy, @state.direction)
         follow_vehicle # the vehicle is left where the party is getting off
@@ -934,6 +944,17 @@ class RPG2k
         @state.y = fy
         @state.boarded = nil
         restore_pre_vehicle_bgm # the map BGM resumes
+      end
+
+      # Whether the airship may land on tile (x, y): the database terrain's
+      # airship_land flag (default true), with no event occupying the ground
+      # underneath. A tile with no terrain data (a bare fixture) is landable.
+      def airship_landable?(x, y)
+        return false unless @map.in_bounds?(x, y)
+        return false if @event_tiles[[x, y]]
+        row = terrain_row_at(x, y)
+        return true if row.nil?
+        row.airship_land ? true : false
       end
 
       # Play the vehicle's own BGM (the database System boat / ship / airship
@@ -990,15 +1011,20 @@ class RPG2k
       end
 
       # Whether vehicle `type` may enter tile (x, y) heading `dir`: the airship
-      # flies over any in-bounds tile; a boat / ship needs the tile's terrain to
-      # allow it (the database terrain's boat_pass / ship_pass flag) with no event
-      # in the way, falling back to on-foot passability when the map has no
-      # terrain data.
+      # flies over any in-bounds tile whose terrain allows it (the database
+      # terrain's airship_pass flag, default true, so it clears everything
+      # blocked on foot unless a map explicitly grounds it); a boat / ship needs
+      # the tile's terrain to allow it (boat_pass / ship_pass) with no event in
+      # the way, falling back to on-foot passability when the map has no terrain
+      # data.
       def vehicle_passable?(x, y, dir, type)
         return false unless @map.in_bounds?(x, y)
-        return true if type == :airship
-        return false if @event_tiles[[x, y]]
         row = terrain_row_at(x, y)
+        if type == :airship
+          return true if row.nil?
+          return row.airship_pass ? true : false
+        end
+        return false if @event_tiles[[x, y]]
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
       end

@@ -1010,8 +1010,12 @@ The work below is roughly ordered by the critical path to a walkable game
   now). **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
   place a boat / ship / airship and set its CharSet (persisted via
   `Game::Vehicle`), and the party can now **board and pilot** a placed vehicle on
-  the map (`Game::State#boarded`; airship flies over any tile, boat / ship follow
-  their terrain). Placed vehicles are **drawn on the map** from their CharSet, the
+  the map (`Game::State#boarded`; the airship flies over any tile whose terrain
+  allows it — the database terrain's `airship_pass` flag, default true — and
+  lands only where `airship_land` allows, touching down **in place** rather
+  than stepping onto the tile ahead the way a boat / ship disembarks onto the
+  shore; boat / ship follow their terrain's `boat_pass` / `ship_pass`).
+  Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
   ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
   boat / ship / airship music) and disembarking restores the map BGM. **Enter Hero Name**
