@@ -1584,6 +1584,20 @@ following this paragraph as the original record.
   event selection: `Game::BattlePage.select_all` runs **every** satisfied
   page once per turn, lower page number first, vs. `Game::EventPage.select`
   picking only the single highest-numbered page for map/common events.
+- **Jump to Label already matches the three documented yado.tk facts.**
+  `Game::Interpreter#do_jump_label` does a linear scan of `@list` (the
+  current page/common-event's own flat command array) from index 0 and
+  returns on the first `Label` command whose id matches, which is all three
+  claims at once: it can only ever land inside the *same* block since
+  nothing else is searched (no cross-page/event list exists to jump into);
+  it works from any position because the scan always restarts at 0
+  regardless of where `@index` currently sits, so a jump issued before,
+  after, or anywhere around the target label finds it the same way; and a
+  duplicate label id always resolves to the first (topmost) occurrence
+  because `each_with_index` returns on its first match. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a duplicate-label jump lands on the
+  earlier one, not the later one; a jump issued mid-block, not as the first
+  command, still finds its target and skips the commands in between).
 - **Change Menu Prohibit already persists across map transfers; Change Save
   Prohibit and Teleport/Escape Prohibit already do not** (yado.tk: a real,
   asymmetric rule across three similar-sounding commands). Confirmed by
@@ -1796,9 +1810,6 @@ Everything below is unverified against the codebase.
   battle; opening it pauses *all* event processing including active
   timers/parallel processes; Erase Screen's black-out is undone if the
   player opens and closes the menu.
-- **Label** — only jumps within the same Event Content block (not across
-  events/pages); works from anywhere in the block; a duplicate label number
-  always jumps to the first (topmost) occurrence.
 - **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
