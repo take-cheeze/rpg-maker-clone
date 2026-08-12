@@ -3667,6 +3667,26 @@ check 'a descending batch range silently no-ops for both Switches and Variables'
   eq false, st.switches[3], 'switch 3 untouched by the descending-range batch'
 end
 
+check 'indirect ("pointer") target addressing no-ops when the resolved id is <= 0' do
+  # yado.tk: indirect addressing's failure mode on an index <=0 differs by
+  # role -- the *target* form (which switch/variable id gets written) is a
+  # no-op, unlike the *operand* form (the value read), which already
+  # resolves a missing/negative id to 0 via Variables/Switches' own default.
+  st = new_state
+  st.variables[10] = 0   # a pointer variable holding 0
+  st.variables[11] = -5  # a pointer variable holding a negative id
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [2, 10, 0, 0, 0, 99]), # mode 2 (indirect): target = var[10] = 0
+    FakeCmd.new(IC::CONTROL_VARS, [2, 11, 0, 0, 0, 99]), # target = var[11] = -5
+    FakeCmd.new(IC::CONTROL_SWITCHES, [2, 10, 0, 0]),    # same, for switches
+  ])
+  it.update
+  ok !st.variables.to_h.key?(0), 'nothing written to variable slot 0'
+  ok !st.variables.to_h.key?(-5), 'nothing written to a negative variable slot'
+  ok !st.switches.to_h.key?(0), 'nothing written to switch slot 0'
+end
+
 check 'Control Variables reads party gold and the timer (operand type 7)' do
   st = new_state
   st.party.gain_gold(500)

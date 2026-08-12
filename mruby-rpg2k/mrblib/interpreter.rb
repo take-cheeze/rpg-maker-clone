@@ -1206,8 +1206,17 @@ module Game
       mode = cmd.param(0)
       a = cmd.param(1)
       b = mode == 0 ? a : cmd.param(2)
-      a = variables[cmd.param(1)] if mode == 2 # indirect: id held in a variable
-      b = a if mode == 2
+      if mode == 2 # indirect: id held in a variable
+        a = variables[cmd.param(1)]
+        # RPG_RT's indirect *target* addressing (as opposed to an indirect
+        # operand read, which resolves a missing/out-of-range id to 0) is a
+        # no-op when the resolved id is <= 0, rather than writing switch/
+        # variable slot 0 or a negative one. An already-empty range gets the
+        # same "does nothing" result do_control_switches/do_control_vars
+        # already produce for a descending batch range.
+        return [1, 0] if a <= 0
+        b = a
+      end
       [a, b]
     end
 
