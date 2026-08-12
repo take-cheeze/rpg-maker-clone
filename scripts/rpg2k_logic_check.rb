@@ -2189,6 +2189,23 @@ check 'an actor who leaves and rejoins the party keeps their state' do
   eq levelled_hp, back.max_hp
 end
 
+check 'add_actor no-ops once the party already holds MAX_SIZE (4) members' do
+  players = (1..5).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
+  db = FakeActorDB.new(players, [1])
+  party = Game::Party.new(db)
+  [2, 3, 4].each { |id| party.add_actor(id) }
+  eq [1, 2, 3, 4], party.actors.map(&:id), 'four members joined'
+
+  party.add_actor(5)
+  eq [1, 2, 3, 4], party.actors.map(&:id), 'a fifth add is a no-op on a full party'
+  eq false, party.include_actor?(5)
+
+  party.remove_actor(2)
+  party.add_actor(5)
+  eq [1, 3, 4, 5], party.actors.map(&:id),
+     'adding is allowed again once a member has left and freed a slot'
+end
+
 check 'Actors builds each id once and reports a missing row as nil' do
   roster = Game::Actors.new(roster_db)
   a = roster[1]
