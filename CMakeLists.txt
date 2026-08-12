@@ -594,8 +594,8 @@ if(NOT EMSCRIPTEN)
   # code runs and the screen never changes fails a test instead of shipping. It
   # needs no game directory — the probe builds its own sprite (RGSS.effect_probe
   # in mruby-rgss/mrblib/lib.rb).
-  set(render_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
-                       --test_play --rgss_effect_probe --width=544 --height=416)
+  set(render_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --test_play
+                       --rgss_effect_probe --width=544 --height=416)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(render_probe_cmd
         xvfb-run --server-num=98 "--server-args=-screen 0 640x480x24"
@@ -610,8 +610,8 @@ if(NOT EMSCRIPTEN)
   # encrypted archive, and check both reach the mixer. mruby_test cannot — that
   # binary installs no audio backend, so every Audio call there is a no-op and a
   # broken memory path looks exactly like a working one. See RGSS.audio_probe.
-  set(audio_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
-                      --test_play --rgss_audio_probe)
+  set(audio_probe_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --test_play
+                      --rgss_audio_probe)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(audio_probe_cmd xvfb-run --server-num=97
                         "--server-args=-screen 0 640x480x24" ${audio_probe_cmd})
@@ -634,9 +634,8 @@ if(NOT EMSCRIPTEN)
   # quietly lost a section — by the time one is wanted, the crash has happened.
   # Runs in the build directory, where the probe writes and then removes its
   # report file. Reserved display 96 (see the exe_open note above).
-  set(error_dump_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone
-                     --test_play --error_dump_probe
-                     --error_dump=error-report-probe.md)
+  set(error_dump_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --test_play
+                     --error_dump_probe --error_dump=error-report-probe.md)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(error_dump_cmd xvfb-run --server-num=96
                        "--server-args=-screen 0 640x480x24" ${error_dump_cmd})

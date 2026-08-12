@@ -1164,8 +1164,8 @@ int main(int argc, char** argv) {
   // --test_play): the one native-side signal every maker's Ruby can consult,
   // the same way RPG2000/2003's own `TestPlay` launch word or MV/MZ's
   // `Utils.isOptionValid('test')` would.
-  mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "TEST_PLAY"),
-                mrb_bool_value(is_test_mode));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "TEST_PLAY"), mrb_bool_value(is_test_mode));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpg2k_new_game));
