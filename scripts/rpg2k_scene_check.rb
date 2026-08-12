@@ -730,6 +730,55 @@ check 'two events do not stack on the same tile' do
   ok (ca.x - cb.x).abs == 1, "expected adjacency, got a=#{ca.x} b=#{cb.x}"
 end
 
+# Priority type (the page `layer` field) gates collision the same way it gates
+# draw order: only LAYER_SAME (1) — "same as normal characters" — is solid.
+# LAYER_BELOW (0) and LAYER_ABOVE (2) are decorations the hero, vehicles and
+# other events all walk straight through. See the LAYER_* comment in map.rb.
+check 'a below-characters event does not block the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW) # action trigger, not touch
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, through the event at (1,0)
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, "expected the hero to walk onto/through (1,0), stuck at x=#{st.x}"
+end
+
+check 'an above-characters event does not block the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_ABOVE)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, "expected the hero to walk onto/through (1,0), stuck at x=#{st.x}"
+end
+
+check 'a same-layer event still blocks the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'a same-layer event still blocks like a normal character'
+end
+
+check 'events on different layers pass through each other via Move Route' do
+  # A below-layer event sits at (3,2); an above-layer event runs a custom
+  # route straight through its column. Only a matching layer collides (see
+  # #char_passable?), so the mover reaches the far side instead of stopping.
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_ABOVE))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [3, 2], [ch.x, ch.y],
+     "an above-layer mover should cross a below-layer event, got #{[ch.x, ch.y]}"
+end
+
 # Each tile's four passability bits mark whether *that tile's own* north/
 # south/east/west edge is open; crossing a boundary needs the leaving tile's
 # bit for the side it exits through *and* the entering tile's bit for the
@@ -875,7 +924,10 @@ end
 
 check 'the action button reaches across a shop counter' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 0)
+  # Same-as-characters: a facing (not overlapping) action check only answers a
+  # LAYER_SAME event — see 'the action button does not answer a below/above
+  # -characters event from an adjacent facing tile' below.
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
   # Player at (0,0) facing east; (1,0) is the counter, the keeper is at (2,0).
   scene = counter_scene({ 1 => event(2, 0, pg) }, [[1, 0]], player: [0, 0])
@@ -890,7 +942,7 @@ end
 
 check 'the reach stops after three counters, and at a non-counter tile' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 0)
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
   # (1,0) is a counter but (2,0) is not, so the event at (3,0) is out of reach.
   scene = counter_scene({ 1 => event(3, 0, pg) }, [[1, 0]], player: [0, 0])
@@ -941,6 +993,25 @@ check 'an action event under the player answers the action button' do
   RGSS::Input.reset
   5.times { scene.update }
   ok st.switches[4], 'the event under the party ran'
+end
+
+# yado.tk: 決定キーを押してもマップイベントが実行しない (「決定キーを押しても
+# マップイベントが実行しない」バグ・エラーページ) — a below/above-characters
+# action event only answers the button by overlap (see the check above), never
+# by facing it from an adjacent tile; only LAYER_SAME does that (its own tile
+# is unreachable, since it blocks the party from ever standing there).
+check 'a below-characters action event does not answer the button from an adjacent tile' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6 # face the event at (1,0) without stepping onto it
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'a below-characters event must not answer the button while merely faced'
 end
 
 # CONTROL_VARS params to add `by` to variable `id`:
@@ -2859,8 +2930,9 @@ check 'boarding a boat and disembarking onto the shore' do
 end
 
 check 'the airship flies over a tile blocked on foot, and follows the party' do
-  # An event occupies (1, 0): impassable on foot, but the airship flies over it.
-  scene = new_scene({ 1 => event(1, 0, page) }, player: [0, 0])
+  # A same-layer event occupies (1, 0): impassable on foot, but the airship
+  # flies over it regardless of layer.
+  scene = new_scene({ 1 => event(1, 0, page(layer: 1)) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   air = st.vehicle(:airship)
   air.map_id = st.map_id
@@ -3877,7 +3949,7 @@ check 'a BGM position that jumps backwards counts as one play-through' do
 end
 
 check 'the action key marks the event it started for the type-8 branch' do
-  pg = page(trigger: 0)
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [
     ECmd.new(IC2::CONDITIONAL, [8], indent: 0),
     ECmd.new(Game::Interpreter::Cmd::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 1),
@@ -5027,6 +5099,35 @@ check 'a forced player walk is never lifted' do
     scene.update
     eq 0, scene.send(:player_jump_offset), 'a step is not a hop'
   end
+end
+
+# yado.tk: move-route "Change Graphic" (hero or vehicle) applies visibly but
+# does not persist like the dedicated Change Hero Graphic command — it reverts
+# on Transfer Player (and, being scene-only state, on save/load too, since
+# Continue always builds a fresh Scene::Map).
+check 'a forced route Change Graphic overrides the hero sprite, reverting on Transfer Player' do
+  ic = Game::Interpreter::Cmd
+  name = 'other'
+  # Move Event params: target 10001, freq 8, repeat off, skippable on, then the
+  # packed move command -- Change Graphic carries its filename length + the
+  # graphic index, with the filename bytes in the command's own string field
+  # (see Interpreter#decode_move_route).
+  params = [10001, 8, 0, 1, R::CHANGE_GRAPHIC, name.length, 3]
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::MOVE_EVENT, params, string: name)]
+  scene = new_scene({ 1 => event(3, 3, pg) }, player: [0, 0])
+  5.times { scene.update }
+  charset, index = scene.send(:player_draw_charset)
+  ok charset, 'the overridden charset bitmap loaded'
+  eq 3, index, 'the overridden graphic index applied'
+  ok !charset.equal?(scene.instance_variable_get(:@charset)),
+     'the override bitmap is not the leader\'s own charset'
+
+  scene.send(:perform_teleport, [1, 0, 0, 0])
+  charset2, index2 = scene.send(:player_draw_charset)
+  eq scene.instance_variable_get(:@charset), charset2,
+     'Transfer Player reverted to the leader\'s own charset'
+  eq scene.instance_variable_get(:@charset_index), index2
 end
 
 check 'a teleport lands the party on its tile, not mid-slide' do

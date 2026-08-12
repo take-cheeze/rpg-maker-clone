@@ -50,6 +50,15 @@ class RPG2k
       TRIGGER_AUTO_START   = 3 # runs automatically once on the map
       TRIGGER_PARALLEL     = 4 # runs continuously in the background
 
+      # Event-page priority type (the page `layer` field): where the event
+      # draws relative to normal characters, and — RPG_RT ties the two together
+      # — which of them it collides with. Only LAYER_SAME blocks movement: a
+      # "below"/"above characters" event is a decoration the hero, vehicles and
+      # other events all walk straight through (see #passable?, #char_passable?).
+      LAYER_BELOW = 0
+      LAYER_SAME  = 1
+      LAYER_ABOVE = 2
+
       # Move Event (Set Move Route) target ids: the player, the three vehicles
       # and "this event" (the event running the command). Any other id is a map
       # event id. Vehicles are not modelled yet, so those targets are ignored.
@@ -625,6 +634,8 @@ class RPG2k
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
+        layer = page_layer(page)
+        ch.layer = layer # collision (see #char_passable?) follows priority type too
         move_type = page_move_type(page)
         route = move_type == Game::MoveType::CUSTOM ?
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
@@ -639,7 +650,7 @@ class RPG2k
           # the sprite between tiles. move_count == TILE means "at rest".
           # `jumping` marks that slide as a hop, which is lifted along an arc
           # and is the one kind that slides across more than a single tile.
-          layer: page_layer(page), translucent: page_translucent(page),
+          layer: layer, translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
           moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE,
@@ -844,13 +855,25 @@ class RPG2k
         return unless Input.trigger?(Input::C)
         # An action event **under the player** fires too: RPG_RT checks the tile
         # the party is standing on before the one it faces, which is how a
-        # trigger-0 event on a doorway tile answers the action button.
+        # trigger-0 event on a doorway tile answers the action button. Overlap
+        # answers the button regardless of priority type, so this check alone
+        # is how a below/above-characters action event (see below) is ever
+        # reachable at all.
         here = event_at(@state.x, @state.y)
         return start_event(here, true) if actionable?(here)
 
+        # The faced tile only answers the button for a LAYER_SAME event: RPG_RT
+        # ties this to priority type the same way it ties collision to it
+        # (yado.tk's 決定キーを押してもマップイベントが実行しない) — a
+        # below/above-characters action event (typically one whose graphic is
+        # an upper-layer chip, which defaults to LAYER_BELOW) does not answer
+        # the button from an adjacent facing tile, only from standing on it via
+        # the overlap check above. A same-layer event never has that option
+        # (it blocks the party from ever standing on it), so facing it is its
+        # only way in.
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        return start_event(ev, true) if actionable?(ev)
+        return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
 
         # Nothing on the faced tile: if it is a **counter** — a shop or inn
         # counter, marked in the chipset's upper-layer passage table — look
@@ -859,7 +882,7 @@ class RPG2k
           break unless counter_tile?(fx, fy)
           fx, fy = target_tile(fx, fy, @state.direction)
           ev = event_at(fx, fy)
-          return start_event(ev, true) if actionable?(ev)
+          return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
         end
         nil
       end
@@ -997,7 +1020,8 @@ class RPG2k
       def vehicle_passable?(x, y, dir, type)
         return false unless @map.in_bounds?(x, y)
         return true if type == :airship
-        return false if @event_tiles[[x, y]]
+        blocker = @event_tiles[[x, y]]
+        return false if blocker && blocker[:layer] == LAYER_SAME
         row = terrain_row_at(x, y)
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
@@ -1843,26 +1867,34 @@ class RPG2k
         (f && f >= 1 && f <= 8) ? f : nil
       end
 
-      # Collision test for an event stepping one tile in `dir`: in bounds, not
-      # onto the player or another event, and passable per the chipset. A
-      # "through" character ignores all of this.
+      # Collision test for an event stepping one tile in `dir`: in bounds,
+      # passable per the chipset, and not onto the hero or another event that
+      # shares its collision layer. A "through" character ignores all of this.
       #
-      # **Both** tiles at the boundary are asked, each from its own side, as
-      # RPG2000's per-direction passability does: the tile a character is
-      # leaving must allow exit toward `dir`, and the tile it is entering must
-      # allow entry from the opposite side (its own passability bit for
-      # `TURN_180[dir]`). A wall painted on either tile blocks the crossing —
-      # checking only the destination (as this used to) missed a chip whose
-      # *own* tile disallowed stepping off it, which is how one-way ledges and
-      # railings are authored. The upper layer gets the same two-sided check:
-      # an obstacle drawn on top of the ground (a boulder, a shop counter) is
-      # exactly as solid as a lower-layer wall.
+      # Layer gates the occupancy half the same way RPG_RT's priority type
+      # does: the hero is always a "normal character", so a below/above-
+      # characters event (LAYER_BELOW / LAYER_ABOVE) walks straight through it
+      # and vice versa; two events only collide when they share the same
+      # layer (below blocks below, above blocks above, same blocks same) —
+      # different layers pass through each other too.
+      #
+      # The chipset half asks **both** tiles at the boundary, each from its
+      # own side, as RPG2000's per-direction passability does: the tile a
+      # character is leaving must allow exit toward `dir`, and the tile it is
+      # entering must allow entry from the opposite side (its own passability
+      # bit for `TURN_180[dir]`). A wall painted on either tile blocks the
+      # crossing — checking only the destination (as this used to) missed a
+      # chip whose *own* tile disallowed stepping off it, which is how
+      # one-way ledges and railings are authored. The upper layer gets the
+      # same two-sided check: an obstacle drawn on top of the ground (a
+      # boulder, a shop counter) is exactly as solid as a lower-layer wall.
       def char_passable?(character, dir)
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
         return false unless @map.in_bounds?(nx, ny)
-        return false if nx == @state.x && ny == @state.y
-        return false if @event_tiles[[nx, ny]]
+        return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
+        blocker = @event_tiles[[nx, ny]]
+        return false if blocker && blocker[:layer] == character.layer
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
                                  @map.upper(character.x, character.y), dir) &&
@@ -1890,8 +1922,10 @@ class RPG2k
         # anything on screen to notice it by.
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
-        return false if x == @state.x && y == @state.y
-        return false if @event_tiles[[x, y]]
+        # Same layer-gated occupancy rule as #char_passable? (see its comment).
+        return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
+        blocker = @event_tiles[[x, y]]
+        return false if blocker && blocker[:layer] == character.layer
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
@@ -4196,6 +4230,10 @@ class RPG2k
         @started_common = {}
         @active_event = nil
         @player_route = nil # a forced player route does not survive a teleport
+        # ... nor does a Set Move Route "Change Graphic" override on the hero
+        # (see #player_draw_charset): RPG_RT reverts it on Transfer Player,
+        # unlike the dedicated Change Hero Graphic command.
+        @player_char = nil
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
@@ -4825,7 +4863,11 @@ class RPG2k
       # gets the same say as the lower one.
       def passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
-        return false if @event_tiles[[x, y]]
+        blocker = @event_tiles[[x, y]]
+        # The hero is always a "normal character" for collision purposes: only
+        # a same-layer event blocks it, a below/above-characters one is a
+        # decoration it walks straight over (see the LAYER_* comment).
+        return false if blocker && blocker[:layer] == LAYER_SAME
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(@state.x, @state.y),
                                  @map.upper(@state.x, @state.y), dir) &&
@@ -5314,29 +5356,49 @@ class RPG2k
         end
       end
 
+      # Which CharSet bitmap + index currently draw the player: ordinarily the
+      # party leader's own (@charset/@charset_index), but a Set Move Route
+      # "Change Graphic" targeting the hero overrides it in place on the
+      # forced-route mirror character (@player_char) -- distinct from, and not
+      # persisted like, the dedicated Change Hero Graphic command (see
+      # perform_teleport, which drops the override on Transfer Player the same
+      # way a fresh Scene::Map drops it on save-load, by clearing @player_char).
+      # Reuses the event-charset cache: it is the exact same "CharSet/<name>"
+      # load a map event's own graphic already goes through.
+      def player_draw_charset
+        if @player_char && @player_char.graphic_name
+          [event_charset(@player_char.graphic_name), @player_char.graphic_index]
+        else
+          [@charset, @charset_index]
+        end
+      end
+
       def draw_player_frame
-        return unless @charset
+        charset, charset_index = player_draw_charset
+        return unless charset
         pat = @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
         bush = player_bush_depth
         # The sunken depth is part of the frame key, so walking into and out of
         # tall grass redraws the sprite even though the pose has not changed.
-        frame = [@state.direction, pat, bush]
+        # The bitmap identity + index are too, so a move-route graphic change
+        # forces a redraw even when direction/pose/bush all stay the same.
+        frame = [@state.direction, pat, bush, charset.object_id, charset_index]
         return if frame == @last_frame
         @last_frame = frame
 
-        rx, ry, rw, rh = Game::CharSet.frame_rect(@charset_index, @state.direction, pat)
+        rx, ry, rw, rh = Game::CharSet.frame_rect(charset_index, @state.direction, pat)
         src = Rect.new(rx, ry, rw, rh)
         # A Flash Sprite aimed at the hero tones the frame as it is laid down
         # (update_sprite_flashes invalidates @last_frame each frame it runs, so
         # the fading colour is re-applied rather than baked in once).
-        toned = @player_flash && flashed_charset(@charset, src, @player_flash)
+        toned = @player_flash && flashed_charset(charset, src, @player_flash)
         @player_bmp.clear
         if toned
           blt_bushed @player_bmp, 0, 0, toned,
                      Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT),
                      255, bush
         else
-          blt_bushed @player_bmp, 0, 0, @charset, src, 255, bush
+          blt_bushed @player_bmp, 0, 0, charset, src, 255, bush
         end
       end
 
