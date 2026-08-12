@@ -4479,12 +4479,14 @@ class RPG2k
         # (set below) actually flashes instead of sitting on one frame.
         @message[:window].update
         if @message[:choice]
-          if Input.trigger?(Input::DOWN) && @choice_index < @message[:count] - 1
+          if Input.trigger?(Input::DOWN)
             @choice_index += 1
+            @choice_index %= @message[:count]
             set_choice_cursor
             play_system_se(SFX_CURSOR)
-          elsif Input.trigger?(Input::UP) && @choice_index > 0
+          elsif Input.trigger?(Input::UP)
             @choice_index -= 1
+            @choice_index %= @message[:count]
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::C)
