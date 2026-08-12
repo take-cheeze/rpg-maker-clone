@@ -32,6 +32,14 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
+      # Optional: routes the game-archive/asset downloads below through the
+      # CORS proxy's R2 cache (cors-proxy/, docs/cors-proxy.md) instead of the
+      # origin host, as a fallback for when the "cache test game" step below
+      # misses. Unset in forks and by default — scripts/cors-proxy-url.bash
+      # passes URLs through unchanged when this is empty. May carry a
+      # ?key=...&url= prefix (see AUTH_KEY in docs/cors-proxy.md), so it's a
+      # secret rather than a repository variable.
+      CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -774,6 +782,8 @@ jobs:
       # environment, so emcc does not pass --em-config on the command line and
       # ccache does not bail out with "Multiple input files".
       CCACHE_DIR: ${{ github.workspace }}/.ccache
+      # See the `build` job for what this is.
+      CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7

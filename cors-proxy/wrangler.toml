@@ -8,7 +8,7 @@ compatibility_date = "2025-01-01"
 
 # Optional access controls so this isn't an open proxy. All unset => open.
 # Uncomment and edit to enable. See ../docs/cors-proxy.md for the details.
-# [vars]
+[vars]
 # Which target hosts may be fetched (leading dot matches subdomains):
 # ALLOWED_HOSTS = ".github.com,codeload.github.com,objects.githubusercontent.com"
 # Which web-page origins may call the proxy (exact scheme+host):
@@ -18,3 +18,15 @@ compatibility_date = "2025-01-01"
 # plaintext — set it as an encrypted secret instead:
 #   npx wrangler secret put AUTH_KEY
 # then use a query-style prefix that includes it: https://<worker>/?key=SECRET&url=
+
+# Tune freshness/size in [vars] alongside the access-control vars above:
+CACHE_TTL_SECONDS = "86400"   # how long a cached entry stays fresh (default)
+CACHE_MAX_BYTES = "268435456"   # skip caching (not proxying) anything bigger
+
+# Optional R2 cache so a repeat load (by anyone) skips the upstream fetch.
+# Unbound => no caching, the Worker behaves exactly as before. Create the
+# bucket once, then uncomment:
+#   npx wrangler r2 bucket create rpg-maker-cors-proxy-cache
+[[r2_buckets]]
+binding = "ARCHIVE_CACHE"
+bucket_name = "rpg-maker-cors-proxy-cache"

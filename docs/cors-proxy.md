@@ -129,6 +129,80 @@ include both; add any other zip hosts you use. You can also set these vars by
 uncommenting the `[vars]` block in
 [`wrangler.toml`](../cors-proxy/wrangler.toml) instead of passing `--var`.
 
+## Caching archives in R2 (optional)
+
+Without it, every load re-fetches the archive from the origin host — even a
+repeat load of a project you already played, from a different browser or
+device than last time (the loader's own browser-side cache only covers the
+*same* browser). Binding an R2 bucket lets the Worker serve repeat loads
+straight from Cloudflare's edge instead: faster, and it stops hammering
+`codeload.github.com`'s rate limit. Off by default, like the access controls
+above — rationale in
+[`docs/adr/0042-cors-proxy-r2-cache.md`](adr/0042-cors-proxy-r2-cache.md).
+
+```sh
+cd cors-proxy
+
+# 1. Create the bucket (one-time; free tier covers 10 GB storage).
+npx wrangler r2 bucket create rpg-maker-cors-proxy-cache
+```
+
+Then uncomment the `[[r2_buckets]]` block in
+[`wrangler.toml`](../cors-proxy/wrangler.toml) and deploy again:
+
+```sh
+npx wrangler deploy
+```
+
+That's it — no loader changes needed, and no change to the proxy prefix you
+already configured. A `curl -sI` against the same URL twice shows the effect:
+the first response carries `x-proxy-cache: miss`, the second `x-proxy-cache:
+hit` (also exposed to browser JS via `Access-Control-Expose-Headers`, if you
+want to show it in the loader's log).
+
+Two vars tune it, set alongside `ALLOWED_HOSTS` etc. in the `[vars]` block:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CACHE_TTL_SECONDS` | `3600` (1 hour) | How long a cached entry is served before being treated as stale and re-fetched. A GitHub **branch** archive's URL never changes even though its contents do, so the cache revalidates on a timer rather than keeping entries forever. Point at a release/tag zip (which *is* immutable) and raise this; point at a fast-moving branch and lower it. |
+| `CACHE_MAX_BYTES` | unset (no limit) | Skip *caching* (the response is still proxied normally) an archive whose `Content-Length` exceeds this many bytes, to cap what lands in the bucket. |
+
+Only whole-file downloads populate the cache (the loader only ever does plain
+`GET`s — see `src/shell.html`'s `fetchZip()` — so this covers it entirely); a
+`Range` request is proxied straight through without touching R2 on a cache
+miss, but *is* served from R2 once an entry exists, computed from the cached
+bytes.
+
+### Using it from CI
+
+CI downloads a handful of third-party test-bed archives and assets on every
+run (`scripts/download-nepheshel.bash`, `download-prayforyou.bash`,
+`download-freepats.bash`, `download-default-font.bash`,
+`scripts/rtp_install.bash`, `rtp_xp_install.bash`) — the ones that are a plain
+URL fetch rather than a `git clone`. Those are already cached across runs by
+an `actions/cache` step keyed on the download scripts, so this rarely matters;
+it's a fallback for when that cache misses (a new runner, an evicted cache, a
+changed script), so CI falls back to R2 instead of hammering a small
+third-party host (`til.sakura.ne.jp`, `dl.fgamearchives.com`) — or re-pulling
+the (larger) RTP zips from `cdn.tkool.jp` — on every cold cache.
+
+Set the **`CORS_PROXY_URL`** repository secret (Settings → Secrets and
+variables → Actions) to your proxy prefix, in either style — the same value
+you'd put in the loader's *CORS proxy prefix* field, `?key=…&url=` included if
+`AUTH_KEY` is set. `scripts/cors-proxy-url.bash` rewrites each download's URL
+through it; leave the secret unset (the default, including on forks) and
+every download script behaves exactly as it does without this section.
+
+It must be a **secret**, not a repository **variable**, if it carries a key:
+the download scripts run under `set -x`, so the resolved URL — prefix and all
+— lands in the step's trace output, and only a value sourced from
+`secrets.*` gets GitHub's automatic log masking applied to it.
+
+If your proxy sets `ALLOWED_ORIGINS`, note that CI won't satisfy it: `wget`
+and `curl` send no `Origin` header, so an origin-restricted proxy 403s every
+CI request regardless of `CORS_PROXY_URL`. `AUTH_KEY` and/or `ALLOWED_HOSTS`
+are the controls compatible with CI use.
+
 ## Updating
 
 Edit [`cors-proxy/worker.js`](../cors-proxy/worker.js) and run
@@ -145,6 +219,10 @@ Pages → your Worker → Deployments** in the Cloudflare dashboard.
 - **Access checks** (all opt-in): a disallowed origin, a missing/invalid
   `AUTH_KEY`, or a blocked target host each return `403`. The CORS preflight
   (`OPTIONS`) is exempt from the key check but still honours the origin check.
+- **R2 cache** (opt-in, see above): when bound, a fresh cache hit is served
+  from R2 without an upstream fetch (`X-Proxy-Cache: hit`); a miss fetches
+  and streams through as usual while also writing to R2 in the background
+  (`X-Proxy-Cache: miss`).
 - **Errors** come back with CORS headers and a plain-text reason (`400` bad
   target, `403` blocked/unauthorised, `502` upstream failure), so the loader
   shows a real message instead of an opaque network error.

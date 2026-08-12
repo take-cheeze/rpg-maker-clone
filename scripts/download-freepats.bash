@@ -24,6 +24,9 @@ version="1.0.3"
 sha256="47911ccd41ac4285b001c25ebaf3df6f488d68bd5d8a46355e98505868a9af78"
 url="https://registry.npmjs.org/freepats/-/freepats-${version}.tgz"
 
+# Routes through the optional CI CORS proxy cache when CORS_PROXY_URL is set.
+. "$(dirname "$0")/cors-proxy-url.bash"
+
 here="$(cd "$(dirname "$0")/.." && pwd)"
 dest="$here/assets/timidity"
 cache="$here/assets/.freepats"
@@ -48,7 +51,7 @@ fi
 
 if [ ! -f "$tarball" ]; then
     echo "freepats: downloading $url"
-    curl -fsSL --retry 3 --retry-delay 2 -o "$tarball.part" "$url"
+    curl -fsSL --retry 3 --retry-delay 2 -o "$tarball.part" "$(proxied_url "$url")"
     mv "$tarball.part" "$tarball"
 fi
 

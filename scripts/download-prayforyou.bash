@@ -2,6 +2,9 @@
 
 set -eux -o pipefail
 
+# Routes through the optional CI CORS proxy cache when CORS_PROXY_URL is set.
+. "$(dirname "$0")/cors-proxy-url.bash"
+
 mkdir -p $(dirname $0)/../data
 
 cd $(dirname $0)/../data
@@ -20,7 +23,7 @@ cd $(dirname $0)/../data
 #
 # See download-nepheshel.bash for why wget/unar are quietened.
 if [ ! -f PrayforYou.zip ] ; then
-    wget -nv -O PrayforYou.zip "https://dl.fgamearchives.com/archives/win/3271/PrayforYou.zip"
+    wget -nv -O PrayforYou.zip "$(proxied_url "https://dl.fgamearchives.com/archives/win/3271/PrayforYou.zip")"
 fi
 
 if [ ! -d PrayforYou ] ; then

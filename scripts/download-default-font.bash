@@ -36,6 +36,9 @@ font_sha256="2f294ad496432b1608f070d310e3aa2adcf1de4af429f4901df97ec4bd361ed1"
 license_sha256="da15da6b1496d4de18f97e2ad1b722ef8a1c121149c2c93b2cf7eac6ac27b35c"
 base="https://raw.githubusercontent.com/google/fonts/${commit}/ofl/mplus1p"
 
+# Routes through the optional CI CORS proxy cache when CORS_PROXY_URL is set.
+. "$(dirname "$0")/cors-proxy-url.bash"
+
 here="$(cd "$(dirname "$0")/.." && pwd)"
 dest="$here/assets/fonts"
 
@@ -57,7 +60,7 @@ fetch() {
     local name="$1" want="$2" out="$dest/$1"
 
     echo "default font: downloading $base/$name"
-    curl -fsSL --retry 3 --retry-delay 2 -o "$out.part" "$base/$name"
+    curl -fsSL --retry 3 --retry-delay 2 -o "$out.part" "$(proxied_url "$base/$name")"
 
     if ! echo "$want  $out.part" | sha256sum -c --status; then
         echo "default font: checksum mismatch for $name" >&2
