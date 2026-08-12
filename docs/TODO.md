@@ -1569,6 +1569,13 @@ following this paragraph as the original record.
   Covered by two new `scripts/rpg2k_scene_check.rb` checks (a below-characters
   blocker with the flag set still stops the hero; two events on different
   layers no longer pass through each other when the blocker sets it).
+- ✅ **The active party caps at four members.** `Game::Party#add_actor` had no
+  size check at all, so a Change Party Member "Add" past the fourth slot grew
+  `@actors` unbounded instead of no-op'ing the way RPG_RT does (the editor
+  never offers a fifth party slot). `Game::Party::MAX_SIZE` (4) now guards the
+  join; leaving and rejoining once a slot frees up still works, and nothing
+  about `remove_actor` or the roster's rejoin-with-preserved-state changed.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -1718,11 +1725,11 @@ Everything below is unverified against the codebase.
   it again, toggle its appearance switch, or issue any move-route command
   at it — "Cancel Move Route" alone does not clear it). Related to the
   already-fixed priority-type/touch-trigger work but distinct and unverified.
-- **Hero & party** — party caps at 4 (Change Party Member no-ops past that);
-  removing a hero preserves their equipment/level/EXP/HP/status; the field
-  sprite is always party member 1's; only the front member draws on the
-  field at all; a hero's name can't be copied to another via any built-in
-  command.
+- **Hero & party** — removing a hero preserves their equipment/level/EXP/HP/
+  status; the field sprite is always party member 1's; only the front member
+  draws on the field at all; a hero's name can't be copied to another via any
+  built-in command. (Party caps at 4, Change Party Member no-ops past that —
+  now fixed, see above.)
 - **Processing order** — map/common events process in ascending id order;
   "Get Event ID at coordinates" on overlapping events returns the
   **highest** id, not lowest/topmost-drawn; only one event/parallel-process

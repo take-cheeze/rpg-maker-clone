@@ -1964,6 +1964,10 @@ module Game
   class Party
     include Enumerable
 
+    # RPG2000's active party roster caps at four members (the editor never
+    # offers a fifth slot); a Change Party Member "Add" beyond that no-ops.
+    MAX_SIZE = 4
+
     attr_reader :actors, :items, :gold
 
     # The permanent actor roster this party draws from (see Game::Actors). The
@@ -2142,9 +2146,12 @@ module Game
 
     # Put an actor in the party. The actor comes from the roster, so one who has
     # been in the party before rejoins with the level, EXP, gear, skills, statuses
-    # and name they left with rather than a fresh database row.
+    # and name they left with rather than a fresh database row. A no-op once the
+    # party already holds MAX_SIZE members, matching RPG_RT's Change Party
+    # Member "Add" against a full party (yado.tk: 主人公・パーティー・乗り物).
     def add_actor(id)
       return if include_actor?(id)
+      return if @actors.size >= MAX_SIZE
       a = @roster[id]
       return unless a
       @actors.push a
