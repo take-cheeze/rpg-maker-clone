@@ -1263,16 +1263,20 @@ module Game
       @equipment.include?(item_id)
     end
 
-    # Equip a database item into the slot matching its type (weapon type 1 ->
-    # slot 0, shield 2 -> 1, armour 3 -> 2, helmet 4 -> 3, accessory 5 -> 4) and
-    # recompute the boosted stats. A non-equippable item, an unknown id, or a
-    # database without an item table is ignored. Drives the Change Equipment
-    # event command's equip operation.
-    def equip_item(item_id)
+    # Equip a database item into `slot`, defaulting to the one its own type
+    # matches (weapon type 1 -> slot 0, shield 2 -> 1, armour 3 -> 2, helmet
+    # 4 -> 3, accessory 5 -> 4), and recompute the boosted stats. An explicit
+    # `slot` is what a 二刀流 actor's second weapon needs: its type still says
+    # "weapon" (slot 0), but the equip menu is placing it in the shield slot
+    # (1) as the candidate list `Party#equip_candidates` offered it for. A
+    # non-equippable item, an unknown id, or a database without an item table
+    # is ignored. Drives the Change Equipment event command's equip operation
+    # (always by type, since that command names no slot).
+    def equip_item(item_id, slot = nil)
       return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
       return unless it
-      slot = it.type - 1
+      slot ||= it.type - 1
       return unless slot >= 0 && slot < EQUIP_ORDER.size
       @equipment[slot] = item_id
       freed = free_two_handed_slot(slot)
@@ -1492,6 +1496,25 @@ module Game
       row = class_row_for(@class_id) if @class_id && @class_id > 0
       row ||= @db_row
       row.respond_to?(:strong_defence) ? (row.strong_defence ? true : false) : false
+    end
+
+    # 二刀流 — an actor (or RPG2003 class) trait that turns the *shield* slot
+    # into a *second weapon* slot, unlike the item-row #dual_attack? above (a
+    # weapon that makes one basic attack swing twice — an unrelated flag that
+    # happens to share the same Japanese name). Same class-row-then-player-row
+    # lookup as #strong_defence?, since RPG2003 lets a class override it too
+    # (liblcf's `job` table carries the same field id). EasyRPG's
+    # `Window_EquipItem` retargets the whole shield slot to `weapon` before
+    # listing candidates for such an actor, and rejects a shield there
+    # outright — #equip_candidates does the retargeting; #attack_hit_rate,
+    # #weapon_crit_bonus and #equipment_flag?'s weapon-only search already
+    # scan every equipped slot for an item whose own *type* is a weapon rather
+    # than hard-coding slot 0, so once a second weapon sits in the shield slot
+    # they pick it up (and the better of the two) with no change of their own.
+    def double_hand?
+      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row ||= @db_row
+      row.respond_to?(:double_hand) ? (row.double_hand ? true : false) : false
     end
 
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
@@ -2426,27 +2449,54 @@ module Game
       (t >= 1 && t <= Actor::EQUIP_ORDER.size) ? t - 1 : nil
     end
 
-    # Held items equippable in equipment `slot` (0..4), as [id, count] pairs in
-    # ascending id order -- the candidate list for the equip menu's chosen slot.
-    def equip_candidates(slot)
+    # Held items equippable in equipment `slot` (0..4) on `actor`, as
+    # [id, count] pairs in ascending id order -- the candidate list for the
+    # equip menu's chosen slot. `actor` only matters for the shield slot (1):
+    # a 二刀流 (double_hand) actor's shield slot is a second weapon slot, so it
+    # lists weapons there instead of shields -- mirroring EasyRPG's
+    # `Window_EquipItem`, which retargets the whole slot to `weapon` for such
+    # an actor before filtering, rather than offering both kinds.
+    def equip_candidates(slot, actor = nil)
+      slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
       @items.keys.sort.select { |id| item_count(id) > 0 && equip_slot_for(id) == slot }
             .map { |id| [id, item_count(id)] }
     end
 
-    # Equip bag item `item_id` on `actor`, moving it through the inventory the way
-    # the equip menu does: take one from the bag, equip it into the slot its type
-    # dictates, and return the previously-equipped item (if any) to the bag. A
-    # no-op returning false unless the party holds the item and it is equipment;
-    # true on success. (Unlike the Change Equipment event command, which does not
-    # touch the bag, the menu swaps through it.)
-    def equip_from_bag(actor, item_id)
+    # Whether held item `id` is a genuine #equip_candidates entry for `slot` on
+    # `actor` -- mirrors that method's own retargeting exactly, so a `slot`
+    # argument #equip_from_bag receives can never accept anything the
+    # candidate list would not itself have offered (in either direction: a
+    # 二刀流 actor's shield slot accepts a weapon, not a weapon *and* a shield).
+    def equip_candidate_for?(actor, id, slot)
+      base = equip_slot_for(id)
+      return false if base.nil?
+      if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
+        base == Actor::WEAPON_SLOT
+      else
+        base == slot
+      end
+    end
+
+    # Equip bag item `item_id` on `actor` into equipment `slot`, moving it
+    # through the inventory the way the equip menu does: take one from the bag,
+    # equip it into that slot, and return the previously-equipped item (if any)
+    # to the bag. `slot` defaults to the one the item's own type dictates (so
+    # the Item menu's field-usable-item paths that never pass one keep working
+    # unchanged); the equip menu always passes the slot its candidate list
+    # (#equip_candidates) was built for, which is what lets a 二刀流 actor's
+    # second weapon land in the shield slot rather than overwriting the first.
+    # A no-op returning false unless the party holds the item and it is a
+    # genuine candidate for that slot on that actor (#equip_candidate_for?);
+    # true on success. (Unlike the Change Equipment event command, which does
+    # not touch the bag, the menu swaps through it.)
+    def equip_from_bag(actor, item_id, slot = nil)
       return false unless actor && item_count(item_id) > 0
-      slot = equip_slot_for(item_id)
-      return false if slot.nil?
+      slot ||= equip_slot_for(item_id)
+      return false if slot.nil? || !equip_candidate_for?(actor, item_id, slot)
       previous = actor.equipment[slot]
       # A 両手持ち weapon empties the other hand; whatever it was holding comes
       # back to the bag alongside the item this slot displaced.
-      freed = actor.equip_item(item_id)
+      freed = actor.equip_item(item_id, slot)
       lose_item(item_id, 1)
       gain_item(previous, 1) if previous && previous != 0
       gain_item(freed, 1) if freed && freed != 0

@@ -4618,7 +4618,7 @@ class WrapMenuParty < MenuStubParty
   def field_skills(_actor, _state = nil); [[10, 2], [11, 4]]; end
   def db_item(id); OpenStruct.new(name: "Item#{id}"); end
   def db_skill(id); OpenStruct.new(name: "Skill#{id}"); end
-  def equip_candidates(_slot); [[7, 2], [8, 1]]; end
+  def equip_candidates(_slot, _actor = nil); [[7, 2], [8, 1]]; end
 end
 
 def wrap_menu_state

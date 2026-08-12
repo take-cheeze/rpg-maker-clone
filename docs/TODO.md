@@ -1293,13 +1293,31 @@ The work below is roughly ordered by the critical path to a walkable game
   with no map or interpreter behind it, so it still cannot tell "this skill is
   legitimately state-gated" from "no menu reaches this skill" on its own, and
   keeps deferring those two types to this note instead of flagging them as
-  unreachable. Left unbuilt still: the battle-time skill variance and
-  two-handed / dual-wield **equipping** (the equip screen's slot rules — a
-  二刀流 weapon's *combat* effect is read now, see ADR 0033), and a **special
-  item** (type 9) invoking an Escape/Teleport skill — `#field_usable?` does not
-  thread `Game::State` through to `#field_skill?` the way the field menu does,
-  so such an item (neither test bed has one) would still read as unusable
-  rather than warping.
+  unreachable. Left unbuilt still: the battle-time skill variance, and a
+  **special item** (type 9) invoking an Escape/Teleport skill —
+  `#field_usable?` does not thread `Game::State` through to `#field_skill?`
+  the way the field menu does, so such an item (neither test bed has one)
+  would still read as unusable rather than warping.
+  **Dual-wield equipping is done too, the opposite rule to two-handed.** A
+  weapon's own *combat* effect (a 二刀流 weapon swinging twice) was read
+  already (ADR 0033); what remained was the *actor*-row 二刀流 (`double_hand`,
+  4 of Nepheshel's actors and 1 of mtf's), which turns the shield slot into a
+  second weapon slot — ADR 0040 named this as the item its own two-handed-gear
+  rule left alone. `Game::Party#equip_candidates(slot, actor)` retargets the
+  shield slot to weapon-only candidates for such an actor, ported from
+  EasyRPG's `Window_EquipItem` (which does the identical retarget before
+  filtering, and rejects a shield there outright with no exception); a new
+  `#equip_candidate_for?` guards `#equip_from_bag` against the reverse. Placing
+  the result needed `Actor#equip_item` to take an explicit slot — its old
+  always-by-type mapping would put any weapon in slot 0, which is exactly
+  wrong for a second one — while the Change Equipment event command's own call
+  stays untouched (no notion of "the second weapon slot" there either,
+  matching `Game_Actor::ChangeEquipment`). Combat needed nothing: the weapon-
+  only scans behind `#attack_hit_rate` / `#weapon_crit_bonus` /
+  `#equipment_flag?` and the plain sum behind `#equip_bonus` already read every
+  equipped slot by the item's own *type*, not by slot index, so a second
+  weapon in the shield slot is picked up — the better of the two, for hit and
+  crit — the moment it is worn. See ADR 0040's addendum.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default

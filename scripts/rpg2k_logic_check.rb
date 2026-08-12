@@ -1947,7 +1947,12 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # constructions above keep working; a row that names
                            # neither never crits, which is what a bare fixture
                            # wants.
-                           :has_critical_rate, :critical_rate)
+                           :has_critical_rate, :critical_rate,
+                           # 二刀流 -- turns the shield slot into a second
+                           # weapon slot (Actor#double_hand?). Appended last for
+                           # the same reason: every existing positional
+                           # construction keeps working with it defaulting nil.
+                           :double_hand)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -8733,6 +8738,78 @@ check 'a bulk equip restores a saved pair as-is' do
   hero = st.party.actor_by_id(1)
   hero.equip([2, 3, 0, 0, 0])
   eq [2, 3], hero.equipment[0, 2], 'loaded exactly as saved'
+end
+
+# -- 二刀流 actors (double_hand) -----------------------------------------------
+# An actor (or RPG2003 class) trait that turns the *shield* slot into a
+# *second weapon* slot -- the flag ADR 0040 flagged as "left alone" (the
+# opposite rule to two_handed above: that empties a hand, this fills it with
+# a weapon). 4 of Nepheshel's actors carry it and 1 of mtf-meido-action's.
+
+def double_hand_party(double_hand = true)
+  items = { 1 => fake_item(type: 1, atk: 20, hit: 95),                # sword
+            2 => fake_item(type: 1, atk: 15, hit: 85, critical_hit: 20), # dagger
+            3 => fake_item(type: 2, dfn: 10),                         # shield
+            4 => fake_item(type: 1, atk: 10, two_handed: 1) }         # claymore
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 8 })
+  row.double_hand = double_hand
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  Game::State.new(Game::Party.new(db), 1, 0, 0)
+end
+
+check 'a 二刀流 actor is offered weapons, not the shield, for the shield slot' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  [1, 2, 3].each { |id| st.party.gain_item(id, 1) }
+  eq [[1, 1], [2, 1]], st.party.equip_candidates(Game::Actor::SHIELD_SLOT, hero),
+     'the two swords, not the shield'
+  eq [[1, 1], [2, 1]], st.party.equip_candidates(Game::Actor::WEAPON_SLOT, hero),
+     'the ordinary weapon slot lists exactly the same two weapons'
+end
+
+check 'an ordinary actor is still offered the shield for the shield slot' do
+  st = double_hand_party(false)
+  hero = st.party.actor_by_id(1)
+  [1, 2, 3].each { |id| st.party.gain_item(id, 1) }
+  eq [[3, 1]], st.party.equip_candidates(Game::Actor::SHIELD_SLOT, hero)
+end
+
+check 'equipping a second weapon from the bag lands it in the shield slot' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT), 'the sword, first hand'
+  ok st.party.equip_from_bag(hero, 2, Game::Actor::SHIELD_SLOT), 'the dagger, second hand'
+  eq [1, 2], hero.equipment[0, 2], 'both weapons are on, one per slot'
+  # Both weapons now contribute -- the existing per-item-type scans in
+  # attack_hit_rate / weapon_crit_bonus / equipment_flag? are slot-agnostic,
+  # so the second weapon in the shield slot needed no changes of its own.
+  eq 95, hero.attack_hit_rate, 'the better of the two weapons\' hit rates'
+  eq 20, hero.weapon_crit_bonus, 'the dagger\'s crit bonus, the sword carrying none'
+  eq 10 + 20 + 15, hero.atk, 'both weapons\' attack bonuses are summed in, like any slot'
+end
+
+check 'a shield is rejected for a 二刀流 actor\'s shield slot even named directly' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(3, 1)
+  ok !st.party.equip_from_bag(hero, 3, Game::Actor::SHIELD_SLOT),
+     'not a real candidate for that slot on this actor'
+  eq 0, hero.equipment[1], 'nothing was equipped'
+  eq 1, st.party.item_count(3), 'and the shield stayed in the bag'
+end
+
+check 'a two-handed second weapon still empties the shield-turned-weapon hand\'s neighbour' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(4, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(hero, 4, Game::Actor::SHIELD_SLOT), 'the claymore, into the second hand'
+  eq 4, hero.equipment[1]
+  eq 0, hero.equipment[0], 'the two-handed claymore still claims the other hand'
 end
 
 # -- chipset terrain tags -----------------------------------------------------
