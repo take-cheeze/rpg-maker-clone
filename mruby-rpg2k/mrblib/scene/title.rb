@@ -24,8 +24,11 @@ class RPG2k
         @title = Sprite.new
         @title.bitmap = load_title_picture unless hide_title?
 
-        @menu_items =
-          [db.term.new_game, db.term.continue, db.term.shutdown].map(&:to_s)
+        @menu_items = [
+          term(:new_game, 'New Game'),
+          term(:continue, 'Continue'),
+          term(:shutdown, 'Shutdown')
+        ]
         @selected_index = 0
 
         # RPG_RT sizes the window to the widest label plus one border on each

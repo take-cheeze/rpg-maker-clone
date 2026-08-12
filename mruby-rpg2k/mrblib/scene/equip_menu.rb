@@ -12,7 +12,6 @@ class RPG2k
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
-      SLOTS = ["Weapon", "Shield", "Armor", "Helmet", "Accessory"].freeze
 
       def initialize parent, state
         super parent
@@ -22,6 +21,10 @@ class RPG2k
         @slot_index = 0
         @cand_index = 0
         @mode = :slots          # :slots list, or :items candidate pick
+        @slots = [
+          term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
+          term(:helmet, "Helmet"), term(:accessory, "Accessory")
+        ]
         build_stats_window
         build_slot_window
       end
@@ -53,7 +56,7 @@ class RPG2k
         party = @state.party.actors
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN) && @slot_index < SLOTS.size - 1
+        elsif Input.trigger?(Input::DOWN) && @slot_index < @slots.size - 1
           @slot_index += 1
           refresh_slot_cursor
         elsif Input.trigger?(Input::UP) && @slot_index > 0
@@ -112,7 +115,7 @@ class RPG2k
       end
 
       def rebuild_for_actor
-        @slot_index = SLOTS.size - 1 if @slot_index >= SLOTS.size
+        @slot_index = @slots.size - 1 if @slot_index >= @slots.size
         build_stats_window
         build_slot_window
       end
@@ -127,18 +130,20 @@ class RPG2k
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         a = actor
-        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  Lv #{a.level}"
+        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  #{term(:level_short, 'Lv')} #{a.level}"
         c.draw_text 0, LINE_H, inner_w, LINE_H,
-                    "HP #{a.hp}/#{a.max_hp}  MP #{a.mp}/#{a.max_mp}"
+                    "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
+                    "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
         c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
-                    "Atk #{a.atk}  Def #{a.def}  Int #{a.int}  Agi #{a.agi}"
+                    "#{term(:attack, 'Atk')} #{a.atk}  #{term(:defense, 'Def')} #{a.def}  " \
+                    "#{term(:mind, 'Int')} #{a.int}  #{term(:agility, 'Agi')} #{a.agi}"
         @stats_window.contents = c
       end
 
       def build_slot_window
         @slot_window.dispose if @slot_window
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = SLOTS.size * LINE_H
+        h = @slots.size * LINE_H
         y = LINE_H * 3 + Window::BORDER * 2
         @slot_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
         @slot_window.z = 400
@@ -146,7 +151,7 @@ class RPG2k
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         eq = actor.equipment
-        SLOTS.each_with_index do |label, i|
+        @slots.each_with_index do |label, i|
           c.draw_text 0, i * LINE_H, 80, LINE_H, label
           c.draw_text 80, i * LINE_H, inner_w - 80, LINE_H, item_name(eq[i])
         end

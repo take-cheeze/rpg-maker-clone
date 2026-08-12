@@ -2073,11 +2073,6 @@ class RPG2k
         }
       end
 
-      def nonblank(s, fallback)
-        s = s.to_s
-        s.empty? ? fallback : s
-      end
-
       def open_inn_window(req)
         terms = inn_terms(req[:type])
         gold_term = nonblank(db.term.gold, 'G')
@@ -2604,12 +2599,20 @@ class RPG2k
       end
 
       # The four per-actor commands, in menu order (the cursor row is 1 + index,
-      # below the actor-name header).
-      BATTLE_COMMANDS = %w[Attack Skill Item Defend].freeze
+      # below the actor-name header), read from the database's battle-command
+      # terms with the standard RPG2k labels as fallback.
+      def battle_commands
+        @battle_commands ||= [
+          term(:battle_attack, 'Attack'),
+          term(:battle_skill, 'Skill'),
+          term(:battle_item, 'Item'),
+          term(:battle_defend, 'Defend')
+        ]
+      end
 
       # Per-actor command menu: Attack, Skill, Item or Defend.
       def drive_battle_command
-        last = BATTLE_COMMANDS.length - 1
+        last = battle_commands.length - 1
         if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < last
           @battle_ui[:cmd] += 1
           draw_battle_command
@@ -3556,7 +3559,7 @@ class RPG2k
         actor = current_actor
         return unless actor
         @battle_ui[:cmd_win].dispose if @battle_ui[:cmd_win]
-        labels = [actor.name] + BATTLE_COMMANDS
+        labels = [actor.name] + battle_commands
         w = 96
         inner_h = labels.length * BATTLE_LINE_H
         win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,

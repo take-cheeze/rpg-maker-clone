@@ -9,7 +9,6 @@ class RPG2k
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
-      SLOTS = ["Weapon", "Shield", "Armor", "Helmet", "Accessory"].freeze
       # The condition row: which line of the panel it is, its label, and where
       # the state itself starts (clear of the label).
       STATE_ROW = 4
@@ -21,6 +20,10 @@ class RPG2k
         @state = state
         @skin = make_windowskin
         @actor_index = 0
+        @slots = [
+          term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
+          term(:helmet, "Helmet"), term(:accessory, "Accessory")
+        ]
         build_window
       end
 
@@ -64,9 +67,12 @@ class RPG2k
         nxt = a.exp_to_next
         lines = [
           header,
-          "Lv #{a.level}    EXP #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
-          "HP #{a.hp}/#{a.max_hp}    MP #{a.mp}/#{a.max_mp}",
-          "Atk #{a.atk}   Def #{a.def}   Int #{a.int}   Agi #{a.agi}",
+          "#{term(:level_short, 'Lv')} #{a.level}    " \
+          "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
+          "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}    " \
+          "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}",
+          "#{term(:attack, 'Atk')} #{a.atk}   #{term(:defense, 'Def')} #{a.def}   " \
+          "#{term(:mind, 'Int')} #{a.int}   #{term(:agility, 'Agi')} #{a.agi}",
           # The condition gets a labelled row of its own, as on RPG_RT's status
           # screen (its Window_ActorInfo draws the label then the state). Only
           # the label goes through the flat pass below; the state itself is drawn
@@ -75,7 +81,7 @@ class RPG2k
           "",
         ]
         eqp = a.equipment
-        SLOTS.each_with_index { |label, i| lines.push("#{label}: #{item_name(eqp[i])}") }
+        @slots.each_with_index { |label, i| lines.push("#{label}: #{item_name(eqp[i])}") }
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end
