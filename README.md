@@ -419,19 +419,25 @@
   on `stderr` and scribble over the terminal picture. The last few messages are
   tailed (newest at the bottom, coloured by severity: dim info, yellow warnings,
   red errors). On by default; turn it off with `--noterm_console` or change how
-  many rows it reserves with `--term_console_lines=N` (default 5):
+  many rows it reserves with `--term_console_lines=N` (default 5). Like the
+  profiler below, the log console and the stats overlay (`--term_stats`) are
+  test-play-only: they need either the project's own `Game.ini` `[Game]
+  Test=1` or an explicit `--test_play`, and are silently disabled otherwise:
 
   ```sh
-  ./rpg_maker_clone --sixel --term_console_lines=8 --game_dir path/to/game
+  ./rpg_maker_clone --sixel --test_play --term_console_lines=8 --game_dir path/to/game
   ```
 
 ### Profiling
 
+- Debugging tooling, so it only runs during test play: either the project's
+  own `Game.ini` `[Game] Test=1` or an explicit `--test_play` is required, or
+  the flags below are ignored
 - Measure where frame time goes with the built-in CPU/memory profiler, enabled
   with `--profile`:
 
   ```sh
-  ./rpg_maker_clone --profile --game_dir path/to/game
+  ./rpg_maker_clone --test_play --profile --game_dir path/to/game
   ```
 
 - About once a second (tune with `--profile_interval_ms=N`) it prints a summary
@@ -454,7 +460,7 @@
   (implies `--profile`):
 
   ```sh
-  ./rpg_maker_clone --profile_trace=trace.json --game_dir path/to/game
+  ./rpg_maker_clone --test_play --profile_trace=trace.json --game_dir path/to/game
   ```
 
   Every frame and section is streamed as a Chrome Trace Event and the memory

@@ -10,11 +10,12 @@ class RPG2k
   #   (32, 0, 32, 32)  8px-thick frame border, split into 4 corners and 4 edges
   #
   # The window is a Viewport that clips its contents to the window rectangle.
-  # Rather than compositing everything into one Bitmap, three separate Sprites
-  # are layered inside the viewport by their `z`: the windowskin (background +
-  # frame), the selection cursor, and the contents (text and other graphics
-  # drawn by callers). Keeping them apart means updating the cursor or the text
-  # no longer forces the skin to be re-blitted.
+  # Rather than compositing everything into one Bitmap, separate Sprites are
+  # layered inside the viewport by their `z`: the windowskin (background +
+  # frame), the selection cursor, the contents (text and other graphics drawn
+  # by callers), and the blinking "waiting for input" arrow. Keeping them
+  # apart means updating the cursor or the text no longer forces the skin to
+  # be re-blitted.
   #
   # RPG2k::Window, not RGSS::Window: this is the RPG Maker 2000 window, and the
   # RGSS one is a different widget with a different windowskin layout that a
@@ -31,10 +32,24 @@ class RPG2k
     BORDER = 8
 
     # z of each layer within the window's viewport (skin at the back, text on
-    # top, cursor highlight sandwiched between them).
+    # top, cursor highlight sandwiched between them, the pause arrow in front
+    # of everything -- it overlays whatever contents happen to be under it).
     SKIN_Z = 0
     CURSOR_Z = 1
     CONTENTS_Z = 2
+    ARROW_Z = 3
+
+    # Geometry of the blinking "waiting for input" arrow: an 8px-tall strip
+    # inside the frame block (32,0)-(64,32) of the System windowskin, blitted
+    # centred at the bottom of the window. Unlike Game::WindowCursor, there is
+    # no real RPG_RT frame in this repo to measure this against, so the source
+    # rect and the 20-frames-on/20-frames-off blink are ported from EasyRPG
+    # Player's src/window.cpp.
+    ARROW_SRC_X = 40
+    ARROW_SRC_Y = 16
+    ARROW_W = 16
+    ARROW_H = 8
+    ARROW_BLINK_FRAMES = 20
 
     def initialize(x = 0, y = 0, width = 0, height = 0)
       @x = x
@@ -46,8 +61,10 @@ class RPG2k
       @cursor_rect = Rect.new(0, 0, 0, 0)
       @active = true
       @visible = true
+      @pause = false
+      @arrow_anim = 0
 
-      # The viewport groups and clips the three layers to the window rect.
+      # The viewport groups and clips the four layers to the window rect.
       @viewport = Viewport.new(x, y, [width, 1].max, [height, 1].max)
       @viewport.z = DEFAULT_Z
 
@@ -61,12 +78,17 @@ class RPG2k
       @contents_sprite.x = BORDER
       @contents_sprite.y = BORDER
       @contents_sprite.visible = false
+      @arrow_sprite = Sprite.new(@viewport)
+      @arrow_sprite.z = ARROW_Z
+      @arrow_sprite.visible = false
+      @arrow_bmp = Bitmap.new(ARROW_W, ARROW_H)
+      @arrow_sprite.bitmap = @arrow_bmp
 
       allocate_skin
     end
 
     attr_reader :x, :y, :width, :height, :contents, :windowskin, :cursor_rect
-    attr_reader :active, :visible
+    attr_reader :active, :visible, :pause
 
     def x=(v)
       @x = v
@@ -97,6 +119,7 @@ class RPG2k
     def windowskin=(bmp)
       @windowskin = bmp
       draw_skin
+      draw_arrow
       bmp
     end
 
@@ -131,14 +154,33 @@ class RPG2k
       @viewport.visible = v
     end
 
-    # Present so the game loop can drive per-frame behaviour (cursor blinking,
-    # etc.). The cursor is drawn steadily for now, so this is a no-op.
-    def update; end
+    # RPG2000's message-window "waiting for input" indicator: a small arrow
+    # blinking at the bottom-centre of the window. Turning it on always starts
+    # from a visible frame, matching RPG_RT.
+    def pause=(v)
+      v = v ? true : false
+      return v if v == @pause
+      @pause = v
+      @arrow_anim = 0
+      draw_arrow_visibility
+      v
+    end
+
+    # Present so the game loop can drive per-frame behaviour: advances the
+    # pause-arrow blink while `pause` is set. The cursor highlight itself is
+    # drawn steadily (RPG_RT alternates two cursor frames, but Nepheshel's own
+    # skin draws both identically -- see Game::WindowCursor), so nothing else
+    # needs a per-frame tick yet.
+    def update
+      return unless @pause
+      @arrow_anim = (@arrow_anim + 1) % (ARROW_BLINK_FRAMES * 2)
+      draw_arrow_visibility
+    end
 
     def dispose
       # Dispose the layers before the viewport so each Sprite tears its own
       # LVGL object down; disposing the viewport then only frees the frame.
-      [@skin_sprite, @cursor_sprite, @contents_sprite].each(&:dispose)
+      [@skin_sprite, @cursor_sprite, @contents_sprite, @arrow_sprite].each(&:dispose)
       @viewport.dispose
     end
 
@@ -150,14 +192,51 @@ class RPG2k
     end
 
     # (Re)create the skin and cursor bitmaps whenever the window is resized,
-    # then redraw both layers.
+    # then redraw both layers and re-centre the (fixed-size) arrow sprite.
     def allocate_skin
       @skin_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
       @skin_sprite.bitmap = @skin_bmp
       @cursor_bmp = Bitmap.new([@width, 1].max, [@height, 1].max)
       @cursor_sprite.bitmap = @cursor_bmp
+      position_arrow
       draw_skin
       draw_cursor
+    end
+
+    # Re-centre the arrow sprite at the bottom of the (possibly resized)
+    # window. Viewport-local coordinates, like every other layer here.
+    def position_arrow
+      @arrow_sprite.x = @width / 2 - ARROW_W / 2
+      @arrow_sprite.y = @height - ARROW_H
+    end
+
+    # (Re)draw the arrow bitmap from the current windowskin, or a plain
+    # fallback triangle when there is none to blit.
+    def draw_arrow
+      @arrow_bmp.clear
+      if @windowskin
+        @arrow_bmp.blt 0, 0, @windowskin,
+                       Rect.new(ARROW_SRC_X, ARROW_SRC_Y, ARROW_W, ARROW_H)
+      else
+        draw_arrow_fallback
+      end
+    end
+
+    # No windowskin to take the arrow art from: a small solid triangle,
+    # narrowing by a pixel on each side per row.
+    def draw_arrow_fallback
+      color = Color.new(232, 232, 248, 255)
+      ARROW_H.times do |row|
+        w = ARROW_W - row * 2
+        next if w <= 0
+        @arrow_bmp.fill_rect row, row, w, 1, color
+      end
+    end
+
+    # Show the arrow sprite only while paused and in the "on" half of the
+    # blink cycle.
+    def draw_arrow_visibility
+      @arrow_sprite.visible = @pause && @arrow_anim < ARROW_BLINK_FRAMES
     end
 
     # Redraw the windowskin layer (background + frame, or the fallback panel).
@@ -323,8 +402,15 @@ class RPG2k
   #   Toggle Fullscreen event command in interpreter.rb), so the word is
   #   accepted -- it must not be treated as an unknown/invalid argument -- but
   #   there is nothing left for it to switch.
+  #
+  # `test_play` is also true when src/main.cxx resolved this run as test play
+  # some other way -- the project's own Game.ini `[Game] Test=1`, or an
+  # explicit --test_play -- since a RPG_RT.exe launched by the real editor
+  # always carries the TestPlay word too; TEST_PLAY only exists when this is
+  # the native binary (see scripts/rpg2k_scene_check.rb, which loads this file
+  # under plain CRuby and never defines it).
   def initialize args
-    @test_play = args.include?('TestPlay')
+    @test_play = args.include?('TestPlay') || native_test_play?
     @hide_title = args.include?('HideTitle')
 
     @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
@@ -332,6 +418,14 @@ class RPG2k
     @scenes = []
     push Scene::Title.new self
   end
+
+  # See the TEST_PLAY comment on #initialize above.
+  def native_test_play?
+    TEST_PLAY
+  rescue StandardError
+    false
+  end
+  private :native_test_play?
 
   def push scene
     @scenes.push scene

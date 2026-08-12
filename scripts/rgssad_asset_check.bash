@@ -142,7 +142,7 @@ for which in with without ; do
     # it.
     if ! (cd "${WORK}/${which}" && \
           xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
-            --game_dir "${WORK}/${which}" --rgss_host_new_game \
+            --game_dir "${WORK}/${which}" --test_play --rgss_host_new_game \
             --timeout_ms="${TIMEOUT_MS}") >"${log}" 2>&1 ; then
         echo "FAILED: packed ${which}: the engine exited non-zero" >&2
         fail=1
