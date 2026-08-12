@@ -246,9 +246,20 @@ for game in "${GAMES[@]}" ; do
 
             # And the save screen, its own pass for the same reason. This is
             # the only place a game reads a file's timestamp back, and the
-            # only one that writes a file of its own.
+            # only one that writes a file of its own -- which the script_host
+            # and battle passes above cannot share the bed's directory with:
+            # a title screen offers Continue when it finds a save, changing
+            # what their confirm taps pick, and when RPGXP_BOOT_PASS splits
+            # these into concurrent CI steps a save written mid-run is exactly
+            # the kind of state a concurrent pass's own pre-run sweep (in
+            # run_boot, below) would delete out from under this one. Run it
+            # against a private copy of the bed instead, so its write can
+            # never race a sibling pass reading or cleaning the shared one.
             save)
-                if run_boot "${game}" "${num}" "script host: save" \
+                save_dir="${game}-save-copy"
+                rm -rf "${save_dir}"
+                cp -a "${game}" "${save_dir}"
+                if run_boot "${save_dir}" "${num}" "script host: save" \
                         "--rgss_host_save_test" 2 \
                         '\[RPGXP-HOST-SAVE\] .*reached=true' ; then
                     # ...and it has to land in the *game's* directory. The
@@ -258,17 +269,22 @@ for game in "${GAMES[@]}" ; do
                     # it, the file landed wherever the engine was launched
                     # from and the next game found it (Pray for You offered
                     # Continue on the strength of the editor bed's save and
-                    # died reading it as its own).
-                    if [ ! -f "${game}/Save1.rxdata" ] ; then
+                    # died reading it as its own). The private copy is still
+                    # the game's own directory as far as the engine is
+                    # concerned (it is exactly what --game_dir points at), so
+                    # the proof holds without touching the shared original.
+                    if [ ! -f "${save_dir}/Save1.rxdata" ] ; then
                         echo "FAILED: ${game} (script host: save): the" \
                              "game's own save did not land in its own" \
                              "directory" >&2
-                        ls -1 Save[0-9]*.rxdata 2>/dev/null >&2 || true
+                        ls -1 "${save_dir}"/Save[0-9]*.rxdata 2>/dev/null >&2 ||
+                            true
                         failed=$((failed + 1))
                     fi
                 else
                     failed=$((failed + 1))
                 fi
+                rm -rf "${save_dir}"
                 ;;
         esac
         num=$((num + 1))
