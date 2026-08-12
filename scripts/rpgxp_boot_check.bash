@@ -51,13 +51,24 @@
 # silently passed over -- but if *none* of them is present the check fails,
 # because then it proved nothing.
 #
-# Usage: ./scripts/rpgxp_boot_check.bash [server_num] [game_dir...]
+# Usage: RPGXP_BOOT_PASS=<pass> ./scripts/rpgxp_boot_check.bash [server_num] [game_dir...]
 #   server_num  xvfb-run --server-num to use (default 112; see the reserved
 #               display numbers in .github/workflows/build.yml). Each run takes
 #               the next one, and build.yml reserves 112..119 for this check so
 #               another probe can be added without renumbering anything else.
 #   game_dir    defaults to the repo's two RPG Maker XP beds -- the editor-shaped
 #               OpenGame test bed and the released Pray for You
+#   RPGXP_BOOT_PASS
+#               one of `script_host`, `battle`, `save`, or unset (default) to run
+#               every pass that applies to each requested game, as this script
+#               always did before this variable existed. The four passes across
+#               the two default beds are independent full engine boots that
+#               share nothing but the save-file sweep at the very end, so
+#               build.yml runs one per CI step (each on its own display number)
+#               instead of the four of them serially in one step -- see the
+#               `RPG XP real-game boot smoke` steps there. A pass that does not
+#               apply to a requested game (e.g. `battle` against a released
+#               game, which only ever gets a `script_host` pass) is skipped.
 
 set -eu -o pipefail
 
@@ -82,6 +93,17 @@ TIMEOUT_MS="${RPGXP_TIMEOUT_MS:-45000}"
 # make_action_orders with no way to ask for that run back. Override to hunt a
 # failure that only some seeds reach.
 RANDOM_SEED="${RPGXP_RANDOM_SEED:-20260806}"
+
+# Restrict this run to one pass (see the usage comment above). Empty means run
+# every pass that applies to each requested game, same as always.
+RPGXP_BOOT_PASS="${RPGXP_BOOT_PASS:-}"
+case "${RPGXP_BOOT_PASS}" in
+    ''|script_host|battle|save) ;;
+    *) echo "error: RPGXP_BOOT_PASS must be one of: script_host, battle, save" \
+            "(got '${RPGXP_BOOT_PASS}')" >&2
+       exit 1 ;;
+esac
+want_pass() { [ -z "${RPGXP_BOOT_PASS}" ] || [ "${RPGXP_BOOT_PASS}" = "$1" ] ; }
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
@@ -170,62 +192,103 @@ for game in "${GAMES[@]}" ; do
         echo "skip ${game}: no Game.ini (run scripts/download-opengame-xp.bash first)"
         continue
     fi
-    checked=$((checked + 1))
-    echo "== ${game}"
 
     # The editor test bed opens on a plain walkable map with the stock scripts,
     # so its walk and its menu are both assertions; a released game opens on a
     # cutscene, where a walk that does not happen and a menu that does not open
-    # say nothing about the engine. Both log everything either way.
+    # say nothing about the engine. Both log everything either way. Only the
+    # editor bed gets a battle and a save pass -- see those cases below.
     case "${game}" in
         *Testbed*) markers=('\[RPGXP-HOST-MOVE\] .*moved=true'
-                            '\[RPGXP-HOST-MENU\] .*opened=true') ;;
-        *)         markers=('\[RPGXP-HOST-SCENE\]') ;;
+                            '\[RPGXP-HOST-MENU\] .*opened=true')
+                   is_testbed=1 ;;
+        *)         markers=('\[RPGXP-HOST-SCENE\]')
+                   is_testbed=0 ;;
     esac
-    run_boot "${game}" "${num}" "script host" \
-        "--rgss_host_move_test --rgss_host_menu_test" 2 "${markers[@]}" ||
-        failed=$((failed + 1))
-    num=$((num + 1))
 
-    # Battle needs its own pass: it has to be called from the game's own map,
-    # and the pass above deliberately leaves the game inside its menu. Only the
-    # editor bed, whose stock database ships 32 troops -- a released game's
-    # opening is an event sequence that a battle call would land in the middle
-    # of, which says nothing about the engine.
-    case "${game}" in
-        *Testbed*)
-            run_boot "${game}" "${num}" "script host: battle" \
-                "--rgss_host_battle_test" 2 \
-                '\[RPGXP-HOST-BATTLE\] .*reached=true' ||
-                failed=$((failed + 1))
-            num=$((num + 1))
+    passes=()
+    want_pass script_host && passes+=(script_host)
+    if [ "${is_testbed}" -eq 1 ] ; then
+        want_pass battle && passes+=(battle)
+        want_pass save && passes+=(save)
+    fi
+    if [ "${#passes[@]}" -eq 0 ] ; then
+        if [ -n "${RPGXP_BOOT_PASS}" ] ; then
+            echo "skip ${game}: no '${RPGXP_BOOT_PASS}' pass for this game"
+        fi
+        continue
+    fi
 
-            # And the save screen, its own pass for the same reason. This is the
-            # only place a game reads a file's timestamp back, and the only one
-            # that writes a file of its own.
-            if run_boot "${game}" "${num}" "script host: save" \
-                    "--rgss_host_save_test" 2 \
-                    '\[RPGXP-HOST-SAVE\] .*reached=true' ; then
-                # ...and it has to land in the *game's* directory. The stock
-                # Scene_Save writes a bare "Save1.rxdata", so where that file
-                # ends up is the whole of what the engine's run-from-the-game's-
-                # directory behaviour is worth: before it, the file landed
-                # wherever the engine was launched from and the next game found
-                # it (Pray for You offered Continue on the strength of the
-                # editor bed's save and died reading it as its own).
-                if [ ! -f "${game}/Save1.rxdata" ] ; then
-                    echo "FAILED: ${game} (script host: save): the game's own" \
-                         "save did not land in its own directory" >&2
-                    ls -1 Save[0-9]*.rxdata 2>/dev/null >&2 || true
+    checked=$((checked + 1))
+    echo "== ${game}"
+
+    for pass in "${passes[@]}" ; do
+        case "${pass}" in
+            script_host)
+                run_boot "${game}" "${num}" "script host" \
+                    "--rgss_host_move_test --rgss_host_menu_test" 2 \
+                    "${markers[@]}" ||
+                    failed=$((failed + 1))
+                ;;
+
+            # Battle needs its own pass: it has to be called from the game's
+            # own map, and the script_host pass above deliberately leaves the
+            # game inside its menu. Only the editor bed, whose stock database
+            # ships 32 troops -- a released game's opening is an event
+            # sequence that a battle call would land in the middle of, which
+            # says nothing about the engine.
+            battle)
+                run_boot "${game}" "${num}" "script host: battle" \
+                    "--rgss_host_battle_test" 2 \
+                    '\[RPGXP-HOST-BATTLE\] .*reached=true' ||
+                    failed=$((failed + 1))
+                ;;
+
+            # And the save screen, its own pass for the same reason. This is
+            # the only place a game reads a file's timestamp back, and the
+            # only one that writes a file of its own -- which the script_host
+            # and battle passes above cannot share the bed's directory with:
+            # a title screen offers Continue when it finds a save, changing
+            # what their confirm taps pick, and when RPGXP_BOOT_PASS splits
+            # these into concurrent CI steps a save written mid-run is exactly
+            # the kind of state a concurrent pass's own pre-run sweep (in
+            # run_boot, below) would delete out from under this one. Run it
+            # against a private copy of the bed instead, so its write can
+            # never race a sibling pass reading or cleaning the shared one.
+            save)
+                save_dir="${game}-save-copy"
+                rm -rf "${save_dir}"
+                cp -a "${game}" "${save_dir}"
+                if run_boot "${save_dir}" "${num}" "script host: save" \
+                        "--rgss_host_save_test" 2 \
+                        '\[RPGXP-HOST-SAVE\] .*reached=true' ; then
+                    # ...and it has to land in the *game's* directory. The
+                    # stock Scene_Save writes a bare "Save1.rxdata", so where
+                    # that file ends up is the whole of what the engine's
+                    # run-from-the-game's-directory behaviour is worth: before
+                    # it, the file landed wherever the engine was launched
+                    # from and the next game found it (Pray for You offered
+                    # Continue on the strength of the editor bed's save and
+                    # died reading it as its own). The private copy is still
+                    # the game's own directory as far as the engine is
+                    # concerned (it is exactly what --game_dir points at), so
+                    # the proof holds without touching the shared original.
+                    if [ ! -f "${save_dir}/Save1.rxdata" ] ; then
+                        echo "FAILED: ${game} (script host: save): the" \
+                             "game's own save did not land in its own" \
+                             "directory" >&2
+                        ls -1 "${save_dir}"/Save[0-9]*.rxdata 2>/dev/null >&2 ||
+                            true
+                        failed=$((failed + 1))
+                    fi
+                else
                     failed=$((failed + 1))
                 fi
-            else
-                failed=$((failed + 1))
-            fi
-            ;;
-    esac
-
-    num=$((num + 1))
+                rm -rf "${save_dir}"
+                ;;
+        esac
+        num=$((num + 1))
+    done
 done
 
 # The save pass leaves a real save file in the bed it ran on; take it back out
