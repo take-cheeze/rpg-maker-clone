@@ -776,8 +776,16 @@ class RPG2k
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
         if it.waiting?
+          wait_kind = it.wait_kind
           drive_parallel_wait(p, it)
-        elsif it.running?
+          # A plain Wait resolves the instant its timer elapses; keep spending
+          # this same frame's step budget instead of losing a frame to the
+          # resume, matching drive_event's foreground handling (see there for
+          # why: Wait 0.0 sec must cost exactly one frame). Other wait kinds
+          # keep their old one-frame-per-call pacing.
+          return apply_interpreter_requests(it, p[:event]) unless wait_kind == :wait && !it.waiting?
+        end
+        if it.running?
           it.update
         else
           it.start(p[:commands]) # loop the process
@@ -1944,7 +1952,17 @@ class RPG2k
           when :inn then drive_inn
           when :shop then drive_shop
           when :battle then drive_battle
-          when :wait then drive_wait
+          when :wait
+            drive_wait
+            # RPG_RT resumes a Wait the instant its timer elapses and keeps
+            # spending that same frame's step budget -- Wait 0.0 sec is
+            # documented as costing exactly one frame (1/60s), not two, so the
+            # command right after it must not wait for a second frame here.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+            return
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?

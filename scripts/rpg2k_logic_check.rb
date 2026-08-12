@@ -1091,6 +1091,81 @@ check 'a self-calling common event terminates instead of hanging' do
   ok !it.running?, 'recursion was bounded and the process ended'
 end
 
+# A resolver that counts every Call Event lookup instead of answering with
+# real commands, so a Call Event round trip stays a one-command no-op (the
+# empty-target early return in do_call_event) whose count is still visible.
+class CountingResolver
+  attr_reader :calls
+  def initialize
+    @calls = 0
+  end
+
+  def common_event_commands(_id)
+    @calls += 1
+    []
+  end
+
+  def map_event_commands(_id, _page); nil; end
+end
+
+check 'a single update spends its 10000-step budget at the documented per-command cost' do
+  # RPG_RT's own timing measurements give most commands one step, but a Loop's
+  # End Loop marker and a Call Event round trip cost two -- see the event
+  # command spec. These two checks pin that MAX_STEPS (10000) is spent at
+  # those weights, not a flat one step per command.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::LOOP, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 1, 0, 1], indent: 0), # variable 1 += 1
+    FakeCmd.new(IC::END_LOOP, [], indent: 0),
+  ])
+  it.update
+  eq 3333, st.variables[1],
+     '10000 steps / (1 for the add + 2 for the loop-back) per iteration'
+
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.resolver = CountingResolver.new
+  it2.start(Array.new(6000) { FakeCmd.new(IC::CALL_EVENT, [0, 1, 0]) })
+  it2.update
+  eq 5000, it2.resolver.calls, '10000 steps / 2 per Call Event round trip'
+end
+
+check 'a Conditional Branch costs one step when matched, two when not' do
+  # Per the event command spec, a Conditional Branch evaluation is one step
+  # when it matches (falling through into the true body) and two when it does
+  # not. A block here is a bare [Conditional Branch, End Branch] pair (no
+  # body), which also exercises the asymmetry in how each path reaches End
+  # Branch: a match falls through to it as an ordinary next command (so it is
+  # separately dispatched and pays its own two-step cost, for 1+2=3 per
+  # block); a miss jumps straight past it via #skip_to/#consume inside the
+  # same do_conditional call, so it is never independently dispatched (just
+  # the 2-step miss, for 2 per block) -- cheaper overall despite costing more
+  # to evaluate.
+  st = new_state
+  st.switches[1] = true
+  matched = Game::Interpreter.new(st)
+  matched.start(Array.new(4000) {
+    [FakeCmd.new(IC::CONDITIONAL, [0, 1, 0], indent: 0), # switch 1 == on
+     FakeCmd.new(IC::END_BRANCH, [], indent: 0)]
+  }.flatten)
+  matched.update
+  eq 3333, matched.instance_variable_get(:@index) / 2,
+     '10000 steps / (1 to match + 2 for the End Branch it falls through to) per block'
+
+  st2 = new_state
+  st2.switches[1] = false
+  unmatched = Game::Interpreter.new(st2)
+  unmatched.start(Array.new(6000) {
+    [FakeCmd.new(IC::CONDITIONAL, [0, 1, 0], indent: 0), # switch 1 == on (it is not)
+     FakeCmd.new(IC::END_BRANCH, [], indent: 0)]
+  }.flatten)
+  unmatched.update
+  eq 5000, unmatched.instance_variable_get(:@index) / 2,
+     '10000 steps / 2 per miss, with no separate End Branch dispatch to pay for'
+end
+
 check 'Call Event with no resolver set is a safe no-op' do
   st = new_state
   it = Game::Interpreter.new(st)

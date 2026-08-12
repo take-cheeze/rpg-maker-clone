@@ -174,7 +174,9 @@ module Game
 
     # Upper bound on nested Call Event depth, so a common event that (directly or
     # indirectly) calls itself unwinds instead of growing the stack without end.
-    MAX_CALL_DEPTH = 100
+    # RPG_RT allows 1000 levels (not counting the original caller) before it
+    # aborts the process with an "invalid event call" error.
+    MAX_CALL_DEPTH = 1000
 
     def initialize(state)
       @state = state
@@ -428,9 +430,11 @@ module Game
       name
     end
 
-    # Upper bound on commands run in a single update, so a malformed loop cannot
-    # hang the game loop.
-    MAX_STEPS = 1_000_000
+    # Upper bound on commands run in a single update (one map frame): RPG_RT
+    # processes at most 10000 "steps" of event commands per 1/60s frame, after
+    # which the rest waits for the next frame -- this is what makes a
+    # tight/heavy loop visibly slow down the game instead of freezing it.
+    MAX_STEPS = 10_000
 
     # Advance through commands until the list ends or a command asks to wait.
     # When the current (possibly called) list runs out, control returns to the
@@ -446,10 +450,27 @@ module Game
         cmd = @list[@index]
         @index += 1
         execute cmd
-        steps += 1
+        steps += step_cost(cmd.code)
         break if steps >= MAX_STEPS
       end
       @running = false if finished?
+    end
+
+    # Per-command cost against the MAX_STEPS budget. Most commands cost one
+    # step; a handful cost more because RPG_RT's own timing measurements show
+    # them taking roughly twice as long to process: each loop iteration (the
+    # End Loop marker looping back), a Call Event round trip, and a Conditional
+    # Branch evaluation that falls through to its else/end (an unmatched
+    # condition, or an End Branch reached after a matched one).
+    def step_cost(code)
+      case code
+      when Cmd::END_LOOP, Cmd::CALL_EVENT, Cmd::CALL_COMMON_EVENT, Cmd::END_BRANCH
+        2
+      when Cmd::CONDITIONAL
+        @last_condition_matched ? 1 : 2
+      else
+        1
+      end
     end
 
     # True when nothing is left to run: the current list is exhausted, no caller
@@ -1975,7 +1996,8 @@ module Game
     # -- conditional branch ---------------------------------------------------
 
     def do_conditional(cmd)
-      return if eval_condition(cmd) # fall through into the true branch
+      @last_condition_matched = eval_condition(cmd)
+      return if @last_condition_matched # fall through into the true branch
       skip_to([Cmd::ELSE_BRANCH, Cmd::END_BRANCH], cmd.indent)
       consume # step past the else/end marker to run the else body (or continue)
     end

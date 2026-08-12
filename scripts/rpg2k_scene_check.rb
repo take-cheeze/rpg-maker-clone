@@ -885,6 +885,39 @@ check 'parallel (trigger 4): a background event runs every frame' do
   ok v >= 8, "parallel event should have looped ~10 times, got #{v}"
 end
 
+check 'Wait 0.0 sec pauses a foreground event for exactly one frame' do
+  # RPG_RT pauses a Wait 0.0 command and resumes it on the very next frame,
+  # since 0 seconds have already elapsed by then -- so it costs exactly one
+  # frame (1/60s), the same as any other single-frame pause, not two.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+                       ECmd.new(ic::WAIT, [0]), # 0.0 seconds
+                       ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0])]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.switches[1], 'the command before the wait ran on the first frame'
+  ok !st.switches[2], 'the command after Wait 0.0 must not run on that same frame'
+  scene.update
+  ok st.switches[2], 'Wait 0.0 sec costs exactly one frame, not two'
+end
+
+check 'Wait 0.0 sec doubles a parallel process lap gap to two frames' do
+  # A parallel process already gets a free one-frame gap between laps with no
+  # explicit wait at all (the check above). Adding a Wait 0.0 stacks one more
+  # frame on top, for a 2-frame (1/30s) gap -- not the free gap alone, and not
+  # three frames from an extra "detect it finished" frame.
+  pg = page(trigger: 4)
+  pg.event_commands = [add_var_cmd(1), ECmd.new(Game::Interpreter::Cmd::WAIT, [0])]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  4.times { scene.update }
+  eq 2, st.variables[1], 'two laps (increment + wait) should have run in four frames'
+  scene.update
+  eq 3, st.variables[1], 'a third lap starts on the fifth frame'
+end
+
 check 'an auto-start event reads its own position ("this event", ref 10005)' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
