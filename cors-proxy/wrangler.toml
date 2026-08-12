@@ -28,5 +28,5 @@ CACHE_MAX_BYTES = "268435456"   # skip caching (not proxying) anything bigger
 # bucket once, then uncomment:
 #   npx wrangler r2 bucket create rpg-maker-cors-proxy-cache
 [[r2_buckets]]
-binding = "rpg_maker_cors_proxy_cache"
+binding = "ARCHIVE_CACHE"
 bucket_name = "rpg-maker-cors-proxy-cache"
