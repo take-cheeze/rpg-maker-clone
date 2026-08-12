@@ -1,5 +1,7 @@
 #include "terminal.hxx"
 
+#include "profiler.hxx"
+
 #include <atomic>
 #include <cerrno>
 #include <condition_variable>
@@ -57,12 +59,15 @@ bool g_termios_saved = false;
 std::vector<uint8_t> g_fb;
 
 // Emit-rate statistics: how many bytes the active encoder pushes to the
-// terminal, recomputed about once a second and drawn on-screen just under the
-// control legend.  On by default; toggled with --term_stats.
+// terminal, plus the fps-cap frame drops reported through profiler.hxx
+// (profiler_total_frame_drops(), which is tracked unconditionally, not just
+// under --profile). Recomputed about once a second and drawn on-screen just
+// under the control legend.  On by default; toggled with --term_stats.
 bool g_stats = true;
 uint64_t g_stats_bytes = 0;   // bytes written to the terminal this interval
 uint32_t g_stats_frames = 0;  // frames emitted this interval
 uint32_t g_stats_last_ms = 0;
+uint32_t g_stats_drops_mark = 0;  // profiler_total_frame_drops() at last report
 bool g_stats_started = false;
 std::string
     g_stats_line;  // last formatted report, drawn by terminal_append_stats
@@ -343,6 +348,7 @@ void maybe_report_stats(uint32_t now) {
   if (!g_stats_started) {  // anchor the first interval; don't report a partial
     g_stats_started = true;
     g_stats_last_ms = now;
+    g_stats_drops_mark = profiler_total_frame_drops();
     return;
   }
   const uint32_t dt = now - g_stats_last_ms;
@@ -355,14 +361,17 @@ void maybe_report_stats(uint32_t now) {
       g_stats_frames
           ? static_cast<double>(g_stats_bytes) / g_stats_frames / 1024.0
           : 0.0;
-  char buf[128];
+  const uint32_t total_drops = profiler_total_frame_drops();
+  const uint32_t drops = total_drops - g_stats_drops_mark;
+  char buf[160];
   std::snprintf(buf, sizeof(buf),
-                "term_stats: %.1f KB/frame  %.2f MB/s  %.1f fps", kb_per_frame,
-                mbps, fps);
+                "term_stats: %.1f KB/frame  %.2f MB/s  %.1f fps  drops=%u",
+                kb_per_frame, mbps, fps, drops);
   g_stats_line.assign(buf);
   g_stats_bytes = 0;
   g_stats_frames = 0;
   g_stats_last_ms = now;
+  g_stats_drops_mark = total_drops;
 }
 
 // Current terminal width in columns, so console rows can be truncated to avoid

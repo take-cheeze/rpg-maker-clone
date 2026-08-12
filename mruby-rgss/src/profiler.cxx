@@ -65,6 +65,13 @@ struct SectionAgg {
 FrameAgg g_frames;
 std::map<std::string, SectionAgg> g_sections;
 
+// Cumulative dropped-frame count, kept outside the interval aggregation and
+// updated unconditionally (not gated by g_enabled): the terminal backend's
+// always-on stats overlay (mruby-rgss/src/terminal.cxx, --term_stats) shows
+// drops even when --profile is off, by diffing this against its own interval
+// mark the same way it already does for bytes/frames emitted.
+uint32_t g_total_drops = 0;
+
 uint64_t g_frame_start = 0;       // now_ns() at the current frame_begin()
 uint64_t g_frame_idle_ns = 0;     // idle reported within the current frame
 uint64_t g_interval_start = 0;    // now_ns() when the interval opened
@@ -390,11 +397,16 @@ void profiler_note_idle(uint32_t idle_ms) {
 }
 
 void profiler_note_frame_drop() {
+  ++g_total_drops;
   if (!g_enabled)
     return;
   ++g_frames.drops;
   if (g_trace_file)
     trace_instant("frame_drop", now_ns());
+}
+
+uint32_t profiler_total_frame_drops() {
+  return g_total_drops;
 }
 
 void profiler_frame_end() {

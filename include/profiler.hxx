@@ -56,10 +56,18 @@ void profiler_note_idle(uint32_t idle_ms);
 
 // Record a dropped frame: the fps-cap pacing in Graphics.update missed its
 // deadline by more than one frame period and had to rebase, i.e. a frame the
-// game could not keep up with. Aggregated per interval and included in the
-// summary line, `RGSS::Profiler.stats`, and (when tracing) an instant marker
-// in the Chrome trace. No-op when profiling is disabled.
+// game could not keep up with. Always bumps the cumulative count returned by
+// profiler_total_frame_drops(), regardless of profiler_configure(); when
+// profiling is enabled it is additionally aggregated per interval and
+// included in the summary line, `RGSS::Profiler.stats`, and (when tracing) an
+// instant marker in the Chrome trace.
 void profiler_note_frame_drop();
+
+// Cumulative dropped-frame count since process start, tracked unconditionally
+// (unlike the rest of this file, not gated by profiler_configure()) so
+// always-on consumers -- the terminal backend's --term_stats overlay -- can
+// show it without turning --profile on.
+uint32_t profiler_total_frame_drops();
 
 // Named-section timing primitives. profiler_section_begin() returns an opaque
 // start stamp to hand back to profiler_section_end(); the elapsed time is
