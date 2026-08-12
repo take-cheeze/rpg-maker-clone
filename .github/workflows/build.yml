@@ -206,13 +206,19 @@ jobs:
       - name: Prepare screenshot dir
         run: mkdir -p ss
 
-      # Every post-build check is independent and each is a separate, mostly
-      # IO-/timeout-bound process that reads the (now built) binary and the
-      # downloaded data read-only, so they run concurrently in one `parallel`
-      # group (implicit wait at the end). The MV smoke tests stay non-blocking
-      # (continue-on-error) while the MV runtime is brought up; the required
-      # checks (LCF / RPG XP / RPG2k / ctest) fail the group — and the job — if
-      # they fail. Each xvfb-run instance gets a fixed, distinct display number
+      # Every post-build check here is independent and each is a separate,
+      # mostly IO-/timeout-bound process that reads the (now built) binary and
+      # the downloaded data read-only, so they run concurrently in one
+      # `parallel` group (implicit wait at the end). The Ruby-only checks that
+      # used to sit in this group (LCF, the RPG XP data/script-host checks,
+      # RPG2k's event soak/logic/testbed-logic checks) never touched the
+      # binary at all, so they moved to the `ruby-checks` job below, which
+      # skips `cmake`/`build` entirely and does not have to wait on it. The MV
+      # smoke tests stay non-blocking (continue-on-error) while the MV runtime
+      # is brought up; the required checks that remain here (the RPG2k/RPG XP
+      # real-game boot smokes, the RGSSAD packed-asset smoke and ctest) fail
+      # the group — and the job — if they fail. Each xvfb-run instance gets a
+      # fixed, distinct display number
       # (--server-num) and a distinct screenshot path, so the concurrent runs
       # never collide. `xvfb-run -a` (auto-picked display) is deliberately
       # avoided: its server-number probe is not atomic, so concurrent -a runs
@@ -393,66 +399,6 @@ jobs:
             env:
               MZ_MODE: animation
             run: ./scripts/nix-develop.bash ./scripts/mz_boot_check.bash 111
-
-          - name: LCF test-bed smoke check
-            run: ./scripts/nix-develop.bash ruby scripts/lcf_testbed_check.rb
-
-          # The interpreter against every event command the downloaded games
-          # ship (371k of them), asserting that none raises and none reaches a
-          # handler's "I do not know this" arm. The unit checks pin the
-          # semantics against hand-written commands; this covers the parameter
-          # shapes real games use, which no fixture set reaches.
-          - name: RPG2k event-command soak
-            run: ./scripts/nix-develop.bash ruby scripts/rpg2k_command_soak.rb
-
-          - name: RPG XP test-bed smoke check
-            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_testbed_check.rb
-
-          - name: RPG XP script-host smoke check
-            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_script_host_check.rb
-
-          # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
-          # open-source test bed (the editors and their RTPs are commercial), so
-          # this check builds a full project per edition and drives the loader
-          # over it — loose on disk and repacked into the edition's encrypted
-          # archive — plus an audit that every field in the data has an accessor
-          # in the schema. It also picks up any real VX/VX Ace project that a
-          # future download step unpacks under data/.
-          - name: RPG VX / VX Ace data check
-            run: ./scripts/nix-develop.bash ruby scripts/rpgvx_testbed_check.rb
-
-          # Validate the committed MV test-bed database (data/mv-sample) before
-          # the non-blocking native MV smokes below. Pure CRuby, no JS engine —
-          # a blocking guard against a sample-data regression that would
-          # silently break the map/battle/message smokes. Pinned to the
-          # committed bed so it stays deterministic even though this parallel
-          # group may run alongside the MV game download.
-          - name: MV test-bed data check
-            run: ./scripts/nix-develop.bash ruby scripts/mv_testbed_check.rb data/mv-sample
-
-          # The same blocking guard for the MZ bed (data/mz-sample, authored by
-          # scripts/gen-mz-sample.py). MZ's boot is fussier than MV's about two
-          # things a JSON-shape check cannot see — the ButtonSet sheet's minimum
-          # size, which Sprite_Button *asserts*, and the "no effect on passage"
-          # flag on the empty tile, without which no wall blocks — so this runs
-          # ahead of the non-blocking native MZ smoke below.
-          - name: MZ test-bed data check
-            run: ./scripts/nix-develop.bash ruby scripts/mz_testbed_check.rb data/mz-sample
-
-          - name: RPG2k game-logic checks
-            run: |
-              ./scripts/nix-develop.bash ruby scripts/rpg2k_logic_check.rb
-              ./scripts/nix-develop.bash ruby scripts/rpg2k_scene_check.rb
-              ./scripts/nix-develop.bash ruby scripts/rpg2k_render_check.rb
-
-          # The join of the two check kinds above: real test-bed databases
-          # (LCF test-bed smoke check's data) driven through the real
-          # Game::Interpreter, so a rule only genuine game data violates gets
-          # caught. Its first subject is Nepheshel's companion swaps — the
-          # party-roster bug of ADR 0030 passed every fixture check. Skips with
-          # exit 0 when no game has been downloaded.
-          - name: RPG2k test-bed logic check
-            run: ./scripts/nix-develop.bash ruby scripts/rpg2k_testbed_logic_check.rb
 
           - name: test
             run: |
@@ -753,6 +699,123 @@ jobs:
             ss/mz_save.png
             ss/mz_battle.png
           if-no-files-found: warn
+
+  # Ruby-only checks split out of `build`: none of the nine steps below ever
+  # touches the compiled engine binary (they load the mruby-*/mrblib sources
+  # directly under CRuby), so unlike everything left in `build`'s `parallel:`
+  # group they do not need to wait on `cmake`/`build` -- the native compile
+  # that job's own comments call "the long pole". This job skips the C++
+  # toolchain entirely: no cmake, no sccache, no RTP/MV/MZ engine downloads,
+  # just checkout + the dev shell + the one game download these checks
+  # actually read (`download-*.bash` below; see rpg2k_command_soak.rb, the
+  # one script here that hard-fails rather than skips when it finds nothing
+  # under data/) + the checks themselves. It runs alongside `build`, not
+  # after it, so these checks report back in well under a minute instead of
+  # queueing behind several minutes of C++ compile first, and `build`'s own
+  # `parallel:` group has a few fewer steps competing for its worker slots.
+  ruby-checks:
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+
+    env:
+      # See the `build` job for what this is; the same game-archive downloads
+      # run here.
+      CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
+
+      # Keep the tc39/test262 clone out of CI; see the `build` job.
+      - name: Skip the quickjs test262 submodule
+        run: ./scripts/skip-quickjs-test262.bash
+        env:
+          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - run: ./scripts/nix-develop.bash echo test
+
+      - name: cache test game
+        uses: actions/cache@v6
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './scripts/gen-sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
+
+      - name: Download game
+        run: |
+          ./scripts/nix-develop.bash ./scripts/download-nepheshel.bash
+          ./scripts/nix-develop.bash ./scripts/download-mtf-meido-action.bash
+          ./scripts/nix-develop.bash ./scripts/download-opengame-xp.bash
+          ./scripts/nix-develop.bash ./scripts/download-prayforyou.bash
+
+      - parallel:
+          - name: LCF test-bed smoke check
+            run: ./scripts/nix-develop.bash ruby scripts/lcf_testbed_check.rb
+
+          # The interpreter against every event command the downloaded games
+          # ship (371k of them), asserting that none raises and none reaches a
+          # handler's "I do not know this" arm. The unit checks pin the
+          # semantics against hand-written commands; this covers the parameter
+          # shapes real games use, which no fixture set reaches.
+          - name: RPG2k event-command soak
+            run: ./scripts/nix-develop.bash ruby scripts/rpg2k_command_soak.rb
+
+          - name: RPG XP test-bed smoke check
+            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_testbed_check.rb
+
+          - name: RPG XP script-host smoke check
+            run: ./scripts/nix-develop.bash ruby scripts/rpgxp_script_host_check.rb
+
+          # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
+          # open-source test bed (the editors and their RTPs are commercial), so
+          # this check builds a full project per edition and drives the loader
+          # over it — loose on disk and repacked into the edition's encrypted
+          # archive — plus an audit that every field in the data has an accessor
+          # in the schema. It also picks up any real VX/VX Ace project that a
+          # future download step unpacks under data/.
+          - name: RPG VX / VX Ace data check
+            run: ./scripts/nix-develop.bash ruby scripts/rpgvx_testbed_check.rb
+
+          # Validate the committed MV test-bed database (data/mv-sample). Pure
+          # CRuby, no JS engine — a guard against a sample-data regression
+          # that would silently break the native MV smokes in the `build` job.
+          - name: MV test-bed data check
+            run: ./scripts/nix-develop.bash ruby scripts/mv_testbed_check.rb data/mv-sample
+
+          # The same guard for the MZ bed (data/mz-sample, authored by
+          # scripts/gen-mz-sample.py). MZ's boot is fussier than MV's about two
+          # things a JSON-shape check cannot see — the ButtonSet sheet's
+          # minimum size, which Sprite_Button *asserts*, and the "no effect on
+          # passage" flag on the empty tile, without which no wall blocks.
+          - name: MZ test-bed data check
+            run: ./scripts/nix-develop.bash ruby scripts/mz_testbed_check.rb data/mz-sample
+
+          - name: RPG2k game-logic checks
+            run: |
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_logic_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_scene_check.rb
+              ./scripts/nix-develop.bash ruby scripts/rpg2k_render_check.rb
+
+          # The join of the two check kinds above: real test-bed databases
+          # (LCF test-bed smoke check's data) driven through the real
+          # Game::Interpreter, so a rule only genuine game data violates gets
+          # caught. Its first subject is Nepheshel's companion swaps — the
+          # party-roster bug of ADR 0030 passed every fixture check. Skips
+          # with exit 0 when no game has been downloaded.
+          - name: RPG2k test-bed logic check
+            run: ./scripts/nix-develop.bash ruby scripts/rpg2k_testbed_logic_check.rb
 
   # `/preview` command gate. Cloudflare previews are opt-in per pull request:
   # they are published when someone with write access comments `/preview` on the
