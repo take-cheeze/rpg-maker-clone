@@ -1391,6 +1391,15 @@ module Game
       party.gain_item(item, cmd.param(0) == 0 ? amount : -amount)
     end
 
+    # Change Party Member (10330): add or remove the actor named by param2 (a
+    # constant, or a variable when param1 is 1). Either can change who leads
+    # the party — an add when the party was empty, a remove of the current
+    # leader — and RPG_RT's `Game_Player::Refresh` runs on every such change,
+    # not only on Change Sprite Association, so the on-screen hero sprite
+    # (loaded from the leader's CharSet) has to be reloaded here too. Without
+    # this a companion swap left the map showing whichever leader's graphic
+    # happened to be cached, which for Nepheshel's 5205 Change Party Member
+    # commands is most of the game.
     def do_change_party(cmd)
       actor = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
       if cmd.param(0) == 0
@@ -1398,6 +1407,7 @@ module Game
       else
         party.remove_actor(actor)
       end
+      @actor_graphic_changed = true
       check_game_over
     end
 

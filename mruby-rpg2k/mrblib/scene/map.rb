@@ -4153,7 +4153,15 @@ class RPG2k
         @moving = false
         @move_count = 0
         @last_frame = nil
-        @interpreter.stop
+        # Resume, not stop: RPG_RT keeps running the rest of the event's own
+        # command list after a Teleport lands, and the standard "fade to black,
+        # teleport, fade back in" transition depends on it -- an Erase Screen
+        # before the Teleport is paired with a Show Screen right after it, in
+        # the SAME event, meant to run once the destination map is up. Stopping
+        # here threw that trailing Show Screen away, so the erase overlay was
+        # never lifted and the game stayed black from the first such teleport
+        # on (this pattern opens Nepheshel's very first scene transition).
+        @interpreter.resume
       rescue StandardError => e
         $stderr.puts "[RPG2k] Teleport failed: #{e.message}"
         @interpreter.stop
