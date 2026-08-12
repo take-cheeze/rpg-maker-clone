@@ -289,10 +289,50 @@ class MZ
     "addLoadListener: function(){}, volume: 0, pitch: 0, pan: 0, seek: 0 }; }; " \
     "})(globalThis);".freeze
 
+  # Installed only for headless/CI runs (see #render_skip_enabled?, gated on
+  # the same --no_render_wait flag as RGSS::Graphics.update's frame-pacing
+  # skip). Wraps PIXI's real render call so #main_loop can suppress it on
+  # every frame but the one #maybe_screenshot actually captures.
+  #
+  # Safe to skip almost every frame's render because nothing else looks at a
+  # pixel: `Graphics._onTick` (rmmz_core.js) runs `SceneManager.updateMain`
+  # — scene transitions, fades, animation counters, all of it — as a
+  # completely separate step from `this._app.render()`, and every
+  # `maybe_*_test`/`*_shot_ready?` probe in this file reads JS or Ruby state,
+  # never the framebuffer. So game state at the moment a capture is due is
+  # identical whether or not the frames leading up to it were ever rasterised
+  # — only the *pixels* of the skipped frames are lost, and nothing reads
+  # those. Measured on data/mz-sample's `play` mode: the real WebGL render
+  # was ~95% of the JS pump's time (software GL on the surfaceless-EGL
+  # backend), so skipping it on the frames nobody looks at is most of a
+  # headless run's cost.
+  #
+  # Installed once `Graphics._app` exists — `SceneManager.run` builds the
+  # PIXI.Application synchronously (Graphics.initialize -> _createPixiApp)
+  # before returning, so evaluating this right after the `SceneManager.run`
+  # call in #boot_probe always finds it. Guarded on `Graphics.__mzRealRender`
+  # so a second eval (there is none today) would not double-wrap.
+  RENDER_SKIP_BRIDGE_JS =
+    "(function(){ if (typeof Graphics === 'undefined' || !Graphics._app || " \
+    "Graphics.__mzRealRender) return; " \
+    "var app = Graphics._app; " \
+    "Graphics.__mzRealRender = app.render.bind(app); " \
+    "Graphics.__mzSkipRender = true; " \
+    "app.render = function(){ " \
+    "if (!Graphics.__mzSkipRender) Graphics.__mzRealRender(); }; " \
+    "Graphics.__mzForceRender = function(){ Graphics.__mzRealRender(); }; " \
+    "})();".freeze
+
   class << self
     # The canonical MZ script load order (see CORE_SCRIPTS).
     def core_scripts
       CORE_SCRIPTS
+    end
+
+    # The JS that lets headless/CI runs skip PIXI's real render on frames
+    # nobody looks at (see RENDER_SKIP_BRIDGE_JS).
+    def render_skip_bridge_js
+      RENDER_SKIP_BRIDGE_JS
     end
 
     # The JS that routes MZ's audio through RGSS::Audio: MV's shared bridge plus
@@ -967,6 +1007,19 @@ class MZ
   end
 
   private
+
+  # Whether this is a headless/CI run that should skip PIXI's real WebGL
+  # render on frames nobody looks at (see RENDER_SKIP_BRIDGE_JS) and the
+  # on-screen present() readback (see #present) that exists only to display
+  # frames nobody is watching. Reuses --no_render_wait (native-side constant,
+  # src/main.cxx): a run that has already opted out of real-time frame
+  # pacing has no use for intermediate renders or a live on-screen picture
+  # either — both flags exist for the same headless-smoke-test case.
+  def render_skip_enabled?
+    NO_RENDER_WAIT
+  rescue StandardError
+    false
+  end
 
   # Advance the JavaScript host by one frame. This is the whole of MZ's update:
   # `SceneManager.run` hands the loop to `Graphics.startGameLoop`, which starts
@@ -2209,11 +2262,29 @@ class MZ
     return if equip_test_requested? && !equip_shot_ready?
 
     @shot_taken = true
+    force_render_before_capture
     handle = mz_gl_handle
     ok = handle && handle > 0 && MV::JS.screenshot_gl(path, handle)
     $stderr.puts "[MZ] screenshot #{ok ? "saved" : "failed"}: #{path}"
   rescue StandardError => e
     $stderr.puts "[MZ] screenshot error: #{e.message}"
+  end
+
+  # Render-skip runs (see #render_skip_enabled?) never let PIXI rasterise a
+  # frame except this one: `screenshot_gl` reads the WebGL FBO directly, so
+  # without a real render just before it the capture would read back whatever
+  # a run that skips almost every frame's render last happened to draw —
+  # stale, or on a run whose render was skipped from the very first frame,
+  # never drawn at all. `Graphics.__mzForceRender` (RENDER_SKIP_BRIDGE_JS)
+  # renders once with the game state already current as of this frame's
+  # `#pump_frame`, so the capture is exactly what an unskipped run would have
+  # shown here. A no-op (and safe to call) when render-skip was never armed.
+  def force_render_before_capture
+    return unless render_skip_enabled?
+    MV::JS.eval(
+      "(function(){ if (typeof Graphics !== 'undefined' && " \
+      "Graphics.__mzForceRender) Graphics.__mzForceRender(); })();"
+    )
   end
 
   # Has the battle probe reported *and* had BATTLE_SHOT_GRACE_FRAMES to fade in?
@@ -2359,8 +2430,14 @@ class MZ
   # the WebGL canvas' FBO during SceneManager.update; MV::JS.present_gl reads that
   # FBO back and blits it into the sprite's bitmap (marking it dirty) so the next
   # Graphics.update draws it.
+  #
+  # Skipped entirely on a render-skip run (#render_skip_enabled?): its whole
+  # purpose is a live picture for something watching the screen, and nothing
+  # is — the captured screenshot reads the WebGL FBO straight (see
+  # #force_render_before_capture), never this bitmap.
   def present
     return unless @screen_bitmap
+    return if render_skip_enabled?
     handle = mz_gl_handle
     unless @present_logged
       @present_logged = true
@@ -2448,6 +2525,12 @@ class MZ
       "try { SceneManager.run(Scene_Boot); } catch(e){ SceneManager.__mzErr = " \
       "(e && (e.stack || e.message)) || String(e); } })();"
     )
+
+    # Headless/CI only (see #render_skip_enabled?): `SceneManager.run` above
+    # built `Graphics._app` synchronously, so the render-skip bridge can be
+    # installed right away and cover every frame from here on, including the
+    # boot-probe loop below.
+    MV::JS.eval(self.class.render_skip_bridge_js) if render_skip_enabled?
 
     # Drive frames until the boot scene hands over to the next one (normally
     # Scene_Title). Scene_Boot is a *loading* scene: it polls its database,

@@ -189,6 +189,51 @@ assert 'the MZ audio bridge queues ops and neutralises the eager preload' do
   assert_equal "audio/se/Beep", call[1]
 end
 
+assert 'MZ.render_skip_bridge_js only wraps once Graphics._app exists' do
+  js = MZ.render_skip_bridge_js
+  assert_true js.include?("Graphics._app")
+  # The idempotency guard: a second eval must not double-wrap an already
+  # wrapped render (see the effect test below for what double-wrapping would
+  # do — call the real render twice per app.render() call).
+  assert_true js.include?("Graphics.__mzRealRender")
+end
+
+assert 'the MZ render-skip bridge suppresses render() until forced' do
+  # Exercised against the real host with a stand-in Graphics/PIXI.Application,
+  # so this checks the bridge's *effect* rather than its text. rmmz itself is a
+  # fetched, CI-only fixture and is not present in this test build.
+  MV::JS.eval(
+    "globalThis.__mzRenderCalls = 0; " \
+    "globalThis.Graphics = { _app: { render: function () { " \
+    "__mzRenderCalls++; } } };"
+  )
+  MV::JS.eval(MZ.render_skip_bridge_js)
+
+  # Armed by default: the wrapped app.render() must not reach the real one.
+  assert_equal true, MV::JS.eval("Graphics.__mzSkipRender")
+  MV::JS.eval("Graphics._app.render();")
+  assert_equal 0, MV::JS.eval("__mzRenderCalls")
+
+  # Flipping the flag off (as a live game, or #present's real-play path, would
+  # leave it) lets frames through again.
+  MV::JS.eval("Graphics.__mzSkipRender = false; Graphics._app.render();")
+  assert_equal 1, MV::JS.eval("__mzRenderCalls")
+
+  # __mzForceRender reaches the real render regardless of the flag — this is
+  # what MZ#force_render_before_capture calls right before a screenshot, so a
+  # capture on a skip-armed run still shows the current frame.
+  MV::JS.eval("Graphics.__mzSkipRender = true;")
+  MV::JS.eval("Graphics.__mzForceRender();")
+  assert_equal 2, MV::JS.eval("__mzRenderCalls")
+
+  # Idempotent: re-evaluating (boot_probe guards on this too, but the bridge
+  # must not misbehave if it were ever run twice) leaves the real render
+  # called exactly once per forced/unsuppressed call, not twice.
+  MV::JS.eval(MZ.render_skip_bridge_js)
+  MV::JS.eval("Graphics.__mzForceRender();")
+  assert_equal 3, MV::JS.eval("__mzRenderCalls")
+end
+
 assert 'MZ.message_probe_js queues text through $gameMessage' do
   # Exercised against the real host with a stand-in $gameMessage, so this checks
   # the injection's *effect*: it must call the engine's own Game_Message#add
