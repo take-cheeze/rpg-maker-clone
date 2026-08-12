@@ -1947,7 +1947,12 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # constructions above keep working; a row that names
                            # neither never crits, which is what a bare fixture
                            # wants.
-                           :has_critical_rate, :critical_rate)
+                           :has_critical_rate, :critical_rate,
+                           # 二刀流 -- turns the shield slot into a second
+                           # weapon slot (Actor#double_hand?). Appended last for
+                           # the same reason: every existing positional
+                           # construction keeps working with it defaulting nil.
+                           :double_hand)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -3208,6 +3213,62 @@ check 'a switch skill is cast for its switch, and only where its flags allow' do
   eq before - 6, hero.mp, 'and spends the SP'
   # A non-switch skill is not one, and spends nothing.
   ok st.party.cast_switch_skill(hero, 99).nil?
+end
+
+check 'an Escape skill is hidden with no runtime state, then gated on access ' \
+      'and a registered target, and warps there for free -- but not while flying' do
+  skills = { 6 => fake_skill(name: 'Escape', type: Game::Party::SKILL_ESCAPE,
+                             sp_cost: 4) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(6)
+  # No state at all -- the bare #field_skill?(sk) a fixture check would call --
+  # reads exactly like the old "not built" behaviour.
+  eq [], st.party.field_skills(hero), 'unsupported with no state to gate on'
+  ok st.party.unsupported_field_skill?(st.party.db_skill(6))
+  ok st.party.cast_escape_skill(hero, 6, nil).nil?
+  # State present, but access off (the RPG2000 default) and no target set.
+  eq [], st.party.field_skills(hero, st)
+  st.escape_access = true
+  eq [], st.party.field_skills(hero, st), 'access alone is not enough -- no target yet'
+  st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
+  eq [[6, 4]], st.party.field_skills(hero, st)
+  before = hero.mp
+  eq({ map_id: 3, x: 4, y: 5 }, st.party.cast_escape_skill(hero, 6, st))
+  eq before - 4, hero.mp, "the warp costs the skill's SP like any other cast"
+  # Flying (boarded the airship) bars it even with access and a target set --
+  # EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::IsFlying.
+  st.boarded = :airship
+  eq [], st.party.field_skills(hero, st), 'the airship blocks it'
+  ok st.party.cast_escape_skill(hero, 6, st).nil?
+  st.boarded = nil
+  # A skill that is not Escape casts nothing through the Escape path.
+  ok st.party.cast_escape_skill(hero, 99, st).nil?
+end
+
+check 'a Teleport skill lists every registered destination and warps to the ' \
+      'one chosen' do
+  skills = { 7 => fake_skill(name: 'Warp', type: Game::Party::SKILL_TELEPORT,
+                             sp_cost: 3) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  eq [], st.party.field_skills(hero, st), 'no targets registered yet'
+  st.teleport_access = true
+  st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
+  st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
+  eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target offers it'
+  before = hero.mp
+  eq({ map_id: 5, x: 8, y: 9 }, st.party.cast_teleport_skill(hero, 7, st, 5))
+  eq before - 3, hero.mp
+  # An id that was never registered casts nothing and spends nothing.
+  before = hero.mp
+  ok st.party.cast_teleport_skill(hero, 7, st, 999).nil?
+  eq before, hero.mp, 'an unknown destination spends no SP'
+  # Riding the airship bars Teleport the same way it bars Escape.
+  st.boarded = :airship
+  eq [], st.party.field_skills(hero, st)
+  ok st.party.cast_teleport_skill(hero, 7, st, 5).nil?
 end
 
 check 'a special item invokes its skill, free of SP and without knowing it' do
@@ -8734,6 +8795,78 @@ check 'a bulk equip restores a saved pair as-is' do
   hero = st.party.actor_by_id(1)
   hero.equip([2, 3, 0, 0, 0])
   eq [2, 3], hero.equipment[0, 2], 'loaded exactly as saved'
+end
+
+# -- 二刀流 actors (double_hand) -----------------------------------------------
+# An actor (or RPG2003 class) trait that turns the *shield* slot into a
+# *second weapon* slot -- the flag ADR 0040 flagged as "left alone" (the
+# opposite rule to two_handed above: that empties a hand, this fills it with
+# a weapon). 4 of Nepheshel's actors carry it and 1 of mtf-meido-action's.
+
+def double_hand_party(double_hand = true)
+  items = { 1 => fake_item(type: 1, atk: 20, hit: 95),                # sword
+            2 => fake_item(type: 1, atk: 15, hit: 85, critical_hit: 20), # dagger
+            3 => fake_item(type: 2, dfn: 10),                         # shield
+            4 => fake_item(type: 1, atk: 10, two_handed: 1) }         # claymore
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 8 })
+  row.double_hand = double_hand
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  Game::State.new(Game::Party.new(db), 1, 0, 0)
+end
+
+check 'a 二刀流 actor is offered weapons, not the shield, for the shield slot' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  [1, 2, 3].each { |id| st.party.gain_item(id, 1) }
+  eq [[1, 1], [2, 1]], st.party.equip_candidates(Game::Actor::SHIELD_SLOT, hero),
+     'the two swords, not the shield'
+  eq [[1, 1], [2, 1]], st.party.equip_candidates(Game::Actor::WEAPON_SLOT, hero),
+     'the ordinary weapon slot lists exactly the same two weapons'
+end
+
+check 'an ordinary actor is still offered the shield for the shield slot' do
+  st = double_hand_party(false)
+  hero = st.party.actor_by_id(1)
+  [1, 2, 3].each { |id| st.party.gain_item(id, 1) }
+  eq [[3, 1]], st.party.equip_candidates(Game::Actor::SHIELD_SLOT, hero)
+end
+
+check 'equipping a second weapon from the bag lands it in the shield slot' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT), 'the sword, first hand'
+  ok st.party.equip_from_bag(hero, 2, Game::Actor::SHIELD_SLOT), 'the dagger, second hand'
+  eq [1, 2], hero.equipment[0, 2], 'both weapons are on, one per slot'
+  # Both weapons now contribute -- the existing per-item-type scans in
+  # attack_hit_rate / weapon_crit_bonus / equipment_flag? are slot-agnostic,
+  # so the second weapon in the shield slot needed no changes of its own.
+  eq 95, hero.attack_hit_rate, 'the better of the two weapons\' hit rates'
+  eq 20, hero.weapon_crit_bonus, 'the dagger\'s crit bonus, the sword carrying none'
+  eq 10 + 20 + 15, hero.atk, 'both weapons\' attack bonuses are summed in, like any slot'
+end
+
+check 'a shield is rejected for a 二刀流 actor\'s shield slot even named directly' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(3, 1)
+  ok !st.party.equip_from_bag(hero, 3, Game::Actor::SHIELD_SLOT),
+     'not a real candidate for that slot on this actor'
+  eq 0, hero.equipment[1], 'nothing was equipped'
+  eq 1, st.party.item_count(3), 'and the shield stayed in the bag'
+end
+
+check 'a two-handed second weapon still empties the shield-turned-weapon hand\'s neighbour' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(4, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(hero, 4, Game::Actor::SHIELD_SLOT), 'the claymore, into the second hand'
+  eq 4, hero.equipment[1]
+  eq 0, hero.equipment[0], 'the two-handed claymore still claims the other hand'
 end
 
 # -- chipset terrain tags -----------------------------------------------------

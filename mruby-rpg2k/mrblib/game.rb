@@ -1263,16 +1263,20 @@ module Game
       @equipment.include?(item_id)
     end
 
-    # Equip a database item into the slot matching its type (weapon type 1 ->
-    # slot 0, shield 2 -> 1, armour 3 -> 2, helmet 4 -> 3, accessory 5 -> 4) and
-    # recompute the boosted stats. A non-equippable item, an unknown id, or a
-    # database without an item table is ignored. Drives the Change Equipment
-    # event command's equip operation.
-    def equip_item(item_id)
+    # Equip a database item into `slot`, defaulting to the one its own type
+    # matches (weapon type 1 -> slot 0, shield 2 -> 1, armour 3 -> 2, helmet
+    # 4 -> 3, accessory 5 -> 4), and recompute the boosted stats. An explicit
+    # `slot` is what a 二刀流 actor's second weapon needs: its type still says
+    # "weapon" (slot 0), but the equip menu is placing it in the shield slot
+    # (1) as the candidate list `Party#equip_candidates` offered it for. A
+    # non-equippable item, an unknown id, or a database without an item table
+    # is ignored. Drives the Change Equipment event command's equip operation
+    # (always by type, since that command names no slot).
+    def equip_item(item_id, slot = nil)
       return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
       return unless it
-      slot = it.type - 1
+      slot ||= it.type - 1
       return unless slot >= 0 && slot < EQUIP_ORDER.size
       @equipment[slot] = item_id
       freed = free_two_handed_slot(slot)
@@ -1492,6 +1496,25 @@ module Game
       row = class_row_for(@class_id) if @class_id && @class_id > 0
       row ||= @db_row
       row.respond_to?(:strong_defence) ? (row.strong_defence ? true : false) : false
+    end
+
+    # 二刀流 — an actor (or RPG2003 class) trait that turns the *shield* slot
+    # into a *second weapon* slot, unlike the item-row #dual_attack? above (a
+    # weapon that makes one basic attack swing twice — an unrelated flag that
+    # happens to share the same Japanese name). Same class-row-then-player-row
+    # lookup as #strong_defence?, since RPG2003 lets a class override it too
+    # (liblcf's `job` table carries the same field id). EasyRPG's
+    # `Window_EquipItem` retargets the whole shield slot to `weapon` before
+    # listing candidates for such an actor, and rejects a shield there
+    # outright — #equip_candidates does the retargeting; #attack_hit_rate,
+    # #weapon_crit_bonus and #equipment_flag?'s weapon-only search already
+    # scan every equipped slot for an item whose own *type* is a weapon rather
+    # than hard-coding slot 0, so once a second weapon sits in the shield slot
+    # they pick it up (and the better of the two) with no change of their own.
+    def double_hand?
+      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row ||= @db_row
+      row.respond_to?(:double_hand) ? (row.double_hand ? true : false) : false
     end
 
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
@@ -2426,27 +2449,54 @@ module Game
       (t >= 1 && t <= Actor::EQUIP_ORDER.size) ? t - 1 : nil
     end
 
-    # Held items equippable in equipment `slot` (0..4), as [id, count] pairs in
-    # ascending id order -- the candidate list for the equip menu's chosen slot.
-    def equip_candidates(slot)
+    # Held items equippable in equipment `slot` (0..4) on `actor`, as
+    # [id, count] pairs in ascending id order -- the candidate list for the
+    # equip menu's chosen slot. `actor` only matters for the shield slot (1):
+    # a 二刀流 (double_hand) actor's shield slot is a second weapon slot, so it
+    # lists weapons there instead of shields -- mirroring EasyRPG's
+    # `Window_EquipItem`, which retargets the whole slot to `weapon` for such
+    # an actor before filtering, rather than offering both kinds.
+    def equip_candidates(slot, actor = nil)
+      slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
       @items.keys.sort.select { |id| item_count(id) > 0 && equip_slot_for(id) == slot }
             .map { |id| [id, item_count(id)] }
     end
 
-    # Equip bag item `item_id` on `actor`, moving it through the inventory the way
-    # the equip menu does: take one from the bag, equip it into the slot its type
-    # dictates, and return the previously-equipped item (if any) to the bag. A
-    # no-op returning false unless the party holds the item and it is equipment;
-    # true on success. (Unlike the Change Equipment event command, which does not
-    # touch the bag, the menu swaps through it.)
-    def equip_from_bag(actor, item_id)
+    # Whether held item `id` is a genuine #equip_candidates entry for `slot` on
+    # `actor` -- mirrors that method's own retargeting exactly, so a `slot`
+    # argument #equip_from_bag receives can never accept anything the
+    # candidate list would not itself have offered (in either direction: a
+    # 二刀流 actor's shield slot accepts a weapon, not a weapon *and* a shield).
+    def equip_candidate_for?(actor, id, slot)
+      base = equip_slot_for(id)
+      return false if base.nil?
+      if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
+        base == Actor::WEAPON_SLOT
+      else
+        base == slot
+      end
+    end
+
+    # Equip bag item `item_id` on `actor` into equipment `slot`, moving it
+    # through the inventory the way the equip menu does: take one from the bag,
+    # equip it into that slot, and return the previously-equipped item (if any)
+    # to the bag. `slot` defaults to the one the item's own type dictates (so
+    # the Item menu's field-usable-item paths that never pass one keep working
+    # unchanged); the equip menu always passes the slot its candidate list
+    # (#equip_candidates) was built for, which is what lets a 二刀流 actor's
+    # second weapon land in the shield slot rather than overwriting the first.
+    # A no-op returning false unless the party holds the item and it is a
+    # genuine candidate for that slot on that actor (#equip_candidate_for?);
+    # true on success. (Unlike the Change Equipment event command, which does
+    # not touch the bag, the menu swaps through it.)
+    def equip_from_bag(actor, item_id, slot = nil)
       return false unless actor && item_count(item_id) > 0
-      slot = equip_slot_for(item_id)
-      return false if slot.nil?
+      slot ||= equip_slot_for(item_id)
+      return false if slot.nil? || !equip_candidate_for?(actor, item_id, slot)
       previous = actor.equipment[slot]
       # A 両手持ち weapon empties the other hand; whatever it was holding comes
       # back to the bag alongside the item this slot displaced.
-      freed = actor.equip_item(item_id)
+      freed = actor.equip_item(item_id, slot)
       lose_item(item_id, 1)
       gain_item(previous, 1) if previous && previous != 0
       gain_item(freed, 1) if freed && freed != 0
@@ -2517,9 +2567,13 @@ module Game
     # has no target at all — it just turns its switch on. Nepheshel's companions
     # are summoned and dismissed exactly this way (skills 120–125, "ファルを召還"
     # and friends, each flipping the switch its common event watches).
-    def field_skills(caster)
+    #
+    # `state` is optional and only read for the Escape / Teleport types below —
+    # every other caller (the host-side fixture checks included) can omit it and
+    # gets the old scope/occasion-only behaviour.
+    def field_skills(caster, state = nil)
       return [] unless caster
-      caster.skills.sort.select { |sid| field_skill?(db_skill(sid)) }
+      caster.skills.sort.select { |sid| field_skill?(db_skill(sid), state) }
             .map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
     end
 
@@ -2539,11 +2593,13 @@ module Game
     # An ordinary skill outside battle needs a target the field can offer (scope
     # >= 2, i.e. self or allies -- there is no enemy to aim at) and has to do
     # something once there: change HP/SP, or inflict a state.
-    def field_skill?(sk)
+    def field_skill?(sk, state = nil)
       return false unless sk
       case sk.type
-      when SKILL_ESCAPE, SKILL_TELEPORT
-        false # see #unsupported_field_skill?
+      when SKILL_TELEPORT
+        teleport_skill_available?(state)
+      when SKILL_ESCAPE
+        escape_skill_available?(state)
       when SKILL_SWITCH
         field_occasion?(sk)
       else
@@ -2555,12 +2611,77 @@ module Game
       end
     end
 
-    # Escape (type 1) and Teleport (type 2) skills warp the party to a memorised
-    # target. RPG_RT also gates them on the party's escape / teleport access and
-    # on a target having been memorised. Neither is offered yet: teleport needs a
-    # destination picker this build has no screen for. Between them the two test
-    # beds hold exactly one of each (mtf-meido-action's "Escape" and "Teleport"),
-    # so there is nothing here to measure a real implementation against.
+    # Whether the Escape skill type (1) is usable right now: the party's escape
+    # access is on, a Set Escape Target has registered a destination, and the
+    # party is not flying (boarded the airship). Mirrors EasyRPG's
+    # `Algo::IsSkillUsable`'s `Type_escape` arm, minus the "not in battle" term —
+    # #battle_skill? already excludes both types unconditionally, matching
+    # RPG_RT's own field-only offer of them. `state` is nil for callers that
+    # have none (bare fixtures, the fixture-only test harnesses), which reads as
+    # unusable exactly like the old "always false" behaviour.
+    def escape_skill_available?(state)
+      return false unless state
+      state.escape_access && !state.escape_target.nil? && !flying?(state)
+    end
+
+    # Whether the Teleport skill type (2) is usable right now: teleport access is
+    # on, at least one destination has been registered by a Set Teleport Target,
+    # and the party is not flying. Which registered destination is used is a
+    # separate choice the field menu offers (see Scene::SkillMenu) — unlike
+    # Escape, RPG_RT's Teleport type has more than one possible target and pops a
+    # picker (EasyRPG's `Scene_Teleport` / `Window_Teleport`, which lists every
+    # registered map by name and does not itself filter by the target's own
+    # switch field — that field round-trips through the save but the reference
+    # implementation never reads it back, so it is left unconsumed here too).
+    def teleport_skill_available?(state)
+      return false unless state
+      state.teleport_access && !state.teleport_targets.empty? && !flying?(state)
+    end
+
+    # Whether the party is currently riding the airship — the one vehicle RPG_RT
+    # bars Escape/Teleport from (a boat or ship is forced off first instead, see
+    # #cast_escape_skill / #cast_teleport_skill).
+    def flying?(state)
+      state.respond_to?(:boarded) && state.boarded == :airship
+    end
+
+    # Cast an Escape (type 1) skill: spend `caster`'s SP and return the
+    # registered escape destination as `{map_id:, x:, y:}` for the scene to jump
+    # to, or nil when `sid` is not a castable, available Escape skill. Matches
+    # EasyRPG's Scene_Skill, which jumps straight to `Game_Targets`' single
+    # escape target with no picker.
+    def cast_escape_skill(caster, sid, state)
+      sk = db_skill(sid)
+      return nil unless sk && sk.type == SKILL_ESCAPE
+      return nil unless can_cast?(caster, sid) && escape_skill_available?(state)
+      target = state.escape_target
+      return nil unless target
+      caster.change_mp(-skill_cost(sk, caster))
+      { map_id: target[:map_id], x: target[:x], y: target[:y] }
+    end
+
+    # Cast a Teleport (type 2) skill to the registered destination named by
+    # `map_id`: spend `caster`'s SP and return `{map_id:, x:, y:}`, or nil when
+    # `sid` is not a castable, available Teleport skill or `map_id` names no
+    # registered target (the picker only offers ids that do, so this is a
+    # defensive check rather than one real play can trigger).
+    def cast_teleport_skill(caster, sid, state, map_id)
+      sk = db_skill(sid)
+      return nil unless sk && sk.type == SKILL_TELEPORT
+      return nil unless can_cast?(caster, sid) && teleport_skill_available?(state)
+      target = state.teleport_targets[map_id]
+      return nil unless target
+      caster.change_mp(-skill_cost(sk, caster))
+      { map_id: map_id, x: target[:x], y: target[:y] }
+    end
+
+    # Whether `sk`'s field-menu offer depends on runtime state (`Game::State`)
+    # that a caller checking `#field_skill?` / `#battle_skill?` alone has no way
+    # to supply — the Escape (1) and Teleport (2) types, whose availability
+    # depends on the party's access flags and registered targets rather than the
+    # skill row alone. Used by the testbed harness, which builds a party with no
+    # running map/interpreter behind it, to tell "this skill type is legitimately
+    # state-gated" apart from "no menu offers this skill at all".
     def unsupported_field_skill?(sk)
       !sk.nil? && (sk.type == SKILL_ESCAPE || sk.type == SKILL_TELEPORT)
     end
@@ -6566,9 +6687,18 @@ module Game
     # Whether the Teleport and Escape skills are usable, toggled by the Change
     # Teleport Access (11820) and Change Escape Access (11840) event commands.
     # Default off — RPG2000 games enable these once the skill's targets are set —
-    # and persisted in the save. (The skills themselves are not executed yet, so
-    # these gate nothing at runtime; they are modelled for save fidelity.)
+    # and persisted in the save. Read by Game::Party#escape_skill_available? /
+    # #teleport_skill_available? to gate the field skill menu.
     attr_accessor :teleport_access, :escape_access
+    # A `{map_id:, x:, y:}` destination queued by an Escape / Teleport field
+    # skill (see Game::Party#cast_escape_skill / #cast_teleport_skill), picked up
+    # and cleared by Scene::Map#update on the next frame it runs. The menu
+    # scenes that cast these skills are not the map scene and have none of its
+    # map-load machinery, so — like the interpreter's own Teleport command — the
+    # actual jump happens back in Scene::Map, just queued from a different
+    # source. Transient: never persisted, since nothing can be mid-menu at a
+    # save (Save is a main-menu command, one level up from the skill screen).
+    attr_accessor :pending_teleport
     # The BGM currently playing and the one stashed by Memorize BGM (11530),
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
@@ -6633,6 +6763,7 @@ module Game
       @y = y
       @direction = 2
       @map = nil
+      @pending_teleport = nil
       @switches = Switches.new
       @variables = Variables.new
       @timers = [Timer.new, Timer.new]

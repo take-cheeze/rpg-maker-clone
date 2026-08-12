@@ -374,6 +374,10 @@ class FakeParent
   def load_map(id); @map_maker.call(id); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
+  # An Escape / Teleport field skill closes the whole menu stack at once;
+  # record that it fired rather than modelling a real scene stack here.
+  attr_reader :pop_to_map_called
+  def pop_to_map; @pop_to_map_called = true; end
   # Return to Title Screen (12510) hands control back here; record that it fired.
   attr_reader :returned_to_title
   def return_to_title; @returned_to_title = true; end
@@ -4692,7 +4696,7 @@ class MenuStubParty
     @actors = [MenuStubActor.new]; @gold = 0; @leader = nil; @revision = 0
   end
   def field_items; []; end
-  def field_skills(_actor); []; end
+  def field_skills(_actor, _state = nil); []; end
 end
 
 def menu_scene(klass, state)
@@ -4713,10 +4717,10 @@ class WrapMenuParty < MenuStubParty
     @actors = [MenuStubActor.new, MenuStubActor.new]
   end
   def field_items; [[1, 3], [2, 1]]; end
-  def field_skills(_actor); [[10, 2], [11, 4]]; end
+  def field_skills(_actor, _state = nil); [[10, 2], [11, 4]]; end
   def db_item(id); OpenStruct.new(name: "Item#{id}"); end
   def db_skill(id); OpenStruct.new(name: "Skill#{id}"); end
-  def equip_candidates(_slot); [[7, 2], [8, 1]]; end
+  def equip_candidates(_slot, _actor = nil); [[7, 2], [8, 1]]; end
 end
 
 def wrap_menu_state
@@ -4820,6 +4824,127 @@ check 'Scene::SkillMenu: the skill list, caster and target cursors wrap around' 
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
+end
+
+# A party whose only two skills are Escape (30) and Teleport (31), each
+# offered once #escape_access / #teleport_access and a target are set on the
+# real Game::State that holds it -- Game::Party's own decision logic
+# (#field_skill? / #cast_escape_skill / #cast_teleport_skill) is covered by
+# scripts/rpg2k_logic_check.rb; this stub only has to hand the scene something
+# that behaves the same way, so the checks below stay about the RGSS wiring
+# (does casting queue a teleport and close the menu?) rather than repeating
+# that coverage under RGSS stubs.
+class EscapeTeleportStubParty < MenuStubParty
+  ESCAPE_SID = 30
+  TELEPORT_SID = 31
+
+  def field_skills(_actor, state = nil)
+    return [] unless state
+    rows = []
+    rows << [ESCAPE_SID, 5] if state.escape_access && state.escape_target
+    if state.teleport_access && !state.teleport_targets.empty?
+      rows << [TELEPORT_SID, 3]
+    end
+    rows
+  end
+
+  def db_skill(id)
+    case id
+    when ESCAPE_SID then OpenStruct.new(name: 'Escape', type: Game::Party::SKILL_ESCAPE)
+    when TELEPORT_SID then OpenStruct.new(name: 'Warp', type: Game::Party::SKILL_TELEPORT)
+    end
+  end
+
+  def cast_escape_skill(_caster, sid, state)
+    return nil unless sid == ESCAPE_SID && state.escape_target
+    state.escape_target
+  end
+
+  def cast_teleport_skill(_caster, sid, state, map_id)
+    return nil unless sid == TELEPORT_SID
+    target = state.teleport_targets[map_id]
+    return nil unless target
+    { map_id: map_id, x: target[:x], y: target[:y] }
+  end
+end
+
+def escape_teleport_state
+  st = Game::State.new(EscapeTeleportStubParty.new, 1, 0, 0)
+  st.escape_access = true
+  st.escape_target = { map_id: 9, x: 1, y: 2, switch_id: nil }
+  st.teleport_access = true
+  st.teleport_targets[10] = { x: 11, y: 12, switch_id: nil }
+  st.teleport_targets[20] = { x: 21, y: 22, switch_id: nil }
+  st
+end
+
+check 'Scene::SkillMenu: an Escape skill queues its target and closes the menu' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  eq [[30, 5], [31, 3]], scene.send(:skills), 'Escape (registered target) then Teleport'
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the first row, Escape
+  scene.update
+  RGSS::Input.reset
+  eq [9, 1, 2, 0], state.pending_teleport, 'queued straight from the one registered escape target'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+end
+
+check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues the chosen one' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto Teleport (row 2)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq :teleport_target, scene.instance_variable_get(:@mode)
+  eq [[10, 'Map 10'], [20, 'Map 20']], scene.send(:teleport_targets),
+     'both registered destinations, ascending by map id, named by their bare id ' \
+     '(this fixture parent carries no map tree)'
+  ok state.pending_teleport.nil?, 'opening the list does not warp yet'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm it
+  scene.update
+  RGSS::Input.reset
+  eq [20, 21, 22, 0], state.pending_teleport
+  ok parent.pop_to_map_called
+end
+
+check 'Scene::SkillMenu: cancelling the destination list returns to the skill list' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto Teleport (row 2)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq :teleport_target, scene.instance_variable_get(:@mode)
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode)
+  ok state.pending_teleport.nil?
+  ok !parent.pop_to_map_called
+end
+
+check 'Scene::Map: a pending teleport queued by the field skill menu is applied' do
+  scene = new_scene({}, player: [0, 0])
+  state = scene.instance_variable_get(:@state)
+  state.pending_teleport = [1, 3, 4, 6] # same map id, elsewhere on it, facing left
+  scene.update
+  eq 1, state.map_id
+  eq 3, state.x
+  eq 4, state.y
+  eq 6, state.direction
+  ok state.pending_teleport.nil?, 'the request is consumed, not reapplied every frame'
 end
 
 check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do

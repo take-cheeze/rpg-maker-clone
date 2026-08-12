@@ -3,9 +3,15 @@ class RPG2k
     # The field skill screen (main menu -> Skill). Lists one party member's known
     # field-usable skills with their SP cost; LEFT/RIGHT cycle the caster. Casting
     # a single-ally skill (scope 3) asks who to use it on, while a self (2) or
-    # all-ally (4) skill applies at once, spending SP and restoring HP/SP. All the
+    # all-ally (4) skill applies at once, spending SP and restoring HP/SP. An
+    # Escape skill warps straight to the registered escape target with no
+    # prompt; a Teleport skill opens a third list of every registered
+    # destination (by map name) to choose from. Either warp closes the whole
+    # menu stack and queues the jump for Scene::Map to perform (see
+    # Game::State#pending_teleport) rather than applying anything here. All the
     # decision logic is on Game::Party (field_skills / skill_cost / can_cast? /
-    # skill_effect / cast_skill), host-tested; this is the RGSS UI over it.
+    # skill_effect / cast_skill / cast_escape_skill / cast_teleport_skill),
+    # host-tested; this is the RGSS UI over it.
     class SkillMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -18,8 +24,9 @@ class RPG2k
         @caster_index = 0
         @skill_index = 0
         @target_index = 0
+        @teleport_index = 0
         @pending_skill = nil
-        @mode = :skills          # :skills list, or :target selection
+        @mode = :skills          # :skills list, :target selection, or :teleport_target
         @message = nil
         build_skill_window
       end
@@ -28,11 +35,16 @@ class RPG2k
         close_message
         @skill_window.dispose if @skill_window
         @target_window.dispose if @target_window
+        @teleport_window.dispose if @teleport_window
       end
 
       def update
         return drive_message if @message
-        @mode == :target ? update_target : update_skills
+        case @mode
+        when :target then update_target
+        when :teleport_target then update_teleport_target
+        else update_skills
+        end
       end
 
       private
@@ -42,7 +54,7 @@ class RPG2k
       end
 
       def skills
-        @skills ||= @state.party.field_skills(caster)
+        @skills ||= @state.party.field_skills(caster, @state)
       end
 
       def skill_name(sid)
@@ -86,10 +98,19 @@ class RPG2k
         return if skills.empty?
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
-        # A switch skill has no target at all; a self (2) or all-ally (4) skill
-        # needs no target prompt; a single-ally skill (3) asks which ally.
+        # A switch skill has no target at all; Escape warps straight to its one
+        # registered target; Teleport opens a list of every registered target;
+        # a self (2) or all-ally (4) skill needs no target prompt; a
+        # single-ally skill (3) asks which ally.
         if sk && sk.type == Game::Party::SKILL_SWITCH
           apply_switch_skill(sid)
+        elsif sk && sk.type == Game::Party::SKILL_ESCAPE
+          apply_escape_skill(sid)
+        elsif sk && sk.type == Game::Party::SKILL_TELEPORT
+          @pending_skill = sid
+          @mode = :teleport_target
+          @teleport_index = 0
+          build_teleport_window
         elsif sk && (sk.scope == 2 || sk.scope == 4)
           apply_skill(sid, nil)
         else
@@ -145,6 +166,65 @@ class RPG2k
         if @target_window
           @target_window.dispose
           @target_window = nil
+        end
+      end
+
+      def update_teleport_target
+        targets = teleport_targets
+        if Input.trigger?(Input::B)
+          leave_teleport_target
+        elsif Input.trigger?(Input::DOWN) && !targets.empty?
+          @teleport_index += 1
+          @teleport_index %= targets.size
+          refresh_teleport_cursor
+        elsif Input.trigger?(Input::UP) && !targets.empty?
+          @teleport_index -= 1
+          @teleport_index %= targets.size
+          refresh_teleport_cursor
+        elsif Input.trigger?(Input::C) && !targets.empty?
+          map_id, = targets[@teleport_index]
+          apply_teleport_skill(@pending_skill, map_id)
+        end
+      end
+
+      # Escape (type 1) warps to the single registered escape target with no
+      # picker (see the class comment). A successful cast closes the whole menu
+      # stack at once, matching RPG_RT: there is no field-menu message shown
+      # afterwards, since the map that would show it is gone before the next
+      # frame draws.
+      def apply_escape_skill(sid)
+        target = @state.party.cast_escape_skill(caster, sid, @state)
+        if target
+          queue_teleport(target)
+        else
+          show_message("It had no effect.")
+        end
+      end
+
+      # Teleport (type 2), once a destination is chosen from the list built by
+      # #build_teleport_window.
+      def apply_teleport_skill(sid, map_id)
+        target = @state.party.cast_teleport_skill(caster, sid, @state, map_id)
+        if target
+          queue_teleport(target)
+        else
+          show_message("It had no effect.")
+        end
+      end
+
+      # Queue the warp for Scene::Map (see Game::State#pending_teleport) and pop
+      # every menu on top of it in one step.
+      def queue_teleport(target)
+        @state.pending_teleport = [target[:map_id], target[:x], target[:y], 0]
+        @parent.pop_to_map
+      end
+
+      def leave_teleport_target
+        @pending_skill = nil
+        @mode = :skills
+        if @teleport_window
+          @teleport_window.dispose
+          @teleport_window = nil
         end
       end
 
@@ -223,6 +303,54 @@ class RPG2k
         @target_window.cursor_rect =
           Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
                    LINE_H * 2)
+      end
+
+      # The registered teleport destinations as `[map_id, name]` pairs,
+      # ascending by map id — the same order `Game::State#teleport_targets`
+      # (a plain hash built by Set Teleport Target) already keeps them in, and
+      # the same order EasyRPG's `Window_Teleport` lists them in (the order
+      # `Game_Targets::GetTeleportTargets` returns, sorted by map id on insert).
+      def teleport_targets
+        @state.teleport_targets.keys.sort.map { |id| [id, map_display_name(id)] }
+      end
+
+      # A map's editor name for the teleport picker, or its bare id when the
+      # tree carries no name for it (a bare fixture, or an id the tree does not
+      # know) — matching EasyRPG's `Game_Map::GetMapName`, which reads the same
+      # map-tree field this build's #map_properties elsewhere already exposes.
+      def map_display_name(map_id)
+        row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
+        name = row && row.respond_to?(:name) ? row.name.to_s : nil
+        name.nil? || name.empty? ? "Map #{map_id}" : name
+      end
+
+      def build_teleport_window
+        @teleport_window.dispose if @teleport_window
+        rows = teleport_targets
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = [rows.size, 1].max * LINE_H
+        @teleport_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
+                                      SCREEN_W, h + Window::BORDER * 2)
+        @teleport_window.z = 450
+        @teleport_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        if rows.empty?
+          c.draw_text 0, 0, inner_w, LINE_H, "No destinations"
+        else
+          rows.each_with_index do |(_id, name), i|
+            c.draw_text 0, i * LINE_H, inner_w, LINE_H, name
+          end
+        end
+        @teleport_window.contents = c
+        refresh_teleport_cursor
+      end
+
+      def refresh_teleport_cursor
+        return unless @teleport_window
+        h = teleport_targets.empty? ? 0 : LINE_H
+        @teleport_window.cursor_rect =
+          Rect.new(0, @teleport_index * LINE_H, @teleport_window.contents.width, h)
       end
 
       def drive_message

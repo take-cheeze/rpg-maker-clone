@@ -157,6 +157,30 @@ class RPG2k
       end
 
       def update
+        # An Escape / Teleport field skill queues its destination here rather
+        # than jumping directly -- it is cast from the skill menu, a scene with
+        # none of this one's map-load machinery, and this scene does not even
+        # run its #update while that menu sits on top of it. Applied as the
+        # very first thing once this scene is on top again and then rendered
+        # immediately, the same way the interpreter's own Teleport command
+        # renders the destination map on the frame it lands (see the `:teleport`
+        # branch below) rather than leaving a stale frame up for one tick. The
+        # rest of this frame's simulation (timers, event stepping, movement) is
+        # skipped exactly as it already is on that frame -- #event_busy? holds
+        # it off there because the interpreter is mid-wait, and there is no
+        # interpreter wait to hold it off here, so it is skipped explicitly.
+        if @state.pending_teleport
+          if @state.boarded? && @state.boarded != :airship
+            follow_vehicle
+            @state.boarded = nil
+            restore_pre_vehicle_bgm
+          end
+          perform_teleport(@state.pending_teleport)
+          @state.pending_teleport = nil
+          animate_events
+          render
+          return
+        end
         # The timers keep counting during events too. A fight is running when the
         # battle UI is up, and a timer without the "run in battle" flag pauses
         # (and hides) for its duration rather than being stopped.

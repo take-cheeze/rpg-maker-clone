@@ -504,13 +504,16 @@ The work below is roughly ordered by the critical path to a walkable game
   which `draw_weather` paints rain streaks (falling, wind-skewed 1×6 marks) or
   snow (drifting 2×2 flecks), the particle count scaling with strength and the
   positions advancing with the scene's animation frame so the field animates.
-  **Set Teleport / Escape Target** (11810 / 11830), **Change Encounter Rate**
-  (11740) and **Change System BGM** (10660) record their payloads
-  on `Game::State` — a per-map teleport-target registry, a single escape target,
-  the encounter step rate and per-slot system music overrides — and
-  round-trip through the save, but nothing consumes them yet (the Teleport /
-  Escape skills, encounter system and battle scene are not built), so
-  they are modelled for save fidelity like the access flags. **Change System
+  **Set Teleport / Escape Target** (11810 / 11830) record their payloads on
+  `Game::State` — a per-map teleport-target registry, a single escape target —
+  and round-trip through the save; the field menu's Escape / Teleport skill
+  types now consume them (see the field-skill-menu entry below) — an event can
+  register a destination for a warp spell to use. **Change Encounter Rate**
+  (11740) and **Change System BGM** (10660) record their payloads too — the
+  encounter step rate and per-slot system music overrides — and round-trip
+  through the save, but nothing consumes them yet (the encounter system and
+  battle scene's use of a system BGM slot are not built), so they are modelled
+  for save fidelity like the access flags. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
@@ -1257,12 +1260,68 @@ The work below is roughly ordered by the critical path to a walkable game
   `occasion_field2` and `occasion_battle` (a switch item's own pair) — this build
   asked for `occasion_field`, a name no real row carries, so the gate silently
   never fired. An earlier version of this list claimed that gate worked; it did
-  not, on any genuine item. See ADR 0031. Remaining: **teleport / escape** skill
-  types (one of each across both test beds; teleport wants a destination picker
-  this build has no screen for, so `Party#unsupported_field_skill?` declares the
-  gap), the battle-time skill variance, and two-handed / dual-wield **equipping**
-  (the equip screen's slot rules — a 二刀流 weapon's *combat* effect is read now,
-  see ADR 0033).
+  not, on any genuine item. See ADR 0031. **Escape and Teleport skill types now
+  warp the party.** Both were declared unbuilt here — Escape wanting nothing
+  more than its one registered target and Teleport wanting "a destination
+  picker this build has no screen for" — and both gaps are closed the same way
+  EasyRPG's own `Scene_Skill` closes them: `Algo::IsSkillUsable`'s
+  `Type_escape` / `Type_teleport` arms (not in battle — already true, since
+  `#battle_skill?` excludes both types unconditionally; the party's access
+  flag; a registered target; not flying) became
+  `Game::Party#escape_skill_available?` / `#teleport_skill_available?`, read by
+  `#field_skill?` given the `Game::State` the field menu now passes it (every
+  older caller, including the fixture checks, still omits it and gets the old
+  "unsupported" reading). Casting spends SP through the same `#can_cast?` gate
+  every other field skill uses and returns the destination for
+  `Scene::SkillMenu` to queue on `Game::State#pending_teleport` rather than
+  jumping directly — the menu is not `Scene::Map` and has none of its map-load
+  machinery, so the actual jump happens back there, the way the interpreter's
+  own Teleport command already does, just queued from a different source and
+  picked up (then rendered immediately, not left a frame stale) the moment
+  `Scene::Map` is next on top of the scene stack. Escape warps straight to its
+  one target with no prompt, matching `Scene_Skill`'s own "no picker" branch;
+  Teleport opens a third list beside the skill/target ones, built from every
+  `Game::State#teleport_targets` entry and named through the map tree's own
+  `map_properties` (`Game_Map::GetMapName`), the same source the battle
+  backdrop's terrain walk already reads. A registered target's own `switch_id`
+  is round-tripped through the save but — like EasyRPG's `Window_Teleport`,
+  `Game_Targets` and `Scene_Teleport`, none of which read it back — still left
+  unconsumed here too; nothing in the reference implementation gates the list
+  by it, so filtering here would be a guess the real binary does not make.
+  Casting either skill also forces the party off a ridden boat or ship first
+  (mirroring `Game_Player::ForceGetOffVehicle`), leaving the vehicle parked
+  where it was boarded; the airship is not forced off because it is not
+  boarded off at all — `#flying?` (`state.boarded == :airship`) bars both
+  skills outright, the one vehicle RPG_RT excludes them from. `Party#unsupported_field_skill?`
+  stays (renamed in spirit, not in name): the testbed harness builds a party
+  with no map or interpreter behind it, so it still cannot tell "this skill is
+  legitimately state-gated" from "no menu reaches this skill" on its own, and
+  keeps deferring those two types to this note instead of flagging them as
+  unreachable. Left unbuilt still: the battle-time skill variance, and a
+  **special item** (type 9) invoking an Escape/Teleport skill —
+  `#field_usable?` does not thread `Game::State` through to `#field_skill?`
+  the way the field menu does, so such an item (neither test bed has one)
+  would still read as unusable rather than warping.
+  **Dual-wield equipping is done too, the opposite rule to two-handed.** A
+  weapon's own *combat* effect (a 二刀流 weapon swinging twice) was read
+  already (ADR 0033); what remained was the *actor*-row 二刀流 (`double_hand`,
+  4 of Nepheshel's actors and 1 of mtf's), which turns the shield slot into a
+  second weapon slot — ADR 0040 named this as the item its own two-handed-gear
+  rule left alone. `Game::Party#equip_candidates(slot, actor)` retargets the
+  shield slot to weapon-only candidates for such an actor, ported from
+  EasyRPG's `Window_EquipItem` (which does the identical retarget before
+  filtering, and rejects a shield there outright with no exception); a new
+  `#equip_candidate_for?` guards `#equip_from_bag` against the reverse. Placing
+  the result needed `Actor#equip_item` to take an explicit slot — its old
+  always-by-type mapping would put any weapon in slot 0, which is exactly
+  wrong for a second one — while the Change Equipment event command's own call
+  stays untouched (no notion of "the second weapon slot" there either,
+  matching `Game_Actor::ChangeEquipment`). Combat needed nothing: the weapon-
+  only scans behind `#attack_hit_rate` / `#weapon_crit_bonus` /
+  `#equipment_flag?` and the plain sum behind `#equip_bonus` already read every
+  equipped slot by the item's own *type*, not by slot index, so a second
+  weapon in the shield slot is picked up — the better of the two, for hit and
+  crit — the moment it is worn. See ADR 0040's addendum.
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default

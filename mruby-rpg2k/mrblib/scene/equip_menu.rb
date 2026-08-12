@@ -6,8 +6,10 @@ class RPG2k
     # -- swapping the previously-worn item back into the bag -- or empties the
     # slot. The bag-aware equip logic is Game::Party#equip_candidates /
     # equip_from_bag / unequip_to_bag (host-tested); this is the RGSS UI over it,
-    # mirroring Scene::ItemMenu's helpers. Actor-cycling covers the party; two-
-    # handed weapons and dual-wield are later refinements.
+    # mirroring Scene::ItemMenu's helpers. A two-handed weapon empties the other
+    # hand (Actor#free_two_handed_slot) and a 二刀流 actor's shield slot lists
+    # weapons instead of shields (#equip_candidates, given `actor`) -- both
+    # handled by the party-level logic this scene just calls through to.
     class EquipMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -80,8 +82,10 @@ class RPG2k
       end
 
       def candidates
-        # The slot's fitting bag items, with a leading Remove entry (id 0).
-        @candidates ||= [[0, 0]] + @state.party.equip_candidates(@slot_index)
+        # The slot's fitting bag items, with a leading Remove entry (id 0). A
+        # 二刀流 actor's shield slot lists weapons instead of shields, which is
+        # why `actor` goes along -- see Game::Party#equip_candidates.
+        @candidates ||= [[0, 0]] + @state.party.equip_candidates(@slot_index, actor)
       end
 
       def update_items
@@ -105,7 +109,10 @@ class RPG2k
         if id == 0
           @state.party.unequip_to_bag(actor, @slot_index)
         else
-          @state.party.equip_from_bag(actor, id)
+          # Pass the slot the candidate list was built for -- a 二刀流 actor's
+          # second weapon has to land in the shield slot (1), which its own
+          # item type (weapon, slot 0) would not otherwise pick.
+          @state.party.equip_from_bag(actor, id, @slot_index)
         end
         leave_items
         rebuild_for_actor

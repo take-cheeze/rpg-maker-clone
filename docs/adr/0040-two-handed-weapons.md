@@ -71,3 +71,55 @@ a bulk equip restores a saved pair as-is) and by
 `scripts/rpg2k_testbed_logic_check.rb`, which equips **every** real two-handed
 weapon in both games over a real shield and asserts the hand empties, and asserts
 that no non-weapon in either game carries the flag.
+
+## Addendum: `double_hand` — the opposite rule
+
+Date: 2026-08-12
+
+The item left alone above is now implemented, ported from EasyRPG's
+`Window_EquipItem` (the equip menu's candidate-list window) and
+`Game_Actor::ForEachEquipment` rather than guessed at, since the flag has no
+byte pattern of its own to read the way a combat modifier's do — it is purely
+a menu-construction rule.
+
+`Window_EquipItem`'s constructor retargets the whole slot before it filters
+candidates: `if (equip_type == shield && actor.HasTwoWeapons()) equip_type =
+weapon`, and its shield case tests `item->type == Type_shield` with no
+double-hand exception at all — so a double-hand actor's shield slot lists
+weapons and *only* weapons, not weapons alongside shields.
+`Game::Party#equip_candidates(slot, actor)` does the same retargeting, and
+`#equip_candidate_for?` mirrors it as a guard on `#equip_from_bag`, so the two
+can never disagree about what a given slot will accept.
+
+The harder part was not the candidate list but *placing* the result:
+`Actor#equip_item`'s slot used to come from nowhere but the item's own type
+(weapon → 0, always), which is exactly wrong for a second weapon that has to
+land in slot 1. It now takes an optional explicit `slot`, and
+`Party#equip_from_bag` passes the one its candidate list was built for — the
+Change Equipment event command's own call is untouched (no slot argument, as
+before), matching EasyRPG's `Game_Actor::ChangeEquipment`, which likewise has
+no notion of "the second weapon slot" and always resolves a weapon to slot 0.
+
+Nothing about *combat* needed a change. `#attack_hit_rate`, `#weapon_crit_bonus`
+and the weapon-only arm of `#equipment_flag?` (二刀流 dual-attack, 必中
+ignore-evasion) already scan every equipped slot for an item whose own
+*type* reads as a weapon, never slot 0 by name, so once a second weapon
+occupies slot 1 they pick it up — and take the *better* of the two, mirroring
+`ForEachEquipment`'s own max-of-both-weapons reduction — for free. The stat
+sum (`#equip_bonus`) was already slot-agnostic for the same reason: it adds
+every equipped item's own bonus field regardless of which slot holds it.
+
+Left alone still: whether the equip screen's slot-1 *label* changes from
+"Shield" to something else for a double-hand actor. Nothing in
+`Window_EquipItem` (which only builds the candidate list) settles that, and it
+would need `Window_Equip`'s own row-label source — not checked here, so the
+label stays "Shield" regardless.
+
+Covered by `scripts/rpg2k_logic_check.rb`: a double-hand actor's shield slot
+offers the two held weapons and not the shield (with the ordinary weapon slot
+listing the same two, and an ordinary actor still offered the shield);
+equipping a second weapon from the bag lands it in slot 1, both weapons then
+contributing to attack, hit rate (the better of the two) and crit bonus;
+naming a shield for the shield slot directly is rejected and nothing is
+spent; and a two-handed weapon equipped as the *second* weapon still empties
+its neighbour, the same rule as the base ADR from the other slot.
