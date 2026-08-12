@@ -4251,6 +4251,58 @@ def window_texts(win)
   ((c.draw_calls || []) + (c.blend_calls || [])).map { |a| a[4] }
 end
 
+check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each screen prompt' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.shop_greeting1 = 'いらっしゃいませ！'
+  db.term.shop_regreeting1 = '他に何かご入用ですか？'
+  db.term.shop_buy1 = '買う'
+  db.term.shop_sell1 = '売る'
+  db.term.shop_leave1 = 'やめる'
+  db.term.shop_buy_select1 = '何をお求めですか？'
+  db.term.shop_buy_number1 = 'いくつ買いますか？'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)]
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  texts = window_texts(shop[:window])
+  ok texts.any? { |t| t.include?('いらっしゃいませ！') }, 'the first-visit greeting shows'
+  ok texts.any? { |t| t.include?('買う') } && texts.any? { |t| t.include?('売る') } &&
+     texts.any? { |t| t.include?('やめる') }, 'the command row labels use the database terms'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen]
+  ok window_texts(shop[:window]).any? { |t| t.include?('何をお求めですか？') },
+     'the buy list shows its own prompt above the goods'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the first good
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :quantity, shop[:screen]
+  ok window_texts(shop[:window]).any? { |t| t.include?('いくつ買いますか？') },
+     'the quantity screen shows its own prompt'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # back to the buy list
+  scene.update
+  RGSS::Input.triggered = []
+  RGSS::Input.triggered = [RGSS::Input::B] # back to the command menu
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok window_texts(shop[:window]).any? { |t| t.include?('他に何かご入用ですか？') },
+     'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
+end
+
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
   ic = Game::Interpreter::Cmd
   db = fake_db

@@ -2275,11 +2275,55 @@ class RPG2k
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  window: nil, gold: build_shop_gold_window }
+                  window: nil, gold: build_shop_gold_window,
+                  terms: shop_terms(req[:type]), browsed: false }
         draw_shop
       end
 
       def shop_gold_term; nonblank(db.term.gold, 'G'); end
+
+      # RPG2000 shop term set (1/2/3, one of three shopkeeper "voices") selected
+      # by Open Shop's own type parameter, mirroring #inn_terms. Blank database
+      # terms fall back to plain English so the window is never empty.
+      def shop_terms(type)
+        t = db.term
+        i = Game.clamp(type || 0, 0, 2)
+        {
+          greeting: nonblank([t.shop_greeting1, t.shop_greeting2, t.shop_greeting3][i], 'Welcome!'),
+          regreeting: nonblank([t.shop_regreeting1, t.shop_regreeting2, t.shop_regreeting3][i],
+                               'Is there anything else you need?'),
+          buy: nonblank([t.shop_buy1, t.shop_buy2, t.shop_buy3][i], 'Buy'),
+          sell: nonblank([t.shop_sell1, t.shop_sell2, t.shop_sell3][i], 'Sell'),
+          leave: nonblank([t.shop_leave1, t.shop_leave2, t.shop_leave3][i], 'Leave'),
+          buy_select: nonblank([t.shop_buy_select1, t.shop_buy_select2, t.shop_buy_select3][i],
+                               'What would you like to buy?'),
+          sell_select: nonblank([t.shop_sell_select1, t.shop_sell_select2, t.shop_sell_select3][i],
+                                'What would you like to sell?'),
+          buy_number: nonblank([t.shop_buy_number1, t.shop_buy_number2, t.shop_buy_number3][i],
+                               'How many will you buy?'),
+          sell_number: nonblank([t.shop_sell_number1, t.shop_sell_number2, t.shop_sell_number3][i],
+                                'How many will you sell?')
+        }
+      end
+
+      # The line shown above the current screen's selectable rows: the
+      # shopkeeper's greeting on first entering the command menu, the same
+      # shopkeeper asking "anything else?" on returning to it after browsing
+      # (EasyRPG's Window_Shop switches from `shop_greeting` to
+      # `shop_regreeting` once the player has entered Buy or Sell mode -- a
+      # per-visit flag, not a persisted "have I shopped here before"), and a
+      # prompt on the buy / sell / quantity screens themselves. nil for any
+      # other screen, which #draw_shop reads as "no header row".
+      def shop_header
+        t = @shop[:terms]
+        case @shop[:screen]
+        when :command then @shop[:browsed] ? t[:regreeting] : t[:greeting]
+        when :buy then t[:buy_select]
+        when :sell then t[:sell_select]
+        when :quantity
+          @shop[:quantity][:mode] == :buy ? t[:buy_number] : t[:sell_number]
+        end
+      end
 
       def build_shop_gold_window
         gw = 88
@@ -2293,18 +2337,19 @@ class RPG2k
       # actions, the goods on the buy list, or the party's sellable items.
       def shop_lines
         m = @shop[:model]
+        t = @shop[:terms]
         case @shop[:screen]
         when :command
           rows = []
-          rows << ['Buy', :buy] if m.allow_buy?
-          rows << ['Sell', :sell] if m.allow_sell?
-          rows << ['Leave', :leave]
+          rows << [t[:buy], :buy] if m.allow_buy?
+          rows << [t[:sell], :sell] if m.allow_sell?
+          rows << [t[:leave], :leave]
           rows
         when :quantity
           # The counter is one row: how many, and what the stack comes to.
           q = @shop[:quantity]
           unit = q[:mode] == :buy ? m.price(q[:id]) : m.sell_price(q[:id])
-          verb = q[:mode] == :buy ? 'Buy' : 'Sell'
+          verb = q[:mode] == :buy ? t[:buy] : t[:sell]
           [["#{verb} #{m.name(q[:id])} x#{q[:count]}  " \
             "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
         when :buy
@@ -2320,8 +2365,14 @@ class RPG2k
       def draw_shop
         lines = shop_lines
         @shop[:index] = Game.clamp(@shop[:index], 0, [lines.length - 1, 0].max)
+        # The shopkeeper's line (greeting / regreeting / a buy-sell-quantity
+        # prompt) sits above the selectable rows as one extra line, the same
+        # layout #open_inn_window uses for its own greeting.
+        header = shop_header
+        offset = header ? 1 : 0
+        row_count = lines.length + offset
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
-        inner_h = [lines.length, 1].max * SHOP_LINE_H
+        inner_h = [row_count, 1].max * SHOP_LINE_H
         @shop[:window].dispose if @shop[:window]
         win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
                          SCREEN_W - 20, inner_h + Window::BORDER * 2)
@@ -2329,13 +2380,14 @@ class RPG2k
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, header if header
         lines.each_with_index do |(label, _), i|
-          c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
+          c.draw_text 0, (i + offset) * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
         end
         win.contents = c
         unless lines.empty?
           win.cursor_rect =
-            Rect.new(0, @shop[:index] * SHOP_LINE_H, inner_w, SHOP_LINE_H)
+            Rect.new(0, (@shop[:index] + offset) * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
         @shop[:window] = win
         draw_shop_gold
@@ -2454,6 +2506,10 @@ class RPG2k
       end
 
       def shop_switch(screen)
+        # Once the player has gone into Buy or Sell at all this visit, the
+        # shopkeeper's line on returning to the command menu switches from a
+        # first-time greeting to "anything else?" for the rest of it.
+        @shop[:browsed] = true if screen == :buy || screen == :sell
         @shop[:screen] = screen
         @shop[:index] = 0
         draw_shop
