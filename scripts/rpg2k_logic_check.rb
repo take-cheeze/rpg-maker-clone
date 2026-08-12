@@ -3503,6 +3503,39 @@ check 'equip_from_bag rejects a non-equippable or unheld item' do
   eq 0, a.equipment[0]
 end
 
+# RPG_RT's item-possession test counts an equipped copy even though equipping
+# removes it from the bag (yado.tk 011_siyou/): #has_item? -> true although
+# #item_count reads 0. The numeric possession-count operand stays bag-only.
+check 'party#has_item? counts a copy equipped on any member, not just the bag' do
+  items = { 7 => fake_item(atk: 15, type: 1) }   # weapon -> slot 0
+  st = equip_party(items)
+  a = st.party.leader
+  eq false, st.party.has_item?(7)          # not held at all
+  st.party.gain_item(7, 1)
+  ok st.party.equip_from_bag(a, 7)
+  eq 0, st.party.item_count(7)             # gone from the bag
+  eq true, st.party.has_item?(7)           # but still counts as "had"
+  eq 7, st.party.unequip_to_bag(a, 0)
+  eq 1, st.party.item_count(7)             # back in the bag
+  eq true, st.party.has_item?(7)
+end
+
+check 'Conditional Branch item test (type 4) sees an equipped copy too' do
+  items = { 7 => fake_item(atk: 15, type: 1) }
+  st = equip_party(items)
+  a = st.party.leader
+  st.party.gain_item(7, 1)
+  ok st.party.equip_from_bag(a, 7)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONDITIONAL, [4, 7, 0], indent: 0), # has item 7?
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+            FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+            FakeCmd.new(IC::END_BRANCH, [], indent: 0)])
+  it.update
+  eq true, st.switches[1]                  # equipped counts as "has" -> if-branch
+end
+
 # -- Status screen (Game::Actor EXP-to-next) ---------------------------------
 
 check 'next_level_exp / exp_to_next track the curve across a level up' do

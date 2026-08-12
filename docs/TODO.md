@@ -1536,6 +1536,13 @@ following this paragraph as the original record.
   changes the on-screen sprite (it applied to `@player_char` but the
   renderer never read it), and reverts on Transfer Player like real RPG_RT
   (not persistent like the dedicated Change Hero Graphic command).
+- ✅ **"Has item X" now counts an equipped copy, not just the bag**
+  (`Game::Party#has_item?`, behind Conditional Branch's item condition and an
+  event page's item appearance condition). Equipping an item removes it from
+  `item_count`'s bag tally, and RPG_RT's possession test still reads it as
+  held; the numeric "item possession count" operand (Control Variables) stays
+  bag-only, matching RPG_RT's own split between the two reads. Covered by new
+  `scripts/rpg2k_logic_check.rb` checks.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -1615,10 +1622,12 @@ Everything below is unverified against the codebase.
   ignored past it); Change Equipment creates/returns inventory copies
   implicitly; item list always sorts by database id, never acquisition
   order; "equipped item No." reads 0 when empty, and the 2nd weapon slot
-  reads through the *Shield* No. operand for dual-wield; "hero equips X"
-  and "has item X" conditions both count an equipped copy; "item possession
-  count" excludes equipped copies (must sum both for the true total); no
-  inventory is per-hero, always party-shared.
+  reads through the *Shield* No. operand for dual-wield; "item possession
+  count" excludes equipped copies (must sum both for the true total —
+  already true of the Control Variables item operand); no inventory is
+  per-hero, always party-shared. ("hero equips X" — the Conditional Branch
+  actor sub-condition — already reads `actor.equipped?` directly and was
+  fine; "has item X" was the actual gap, now fixed, see above.)
 - **Call Event** — doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
   once the callee finishes/cancels; a variable can't pick the called

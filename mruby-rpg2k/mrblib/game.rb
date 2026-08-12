@@ -2160,7 +2160,16 @@ module Game
     end
 
     def item_count(id); @items[id] || 0; end
-    def has_item?(id); item_count(id) > 0; end
+
+    # RPG_RT's item-possession test (Conditional Branch's item condition and an
+    # event page's item appearance condition, both routed through here) also
+    # counts a copy currently equipped on any party member — even though
+    # equipping an item removes it from the bag `item_count` reports. The
+    # numeric "item possession count" operand (Control Variables, item_operand
+    # above) stays bag-only, matching RPG_RT's own split between the two reads.
+    def has_item?(id)
+      item_count(id) > 0 || @actors.any? { |a| a.equipment.include?(id) }
+    end
 
     def gain_item(id, n = 1)
       c = item_count(id) + n
