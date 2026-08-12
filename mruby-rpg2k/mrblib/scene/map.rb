@@ -1925,13 +1925,20 @@ class RPG2k
       end
 
       def drive_event
-        if @message
-          drive_message
+        # An Input Number that followed a Show Text draws its digit cells
+        # inside the still-open message window (see #open_number_input) --
+        # check it first so it takes over from the finished text reveal.
+        if @number_input
+          drive_number_input
           return
         end
 
-        if @number_input
-          drive_number_input
+        # A message window with a pending Show Choices / Input Number followup
+        # has finished typing and is just waiting on the interpreter to reach
+        # that next command (see #drive_text_message) -- fall through to the
+        # `waiting?` dispatch below instead of driving it as a live message.
+        if @message && !@message[:awaiting_followup]
+          drive_message
           return
         end
 
@@ -4231,7 +4238,14 @@ class RPG2k
       end
 
       def open_message(lines, choice)
-        return if @message
+        if @message
+          # A Show Choices that directly follows a Show Text keeps the same
+          # window: append the choice list below the text already on screen
+          # instead of building a new window (see #drive_text_message).
+          return unless choice && @message[:awaiting_followup] == :choice
+          append_choice_lines(lines)
+          return
+        end
         names = ->(id) { actor_name(id) }
         raw = (lines || [])
         raw = [''] if raw.empty?
@@ -4283,8 +4297,8 @@ class RPG2k
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
         @message = { window: win, choice: choice, count: plain.length,
-                     reveal: reveal, contents: contents, inner_w: inner_w,
-                     seg_lines: seg_lines, face: face,
+                     choice_start: 0, reveal: reveal, contents: contents,
+                     inner_w: inner_w, seg_lines: seg_lines, face: face,
                      face_index: cfg.face_index,
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
                      text_x: text_x, text_w: text_w, gold_window: gold_window }
@@ -4292,6 +4306,32 @@ class RPG2k
         win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
+      end
+
+      # Append a Show Choices block's labels to the still-open message window
+      # from a Show Text that immediately preceded it (RPG_RT keeps one window
+      # for the pair: text on top, choices below). Reuses the existing window,
+      # contents bitmap and text layout; only the reveal and line list grow.
+      def append_choice_lines(labels)
+        @message[:awaiting_followup] = nil
+        names = ->(id) { actor_name(id) }
+        raw = (labels || [])
+        raw = [''] if raw.empty?
+        scans = raw.map { |l| Game::Message.scan(l.to_s, @state.variables, names) }
+        new_seg_lines = scans.map { |s| s[:segments] }
+        @message[:choice_start] = @message[:seg_lines].length
+        @message[:seg_lines] = @message[:seg_lines] + new_seg_lines
+        @message[:choice] = true
+        @message[:count] = new_seg_lines.length
+        # Choice lists appear at once, same as a standalone choice window; the
+        # text lines above are already fully revealed.
+        plain = @message[:seg_lines].map { |segs| segs.map { |s| s[:text] }.join }
+        reveal = Game::TextReveal.new(plain)
+        reveal.reveal_all
+        @message[:reveal] = reveal
+        draw_message_contents
+        @choice_index = 0
+        set_choice_cursor
       end
 
       # Vertical position of a `win_h`-tall message window for the configured
@@ -4409,8 +4449,9 @@ class RPG2k
 
       def set_choice_cursor
         return unless @message
+        offset = @message[:choice_start] || 0
         @message[:window].cursor_rect =
-          Rect.new(0, @choice_index * MSG_LINE_H,
+          Rect.new(0, (offset + @choice_index) * MSG_LINE_H,
                    @message[:window].contents.width, MSG_LINE_H)
       end
 
@@ -4517,7 +4558,15 @@ class RPG2k
         end
         # `\^` closes the finished window on its own; otherwise wait for a button.
         if reveal.auto_close? || pressed
-          close_message
+          followup = @interpreter.message_followup
+          if followup
+            # A Show Choices / Input Number immediately follows this Show Text:
+            # RPG_RT keeps the same window up, with the choices / digit entry
+            # appended below the text already shown, instead of closing it.
+            @message[:awaiting_followup] = followup
+          else
+            close_message
+          end
           @interpreter.resume
         else
           @message[:window].pause = true
@@ -4552,12 +4601,23 @@ class RPG2k
       # Pixels per digit cell in the Input Number widget.
       NUM_CELL = 16
 
-      # Open a digit-entry window for the Input Number command. A compact panel
-      # near the bottom of the screen shows `digits` cells with an editable
-      # cursor; the interpreter is resumed with the entered value on confirm.
+      # Open a digit-entry widget for the Input Number command. When it directly
+      # follows a Show Text (RPG_RT keeps one window for the pair -- see
+      # #drive_text_message), the cells are drawn into the still-open message
+      # window below the text already shown; otherwise a standalone compact
+      # panel opens near the bottom of the screen. Either way the interpreter
+      # is resumed with the entered value on confirm.
       def open_number_input(digits)
         return if @number_input
         model = Game::NumberInput.new(digits || 1)
+        if @message && @message[:awaiting_followup] == :number
+          @message[:awaiting_followup] = nil
+          x = @message[:inner_w] - model.digits * NUM_CELL
+          y = @message[:seg_lines].length * MSG_LINE_H
+          @number_input = { model: model, embedded: true, x: x, y: y }
+          draw_number_input
+          return
+        end
         inner_w = model.digits * NUM_CELL
         inner_h = MSG_LINE_H
         win_w = inner_w + Window::BORDER * 2
@@ -4575,15 +4635,24 @@ class RPG2k
         ni = @number_input
         return unless ni
         model = ni[:model]
-        c = ni[:contents]
-        c.clear
+        if ni[:embedded]
+          c = @message[:contents]
+          x0 = ni[:x]
+          y0 = ni[:y]
+          c.fill_rect x0, y0, model.digits * NUM_CELL, MSG_LINE_H, Color.new(0, 0, 0, 0)
+        else
+          c = ni[:contents]
+          x0 = 0
+          y0 = 0
+          c.clear
+        end
         (0...model.digits).each do |i|
-          x = i * NUM_CELL
+          x = x0 + i * NUM_CELL
           if i == model.cursor
-            c.fill_rect x, 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
+            c.fill_rect x, y0 + 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
           end
           c.font.color = Color.new(255, 255, 255, 255)
-          c.draw_text x, 0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
+          c.draw_text x, y0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
         end
       end
 
@@ -4604,14 +4673,16 @@ class RPG2k
           draw_number_input
         elsif Input.trigger?(Input::C)
           value = model.value
+          embedded = ni[:embedded]
           close_number_input
+          close_message if embedded
           @interpreter.resume_number(value)
         end
       end
 
       def close_number_input
         return unless @number_input
-        @number_input[:window].dispose
+        @number_input[:window].dispose if @number_input[:window]
         @number_input = nil
       end
 
