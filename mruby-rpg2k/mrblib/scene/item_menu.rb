@@ -50,11 +50,13 @@ class RPG2k
       def update_items
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN) && @item_index < items.size - 1
+        elsif Input.trigger?(Input::DOWN) && !items.empty?
           @item_index += 1
+          @item_index %= items.size
           refresh_item_cursor
-        elsif Input.trigger?(Input::UP) && @item_index > 0
+        elsif Input.trigger?(Input::UP) && !items.empty?
           @item_index -= 1
+          @item_index %= items.size
           refresh_item_cursor
         elsif Input.trigger?(Input::C)
           choose_item
@@ -105,11 +107,13 @@ class RPG2k
         party = @state.party.actors
         if Input.trigger?(Input::B)
           leave_target_mode
-        elsif Input.trigger?(Input::DOWN) && @target_index < party.size - 1
+        elsif Input.trigger?(Input::DOWN)
           @target_index += 1
+          @target_index %= party.size
           refresh_target_cursor
-        elsif Input.trigger?(Input::UP) && @target_index > 0
+        elsif Input.trigger?(Input::UP)
           @target_index -= 1
+          @target_index %= party.size
           refresh_target_cursor
         elsif Input.trigger?(Input::C)
           apply_item(@pending_item, party[@target_index])

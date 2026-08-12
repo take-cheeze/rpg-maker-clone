@@ -735,6 +735,55 @@ check 'two events do not stack on the same tile' do
   ok (ca.x - cb.x).abs == 1, "expected adjacency, got a=#{ca.x} b=#{cb.x}"
 end
 
+# Priority type (the page `layer` field) gates collision the same way it gates
+# draw order: only LAYER_SAME (1) — "same as normal characters" — is solid.
+# LAYER_BELOW (0) and LAYER_ABOVE (2) are decorations the hero, vehicles and
+# other events all walk straight through. See the LAYER_* comment in map.rb.
+check 'a below-characters event does not block the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW) # action trigger, not touch
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, through the event at (1,0)
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, "expected the hero to walk onto/through (1,0), stuck at x=#{st.x}"
+end
+
+check 'an above-characters event does not block the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_ABOVE)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok st.x >= 1, "expected the hero to walk onto/through (1,0), stuck at x=#{st.x}"
+end
+
+check 'a same-layer event still blocks the hero' do
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'a same-layer event still blocks like a normal character'
+end
+
+check 'events on different layers pass through each other via Move Route' do
+  # A below-layer event sits at (3,2); an above-layer event runs a custom
+  # route straight through its column. Only a matching layer collides (see
+  # #char_passable?), so the mover reaches the far side instead of stopping.
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_ABOVE))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [3, 2], [ch.x, ch.y],
+     "an above-layer mover should cross a below-layer event, got #{[ch.x, ch.y]}"
+end
+
 # Each tile's four passability bits mark whether *that tile's own* north/
 # south/east/west edge is open; crossing a boundary needs the leaving tile's
 # bit for the side it exits through *and* the entering tile's bit for the
@@ -880,7 +929,10 @@ end
 
 check 'the action button reaches across a shop counter' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 0)
+  # Same-as-characters: a facing (not overlapping) action check only answers a
+  # LAYER_SAME event — see 'the action button does not answer a below/above
+  # -characters event from an adjacent facing tile' below.
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
   # Player at (0,0) facing east; (1,0) is the counter, the keeper is at (2,0).
   scene = counter_scene({ 1 => event(2, 0, pg) }, [[1, 0]], player: [0, 0])
@@ -895,7 +947,7 @@ end
 
 check 'the reach stops after three counters, and at a non-counter tile' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 0)
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
   # (1,0) is a counter but (2,0) is not, so the event at (3,0) is out of reach.
   scene = counter_scene({ 1 => event(3, 0, pg) }, [[1, 0]], player: [0, 0])
@@ -946,6 +998,25 @@ check 'an action event under the player answers the action button' do
   RGSS::Input.reset
   5.times { scene.update }
   ok st.switches[4], 'the event under the party ran'
+end
+
+# yado.tk: 決定キーを押してもマップイベントが実行しない (「決定キーを押しても
+# マップイベントが実行しない」バグ・エラーページ) — a below/above-characters
+# action event only answers the button by overlap (see the check above), never
+# by facing it from an adjacent tile; only LAYER_SAME does that (its own tile
+# is unreachable, since it blocks the party from ever standing there).
+check 'a below-characters action event does not answer the button from an adjacent tile' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6 # face the event at (1,0) without stepping onto it
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'a below-characters event must not answer the button while merely faced'
 end
 
 # CONTROL_VARS params to add `by` to variable `id`:
@@ -1156,6 +1227,20 @@ check 'Show Inn scene: an unaffordable Accept is ignored' do
   scene.update
   scene.update
   ok st.switches[2], 'the No Stay branch ran on cancel'
+end
+
+check 'Show Inn scene: the Accept / Cancel cursor wraps around' do
+  scene, _st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  eq 0, scene.instance_variable_get(:@inn_choice), 'affordable: cursor starts on Accept'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@inn_choice), 'Up from Accept wraps to Cancel'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@inn_choice), 'Down from Cancel wraps back to Accept'
 end
 
 check 'Key Input Proc waits for a key, stores its code, then continues' do
@@ -2253,6 +2338,28 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   ok !st.switches[2], 'the No Transaction branch was skipped'
 end
 
+check 'Open Shop scene: the buy list cursor wraps around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only, goods 3/5
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+  shop = scene.instance_variable_get(:@shop)
+  eq 0, shop[:index], 'starts on the first good'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, shop[:index], 'Up from the first good wraps to the last (2 goods)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, shop[:index], 'Down from the last good wraps to the first'
+end
 
 # Open a buy-only shop stocking goods 3 (100g) and 5, with `gold` on hand, and
 # advance to the quantity counter for the first good.
@@ -2700,6 +2807,61 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+check 'Enter Hero Name: the character grid cursor wraps around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  # 26 letters (upper) + 26 (lower) + 10 digits + 4 punctuation = 66 characters,
+  # plus BS and OK = 68 cells; 13 per row makes 6 rows, the last ragged with 3.
+  eq 68, RPG2k::Scene::Map::NAME_CELLS.length
+  eq 13, RPG2k::Scene::Map::NAME_COLS
+
+  # Row-local wrap: Right past the end of the first (full, 13-cell) row wraps
+  # to that same row's start, not into row 1.
+  ui[:sel] = 12 # row 0, col 12 (last cell of row 0)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 0, ui[:sel], 'Right from the last cell of row 0 wraps to its first cell'
+
+  # ...and the wrap respects the ragged last row's narrower width (3 cells:
+  # indices 65-67), not a full 13-wide row.
+  ui[:sel] = 67 # row 5, col 2 (OK, the last of the 3 cells)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 65, ui[:sel], 'Right from the last cell of the ragged row wraps to its own first cell'
+
+  # Column wrap: Down from the last row (row 5) wraps to row 0, keeping the
+  # column when the target row is wide enough to hold it.
+  ui[:sel] = 66 # row 5, col 1 (BS)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 1, ui[:sel], 'Down from row 5 wraps to row 0, same column (1)'
+
+  # Up from row 0 wraps to the last row, with the column clamped modulo that
+  # row's narrower width (col 10 in a 13-wide row becomes col 1 of the 3-wide
+  # last row: 10 % 3 == 1).
+  ui[:sel] = 10 # row 0, col 10
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 66, ui[:sel], 'Up from row 0 wraps to row 5, column 10 % 3 == 1'
+end
+
 # A party whose actor levels up on demand, for the level-up-message check.
 class LevelStubActor
   attr_reader :name, :id
@@ -2773,8 +2935,9 @@ check 'boarding a boat and disembarking onto the shore' do
 end
 
 check 'the airship flies over a tile blocked on foot, and follows the party' do
-  # An event occupies (1, 0): impassable on foot, but the airship flies over it.
-  scene = new_scene({ 1 => event(1, 0, page) }, player: [0, 0])
+  # A same-layer event occupies (1, 0): impassable on foot, but the airship
+  # flies over it regardless of layer.
+  scene = new_scene({ 1 => event(1, 0, page(layer: 1)) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   air = st.vehicle(:airship)
   air.map_id = st.map_id
@@ -3076,6 +3239,33 @@ check 'the choice window plays the cursor and decision system sounds' do
   ok !scene.instance_variable_get(:@message), 'the choice window closed on confirm'
 end
 
+check 'the choice window cursor wraps around, like Scene::Title (98dad9b)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'Yes'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'No'),
+    ECmd.new(ic::CHOICE_OPTION, [2], indent: 0, string: 'Maybe'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
+  ok(msg && msg[:choice], 'choice window opened')
+  eq 0, scene.instance_variable_get(:@choice_index), 'starts on the first choice'
+  # Up on the first choice wraps to the last, instead of clamping at 0.
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@choice_index), 'Up from the first choice wraps to the last'
+  # Down on the last choice wraps back to the first, instead of clamping.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@choice_index), 'Down from the last choice wraps to the first'
+end
+
 check 'character_screen_position measures against the live camera' do
   # A map small enough that the camera cannot scroll, so screen position is just
   # the map position: the offsets RPG_RT applies are then visible on their own.
@@ -3374,6 +3564,117 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   scene.update                          # the Hero uses the Potion first
   eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
   eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
+end
+
+check 'Enemy Encounter scene: the command and target cursors wrap around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  eq 0, ui[:cmd], 'starts on Attack'
+  press_key(scene, RGSS::Input::UP)
+  eq 3, ui[:cmd], 'Up from Attack wraps to Defend (the last of the four commands)'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 0, ui[:cmd], 'Down from Defend wraps back to Attack'
+
+  press_key(scene, RGSS::Input::C) # open the enemy target list (2 Slimes)
+  eq :target, ui[:phase]
+  eq 0, ui[:target_i], 'starts on the first foe'
+  press_key(scene, RGSS::Input::UP)
+  eq 1, ui[:target_i], 'Up from the first foe wraps to the last (2 Slimes)'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 0, ui[:target_i], 'Down from the last foe wraps to the first'
+end
+
+# A hero with two battle skills, so the skill-list cursor has more than one row
+# to wrap across (BattleMagicParty above only carries one).
+class BattleTwoSkillParty < BattleMagicParty
+  def initialize
+    super()
+    @hero.instance_variable_set(:@skills, [1, 2])
+  end
+  def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, 3] }; end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
+end
+
+check 'Enemy Encounter scene: the skill list cursor wraps around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleTwoSkillParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+  eq 0, ui[:skill_i], 'starts on the first skill'
+  press_key(scene, RGSS::Input::UP)
+  eq 1, ui[:skill_i], 'Up from the first skill wraps to the last (2 skills)'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 0, ui[:skill_i], 'Down from the last skill wraps to the first'
+end
+
+# A hero with two battle items, so the item-list cursor has more than one row
+# to wrap across (BattleMagicParty above only carries one).
+class BattleTwoItemParty < BattleMagicParty
+  def initialize
+    super()
+    @items = { 5 => 2, 6 => 1 }
+  end
+  def db_item(id); OpenStruct.new(name: "Item#{id}"); end
+end
+
+check 'Enemy Encounter scene: the item list cursor wraps around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleTwoItemParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+  eq 0, ui[:item_i], 'starts on the first item'
+  press_key(scene, RGSS::Input::UP)
+  eq 1, ui[:item_i], 'Up from the first item wraps to the last (2 items)'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 0, ui[:item_i], 'Down from the last item wraps to the first'
+end
+
+# A two-actor party, so the ally-target cursor (heal skill / medicine) has
+# more than one row to wrap across.
+class BattleTwoAllyParty < BattleMagicParty
+  def initialize(hurt: false)
+    super(hurt: hurt)
+    @hero2 = BattleStubActor.new(atk: 10, agi: 5, mp: 5, hp: 150)
+    @actors = [@hero, @hero2]
+  end
+end
+
+check 'Enemy Encounter scene: the ally target cursor wraps around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleTwoAllyParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
+  eq :ally_target, ui[:phase]
+  eq 0, ui[:ally_i], 'starts on the first ally'
+  press_key(scene, RGSS::Input::UP)
+  eq 1, ui[:ally_i], 'Up from the first ally wraps to the last (2 actors)'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 0, ui[:ally_i], 'Down from the last ally wraps to the first'
 end
 
 check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death' do
@@ -3707,7 +4008,7 @@ check 'a BGM position that jumps backwards counts as one play-through' do
 end
 
 check 'the action key marks the event it started for the type-8 branch' do
-  pg = page(trigger: 0)
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
   pg.event_commands = [
     ECmd.new(IC2::CONDITIONAL, [8], indent: 0),
     ECmd.new(Game::Interpreter::Cmd::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 1),
@@ -4359,6 +4660,26 @@ def menu_state
   Game::State.new(MenuStubParty.new, 1, 0, 0)
 end
 
+# A two-actor party carrying a couple of usable items, skills and equip
+# candidates -- MenuStubParty above is a deliberately bare single actor with
+# empty lists (all the condition checks need), but the cursor-wrap checks
+# below need more than one row/actor to wrap across.
+class WrapMenuParty < MenuStubParty
+  def initialize
+    super
+    @actors = [MenuStubActor.new, MenuStubActor.new]
+  end
+  def field_items; [[1, 3], [2, 1]]; end
+  def field_skills(_actor); [[10, 2], [11, 4]]; end
+  def db_item(id); OpenStruct.new(name: "Item#{id}"); end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}"); end
+  def equip_candidates(_slot); [[7, 2], [8, 1]]; end
+end
+
+def wrap_menu_state
+  Game::State.new(WrapMenuParty.new, 1, 0, 0)
+end
+
 check 'the menu party list shows each member condition' do
   st = menu_state
   hero = st.party.actors.first
@@ -4373,6 +4694,19 @@ check 'the menu party list shows each member condition' do
   ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
 end
 
+check 'Scene::Menu: the main command cursor wraps around' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  eq 0, scene.instance_variable_get(:@index), 'starts on the first command'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 5, scene.instance_variable_get(:@index), 'Up from the first command wraps to the last (6 commands)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@index), 'Down from the last command wraps to the first'
+end
+
 check 'the item / skill target list shows who is afflicted' do
   st = menu_state
   st.party.actors.first.add_state(4)                    # Sleep
@@ -4382,6 +4716,104 @@ check 'the item / skill target list shows who is afflicted' do
     texts = window_texts(scene.instance_variable_get(:@target_window))
     ok texts.include?('Sleep'), "the #{klass} target list shows the condition"
   end
+end
+
+check 'Scene::ItemMenu: the item list and target cursors wrap around' do
+  scene = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state)
+  eq 0, scene.instance_variable_get(:@item_index), 'starts on the first item'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index), 'Up from the first item wraps to the last (2 items)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@item_index), 'Down from the last item wraps to the first'
+
+  # Enter target mode (a two-actor party) and wrap that cursor too.
+  scene.send(:prompt_item_target, 1)
+  eq 0, scene.instance_variable_get(:@target_index), 'target starts on the first ally'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@target_index), 'Up from the first ally wraps to the last (2 actors)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
+end
+
+check 'Scene::SkillMenu: the skill list, caster and target cursors wrap around' do
+  scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
+  eq 0, scene.instance_variable_get(:@skill_index), 'starts on the first skill'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@skill_index), 'Up from the first skill wraps to the last (2 skills)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@skill_index), 'Down from the last skill wraps to the first'
+
+  eq 0, scene.instance_variable_get(:@caster_index), 'starts on the first caster'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@caster_index), 'Left from the first caster wraps to the last (2 actors)'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@caster_index), 'Right from the last caster wraps to the first'
+
+  # Target mode (single-ally scope skill) has its own cursor over the party.
+  scene.instance_variable_set(:@mode, :target)
+  scene.instance_variable_set(:@target_index, 0)
+  scene.send(:build_target_window)
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@target_index), 'Up from the first ally wraps to the last (2 actors)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
+end
+
+check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do
+  scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
+  eq 0, scene.instance_variable_get(:@slot_index), 'starts on the first slot'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 4, scene.instance_variable_get(:@slot_index), 'Up from the first slot wraps to the last (5 slots)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@slot_index), 'Down from the last slot wraps to the first'
+
+  eq 0, scene.instance_variable_get(:@actor_index), 'starts on the first actor'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@actor_index), 'Left from the first actor wraps to the last (2 actors)'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Right from the last actor wraps to the first'
+
+  # The equip-candidate list (Remove + the two fitting bag items = 3 rows).
+  scene.instance_variable_set(:@mode, :items)
+  scene.instance_variable_set(:@cand_index, 0)
+  scene.send(:build_cand_window)
+  eq 3, scene.send(:candidates).size, 'Remove plus the two candidates'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@cand_index), 'Up from the first candidate wraps to the last'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@cand_index), 'Down from the last candidate wraps to the first'
 end
 
 check 'the status screen gives the condition a labelled row' do
@@ -4395,6 +4827,19 @@ check 'the status screen gives the condition a labelled row' do
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
                          .instance_variable_get(:@window))
   ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
+end
+
+check 'Scene::StatusMenu: the actor cursor wraps around' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, wrap_menu_state)
+  eq 0, scene.instance_variable_get(:@actor_index), 'starts on the first actor'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@actor_index), 'Left from the first actor wraps to the last (2 actors)'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Right from the last actor wraps to the first'
 end
 
 check 'the field windows resolve the same condition the battle panel does' do
@@ -4713,6 +5158,35 @@ check 'a forced player walk is never lifted' do
     scene.update
     eq 0, scene.send(:player_jump_offset), 'a step is not a hop'
   end
+end
+
+# yado.tk: move-route "Change Graphic" (hero or vehicle) applies visibly but
+# does not persist like the dedicated Change Hero Graphic command — it reverts
+# on Transfer Player (and, being scene-only state, on save/load too, since
+# Continue always builds a fresh Scene::Map).
+check 'a forced route Change Graphic overrides the hero sprite, reverting on Transfer Player' do
+  ic = Game::Interpreter::Cmd
+  name = 'other'
+  # Move Event params: target 10001, freq 8, repeat off, skippable on, then the
+  # packed move command -- Change Graphic carries its filename length + the
+  # graphic index, with the filename bytes in the command's own string field
+  # (see Interpreter#decode_move_route).
+  params = [10001, 8, 0, 1, R::CHANGE_GRAPHIC, name.length, 3]
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::MOVE_EVENT, params, string: name)]
+  scene = new_scene({ 1 => event(3, 3, pg) }, player: [0, 0])
+  5.times { scene.update }
+  charset, index = scene.send(:player_draw_charset)
+  ok charset, 'the overridden charset bitmap loaded'
+  eq 3, index, 'the overridden graphic index applied'
+  ok !charset.equal?(scene.instance_variable_get(:@charset)),
+     'the override bitmap is not the leader\'s own charset'
+
+  scene.send(:perform_teleport, [1, 0, 0, 0])
+  charset2, index2 = scene.send(:player_draw_charset)
+  eq scene.instance_variable_get(:@charset), charset2,
+     'Transfer Player reverted to the leader\'s own charset'
+  eq scene.instance_variable_get(:@charset_index), index2
 end
 
 check 'a teleport lands the party on its tile, not mid-slide' do
