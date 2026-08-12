@@ -36,6 +36,18 @@ DEFINE_int64(timeout_ms, -1, "timeout to exit");
 DEFINE_int64(width, 320, "width of the window");
 DEFINE_int64(height, 240, "height of the window");
 DEFINE_string(game_dir, "", "Game directory");
+DEFINE_bool(
+    test_play,
+    false,
+    "Explicitly mark this run as a Test Play launch, the same way the RPG "
+    "Maker editors' own Test Play button does (Game.ini's [Game] Test=1 for "
+    "RPG2000/2003, XP and VX/VX Ace projects is read automatically and does "
+    "not need this). The engine's own debugging and CI-automation tooling "
+    "-- --profile, --term_console, --term_stats, the --error_dump_probe / "
+    "--rgss_effect_probe / --rgss_audio_probe ctest probes, and the "
+    "--rpg2k_*/--rgss_host_*/--mv_*/--mz_* headless-drive flags -- only take "
+    "effect when the run is in test play; a released game launched without "
+    "Test=1 or --test_play ignores all of them");
 DEFINE_string(
     mv_screenshot,
     "",
@@ -467,6 +479,20 @@ std::string ini_rtp_name(const fs::path& game_dir) {
   return name;
 }
 
+// The RPG Maker editors (2000/2003, XP, VX/VX Ace) write `Test=1` into a
+// project's own Game.ini for the duration of a Test Play launch and strip it
+// again for a real build, so it is the authentic on-disk signal that this run
+// is a playtest rather than a released game -- unlike the CLI, which anyone
+// launching the binary controls either way. MV/MZ projects carry no Game.ini
+// at all; --test_play is the only signal for those.
+bool game_ini_test_flag(const fs::path& game_dir) {
+  const fs::path ini_path = game_dir / "Game.ini";
+  if (!fs::exists(ini_path))
+    return false;
+  inicpp::IniManager ini(ini_path.string());
+  return ini["Game"].toInt("Test") != 0;
+}
+
 // Each RGSS generation registers its RTPs under its own key, keyed by RTP name:
 // RGSS (XP) -> "Standard", RGSS2 (VX) -> "RPGVX", RGSS3 (VX Ace) -> "RPGVXAce".
 fs::path rgss_rtp_path(const std::string& rgss_key,
@@ -770,6 +796,91 @@ static bool script_host_env_enabled(const std::string& value) {
   return !(value == "0" || value == "false" || value == "off" || value == "no");
 }
 
+// Every flag below is debugging or CI-automation tooling: a profiler, a
+// terminal log/stats overlay, headless input-injection ("drive the game as if
+// testing it") and the render/audio/error-report self-probes. None of it
+// should be reachable against a released game -- one launched with neither
+// Game.ini's own Test=1 nor an explicit --test_play -- no matter what is on
+// its command line, so this resets each one to its default and says why
+// whenever the run asked for it anyway. --rgss_script_host is deliberately
+// not touched: it is not a debug feature but the only way an RGSS game runs
+// at all (docs/adr/0029-rgss-script-host-by-default.md).
+static void disable_non_test_play_flags() {
+  auto reset_bool = [](bool& flag, const char* name) {
+    if (flag) {
+      LOG(ERROR) << "--" << name
+                 << " is test-play-only tooling; ignoring outside test play "
+                    "(no Game.ini [Game] Test=1 and no --test_play)";
+      flag = false;
+    }
+  };
+  auto reset_int = [](auto& flag, const char* name) {
+    if (flag != 0) {
+      LOG(ERROR) << "--" << name
+                 << " is test-play-only tooling; ignoring outside test play "
+                    "(no Game.ini [Game] Test=1 and no --test_play)";
+      flag = 0;
+    }
+  };
+  auto reset_string = [](std::string& flag, const char* name) {
+    if (!flag.empty()) {
+      LOG(ERROR) << "--" << name
+                 << " is test-play-only tooling; ignoring outside test play "
+                    "(no Game.ini [Game] Test=1 and no --test_play)";
+      flag.clear();
+    }
+  };
+
+  reset_bool(FLAGS_rpg2k_new_game, "rpg2k_new_game");
+  reset_bool(FLAGS_rpg2k_continue, "rpg2k_continue");
+  reset_bool(FLAGS_rgss_host_new_game, "rgss_host_new_game");
+  reset_bool(FLAGS_rgss_host_move_test, "rgss_host_move_test");
+  reset_bool(FLAGS_rgss_host_menu_test, "rgss_host_menu_test");
+  reset_bool(FLAGS_rgss_host_battle_test, "rgss_host_battle_test");
+  reset_bool(FLAGS_rgss_host_save_test, "rgss_host_save_test");
+  reset_int(FLAGS_rgss_random_seed, "rgss_random_seed");
+  reset_bool(FLAGS_mv_new_game, "mv_new_game");
+  reset_int(FLAGS_mv_battle_test, "mv_battle_test");
+  reset_bool(FLAGS_mv_move_test, "mv_move_test");
+  reset_bool(FLAGS_mv_message_test, "mv_message_test");
+  reset_bool(FLAGS_mv_menu_test, "mv_menu_test");
+  reset_bool(FLAGS_mv_save_test, "mv_save_test");
+  reset_bool(FLAGS_mv_audio_test, "mv_audio_test");
+  reset_string(FLAGS_mv_screenshot, "mv_screenshot");
+  reset_bool(FLAGS_mz_new_game, "mz_new_game");
+  reset_bool(FLAGS_mz_move_test, "mz_move_test");
+  reset_bool(FLAGS_mz_audio_test, "mz_audio_test");
+  reset_bool(FLAGS_mz_message_test, "mz_message_test");
+  reset_bool(FLAGS_mz_animation_test, "mz_animation_test");
+  reset_bool(FLAGS_mz_equip_test, "mz_equip_test");
+  reset_bool(FLAGS_mz_message_play, "mz_message_play");
+  reset_bool(FLAGS_mz_shop_test, "mz_shop_test");
+  reset_bool(FLAGS_mz_encounter_test, "mz_encounter_test");
+  reset_bool(FLAGS_mz_common_event_test, "mz_common_event_test");
+  reset_bool(FLAGS_mz_transfer_test, "mz_transfer_test");
+  reset_bool(FLAGS_mz_menu_test, "mz_menu_test");
+  reset_bool(FLAGS_mz_menu_play, "mz_menu_play");
+  reset_bool(FLAGS_mz_save_test, "mz_save_test");
+  reset_int(FLAGS_mz_battle_test, "mz_battle_test");
+  reset_bool(FLAGS_mz_battle_play, "mz_battle_play");
+  reset_string(FLAGS_mz_screenshot, "mz_screenshot");
+  reset_bool(FLAGS_rgss_effect_probe, "rgss_effect_probe");
+  reset_bool(FLAGS_rgss_audio_probe, "rgss_audio_probe");
+  reset_bool(FLAGS_error_dump_probe, "error_dump_probe");
+  reset_bool(FLAGS_profile, "profile");
+  reset_string(FLAGS_profile_trace, "profile_trace");
+
+  // --term_console/--term_stats default to *on*, but only have any effect
+  // once a terminal backend (--sixel/--iterm) is active; only warn when that
+  // is actually the case, so an ordinary SDL-window launch stays quiet.
+  if ((FLAGS_sixel || FLAGS_iterm) && (FLAGS_term_console || FLAGS_term_stats))
+    LOG(ERROR) << "--term_console/--term_stats are test-play-only tooling; "
+                  "disabled outside test play (no Game.ini [Game] Test=1 and "
+                  "no --test_play)";
+  FLAGS_term_console = false;
+  FLAGS_term_stats = false;
+}
+
 int main(int argc, char** argv) {
   // Seed the script-host flag from the environment *before* parsing, so an
   // explicit --rgss_script_host on the command line still wins. The variable is
@@ -801,6 +912,18 @@ int main(int argc, char** argv) {
       FLAGS_game_dir = absolute.lexically_normal().string();
   }
   nglog::InitializeLogging(argv[0]);
+
+  // Whether this run is a Test Play launch: either the project's own
+  // Game.ini says so (the RPG Maker editors' own signal, for 2000/2003, XP
+  // and VX/VX Ace projects) or --test_play was passed explicitly (the only
+  // signal available for MV/MZ projects, which carry no Game.ini, and for CI).
+  // A released game launched plainly has neither, so the debugging and
+  // CI-automation flags below all stay off for it regardless of what else is
+  // on the command line.
+  const bool is_test_mode =
+      FLAGS_test_play || game_ini_test_flag(FLAGS_game_dir);
+  if (!is_test_mode)
+    disable_non_test_play_flags();
 
 #ifdef __EMSCRIPTEN__
   // The page has no terminal and no log file anyone can reach: ng-log's files
@@ -1037,6 +1160,12 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "TIMEOUT_MS"),
                 mrb_fixnum_value(FLAGS_timeout_ms));
+  // Whether this run is a Test Play launch (Game.ini's own Test=1, or
+  // --test_play): the one native-side signal every maker's Ruby can consult,
+  // the same way RPG2000/2003's own `TestPlay` launch word or MV/MZ's
+  // `Utils.isOptionValid('test')` would.
+  mrb_const_set(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "TEST_PLAY"),
+                mrb_bool_value(is_test_mode));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpg2k_new_game));

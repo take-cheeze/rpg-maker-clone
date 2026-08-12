@@ -134,7 +134,7 @@ start_ours() {
     PIDS+=($!)
     sleep 1
     DISPLAY="${OUR_DISPLAY}" "${ENGINE}" --game_dir "${GAME_DIR}" \
-        --rpg2k_continue --timeout_ms="${OUR_TIMEOUT_MS:-300000}" \
+        --test_play --rpg2k_continue --timeout_ms="${OUR_TIMEOUT_MS:-300000}" \
         >/tmp/neph-save-our-player.log 2>&1 &
     PIDS+=($!)
     sleep "${OUR_BOOT_WAIT:-10}"

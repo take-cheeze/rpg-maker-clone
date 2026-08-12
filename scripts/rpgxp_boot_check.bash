@@ -129,7 +129,7 @@ run_boot() {
     # and can steal a display from a concurrent run (see build.yml).
     # shellcheck disable=SC2086 # ${flags} is a deliberate word-split flag list
     if ! xvfb-run --server-num="${display}" timeout 180 "${ENGINE}" \
-            --game_dir "${game}" ${flags} \
+            --game_dir "${game}" --test_play ${flags} \
             --rgss_random_seed="${RANDOM_SEED}" \
             --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
         echo "FAILED: ${game} (${label}): the engine exited non-zero" >&2
