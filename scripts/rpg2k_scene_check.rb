@@ -195,7 +195,8 @@ def fake_map_with_counters(id, events, counters)
                                    upper_layer: upper, events: events))
 end
 
-def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
+def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
+            airship_land: true, airship_pass: true)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
@@ -291,8 +292,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
                                      flash_green: 31, flash_blue: 31, flash_power: 20) }
     ) },
     # Every tile of the synthetic map is chip 0, which the fake chipset tags as
-    # terrain 42 — so this one row decides whether walking hurts.
-    terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth) },
+    # terrain 42 — so this one row decides whether walking hurts, and (for the
+    # airship checks) whether it may fly over / land on any tile.
+    terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth,
+                                    airship_land: airship_land, airship_pass: airship_pass) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -437,8 +440,10 @@ def fake_party(members = [])
 end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
-              members: [], terrain_damage: 0, bush_depth: 0)
-  db = fake_db(common, troop_pages, terrain_damage, bush_depth)
+              members: [], terrain_damage: 0, bush_depth: 0,
+              airship_land: true, airship_pass: true)
+  db = fake_db(common, troop_pages, terrain_damage, bush_depth,
+               airship_land: airship_land, airship_pass: airship_pass)
   state = Game::State.new(fake_party(members), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   RPG2k::Scene::Map.new(fake_parent(db), state)
@@ -2949,6 +2954,60 @@ check 'the airship flies over a tile blocked on foot, and follows the party' do
   RGSS::Input.dir_value = 0
   ok st.x >= 1, 'the airship crossed the on-foot-blocked tile'
   eq [st.x, st.y], [air.x, air.y], 'the airship follows the party'
+end
+
+check 'the airship cannot fly over terrain whose airship_pass flag forbids it' do
+  scene = new_scene({}, player: [0, 0], airship_pass: false)
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0 # the airship sits under the party; board in place
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship in place'
+  RGSS::Input.dir_value = 6
+  10.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'airship_pass: false grounded the airship in place'
+end
+
+check 'the airship cannot land where the terrain\'s airship_land flag forbids it' do
+  scene = new_scene({}, player: [0, 0], airship_land: false)
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship'
+  # Try to land again: every tile forbids it, so the party stays aboard.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'airship_land: false kept the party aboard'
+end
+
+check 'the airship lands in place where the terrain allows it' do
+  scene = new_scene({}, player: [0, 0], airship_land: true)
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'landed where airship_land allows it'
+  eq [0, 0], [st.x, st.y], 'the party stands where the airship touched down'
+  eq [0, 0], [air.x, air.y], 'the airship stayed where it landed'
 end
 
 check 'Show Battle Animation with the wait flag holds the event then resumes' do
