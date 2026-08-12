@@ -1437,7 +1437,258 @@ The work below is roughly ordered by the critical path to a walkable game
   opposite rule, and the menu's candidate list for slot 1 has to change with it.
   See ADR 0040.
 
-## RPG Maker with RGSS (XP / VX / VXAce)
+### yado.tk quirks backlog
+
+[yado.tk](http://yado.tk/) is a Japanese fan reference cataloguing specific,
+undocumented-elsewhere behavioural quirks of the genuine RPG_RT.exe (RPG
+Maker 2000/2003 runtime). Unlike the rest of this file, the section below is
+a **raw backlog to triage**, not a record of shipped work — items move up
+into "Fixed" or "Confirmed already correct" as they're checked against the
+codebase and, where needed, against real RPG_RT. Primary sources read so far:
+the front page (`yado.tk/`, partially — the 初心者/主人公・パーティー/
+event-command categories), the full site update history (`page/reki.htm`),
+the full ツクールの仕様 ("RPG Maker specifications") page
+(`2k/01_shoshin/011_siyou/`, ~140 quirks), and 13 pages under `2k/09_bug/`
+(bugs/errors). **460 of the ~474 distinct subpages linked from the front
+page remain unopened** — the rest of the site (自作メニュー/自作戦闘 custom
+menu/battle, マップイベント, データベース, 特殊技能・アイテム, 画像加工,
+デフォルト戦闘, 演出, 特設ページ, and most of イベントコマンド/スイッチ・
+変数) hasn't been swept at all yet.
+
+#### Fixed
+- ✅ Event **priority type** (page `layer`: below/same/above characters) now
+  gates collision (`passable?`/`char_passable?`/`char_can_land?`/
+  `vehicle_passable?`), not just draw order — only "same as characters"
+  blocks movement.
+- ✅ The **decision key** only answers a below/above-characters action event
+  (trigger 0) by tile overlap, never by facing it from an adjacent tile —
+  only "same as characters" answers by facing (yado.tk: 決定キーを押しても
+  マップイベントが実行しない, `2k/09_bug/025_ibento_kettei_huka/`).
+- ✅ Set Move Route **Change Graphic** targeting the hero now actually
+  changes the on-screen sprite (it applied to `@player_char` but the
+  renderer never read it), and reverts on Transfer Player like real RPG_RT
+  (not persistent like the dedicated Change Hero Graphic command).
+
+#### Confirmed already correct (no action needed)
+- Wait 0.0 seconds already costs exactly one frame (not a no-op) —
+  `do_wait`/`drive_wait` in interpreter.rb / map.rb.
+- Battle Event page selection already differs correctly from Map/Common
+  event selection: `Game::BattlePage.select_all` runs **every** satisfied
+  page once per turn, lower page number first, vs. `Game::EventPage.select`
+  picking only the single highest-numbered page for map/common events.
+
+#### Confirmed genuine gaps, not yet fixed
+- **Move route continuation across a page switch.** Real RPG_RT: if a map
+  event's active page switches while its move route is executing, the route
+  restarts from the top — *unless* the old and new page's move-route
+  settings are byte-identical, in which case it continues seamlessly.
+  `build_event` always builds a fresh `Game::MoveRoute` on every page
+  (re)selection with no such comparison. Self-contained, no save-format
+  impact — a reasonable next pick.
+- **Common-event Parallel Process state should survive map changes and
+  saves, unlike a map event's.** Within one map visit this is already
+  modelled correctly (`step_parallel`'s `gate_switch` resumes the same
+  interpreter; a map event's parallel process restarts via `new_parallel` on
+  every page reselect) — but `perform_teleport` and `Scene::Map#initialize`
+  unconditionally rebuild *every* parallel process from scratch via
+  `build_parallels`, and `Game::State#to_h`/`to_lsd` have no field for
+  interpreter/parallel continuation state at all (LCF save chunks 113/114
+  are explicitly documented as opaque/unimplemented in
+  `mruby-lcf/mrblib/schema.rb`). **Architecturally significant — needs a
+  design decision (new save-chunk plumbing) before starting, not a small
+  patch.** Candidate for its own ADR.
+
+#### Untriaged backlog, from `2k/09_bug/` (bugs/errors pages read so far)
+- `016_ikinari_end/` — a Parallel Process can observe an all-KO'd party and
+  fire Game Over *before* a concurrent Battle "On Lose" recovery branch gets
+  to run its full-heal, even though the recovery would have prevented it.
+  Ordering/race between the game-over check and parallel-process ticking.
+- `017_heiretu_totyu_end/hei_mukou.htm` — (a) a Parallel Process's appearance
+  condition going false mid-execution isn't observed until the process
+  naturally hits a Wait/yield point, not instantly (may already follow from
+  how `step_parallel` is structured — unverified); (b) Set Move Route +
+  "wait for completion" targeting a permanently-impassable tile without
+  "Ignore if can't move" stalls a parallel process forever.
+- `015_shujinkou_idou_huka/` — catalogue of hero-can't-move causes; most
+  already covered by existing passability/move-route logic, but **"Force
+  Move All" targeting a currently-hidden (appearance-conditions-unmet) map
+  event causes a hard freeze in real RPG_RT** is a distinct crash-class quirk
+  not cross-checked yet.
+- `037_zen_tuukou_kanou/` — passability is the AND of lower+upper chip
+  passability (probably already correct, unverified); only the chipset's
+  literal top-left upper tile is the canonical "no tile" transparent chip,
+  any other blank-looking one carries its own (possibly impassable)
+  identity — content-authoring nuance, likely nothing to fix engine-side.
+- `028_tokushu_huka/` — a skill whose Attack/Defense Attribute is configured
+  as a **weapon** attribute (vs. a **magic** attribute) can only be used
+  while a weapon carrying that same attribute is equipped; armour with the
+  same attribute does not satisfy it. Worth checking whether skill
+  usability currently models attribute-based equip-gating at all.
+- `033_load/` — editing a map in the *editor* after a save exists resets
+  that save's event positions to default on load, and database edits (e.g.
+  reordering Items) desync old saves since items are referenced by
+  index/id. Narrow/likely not applicable — this reimplementation has no
+  "map data changed since this save" concept to model.
+- `027_tokushu_suicchi/` — a Skill Type "Switch" becoming unselectable in
+  battle until its attributes are reset appears to be an *editor* bug that
+  produces malformed authored data, not runtime engine behaviour — probably
+  nothing to reproduce here.
+- `001_bug_taisaku/`, `014_shift/`, `024_shori_ochi/`, `032_bgm_naranai/`,
+  `040_siro_bubun/` — debugging-technique guide, Windows StickyKeys dialog,
+  frame-rate-drop authoring advice, and two Windows/graphics-import issues,
+  respectively. Not engine game-logic; skip.
+
+#### Untriaged backlog, from `2k/01_shoshin/011_siyou/` (ツクールの仕様)
+Full page read; ~140 distinct quirks catalogued, grouped by the page's own
+section headers (English). Items already Fixed/Confirmed above are omitted.
+Everything below is unverified against the codebase.
+
+- **Items & equipment** — counts silently cap at 99 (not clamped, just
+  ignored past it); Change Equipment creates/returns inventory copies
+  implicitly; item list always sorts by database id, never acquisition
+  order; "equipped item No." reads 0 when empty, and the 2nd weapon slot
+  reads through the *Shield* No. operand for dual-wield; "hero equips X"
+  and "has item X" conditions both count an equipped copy; "item possession
+  count" excludes equipped copies (must sum both for the true total); no
+  inventory is per-hero, always party-shared.
+- **Call Event** — doesn't move the target event, ignores its appearance
+  conditions, can't cross maps, continues the *caller* right after itself
+  once the callee finishes/cancels; a variable can't pick the called
+  common-event id directly (needs a dispatcher chain); calling a bad
+  event/page id raises specific distinct error dialogs; nesting caps at
+  1000; under heavy nested-Call-Event + multi-parallel-process load,
+  processing can freeze (workaround: a Wait:0.0s before the call). Battle
+  Events can't use Call Event through the normal editor at all.
+- **Wait** — an inline "(W)" wait option is identical to a separate Wait
+  command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
+  above).
+- **Encounter** — standing on a "hero touches event" tile suppresses random
+  encounters there (**related to the already-fixed priority-type work but
+  itself unverified** — check `try_encounter`/equivalent); Ctrl during test
+  play disables encounters.
+- **Screen Flash / Character Flash** — only one of each can be active at
+  once (a second supersedes, doesn't stack); both are capped to 1/30s
+  display while a Battle Animation plays concurrently (the animation's own
+  per-frame flash occupies the effect).
+- **Set Move Route / Character movement** — route commands don't apply
+  until Move-All/Show-Text/Wait/event-end; only one pending route per
+  character (issuing two back-to-back discards the first entirely, not
+  just supersedes visually); moving onto an impassable tile without
+  "Ignore If Can't Move" hangs at that command until unblocked; Through
+  Mode must be explicitly ended or it never turns back off; "Face
+  Direction" always overrides Fixed Direction/Animation Type; "One Step
+  Forward" after Fixed-Direction movement uses the last direction actually
+  moved, not the displayed facing; Jump needs both Begin/End (no move
+  between = vertical hop in place), speed/direction fixed for its duration;
+  hero-targeted Set Move Route suppresses random encounters during the
+  move; running it from a Parallel Process during a hero/event tile overlap
+  can suppress that event's touch trigger; targeting a currently-hidden map
+  event with Move-All freezes (same family as the `015_shujinkou_idou_huka`
+  item above).
+- **Repeat/Loop** — loops forever without an explicit Break Loop.
+- **Common Event** — can't display map graphics or use touch-style
+  triggers, can't run during battle or with the menu open; "This Event" as
+  a target inside a Common Event (no map-event context) raises the invalid-
+  event error; **interrupting a Common Event's Parallel Process (its switch
+  turns off mid-run) and re-enabling it resumes exactly where it left off**
+  — this is the same fact as the "Confirmed genuine gap" above, restated.
+- **Move All / Force Complete Move** — blocks Event Content at that command
+  until every targeted character's route finishes; same freeze conditions
+  as Set Move Route above.
+- **Autorun** — blocks hero control (unlike Parallel Process) and blocks
+  other events too, unless "move other events during message wait" is on;
+  runs to completion even if its own appearance condition goes false mid-
+  run, *including across a map transfer*; only one Autorun engine-wide at a
+  time, and none can start while any non-parallel event is already running;
+  a self-targeted Set Move Route with a real movement command can let hero
+  control through during an Autorun. **Bug**: an "event touches hero"
+  event approaching via "Approach Hero" that simultaneously triggers a
+  Common Event Autorun can permanently freeze that map event (fixes: touch
+  it again, toggle its appearance switch, or issue any move-route command
+  at it — "Cancel Move Route" alone does not clear it). Related to the
+  already-fixed priority-type/touch-trigger work but distinct and unverified.
+- **Hero & party** — party caps at 4 (Change Party Member no-ops past that);
+  removing a hero preserves their equipment/level/EXP/HP/status; the field
+  sprite is always party member 1's; only the front member draws on the
+  field at all; a hero's name can't be copied to another via any built-in
+  command.
+- **Processing order** — map/common events process in ascending id order;
+  "Get Event ID at coordinates" on overlapping events returns the
+  **highest** id, not lowest/topmost-drawn; only one event/parallel-process
+  advances per tick engine-wide (round robin, not true concurrency) — a
+  process that hits Wait/Show-Text yields to the others that tick.
+- **Battle Animation** — only one can display at once (second supersedes);
+  each frame is exactly 1/30s; targeting a Vehicle position reads that
+  vehicle's live x/y even from a different map than the one shown.
+- **Material data** — an imported asset takes priority over a same-named RTP
+  one; dropping files directly into asset folders bypasses size/transparent-
+  colour-index validation.
+- **Parallel Process** — yields to others during its own Wait/Show-Text
+  pause; restarting after reaching its own end always costs exactly one
+  frame; appearance condition going false mid-run only stops at the next
+  yield point, not instantly (same fact as the `09_bug` item above); a
+  Transfer Player command inside one lets subsequent commands run while the
+  new map is still loading (needs a Wait:0.0s after it) — for a **map**
+  event specifically, a Wait right there instead ends that event outright
+  since its context is gone post-transfer; "On Loss: Handle Separately" +
+  an immediate recovery branch can still lose to Game Over if *any*
+  Parallel Process is still running (must stop them all first) — same
+  family as the `016_ikinari_end` race above; **setting a map event's
+  trigger to Parallel Process also fires it on hero contact** — instantly
+  on overlap for below/above-characters priority, repeatedly while a
+  direction key is held against a same-as-characters (blocking) one. Worth
+  checking against `step_parallel`/touch-trigger dispatch.
+- **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
+  Ship aren't hardcoded to water, their passability follows the terrain
+  table's boat/ship-pass flags like any other vehicle rule; an airship
+  can't land on a tile a map event currently occupies; airships get no
+  random encounters by default; hero-targeted Set Move Route commands (Dash,
+  Jump, etc.) still run normally while mounted and must be manually guarded
+  off; **setting a map event's trigger to Parallel Process and running "Set
+  Vehicle Position" from it crashes RPG_RT** (any other trigger type does
+  not) — an authentic engine crash, probably not worth reproducing; a
+  vehicle's x/y/screen-x/y can be read via variable ops from a different map
+  than it currently occupies.
+- **Battle Event** — separate command set from Map/Common events entirely;
+  no Pictures on the battle screen; Parallel Process can't run in battle;
+  no further pages run once battle ends.
+- **Picture** — 50 independent slots, higher id draws on top; map/characters
+  always draw below all Pictures, Battle Animation + text window always
+  above; none show on Menu/Battle screens; halted entirely while a text
+  window is up; **changing maps clears all Pictures — except via Teleport
+  or Escape (skill/item), which don't clear them**; semi-transparent
+  (1-99%) opacity costs noticeably more than fully opaque/transparent;
+  Erase Picture is instant (no fade) — a gradual fade needs Move Picture to
+  the same spot at 0% opacity instead.
+- **Map Event** — "hero touches event" does *not* fire in three specific
+  cases: (a) the event has already logically started moving into its next
+  tile (hit-test uses the target tile, even if the sprite still visually
+  overlaps the old one); (b) the event moved onto the hero's own tile
+  (event-initiated contact doesn't count for this trigger — **already
+  correctly modelled**, `move_autonomous` only checks trigger 2 for that
+  case); (c) hero and event simultaneously swap tiles by crossing paths —
+  this "pass-through" also fails to register (looked at this one already —
+  genuinely tricky to verify without a real RPG_RT reference, see prior
+  session notes); if a multi-page event's move route is mid-execution when
+  its page switches, the route restarts *unless* the two pages' move-route
+  settings are byte-identical (**same fact as the "confirmed gap" above**).
+- **Menu screen** — Call Menu Screen bypasses "Prohibit Menu" (only the
+  player's own Cancel-key shortcut respects it); no sub-part of the menu
+  can be called except the dedicated Save-screen command; can't open during
+  battle; opening it pauses *all* event processing including active
+  timers/parallel processes; Erase Screen's black-out is undone if the
+  player opens and closes the menu.
+- **Label** — only jumps within the same Event Content block (not across
+  events/pages); works from anywhere in the block; a duplicate label number
+  always jumps to the first (topmost) occurrence.
+- **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
+  where it left off, *unless* the map was edited/re-saved since, in which
+  case that event restarts from the top (edge case, likely not applicable
+  here — no "map data changed since save" concept); a runtime Change
+  Tileset override does not survive save/load, reverting to the map's own
+  configured tileset (**worth checking** — `apply_tileset_request`/
+  `@tileset_id` currently only resets on teleport per the code read this
+  session; unclear whether it also resets on save/load).
 
 An RPG Maker XP project stores its whole database as Ruby `Marshal` dumps
 (`Data/*.rxdata`) and its game logic as ~90 zlib-deflated RGSS (Ruby 1.8)
