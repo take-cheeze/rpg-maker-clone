@@ -56,17 +56,21 @@ class RPG2k
         party = @state.party.actors
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN) && @slot_index < @slots.size - 1
+        elsif Input.trigger?(Input::DOWN)
           @slot_index += 1
+          @slot_index %= @slots.size
           refresh_slot_cursor
-        elsif Input.trigger?(Input::UP) && @slot_index > 0
+        elsif Input.trigger?(Input::UP)
           @slot_index -= 1
+          @slot_index %= @slots.size
           refresh_slot_cursor
-        elsif Input.trigger?(Input::RIGHT) && @actor_index < party.size - 1
+        elsif Input.trigger?(Input::RIGHT)
           @actor_index += 1
+          @actor_index %= party.size
           rebuild_for_actor
-        elsif Input.trigger?(Input::LEFT) && @actor_index > 0
+        elsif Input.trigger?(Input::LEFT)
           @actor_index -= 1
+          @actor_index %= party.size
           rebuild_for_actor
         elsif Input.trigger?(Input::C)
           @cand_index = 0
@@ -83,11 +87,13 @@ class RPG2k
       def update_items
         if Input.trigger?(Input::B)
           leave_items
-        elsif Input.trigger?(Input::DOWN) && @cand_index < candidates.size - 1
+        elsif Input.trigger?(Input::DOWN)
           @cand_index += 1
+          @cand_index %= candidates.size
           refresh_cand_cursor
-        elsif Input.trigger?(Input::UP) && @cand_index > 0
+        elsif Input.trigger?(Input::UP)
           @cand_index -= 1
+          @cand_index %= candidates.size
           refresh_cand_cursor
         elsif Input.trigger?(Input::C)
           apply_choice

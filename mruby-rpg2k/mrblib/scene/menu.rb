@@ -39,11 +39,13 @@ class RPG2k
       def update
         return drive_message if @message
 
-        if Input.trigger?(Input::DOWN) && @index < @commands.size - 1
+        if Input.trigger?(Input::DOWN)
           @index += 1
+          @index %= @commands.size
           refresh_cursor
-        elsif Input.trigger?(Input::UP) && @index > 0
+        elsif Input.trigger?(Input::UP)
           @index -= 1
+          @index %= @commands.size
           refresh_cursor
         elsif Input.trigger?(Input::B)
           @parent.pop

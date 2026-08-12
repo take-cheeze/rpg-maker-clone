@@ -2058,11 +2058,13 @@ class RPG2k
           open_inn_window(req) # opened this frame; take input from the next one
           return
         end
-        if Input.trigger?(Input::DOWN) && @inn_choice < 1
+        if Input.trigger?(Input::DOWN)
           @inn_choice += 1
+          @inn_choice %= 2
           set_inn_cursor
-        elsif Input.trigger?(Input::UP) && @inn_choice > 0
+        elsif Input.trigger?(Input::UP)
           @inn_choice -= 1
+          @inn_choice %= 2
           set_inn_cursor
         elsif Input.trigger?(Input::C)
           if @inn_choice.zero?
@@ -2344,12 +2346,14 @@ class RPG2k
 
       # Move the shop cursor with Up / Down; returns true if it moved.
       def shop_move_cursor(lines)
-        if Input.trigger?(Input::DOWN) && @shop[:index] < lines.length - 1
+        if Input.trigger?(Input::DOWN) && !lines.empty?
           @shop[:index] += 1
+          @shop[:index] %= lines.length
           draw_shop
           true
-        elsif Input.trigger?(Input::UP) && @shop[:index] > 0
+        elsif Input.trigger?(Input::UP) && !lines.empty?
           @shop[:index] -= 1
+          @shop[:index] %= lines.length
           draw_shop
           true
         else
@@ -2635,12 +2639,13 @@ class RPG2k
 
       # Per-actor command menu: Attack, Skill, Item or Defend.
       def drive_battle_command
-        last = battle_commands.length - 1
-        if Input.trigger?(Input::DOWN) && @battle_ui[:cmd] < last
+        if Input.trigger?(Input::DOWN)
           @battle_ui[:cmd] += 1
+          @battle_ui[:cmd] %= battle_commands.length
           draw_battle_command
-        elsif Input.trigger?(Input::UP) && @battle_ui[:cmd] > 0
+        elsif Input.trigger?(Input::UP)
           @battle_ui[:cmd] -= 1
+          @battle_ui[:cmd] %= battle_commands.length
           draw_battle_command
         elsif Input.trigger?(Input::C)
           select_battle_command
@@ -2691,11 +2696,13 @@ class RPG2k
       # enemy-scope Skill) hits.
       def drive_battle_target
         foes = living_foes
-        if Input.trigger?(Input::DOWN) && @battle_ui[:target_i] < foes.length - 1
+        if Input.trigger?(Input::DOWN) && !foes.empty?
           @battle_ui[:target_i] += 1
+          @battle_ui[:target_i] %= foes.length
           draw_battle_target
-        elsif Input.trigger?(Input::UP) && @battle_ui[:target_i] > 0
+        elsif Input.trigger?(Input::UP) && !foes.empty?
           @battle_ui[:target_i] -= 1
+          @battle_ui[:target_i] %= foes.length
           draw_battle_target
         elsif Input.trigger?(Input::C)
           target = foes[@battle_ui[:target_i]]
@@ -2748,11 +2755,13 @@ class RPG2k
 
       def drive_battle_skill
         skills = @battle_ui[:skills]
-        if Input.trigger?(Input::DOWN) && @battle_ui[:skill_i] < skills.length - 1
+        if Input.trigger?(Input::DOWN) && !skills.empty?
           @battle_ui[:skill_i] += 1
+          @battle_ui[:skill_i] %= skills.length
           draw_battle_skill
-        elsif Input.trigger?(Input::UP) && @battle_ui[:skill_i] > 0
+        elsif Input.trigger?(Input::UP) && !skills.empty?
           @battle_ui[:skill_i] -= 1
+          @battle_ui[:skill_i] %= skills.length
           draw_battle_skill
         elsif Input.trigger?(Input::C)
           confirm_battle_skill
@@ -2848,11 +2857,13 @@ class RPG2k
 
       def drive_battle_item
         items = @battle_ui[:items]
-        if Input.trigger?(Input::DOWN) && @battle_ui[:item_i] < items.length - 1
+        if Input.trigger?(Input::DOWN) && !items.empty?
           @battle_ui[:item_i] += 1
+          @battle_ui[:item_i] %= items.length
           draw_battle_item
-        elsif Input.trigger?(Input::UP) && @battle_ui[:item_i] > 0
+        elsif Input.trigger?(Input::UP) && !items.empty?
           @battle_ui[:item_i] -= 1
+          @battle_ui[:item_i] %= items.length
           draw_battle_item
         elsif Input.trigger?(Input::C)
           item_id, _count = @battle_ui[:items][@battle_ui[:item_i]]
@@ -2877,11 +2888,13 @@ class RPG2k
 
       def drive_battle_ally_target
         allies = living_allies
-        if Input.trigger?(Input::DOWN) && @battle_ui[:ally_i] < allies.length - 1
+        if Input.trigger?(Input::DOWN) && !allies.empty?
           @battle_ui[:ally_i] += 1
+          @battle_ui[:ally_i] %= allies.length
           draw_battle_ally_target
-        elsif Input.trigger?(Input::UP) && @battle_ui[:ally_i] > 0
+        elsif Input.trigger?(Input::UP) && !allies.empty?
           @battle_ui[:ally_i] -= 1
+          @battle_ui[:ally_i] %= allies.length
           draw_battle_ally_target
         elsif Input.trigger?(Input::C)
           target = allies[@battle_ui[:ally_i]]
@@ -3859,16 +3872,31 @@ class RPG2k
         handle_name_input
       end
 
+      # Cell count in `row` (0-indexed): a full NAME_COLS for every row except
+      # the last, which is however many cells are left over.
+      def name_row_len(row)
+        [NAME_COLS, NAME_CELLS.length - row * NAME_COLS].min
+      end
+
       def handle_name_input
         ui = @name_ui
-        if Input.trigger?(Input::RIGHT) && ui[:sel] < NAME_CELLS.length - 1
-          ui[:sel] += 1; draw_name_input
-        elsif Input.trigger?(Input::LEFT) && ui[:sel] > 0
-          ui[:sel] -= 1; draw_name_input
-        elsif Input.trigger?(Input::DOWN) && ui[:sel] + NAME_COLS < NAME_CELLS.length
-          ui[:sel] += NAME_COLS; draw_name_input
-        elsif Input.trigger?(Input::UP) && ui[:sel] - NAME_COLS >= 0
-          ui[:sel] -= NAME_COLS; draw_name_input
+        row = ui[:sel] / NAME_COLS
+        col = ui[:sel] % NAME_COLS
+        rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
+        if Input.trigger?(Input::RIGHT)
+          ui[:sel] = row * NAME_COLS + (col + 1) % name_row_len(row)
+          draw_name_input
+        elsif Input.trigger?(Input::LEFT)
+          ui[:sel] = row * NAME_COLS + (col - 1) % name_row_len(row)
+          draw_name_input
+        elsif Input.trigger?(Input::DOWN)
+          new_row = (row + 1) % rows
+          ui[:sel] = new_row * NAME_COLS + col % name_row_len(new_row)
+          draw_name_input
+        elsif Input.trigger?(Input::UP)
+          new_row = (row - 1) % rows
+          ui[:sel] = new_row * NAME_COLS + col % name_row_len(new_row)
+          draw_name_input
         elsif Input.trigger?(Input::C)
           name_input_confirm
         elsif Input.trigger?(Input::B)
