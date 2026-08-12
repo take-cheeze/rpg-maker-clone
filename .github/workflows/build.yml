@@ -83,7 +83,7 @@ jobs:
       # warm-up above already realised the shell and populated nix's
       # git-fetch cache, so this second `nix` call hits warm caches and stays
       # quiet.
-      - uses: nicknovitski/nix-develop@v1
+      - run: ./scripts/nix-develop-export-env.bash
 
       - name: cache rtp
         uses: actions/cache@v6
@@ -749,7 +749,7 @@ jobs:
 
       # See the `build` job: exports the dev shell's environment once so the
       # steps below run their commands directly, with no further `nix` calls.
-      - uses: nicknovitski/nix-develop@v1
+      - run: ./scripts/nix-develop-export-env.bash
 
       - name: cache test game
         uses: actions/cache@v6
@@ -933,7 +933,7 @@ jobs:
       # steps below — including the concurrent `background: true` ones — run
       # their commands directly, with no further `nix` calls and therefore no
       # store-lock contention between them.
-      - uses: nicknovitski/nix-develop@v1
+      - run: ./scripts/nix-develop-export-env.bash
 
       # Fetch + build the MIT MV engine into the committed sample so it can be
       # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).

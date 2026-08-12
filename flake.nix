@@ -145,13 +145,8 @@
             '';
           };
         };
-        # `devShells.default` rather than the legacy singular `devShell`: the
-        # `nicknovitski/nix-develop` action CI uses to export this shell's
-        # environment into $GITHUB_ENV/$GITHUB_PATH (see the `build` job)
-        # resolves the modern flake schema's default-installable list
-        # (devShells.<system>.default, packages.<system>.default, ...) but
-        # does not fall back to `devShell.<system>` the way plain `nix
-        # develop` does.
+        # `devShells.default`, the current flake schema's spelling of what
+        # used to be the singular `devShell` output.
         devShells.default = self.packages.${system}.build.overrideAttrs {
           CMAKE_C_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
           CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
