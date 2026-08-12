@@ -3423,8 +3423,9 @@ end
 # docking it near where the picture would have sat. A full Scene::Title can be
 # built here (unlike RPG2k itself, which needs a real RPG_RT.ldb/.lmt) with a
 # minimal stand-in parent that only answers what Scene::Title reads.
-TitleParent = Struct.new(:db, :map_tree, :hide_title_flag) do
+TitleParent = Struct.new(:db, :map_tree, :hide_title_flag, :save_exists_flag) do
   def hide_title?; hide_title_flag; end
+  def save_exists?; save_exists_flag; end
 end
 
 check 'HideTitle hides the title picture and centres the command window' do
@@ -3447,6 +3448,34 @@ check 'without HideTitle the picture shows and the window docks near its foot' d
   bottom_den = RPG2k::Scene::Title::BOTTOM_DEN
   eq RPG2k::HEIGHT * bottom_num / bottom_den - window.height, window.y,
      'the command window docks near the picture, as RPG_RT does'
+end
+
+# -- Continue disabled without save data --------------------------------------
+#
+# RPG_RT grays out and skips over Continue on the title screen when there is
+# no save to resume; `save_exists?` (main.rb) is the source of truth,
+# routed through Scene::Title's own `continue_available?` (ADR 0012).
+
+check 'no save data: Continue is unavailable and the cursor skips over it' do
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  ok !scene.instance_variable_get(:@continue_available), 'Continue is flagged unavailable'
+  eq 0, scene.instance_variable_get(:@selected_index), 'starts on New Game'
+  scene.send(:move_selection, 1)
+  eq 2, scene.instance_variable_get(:@selected_index),
+     'moving down from New Game skips Continue and lands on Shutdown'
+  scene.send(:move_selection, -1)
+  eq 0, scene.instance_variable_get(:@selected_index),
+     'moving back up skips Continue again and returns to New Game'
+end
+
+check 'a save exists: Continue is available and selectable' do
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  ok scene.instance_variable_get(:@continue_available), 'Continue is flagged available'
+  scene.send(:move_selection, 1)
+  eq 1, scene.instance_variable_get(:@selected_index),
+     'moving down from New Game lands on Continue'
 end
 
 # -- screen fade / flash overlays ---------------------------------------------

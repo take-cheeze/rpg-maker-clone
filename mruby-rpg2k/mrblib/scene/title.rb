@@ -31,6 +31,11 @@ class RPG2k
         ]
         @selected_index = 0
 
+        # RPG_RT grays out and skips over Continue when there is no save to
+        # resume. `save_exists?` (main.rb) covers both our own Marshal saves
+        # and a genuine editor Save<N>.lsd dropped into the game dir.
+        @continue_available = continue_available?
+
         # RPG_RT sizes the window to the widest label plus one border on each
         # side — no extra padding — and one 16px row per entry.
         measure = Bitmap.new 1, 1
@@ -53,12 +58,20 @@ class RPG2k
         @window.windowskin = skin
 
         # Render the (unchanging) menu labels once, in the windowskin's own
-        # default text colour with RPG_RT's one-pixel shadow.
+        # default text colour with RPG_RT's one-pixel shadow. A disabled
+        # Continue is drawn flat gray instead -- the same fallback draw_text
+        # path draw_system_text itself takes when there is no windowskin,
+        # reused here on purpose to read as dimmed rather than styled.
         contents = Bitmap.new content_w, content_h
-        contents.font.color = Color.new(255, 255, 255, 255)
         @menu_items.each_with_index do |item, index|
-          draw_system_text contents, 0, index * LINE_HEIGHT + TEXT_PAD_Y,
-                           content_w, LINE_HEIGHT, item, skin
+          y = index * LINE_HEIGHT + TEXT_PAD_Y
+          if index == 1 && !@continue_available
+            contents.font.color = Color.new(128, 128, 128, 255)
+            contents.draw_text 0, y, content_w, LINE_HEIGHT, item
+          else
+            contents.font.color = Color.new(255, 255, 255, 255)
+            draw_system_text contents, 0, y, content_w, LINE_HEIGHT, item, skin
+          end
         end
         @window.contents = contents
 
@@ -68,15 +81,9 @@ class RPG2k
 
       def update
         if Input.trigger?(Input::DOWN)
-          @selected_index += 1
-          @selected_index %= 3
-          play_cursor_se
-          refresh_cursor
+          move_selection 1
         elsif Input.trigger?(Input::UP)
-          @selected_index -= 1
-          @selected_index %= 3
-          play_cursor_se
-          refresh_cursor
+          move_selection(-1)
         end
 
         if Input.trigger?(Input::C) || auto_select?
@@ -149,6 +156,30 @@ class RPG2k
         parent.hide_title?
       rescue StandardError
         false
+      end
+
+      # Whether Continue has a save to resume, per `RPG2k#save_exists?`.
+      # Guarded the same way as `hide_title?` above: a bare instance built
+      # without a real parent (see scripts/rpg2k_scene_check.rb's
+      # title_selector) answers false rather than raising.
+      def continue_available?
+        parent.save_exists?
+      rescue StandardError
+        false
+      end
+
+      # Move `@selected_index` by `delta` (+1/-1), stepping past Continue when
+      # it has no save to offer -- RPG_RT skips a grayed-out entry the same
+      # way rather than letting the cursor land on it.
+      def move_selection(delta)
+        index = @selected_index
+        loop do
+          index = (index + delta) % @menu_items.length
+          break unless index == 1 && !@continue_available
+        end
+        @selected_index = index
+        play_cursor_se
+        refresh_cursor
       end
 
       # The database's title picture. Returns nil (drawing nothing, same as
