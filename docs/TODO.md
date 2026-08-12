@@ -2020,11 +2020,15 @@ not yet verified:
   entire `09_bug/` page on the topic). Indirect addressing's failure mode
   on an index ≤0 differs by role: the **target** form is a no-op, the
   **operand** form resolves to 0.
-- **Batch (range) operations require ascending order or silently no-op** —
-  for both switches and variables, if the high end of a `[a〜b]` range is
-  smaller than the low end, the whole command does nothing (no error).
-  (A batch **random-assign** rolling independently per variable, not once
-  for the whole group, used to be a real gap here — now fixed, see below.)
+- ✅ **Batch (range) operations requiring ascending order or silently no-op is
+  confirmed already correct.** `Game::Interpreter#range` returns a batch's
+  two ends verbatim with no ordering check, and Ruby's `(a..b).each` on a
+  descending range already iterates zero times — so a `Control Switches` or
+  `Control Variables` batch whose high end is below its low end does nothing
+  at all, matching RPG_RT, with no dedicated guard needed. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check. (A batch **random-assign** rolling
+  independently per variable, not once for the whole group, used to be a
+  real gap here — now fixed, see below.)
 - The built-in random-number operand is a genuine non-seeded RNG (two New
   Games produce different sequences) and accepts negative ranges.
 - `\N[]`/`\V[]` control codes can nest (`\N[\V[1]]`), but only on
