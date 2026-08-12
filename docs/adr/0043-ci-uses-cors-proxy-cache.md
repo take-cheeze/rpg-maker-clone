@@ -14,40 +14,49 @@ and `wasm` (`.github/workflows/build.yml`) fetch a handful of test-bed
 archives and assets straight from their origin host on every run —
 `scripts/download-nepheshel.bash` (`til.sakura.ne.jp`),
 `download-prayforyou.bash` (`dl.fgamearchives.com`), `download-freepats.bash`
-(the npm registry, checksum-pinned), and `download-default-font.bash`
-(`raw.githubusercontent.com`, commit-pinned). Two of those are small
-third-party hosts with no CDN behind them — exactly the kind of host that
-either rate-limits or occasionally falls over under CI-scale traffic.
+(the npm registry, checksum-pinned), `download-default-font.bash`
+(`raw.githubusercontent.com`, commit-pinned), and `rtp_install.bash` /
+`rtp_xp_install.bash` (`cdn.tkool.jp`, the RPG Maker Runtime Package). Two of
+those are small third-party hosts with no CDN behind them — exactly the kind
+of host that either rate-limits or occasionally falls over under CI-scale
+traffic; `cdn.tkool.jp` is the maker's own CDN, less likely to be flaky, but
+the RTP zips are the largest of the bunch and benefit the most from ever being
+served from R2 instead of refetched.
 
-This is already mitigated once: a `cache test game` `actions/cache` step
-(keyed on the download scripts and generated sample content) restores
-previously-fetched files before any download script runs, and each script
-already skips its own work when the file is on disk. So on the common path —
-an unchanged cache key — none of this network traffic happens at all. The gap
-is the fallback path: a new runner, an evicted cache (Actions caches are
-capped at 10 GB/repo and evicted after 7 days unused), or a changed download
-script all invalidate that key, and CI falls straight back to hitting the
-origin host cold. That's the case the R2 cache built for the loader can also
-absorb — for free, since the infrastructure already exists.
+This is already mitigated once: a `cache test game` / `cache rtp`
+`actions/cache` step (keyed on the download scripts, and for RTP on
+`rtp*_install.bash`) restores previously-fetched files before any download
+script runs, and each script already skips its own work when the file is on
+disk. So on the common path — an unchanged cache key — none of this network
+traffic happens at all. The gap is the fallback path: a new runner, an evicted
+cache (Actions caches are capped at 10 GB/repo and evicted after 7 days
+unused), or a changed download script all invalidate that key, and CI falls
+straight back to hitting the origin host cold. That's the case the R2 cache
+built for the loader can also absorb — for free, since the infrastructure
+already exists.
 
 Not every download script is eligible. `download-mtf-meido-action.bash`,
 `download-opengame-xp.bash`, and `download-lunatic-core.bash` use `git clone
 --depth 1 --sparse` against GitHub, not a plain URL fetch — the Worker proxies
 a single `GET`, not the git smart-HTTP protocol, and sparse checkout's whole
-point is to avoid pulling files the proxy can't see into either. RTP
-(`rtp_install.bash` / `rtp_xp_install.bash`) is left alone too: it already has
-its own `actions/cache` entry, and its host (`cdn.tkool.jp`, the maker's own
-CDN) isn't the small-hoster case this is aimed at.
+point is to avoid pulling files the proxy can't see into either. Those three
+stay on direct clones; nothing else is excluded.
 
 ## Decision
 
-`scripts/cors-proxy-url.bash` — sourced by the four eligible download
-scripts — adds `proxied_url <url>`, which rewrites a URL through
-`$CORS_PROXY_URL` when set, building the identical two prefix shapes the web
-loader itself builds (query-style `?url=`, path-style `/<raw>`; see ADR 10).
-Unset (the default, including on every fork), it returns the URL unchanged —
-this is opt-in the same way `ARCHIVE_CACHE`/`ALLOWED_HOSTS`/etc. are opt-in on
-the Worker side.
+`scripts/cors-proxy-url.bash` — sourced by every eligible download script —
+adds `proxied_url <url>`, which rewrites a URL through `$CORS_PROXY_URL` when
+set, building the identical two prefix shapes the web loader itself builds
+(query-style `?url=`, path-style `/<raw>`; see ADR 10). Unset (the default,
+including on every fork), it returns the URL unchanged — this is opt-in the
+same way `ARCHIVE_CACHE`/`ALLOWED_HOSTS`/etc. are opt-in on the Worker side.
+
+The RTP scripts needed one extra change the other four didn't: they call
+`wget` without `-O`, relying on wget deriving the output filename from the
+URL's last path segment. A proxied URL doesn't end in that filename, so both
+gained an explicit `-O 2000rtp.zip` / `-O xp_rtp103.zip` alongside the
+`proxied_url` wrap, matching what wget would have inferred from the unproxied
+URL anyway.
 
 `build.yml` sets `CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}` as a
 job-level env on `build` and `wasm`. A **secret**, deliberately, not a
@@ -71,7 +80,6 @@ Actions log would defeat the point of having a key at all.
   CI request no matter what `CORS_PROXY_URL` is. Documented in
   `docs/cors-proxy.md` as a control that isn't compatible with CI use;
   `AUTH_KEY` and `ALLOWED_HOSTS` are.
-- The three git-clone-based downloads and the RTP installers are unchanged —
-  proxying them would need a different mechanism (a git proxy, or switching
-  them to codeload zip downloads and giving up sparse checkout), not a
-  follow-up to this ADR.
+- The three git-clone-based downloads are unchanged — proxying them would need
+  a different mechanism (a git proxy, or switching them to codeload zip
+  downloads and giving up sparse checkout), not a follow-up to this ADR.

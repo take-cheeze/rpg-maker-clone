@@ -2,11 +2,14 @@
 
 set -eux
 
+# Routes through the optional CI CORS proxy cache when CORS_PROXY_URL is set.
+. "$(dirname "$0")/cors-proxy-url.bash"
+
 cd $(dirname $0)
 
 # See rtp_install.bash for why wget/unar are quietened.
 if [ ! -f xp_rtp103.zip ] ; then
-  wget -nv https://cdn.tkool.jp/updata/rtp/xp_rtp103.zip
+  wget -nv -O xp_rtp103.zip "$(proxied_url "https://cdn.tkool.jp/updata/rtp/xp_rtp103.zip")"
 fi
 
 if [ ! -d RPGXP_RTP103 ] ; then

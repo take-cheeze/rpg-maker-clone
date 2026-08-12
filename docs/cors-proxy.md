@@ -177,13 +177,14 @@ bytes.
 
 CI downloads a handful of third-party test-bed archives and assets on every
 run (`scripts/download-nepheshel.bash`, `download-prayforyou.bash`,
-`download-freepats.bash`, `download-default-font.bash`) — the ones that are a
-plain URL fetch rather than a `git clone`. Those are already cached across
-runs by an `actions/cache` step keyed on the download scripts, so this rarely
-matters; it's a fallback for when that cache misses (a new runner, an evicted
-cache, a changed script), so CI falls back to R2 instead of hammering a small
-third-party host (`til.sakura.ne.jp`, `dl.fgamearchives.com`) on every cold
-cache.
+`download-freepats.bash`, `download-default-font.bash`,
+`scripts/rtp_install.bash`, `rtp_xp_install.bash`) — the ones that are a plain
+URL fetch rather than a `git clone`. Those are already cached across runs by
+an `actions/cache` step keyed on the download scripts, so this rarely matters;
+it's a fallback for when that cache misses (a new runner, an evicted cache, a
+changed script), so CI falls back to R2 instead of hammering a small
+third-party host (`til.sakura.ne.jp`, `dl.fgamearchives.com`) — or re-pulling
+the (larger) RTP zips from `cdn.tkool.jp` — on every cold cache.
 
 Set the **`CORS_PROXY_URL`** repository secret (Settings → Secrets and
 variables → Actions) to your proxy prefix, in either style — the same value

@@ -2,13 +2,16 @@
 
 set -eux
 
+# Routes through the optional CI CORS proxy cache when CORS_PROXY_URL is set.
+. "$(dirname "$0")/cors-proxy-url.bash"
+
 cd $(dirname $0)
 
 # `wget -nv` / `unar -q`: without a terminal wget still prints a dot-progress
 # line per 50 KiB and unar names every file it extracts — the RTP archive alone
 # is thousands of lines of CI log. Errors and the final summary still print.
 if [ ! -f 2000rtp.zip ] ; then
-  wget -nv https://cdn.tkool.jp/updata/rtp/2000rtp.zip
+  wget -nv -O 2000rtp.zip "$(proxied_url "https://cdn.tkool.jp/updata/rtp/2000rtp.zip")"
 fi
 
 if [ ! -d RTP* ] ; then
