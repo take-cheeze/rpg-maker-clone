@@ -3943,17 +3943,30 @@ module Game
       CROSS_COMBINE, ZOOM_OUT, MOSAIC_IN, WAVE_IN, CUT_IN
     ].freeze
 
-    # Styles this build paints for real. The rest are the ones a black mask
-    # cannot express: the scrolls and the combine / division pairs slide the live
-    # scene itself, zoom / mosaic / wave resample it, and random blocks needs
-    # thousands of per-frame block blits. They run as a fade of the same length —
-    # the right duration and the right end state, the wrong texture — until the
-    # renderer can capture a screen and transform it.
+    # The scroll and combine / division styles: a black mask cannot express them
+    # (the true old/new pixels have to move), so Scene::Map instead snapshots the
+    # screen once via RGSS::Graphics.snap_to_bitmap when one of these starts and
+    # blits that capture per #capture_ops every frame -- see docs/TODO.md's
+    # "Screen effects" entry. This class stays pure logic (no Graphics access,
+    # per the SCREEN_W/H comment above): it only computes where each piece of
+    # the capture goes.
+    CAPTURED = [SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
+                SCROLL_UP_OUT, SCROLL_DOWN_OUT, SCROLL_LEFT_OUT,
+                SCROLL_RIGHT_OUT, VERTICAL_COMBINE, VERTICAL_DIVISION,
+                HORIZONTAL_COMBINE, HORIZONTAL_DIVISION, CROSS_COMBINE,
+                CROSS_DIVISION].freeze
+
+    # Styles this build paints for real. Zoom / mosaic / wave still fall through
+    # to a plain fade: mosaic and wave want a native per-pixel resample and zoom's
+    # own IN/OUT direction (which way the picture scales) has nothing in either
+    # test bed to confirm it against, so it is left rather than guessed. Random
+    # blocks wants RPG_RT's incremental per-frame block paint, which a mask can
+    # express but this does not do yet either.
     DRAWN = [FADE_IN, FADE_OUT, BLIND_OPEN, BLIND_CLOSE, VERTICAL_STRIPES_IN,
              VERTICAL_STRIPES_OUT, HORIZONTAL_STRIPES_IN,
              HORIZONTAL_STRIPES_OUT, BORDER_TO_CENTER_IN, BORDER_TO_CENTER_OUT,
              CENTER_TO_BORDER_IN, CENTER_TO_BORDER_OUT, CUT_IN, CUT_OUT,
-             NONE].freeze
+             NONE, *CAPTURED].freeze
 
     # The highest setting index the numbering defines (20 = "no transition").
     MAX_SETTING = 20
@@ -4051,11 +4064,129 @@ module Game
       end
     end
 
+    # Whether this style is composited from a captured screen (see CAPTURED)
+    # rather than punched as a mask of the live one.
+    def captured?
+      CAPTURED.include?(@style)
+    end
+
+    # The captured screen's pieces for this frame, each `[dx, dy, sx, sy, sw,
+    # sh]` -- paste the capture's `[sx, sy, sw, sh]` region at `(dx, dy)`. Only
+    # called for a captured style; Scene::Map paints these over a black fill, so
+    # a piece that has slid off-screen just leaves black behind it.
+    def capture_ops
+      case @style
+      when SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
+           SCROLL_UP_OUT, SCROLL_DOWN_OUT, SCROLL_LEFT_OUT, SCROLL_RIGHT_OUT
+        ox, oy = scroll_offset
+        [[ox, oy, 0, 0, @width, @height]]
+      when VERTICAL_COMBINE, VERTICAL_DIVISION
+        vertical_split_ops(@style == VERTICAL_COMBINE)
+      when HORIZONTAL_COMBINE, HORIZONTAL_DIVISION
+        horizontal_split_ops(@style == HORIZONTAL_COMBINE)
+      when CROSS_COMBINE, CROSS_DIVISION
+        cross_split_ops(@style == CROSS_COMBINE)
+      else
+        []
+      end
+    end
+
     private
 
     # The frame index the geometry is drawn at, and the span it runs over —
     # EasyRPG's `current_frame` and `total_frames - 1`.
     def span; @frames - 1; end
+
+    # `[p, d]` for the same frame0..1 linear ramp `border_to_center_rect` etc.
+    # use below, factored out for the capture-geometry helpers.
+    def frame_ratio
+      d = span
+      d <= 0 ? [1, 1] : [@frame, d]
+    end
+
+    # Scroll: the whole capture slides in from (or out to) one edge in a
+    # straight line, landing flush at (0, 0) -- RPG2000's curtain-style
+    # transition. "In" starts off-screen and ends in place (Show Screen, the
+    # arriving picture); "out" starts in place and ends off-screen (Erase
+    # Screen, the departing one), each direction sliding the way its name says.
+    def scroll_offset
+      p, d = frame_ratio
+      case @style
+      when SCROLL_UP_IN    then [0, @height - @height * p / d]
+      when SCROLL_DOWN_IN  then [0, -(@height - @height * p / d)]
+      when SCROLL_LEFT_IN  then [@width - @width * p / d, 0]
+      when SCROLL_RIGHT_IN then [-(@width - @width * p / d), 0]
+      when SCROLL_UP_OUT   then [0, -(@height * p / d)]
+      when SCROLL_DOWN_OUT then [0, @height * p / d]
+      when SCROLL_LEFT_OUT then [-(@width * p / d), 0]
+      when SCROLL_RIGHT_OUT then [@width * p / d, 0]
+      end
+    end
+
+    # Combine / division: the capture splits along one axis into two pieces
+    # that slide together (combine, a Show) or apart (division, an Erase).
+    # `top_h` / `left_w` is the first piece's share of the axis (integer half,
+    # remainder to the second piece so an odd dimension still tiles exactly).
+    def half(total)
+      h = total / 2
+      [h, total - h]
+    end
+
+    # Vertical split: a top piece and a bottom piece, sliding along y.
+    def vertical_split_ops(combine)
+      top_h, bottom_h = half(@height)
+      p, d = frame_ratio
+      if combine
+        top_dy = -top_h + top_h * p / d
+        bottom_dy = @height - bottom_h * p / d
+      else
+        top_dy = -(top_h * p / d)
+        bottom_dy = top_h + bottom_h * p / d
+      end
+      [[0, top_dy, 0, 0, @width, top_h],
+       [0, bottom_dy, 0, top_h, @width, bottom_h]]
+    end
+
+    # Horizontal split: a left piece and a right piece, sliding along x.
+    def horizontal_split_ops(combine)
+      left_w, right_w = half(@width)
+      p, d = frame_ratio
+      if combine
+        left_dx = -left_w + left_w * p / d
+        right_dx = @width - right_w * p / d
+      else
+        left_dx = -(left_w * p / d)
+        right_dx = left_w + right_w * p / d
+      end
+      [[left_dx, 0, 0, 0, left_w, @height],
+       [right_dx, 0, left_w, 0, right_w, @height]]
+    end
+
+    # Cross split: both axes at once, four quadrants each sliding diagonally
+    # from (combine) or to (division) their own screen corner. The exact
+    # quadrant motion is this build's own reading of "cross" -- reasoned from
+    # the vertical/horizontal pair rather than confirmed against RPG_RT, since
+    # neither test bed exercises this specific style.
+    def cross_split_ops(combine)
+      top_h, bottom_h = half(@height)
+      left_w, right_w = half(@width)
+      p, d = frame_ratio
+      if combine
+        top_dy = -top_h + top_h * p / d
+        bottom_dy = @height - bottom_h * p / d
+        left_dx = -left_w + left_w * p / d
+        right_dx = @width - right_w * p / d
+      else
+        top_dy = -(top_h * p / d)
+        bottom_dy = top_h + bottom_h * p / d
+        left_dx = -(left_w * p / d)
+        right_dx = left_w + right_w * p / d
+      end
+      [[left_dx, top_dy, 0, 0, left_w, top_h],
+       [right_dx, top_dy, left_w, 0, right_w, top_h],
+       [left_dx, bottom_dy, 0, top_h, left_w, bottom_h],
+       [right_dx, bottom_dy, left_w, top_h, right_w, bottom_h]]
+    end
 
     # Blinds: 8-pixel bands, each closing (or opening) from its top edge by one
     # pixel every five frames. The live band is what is left of the 8.

@@ -1152,9 +1152,10 @@ The work below is roughly ordered by the critical path to a walkable game
   and it answers nil there), and the **RPG Maker XP scene already uses it**
   (`mruby-rpgxp/mrblib/scene.rb`) for exactly this — its own transitions.** The
   same mistake as the fade/flash note below: a capability assumed missing that
-  was already there. What is actually left per style:
+  was already there. What was left per style (scroll and combine / division are
+  now done — see below):
 
-  - **Scroll (settings 9–12)** and **combine / division (13–15)**: capture the
+  - ✅ **Scroll (settings 9–12)** and **combine / division (13–15)**: capture the
     outgoing screen once when the transition starts, then each frame paint the
     overlay as the full composite — black plus the capture blitted at the
     sliding offset — rather than as a mask. `Bitmap#blt` is enough; no native
@@ -1177,6 +1178,28 @@ The work below is roughly ordered by the critical path to a walkable game
   building on it — the RPG2003 test-bed uses zoom / mosaic / wave twelve times,
   which is what makes the family worth finishing (`ruby scripts/analyze_game.rb
   --params --code 11010 data/mtf-meido-action/Debug`).
+
+  **Scroll and combine / division are done.** `Game::Transition#capture_ops`
+  computes, per style, where each piece of a captured screen goes this frame
+  (a plain offset for the four scroll directions; two sliding pieces for
+  vertical/horizontal combine and division; four for cross), staying pure
+  logic exactly like `#visible_rects` above — no `Graphics` access, so it is
+  unit-testable without a renderer. `Scene::Map#draw_captured_transition`
+  snapshots the screen once (on the frame a captured `Game::Transition`
+  instance first appears, by object identity, so a same-style transition
+  right after it still re-snapshots) and blits the pieces over a black fill
+  every frame after, disposing the snapshot once the transition ends. The
+  wrinkle above did not end up mattering in practice: a shaped transition still
+  runs a plain fade at the moment a captured one starts (the two families
+  never chain outside a hand-built sequence), so there was no erase overlay
+  hiding the scene to worry about excluding — worth revisiting if that
+  assumption stops holding. Cross combine/division's exact quadrant motion
+  (diagonal from each screen corner) is this build's own reading, not
+  confirmed against RPG_RT — neither test bed exercises that specific style,
+  so the vertical/horizontal pair's confirmed-by-name motion was extended
+  rather than guessed from nothing. Covered by new checks in
+  `scripts/rpg2k_scene_check.rb`. Zoom, mosaic/wave and random blocks are
+  still unbuilt, per the per-style breakdown above.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already
