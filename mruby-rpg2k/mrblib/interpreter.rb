@@ -212,7 +212,7 @@ module Game
     attr_reader :wait_kind, :message_lines, :choice_labels, :wait_frames,
                 :teleport, :input_digits, :key_input_request, :inn_request,
                 :shop_request, :battle_request, :name_input_request,
-                :battle_animation, :choice_cancel_type
+                :battle_animation, :choice_cancel_type, :message_followup
     # Resolves the command list a Call Event refers to (a common event, or a page
     # of a map event). Set by the owning scene; nil disables Call Event.
     attr_accessor :resolver
@@ -679,6 +679,7 @@ module Game
       @waiting = false
       @wait_kind = nil
       @message_lines = nil
+      @message_followup = nil
       @choice_labels = nil
       # 0 = cancelling forbidden, which is also the right answer while nothing
       # is being chosen (see #choice_cancellable?).
@@ -939,6 +940,19 @@ module Game
         @index += 1
       end
       @message_lines = lines
+      # RPG_RT keeps the same message window on screen when a Show Choices or
+      # Input Number command immediately follows (same indent, nothing else
+      # between): the typed-out lines stay up and the choices / digit entry
+      # appear below them, instead of the window closing and a new one
+      # opening. Peek at the next command now, before it runs, so the scene
+      # knows at reveal-completion time whether to keep the window.
+      next_cmd = @list[@index]
+      @message_followup =
+        if next_cmd && next_cmd.indent == cmd.indent && next_cmd.code == Cmd::SHOW_CHOICES
+          :choice
+        elsif next_cmd && next_cmd.indent == cmd.indent && next_cmd.code == Cmd::INPUT_NUMBER
+          :number
+        end
       @wait_kind = :message
       @waiting = true
     end
@@ -1498,6 +1512,10 @@ module Game
     def show_next_pending_message
       return false if @pending_messages.empty?
       @message_lines = @pending_messages.shift
+      # Not a user-authored Show Text block, so it never keeps the window open
+      # for a following Show Choices / Input Number -- clear any followup left
+      # over from an earlier, unrelated message.
+      @message_followup = nil
       @wait_kind = :message
       @waiting = true
       true

@@ -1342,6 +1342,98 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check 'a Show Text keeps its window open when a Show Choices follows directly' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], indent: 0, string: 'hello'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0), # cancel forbidden
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'no'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  win = msg[:window]
+
+  scene.update # no input: text keeps revealing
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # completes the reveal; window stays open
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # would dismiss a lone message -- but a Show Choices follows directly
+  RGSS::Input.reset
+
+  choice_msg = nil
+  8.times do
+    scene.update
+    choice_msg = scene.instance_variable_get(:@message)
+    break if choice_msg && choice_msg[:choice]
+  end
+  ok choice_msg, 'the window is still open once the choices appear'
+  ok choice_msg[:window].equal?(win), 'the same window is reused, not closed and reopened'
+  eq 2, choice_msg[:count], 'both options are listed'
+  eq 1, choice_msg[:choice_start], 'the choices are appended below the one text line'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm option 0 ("yes")
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'the window closes once the choice is made'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], 'the chosen branch ran'
+  ok !st.switches[2], 'and the other did not'
+end
+
+check 'a Show Text keeps its window open when an Input Number follows directly' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], indent: 0, string: 'hello'),
+    ECmd.new(ic::INPUT_NUMBER, [2, 5], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  win = msg[:window]
+
+  scene.update # no input: text keeps revealing
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # completes the reveal
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # would dismiss a lone message -- but Input Number follows directly
+  RGSS::Input.reset
+
+  ni = nil
+  8.times do
+    scene.update
+    ni = scene.instance_variable_get(:@number_input)
+    break if ni
+  end
+  ok ni, 'the number-entry widget opened'
+  ok ni[:embedded], 'it was embedded in the still-open message window, not a new one'
+  ok scene.instance_variable_get(:@message), 'the message window was not closed for it'
+  ok scene.instance_variable_get(:@message)[:window].equal?(win),
+     'the same window is reused, not closed and reopened'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]  # confirm
+  scene.update
+  ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
+  ok !scene.instance_variable_get(:@message), 'and the message window closed with it'
+  5.times { RGSS::Input.reset; scene.update }
+  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
 check 'the cancel key backs out of a Show Choices, per its cancel type' do
   ic = Game::Interpreter::Cmd
   # Cancel type 5: the block carries a [Cancel] branch as option index 4 (an
