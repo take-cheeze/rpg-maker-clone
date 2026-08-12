@@ -41,6 +41,7 @@ enum RgssKey {
   KEY_F7 = 17,
   KEY_F8 = 18,
   KEY_F9 = 19,
+  KEY_F12 = 20,
 };
 
 // Map an SDL keysym to an RGSS::Input key id, or -1 when the key is unbound.
@@ -100,6 +101,8 @@ int map_key(SDL_Keycode k) {
       return KEY_F8;
     case SDLK_F9:
       return KEY_F9;
+    case SDLK_F12:
+      return KEY_F12;
     default:
       return -1;
   }

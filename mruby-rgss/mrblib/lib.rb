@@ -1342,6 +1342,7 @@ module RGSS
     F7 = 17
     F8 = 18
     F9 = 19
+    F12 = 20
 
     # RGSS2 (VX) and RGSS3 (VX Ace) name the keys with **symbols** —
     # `Input.trigger?(:C)` — where RGSS1 (XP) used the integer constants above.
@@ -1354,13 +1355,13 @@ module RGSS
       UP: UP, DOWN: DOWN, LEFT: LEFT, RIGHT: RIGHT,
       A: A, B: B, C: C, X: X, Y: Y, Z: Z, L: L, R: R,
       SHIFT: SHIFT, CTRL: CTRL, ALT: ALT,
-      F5: F5, F6: F6, F7: F7, F8: F8, F9: F9
+      F5: F5, F6: F6, F7: F7, F8: F8, F9: F9, F12: F12
     }.freeze
 
-    @pressed = Array.new(20, false)
-    @triggered = Array.new(20, false)
-    @repeated = Array.new(20, false)
-    @count = Array.new(20, 0)
+    @pressed = Array.new(21, false)
+    @triggered = Array.new(21, false)
+    @repeated = Array.new(21, false)
+    @count = Array.new(21, 0)
 
     # Key index for either spelling. An unrecognised key reads as unpressed
     # rather than raising (a script may probe a key this build has no name for),
