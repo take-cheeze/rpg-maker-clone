@@ -1118,7 +1118,14 @@ class RPG2k
         oy = ch.y
         if forced
           forced.step(ch, @world) unless forced.done?
-          e[:forced_route] = nil if forced.done? # revert to page movement
+          if forced.done? # revert to page movement
+            e[:forced_route] = nil
+            # The page's own Move Frequency reasserts itself once the forced
+            # route finishes -- a Frequency Up/Down sub-command inside that
+            # route must not go on pacing the event after control reverts to
+            # its page, only for the duration of the route that issued it.
+            ch.move_frequency = page_move_frequency(e[:page])
+          end
         elsif e[:route]
           e[:route].step(ch, @world) unless e[:route].done?
         else
