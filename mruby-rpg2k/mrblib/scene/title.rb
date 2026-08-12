@@ -86,7 +86,12 @@ class RPG2k
           move_selection(-1)
         end
 
-        if Input.trigger?(Input::C) || auto_select?
+        confirmed = Input.trigger?(Input::C)
+        if confirmed && @selected_index == 1 && !@continue_available
+          # Continue is grayed out with nothing to resume: the selection key
+          # is ignored rather than landing on parent.continue_game's own
+          # "no save data" stub.
+        elsif confirmed || auto_select?
           Audio.bgm_stop
           case @selected_index
           when 0  # New Game
@@ -168,16 +173,11 @@ class RPG2k
         false
       end
 
-      # Move `@selected_index` by `delta` (+1/-1), stepping past Continue when
-      # it has no save to offer -- RPG_RT skips a grayed-out entry the same
-      # way rather than letting the cursor land on it.
+      # Move `@selected_index` by `delta` (+1/-1), wrapping around the menu.
+      # A grayed-out Continue is still reachable by the cursor -- only the
+      # selection key is ignored on it (see #update).
       def move_selection(delta)
-        index = @selected_index
-        loop do
-          index = (index + delta) % @menu_items.length
-          break unless index == 1 && !@continue_available
-        end
-        @selected_index = index
+        @selected_index = (@selected_index + delta) % @menu_items.length
         play_cursor_se
         refresh_cursor
       end
