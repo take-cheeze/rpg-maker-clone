@@ -22,7 +22,7 @@ class RPG2k
         # near the picture's bottom edge to the centre of the screen, since there
         # is no picture left to dock against.
         @title = Sprite.new
-        @title.bitmap = Bitmap.new "Title/#{db.system.title}" unless hide_title?
+        @title.bitmap = load_title_picture unless hide_title?
 
         @menu_items =
           [db.term.new_game, db.term.continue, db.term.shutdown].map(&:to_s)
@@ -146,6 +146,22 @@ class RPG2k
         parent.hide_title?
       rescue StandardError
         false
+      end
+
+      # The database's title picture. Returns nil (drawing nothing, same as
+      # HideTitle) when the game names none or the file fails to load — every
+      # other asset loader in this scene stack degrades the same way (see
+      # #load_windowskin below and Scene::GameOver#gameover_bitmap), and the
+      # title screen showing a blank background beats an unhandled exception
+      # blocking New Game before a single frame is drawn.
+      def load_title_picture
+        name = db.system.title.to_s
+        return nil if name.empty?
+        Bitmap.new "Title/#{name}"
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] title picture '#{name}' load failed, showing a " \
+                     "blank background: #{e.message}"
+        nil
       end
 
       # Load the System/ windowskin declared in the database. Returns nil when

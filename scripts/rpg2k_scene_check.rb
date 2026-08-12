@@ -196,7 +196,7 @@ end
 
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0)
   OpenStruct.new(
-    system: OpenStruct.new(system_graphic: '',
+    system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
                            ship_music: OpenStruct.new(file: 'ShipBGM', volume: 80, pitch: 100),
                            airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
