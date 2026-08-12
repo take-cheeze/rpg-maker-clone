@@ -420,16 +420,23 @@ module Game
     clamp(player_px - screen_px / 2, 0, max)
   end
 
-  # A chipset: its tile graphic name plus the lower-layer passability table.
-  # Passability is keyed by a chip index derived from the tile id following the
-  # EasyRPG block layout; unknown/out-of-range tiles are treated as passable so
-  # collision degrades safely.
+  # A chipset: its tile graphic name plus the lower- and upper-layer
+  # passability tables. Passability is keyed by a chip index derived from the
+  # tile id following the EasyRPG block layout; unknown/out-of-range tiles are
+  # treated as passable so collision degrades safely.
   class ChipSet
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
     # The non-directional bits of the same passage byte (EasyRPG's `Passable`).
-    # Only the counter flag is read so far: it marks a tile you may talk *across*
-    # — the shop counter an NPC stands behind.
+    # `ABOVE_BIT` marks an upper tile as *see-through* ground rather than a
+    # solid object in its own right: `IsPassableTile` only falls through to
+    # the lower layer's own passability when this bit is set, so a
+    # painted-on decoration (a rug, a patch of flowers) still collides with
+    # whatever the lower layer says underneath it, while a genuine obstacle
+    # (a boulder, a fence post, a shop counter) is decided by the upper tile
+    # alone. `COUNTER_BIT` marks a tile you may talk *across* — the shop
+    # counter an NPC stands behind.
+    ABOVE_BIT = 0x20
     COUNTER_BIT = 0x40
     # Every directional bit ORed together, for a jump's any-side landing check.
     ALL_DIRS = (DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]).freeze
@@ -452,6 +459,17 @@ module Game
       @animation_type = c ? (c.animation_type || 0) : 0
       @animation_speed = c ? (c.animation_speed || 0) : 0
     end
+
+    # Passage byte for an upper-layer tile id, or nil when there is none to
+    # read: no table on this chipset, no id given, the id is 0 (RPG2000's "no
+    # upper tile here" sentinel), or it falls outside the table.
+    def upper_flags(upper_tile_id)
+      return nil if @passable_upper.nil? || upper_tile_id.nil? || upper_tile_id == 0
+      idx = upper_tile_id - ChipsetLayout::BLOCK_F
+      return nil if idx < 0 || idx >= @passable_upper.size
+      @passable_upper[idx]
+    end
+    private :upper_flags
 
     # Chip index into the lower passability table for a lower-layer tile id.
     def self.lower_index(tile_id)
@@ -489,15 +507,40 @@ module Game
 
     # Is this an upper-layer **counter** tile — one the action button reaches
     # across? RPG2000 marks shop and inn counters with it so the keeper can stand
-    # behind an impassable tile and still be talked to. Upper-layer ids start at
-    # BLOCK_F and index the upper passage table directly; anything below that is
-    # not an upper tile at all. A chipset without the table has no counters.
+    # behind an impassable tile and still be talked to. A chipset without the
+    # table has no counters.
     def counter?(upper_tile_id)
-      return false if @passable_upper.nil? || upper_tile_id.nil?
-      idx = upper_tile_id - ChipsetLayout::BLOCK_F
-      return false if idx < 0 || idx >= @passable_upper.size
-      flags = @passable_upper[idx]
+      flags = upper_flags(upper_tile_id)
       !flags.nil? && (flags & COUNTER_BIT) != 0
+    end
+
+    # Can a character enter this cell, moving in `dir`, once the upper layer's
+    # own passability is taken into account? Mirrors EasyRPG's
+    # `Game_Map::IsPassableTile`: an upper tile that blocks `dir` wins outright
+    # (this is how a counter, blocked on every side, refuses to be walked
+    # onto); one that permits it but is not flagged `ABOVE_BIT` is solid
+    # ground in its own right and the check stops there; otherwise — no upper
+    # tile at all, or one flagged `ABOVE_BIT` — the lower layer's own
+    # passability decides, exactly as `passable?` alone did before this upper
+    # check existed.
+    def passable_tile?(lower_tile_id, upper_tile_id, dir)
+      flags = upper_flags(upper_tile_id)
+      return passable?(lower_tile_id, dir) if flags.nil?
+      return false if (flags & (DIR_BIT[dir] || 0)) == 0
+      return true if (flags & ABOVE_BIT) == 0
+      passable?(lower_tile_id, dir)
+    end
+
+    # The jump-landing counterpart of `passable_tile?`, following `landable?`'s
+    # any-side rule for the upper layer too: an upper tile blocked from every
+    # direction refuses the landing outright, and `ABOVE_BIT` decides — same as
+    # `passable_tile?` — whether the lower layer also gets a say.
+    def landable_tile?(lower_tile_id, upper_tile_id)
+      flags = upper_flags(upper_tile_id)
+      return landable?(lower_tile_id) if flags.nil?
+      return false if (flags & ALL_DIRS) == 0
+      return true if (flags & ABOVE_BIT) == 0
+      landable?(lower_tile_id)
     end
 
     # Terrain id of a lower-layer tile (for the Store Terrain ID command), looked

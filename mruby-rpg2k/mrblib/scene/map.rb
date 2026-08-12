@@ -1854,7 +1854,9 @@ class RPG2k
       # `TURN_180[dir]`). A wall painted on either tile blocks the crossing —
       # checking only the destination (as this used to) missed a chip whose
       # *own* tile disallowed stepping off it, which is how one-way ledges and
-      # railings are authored.
+      # railings are authored. The upper layer gets the same two-sided check:
+      # an obstacle drawn on top of the ground (a boulder, a shop counter) is
+      # exactly as solid as a lower-layer wall.
       def char_passable?(character, dir)
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
@@ -1862,8 +1864,10 @@ class RPG2k
         return false if nx == @state.x && ny == @state.y
         return false if @event_tiles[[nx, ny]]
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(character.x, character.y), dir) &&
-          @chipset.passable?(@map.lower(nx, ny), Game::Character::TURN_180[dir] || dir)
+        @chipset.passable_tile?(@map.lower(character.x, character.y),
+                                 @map.upper(character.x, character.y), dir) &&
+          @chipset.passable_tile?(@map.lower(nx, ny), @map.upper(nx, ny),
+                                   Game::Character::TURN_180[dir] || dir)
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
@@ -1889,7 +1893,7 @@ class RPG2k
         return false if x == @state.x && y == @state.y
         return false if @event_tiles[[x, y]]
         return true if @chipset.nil?
-        @chipset.landable?(@map.lower(x, y))
+        @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
       public :char_can_land?
 
@@ -4787,13 +4791,16 @@ class RPG2k
       # direction of travel from the player's current tile. Like
       # `char_passable?`, both sides of the boundary must agree — the tile
       # under the player's feet must allow exit toward `dir`, and (x, y) must
-      # allow entry from the opposite side.
+      # allow entry from the opposite side — and the upper layer at each tile
+      # gets the same say as the lower one.
       def passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
         return false if @event_tiles[[x, y]]
         return true if @chipset.nil?
-        @chipset.passable?(@map.lower(@state.x, @state.y), dir) &&
-          @chipset.passable?(@map.lower(x, y), Game::Character::TURN_180[dir] || dir)
+        @chipset.passable_tile?(@map.lower(@state.x, @state.y),
+                                 @map.upper(@state.x, @state.y), dir) &&
+          @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
+                                   Game::Character::TURN_180[dir] || dir)
       end
 
       # Current player position in map pixels, interpolated during a step.
