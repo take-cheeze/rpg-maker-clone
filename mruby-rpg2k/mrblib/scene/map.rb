@@ -71,6 +71,12 @@ class RPG2k
       def initialize parent, state
         super parent
         @state = state
+        # Named graphics loaded and memoized on demand (event/party CharSets,
+        # pictures, the battle backdrop, battlers, animation sheets — see
+        # #cached_bitmap), so a graphic reused across many requests within
+        # this map visit (a replayed animation, a monster shared by several
+        # troop slots) is decoded once rather than on every request.
+        @image_cache = {}
         apply_map_access
         @map = state.map
         @chipset = build_chipset
@@ -279,10 +285,6 @@ class RPG2k
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
                                 Color.new(240, 240, 80, 255)
         end
-        # CharSet graphics for events, loaded on demand and cached by name (a
-        # cached nil marks a name that failed to load, so we log it once).
-        @event_charsets = {}
-
         setup_parallax
         setup_pictures
         setup_screen_overlay
@@ -482,10 +484,25 @@ class RPG2k
         @picture_sprite.z = 250
         @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
         @picture_sprite.bitmap = @picture_bmp
-        @picture_srcs = {}
-        # Toned copies of those sources, keyed by image + tone (see
-        # #toned_picture_src).
+        # Toned copies of picture sources, keyed by image + tone (see
+        # #toned_picture_src). Picture sources themselves are cached in the
+        # shared @image_cache (see #picture_src).
         @picture_tone_cache = {}
+      end
+
+      # Load-and-memoize helper backing every named graphic loader below
+      # (event and party CharSets, pictures, the battle backdrop, battlers
+      # and animation sheets): each is requested by name repeatedly -- an
+      # animation replayed, a monster shared across troop slots, a picture
+      # redrawn every frame -- and without this they would hit the decoder
+      # again on every request. Keyed on whatever the caller passes (a
+      # [kind, name, ...] tuple); the block's result is cached as-is,
+      # including a nil/fallback for a failed load, so the caller's own
+      # rescue logs the error once and every later call reuses that outcome
+      # instead of retrying the disk.
+      def cached_bitmap(key)
+        return @image_cache[key] if @image_cache.key?(key)
+        @image_cache[key] = yield
       end
 
       # Load (and cache) a picture's source image (Picture/<name>). `transparent`
@@ -493,15 +510,14 @@ class RPG2k
       # nil marks a missing file so a broken picture simply draws nothing.
       def picture_src(name, transparent)
         return nil if name.nil? || name.empty?
-        key = [name, transparent]
-        return @picture_srcs[key] if @picture_srcs.key?(key)
-        @picture_srcs[key] =
+        cached_bitmap(["Picture", name, transparent]) do
           begin
             Bitmap.new "Picture/#{name}", transparent
           rescue StandardError => e
             $stderr.puts "[RPG2k] picture '#{name}' load failed, not drawn: #{e.message}"
             nil
           end
+        end
       end
 
       # Load the map's parallax background (Panorama/<name>) and its scroll
@@ -558,8 +574,7 @@ class RPG2k
       # genuine RPG_RT left alone.
       def event_charset(name)
         return nil if name.nil? || name.empty?
-        return @event_charsets[name] if @event_charsets.key?(name)
-        @event_charsets[name] =
+        cached_bitmap(["CharSet", name]) do
           begin
             Bitmap.new "CharSet/#{name}", true
           rescue StandardError => e
@@ -567,6 +582,7 @@ class RPG2k
                          "event drawn empty: #{e.message}"
             nil
           end
+        end
       end
 
       def build_chipset
@@ -609,10 +625,14 @@ class RPG2k
         name = leader.charset_name
         @charset_index = leader.charset_index || 0
         return nil if name.nil? || name.empty?
-        Bitmap.new "CharSet/#{name}", true
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] party charset load failed, using marker: #{e.message}"
-        nil
+        cached_bitmap(["CharSet", name]) do
+          begin
+            Bitmap.new "CharSet/#{name}", true
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] party charset load failed, using marker: #{e.message}"
+            nil
+          end
+        end
       end
 
       # Load the System/ windowskin for message windows (nil -> plain panel).
@@ -2720,13 +2740,23 @@ class RPG2k
       # The battle backdrop: the Backdrop/<name> image a Change Battle Background
       # command (or the encounter) named, falling back to the flat colour field
       # when there is no name or the file is missing — the same fallback the map
-      # uses for a missing chipset.
+      # uses for a missing chipset. Cached by name (see #cached_bitmap) so
+      # re-entering the same encounter, or a battle event that swaps back to a
+      # backdrop already shown this visit, does not re-decode it.
       def battle_back_bitmap(name)
-        return Bitmap.new("Backdrop/#{name}") if name && !name.empty?
-        flat_battle_back
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] battle backdrop '#{name}' failed to load: #{e.message}"
-        flat_battle_back
+        key = (name && !name.empty?) ? name : nil
+        cached_bitmap(["Backdrop", key]) do
+          if key
+            begin
+              Bitmap.new("Backdrop/#{key}")
+            rescue StandardError => e
+              $stderr.puts "[RPG2k] battle backdrop '#{key}' failed to load: #{e.message}"
+              flat_battle_back
+            end
+          else
+            flat_battle_back
+          end
+        end
       end
 
       def flat_battle_back
@@ -2745,14 +2775,25 @@ class RPG2k
 
       # The battler graphic for `enemy` (Monster/<battler_name>, colour-keyed), or
       # a solid placeholder block when it has no graphic or the file is missing —
-      # the same fallback strategy the map uses for a missing chipset.
+      # the same fallback strategy the map uses for a missing chipset. Cached by
+      # name (see #cached_bitmap) so a monster reused across troop slots, or a
+      # transformation that returns to a battler already shown this visit, is
+      # decoded once.
       def battler_bitmap(enemy)
         name = enemy.battler_name
-        return Bitmap.new("Monster/#{name}", true) if name && !name.empty?
-        placeholder_battler
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] battler load failed for #{enemy.name}: #{e.message}"
-        placeholder_battler
+        key = (name && !name.empty?) ? name : nil
+        cached_bitmap(["Monster", key]) do
+          if key
+            begin
+              Bitmap.new("Monster/#{key}", true)
+            rescue StandardError => e
+              $stderr.puts "[RPG2k] battler load failed for #{enemy.name}: #{e.message}"
+              placeholder_battler
+            end
+          else
+            placeholder_battler
+          end
+        end
       end
 
       def placeholder_battler
@@ -4066,11 +4107,13 @@ class RPG2k
         @battle_ui = nil
       end
 
-      # Dispose a battle sprite and its bitmap (sprites do not own their bitmap,
-      # so the graphic is freed explicitly).
+      # Dispose a battle sprite. Its bitmap (the backdrop or a battler, see
+      # #battle_back_bitmap / #battler_bitmap) is a shared @image_cache entry
+      # that may still be referenced elsewhere (another troop slot, a later
+      # encounter reusing the same graphic this visit), so only the sprite
+      # itself is freed here.
       def dispose_battle_sprite(spr)
         return unless spr
-        spr.bitmap.dispose if spr.bitmap
         spr.dispose
       end
 
@@ -4235,7 +4278,9 @@ class RPG2k
         ma[:frame_i] += 1
         if ma[:frame_i] >= ma[:frames].length
           @animation_sprite.visible = false
-          ma[:sheet].dispose if ma[:sheet].respond_to?(:dispose)
+          # The sheet is not disposed here: it is a shared @image_cache entry
+          # (see #animation_sheet) that a later replay of this animation
+          # reuses, not something this one play owns.
           @map_animation = nil
           # A battle animation is driven by the round rather than by an event
           # command, so there is no paused interpreter waiting on it.
@@ -4288,12 +4333,20 @@ class RPG2k
         nil
       end
 
+      # Cached by name (see #cached_bitmap): a battle round or a Show Battle
+      # Animation command can replay the same animation many times over a
+      # visit, and previously this reloaded and redecoded the sheet from disk
+      # on every single play.
       def animation_sheet(name)
         return nil if name.nil? || name.empty?
-        Bitmap.new "Battle/#{name}"
-      rescue StandardError => e
-        $stderr.puts "[RPG2k] battle animation '#{name}' load failed: #{e.message}"
-        nil
+        cached_bitmap(["Battle", name]) do
+          begin
+            Bitmap.new "Battle/#{name}"
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] battle animation '#{name}' load failed: #{e.message}"
+            nil
+          end
+        end
       end
 
       # The target character's map-pixel position: the player, the running event
