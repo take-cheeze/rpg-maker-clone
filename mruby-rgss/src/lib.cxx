@@ -4638,6 +4638,8 @@ mrb_value tilemap_set_oy(mrb_state* M, mrb_value self) {
 // ---- Window ---------------------------------------------------------------
 
 mrb_value make_rect(mrb_state* M, mrb_int x, mrb_int y, mrb_int w, mrb_int h);
+double vp_tone_key(const Tone& t);
+static mrb_int clamp_opacity(mrb_state* M, mrb_value self, const char* iv);
 
 // RGSS insets a window's contents 16px from its frame on every side, so the
 // drawable content area is (width - 32) x (height - 32).
@@ -4669,6 +4671,94 @@ Bitmap& window_ensure_canvas(mrb_state* M,
   lv_obj_set_size(obj, w, h);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_canvas"), cv);
   return c;
+}
+
+// (Re)allocate the window's *structural* composite -- background, frame and
+// contents, i.e. everything window_refresh draws except the blinking cursor
+// and the pause arrow -- to w x h when the size changes. Held in
+// @_win_structural so the GC keeps it alive across frames: a window with an
+// active cursor redraws that furniture every frame (window_update), but the
+// background/frame/contents underneath it only actually change when their
+// own inputs do (window_structural_dirty), so this buffer lets window_refresh
+// cache that work instead of recompositing the whole skin every frame just to
+// blink a cursor.
+mrb_value window_ensure_structural(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_int w,
+                                   mrb_int h) {
+  if (w < 1)
+    w = 1;
+  if (h < 1)
+    h = 1;
+  const mrb_value cur =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_structural"));
+  if (!mrb_nil_p(cur)) {
+    Bitmap& c = DataType<Bitmap>::get(M, cur);
+    if (c.width == w && c.height == h)
+      return cur;
+  }
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value sv =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_structural"), sv);
+  return sv;
+}
+
+// Whether the window's structural composite (background + frame + contents)
+// needs to be rebuilt this frame: any of its inputs changed since the last
+// check, or the contents bitmap was drawn into (Bitmap#draw_text, #blt, ...
+// all set Bitmap.dirty). The key is a flat string of every input rather than
+// several ivars so one string compare covers the lot; @_win_struct_key is
+// GC-owned like @_tone_key already is for window_sync_tone.
+//
+// Reading contents.dirty here *consumes* it: once observed, the pending
+// change is folded into the freshly rebuilt composite, so nothing else needs
+// to reset the flag (nothing else reads a Window's @contents.dirty -- see
+// window_refresh's header comment).
+static bool window_structural_dirty(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_int w,
+                                    mrb_int h) {
+  const mrb_value skin = mrb_iv_get(M, self, mrb_intern_lit(M, "@windowskin"));
+  const mrb_int op = clamp_opacity(M, self, "@opacity");
+  const mrb_int back = clamp_opacity(M, self, "@back_opacity");
+  const mrb_value st = mrb_iv_get(M, self, mrb_intern_lit(M, "@stretch"));
+  const bool stretch = mrb_nil_p(st) ? true : mrb_test(st);
+  const mrb_value tv = mrb_iv_get(M, self, mrb_intern_lit(M, "@tone"));
+  const double tone_key = (mrb_test(tv) && DATA_PTR(tv))
+                              ? vp_tone_key(DataType<Tone>::get(M, tv))
+                              : 0.0;
+  const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
+  const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
+  const mrb_int ox =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+  const mrb_int oy =
+      mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+  Bitmap* cont_bmp = (mrb_test(cont) && DATA_PTR(cont))
+                         ? &DataType<Bitmap>::get(M, cont)
+                         : nullptr;
+  const bool content_dirty = cont_bmp && cont_bmp->dirty;
+
+  char buf[256];
+  std::snprintf(buf, sizeof(buf),
+                "%p|%lld|%lld|%lld|%lld|%d|%.6f|%p|%lld|%lld|%lld",
+                mrb_test(skin) ? DATA_PTR(skin) : nullptr, (long long)w,
+                (long long)h, (long long)op, (long long)back, stretch ? 1 : 0,
+                tone_key, static_cast<void*>(cont_bmp), (long long)cop,
+                (long long)ox, (long long)oy);
+
+  const mrb_value prev =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_struct_key"));
+  const bool key_changed =
+      !mrb_string_p(prev) || std::strcmp(RSTRING_PTR(prev), buf) != 0;
+  if (key_changed) {
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@_win_struct_key"),
+               mrb_str_new_cstr(M, buf));
+  }
+  if (content_dirty)
+    cont_bmp->dirty = false;
+  return key_changed || content_dirty;
 }
 
 // An integer ivar, or `dflt` when it was never assigned. The RGSS2/RGSS3-only
@@ -4729,14 +4819,23 @@ static mrb_int clamp_opacity(mrb_state* M, mrb_value self, const char* iv) {
   return v;
 }
 
-// Repaint the window canvas: clear it, draw the windowskin background + 9-slice
-// frame (if a windowskin is set), then blit the contents bitmap into the
-// content area (inset by WINDOW_PADDING, scrolled by ox/oy). The compositing
-// reuses the tested Bitmap#clear/#stretch_blt/#blt methods via mrb_funcall;
-// only the RMXP windowskin source rects are new here (the 128x128 background at
-// (0,0) and the 64x64 frame at (128,0) with 16px corners). The blinking cursor
-// rect and the pause arrow are not drawn yet (tracked in
-// docs/rpgxp-rgss-api-gap.md).
+// Repaint the window canvas: draw the windowskin background + 9-slice frame
+// (if a windowskin is set) and the contents bitmap (inset by WINDOW_PADDING,
+// scrolled by ox/oy) into a cached *structural* composite, then copy that
+// composite onto the visible canvas and draw the blinking cursor / pause
+// arrow on top. The compositing reuses the tested
+// Bitmap#clear/#stretch_blt/#blt methods via mrb_funcall; only the RMXP
+// windowskin source rects are new here (the 128x128 background at (0,0) and
+// the 64x64 frame at (128,0) with 16px corners).
+//
+// window_update calls this every frame a window has an active cursor or is
+// paused, so the blink alone used to force a full skin+contents recomposite
+// (background tile, 9-slice frame, contents blit -- up to a dozen Bitmap#blt
+// calls) every single frame. window_structural_dirty gates that work behind
+// whether the background/frame/contents inputs actually changed; the common
+// case -- an open menu with nothing but a blinking cursor -- now redraws just
+// the cursor (and the cached composite's one-shot copy onto the canvas) per
+// frame instead.
 void window_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -4770,104 +4869,126 @@ void window_refresh(mrb_state* M, mrb_value self) {
   // The compositing allocates transient Rect values; drop them off the GC arena
   // when done (canvas/skin/contents stay alive via their ivars on self).
   const int arena = mrb_gc_arena_save(M);
-  mrb_funcall_argv(M, canvas, mrb_intern_lit(M, "clear"), 0, nullptr);
 
+  const bool structural_dirty = window_structural_dirty(M, self, w, h);
+  const mrb_value structural = window_ensure_structural(M, self, w, h);
   const mrb_value skin = mrb_iv_get(M, self, mrb_intern_lit(M, "@windowskin"));
   const mrb_int b = WINDOW_PADDING;
-  if (mrb_test(skin) && DATA_PTR(skin)) {
-    const mrb_int op = clamp_opacity(M, self, "@opacity");
-    const mrb_int back = op * clamp_opacity(M, self, "@back_opacity") / 255;
-    // Background from the 128x128 tile at (0,0). RMXP's `stretch` (default
-    // true) scales that tile over the whole window; when false it is tiled at
-    // 1:1, repeating across the window (edge tiles clip against the canvas).
-    const mrb_value st = mrb_iv_get(M, self, mrb_intern_lit(M, "@stretch"));
-    const bool stretch = mrb_nil_p(st) ? true : mrb_test(st);
-    if (stretch) {
-      const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
-                              make_rect(M, 0, 0, 128, 128),
-                              mrb_fixnum_value(back)};
-      mrb_funcall_argv(M, canvas, sblt, 4, bg);
-    } else {
-      for (mrb_int ty = 0; ty < h; ty += 128) {
-        for (mrb_int tx = 0; tx < w; tx += 128) {
-          const mrb_value bg[] = {mrb_fixnum_value(tx), mrb_fixnum_value(ty),
-                                  skin, make_rect(M, 0, 0, 128, 128),
-                                  mrb_fixnum_value(back)};
-          mrb_funcall_argv(M, canvas, blt, 5, bg);
+
+  if (structural_dirty) {
+    mrb_funcall_argv(M, structural, mrb_intern_lit(M, "clear"), 0, nullptr);
+
+    if (mrb_test(skin) && DATA_PTR(skin)) {
+      const mrb_int op = clamp_opacity(M, self, "@opacity");
+      const mrb_int back = op * clamp_opacity(M, self, "@back_opacity") / 255;
+      // Background from the 128x128 tile at (0,0). RMXP's `stretch` (default
+      // true) scales that tile over the whole window; when false it is tiled
+      // at 1:1, repeating across the window (edge tiles clip against the
+      // canvas).
+      const mrb_value st = mrb_iv_get(M, self, mrb_intern_lit(M, "@stretch"));
+      const bool stretch = mrb_nil_p(st) ? true : mrb_test(st);
+      if (stretch) {
+        const mrb_value bg[] = {make_rect(M, 0, 0, w, h), skin,
+                                make_rect(M, 0, 0, 128, 128),
+                                mrb_fixnum_value(back)};
+        mrb_funcall_argv(M, structural, sblt, 4, bg);
+      } else {
+        for (mrb_int ty = 0; ty < h; ty += 128) {
+          for (mrb_int tx = 0; tx < w; tx += 128) {
+            const mrb_value bg[] = {mrb_fixnum_value(tx), mrb_fixnum_value(ty),
+                                    skin, make_rect(M, 0, 0, 128, 128),
+                                    mrb_fixnum_value(back)};
+            mrb_funcall_argv(M, structural, blt, 5, bg);
+          }
         }
       }
-    }
-    // The tone tints the background only, so it goes on before the frame and
-    // the contents are drawn over it.
-    window_apply_tone(M, self, DataType<Bitmap>::get(M, canvas));
-    // Frame: the 64x64 border at (128,0), a 9-slice with 16px corners/margins.
-    // The corner shrinks vertically with a part-open window, so a half-unrolled
-    // one keeps a frame instead of drawing its top and bottom borders over each
-    // other (h is the *drawn* height -- see openness above).
-    const mrb_int bv = std::min<mrb_int>(b, h / 2);
-    if (bv > 0) {
-      const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
-                              make_rect(M, 128, 0, b, bv),
-                              mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, blt, 5, tl);
-      const mrb_value tr[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(0),
-                              skin, make_rect(M, 176, 0, b, bv),
-                              mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, blt, 5, tr);
-      const mrb_value bl[] = {mrb_fixnum_value(0), mrb_fixnum_value(h - bv),
-                              skin, make_rect(M, 128, 64 - bv, b, bv),
-                              mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, blt, 5, bl);
-      const mrb_value br[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(h - bv),
-                              skin, make_rect(M, 176, 64 - bv, b, bv),
-                              mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, blt, 5, br);
-      const mrb_value top[] = {make_rect(M, b, 0, w - 2 * b, bv), skin,
-                               make_rect(M, 144, 0, 32, bv),
-                               mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, sblt, 4, top);
-      const mrb_value bottom[] = {make_rect(M, b, h - bv, w - 2 * b, bv), skin,
-                                  make_rect(M, 144, 64 - bv, 32, bv),
-                                  mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, sblt, 4, bottom);
-    }
-    if (h > 2 * bv) {
-      const mrb_value left[] = {make_rect(M, 0, bv, b, h - 2 * bv), skin,
-                                make_rect(M, 128, 16, b, 32),
+      // The tone tints the background only, so it goes on before the frame
+      // and the contents are drawn over it.
+      window_apply_tone(M, self, DataType<Bitmap>::get(M, structural));
+      // Frame: the 64x64 border at (128,0), a 9-slice with 16px
+      // corners/margins. The corner shrinks vertically with a part-open
+      // window, so a half-unrolled one keeps a frame instead of drawing its
+      // top and bottom borders over each other (h is the *drawn* height --
+      // see openness above).
+      const mrb_int bv = std::min<mrb_int>(b, h / 2);
+      if (bv > 0) {
+        const mrb_value tl[] = {mrb_fixnum_value(0), mrb_fixnum_value(0), skin,
+                                make_rect(M, 128, 0, b, bv),
                                 mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, sblt, 4, left);
-      const mrb_value right[] = {make_rect(M, w - b, bv, b, h - 2 * bv), skin,
-                                 make_rect(M, 176, 16, b, 32),
+        mrb_funcall_argv(M, structural, blt, 5, tl);
+        const mrb_value tr[] = {mrb_fixnum_value(w - b), mrb_fixnum_value(0),
+                                skin, make_rect(M, 176, 0, b, bv),
+                                mrb_fixnum_value(op)};
+        mrb_funcall_argv(M, structural, blt, 5, tr);
+        const mrb_value bl[] = {mrb_fixnum_value(0), mrb_fixnum_value(h - bv),
+                                skin, make_rect(M, 128, 64 - bv, b, bv),
+                                mrb_fixnum_value(op)};
+        mrb_funcall_argv(M, structural, blt, 5, bl);
+        const mrb_value br[] = {
+            mrb_fixnum_value(w - b), mrb_fixnum_value(h - bv), skin,
+            make_rect(M, 176, 64 - bv, b, bv), mrb_fixnum_value(op)};
+        mrb_funcall_argv(M, structural, blt, 5, br);
+        const mrb_value top[] = {make_rect(M, b, 0, w - 2 * b, bv), skin,
+                                 make_rect(M, 144, 0, 32, bv),
                                  mrb_fixnum_value(op)};
-      mrb_funcall_argv(M, canvas, sblt, 4, right);
+        mrb_funcall_argv(M, structural, sblt, 4, top);
+        const mrb_value bottom[] = {make_rect(M, b, h - bv, w - 2 * b, bv),
+                                    skin, make_rect(M, 144, 64 - bv, 32, bv),
+                                    mrb_fixnum_value(op)};
+        mrb_funcall_argv(M, structural, sblt, 4, bottom);
+      }
+      if (h > 2 * bv) {
+        const mrb_value left[] = {make_rect(M, 0, bv, b, h - 2 * bv), skin,
+                                  make_rect(M, 128, 16, b, 32),
+                                  mrb_fixnum_value(op)};
+        mrb_funcall_argv(M, structural, sblt, 4, left);
+        const mrb_value right[] = {make_rect(M, w - b, bv, b, h - 2 * bv), skin,
+                                   make_rect(M, 176, 16, b, 32),
+                                   mrb_fixnum_value(op)};
+        mrb_funcall_argv(M, structural, sblt, 4, right);
+      }
+    } else {
+      // No windowskin: the tone still applies to whatever background there
+      // is.
+      window_apply_tone(M, self, DataType<Bitmap>::get(M, structural));
     }
-  } else {
-    // No windowskin: the tone still applies to whatever background there is.
-    window_apply_tone(M, self, DataType<Bitmap>::get(M, canvas));
+
+    // Contents is furniture RGSS hides while a window is opening or closing
+    // (only the frame animates), same as the cursor and pause arrow below.
+    if (openness == 255) {
+      const mrb_value cont =
+          mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
+      if (mrb_test(cont) && DATA_PTR(cont)) {
+        const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
+        const mrb_int ox =
+            mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
+        const mrb_int oy =
+            mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
+        // Blit the scrolled contents into the content area, inset by
+        // WINDOW_PADDING.
+        const mrb_value c[] = {mrb_fixnum_value(b), mrb_fixnum_value(b), cont,
+                               make_rect(M, ox, oy, w - 2 * b, h - 2 * b),
+                               mrb_fixnum_value(cop)};
+        mrb_funcall_argv(M, structural, blt, 5, c);
+      }
+    }
   }
 
-  // Everything below is window *furniture* -- contents, cursor, pause arrow --
-  // which RGSS hides entirely while a window is opening or closing. Only the
-  // frame animates.
+  // Copy the (possibly cached) structural composite onto the visible canvas
+  // -- one full-size blit standing in for the whole background+frame+contents
+  // recomposite above whenever it was skipped this frame.
+  mrb_funcall_argv(M, canvas, mrb_intern_lit(M, "clear"), 0, nullptr);
+  const mrb_value full[] = {mrb_fixnum_value(0), mrb_fixnum_value(0),
+                            structural, make_rect(M, 0, 0, w, h),
+                            mrb_fixnum_value(255)};
+  mrb_funcall_argv(M, canvas, blt, 5, full);
+
+  // Everything below is window *furniture* -- cursor, pause arrow -- which
+  // RGSS hides entirely while a window is opening or closing.
   if (openness < 255) {
     mrb_gc_arena_restore(M, arena);
     lv_obj_invalidate(obj);
     return;
-  }
-
-  const mrb_value cont = mrb_iv_get(M, self, mrb_intern_lit(M, "@contents"));
-  if (mrb_test(cont) && DATA_PTR(cont)) {
-    const mrb_int cop = clamp_opacity(M, self, "@contents_opacity");
-    const mrb_int ox =
-        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@ox")));
-    const mrb_int oy =
-        mrb_as_int(M, mrb_iv_get(M, self, mrb_intern_lit(M, "@oy")));
-    // Blit the scrolled contents into the content area, inset by
-    // WINDOW_PADDING.
-    const mrb_value c[] = {mrb_fixnum_value(b), mrb_fixnum_value(b), cont,
-                           make_rect(M, ox, oy, w - 2 * b, h - 2 * b),
-                           mrb_fixnum_value(cop)};
-    mrb_funcall_argv(M, canvas, blt, 5, c);
   }
 
   const mrb_int anim =
