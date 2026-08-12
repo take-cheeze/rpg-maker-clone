@@ -2704,9 +2704,11 @@ module Game
     end
 
     # Change System SFX: override one of the system sound slots (cursor,
-    # decision, cancel, ...) selected by param0. string = file name, param1
-    # volume, param2 tempo, param3 balance. Stored for save fidelity like the
-    # system BGM; nothing plays these yet.
+    # decision, cancel, the battle per-hit sounds, ...) selected by param0.
+    # string = file name, param1 volume, param2 tempo, param3 balance. The map
+    # scene (Scene::Map::DB_SE_FIELD) already plays most of these slots at the
+    # moments they name; a slot beyond the ones it plays is still stored for
+    # save fidelity, matching the system BGM.
     def do_change_system_sfx(cmd)
       @state.system_sfx[cmd.param(0)] = {
         name: cmd.string, volume: cmd.param(1),
