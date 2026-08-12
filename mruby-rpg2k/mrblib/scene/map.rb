@@ -71,6 +71,7 @@ class RPG2k
       def initialize parent, state
         super parent
         @state = state
+        apply_map_save_access
         @map = state.map
         @chipset = build_chipset
         @chipset_bmp = load_chipset_graphic
@@ -2572,6 +2573,15 @@ class RPG2k
         nil
       end
 
+      # Re-derive the menu's Save access from the current map's tree setting
+      # (see Game::MapAccess). Runs on the initial map load and every Teleport,
+      # same as RPG_RT: a Control Save Access event command can still override
+      # it for the rest of that map's visit, but the next map load recomputes
+      # from the tree again.
+      def apply_map_save_access
+        @state.save_access = Game::MapAccess.save_allowed?(@state.map_id, map_properties)
+      end
+
       # The backdrop named by the terrain of the tile at (x, y) — the database
       # terrain row's `background_name` (field 4). '' when the tile, the terrain
       # table or the field is missing.
@@ -4227,6 +4237,7 @@ class RPG2k
         @map = @parent.load_map(map_id)
         @state.map = @map
         @state.map_id = map_id
+        apply_map_save_access
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0

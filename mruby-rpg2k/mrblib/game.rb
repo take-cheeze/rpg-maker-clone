@@ -4520,6 +4520,39 @@ module Game
     end
   end
 
+  # Whether the menu's Save command is usable on a given map.
+  #
+  # Each map-tree node (RPG_RT.lmt `map_properties` field 33, `:save`) is a
+  # tri-state, same shape as Backdrop's `backdrop_type`: 0 inherits whatever
+  # the parent map resolves to, 1 explicitly allows Save, 2 forbids it. RPG_RT
+  # re-derives this from scratch on every map load -- the initial map and every
+  # Teleport -- walking "same as parent" nodes up until one pins Allow/Forbid;
+  # a walk that runs off the root (or loops) defaults to Allow, the schema's
+  # own default for an unset field. This sits *underneath* the `Control Save
+  # Access` event command: that command's runtime toggle (`Game::State#save_access`)
+  # still wins for the rest of the current map's visit, but the next map load
+  # recomputes from the tree again, exactly as RPG_RT does.
+  module MapAccess
+    TRISTATE_PARENT = 0
+    TRISTATE_ALLOW  = 1
+    TRISTATE_FORBID = 2
+
+    def self.save_allowed?(map_id, properties)
+      seen = {}
+      id = map_id.to_i
+      while id > 0 && !seen[id]
+        seen[id] = true
+        row = properties ? properties[id] : nil
+        return true unless row
+        v = row.respond_to?(:save) ? row.save : nil
+        v = TRISTATE_ALLOW if v.nil? # schema default for an unset field
+        return v != TRISTATE_FORBID unless v == TRISTATE_PARENT
+        id = row.respond_to?(:parent_map_id) ? row.parent_map_id.to_i : 0
+      end
+      true
+    end
+  end
+
   # One entry of an enemy's 行動パターン (action pattern) table — the database
   # enemy row's chunk 42, decoded off the LCF row into plain data so the battle
   # simulation can pick an action without holding a database row.
