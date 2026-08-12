@@ -8390,6 +8390,45 @@ check 'a node missing its save field defaults to Allow' do
   eq true, Game::MapAccess.save_allowed?(1, { 1 => bare })
 end
 
+# -- field Teleport/Escape access resolution (map tree fields 31, 32) --------
+#
+# The identical tri-state walk as Save above (field 33), just read off a
+# different pair of fields -- confirmed against EasyRPG's Game_Map::Setup,
+# which re-derives Game_System::AllowTeleport/AllowEscape from these two
+# fields on every map load exactly as it does AllowSave. Since #allowed? is
+# shared with #save_allowed? and its walk (inherit, loop, unknown map, root,
+# a field-less node) is already exhaustively covered above, these checks only
+# have to show each method reads its own field rather than borrowing #save's.
+
+class FakeAccessNode
+  attr_accessor :save, :teleport, :escape, :parent_map_id
+  def initialize(save, teleport, escape, parent = 0)
+    @save = save; @teleport = teleport; @escape = escape; @parent_map_id = parent
+  end
+end
+
+check 'teleport_allowed? and escape_allowed? each read their own field' do
+  props = { 1 => FakeAccessNode.new(1, 2, 1) }   # save Allow, teleport Forbid, escape Allow
+  eq true,  Game::MapAccess.save_allowed?(1, props)
+  eq false, Game::MapAccess.teleport_allowed?(1, props), 'teleport is the one forbidden here'
+  eq true,  Game::MapAccess.escape_allowed?(1, props)
+end
+
+check 'teleport/escape access inherits from the parent map' do
+  props = { 1 => FakeAccessNode.new(1, 2, 2),
+            2 => FakeAccessNode.new(1, 0, 0, 1) }
+  eq false, Game::MapAccess.teleport_allowed?(2, props), 'the parent pins Forbid'
+  eq false, Game::MapAccess.escape_allowed?(2, props)
+end
+
+check 'an unknown map, missing field or missing tree defaults teleport/escape to Allow' do
+  eq true, Game::MapAccess.teleport_allowed?(7, { 1 => FakeAccessNode.new(1, 2, 2) })
+  eq true, Game::MapAccess.escape_allowed?(1, nil)
+  bare = Struct.new(:nothing).new(0)
+  eq true, Game::MapAccess.teleport_allowed?(1, { 1 => bare })
+  eq true, Game::MapAccess.escape_allowed?(1, { 1 => bare })
+end
+
 # -- battle log terms (Game::States::BattleText) ------------------------------
 
 BT = Game::States::BattleText

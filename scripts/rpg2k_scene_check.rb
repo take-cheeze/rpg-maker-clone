@@ -363,7 +363,12 @@ end
 # what perform_teleport (and Recall to Location) calls to swap maps; it hands
 # back a fresh empty map for the requested id.
 class FakeParent
-  attr_reader :db, :map_tree, :pushed
+  attr_reader :db, :pushed
+  # Writable (unlike `db`): a test that needs Scene::Map#apply_map_access to
+  # see a real map tree sets this directly, since the default (nil) is what
+  # every other check wants -- no tree, so save/teleport/escape all default
+  # to Allow.
+  attr_accessor :map_tree
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
@@ -4945,6 +4950,34 @@ check 'Scene::Map: a pending teleport queued by the field skill menu is applied'
   eq 4, state.y
   eq 6, state.direction
   ok state.pending_teleport.nil?, 'the request is consumed, not reapplied every frame'
+end
+
+# One map-tree node's save/teleport/escape tri-states (parent_map_id left nil
+# -- MapAccess#allowed? reads a missing one as 0, the tree root). Mirrors
+# scripts/rpg2k_logic_check.rb's own fixture of the same name; reused here to
+# prove Scene::Map actually reaches Game::MapAccess, not just that the module
+# answers correctly in isolation.
+FakeAccessNode = Struct.new(:save, :teleport, :escape, :parent_map_id)
+
+def fake_map_tree(props)
+  Struct.new(:map_properties).new(props)
+end
+
+check 'Scene::Map re-derives Teleport/Escape access from the map tree on load and on Teleport' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeAccessNode.new(1, 2, 1), # map 1: teleport forbidden, escape allowed
+    2 => FakeAccessNode.new(1, 1, 2)  # map 2: teleport allowed, escape forbidden
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  scene = RPG2k::Scene::Map.new(parent, state)
+  eq false, state.teleport_access, 'map 1 forbids Teleport'
+  eq true, state.escape_access, 'map 1 allows Escape'
+
+  scene.send(:perform_teleport, [2, 0, 0, 0])
+  eq true, state.teleport_access, 'map 2 allows Teleport'
+  eq false, state.escape_access, 'map 2 forbids Escape'
 end
 
 check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do

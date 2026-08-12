@@ -4641,31 +4641,50 @@ module Game
     end
   end
 
-  # Whether the menu's Save command is usable on a given map.
+  # Whether the menu's Save command, and the Escape / Teleport field skill
+  # types, are usable on a given map.
   #
-  # Each map-tree node (RPG_RT.lmt `map_properties` field 33, `:save`) is a
-  # tri-state, same shape as Backdrop's `backdrop_type`: 0 inherits whatever
-  # the parent map resolves to, 1 explicitly allows Save, 2 forbids it. RPG_RT
-  # re-derives this from scratch on every map load -- the initial map and every
-  # Teleport -- walking "same as parent" nodes up until one pins Allow/Forbid;
-  # a walk that runs off the root (or loops) defaults to Allow, the schema's
-  # own default for an unset field. This sits *underneath* the `Control Save
-  # Access` event command: that command's runtime toggle (`Game::State#save_access`)
-  # still wins for the rest of the current map's visit, but the next map load
-  # recomputes from the tree again, exactly as RPG_RT does.
+  # Each map-tree node (RPG_RT.lmt `map_properties` field 33 `:save`, 31
+  # `:teleport`, 32 `:escape`) is a tri-state, same shape as Backdrop's
+  # `backdrop_type`: 0 inherits whatever the parent map resolves to, 1
+  # explicitly allows it, 2 forbids it. RPG_RT re-derives all three from
+  # scratch on every map load -- the initial map and every Teleport --
+  # walking "same as parent" nodes up until one pins Allow/Forbid; a walk that
+  # runs off the root (or loops) defaults to Allow, the schema's own default
+  # for an unset field (EasyRPG's `Game_Map::Setup` does the identical walk
+  # for all three fields, feeding `Game_System::SetAllowSave` /
+  # `SetAllowTeleport` / `SetAllowEscape`). This sits *underneath* the
+  # `Control Save/Teleport/Escape Access` event commands: those commands'
+  # runtime toggles (`Game::State#save_access` / `#teleport_access` /
+  # `#escape_access`) still win for the rest of the current map's visit, but
+  # the next map load recomputes from the tree again, exactly as RPG_RT does.
   module MapAccess
     TRISTATE_PARENT = 0
     TRISTATE_ALLOW  = 1
     TRISTATE_FORBID = 2
 
     def self.save_allowed?(map_id, properties)
+      allowed?(map_id, properties, :save)
+    end
+
+    def self.teleport_allowed?(map_id, properties)
+      allowed?(map_id, properties, :teleport)
+    end
+
+    def self.escape_allowed?(map_id, properties)
+      allowed?(map_id, properties, :escape)
+    end
+
+    # The tree walk shared by all three: read tri-state `field` off `map_id`'s
+    # node, following "same as parent" up until a node pins Allow/Forbid.
+    def self.allowed?(map_id, properties, field)
       seen = {}
       id = map_id.to_i
       while id > 0 && !seen[id]
         seen[id] = true
         row = properties ? properties[id] : nil
         return true unless row
-        v = row.respond_to?(:save) ? row.save : nil
+        v = row.respond_to?(field) ? row.send(field) : nil
         v = TRISTATE_ALLOW if v.nil? # schema default for an unset field
         return v != TRISTATE_FORBID unless v == TRISTATE_PARENT
         id = row.respond_to?(:parent_map_id) ? row.parent_map_id.to_i : 0
@@ -6684,11 +6703,15 @@ module Game
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
     attr_accessor :menu_access, :save_access
-    # Whether the Teleport and Escape skills are usable, toggled by the Change
-    # Teleport Access (11820) and Change Escape Access (11840) event commands.
-    # Default off — RPG2000 games enable these once the skill's targets are set —
-    # and persisted in the save. Read by Game::Party#escape_skill_available? /
-    # #teleport_skill_available? to gate the field skill menu.
+    # Whether the Teleport and Escape skills are usable. Toggled directly by
+    # the Change Teleport Access (11820) and Change Escape Access (11840)
+    # event commands, but also recomputed from the current map's own tree
+    # setting on every map load and Teleport (`Scene::Map#apply_map_access`,
+    # `Game::MapAccess.teleport_allowed?` / `#escape_allowed?`) -- so a value
+    # set here is only the *initial* one (before any map has loaded), matching
+    # `#save_access`. Persisted in the save. Read by
+    # Game::Party#escape_skill_available? / #teleport_skill_available? to gate
+    # the field skill menu.
     attr_accessor :teleport_access, :escape_access
     # A `{map_id:, x:, y:}` destination queued by an Escape / Teleport field
     # skill (see Game::Party#cast_escape_skill / #cast_teleport_skill), picked up
