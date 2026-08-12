@@ -124,6 +124,7 @@ module RGSS
     def self.bgm_play(*a); (@bgm_calls ||= []) << a; end
     def self.reset_bgm; @bgm_calls = []; end
     def self.bgm_fade(*); end
+    def self.bgm_stop(*); end
     # Scriptable playback position, so the "BGM played once" watcher can be
     # driven: a value that jumps backwards is how SDL_mixer reports a loop.
     class << self; attr_accessor :pos; end
@@ -3724,8 +3725,11 @@ end
 # docking it near where the picture would have sat. A full Scene::Title can be
 # built here (unlike RPG2k itself, which needs a real RPG_RT.ldb/.lmt) with a
 # minimal stand-in parent that only answers what Scene::Title reads.
-TitleParent = Struct.new(:db, :map_tree, :hide_title_flag) do
+TitleParent = Struct.new(:db, :map_tree, :hide_title_flag, :save_exists_flag) do
   def hide_title?; hide_title_flag; end
+  def save_exists?; save_exists_flag; end
+  def continue_calls; @continue_calls || 0; end
+  def continue_game; @continue_calls = continue_calls + 1; end
 end
 
 check 'HideTitle hides the title picture and centres the command window' do
@@ -3748,6 +3752,45 @@ check 'without HideTitle the picture shows and the window docks near its foot' d
   bottom_den = RPG2k::Scene::Title::BOTTOM_DEN
   eq RPG2k::HEIGHT * bottom_num / bottom_den - window.height, window.y,
      'the command window docks near the picture, as RPG_RT does'
+end
+
+# -- Continue disabled without save data --------------------------------------
+#
+# RPG_RT grays out Continue on the title screen when there is no save to
+# resume; `save_exists?` (main.rb) is the source of truth, routed through
+# Scene::Title's own `continue_available?` (ADR 0012). The cursor can still
+# reach the grayed-out entry -- only its selection key is ignored.
+
+check 'no save data: Continue is flagged unavailable and reachable by the cursor' do
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  ok !scene.instance_variable_get(:@continue_available), 'Continue is flagged unavailable'
+  scene.send(:move_selection, 1)
+  eq 1, scene.instance_variable_get(:@selected_index),
+     'moving down from New Game still lands on Continue'
+end
+
+check 'no save data: pressing the selection key on Continue does nothing' do
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  scene.instance_variable_set(:@selected_index, 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 0, parent.continue_calls,
+     'a grayed-out Continue never reaches parent.continue_game'
+  eq 1, scene.instance_variable_get(:@selected_index), 'the selection is left untouched'
+end
+
+check 'a save exists: Continue is flagged available and its selection key resumes it' do
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  ok scene.instance_variable_get(:@continue_available), 'Continue is flagged available'
+  scene.instance_variable_set(:@selected_index, 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 1, parent.continue_calls, 'pressing the selection key on Continue calls parent.continue_game'
 end
 
 # -- screen fade / flash overlays ---------------------------------------------
