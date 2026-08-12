@@ -730,6 +730,65 @@ check 'two events do not stack on the same tile' do
   ok (ca.x - cb.x).abs == 1, "expected adjacency, got a=#{ca.x} b=#{cb.x}"
 end
 
+# Each tile's four passability bits mark whether *that tile's own* north/
+# south/east/west edge is open; crossing a boundary needs the leaving tile's
+# bit for the side it exits through *and* the entering tile's bit for the
+# side it enters through (the same physical edge, named from each tile's own
+# side of it) -- so a wall can be painted from either tile, and both have to
+# agree for the crossing to work. Nepheshel ships 513 tiles across 17 of its
+# 100 chipsets whose direction bits are not all-or-nothing like a fixture
+# defaults to, so a scene that only asked the destination (as this one used
+# to, and using the direction of travel rather than the reverse) missed both
+# halves of that agreement.
+#
+# `edge_x`/`edge_y` are the map cell whose chip index 0 carries `edge_flags`;
+# every other cell is chip index 1, fully open in all four directions.
+def edge_scene(player, edge_x, edge_y, edge_flags)
+  db = fake_db
+  open = Game::ChipSet::DIR_BIT[2] | Game::ChipSet::DIR_BIT[4] |
+         Game::ChipSet::DIR_BIT[6] | Game::ChipSet::DIR_BIT[8]
+  data = Array.new(162, open)
+  data[0] = edge_flags
+  db.chipset = { 1 => OpenStruct.new(name: 'edge', chipset_name: 'edge',
+                                     passable_data_lower: data,
+                                     passable_data_upper: nil, terrain_data: nil) }
+  w = 6; h = 5
+  lower = Array.new(w * h, 1000) # chip index 1: fully open
+  lower[edge_y * w + edge_x] = 0 # chip index 0: edge_flags
+  unit = OpenStruct.new(width: w, height: h, chipset_id: 1, lower_layer: lower,
+                        upper_layer: Array.new(w * h, 0), events: {})
+  state = Game::State.new(fake_party, 1, player[0], player[1])
+  state.map = Game::Map.new(1, unit)
+  RPG2k::Scene::Map.new(fake_parent(db), state)
+end
+
+
+check 'a step is blocked when the tile being left disallows that side, ' \
+      'even though the tile ahead is open' do
+  # Standing on a tile that only permits crossing its Right edge; every other
+  # side of it, including Down, is closed. The tile below is fully open, but
+  # that never gets asked -- the departure fails at the standing tile first.
+  scene = edge_scene([0, 0], 0, 0, Game::ChipSet::DIR_BIT[6])
+  RGSS::Input.dir_value = 2 # try to walk down
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq [0, 0], [st.x, st.y], 'the standing tile\'s own closed Down edge blocks the step'
+end
+
+check 'a step is blocked when the tile ahead disallows the side being entered, ' \
+      'even though it allows the opposite side' do
+  # The tile at (1,0) only permits crossing its own Right edge (the boundary
+  # with whatever is further east of it) -- not its Left edge, which is the
+  # boundary being crossed here. Checking the destination with the direction
+  # of travel (Right) instead of the entered side (Left) -- the pre-fix bug
+  # -- would read this tile's Right bit and wrongly allow the step.
+  scene = edge_scene([0, 0], 1, 0, Game::ChipSet::DIR_BIT[6])
+  RGSS::Input.dir_value = 6 # try to walk right, into (1,0)
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  eq [0, 0], [st.x, st.y], 'the destination\'s closed Left edge blocks entry from the west'
+end
+
 check 'an autostart event Calls a call-only common event through the scene' do
   ic = Game::Interpreter::Cmd
   # A common event with start_term 5 (call-only): auto-start/parallel never runs
@@ -1864,6 +1923,24 @@ check 'events route into the tile buffer matching their layer / y-order' do
   eq upper, scene.send(:event_target_buffer, eh[2]), 'above-hero -> upper'
   eq lower, scene.send(:event_target_buffer, eh[3]), 'same layer, north -> lower'
   eq upper, scene.send(:event_target_buffer, eh[4]), 'same layer, south -> upper'
+end
+
+check 'two same-layer events sharing a buffer still draw in their own y-order' do
+  # Both south of the player (y=0), so event_target_buffer sends both to the
+  # upper buffer -- but "near" (small y, drawn first / underneath) is defined
+  # *after* "far" (large y, drawn last / on top) in the event table, id 1 vs 2.
+  # Sorting only by event order (the pre-fix behaviour) would draw id 1 last
+  # and put the nearer sprite on top of the farther one, backwards from RPG_RT's
+  # own y-then-x-then-id tie-break.
+  far  = event(1, 5, page(charset_name: 'far',  layer: 1))
+  near = event(2, 1, page(charset_name: 'near', layer: 1))
+  scene = new_scene({ 1 => far, 2 => near }, player: [0, 0])
+  upper = scene.instance_variable_get(:@upper_bmp)
+  scene.send(:draw_events, 0, 0)
+  far_bmp = scene.send(:event_charset, 'far')
+  near_bmp = scene.send(:event_charset, 'near')
+  order = upper.blt_calls.map { |c| c[2] }.select { |b| b.equal?(far_bmp) || b.equal?(near_bmp) }
+  eq [near_bmp, far_bmp], order.uniq, 'the smaller-y sprite draws first, the larger-y one on top of it'
 end
 
 check 'a wandering event cycles its walk phase; a stationary one rests' do

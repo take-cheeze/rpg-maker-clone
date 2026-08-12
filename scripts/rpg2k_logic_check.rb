@@ -8644,6 +8644,37 @@ check 'an unindexable tile reads the first lower tile' do
   eq 7, chipset_with(td).terrain(-1)
 end
 
+# -- chipset directional passability ------------------------------------------
+
+def chipset_with_passable(passable_data)
+  db = Struct.new(:chipset).new(
+    { 1 => FakeChipsetRow.new('cs', 'cs', passable_data, nil, nil, 0, 0) }
+  )
+  Game::ChipSet.new(db, 1)
+end
+
+check 'passable? reads exactly the requested direction bit' do
+  data = Array.new(162, 0)
+  data[0] = Game::ChipSet::DIR_BIT[2] | Game::ChipSet::DIR_BIT[6] # Down, Right
+  cs = chipset_with_passable(data)
+  ok cs.passable?(0, 2), 'Down is set'
+  ok cs.passable?(0, 6), 'Right is set'
+  ok !cs.passable?(0, 4), 'Left is clear'
+  ok !cs.passable?(0, 8), 'Up is clear'
+end
+
+# RPG_RT ORs a jump's landing tile across all four direction bits rather than
+# asking one specific side, since a jump does not arrive "from" anywhere the
+# way a step does; it only refuses a tile blocked on every side.
+check 'landable? accepts a tile passable from any single side' do
+  data = Array.new(162, 0)
+  data[0] = Game::ChipSet::DIR_BIT[8] # Up only
+  cs = chipset_with_passable(data)
+  ok cs.landable?(0), 'one open direction is enough to land'
+  data[0] = 0
+  ok !chipset_with_passable(data).landable?(0), 'blocked on every side refuses the landing'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
