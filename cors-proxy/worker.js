@@ -266,6 +266,14 @@ export default {
     const forward = new Headers();
     if (requestRange) forward.set('Range', requestRange);
     forward.set('Accept', request.headers.get('Accept') || '*/*');
+    // Workers' fetch() sends no User-Agent by default. Some CDNs/WAFs (e.g.
+    // the CloudFront distribution behind cdn.tkool.jp) treat a missing or
+    // non-browser UA as bot traffic and serve an anti-hotlink error page
+    // instead of the file, so pretend to be an ordinary browser.
+    forward.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    );
 
     let upstream;
     try {
@@ -273,6 +281,15 @@ export default {
         method: request.method,
         headers: forward,
         redirect: 'follow',
+        // Cloudflare caches Worker fetch() subrequests at the edge (keyed by
+        // URL, shared across every caller hitting the same origin) according
+        // to standard HTTP cache rules — independent of, and in addition to,
+        // the R2 cache above. A transient upstream error can get stuck there
+        // and get served back for a long time regardless of what the origin
+        // returns afterwards. Opt out: the R2 cache already does explicit,
+        // TTL-checked caching, so this layer only adds an invisible failure
+        // mode on top of it.
+        cf: { cacheTtl: 0, cacheEverything: false },
       });
     } catch (e) {
       return fail(502, 'Upstream fetch failed for ' + target + ': ' + e.message, acao);
