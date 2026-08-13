@@ -5130,6 +5130,58 @@ check 'Change Screen Transitions sets the chosen slot; round-trips through save'
   eq [0, 0, 0, 0, 0, 0], Game::State.load(db, legacy).screen_transitions
 end
 
+# -- Vehicle starting positions (map tree's own boat/ship/airship tool) ------
+
+FakeMapTreeInitial = Struct.new(:initial_map_id, :initial_x, :initial_y,
+                                 :boat_map_id, :boat_x, :boat_y,
+                                 :ship_map_id, :ship_x, :ship_y,
+                                 :airship_map_id, :airship_x, :airship_y)
+FakeMapTree = Struct.new(:initial)
+
+check 'seed_vehicle_positions places each vehicle at the map tree\'s own start position' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ok !st.vehicle(:boat).placed?, 'a fresh vehicle starts unplaced'
+  ok !st.vehicle(:ship).placed?
+  ok !st.vehicle(:airship).placed?
+
+  # The boat and airship are placed by the tree; the ship's fields are left
+  # nil, matching a project whose designer never used the "set ship start
+  # position" editor tool.
+  init = FakeMapTreeInitial.new(1, 5, 5,
+                                 3, 10, 12,
+                                 nil, nil, nil,
+                                 5, 20, 22)
+  st.seed_vehicle_positions(FakeMapTree.new(init))
+
+  ok st.vehicle(:boat).placed?, 'the boat is placed from the tree'
+  eq 3, st.vehicle(:boat).map_id
+  eq 10, st.vehicle(:boat).x
+  eq 12, st.vehicle(:boat).y
+
+  ok !st.vehicle(:ship).placed?,
+     'a vehicle the tree never positions stays unplaced, like Vehicle.new'
+  eq 0, st.vehicle(:ship).map_id
+
+  ok st.vehicle(:airship).placed?
+  eq 5, st.vehicle(:airship).map_id
+  eq 20, st.vehicle(:airship).x
+  eq 22, st.vehicle(:airship).y
+end
+
+check 'seed_vehicle_positions is a no-op for a tree with no start-position fields' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.seed_vehicle_positions(nil) # no map tree at all
+  ok !st.vehicle(:boat).placed?
+  ok !st.vehicle(:ship).placed?
+  ok !st.vehicle(:airship).placed?
+end
+
 # -- Change System Graphics ---------------------------------------------------
 
 check 'Change System Graphics overrides the windowskin / font; round-trips' do

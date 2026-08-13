@@ -7981,6 +7981,32 @@ module Game
       $stderr.puts "[RPG2k] screen transition defaults unreadable: #{e.message}"
     end
 
+    # Place each vehicle at the map tree's own boat/ship/airship starting
+    # position — the editor's dedicated "set starting position" tool for each
+    # vehicle (the map tree's `initial` chunk, fields 11-13/21-23/31-33),
+    # RPG_RT's counterpart to the hero's own initial_map_id/x/y a few lines up
+    # in `RPG2k#start_new_game`, which is the only caller: a vehicle's saved
+    # position already carries this (or a later Set Vehicle Location's)
+    # placement through `Vehicle#to_h`/`#load_h`/`#load_movable`, so Continue
+    # does not call this and cannot clobber it. A vehicle the tree never
+    # positions keeps `Vehicle.new`'s own unplaced default (map_id 0).
+    def seed_vehicle_positions(map_tree)
+      init = map_tree && map_tree.respond_to?(:initial) ? map_tree.initial : nil
+      return unless init
+      Vehicle::TYPES.each do |type|
+        next unless init.respond_to?("#{type}_map_id")
+        v = @vehicles[type]
+        v.map_id = init.send("#{type}_map_id") || 0
+        v.x = init.send("#{type}_x") || 0
+        v.y = init.send("#{type}_y") || 0
+      end
+    rescue StandardError => e
+      # A tree without the fields is not fatal — every vehicle then stays
+      # unplaced, same as before this method existed — but it should not pass
+      # unnoticed.
+      $stderr.puts "[RPG2k] vehicle start positions unreadable: #{e.message}"
+    end
+
     # Change System Graphics: override the windowskin graphic (System/<name>) and
     # font id. Scene::Map reloads the windowskin so windows created afterwards use
     # the new skin.

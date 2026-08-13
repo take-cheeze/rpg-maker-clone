@@ -1253,6 +1253,30 @@ The work below is roughly ordered by the critical path to a walkable game
   lands only where `airship_land` allows, touching down **in place** rather
   than stepping onto the tile ahead the way a boat / ship disembarks onto the
   shore; boat / ship follow their terrain's `boat_pass` / `ship_pass`).
+  ✅ **A vehicle the map tree gives its own starting position now places there
+  at New Game**, instead of staying unplaced until an event runs Set Vehicle
+  Location. RPG2000's editor has a dedicated "set starting position" tool for
+  each vehicle — the map tree's `initial` chunk carries it (fields 11-13 /
+  21-23 / 31-33: `boat_map_id`/`x`/`y`, `ship_map_id`/`x`/`y`,
+  `airship_map_id`/`x`/`y`, `mruby-lcf/mrblib/schema.rb`), parsed by the
+  schema and never read anywhere in `mruby-rpg2k` — `Game::Vehicle.new`
+  always defaulted to `map_id: 0` ("unplaced"), and the only writer of a
+  vehicle's location was the Set Vehicle Location (10850) event command or a
+  save load. A game relying on the tree's own default for a vehicle it never
+  explicitly places (Nepheshel and mtf-meido-action's own boats/ships/
+  airships are both possible examples, unconfirmed either way) would show
+  that vehicle nowhere, ever. Fixed with a new
+  `Game::State#seed_vehicle_positions(map_tree)`, mirroring
+  `#seed_screen_transitions`'s shape, called once from
+  `RPG2k#start_new_game` right beside the identical seeding already done for
+  the hero's own `initial_map_id`/`x`/`y` — Continue does not call it, since
+  a vehicle's saved position (from this seeding or a later Set Vehicle
+  Location) already round-trips through `Vehicle#to_h`/`#load_h`/
+  `#load_movable`. A vehicle field the tree leaves unset keeps
+  `Vehicle.new`'s own unplaced default. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (each vehicle places at its own
+  tree-configured position; one the tree never positions stays unplaced),
+  confirmed to fail against the pre-fix code before the fix.
   Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
   ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
@@ -1486,17 +1510,21 @@ The work below is roughly ordered by the critical path to a walkable game
   an in-place tone would re-tint an already-tinted layer every frame and walk it
   to black.
 
-  **Nothing calls it yet.** A first attempt at wiring it through `Scene::Map`
-  (tone each scene-owned layer into a shadow bitmap, point the sprite at the
-  shadow) was written and then dropped rather than shipped: instrumentation
-  confirms the code runs and finds its four layers, but the rendered frame is
-  unchanged — a forced full-strength green tint moved the frame's mean green by
-  0.09/255. So the remaining work is not the tone maths but finding why a
-  per-frame `Sprite#bitmap=` swap does not reach the display; suspects are the
-  sprite's cached canvas source and the dirty-flag sweep in
-  `mruby-rgss/src/lib.cxx`. Note the obvious probe is misleading: the Nepheshel
-  opening is nearly black (frame mean ~32/255), where a *subtractive* tint
-  changes almost nothing even when it is working — use an additive one
+  ✅ **This paragraph used to end here on "nothing calls it yet" — a
+  `Sprite#bitmap=` shadow-bitmap approach was tried and dropped when
+  instrumentation showed the rendered frame did not change. A later session
+  found a different, working mechanism instead: `RGSS::Viewport#tone`, not a
+  per-sprite bitmap swap.** Every map sprite now lives in one `Viewport`
+  (`Scene::Map`'s `@map_viewport`/`@upper_viewport`) and
+  `Scene::Map#update_map_tone` sets that viewport's tone from
+  `Game::Screen#tint` every frame, reusing the RPG2000→RGSS channel
+  conversion pictures already use (saturation included, which RPG2000 counts
+  down and RGSS counts up) — see the "Render parity" bullet near the top of
+  this document and `changelog.d/screen-tone-viewport.added.md`. A viewport
+  tints the sprites inside it and nothing else, which is the line the screen
+  tone needs: the map is tinted while pictures, the message window and the
+  weather / flash / fade overlays are not. No longer confirmed only by a
+  0.09/255 probe — this is the fix, not the still-open gap.
 - ✅ Random ("wandering monster") encounters — until now the only way to start
   a fight was a scripted Enemy Encounter event command; the map tree's own
   encounter list (`map_properties` field 41 `enemy_groups`, field 44
@@ -3994,10 +4022,20 @@ above are repeated here)
   `scripts/rpg2k_scene_check.rb` check (a strictly-better, a strictly-worse
   and an exactly-equal candidate against a fixed worn item each draw the
   right glyph), confirmed to fail against the pre-fix code before the fix.
-- Text color slots 1-4 have hardcoded semantic roles (stat label /
-  value-increase / value-decrease / low-HP-MP warning), and a State's own
-  configured display-color field is a pointer into that **same** shared
-  palette.
+- ✅ **A State's own configured display-color field is a pointer into the
+  same shared message-colour palette every `\c[n]` code draws from —
+  confirmed already correct, no code change needed.** There is only one
+  20-slot palette in this runtime (`Game::MessagePalette`, a 10×2 grid of
+  windowskin swatches, `mruby-rpg2k/mrblib/game.rb:235`); nothing here special-cases
+  slots 1-4 for a stat label / increase / decrease / low-HP-MP role the way
+  this bullet's first half wondered about — a project's own database chooses
+  those roles by which index it puts where, same as any other coloured text.
+  `Game::States.color(id, table)` (`game.rb:5683`) reads a state row's own
+  `color` field (falling back to `DEFAULT_COLOR = 6` when unset) and
+  `Scene::Base#state_display`/`#draw_actor_state` (`scene/base.rb:91-105`)
+  feeds that index straight into the same `draw_system_text` /
+  `blend_text` path an ordinary `\c[n]` run uses — one palette, one lookup,
+  for both.
 - **Call Event invoked from an Auto-Start parent runs the called content
   under Auto-Start semantics (blocks input) even if the called common
   event's own configured trigger is Parallel Process; Call Event always

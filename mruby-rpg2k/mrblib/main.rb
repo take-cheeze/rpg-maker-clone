@@ -605,6 +605,9 @@ class RPG2k
     # The database's System tab configures the six screen transitions a
     # "use the configured transition" (-1) Erase / Show Screen resolves against.
     state.seed_screen_transitions @db
+    # The map tree's own boat/ship/airship starting positions, the editor's
+    # counterpart to the hero's initial_map_id/x/y just above.
+    state.seed_vehicle_positions map_tree
     state.map = load_map state.map_id
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
