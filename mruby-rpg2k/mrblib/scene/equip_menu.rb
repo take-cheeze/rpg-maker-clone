@@ -74,10 +74,11 @@ class RPG2k
           @actor_index -= 1
           @actor_index %= party.size
           rebuild_for_actor
-        elsif Input.trigger?(Input::C) && !actor.equipment_fixed?
-          # 装備固定: RPG_RT refuses to even open the item list for such an
-          # actor (EasyRPG's Scene_Equip#UpdateEquipSelection), rather than
-          # opening it and rejecting whatever gets chosen there.
+        elsif Input.trigger?(Input::C) && !actor.equipment_fixed? && !actor.slot_cursed?(@slot_index)
+          # 装備固定 / 呪われた装備: RPG_RT refuses to even open the item list
+          # for such an actor, or for a slot currently holding a cursed item
+          # (EasyRPG's Scene_Equip#UpdateEquipSelection), rather than opening
+          # it and rejecting whatever gets chosen there.
           @cand_index = 0
           @mode = :items
           build_cand_window

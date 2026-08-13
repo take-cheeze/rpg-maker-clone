@@ -1,8 +1,11 @@
 class RPG2k
   module Scene
     # Main menu, opened over the map with the cancel button. Shows party status
-    # and a command list. Save and End Game are wired up; the item/skill/equip/
-    # status screens are placeholders that report they are not implemented.
+    # and a command list. Item, Skill, Equip and Status each push their own
+    # scene (Scene::ItemMenu / SkillMenu / EquipMenu / StatusMenu); Save writes
+    # through the app and End Game returns to the title. Any further command
+    # (there are none left in COMMAND_KEYS today) falls back to a "not
+    # implemented yet" message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT

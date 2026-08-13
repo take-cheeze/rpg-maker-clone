@@ -5478,6 +5478,8 @@ class MenuStubActor
   def add_state(id); @states.push(id) unless @states.include?(id); end
   attr_accessor :equipment_fixed_flag
   def equipment_fixed?; !!@equipment_fixed_flag; end
+  attr_accessor :cursed_slot
+  def slot_cursed?(slot); @cursed_slot == slot; end
 end
 
 class MenuStubParty
@@ -5560,6 +5562,27 @@ check 'Scene::Menu: the main command cursor wraps around' do
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@index), 'Down from the last command wraps to the first'
+end
+
+check 'Scene::Menu: choosing Item pushes Scene::ItemMenu (and the rest their own scenes)' do
+  # COMMAND_KEYS order is Item, Skill, Equip, Status, Save, End Game; the first
+  # four each push their own scene onto the parent stack rather than falling
+  # into the generic "not implemented yet" message -- confirm the field Item
+  # command actually reaches Scene::ItemMenu, and its neighbours are not stubs.
+  {
+    0 => RPG2k::Scene::ItemMenu,
+    1 => RPG2k::Scene::SkillMenu,
+    2 => RPG2k::Scene::EquipMenu,
+    3 => RPG2k::Scene::StatusMenu,
+  }.each do |index, klass|
+    scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+    scene.instance_variable_set(:@index, index)
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.reset
+    pushed = scene.parent.pushed.last
+    ok pushed.is_a?(klass), "command ##{index} pushes a live #{klass}, got #{pushed.class}"
+  end
 end
 
 check 'the item / skill target list shows who is afflicted' do
@@ -5841,6 +5864,26 @@ check 'Scene::EquipMenu: 装備固定 refuses to open the item list for that act
   # The second party member is not locked -- switching to them and pressing C
   # opens the list as normal, so the gate really is per-actor.
   RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
+end
+
+check 'Scene::EquipMenu: a cursed item refuses to open the item list for its own slot' do
+  state = wrap_menu_state
+  state.party.actors.first.cursed_slot = 0                # the weapon slot
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :slots, scene.instance_variable_get(:@mode), 'the cursed slot stays closed'
+
+  # The shield slot is not cursed -- moving down to it and pressing C opens
+  # the list as normal, so the gate really is per-slot, not per-actor.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]
