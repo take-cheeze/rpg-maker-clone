@@ -273,6 +273,15 @@ export default {
         method: request.method,
         headers: forward,
         redirect: 'follow',
+        // Cloudflare caches Worker fetch() subrequests at the edge (keyed by
+        // URL, shared across every caller hitting the same origin) according
+        // to standard HTTP cache rules — independent of, and in addition to,
+        // the R2 cache above. A transient upstream error can get stuck there
+        // and get served back for a long time regardless of what the origin
+        // returns afterwards. Opt out: the R2 cache already does explicit,
+        // TTL-checked caching, so this layer only adds an invisible failure
+        // mode on top of it.
+        cf: { cacheTtl: 0, cacheEverything: false },
       });
     } catch (e) {
       return fail(502, 'Upstream fetch failed for ' + target + ': ' + e.message, acao);
