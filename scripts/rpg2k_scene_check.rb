@@ -1391,7 +1391,7 @@ check 'Key Input Proc ignores keys it was not told to accept' do
   ok st.switches[5]
 end
 
-check 'parallel processes pause while a foreground event is running' do
+check 'parallel processes keep running while a message window is open (yado.tk)' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
@@ -1399,9 +1399,37 @@ check 'parallel processes pause while a foreground event is running' do
   par.event_commands = [add_var_cmd(1)]
   scene = new_scene({ 1 => event(2, 2, auto), 2 => event(4, 4, par) })
   10.times { scene.update }
-  # The autostart event opens a message and waits for input we never give, so
-  # the foreground stays busy and the parallel process never advances.
-  eq 0, scene.instance_variable_get(:@state).variables[1]
+  # The autostart event opens a message and waits for input we never give, but
+  # per yado.tk a message box is not a pause condition for parallel processes
+  # -- only the Menu/Battle screens are (and Menu already is, structurally:
+  # Scene::Map#update does not run while it sits on top).
+  ok scene.instance_variable_get(:@state).variables[1] > 0,
+     'the parallel process advances despite the open message window'
+end
+
+check 'parallel processes pause during battle' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4)
+  par.event_commands = [add_var_cmd(1)]
+  scene = new_scene({ 1 => event(4, 4, par) })
+  scene.instance_variable_set(:@battle_ui, { phase: :command })
+  10.times { scene.update }
+  eq 0, scene.instance_variable_get(:@state).variables[1],
+     'a parallel process must not advance while a battle is in progress'
+end
+
+check 'parallels_paused? treats a still-bursting foreground interpreter as busy' do
+  # A command list heavy enough to spill past one frame's MAX_STEPS budget
+  # without reaching a wait leaves the interpreter running? but not waiting? --
+  # exactly the "executes non-blocking commands" case yado.tk says pauses
+  # parallel processes (unlike being parked on a blocking wait, which does not).
+  scene = new_scene({})
+  interp = scene.instance_variable_get(:@interpreter)
+  interp.instance_variable_set(:@running, true)
+  interp.instance_variable_set(:@waiting, false)
+  ok scene.send(:parallels_paused?), 'still-bursting (running, not waiting) pauses parallels'
+  interp.instance_variable_set(:@waiting, true)
+  ok !scene.send(:parallels_paused?), 'parked on a wait (running and waiting) does not'
 end
 
 check 'Move Event forces a target map event onto a route' do

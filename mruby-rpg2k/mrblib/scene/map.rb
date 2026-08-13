@@ -225,6 +225,14 @@ class RPG2k
         # An event page's conditions may have just stopped (or started) holding;
         # re-select before anything reads a trigger or a graphic this frame.
         refresh_event_pages
+        # Parallel processes run every frame on their own schedule, independent
+        # of whatever the foreground is doing (yado.tk: a message window or a
+        # foreground event parked on a blocking wait is not a pause condition,
+        # only a battle or an actively-bursting foreground event is -- see
+        # #parallels_paused?). Stepped before the foreground gets a chance to
+        # start anything this frame, matching "if both are set to fire the
+        # same frame, parallel process goes first".
+        step_parallels unless parallels_paused?
         if event_busy?
           drive_event
         else
@@ -232,7 +240,6 @@ class RPG2k
           if event_busy?
             drive_event
           else
-            step_parallels
             step_player_route
             step_events
             step_movement
@@ -840,6 +847,23 @@ class RPG2k
         @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
+      # Whether #step_parallels should sit this frame out. Per yado.tk, real
+      # RPG_RT only pauses background parallel processes for the Menu screen
+      # (already structural here -- Scene::Map#update simply is not called
+      # while Scene::Menu sits on top) and the Battle screen; a message window
+      # or a foreground event parked on a blocking wait (Show Text, Wait, ...)
+      # is *not* a pause condition, only a foreground event actively grinding
+      # through non-blocking commands is ("parallel processes keep running
+      # during an Autorun's blocking waits ... but are blocked while the
+      # Autorun executes non-blocking commands"). `@interpreter.running?`
+      # stays true for a foreground event's whole lifetime, including while
+      # it is parked waiting, so `!waiting?` is what actually isolates the
+      # still-bursting case (in practice: a command list heavy enough to spill
+      # past a single frame's MAX_STEPS budget without hitting a wait).
+      def parallels_paused?
+        !@battle_ui.nil? || (@interpreter.running? && !@interpreter.waiting?)
+      end
+
       # Start the first not-yet-run auto-start process in the foreground: map
       # events with an auto-start trigger, then auto-start common events (whose
       # switch gate, if any, is on). Each runs at most once per visit so an
@@ -907,8 +931,9 @@ class RPG2k
       # Advance every background parallel process one frame. They loop their
       # command list and honour Wait; as background processes they do not drive
       # the message/choice/teleport UI (those requests are simply resumed so the
-      # process keeps running). Called only while the foreground is idle, so
-      # parallels pause during messages and foreground events.
+      # process keeps running). Called every frame regardless of a message
+      # window or a parked foreground event -- see #parallels_paused? for the
+      # (narrower) actual pause conditions.
       def step_parallels
         # Iterate a copy: an Erase Event in a parallel process removes it from
         # @parallels mid-loop (see erase_event).

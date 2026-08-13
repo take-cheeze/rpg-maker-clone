@@ -1963,17 +1963,31 @@ triage, the same as the rest of this backlog.
 **Flagged for priority triage** — these look most likely to be genuine,
 actionable gaps based on this session's own reading of the current code,
 not yet verified:
-- **Parallel processes may be paused too broadly.** This codebase's
-  `step_parallels` only runs when `!event_busy?`, and `event_busy?` is true
-  for any foreground interpreter activity including an ordinary Show Text
-  window. Multiple independent yado.tk pages state real RPG_RT parallel
-  processes keep advancing during a message window / ordinary foreground
-  event and are suspended only by the **Menu screen and the Battle
-  screen** — a message box is not one of the pause conditions. (Picture
-  commands specifically *are* suppressed during a message window per
-  several other pages, which is a narrower, separate rule from whether the
-  parallel process's own non-picture commands keep ticking.) Worth
-  re-reading `step_parallels`/`event_busy?` against this distinction.
+- ✅ **Parallel processes were paused too broadly.** `Scene::Map#step_parallels`
+  used to only run when `!event_busy?`, and `event_busy?` is true for any
+  foreground interpreter activity including an ordinary Show Text window.
+  Multiple independent yado.tk pages state real RPG_RT parallel processes
+  keep advancing during a message window / ordinary foreground event and are
+  suspended only by the **Menu screen and the Battle screen** — a message
+  box is not one of the pause conditions. Fixed: `#step_parallels` is now
+  called unconditionally every frame (before the foreground gets a chance to
+  start anything, matching a separately-documented "if both fire the same
+  frame, parallel process goes first"), gated by a new, narrower
+  `#parallels_paused?` instead of `event_busy?` — true only while a battle is
+  in progress (`@battle_ui`, the Menu screen's pause is already structural:
+  `Scene::Map#update` simply is not called while `Scene::Menu` sits on top)
+  or the foreground interpreter is actively grinding through non-blocking
+  commands ("parallel processes keep running during an Autorun's *blocking*
+  waits (Show Text/Wait) but are blocked while the Autorun executes
+  non-blocking commands" — `Game::Interpreter#running?` stays true for a
+  foreground event's *entire* lifetime including while parked waiting, so
+  `!waiting?` is what actually isolates the still-bursting case, in practice
+  a command list heavy enough to spill past one frame's `MAX_STEPS` budget
+  without reaching a wait). (Picture commands specifically *are* suppressed
+  during a message window per several other pages, which is a narrower,
+  separate rule from whether the parallel process's own non-picture commands
+  keep ticking, and is **not** addressed by this change — still open if not
+  covered elsewhere.)
 - **Numeric constants worth asserting directly**: battle damage hard-cap
   under 1000; special-skill HP recovery cap 999; Timer max 99:59 (5999s),
   clamped not wrapped when set higher via variable; switches/variables cap
