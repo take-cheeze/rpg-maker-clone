@@ -3139,15 +3139,38 @@ level-up).
   the next-highest — so cut+paste (vs. drag) can silently renumber an
   event and break other commands' hardcoded numeric references. Only
   drag-and-drop reordering in the map tree preserves ids.
-- "Get Event ID at Location" on overlapping events returns the
-  **highest** id among them (0 if none); it still returns an id for a
-  temporarily-erased event or one whose current page conditions aren't
-  met; and — importantly for anything simulating pixel-precise hit
-  detection — the id-lookup position **snaps to an event's destination
-  tile the instant it begins moving**, not once the visual slide
-  completes, which is a documented source of "the bullet visually
-  connected but registered as a miss" bugs in custom battle-system
-  tutorials.
+- ✅ **"Get Event ID at Location" now still resolves a temporarily-erased
+  event at the tile it occupied when it was erased**, instead of reading
+  back 0 there for the rest of the visit — matching yado.tk's claim that
+  RPG_RT keeps answering even though the erased event no longer draws,
+  moves or blocks. `Scene::Map#erase_event` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) used to drop the event from `@event_tiles` — the same
+  table `#event_id_at` (the Store Event ID query) reads — unconditionally
+  on erasure; it now also freezes the tile in a new
+  `@erased_event_positions` hash (an erased event cannot move any further,
+  so one snapshot taken at erasure time is enough) that `#event_id_at`
+  falls back to. The pre-existing "highest id among several events sharing
+  a tile" rule (confirmed already correct — see the "Processing order"
+  bullet above) now spans live and erased events together: several ids on
+  one tile, in any live/erased mix, still resolve to the highest of them.
+  **The other half of this same claim — an event whose current page
+  conditions simply aren't met — is separate and still open**: such an
+  event never gets a `Game::Character` built at all (`#build_events` skips
+  it outright whenever no page's conditions are satisfied), so there is no
+  position to answer from without first deciding what "its" position even
+  means while hidden, which would need a real RPG_RT comparison to pin
+  down rather than a guess. The "id-lookup position snaps to an event's
+  destination tile the instant it begins moving" half of the original
+  bullet was already confirmed correct earlier, under the `Map Event`
+  "hero touches event" bullet above (`#reoccupy` rewrites this same
+  `@event_tiles` table the instant a step commits, well before the visual
+  slide catches up) — `#event_id_at` reads that same table, so the same
+  fact already covered it. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (an erased event alone on a tile
+  still answers with its id; an erased event still outranks a lower-id
+  live event sharing its tile; a live event still outranks a lower-id
+  erased one), two confirmed to fail against the pre-fix code before the
+  fix.
 
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed

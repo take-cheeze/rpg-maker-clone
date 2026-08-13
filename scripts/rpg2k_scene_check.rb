@@ -2587,6 +2587,43 @@ check 'Store Event ID resolves two events on the same tile to the highest id' do
   eq 5, st.variables[2], 'the higher-id event wins the shared tile, not the lower one'
 end
 
+check 'Store Event ID still resolves a temporarily-erased event at its last tile' do
+  # yado.tk: "Get Event ID at Location" still returns an id for a
+  # temporarily-erased event, unlike collision/drawing, which #erase_event
+  # already drops it from (@event_tiles). Event 2 erases itself on its own
+  # autostart page; nothing else ever stands on (3, 1).
+  ic = Game::Interpreter::Cmd
+  erasing = page(trigger: 3)
+  erasing.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 2 => event(3, 1, erasing) }, player: [5, 5])
+  10.times { scene.update }
+  eq 0, event_hashes(scene).size, 'the event is gone from the live list'
+  eq 2, scene.event_id_at(3, 1), 'its id still answers the query at its last tile'
+  eq 0, scene.event_id_at(0, 0), 'an ordinary empty tile still answers 0'
+end
+
+check 'a temporarily-erased event still outranks a lower-id live event on the same tile' do
+  ic = Game::Interpreter::Cmd
+  erasing = page(trigger: 3)
+  erasing.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 5 => event(3, 1, erasing), 2 => event(3, 1, page) },
+                    player: [5, 5])
+  10.times { scene.update }
+  eq 5, scene.event_id_at(3, 1),
+     'the erased higher id still wins over the live lower-id event'
+end
+
+check 'a live event still outranks a lower-id temporarily-erased event on the same tile' do
+  ic = Game::Interpreter::Cmd
+  erasing = page(trigger: 3)
+  erasing.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 2 => event(3, 1, erasing), 5 => event(3, 1, page) },
+                    player: [5, 5])
+  10.times { scene.update }
+  eq 5, scene.event_id_at(3, 1),
+     'the live higher id wins over the erased lower-id event'
+end
+
 check 'Proceed With Movement holds the interpreter until a forced route finishes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
