@@ -5472,6 +5472,27 @@ check 'Scene::Menu: the main command cursor wraps around' do
   eq 0, scene.instance_variable_get(:@index), 'Down from the last command wraps to the first'
 end
 
+check 'Scene::Menu: choosing Item pushes Scene::ItemMenu (and the rest their own scenes)' do
+  # COMMAND_KEYS order is Item, Skill, Equip, Status, Save, End Game; the first
+  # four each push their own scene onto the parent stack rather than falling
+  # into the generic "not implemented yet" message -- confirm the field Item
+  # command actually reaches Scene::ItemMenu, and its neighbours are not stubs.
+  {
+    0 => RPG2k::Scene::ItemMenu,
+    1 => RPG2k::Scene::SkillMenu,
+    2 => RPG2k::Scene::EquipMenu,
+    3 => RPG2k::Scene::StatusMenu,
+  }.each do |index, klass|
+    scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+    scene.instance_variable_set(:@index, index)
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.reset
+    pushed = scene.parent.pushed.last
+    ok pushed.is_a?(klass), "command ##{index} pushes a live #{klass}, got #{pushed.class}"
+  end
+end
+
 check 'the item / skill target list shows who is afflicted' do
   st = menu_state
   st.party.actors.first.add_state(4)                    # Sleep
