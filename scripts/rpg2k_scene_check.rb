@@ -904,6 +904,21 @@ def edge_scene(player, edge_x, edge_y, edge_flags)
   RPG2k::Scene::Map.new(fake_parent(db), state)
 end
 
+# A map every tile of which disallows departure in every direction (chip
+# index 0, with no direction bits set) -- ordinary movement goes nowhere no
+# matter which way the player tries to walk, so only Through Mode gets
+# anywhere. Takes an events hash the same way new_scene does, since the
+# Through Mode checks below need an event to issue the forced route.
+def walled_in_scene(events, player)
+  db = fake_db
+  data = Array.new(162, 0) # chip index 0: every direction closed
+  db.chipset = { 1 => OpenStruct.new(name: 'walls', chipset_name: 'walls',
+                                     passable_data_lower: data,
+                                     passable_data_upper: nil, terrain_data: nil) }
+  state = Game::State.new(fake_party, 1, player[0], player[1])
+  state.map = fake_map(1, events) # fake_map's lower layer is already chip 0 throughout
+  RPG2k::Scene::Map.new(fake_parent(db), state)
+end
 
 check 'a step is blocked when the tile being left disallows that side, ' \
       'even though the tile ahead is open' do
@@ -1498,6 +1513,69 @@ check 'Halt All Movement cancels a forced player route in the scene' do
   ok scene.instance_variable_get(:@player_route).nil?,
      'the forced player route was cancelled'
   eq [0, 0], [st.x, st.y], 'the player never moved (movement was halted)'
+end
+
+check 'Through Mode set by a player route outlives the route, and Halt All Movement does not clear it' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Turn Through Mode on, then take the one step a through route can make
+  # through a wall no ordinary move could cross.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+                                  [10001, 8, 0, 1, R::THROUGH_ON, R::MOVE_DOWN])]
+  scene = walled_in_scene({ 1 => event(5, 0, auto) }, [2, 2])
+  st = scene.instance_variable_get(:@state)
+
+  40.times { scene.update }
+  eq [2, 3], [st.x, st.y], 'the through route stepped through the wall once'
+  ok scene.instance_variable_get(:@player_route).nil?, 'the one-shot route finished'
+
+  # Ordinary input-driven walking now also passes through the same wall --
+  # Through Mode carried over instead of resetting when the route ended. (Not
+  # asserting an exact landing tile: walking speed means holding the key down
+  # for a fixed frame count can land mid-tile-count either side of one step,
+  # which isn't the thing under test.)
+  RGSS::Input.dir_value = 2 # down
+  20.times { scene.update }
+  eq 2, st.x, 'only moved along the column it was already walking'
+  ok st.y > 3, "Through Mode outlived the route that set it -- walked further " \
+               "through the same wall (was at y=3, now #{st.y})"
+end
+
+check "Halt All Movement lands an in-progress jump but drops the route's trailing steps" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # A two-tile jump (Begin/End Jump around two Move Down) followed by a
+  # trailing Move Down that a halt right after landing should never reach.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+                                  [10001, 8, 0, 0, R::BEGIN_JUMP, R::MOVE_DOWN,
+                                   R::MOVE_DOWN, R::END_JUMP, R::MOVE_DOWN])]
+  scene = new_scene({ 1 => event(5, 0, auto) }, player: [2, 0])
+  st = scene.instance_variable_get(:@state)
+
+  # Advance until the jump has landed on-screen (the party's own position
+  # catches up to the slide's destination) but before the route's next paced
+  # step -- the trailing Move Down -- has had a chance to run: that step
+  # happens on the frame *after* the landing frame (see #advance_player_slide
+  # / #step_player_route), so stopping the instant st.y reaches 2 is still one
+  # frame ahead of it.
+  40.times do
+    break if st.y == 2
+    scene.update
+  end
+  eq 2, st.y, 'the jump landed two tiles down'
+  ok scene.instance_variable_get(:@player_route),
+     "the route has not finished -- the trailing step is still queued"
+
+  # Halt All Movement now, injected directly (rather than scripted into the
+  # route's own event) so the timing lands exactly on this frame.
+  scene.instance_variable_get(:@interpreter).start(
+    [ECmd.new(ic::HALT_ALL_MOVEMENT, [])])
+  5.times { scene.update }
+
+  eq 2, st.y,
+     "the jump's landing was not undone -- Halt All Movement aborts the " \
+     'route without unwinding what it already did'
+  ok scene.instance_variable_get(:@player_route).nil?, 'the route itself is cancelled'
 end
 
 check 'Set Transparent Flag hides and shows the player sprite' do
