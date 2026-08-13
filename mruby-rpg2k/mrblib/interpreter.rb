@@ -208,6 +208,12 @@ module Game
       @battle_background = nil
       @input_variable = nil
       @input_digits = 1
+      # Whether *this* interpreter is the one that most recently set the shared
+      # Change Face Graphic state to a real face (see #do_change_face) -- so
+      # only the event that owns the currently-shown face clears it when its
+      # own execution ends, and an unrelated interpreter finishing elsewhere
+      # (another parallel process, say) never stomps someone else's face.
+      @face_owner = false
       # Deterministic RNG for the Control Variables "random" operand (Kernel#rand
       # exists but is unseeded, and these runs are diffed); seeded like the map
       # scene's own RNG.
@@ -285,6 +291,9 @@ module Game
       # continues. Drained by #resume, so it survives the reset_waits between
       # messages; abandoned by #stop.
       @pending_messages = []
+      # A fresh run starts with no claim on the shared face state -- see
+      # #do_change_face / #update.
+      @face_owner = false
       reset_waits
     end
 
@@ -459,7 +468,22 @@ module Game
         steps += step_cost(cmd.code)
         break if steps >= MAX_STEPS
       end
-      @running = false if finished?
+      if finished?
+        @running = false
+        # yado.tk: a Change Face Graphic setting is scoped to "the current
+        # event's execution content" -- it applies to every message the event
+        # shows from here on, but once the event's own command list (Call
+        # Event nesting included, since that shares this same interpreter and
+        # call stack) genuinely runs out, the face resets for whatever event
+        # runs next, even though nothing explicitly erased it. Message Options
+        # (transparency/position/etc., #do_message_options) get no such reset
+        # -- those are deliberately sticky global state for the rest of the
+        # game, a real and separate RPG_RT rule, not touched here.
+        if @face_owner
+          @state.message_config.clear_face
+          @face_owner = false
+        end
+      end
     end
 
     # Per-command cost against the MAX_STEPS budget. Most commands cost one
@@ -1001,17 +1025,22 @@ module Game
     # Change Face Graphic: select the face shown beside the next messages. The
     # command string is the FaceSet file name (empty clears the face); param0 is
     # the cell index (0..15), param1 puts the face on the right, param2 mirrors
-    # it. Persists until changed; does not pause.
+    # it. Persists for the rest of *this* event's execution content (does not
+    # pause), but -- unlike Message Options -- is not sticky game-wide: #update
+    # auto-clears it once this interpreter's own command list genuinely
+    # finishes, via the @face_owner claim set/dropped here.
     def do_change_face(cmd)
       cfg = @state.message_config
       name = cmd.string || ''
       if name.empty?
         cfg.clear_face
+        @face_owner = false
       else
         cfg.face_name = name
         cfg.face_index = cmd.param(0)
         cfg.face_right = cmd.param(1) != 0
         cfg.face_flipped = cmd.param(2) != 0
+        @face_owner = true
       end
     end
 

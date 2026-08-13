@@ -1033,8 +1033,13 @@ end
 check 'Change Face Graphic selects a face; an empty name clears it' do
   st = new_state
   it = Game::Interpreter.new(st)
-  # name "Hero1", index 3, right=1, flipped=1.
-  it.start([FakeCmd.new(IC::CHANGE_FACE, [3, 1, 1], string: 'Hero1')])
+  # name "Hero1", index 3, right=1, flipped=1, followed by a message so the
+  # interpreter is still mid-event (waiting, not finished) when we check --
+  # a bare one-command "event" would finish and auto-clear the face itself
+  # (see the dedicated auto-clear check below), which isn't what this check
+  # is after.
+  it.start([FakeCmd.new(IC::CHANGE_FACE, [3, 1, 1], string: 'Hero1'),
+            FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'hi')])
   it.update
   cfg = st.message_config
   ok cfg.face?, 'a face is selected'
@@ -1042,15 +1047,49 @@ check 'Change Face Graphic selects a face; an empty name clears it' do
   eq 3, cfg.face_index
   eq true, cfg.face_right
   eq true, cfg.face_flipped
-  ok !it.waiting?, 'Change Face Graphic must not pause the interpreter'
+  ok it.waiting?, 'the message after it should still pause the interpreter'
+  it.resume; it.update
   # An empty name clears the face for subsequent messages.
   it2 = Game::Interpreter.new(st)
-  it2.start([FakeCmd.new(IC::CHANGE_FACE, [0, 0, 0], string: '')])
+  it2.start([FakeCmd.new(IC::CHANGE_FACE, [0, 0, 0], string: ''),
+             FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'hi')])
   it2.update
   ok !cfg.face?, 'an empty name clears the face'
   eq '', cfg.face_name
   eq 0, cfg.face_index
 end
+
+check 'a Change Face Graphic auto-clears once its own event finishes, unlike sticky Message Options' do
+  st = new_state
+  cfg = st.message_config
+  it = Game::Interpreter.new(st)
+  # One event: pin the window position (Message Options), pick a face, then
+  # show two messages -- the face must still be selected for both, since
+  # yado.tk says it covers "the rest of the current event's execution
+  # content", not just the very next message.
+  it.start([FakeCmd.new(IC::MESSAGE_OPTIONS, [0, 0, 0, 0]),
+            FakeCmd.new(IC::CHANGE_FACE, [1, 0, 0], string: 'Hero2'),
+            FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'one'),
+            FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'two')])
+  it.update
+  ok it.waiting?, 'paused on the first message'
+  ok cfg.face?, 'the face applies to the first message'
+  eq 'Hero2', cfg.face_name
+  it.resume; it.update
+  ok it.waiting?, 'paused on the second message'
+  ok cfg.face?, 'the face still applies to a later message in the same event'
+  it.resume; it.update
+  ok !it.waiting?, 'the event has nothing left to run'
+  ok !it.running?, 'the event has finished'
+  ok !cfg.face?, 'the face is auto-cleared once the event that set it ends'
+  eq '', cfg.face_name
+  # Message Options are not scoped to the event the way the face is -- RPG_RT
+  # never auto-resets them, so the position pinned above is still in effect
+  # for the next event's own messages.
+  eq Game::MessageConfig::POS_TOP, cfg.position
+  eq true, cfg.position_fixed
+end
+
 
 check 'MessageConfig round-trips through to_h / load_h' do
   cfg = Game::MessageConfig.new
@@ -1116,6 +1155,24 @@ check 'a missing Call Event target is a no-op and the caller continues' do
   it.update
   eq true, st.switches[1]
   ok !it.running?
+end
+
+check 'a face set inside a Call Event survives back into the caller and clears only once the caller finishes too' do
+  st = new_state
+  cfg = st.message_config
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: {
+    9 => [FakeCmd.new(IC::CHANGE_FACE, [0, 0, 0], string: 'Called')],
+  })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 9, 0]),
+            FakeCmd.new(IC::SHOW_MESSAGE, [], string: 'after the call')])
+  it.update
+  ok it.waiting?, 'paused on the message that follows the call, back in the caller'
+  ok cfg.face?, 'a face set by the called common event reaches the caller'
+  eq 'Called', cfg.face_name
+  it.resume; it.update
+  ok !it.running?, 'the whole event (caller plus its call) has finished'
+  ok !cfg.face?, 'the face clears only once the outermost event genuinely ends'
 end
 
 check 'a self-calling common event terminates instead of hanging' do

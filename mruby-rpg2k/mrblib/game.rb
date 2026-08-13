@@ -354,11 +354,18 @@ module Game
   end
 
   # RPG2000 message-window configuration, set by the Message Options (10120) and
-  # Change Face Graphic (10130) event commands. These are *global* game-system
+  # Change Face Graphic (10130) event commands. Both are *global* game-system
   # settings shared across every event and persisted in the save (as RPG_RT does
   # it): a Show Message is displayed with whatever configuration is in effect at
-  # the time, and the face persists until the next Change Face Graphic replaces
-  # or clears it. Pure data — the owning scene reads it when it opens a window.
+  # the time. The two differ in how long they live, though (yado.tk): Message
+  # Options are sticky for the rest of the game once set, with no auto-reset,
+  # while the face graphic is scoped to the event that set it -- it persists
+  # through that event's own remaining execution content (including a Call
+  # Event it makes), and is auto-cleared once that event's command list
+  # actually finishes, not just by an explicit clear. `Game::Interpreter`
+  # enforces the face's shorter lifetime (`@face_owner`, `#do_change_face` /
+  # `#update`); this class stays pure data either way — the owning scene reads
+  # it when it opens a window.
   class MessageConfig
     # Text display position (the Message Options `position` field).
     POS_TOP = 0
