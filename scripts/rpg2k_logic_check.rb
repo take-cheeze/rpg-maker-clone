@@ -2077,7 +2077,11 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # 蘇生専用: does nothing at all to a target still standing.
                       :ko_only,
                       # 両手持ち: a weapon that claims the shield hand too.
-                      :two_handed)
+                      :two_handed,
+                      # 全体化: spreads a basic Attack across the target's whole
+                      # side. 先制攻撃: jumps a basic Attack to the front of the
+                      # round's turn order.
+                      :attack_all, :preemptive)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2085,13 +2089,13 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
-              two_handed: 0)
+              two_handed: 0, attack_all: false, preemptive: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
-               ko_only, two_handed)
+               ko_only, two_handed, attack_all, preemptive)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -7341,6 +7345,83 @@ check 'battle: 必中 still suffers the wielder\'s own blindness' do
                          Game::Rng.new(1), states, false, false, true)
   bat.allies[0].states = [3]
   eq 45, bat.send(:to_hit, bat.allies[0], swift), 'the weapon is sure, the wielder is blind'
+end
+
+check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy side' do
+  items = { 7 => fake_item(type: 1, atk: 20, attack_all: true),
+            8 => fake_item(type: 1, atk: 20) }
+  st = geared_party(items)
+  hero = st.party.leader
+  foe1 = combatant('Foe1', 0, 5, 5, 50)
+  foe2 = combatant('Foe2', 0, 5, 5, 50)
+
+  hero.equip([8, 0, 0, 0, 0])                      # plain weapon
+  plain = Game::Battle.new([Game::Battle.from_actor(hero)], [foe1, foe2], Game::Rng.new(1))
+  plain.command_attack(plain.allies[0], foe1)
+  entry = plain.send(:strike, plain.allies[0])
+  ok entry.is_a?(Hash), 'a plain weapon still hits only the one chosen target'
+  eq 50, foe2.hp, 'the second Foe took nothing'
+
+  hero.equip([7, 0, 0, 0, 0])                      # 全体化
+  foe1b = combatant('Foe1', 0, 5, 5, 50)
+  foe2b = combatant('Foe2', 0, 5, 5, 50)
+  spread = Game::Battle.new([Game::Battle.from_actor(hero)], [foe1b, foe2b], Game::Rng.new(1))
+  spread.command_attack(spread.allies[0], foe1b) # aimed at Foe1...
+  entries = spread.send(:strike, spread.allies[0])
+  eq 2, entries.size, '...but 全体化 hits every living enemy, not just the chosen one'
+  ok foe1b.hp < 50 && foe2b.hp < 50, 'both enemies took damage'
+end
+
+check 'battle: 全体化 spreads a forced (confused) attack across the whole ally side too' do
+  # EasyRPG's Normal::vStart spreads across whichever side the already-
+  # resolved single target belongs to -- confusion resolves that target from
+  # the attacker's own side, so a 全体化 weapon spreads across allies here,
+  # the attacker included (AddTargets pushes the whole party with no
+  # self-exclusion).
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
+  hero = combatant('Hero', 40, 0, 1, 100)
+  hero.states = [6]
+  hero.attack_all = true
+  ally2 = combatant('Ally2', 0, 0, 5, 100)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero, ally2], [slime], Game::Rng.new(1), states)
+  bat.command_attack(hero, slime)
+  entries = bat.send(:strike, hero)
+  eq 100, slime.hp, 'confusion still spares the enemy side'
+  eq 2, entries.size, 'one hit for the confused attacker, one for its ally'
+  ok hero.hp < 100, 'the confused attacker struck itself too'
+  ok ally2.hp < 100, 'and its ally'
+end
+
+check "battle: a 先制攻撃 weapon jumps a basic Attack to the front of the round" do
+  items = { 7 => fake_item(type: 1, atk: 5, preemptive: true),
+            8 => fake_item(type: 1, atk: 5) }
+  st = geared_party(items)
+  hero = st.party.leader
+  fast_foe = combatant('FastFoe', 0, 0, 999, 100) # far faster than the hero
+
+  hero.equip([8, 0, 0, 0, 0])                     # plain weapon
+  plain = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1))
+  eq [fast_foe, plain.allies[0]], plain.send(:turn_order),
+     'agility alone decides: the far faster foe goes first'
+
+  hero.equip([7, 0, 0, 0, 0])                     # 先制攻撃
+  fast_foe2 = combatant('FastFoe', 0, 0, 999, 100)
+  jump = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe2], Game::Rng.new(1))
+  eq [jump.allies[0], fast_foe2], jump.send(:turn_order),
+     "先制攻撃 jumps the hero's Attack ahead of a far faster foe"
+end
+
+check '先制攻撃 does not jump the turn order for a Skill, Item or Defend' do
+  items = { 7 => fake_item(type: 1, atk: 5, preemptive: true) }
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 0, 0, 0, 0])
+  fast_foe = combatant('FastFoe', 0, 0, 999, 100)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1))
+  bat.command_defend(bat.allies[0])
+  eq [fast_foe, bat.allies[0]], bat.send(:turn_order),
+     'Defend keeps the ordinary agility slot, even with the weapon still equipped'
 end
 
 check 'battle: 強力防御 halves damage a second time' do

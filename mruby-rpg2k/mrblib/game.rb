@@ -1479,6 +1479,25 @@ module Game
     # term for such a weapon. 13 of Nepheshel's weapons carry it.
     def ignores_evasion?; equipment_flag?(:ignore_evasion, true); end
 
+    # 全体化 — an equipped weapon that turns a basic Attack into a strike
+    # against every living member of the chosen target's side, rather than
+    # just the one target (EasyRPG's `HasAttackAll` /
+    # `Normal::vStart`: "if this weapon attacks all, then attack all enemies
+    # regardless of original targeting" — "enemies" there means whichever
+    # side the already-resolved target belongs to, so a forced attack-ally
+    # restriction or confusion spreads across the *ally* side instead).
+    def attack_all?; equipment_flag?(:attack_all, true); end
+
+    # 先制攻撃 — an equipped weapon that jumps its wielder's basic Attack to
+    # the front of the round's turn order (EasyRPG's `HasPreemptiveAttack` /
+    # `Scene_Battle_Rpg2k::CreateExecutionOrder`, which adds 9999 to the
+    # battler's computed order for exactly this case — effectively always
+    # first, since ordinary agility values never approach that). Only a
+    # basic Attack earns the jump; a Skill, Item or Defend with the same
+    # weapon still equipped keeps its ordinary agility slot, matching
+    # `CreateExecutionOrder`'s own `Type::Normal` guard.
+    def preemptive?; equipment_flag?(:preemptive, true); end
+
     # MP消費半分 — gear that halves what a skill costs to cast. Any slot, not just
     # the weapon (Nepheshel's 賢者の指輪 is an accessory).
     def half_sp_cost?; equipment_flag?(:half_sp_cost); end
@@ -5543,6 +5562,12 @@ module Game
                            # whether skills cost half.
                            :strikes, :ignores_evasion, :strong_defence,
                            :half_sp_cost,
+                           # A basic Attack spread across the target's whole
+                           # side (attack_all?) or jumped to the front of the
+                           # round's turn order (preemptive?) -- see #turn_order
+                           # and #strike. Actor-only; an enemy Combatant leaves
+                           # both nil/false, so it never qualifies for either.
+                           :attack_all, :preemptive,
                            # The ranks #attr_ranks started the battle at --
                            # never itself written to, only read to cap how far
                            # an "attribute defence up/down" skill (see
@@ -5621,6 +5646,8 @@ module Game
                     state_ranks_of(a))
       c.strikes = flag_of(a, :dual_attack?) ? 2 : 1
       c.ignores_evasion = flag_of(a, :ignores_evasion?)
+      c.attack_all = flag_of(a, :attack_all?)
+      c.preemptive = flag_of(a, :preemptive?)
       c.strong_defence = flag_of(a, :strong_defence?)
       c.half_sp_cost = flag_of(a, :half_sp_cost?)
       c.attr_base_ranks = c.attr_ranks.dup
@@ -6197,10 +6224,30 @@ module Game
       @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
     end
 
-    # Battlers ordered by agility (highest first); ties keep their listed order.
+    # Battlers ordered by agility (highest first, ties keeping their listed
+    # order) -- except a battler whose round is about to be a basic Attack
+    # with a `preemptive` weapon equipped sorts before everyone else
+    # (EasyRPG's `CreateExecutionOrder` adding 9999 to such a battler's
+    # computed order, which in practice always outruns ordinary agility).
+    # Ties between two preemptive battlers still fall back to agility.
     def turn_order
       (@allies + @enemies).reject(&:out_of_play?).each_with_index
-                          .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
+                          .sort_by { |b, i| [preemptive_boost?(b) ? 0 : 1, -b.agi, i] }
+                          .map { |b, _| b }
+    end
+
+    # Whether `b`'s action this round earns the `preemptive` weapon's
+    # turn-order jump: only a basic Attack qualifies (a Skill, Item or Defend
+    # with the same weapon equipped keeps its ordinary agility slot, matching
+    # `CreateExecutionOrder`'s own `Type::Normal` guard), including a
+    # forced attack-enemy/attack-ally restriction, which is still a basic
+    # Attack under the hood. `preemptive` is actor-only (see Combatant), so
+    # an enemy never qualifies.
+    def preemptive_boost?(b)
+      return false unless b.preemptive
+      r = battler_restriction(b)
+      return true if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
+      b.command.nil? && !b.defending && !b.skip
     end
 
     # `b` attacks its target, returning a log entry (or nil when it defends or
@@ -6214,7 +6261,8 @@ module Game
       r = battler_restriction(b)
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
-        return target ? deal_attack(b, target) : nil
+        return nil unless target
+        return b.attack_all ? attack_side(b, side_targets(target)) : deal_attack(b, target)
       end
       return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
@@ -6228,7 +6276,36 @@ module Game
       end
       target = attack_target(b)
       return nil unless target
+      return swing_side(b, side_targets(target)) if b.attack_all
       swing(b, target)
+    end
+
+    # The living members of `target`'s own side -- what an `attack_all`
+    # weapon spreads a basic Attack across (EasyRPG's `Normal::vStart`:
+    # "attack all enemies regardless of original targeting", where "enemies"
+    # means whichever side the already-resolved single target belongs to, so
+    # a forced attack-ally restriction or confusion spreads across the
+    # *ally* side instead of the usual one).
+    def side_targets(target)
+      (side_of(target) == :ally ? @allies : @enemies).reject(&:out_of_play?)
+    end
+
+    # attack_all under an ordinary Attack: every target swings (dual-wield
+    # included, matching a single-target #swing), flattened into one array of
+    # log entries for #record_action to drain one hit at a time.
+    def swing_side(b, targets)
+      # Not Array(swing(...)) -- Array() on a Hash (an ordinary single swing's
+      # log entry) explodes it into [key, value] pairs rather than wrapping
+      # it, since Hash is Enumerable. Same guard #record_action already uses.
+      targets.flat_map { |t| r = swing(b, t); r.is_a?(Array) ? r : [r] }
+    end
+
+    # attack_all under a forced restriction (berserk / confused): one hit per
+    # target, matching the single-target restricted branch's own use of
+    # #deal_attack rather than #swing (a forced attack does not get the
+    # dual-wield bonus either).
+    def attack_side(b, targets)
+      targets.map { |t| deal_attack(b, t) }
     end
 
     # -- enemy AI (行動パターン) ------------------------------------------------

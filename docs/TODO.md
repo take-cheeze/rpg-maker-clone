@@ -737,11 +737,26 @@ The work below is roughly ordered by the critical path to a walkable game
   starting party wields a +2% weapon, lifting its hero from 500 bp to 700.
   mtf-meido-action, which has no such weapon and puts every actor on the plain
   1-in-30, drifts by five swings with no change of outcome: that is the roll
-  changing shape, not the bonus. Still unread:
-  **`attack_all`** (7 weapons), whose handling is not in EasyRPG's `algo.cpp`
-  with the others and is left declared rather than guessed; and **`preemptive`**
-  / **`raise_evasion`**, the latter having nowhere to land until the to-hit
-  formula grows an evasion term separate from agility. **Elemental attributes**
+  changing shape, not the bonus. **`attack_all`** (全体化, 7 of Nepheshel's
+  weapons) and **`preemptive`** (先制攻撃) are read now too: `Game::Actor#attack_all?`
+  / `#preemptive?` follow the same weapon-only `equipment_flag?` shape as
+  `#ignores_evasion?`. `attack_all` spreads a basic Attack across every living
+  member of the already-resolved target's side (`Battle#side_targets`,
+  `#swing_side` / `#attack_side`) rather than just the one target — including
+  under a forced attack-enemy/attack-ally restriction, and including the
+  attacker itself when confusion turns the target's side into its own (EasyRPG's
+  `Normal::vStart`: "attack all enemies regardless of original targeting", and
+  `AddTargets` has no self-exclusion). `preemptive` jumps its wielder's basic
+  Attack to the front of the round's turn order (`Battle#turn_order` /
+  `#preemptive_boost?`) — only a basic Attack qualifies, a Skill/Item/Defend
+  with the same weapon keeps its ordinary agility slot, matching EasyRPG's
+  `CreateExecutionOrder`'s own `Type::Normal` guard (which adds 9999 to such a
+  battler's computed order — this build sorts the flag ahead of agility
+  instead of reproducing that literal offset, since the per-round agility
+  jitter `CreateExecutionOrder` also rolls is not itself modelled here, and
+  the offset's only observable effect is "always first"). Still unread:
+  **`raise_evasion`**, which has nowhere to land until the to-hit formula
+  grows an evasion term separate from agility. **Elemental attributes**
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
   are matched against the target's per-attribute defence ranks (A..E, strongest
   element winning) — the rates come from each attribute's own `a_rate` .. `e_rate`
