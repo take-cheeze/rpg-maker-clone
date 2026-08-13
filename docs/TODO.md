@@ -2551,8 +2551,17 @@ not yet verified:
 - Common events (including Parallel Process ones) **never run during
   battle**, even if their trigger switch flips mid-battle — execution is
   deferred until control returns to the map.
-- Bare-hand attacks carry no elemental attribute by default; an element's
-  effect-rate at 0% deals exactly zero damage (not healing).
+- ✅ **Bare-hand attacks carry no elemental attribute by default; an
+  element's effect-rate at 0% deals exactly zero damage (not healing).**
+  Confirmed already correct rather than left as an open claim:
+  `Actor#weapon_attributes` (`mruby-rpg2k/mrblib/game.rb`) only scans the
+  *weapon*-slot item(s) for an `attribute_set`, so an unarmed actor's loop
+  finds nothing and returns `[]` — no attribute at all, matching the site.
+  `Battle#apply_attr_multiplier` never flips a 0% rate into recovery: a
+  matched (non-nil) rate of exactly 0 takes the `elsif physical` /
+  `elsif magical` branch and computes `0 * dmg / 100 = 0`, not a sign flip —
+  so a full immunity zeroes the hit rather than healing the target. No code
+  change; the claim already held.
 - Battle Interrupt (from inside a battle event) satisfies **neither**
   the Win nor Lose branch of the enclosing Battle Processing command —
   it's a third, unlabeled outcome that resumes right after Branch End,
