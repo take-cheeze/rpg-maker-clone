@@ -223,7 +223,7 @@ class RPG2k
             @state.boarded = nil
             restore_pre_vehicle_bgm
           end
-          perform_teleport(@state.pending_teleport)
+          perform_teleport(@state.pending_teleport, keep_pictures: true)
           @state.pending_teleport = nil
           animate_events
           render
@@ -4769,7 +4769,15 @@ class RPG2k
         tenths * fr / 10
       end
 
-      def perform_teleport(t)
+      # `keep_pictures` is false for an ordinary map transfer (the Transfer
+      # Player / Recall to Location event commands, which arrive via the
+      # interpreter's own `:teleport` wait) and true for the one documented
+      # exception: a Teleport or Escape field skill/item, whose destination
+      # arrives here via `@state.pending_teleport` instead (see #update).
+      # yado.tk: changing maps clears every shown picture *except* via a
+      # Teleport/Escape skill, a deliberate, distinct rule from an ordinary
+      # map change.
+      def perform_teleport(t, keep_pictures: false)
         map_id, x, y, dir = t
         @map = @parent.load_map(map_id)
         @state.map = @map
@@ -4782,8 +4790,9 @@ class RPG2k
         # the edition that added a per-picture "keep across map change" flag).
         # Without this, Nepheshel's opening leaves its full-screen credit
         # pictures on top of the first room and the map is never visible —
-        # exactly what the wine comparison showed (ADR 0021).
-        @state.erase_all_pictures
+        # exactly what the wine comparison showed (ADR 0021). Not for a
+        # Teleport/Escape skill's own warp, though — see `keep_pictures` above.
+        @state.erase_all_pictures unless keep_pictures
         # A Change Parallax Background override does not survive a teleport
         # either; the destination map's own panorama applies. Rebuild the
         # backdrop from the new map so it isn't drawn with the old one.
