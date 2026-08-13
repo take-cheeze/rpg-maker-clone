@@ -5964,13 +5964,16 @@ class RPG2k
 
       def drive_text_message
         reveal = @message[:reveal]
-        # Holding Shift during Test Play fast-forwards dialogue: same effect a
-        # C/B tap already has (complete the current reveal, then advance past
-        # a finished message), but held down instead of tapped. Gated on
-        # RPG2k#test_play the same way #debug_through? is, so a released game
-        # never sees it.
-        pressed = Input.trigger?(Input::C) || Input.trigger?(Input::B) ||
-                  (@parent.test_play && Input.press?(Input::SHIFT))
+        confirm = Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        # Holding Shift during Test Play fast-forwards dialogue *while it is
+        # still typing* -- same effect a C/B tap already has there (complete
+        # the current reveal, releasing any inline `\!`/`\.`/`\|` pause along
+        # the way). Once the whole message is shown, though, it always waits
+        # for an actual confirm below, the same as with no Shift held: Shift
+        # speeds up one paragraph's reveal, it does not blow through
+        # paragraph after paragraph on its own. Gated on RPG2k#test_play the
+        # same way #debug_through? is, so a released game never sees it.
+        fast_forward = confirm || (@parent.test_play && Input.press?(Input::SHIFT))
         unless reveal.done?
           pause = reveal.pending_pause
           # The blinking pause arrow only stands for a player-input wait
@@ -5978,8 +5981,8 @@ class RPG2k
           # `\.` / `\|` holds, which clear on their own.
           @message[:window].pause = pause ? pause[:kind] == :key : false
           if pause
-            drive_message_pause(reveal, pause, pressed)
-          elsif pressed
+            drive_message_pause(reveal, pause, fast_forward)
+          elsif fast_forward
             reveal.reveal_all
           else
             reveal.advance(MSG_REVEAL_SPEED)
@@ -5988,7 +5991,7 @@ class RPG2k
           return
         end
         # `\^` closes the finished window on its own; otherwise wait for a button.
-        if reveal.auto_close? || pressed
+        if reveal.auto_close? || confirm
           followup = @interpreter.message_followup
           if followup
             # A Show Choices / Input Number immediately follows this Show Text:

@@ -37,6 +37,9 @@ enum Key {
   KEY_A = 4,
   KEY_B = 5,
   KEY_C = 6,
+  KEY_SHIFT = 12,
+  KEY_CTRL = 13,
+  KEY_F9 = 19,
   KEY_F12 = 20,
 };
 
@@ -474,7 +477,8 @@ void terminal_append_legend(std::string& s) {
   // legible on any terminal background -- a dim foreground (SGR 2) was too
   // faint to read on light themes.
   s += "\x1b[K\x1b[7m";
-  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q";
+  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q  "
+       "Debug(testplay): T=Ctrl F=Shift F9";
   s += "\x1b[0m\r\n";
 }
 
@@ -612,11 +616,12 @@ void terminal_poll(mrb_state* M) {
   for (size_t i = 0; i < buf.size();) {
     const unsigned char c = static_cast<unsigned char>(buf[i]);
     if (c == 0x1b && i + 2 < buf.size() && buf[i + 1] == '[') {
-      // F12 -- RPG_RT's return-to-title hotkey (RGSS::Input::F12, read by
-      // mruby-rpg2k's main_loop) -- arrives as a multi-digit CSI sequence
-      // terminated by '~' (`ESC [ 24 ~` in xterm and its descendants: foot,
-      // alacritty, kitty, gnome-terminal, wezterm, tmux, ...), unlike the
-      // single-letter arrow sequences below.
+      // F9 and F12 -- RPG_RT's debug-menu and return-to-title hotkeys
+      // (RGSS::Input::F9/F12, read by mruby-rpg2k's Scene::Map and main_loop)
+      // -- arrive as a multi-digit CSI sequence terminated by '~' (`ESC [ 20
+      // ~` / `ESC [ 24 ~` in xterm and its descendants: foot, alacritty,
+      // kitty, gnome-terminal, wezterm, tmux, ...), unlike the single-letter
+      // arrow sequences below.
       if (buf[i + 2] >= '0' && buf[i + 2] <= '9') {
         size_t j = i + 2;
         int value = 0;
@@ -625,7 +630,9 @@ void terminal_poll(mrb_state* M) {
           ++j;
         }
         if (j < buf.size() && buf[j] == '~') {
-          if (value == 24)
+          if (value == 20)
+            hold_key(M, KEY_F9, now);
+          else if (value == 24)
             hold_key(M, KEY_F12, now);
           i = j + 1;
         } else {
@@ -688,6 +695,25 @@ void terminal_poll(mrb_state* M) {
       case 'c':
       case 'C':
         hold_key(M, KEY_A, now);
+        break;
+      // A raw terminal cannot tell a genuine Ctrl/Shift modifier apart from
+      // an ordinary keypress for most of these bindings (Ctrl-<letter> is
+      // already its own control byte -- Ctrl-C above is bound to quit -- and
+      // Shift-<letter> only changes case, already treated the same as
+      // unshifted throughout this switch), so Ctrl and Shift's *held* debug
+      // behaviour (RGSS::Input::CTRL / SHIFT, see mruby-rpg2k's
+      // Scene::Map#debug_through? and #drive_text_message) gets its own
+      // dedicated key here instead, following the same hold-to-repeat model
+      // as the movement keys above (the terminal's own auto-repeat, plus
+      // hold_key's HOLD_MS grace window, are what make "held" work at all in
+      // a backend with no key-release events).
+      case 't':
+      case 'T':
+        hold_key(M, KEY_CTRL, now);
+        break;
+      case 'f':
+      case 'F':
+        hold_key(M, KEY_SHIFT, now);
         break;
       case 'q':
       case 0x03:  // 'q' or Ctrl-C = quit

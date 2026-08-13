@@ -7833,7 +7833,8 @@ check 'Ctrl during Test Play suppresses the random-encounter roll' do
   eq 0, st.encounter_total, 'the accumulator never even started'
 end
 
-check 'holding Shift during Test Play fast-forwards a message the same way a button press does' do
+check 'holding Shift during Test Play fast-forwards a message\'s typing, but still waits ' \
+     'once it is fully shown' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hello'),
@@ -7852,8 +7853,16 @@ check 'holding Shift during Test Play fast-forwards a message the same way a but
   ok reveal.done?, 'holding Shift completed the reveal, like a C/B press'
   ok scene.instance_variable_get(:@message), 'message stays open on the completing frame'
 
-  scene.update # Shift still held: the finished message advances on its own
-  ok !scene.instance_variable_get(:@message), 'message dismissed while Shift stayed down'
+  # Unlike a C/B tap, Shift alone never advances past the now-fully-shown
+  # message -- it waits there (one paragraph at a time) no matter how long
+  # Shift stays held, until an actual confirm arrives.
+  10.times { scene.update }
+  ok scene.instance_variable_get(:@message), 'Shift alone never dismisses a finished message'
+  ok !st.switches[1], 'the interpreter has not resumed past the message yet'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'an actual confirm dismisses it'
   5.times { RGSS::Input.reset; scene.update }
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
