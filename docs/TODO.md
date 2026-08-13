@@ -2415,11 +2415,35 @@ not yet verified:
   substituted value/name is long.
 
 **Battle system (default)**
-- Battle events fire once per turn, right after hero action is decided
-  but before the turn resolves — never before action-select, never after
-  the battle ends. **Every** satisfied page fires that turn (lower page
-  number first), unlike map/common events (already confirmed correct
-  above).
+- ✅ **Battle pages are checked far more often than once per turn** — the
+  yado.tk phrasing above ("right after hero action is decided but before the
+  turn resolves") undersold it, and so did this runtime: EasyRPG's
+  `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents` is called from two
+  places, `State_SelectOption` (before the round-start Fight/Auto/Escape menu
+  — the "before action-select" case this runtime already had) **and**, per
+  its own comment, from `ProcessSceneActionBattle`'s `ePreAction` substate,
+  which "happens before each battler acts and also right after the last
+  battler acts" — i.e. checked again before *every individual battler's*
+  action within the round, not just once at the start. A page whose
+  condition turns true mid-round (an enemy's HP crossing a threshold from an
+  earlier attacker's hit, say) used to sit until the *next* round's check;
+  real RPG_RT would run it immediately, before the next battler in the same
+  round even acts. `Scene::Map#drive_battle_animate` now checks between every
+  acting battler: a `battler_boundary` flag (set once `Game::Battle#step_action`
+  has drained the last buffered hit of one battler's action — a dual-wield
+  swing or an all-target Skill/Item queues several from the *same* battler,
+  and the check belongs between battlers, not between hits) triggers
+  `#run_battle_events` before the next `step_action` call, threading a new
+  `return_phase` (`:command` for the pre-existing between-rounds check,
+  `:animate` for this one) through to `#leave_battle_event_phase` so a page
+  started mid-round resumes the animation loop afterward instead of jumping
+  to the command menu partway through a round. **Every** satisfied page still
+  fires exactly once per turn regardless of how many times it is checked
+  (`pages_run`, unlike map/common events, already confirmed correct above) —
+  never before action-select (the original claim's other half already held),
+  never after the battle ends. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (an enemy-HP-conditioned page firing before the round settles back to
+  `:command`), confirmed to fail against the pre-fix code.
 - Damage is hard-capped below 1000 by engine spec; special-skill HP
   recovery is capped at 999 per use; item drop rate has a 1% floor.
 - Turn-order tie-break on equal Agility: hero acts before an equal-agility
