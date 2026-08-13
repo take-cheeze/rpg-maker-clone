@@ -1165,6 +1165,16 @@ class RPG2k
           # same single on-screen animation slot #drive_map_animation already
           # drives for the foreground, see there.
           drive_map_animation(it)
+        elsif it.wait_kind == :game_over
+          # A wipe-triggering command (Change HP, Change Condition, ...) run
+          # from a Parallel Process's own interpreter raises the same
+          # :game_over wait #check_game_over uses for the foreground -- ending
+          # the game does not depend on which interpreter noticed the wipe.
+          # Before this branch existed this fell into the generic "background:
+          # ignore message/choice/teleport requests" #resume below, which
+          # silently cleared the wait and let the process carry on with a
+          # fully-dead party never reaching the Game Over screen.
+          perform_game_over(it)
         else
           it.resume # background: ignore message/choice/teleport requests
         end
@@ -4078,13 +4088,21 @@ class RPG2k
       # Game Over (12420), and a battle defeat the encounter marked "game over":
       # show the Game Over screen, which returns to the title once dismissed.
       # Nothing resumes, so the event is stopped rather than released.
-      def perform_game_over
+      #
+      # `interp` is whichever interpreter actually raised the :game_over wait --
+      # the foreground event by default, or a Parallel Process's own interpreter
+      # when #drive_parallel_wait dispatches here (see there). Stopping the
+      # right one matters less than it looks: replacing the whole scene stack
+      # below orphans every interpreter in this scene regardless, but stopping
+      # it too keeps its own state consistent for the rest of this frame, the
+      # same as the foreground's already did.
+      def perform_game_over(interp = @interpreter)
         $stderr.puts '[RPG2k] game over'
-        @interpreter.stop
+        interp.stop
         @parent.show_game_over
       rescue StandardError => e
         $stderr.puts "[RPG2k] Game over failed: #{e.message}"
-        @interpreter.stop
+        interp.stop
       end
 
       def log_round(entries)
