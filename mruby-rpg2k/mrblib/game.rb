@@ -1545,6 +1545,31 @@ module Game
       best && best > 0 ? best : 90
     end
 
+    # The battle animation a basic Attack plays with this actor's current gear:
+    # the primary weapon slot's own `animation_id` (item field 20 -- the
+    # weapon editor's own "アニメーション" picker; the same field
+    # Scene::Map#battle_animation_id already reads off a *used* skill/item,
+    # reused here for a weapon's normal-attack swing) when one is worn and set,
+    # or the actor row's `unarmed_animation` (field 56, 素手戦闘アニメID)
+    # otherwise -- RPG2000 has no equivalent monster-side field (an enemy's
+    # Attack plays no animation at all), so this is Actor-only by design, not
+    # an oversight. Only the primary slot is read: RPG_RT keeps this as one
+    # property per actor rather than one per weapon, and a 二刀流 actor's
+    # second swing (the shield-slot weapon #attack_hit_rate's own scan already
+    # picks up for hit/crit) plays the identical animation as the first, so
+    # there is nothing here for that second weapon to override.
+    def attack_animation_id
+      iid = @equipment[WEAPON_SLOT]
+      if iid && iid != 0 && @db.respond_to?(:item)
+        it = @db.item[iid]
+        if it && it.respond_to?(:type) && it.type == ITEM_WEAPON &&
+           it.respond_to?(:animation_id) && it.animation_id && it.animation_id > 0
+          return it.animation_id
+        end
+      end
+      @db_row.respond_to?(:unarmed_animation) ? @db_row.unarmed_animation : nil
+    end
+
     # Whether any equipped item carries boolean field `name`. The weapon combat
     # flags below all work this way — one piece of gear is enough to grant them.
     # `weapon_only` restricts the search to the weapon slot (item type 1), which
@@ -7117,12 +7142,27 @@ module Game
     end
 
     def deal_attack(b, target)
+      # A plain attack's own battle animation -- the attacking actor's current
+      # gear (Actor#attack_animation_id), or nil for an enemy (b.actor is nil;
+      # see #attack_animation_id's own doc comment for why enemies have none
+      # to read) or a bare fixture Combatant with no #actor field at all. The
+      # animation plays on a miss too -- the swing itself always happens, only
+      # its damage is what a miss zeroes -- so this is computed once and
+      # attached to both branches below.
+      anim = b.respond_to?(:actor) && b.actor.respond_to?(:attack_animation_id) ? b.actor.attack_animation_id : nil
+      # Where it plays: over the targeted enemy's sprite, the same
+      # `@enemies.index(target)` lookup #apply_command already attaches to a
+      # skill/item entry -- nil when the target is a party member (RPG2000
+      # draws no ally sprite; #battle_animation_pixel's screen-centre
+      # fallback covers that case exactly as it does for a skill/item).
+      target_index = @enemies.index(target)
       # When accuracy is on, roll the attacker's to-hit chance: a miss deals no
       # damage and reads as `missed` on the log entry.
       if @accuracy && !hits?(b, target)
         return { attacker: b.name, target: target.name, damage: 0, missed: true,
                  critical: false, target_hp: target.hp < 0 ? 0 : target.hp,
-                 defeated: false, target_ally: ally?(target) }
+                 defeated: false, target_ally: ally?(target), attack_animation_id: anim,
+                 target_index: target_index }
       end
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       # An elemental weapon scales its damage by the target's resistance before
@@ -7157,7 +7197,8 @@ module Game
       woke = target.dead? ? [] : shake_off_states(target)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
                 charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
-                defeated: target.dead?, target_ally: ally?(target) }
+                defeated: target.dead?, target_ally: ally?(target),
+                attack_animation_id: anim, target_index: target_index }
       entry[:woke] = woke unless woke.empty?
       entry
     end

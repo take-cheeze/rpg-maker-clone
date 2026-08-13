@@ -2379,7 +2379,12 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            :equipment_fixed,
                            # The actor's default FaceSet portrait (Enter Hero
                            # Name's face box). Same reasoning: appended last.
-                           :faceset_name, :faceset_index)
+                           :faceset_name, :faceset_index,
+                           # 素手戦闘アニメID -- the battle animation a basic
+                           # Attack plays with no weapon equipped
+                           # (Actor#attack_animation_id). Same reasoning:
+                           # appended last, defaults nil (no animation).
+                           :unarmed_animation)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -2445,7 +2450,12 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :cursed,
                       # 物理回避率アップ: a normal attack against the wearer is
                       # 25 points likelier to miss (Actor#physical_evasion_up?).
-                      :raise_evasion)
+                      :raise_evasion,
+                      # アニメーション (weapon field 20): the battle animation a
+                      # basic Attack plays with this weapon equipped
+                      # (Actor#attack_animation_id). Appended last, same
+                      # positional-safety reasoning as every field above.
+                      :animation_id)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2454,14 +2464,14 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
-              cursed: false, raise_evasion: false)
+              cursed: false, raise_evasion: false, animation_id: nil)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
-               raise_evasion)
+               raise_evasion, animation_id)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -8573,6 +8583,66 @@ check "battle: physical-evasion-up gear drops a normal attack's hit chance by 25
   hero.equip([0, 7, 0, 0, 0])
   geared = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
   eq 65, geared.send(:to_hit, foe, geared.allies[0]), 'the shield drops it to 65'
+end
+
+# アニメーション (weapon field 20): a basic Attack now plays the equipped
+# weapon's own battle animation, or the actor row's own 素手戦闘アニメID when
+# unarmed -- previously decoded and read by neither, so a plain attack was
+# always silent regardless of what the weapon editor named
+# (docs/TODO.md's "Battle animations" entry used to end "Left for their own
+# changes: a plain attack's animation... left for a change that plumbs the
+# weapon through rather than guessed at here").
+check "Actor#attack_animation_id reads the primary weapon slot, falling back to unarmed" do
+  items = { 7 => fake_item(type: 1, animation_id: 12),   # a sword, animation 12
+            8 => fake_item(type: 1) }                    # a sword naming none
+  row = CurveRow.new('Hero', '', 0, 1, [200, 50, 20, 10, 10, 10])
+  row.unarmed_animation = 4
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+
+  eq 4, hero.attack_animation_id, 'unarmed falls back to the actor row\'s own id'
+  hero.equip([7, 0, 0, 0, 0])
+  eq 12, hero.attack_animation_id, 'the equipped weapon\'s own animation wins'
+  hero.equip([8, 0, 0, 0, 0])
+  eq 4, hero.attack_animation_id,
+     'a weapon naming no animation (0, the "none" choice) falls back to unarmed too'
+end
+
+check 'battle: a plain attack carries its attacker\'s weapon animation and target index on the log entry' do
+  items = { 7 => fake_item(type: 1, atk: 5, animation_id: 9) }
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 0, 0, 0, 0])
+  foe = combatant('Foe', 0, 0, 5, 100)
+
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  entry = bat.send(:deal_attack, bat.allies[0], foe)
+  eq 9, entry[:attack_animation_id], 'the hero\'s equipped weapon animation rides along'
+  eq 0, entry[:target_index], 'and so does the target\'s index into @enemies'
+
+  # An enemy attacking the party has no weapon to read: `combatant` builds a
+  # bare Combatant with #actor nil, exactly what Battle.from_enemy itself
+  # leaves nil (enemies keep no source actor) -- matching the "no such field
+  # for a monster" note on Actor#attack_animation_id's own doc comment.
+  attacker = combatant('Foe', 20, 0, 5, 100)
+  rev = Game::Battle.new([bat.allies[0]], [attacker], Game::Rng.new(1))
+  back = rev.send(:deal_attack, attacker, rev.allies[0])
+  eq nil, back[:attack_animation_id], 'an enemy\'s own basic attack plays no animation'
+  eq nil, back[:target_index], 'the target is a party member -- no enemy-side sprite to index'
+end
+
+check 'battle: 二刀流\'s second swing plays the same weapon animation as the first' do
+  items = { 7 => fake_item(type: 1, atk: 5, dual_attack: true, animation_id: 3) }
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 0, 0, 0, 0])
+  foe = combatant('Foe', 0, 0, 5, 10_000) # never dies, so both swings land
+
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  first, second = bat.send(:swing, bat.allies[0], foe)
+  eq 3, first[:attack_animation_id]
+  eq 3, second[:attack_animation_id], 'both of a 二刀流 weapon\'s blows carry the identical id'
 end
 
 check 'battle: 必中 still suffers the wielder\'s own blindness' do

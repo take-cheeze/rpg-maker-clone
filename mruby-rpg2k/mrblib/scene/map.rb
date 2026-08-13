@@ -4079,9 +4079,11 @@ class RPG2k
       # skill rows and 170 item rows across the test beds name one, and none of
       # them played. Returns true when one started.
       #
-      # A plain attack's animation is the equipped weapon's, which the log entry
-      # does not carry, so it is left for a change that plumbs the weapon
-      # through rather than guessed at here.
+      # A plain attack now plays one too: Game::Battle#deal_attack resolves
+      # the attacking actor's own weapon/unarmed animation (Actor#
+      # attack_animation_id) and carries it on the log entry as
+      # `attack_animation_id`, which #battle_animation_id below reads once
+      # neither a skill nor an item claims the entry.
       def start_battle_animation(entry)
         id = battle_animation_id(entry)
         return false unless id && id > 0
@@ -4104,7 +4106,10 @@ class RPG2k
           elsif entry[:item_id] && db.respond_to?(:item) && db.item
             db.item[entry[:item_id]]
           end
-        row && row.respond_to?(:animation_id) ? row.animation_id : nil
+        return row.animation_id if row && row.respond_to?(:animation_id)
+        # Neither a skill nor an item: a plain Attack, whose own animation
+        # Game::Battle#deal_attack already resolved onto the log entry.
+        entry[:attack_animation_id]
       end
 
       # Where it plays: over the targeted enemy's sprite. RPG2000 draws no sprite
