@@ -39,6 +39,14 @@
   camera). Nepheshel's town, an interior and an open-water map now render
   **pixel-identical** to RPG_RT — tile layers, autotiles, upper/lower layering
   and event sprites all on its exact pixels
+- RPG_RT's own **Test Play debug keys** work, gated on `--test_play`/`Game.ini`
+  `[Game] Test=1` the same way every other debug tool in this engine is (see
+  "Profiling" below) — a released game never sees any of them do anything:
+  hold **Ctrl** to ignore collision and turn off random encounters; hold
+  **Shift** to fast-forward the current message (same effect a C/B press
+  already has, held down instead of tapped); press **F9** to open a debug
+  menu listing every switch and variable, ten at a time, with a signed number
+  editor for variables
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
