@@ -5582,6 +5582,71 @@ check 'a battle page conditioned on enemy HP fires mid-round, before the round s
      'landed), not only once the round settled back to :command for the next one'
 end
 
+# yado.tk (`2k/01_shoshin/011_siyou/`, Enemy Appearance / Show Hidden Monster):
+# a scripted reinforcement can be lost if all *currently-present* enemies die
+# before its own appearance command fires -- the battle would just end. This
+# is already avoided here as a side effect of the "checked far more often"
+# fix above: #run_battle_events fires at the battler boundary right after the
+# killing blow, strictly before drive_battle_animate's next step_action call
+# (finding nothing pending) reaches #finish_round_animation's own
+# `battle.finished?` check -- so a Show Hidden Monster queued by that page has
+# already cleared the reinforcement's `hidden` flag (via
+# #apply_battle_event_requests, driven every frame the page is running) well
+# before the round could settle into a premature victory.
+check 'a battle page reveals a reinforcement before the round can end in a premature victory (yado.tk)' do
+  ic = Game::Interpreter::Cmd
+  # Fires the instant troop member 0's HP hits 0, showing hidden troop member
+  # 1 -- the "boss dies, a fresh enemy steps in" script the site describes.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_HIDDEN_MONSTER, [1])],
+                            Game::BattlePage::ENEMY_HP, enemy_id: 0, enemy_hp_max: 0) }
+  scene, st = battle_scene_with_pages(pages)
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  # Troop member 1 stands in for a placed-but-invisible reinforcement.
+  ui[:foes][1].hidden = true
+  ui[:troop].members[1].hidden = true
+  # The killing blow that ends member 0's HP at exactly 0, matching a 0%..0%
+  # Enemy HP page condition -- this build's battle HP is not floor-clamped
+  # mid-fight, only written back through Battle#apply_to_party at battle end,
+  # so an *overkill* hit landing well past 0 would never satisfy a 0% window;
+  # exactly 0 sidesteps that separate, unverified question and isolates the
+  # one this check is actually about.
+  ui[:battle].enemy(0).hp = 0
+  # Simulate the exact moment drive_battle_animate lands right after the
+  # battler whose action just landed that blow: the battler-boundary flag it
+  # sets (see @battle_ui[:battler_boundary]) is what gives every battle page
+  # one more chance to fire before step_action next finds nothing pending and
+  # the round settles via #finish_round_animation's own `battle.finished?`
+  # check.
+  ui[:phase] = :animate
+  ui[:battler_boundary] = true
+  revealed_before_victory = nil
+  20.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    break unless ui
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break unless ui
+    next if ui[:foes][1].hidden
+    revealed_before_victory = ui[:phase] != :result
+    break
+  end
+  ok !revealed_before_victory.nil?, 'the reinforcement was revealed within the budget'
+  ok revealed_before_victory,
+     'it was revealed before the round could settle into a premature victory, not after'
+  # Enemy Appearance targeting an already-appeared enemy is a silent no-op:
+  # #reveal_battle_monster returns immediately once `hidden` is already false,
+  # so a second reveal neither rebuilds the sprite nor errors.
+  sprite_before = ui[:enemy_sprites][1]
+  scene.send(:reveal_battle_monster, 1)
+  eq sprite_before, scene.instance_variable_get(:@battle_ui)[:enemy_sprites][1],
+     'revealing an already-visible member again is a no-op, not a sprite rebuild'
+end
+
 check 'Terminate Battle from a page ends the fight and resumes the event' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }

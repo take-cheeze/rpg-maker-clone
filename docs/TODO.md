@@ -3095,10 +3095,31 @@ not yet verified:
   the Win nor Lose branch of the enclosing Battle Processing command —
   it's a third, unlabeled outcome that resumes right after Branch End,
   and only increments the battle-count stat (not loss/escape counts).
-- Enemy Appearance targeting an already-appeared enemy is a silent no-op;
-  if all *currently-present* enemies are wiped before a scripted
-  reinforcement's appearance command fires, the battle just ends and that
-  reinforcement never spawns.
+- ✅ **Enemy Appearance (Show Hidden Monster) already gets both halves of this
+  right.** Targeting an already-appeared enemy is a silent no-op:
+  `Scene::Map#reveal_battle_monster` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  returns immediately once `member.hidden` is already false, before touching
+  the sprite or the combatant. The "reinforcement never spawns" half looked
+  like a real gap on paper — `Game::Battle::Combatant#out_of_play?` treats a
+  still-hidden troop member as not-alive
+  (`dead? || hidden`), so `#finished?` would read a fight as won the instant
+  the only *visible* enemy died, if a scripted reinforcement's own Show
+  Hidden Monster hadn't cleared its `hidden` flag yet — but it already has to
+  have, by construction: this is exactly the race the "Battle pages are
+  checked far more often" fix above (`@battle_ui[:battler_boundary]`) closes.
+  A battle page conditioned on the dying enemy's HP gets to run — and, via
+  `#apply_battle_event_requests`, have its Show Hidden Monster command take
+  effect — at the battler boundary right after the killing blow, strictly
+  before `#drive_battle_animate`'s next `step_action` call (finding nothing
+  left pending for the round) reaches `#finish_round_animation`'s own
+  `battle.finished?` check; the two are sequential states in the same phase
+  machine (`:event` must finish and return to `:animate` before `:animate`
+  can ever reach that check again), not a race that can land either way.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a reinforcement
+  hidden behind an Enemy-HP-conditioned page is revealed while the battle is
+  still running, never after it has already settled into `:result`; a second
+  reveal of an already-visible member is confirmed to be a sprite-rebuild
+  no-op), confirmed to fail if the battler-boundary check is disabled.
 - **Documented race condition**: a Battle Processing "Lose: Branch"
   that revives the party can still lose to an erroneous instant Game Over
   if a Parallel Process is running concurrently — the parallel process's
