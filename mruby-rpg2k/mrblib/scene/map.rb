@@ -950,24 +950,62 @@ class RPG2k
       # one for -- full fidelity (call stack, in-flight wait timer, everything,
       # since it is the very same object), not a reconstruction -- instead of
       # building a fresh one. Map events are always rebuilt fresh from the
-      # destination map's own event table, matching the existing per-visit-reset
-      # behaviour (unchanged). On the very first build for this scene (a brand
-      # new game, or the fresh Scene::Map Continue/#initialize builds from a
-      # loaded save), there is no previous @parallels to reuse from, so
-      # #new_parallel instead fast-forwards a fresh interpreter to whatever
-      # position #step_parallel last recorded on Game::State before the game
-      # was last saved (see Game::State#common_event_progress) -- a coarser,
-      # index-only continuation, since nothing was kept alive across a save to
-      # resume with full fidelity.
-      def build_parallels
+      # destination map's own event table on a genuine map change (Transfer
+      # Player, or the very first build for this scene), matching the existing
+      # per-visit-reset behaviour: a real "visit" gives a map event's own
+      # parallel process no id that means anything on the map being left, so
+      # there is nothing sound to reuse.
+      #
+      # `preserve_map_events:` is the one exception, passed only by
+      # #rebuild_events_preserving_positions: that call does not change maps at
+      # all, it just re-selects pages after a Control Switch/Variable/item/party
+      # write, and #pages_changed? triggering it is a map-wide check -- any
+      # *other* event's page flipping runs this same rebuild, discarding and
+      # rebuilding every event's Game::Character (see #build_events), this
+      # event's included, even though this event's own page selection never
+      # moved. Without this, a Map Event's Parallel Process would restart from
+      # the top (losing its call stack and any in-flight Wait countdown, the
+      # same fidelity #resumable_index cannot capture) every time some
+      # unrelated event on the map reselected its page -- not on this event's
+      # own re-trigger, which does still restart it fresh, matching yado.tk's
+      # "always restarts from the top on every re-trigger". A map event whose
+      # own page selection *did* just change (a different `page`, so a
+      # different `commands` array -- #build_event always builds a fresh
+      # Game::Character/command list from the freshly-selected page) still gets
+      # a brand new interpreter either way, exactly as before.
+      #
+      # On the very first build for this scene (a brand new game, or the fresh
+      # Scene::Map Continue/#initialize builds from a loaded save), there is no
+      # previous @parallels to reuse from, so #new_parallel instead
+      # fast-forwards a fresh interpreter to whatever position #step_parallel
+      # last recorded on Game::State before the game was last saved (see
+      # Game::State#common_event_progress) -- a coarser, index-only
+      # continuation, since nothing was kept alive across a save to resume with
+      # full fidelity.
+      def build_parallels(preserve_map_events: false)
         previous_common = {}
+        previous_map = {}
         (@parallels || []).each do |p|
-          previous_common[p[:common_event_id]] = p if p[:common_event_id]
+          if p[:common_event_id]
+            previous_common[p[:common_event_id]] = p
+          elsif preserve_map_events && p[:event]
+            previous_map[p[:event][:id]] = p
+          end
         end
         @parallels = []
         @events.each do |e|
           next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
-          @parallels.push new_parallel(e[:commands], nil, e, nil)
+          prior = previous_map[e[:id]]
+          if prior && prior[:commands].equal?(e[:commands])
+            # Same page, same command list -- only the surrounding
+            # Game::Character objects were rebuilt (see #build_events), so keep
+            # the still-running interpreter and just re-point its bookkeeping
+            # at this rebuild's fresh event hash.
+            prior[:event] = e
+            @parallels.push prior
+          else
+            @parallels.push new_parallel(e[:commands], nil, e, nil)
+          end
         end
         @common.each do |c|
           next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
@@ -1662,7 +1700,11 @@ class RPG2k
           end
         end
         rebuild_event_tiles
-        build_parallels
+        # This is an in-place page reselection, not a map change -- a map
+        # event's own Parallel Process id still means the same thing before
+        # and after, so a still-running one whose own page did not change
+        # keeps its interpreter (see #build_parallels).
+        build_parallels(preserve_map_events: true)
         # The event the foreground interpreter is running may have just been
         # rebuilt; re-point it so "this event" still reaches the live character.
         @active_event = @events.find { |e| e[:id] == @active_event[:id] } if @active_event

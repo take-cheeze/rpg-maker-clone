@@ -1331,6 +1331,54 @@ check "Transfer Player reuses a common event's Parallel Process interpreter " \
      "the rebuilt map event's parallel process starts over at the top"
 end
 
+check "an unrelated event's page change does not restart another event's " \
+      'own Parallel Process' do
+  ic = Game::Interpreter::Cmd
+  # Event 1's own page never changes -- it is a bystander -- but its Parallel
+  # Process runs marker A, parks on a 0.3s Wait, then runs marker B, so a
+  # restart (which would re-run marker A instead of resuming the same
+  # countdown) can be told apart from a genuine resume, mirroring this same
+  # section's own "Transfer Player reuses a common event's ... interpreter"
+  # check's timing setup above -- the difference here is nothing changes maps
+  # at all, only an *unrelated* event's own page selection flips.
+  par = page(trigger: 4)
+  par.event_commands = [add_var_cmd(1), ECmd.new(ic::WAIT, [3]), add_var_cmd(2)]
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 0, charset_name: 'Ghost')
+  scene = new_scene({ 1 => event(2, 2, par),
+                      2 => two_page_event(5, 5, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  scene.update # marker A runs, then event 1 parks on the 0.3s Wait
+  eq 1, st.variables[1], 'marker A ran once, before the wait'
+  eq 0, st.variables[2], 'the wait has not elapsed yet'
+
+  # Flipping switch 3 only changes event 2's own page selection -- event 1's
+  # page (and its already-running Parallel Process) never moves -- but
+  # #pages_changed? is a map-wide check, so this still runs
+  # #rebuild_events_preserving_positions, which used to discard and rebuild
+  # *every* map event's Parallel Process interpreter, event 1's included.
+  st.switches[3] = true
+  scene.update
+  ok event_hashes(scene)[2][:page].equal?(p2),
+     "event 2's own page did flip (switch 3 went on)"
+  eq 1, st.variables[1],
+     "event 1's Parallel Process must not have restarted -- marker A would " \
+     're-run and bump this to 2'
+  eq 0, st.variables[2], 'nor reset the in-flight wait to a fresh countdown'
+
+  # The common-event Transfer Player check above needs 19 more ticks because
+  # `perform_teleport` itself does not tick the wait timer -- only the
+  # `scene.update` calls that follow do. Here, unlike there, the switch-flip
+  # frame just above *is* a full `scene.update`, so it already spent the
+  # first of those 19 ticks (the one that initialises the timer from nil and
+  # takes its first decrement, per #drive_parallel_wait) -- 18 more are
+  # exactly enough for the remaining countdown to elapse.
+  18.times { scene.update }
+  eq 1, st.variables[1], 'marker A still has not re-run'
+  eq 1, st.variables[2], 'the wait elapsed after exactly its original countdown'
+end
+
 check "a common event's Parallel Process resumes where it left off after a " \
       'save/load, not from the top' do
   ic = Game::Interpreter::Cmd
