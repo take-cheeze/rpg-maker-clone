@@ -25,6 +25,34 @@ class RPG2k
         nil
       end
 
+      # Full-screen backdrop for the field menu scenes (Menu and its Item/
+      # Skill/Equip/Status sub-screens), which have no map of their own behind
+      # them. RPG_RT fills the whole screen with the windowskin's own
+      # background chip -- the same 32x32 tile every RPG2k::Window stretches
+      # over its own interior, see Window#draw_background -- stretched over
+      # the full 320x240 instead, so gaps between windows read as the same
+      # material rather than showing whatever scene happens to sit underneath.
+      # Given a nil skin (load failed) this is a plain black sprite, matching
+      # Window's own fallback panel look. z sits above the map's own tiles,
+      # characters, pictures and animations (Scene::Map tops out at 250 for
+      # its picture layer) so none of them show through, but below its
+      # screen-wide weather/flash/fade effects (430/450/500) and the menu's
+      # own windows (400) -- Scene::Map is never popped while a menu sits on
+      # top of it, so all of that keeps rendering regardless of scene.
+      def build_field_background(skin)
+        sprite = Sprite.new
+        sprite.z = 300
+        bmp = Bitmap.new(RPG2k::WIDTH, RPG2k::HEIGHT)
+        if skin
+          bmp.stretch_blt Rect.new(0, 0, RPG2k::WIDTH, RPG2k::HEIGHT), skin,
+                          Rect.new(0, 0, 32, 32)
+        else
+          bmp.fill_rect 0, 0, RPG2k::WIDTH, RPG2k::HEIGHT, Color.new(0, 0, 0, 255)
+        end
+        sprite.bitmap = bmp
+        sprite
+      end
+
       # Draw `text` the way RPG_RT draws every piece of window text: a shadow
       # glyph one pixel down and right filled from the System image's shadow
       # block, then the glyph itself filled from colour `idx`'s 16x16 swatch, so
