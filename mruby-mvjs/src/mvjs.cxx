@@ -1126,6 +1126,42 @@ mrb_value gl_available(mrb_state* mrb, mrb_value /*self*/) {
   return mrb_bool_value(mvgl::available());
 }
 
+// MV::Font.unpack_woff(bytes) -> the bare sfnt bytes, or nil if `bytes` is a
+// WOFF the unpacker (mvcanvas.cxx) rejects as malformed. A non-WOFF input is
+// returned unchanged. See mv_font_unpack's comment (mvhost.hxx) for why this
+// exists as its own binding rather than relying on the font loader MZ/MV
+// projects boot through.
+mrb_value font_unpack_woff(mrb_state* mrb, mrb_value /*self*/) {
+  const char* p;
+  mrb_int len;
+  mrb_get_args(mrb, "s", &p, &len);
+  std::string out;
+  if (!mv_font_unpack(std::string(p, static_cast<size_t>(len)), out))
+    return mrb_nil_value();
+  return mrb_str_new(mrb, out.data(), out.size());
+}
+
+// MV::Font.smoke_test(bytes, codepoint, pixel) -> [width, height, ink] on
+// success (a real stb_truetype rasterisation of `codepoint`, `ink` its count
+// of non-zero coverage pixels), or nil if `bytes` does not parse as a font.
+// `bytes` may be WOFF or a bare sfnt. See mv_font_smoke_test's comment.
+mrb_value font_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
+  const char* p;
+  mrb_int len;
+  mrb_int codepoint = 'A';
+  mrb_float pixel = 24;
+  mrb_get_args(mrb, "s|if", &p, &len, &codepoint, &pixel);
+  int gw = 0, gh = 0, ink = 0;
+  if (!mv_font_smoke_test(std::string(p, static_cast<size_t>(len)),
+                          static_cast<int>(codepoint), pixel, &gw, &gh, &ink))
+    return mrb_nil_value();
+  mrb_value ary = mrb_ary_new_capa(mrb, 3);
+  mrb_ary_push(mrb, ary, mrb_fixnum_value(gw));
+  mrb_ary_push(mrb, ary, mrb_fixnum_value(gh));
+  mrb_ary_push(mrb, ary, mrb_fixnum_value(ink));
+  return ary;
+}
+
 extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
@@ -1147,6 +1183,14 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, gl, "smoke_test", gl_smoke_test,
                           MRB_ARGS_NONE());
   mrb_define_class_method(mrb, gl, "available?", gl_available, MRB_ARGS_NONE());
+
+  // MV::Font — CI coverage for the WOFF unpacker (mvcanvas.cxx) behind the
+  // process-cached GameFont singleton.
+  RClass* font = mrb_define_class_under(mrb, mv, "Font", mrb->object_class);
+  mrb_define_class_method(mrb, font, "unpack_woff", font_unpack_woff,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, font, "smoke_test", font_smoke_test,
+                          MRB_ARGS_ARG(1, 2));
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}

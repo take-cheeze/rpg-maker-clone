@@ -1671,6 +1671,63 @@ const uint8_t* mv_canvas_pixels(int handle, int* w, int* h) {
   return c->px.data();
 }
 
+// Unpack `in` if it is a WOFF 1.0 font (magic "wOFF"), or pass it through
+// unchanged otherwise (a bare sfnt, or anything else -- the caller finds out
+// via stbtt_InitFont). At file scope so mvjs.cxx can reach the
+// anonymous-namespace woff_to_sfnt for MV::Font.unpack_woff, which exists so
+// the WOFF unpacker itself has CI coverage: it is exercised at load time by
+// game_font() below, but that result is a process-lifetime cache (first text
+// draw wins), so a test-authored font dropped in after another test has
+// already drawn text is invisible to it.
+bool mv_font_unpack(const std::string& in, std::string& out) {
+  const std::vector<uint8_t> bytes(in.begin(), in.end());
+  if (bytes.size() >= 4 && std::memcmp(bytes.data(), "wOFF", 4) == 0) {
+    std::vector<uint8_t> sfnt;
+    if (!woff_to_sfnt(bytes, sfnt))
+      return false;
+    out.assign(sfnt.begin(), sfnt.end());
+    return true;
+  }
+  out = in;
+  return true;
+}
+
+// Rasterise `codepoint` at `pixel` em size from font bytes given directly
+// (WOFF or a bare sfnt), through a *fresh* stbtt_fontinfo -- independent of
+// game_font()'s cached singleton, for the same reason mv_font_unpack exists.
+// Sets *gw/*gh to the glyph bitmap size and *ink to its count of non-zero
+// coverage pixels; false if the bytes do not parse as a font stb_truetype
+// accepts.
+bool mv_font_smoke_test(const std::string& in,
+                        int codepoint,
+                        double pixel,
+                        int* gw,
+                        int* gh,
+                        int* ink) {
+  std::string sfnt;
+  if (!mv_font_unpack(in, sfnt))
+    return false;
+  stbtt_fontinfo info{};
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(sfnt.data());
+  const int off = stbtt_GetFontOffsetForIndex(data, 0);
+  if (off < 0 || !stbtt_InitFont(&info, data, off))
+    return false;
+  const float scale =
+      stbtt_ScaleForMappingEmToPixels(&info, static_cast<float>(pixel));
+  int gxoff = 0, gyoff = 0;
+  uint8_t* bmp = stbtt_GetCodepointBitmap(&info, scale, scale, codepoint, gw,
+                                          gh, &gxoff, &gyoff);
+  *ink = 0;
+  if (bmp) {
+    const size_t n = static_cast<size_t>(*gw) * static_cast<size_t>(*gh);
+    for (size_t i = 0; i < n; ++i)
+      if (bmp[i])
+        ++*ink;
+    stbtt_FreeBitmap(bmp, nullptr);
+  }
+  return true;
+}
+
 void mv_install_canvas(JSContext* ctx) {
   JSValue global = JS_GetGlobalObject(ctx);
   install(ctx, global, "__mv_canvasCreate", js_create, 2);
