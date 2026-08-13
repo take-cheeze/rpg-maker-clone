@@ -6320,7 +6320,23 @@ class RPG2k
         draw_vehicles cam_x, cam_y, px, py
         draw_map_animation cam_x, cam_y
 
-        draw_pictures cam_x, cam_y
+        # Pictures never show on the battle screen (yado.tk / 01_shoshin's
+        # 011_siyou: "none show on Menu/Battle screens") -- unlike the Menu
+        # screen, which is already covered by its own opaque field background
+        # sitting above the picture layer (see Scene::Base#build_field_background),
+        # nothing else painted over @picture_sprite (z 250) while a fight is
+        # running: the battle backdrop (@battle_ui[:back_sprite]) sits well below
+        # it, so a picture shown before the encounter (or by a Parallel Process
+        # still running during it) would otherwise draw straight over the battle
+        # UI. Hidden for the fight's whole duration and stops compositing
+        # entirely (not just hidden with a stale frame underneath), then resumes
+        # -- and immediately redraws -- the instant the battle UI is gone.
+        if @battle_ui
+          @picture_sprite.visible = false
+        else
+          @picture_sprite.visible = true
+          draw_pictures cam_x, cam_y
+        end
         update_screen_overlay
         draw_timer
       end

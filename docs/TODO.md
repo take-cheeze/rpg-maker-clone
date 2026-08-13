@@ -2153,16 +2153,47 @@ Everything below is unverified against the codebase.
   reports the identical screen position the hero riding it does), confirmed
   to fail against the pre-fix code before the fix.
 - **Battle Event** — separate command set from Map/Common events entirely;
-  no Pictures on the battle screen; Parallel Process can't run in battle;
-  no further pages run once battle ends.
-- **Picture** — none show on Menu/Battle screens; halted entirely while a text
-  window is up; **changing maps clears all Pictures — except via Teleport
-  or Escape (skill/item), which don't clear them**; semi-transparent
-  (1-99%) opacity costs noticeably more than fully opaque/transparent;
-  Erase Picture is instant (no fade) — a gradual fade needs Move Picture to
-  the same spot at 0% opacity instead. (50 slots with the higher id always
-  drawing on top, independent of show order, is confirmed already correct —
-  see below.)
+  ✅ no Pictures on the battle screen (see the fuller writeup under the
+  **Picture** bullet directly below — the same fix); Parallel Process can't
+  run in battle; no further pages run once battle ends.
+- **Picture** — ✅ **none show on Menu/Battle screens — the Menu half was
+  already correct, the Battle half was a real gap, now fixed.**
+  `Scene::Base#build_field_background` already paints an opaque panel above
+  the picture layer (`@picture_sprite`, z 250) the instant `Scene::Menu`
+  opens, and `Scene::Map#update` — and with it `#render`, the one place
+  `@picture_sprite` is drawn — simply is not called while a menu scene sits
+  on top of it, so the picture layer never gets a chance to draw over the
+  menu in the first place. The battle screen has no equivalent scene push:
+  RPG2000's front-view battle runs inline on the very same `Scene::Map`,
+  gated only by `@battle_ui`, so `#render` kept calling `#draw_pictures`
+  every frame regardless — and the battle backdrop
+  (`@battle_ui[:back_sprite]`) sits at a much lower z than the picture
+  layer, so nothing painted over it. A picture shown before the encounter
+  (a field HUD element, say) or by a Parallel Process still running during
+  the fight (per the "parallel processes were paused too broadly" fix
+  above, one keeps ticking through a battle-adjacent message window, though
+  not through the battle itself — `#parallels_paused?` does gate on
+  `@battle_ui`) drew straight over the battle UI. Fixed by gating
+  `#render`'s picture step on `@battle_ui`: `@picture_sprite.visible = false`
+  and `#draw_pictures` is skipped entirely for as long as a fight is running
+  (not merely hidden with a stale composited frame underneath), and the
+  sprite un-hides and resumes drawing on the very first frame after
+  `@battle_ui` clears. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (a shown picture draws normally before the encounter, is hidden and
+  stops compositing the instant the battle screen is up, and reappears the
+  instant the fight ends), confirmed to fail against the pre-fix code
+  before the fix. Still open: halted entirely while a text window is up
+  (separate from the battle/menu case — a message window is not a scene
+  push, so a different mechanism would be needed, and this project's own
+  "Picture commands... suppressed while a message window is open" fix above
+  only stops new Show/Move/Erase Picture *commands* from taking effect, not
+  an already-shown picture's own visibility); **changing maps clears all
+  Pictures — except via Teleport or Escape (skill/item), which don't clear
+  them**; semi-transparent (1-99%) opacity costs noticeably more than fully
+  opaque/transparent; Erase Picture is instant (no fade) — a gradual fade
+  needs Move Picture to the same spot at 0% opacity instead. (50 slots with
+  the higher id always drawing on top, independent of show order, is
+  confirmed already correct — see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
   cases: (a) ✅ the event has already logically started moving into its next
   tile (hit-test uses the target tile, even if the sprite still visually
@@ -2688,7 +2719,12 @@ not yet verified:
   `scripts/rpg2k_scene_check.rb` check (two pictures shown out of id order,
   asserting the composite draws the lower id first). Still open: Battle
   Animation drawing above the picture layer specifically, and "map/
-  characters always draw below all pictures" as its own assertion.
+  characters always draw below all pictures" as its own assertion. (Not the
+  same question as "no Pictures on the battle screen" — ✅ fixed, see the
+  **Picture** bullet under "Untriaged backlog, from `2k/01_shoshin/
+  011_siyou/`" above — which is about the picture layer being hidden
+  outright while a fight is running, not about its z-order relative to the
+  battle animation sprite while both are visible on the map.)
 - ✅ **Show Picture now no-ops on a picture id outside 1..50** — the "Still
   open: picture id range 1-50" gap left by the numeric-constants bullet
   above. RPG2000's editor caps the Show Picture id field at 50 (a
