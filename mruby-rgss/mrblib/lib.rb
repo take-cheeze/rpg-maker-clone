@@ -1400,11 +1400,14 @@ module RGSS
       # triggered), so a tap that landed since the last call is visible now.
       _poll
 
-      # Update repeat state
+      # Update repeat state. Timings measured against the genuine RPG_RT.exe
+      # (RPG Maker 2000 runtime) under wine: holding a direction key on a
+      # title/menu cursor moves once immediately, then again after 24 frames
+      # (~400ms @60fps), then every 4 frames (~67ms) after that.
       @pressed.each_index do |i|
         if @pressed[i]
           @count[i] += 1
-          if @count[i] >= 30 && @count[i] % 6 == 0
+          if @count[i] >= 24 && @count[i] % 4 == 0
             @repeated[i] = true
           else
             @repeated[i] = false
