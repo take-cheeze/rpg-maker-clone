@@ -1602,6 +1602,32 @@ The work below is roughly ordered by the critical path to a walkable game
   which turns the shield slot into a second weapon slot — the same pair and the
   opposite rule, and the menu's candidate list for slot 1 has to change with it.
   See ADR 0040.
+- ✅ **使用可能キャラ item restriction** (`actor_set` / `actor_set_size`, item
+  field 62/61) — parsed by the schema but never consulted, so an item or piece
+  of gear reserved for one named character (a signature weapon, a class-locked
+  scroll) could be equipped or used by anyone. `Party#item_usable_by?(it,
+  actor_id)` reads the bit at `actor_id - 1`, defaulting an entry the array is
+  too short to reach to allowed — the same "missing = the field's default"
+  reading every other bit-array field here follows (EasyRPG's
+  `Game_Actor::IsItemUsable`). Wired into every path that reaches an item:
+  `item_effective?` (menu grey-out) and `use_medicine` / `use_skill_book` /
+  `use_seed` / `use_special_item` (the effect itself — `use_medicine` checks it
+  **per target** the same way `ko_only_blocked?` already had to, so a
+  restricted member is skipped even under an all-party scope rather than only
+  being caught by the single-target menu gate); `equip_candidates` /
+  `equip_candidate_for?` (the equip menu's own candidate list and
+  `equip_from_bag`'s validation); and the **Change Equipment** event command
+  (10450, `do_change_equipment` in `interpreter.rb`), which EasyRPG's
+  `ChangeEquipment` gates through the identical `IsItemUsable` call — checked
+  per target there too, since a command can target the whole party at once.
+  **Left open**: the battle screen's own ally-target picker for a restricted
+  medicine/item (`Scene::Map#draw_battle_ally_target`) still lists every
+  living ally regardless of the item's `actor_set` — the pure
+  `Game::Party#battle_item_command` formula is not wrong, nothing upstream of
+  it in the battle scene enforces the restriction on which target can be
+  chosen in the first place. Covered by new `scripts/rpg2k_logic_check.rb`
+  checks (the read itself, the all-party-scope per-target skip, menu
+  greying-out, equip-menu filtering, and the event command).
 
 ### yado.tk quirks backlog
 

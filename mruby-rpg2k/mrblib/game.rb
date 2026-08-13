@@ -2378,6 +2378,25 @@ module Game
       !actor.dead?
     end
 
+    # 使用可能キャラ (`actor_set`, item field 62): whether item `it` names
+    # `actor_id` among the specific characters allowed to use or equip it at
+    # all. The one restriction list gates both uses (EasyRPG's
+    # `Game_Actor::IsItemUsable`, read by `Game_Party::IsItemUsable`'s
+    # per-target overload for using an item and by `ChangeEquipment` for
+    # equipping one) — a book, seed, medicine or piece of gear can all be
+    # limited to a named cast member this way, not just weapons/armour. An
+    # actor id the array is too short to reach defaults to allowed, the same
+    # "missing entry reads as the field's default" rule this runtime's other
+    # bit-array fields (terrain_set, class_set-adjacent ones) already follow.
+    def item_usable_by?(it, actor_id)
+      return true unless it.respond_to?(:actor_set) && it.actor_set
+      return true if actor_id.nil?
+      set = it.actor_set
+      idx = actor_id - 1
+      return true if idx < 0 || set.size <= idx
+      set[idx] ? true : false
+    end
+
     # Whether using item `id` on `actor` would change anything, so the menu can
     # grey out a no-op. A medicine is effective when the target is below full
     # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
@@ -2386,6 +2405,7 @@ module Game
     def item_effective?(id, actor)
       it = db_item(id)
       return false unless it && actor
+      return false unless item_usable_by?(it, actor.id)
       case it.type
       when ITEM_MEDICINE
         return false if ko_only_blocked?(it, actor)
@@ -2429,6 +2449,7 @@ module Game
     # have learnt the skill. One is consumed only when the cast actually did
     # something, matching how the other item kinds here refuse to be wasted.
     def use_special_item(it, id, actor)
+      return [] unless actor && item_usable_by?(it, actor.id)
       affected = cast_skill(actor, it.skill_id, actor, true)
       lose_item(id, 1) unless affected.empty?
       affected
@@ -2446,8 +2467,10 @@ module Game
       targets.each do |t|
         # A 蘇生専用 item passes over anyone still standing without touching
         # them -- not even the HP restore -- which is what keeps an all-party
-        # revive from topping up the members who never fell.
-        next if ko_only_blocked?(it, t)
+        # revive from topping up the members who never fell. An actor_set
+        # restriction does the same for a member the item simply is not
+        # usable on, even under an all-party scope.
+        next if ko_only_blocked?(it, t) || !item_usable_by?(it, t.id)
         changed = false
         # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
         # the HP recovery below lands instead of being blocked as a no-op.
@@ -2474,7 +2497,8 @@ module Game
     # actor who already knows the skill, does nothing and is not consumed.
     def use_skill_book(it, id, actor)
       skill = it.skill_id
-      return [] unless actor && skill && skill != 0 && !actor.knows_skill?(skill)
+      return [] unless actor && item_usable_by?(it, actor.id) &&
+                       skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
       lose_item(id, 1)
       [actor]
@@ -2495,7 +2519,7 @@ module Game
     # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
     # it carries any boost; a seed with no boost does nothing and is not consumed.
     def use_seed(it, id, actor)
-      return [] unless actor
+      return [] unless actor && item_usable_by?(it, actor.id)
       boosts = seed_boosts(it)
       return [] unless boosts.any? { |b| b != 0 }
       boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
@@ -2516,25 +2540,33 @@ module Game
 
     # Held items equippable in equipment `slot` (0..4) on `actor`, as
     # [id, count] pairs in ascending id order -- the candidate list for the
-    # equip menu's chosen slot. `actor` only matters for the shield slot (1):
-    # a 二刀流 (double_hand) actor's shield slot is a second weapon slot, so it
-    # lists weapons there instead of shields -- mirroring EasyRPG's
+    # equip menu's chosen slot. `actor` matters two ways: for the shield slot
+    # (1), a 二刀流 (double_hand) actor's shield slot is a second weapon slot,
+    # so it lists weapons there instead of shields -- mirroring EasyRPG's
     # `Window_EquipItem`, which retargets the whole slot to `weapon` for such
-    # an actor before filtering, rather than offering both kinds.
+    # an actor before filtering, rather than offering both kinds; and an
+    # actor_set restriction (#item_usable_by?) drops an item this particular
+    # actor cannot wear at all, matching `Game_Actor::IsItemUsable` (which
+    # `ChangeEquipment` reads the same way). Both actor-dependent filters are
+    # simply skipped when no `actor` is given.
     def equip_candidates(slot, actor = nil)
       slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
-      @items.keys.sort.select { |id| item_count(id) > 0 && equip_slot_for(id) == slot }
-            .map { |id| [id, item_count(id)] }
+      @items.keys.sort.select do |id|
+        item_count(id) > 0 && equip_slot_for(id) == slot &&
+          (actor.nil? || item_usable_by?(db_item(id), actor.id))
+      end.map { |id| [id, item_count(id)] }
     end
 
     # Whether held item `id` is a genuine #equip_candidates entry for `slot` on
-    # `actor` -- mirrors that method's own retargeting exactly, so a `slot`
-    # argument #equip_from_bag receives can never accept anything the
-    # candidate list would not itself have offered (in either direction: a
-    # 二刀流 actor's shield slot accepts a weapon, not a weapon *and* a shield).
+    # `actor` -- mirrors that method's own retargeting and actor_set filter
+    # exactly, so a `slot` argument #equip_from_bag receives can never accept
+    # anything the candidate list would not itself have offered (in either
+    # direction: a 二刀流 actor's shield slot accepts a weapon, not a weapon
+    # *and* a shield; an actor this item is not usable by accepts nothing).
     def equip_candidate_for?(actor, id, slot)
       base = equip_slot_for(id)
       return false if base.nil?
+      return false if actor && !item_usable_by?(db_item(id), actor.id)
       if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
         base == Actor::WEAPON_SLOT
       else
