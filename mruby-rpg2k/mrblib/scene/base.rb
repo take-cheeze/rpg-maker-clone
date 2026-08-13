@@ -143,6 +143,49 @@ class RPG2k
       end
     end
 
+    # The same `world` protocol as MapWorld, for a Move Event / Set Move Route
+    # driving a vehicle (boat/ship/airship) rather than the hero or a map
+    # event. Passability routes through Scene::Map#vehicle_passable? (terrain
+    # boat_pass/ship_pass/airship_pass plus the vehicle-specific Through-Mode
+    # event-blocking rule) instead of the hero's on-foot #char_passable? —
+    # the only difference from MapWorld.
+    class VehicleWorld
+      def initialize(scene, rng, type)
+        @scene = scene
+        @rng = rng
+        @type = type
+      end
+
+      def passable?(character, dir)
+        @scene.vehicle_char_passable?(character, dir, @type)
+      end
+
+      def can_land?(character, x, y)
+        @scene.vehicle_char_can_land?(character, x, y, @type)
+      end
+
+      def hero_position
+        s = @scene.state
+        [s.x, s.y]
+      end
+
+      def set_switch(id, on)
+        @scene.state.switches[id] = on
+      end
+
+      def play_sound(name, volume, tempo, _balance)
+        return if name.nil? || name.empty?
+        RGSS::Audio.se_play(name, volume, tempo)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] event SE '#{name}' playback failed: #{e.message}"
+        nil
+      end
+
+      def random(n)
+        @rng.random(n)
+      end
+    end
+
     # Resolves the command list a Call Event refers to. Common events are looked
     # up by id; a map event's page is fetched from the loaded map unit (best
     # effort — the page index follows the LCF page numbering).

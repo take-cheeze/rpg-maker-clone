@@ -2291,6 +2291,32 @@ check 'Proceed With Movement holds the interpreter until a forced route finishes
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check "Proceed With Movement also waits on a vehicle's forced route" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [10002, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 5], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+
+  10.times { scene.update } # mid-route: still sailing, switch not yet flipped
+  ok boat.x < 3, "route still in progress, at x=#{boat.x}"
+  ok !st.switches[1],
+     "the command after Proceed With Movement waits on the vehicle's own route"
+
+  200.times { scene.update } # enough frames for the freq-4 route to finish
+  eq 3, boat.x, 'the boat reached the end of its route'
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
 check 'Tint Screen with a wait holds the interpreter until the tint settles' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -3330,6 +3356,72 @@ check 'a boarded boat cannot overlap a below-characters event unless it has Thro
   eq 0, st.x, 'only moved along the column it was already sailing'
   ok st.y > 1,
      "Through Mode on the blocking event let the boat pass it (was at y=1, now #{st.y})"
+end
+
+check 'Move Event drives an unboarded boat along a route, respecting vehicle_passable?' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10002 (boat), freq 8, repeat off, skippable on, MOVE_RIGHT.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10002, 8, 0, 1, R::MOVE_RIGHT])]
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  40.times { scene.update }
+  ok boat.x > 0, "the boat should have sailed east under its own route, at x=#{boat.x}"
+  eq 1, boat.y, 'it stayed on its row'
+  eq 6, boat.direction, 'facing the direction it moved (MOVE_RIGHT)'
+end
+
+check "a boat's move route is blocked by terrain the same way ordinary sailing is" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10002, 8, 0, 1, R::MOVE_RIGHT])]
+  # boat_pass left false (the default): the whole map is unsailable.
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 0])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  20.times { scene.update }
+  eq 0, boat.x, 'terrain blocked it before it ever moved'
+end
+
+check 'a Move Route request targeting a currently-ridden vehicle is ignored' do
+  scene = new_scene({}, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat'
+  route = Game::MoveRoute.new([Game::MoveCommand.new(R::MOVE_RIGHT)],
+                              repeat: false, skippable: true)
+  scene.send(:force_vehicle_route, :boat, route, 8)
+  eq nil, scene.instance_variable_get(:@vehicle_routes)[:boat],
+     'the route request was dropped rather than fighting #follow_vehicle'
+end
+
+check 'Change Event Location repositions a vehicle' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10002 (boat), absolute mode, x=3, y=2.
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [10002, 0, 3, 2])]
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 0])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 0
+  3.times { scene.update }
+  eq [3, 2], [boat.x, boat.y], 'the boat was repositioned by Change Event Location'
 end
 
 check 'the airship flies over a tile blocked on foot, and follows the party' do
@@ -6128,6 +6220,31 @@ check 'a forced route Change Graphic overrides the hero sprite, reverting on Tra
   eq scene.instance_variable_get(:@charset), charset2,
      'Transfer Player reverted to the leader\'s own charset'
   eq scene.instance_variable_get(:@charset_index), index2
+end
+
+check 'a vehicle Change Graphic overrides its sprite without persisting to Game::Vehicle' do
+  ic = Game::Interpreter::Cmd
+  name = 'other'
+  params = [10002, 8, 0, 1, R::CHANGE_GRAPHIC, name.length, 3]
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::MOVE_EVENT, params, string: name)]
+  scene = new_scene({ 1 => event(3, 3, pg) }, player: [5, 5], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  5.times { scene.update }
+  charset = scene.send(:vehicle_charset, boat)
+  index = scene.send(:vehicle_charset_index, boat)
+  ok charset, 'the overridden charset bitmap loaded'
+  eq 3, index, 'the overridden graphic index applied'
+  eq '', boat.charset_name, 'not written to the persisted Game::Vehicle, only the route mirror'
+  eq 0, boat.charset_index
+
+  scene.send(:perform_teleport, [1, 0, 0, 0])
+  ok scene.instance_variable_get(:@vehicle_chars)[:boat].nil?,
+     'Transfer Player drops the mirror, reverting the override'
 end
 
 check 'a teleport lands the party on its tile, not mid-slide' do
