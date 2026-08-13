@@ -643,8 +643,31 @@ The work below is roughly ordered by the critical path to a walkable game
   deliberately undecoded, so a resumed real save starts counting from 0.
   mtf-meido-action's Poison (1 HP every 4 steps) is the only state in either test
   bed that carries the field, and `rpg2k_testbed_logic_check.rb` walks the real
-  party through the real interval against it. Still unread: `affect_type` stat
-  halving / doubling plus the RPG2003-only `avoid_attacks` / `reflect_magic`,
+  party through the real interval against it. **`affect_type` stat
+  halving/doubling is read now too**: a state's `affect_type` (0 halve / 1
+  double / 2 no change, the schema default) plus its four independent
+  `affect_attack` / `affect_defense` / `affect_spirit` / `affect_agility`
+  flags say which stat(s) it touches. `Battle#effective_atk` / `#effective_def`
+  / `#effective_spi` / `#effective_agi` (EasyRPG's `Game_Battler::AdjustParam`,
+  minus its battle-only stat-`mod` term, which this runtime has no equivalent
+  of) feed basic-attack and self-destruct damage, to-hit's agility term,
+  average agility (so escape chance answers it too) and turn order — so a
+  Weaken-style state that halves ATK now actually softens a hit, and two
+  states that cancel out (one halving, one doubling the same stat) net to no
+  change, exactly as `AdjustParam`'s own `dbl != half` guard reads. **A
+  battle Skill's power formula reads it too now**: `Game::Party#skill_effect`
+  / `#skill_defence_term` turned out not to need the state-definitions table
+  threaded in from anywhere new after all — `Game::Party` already holds the
+  whole database (`@db`), `.situation` is that table, so `Party` grew its own
+  copy of the same `stat_mode` / `effective_atk` / `effective_def` /
+  `effective_spi` shape `Battle` has (reading `@db.situation` instead of a
+  `Battle`'s own `@states`), used by both the caster and the target. It
+  applies to field/menu skill casting too, not just in-battle skills — a bare
+  `Game::Actor` (no `Battle` behind it at all) still has `#states`, and
+  EasyRPG's own `GetAtk()` / `GetSpi()` are the one accessor every context
+  reads through, not a battle-only variant, so a Weaken picked up mid-fight
+  blunts a Cure cast on the map afterwards too. Also still unread: the
+  RPG2003-only `avoid_attacks` / `reflect_magic`,
   which no state in either test bed sets.
   **The ground drains it too** — RPG2000's 地形ダメージ, the 地形 row's `damage`
   field (ADR 0034). Stepping onto a tile whose terrain carries one takes that
@@ -737,11 +760,26 @@ The work below is roughly ordered by the critical path to a walkable game
   starting party wields a +2% weapon, lifting its hero from 500 bp to 700.
   mtf-meido-action, which has no such weapon and puts every actor on the plain
   1-in-30, drifts by five swings with no change of outcome: that is the roll
-  changing shape, not the bonus. Still unread:
-  **`attack_all`** (7 weapons), whose handling is not in EasyRPG's `algo.cpp`
-  with the others and is left declared rather than guessed; and **`preemptive`**
-  / **`raise_evasion`**, the latter having nowhere to land until the to-hit
-  formula grows an evasion term separate from agility. **Elemental attributes**
+  changing shape, not the bonus. **`attack_all`** (全体化, 7 of Nepheshel's
+  weapons) and **`preemptive`** (先制攻撃) are read now too: `Game::Actor#attack_all?`
+  / `#preemptive?` follow the same weapon-only `equipment_flag?` shape as
+  `#ignores_evasion?`. `attack_all` spreads a basic Attack across every living
+  member of the already-resolved target's side (`Battle#side_targets`,
+  `#swing_side` / `#attack_side`) rather than just the one target — including
+  under a forced attack-enemy/attack-ally restriction, and including the
+  attacker itself when confusion turns the target's side into its own (EasyRPG's
+  `Normal::vStart`: "attack all enemies regardless of original targeting", and
+  `AddTargets` has no self-exclusion). `preemptive` jumps its wielder's basic
+  Attack to the front of the round's turn order (`Battle#turn_order` /
+  `#preemptive_boost?`) — only a basic Attack qualifies, a Skill/Item/Defend
+  with the same weapon keeps its ordinary agility slot, matching EasyRPG's
+  `CreateExecutionOrder`'s own `Type::Normal` guard (which adds 9999 to such a
+  battler's computed order — this build sorts the flag ahead of agility
+  instead of reproducing that literal offset, since the per-round agility
+  jitter `CreateExecutionOrder` also rolls is not itself modelled here, and
+  the offset's only observable effect is "always first"). Still unread:
+  **`raise_evasion`**, which has nowhere to land until the to-hit formula
+  grows an evasion term separate from agility. **Elemental attributes**
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
   are matched against the target's per-attribute defence ranks (A..E, strongest
   element winning) — the rates come from each attribute's own `a_rate` .. `e_rate`
@@ -1001,11 +1039,17 @@ The work below is roughly ordered by the critical path to a walkable game
   which is RPG_RT's reading of "no trigger" and the opposite of how every other
   RPG2000 page kind treats vacuous conditions; both test beds carry such pages
   (446 of Nepheshel's 3265, all 88 of mtf-meido-action's) and every one is empty,
-  so no real game changes behaviour. Still TODO here: the `command_actor`
-  (chosen battle command) condition, which RPG_RT only answers for the battler
-  whose action triggered the check — this runtime evaluates pages once per turn
-  with no acting battler, the same null-`source` case EasyRPG bails on, so such a
-  page deliberately does not fire rather than firing unchecked; and video
+  so no real game changes behaviour. **The `command_actor` (chosen battle
+  command) condition never firing is confirmed correct, not a gap**: it needs
+  the battler whose action triggered the check, and EasyRPG's
+  `AreConditionsMet` only evaluates it when handed one (`if (!source) return
+  false;`) — but `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents`, the
+  *only* page-scheduling call site RPG2000's own battle scene has, always
+  calls `ScheduleNextPage(nullptr)`. A real `source` only ever exists in
+  `Scene_Battle_Rpg2k3`, the separate ATB battle scene this runtime does not
+  model (see Toggle ATB Mode below), so a page gated on `command_actor` is
+  *never satisfiable* under RPG2000's own battle system — not a once-per-turn
+  evaluation standing in for a future per-actor one. Still open: video
   playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the

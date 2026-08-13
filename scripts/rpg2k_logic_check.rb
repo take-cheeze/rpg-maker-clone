@@ -2095,7 +2095,11 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # 蘇生専用: does nothing at all to a target still standing.
                       :ko_only,
                       # 両手持ち: a weapon that claims the shield hand too.
-                      :two_handed)
+                      :two_handed,
+                      # 全体化: spreads a basic Attack across the target's whole
+                      # side. 先制攻撃: jumps a basic Attack to the front of the
+                      # round's turn order.
+                      :attack_all, :preemptive)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2103,13 +2107,13 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
-              two_handed: 0)
+              two_handed: 0, attack_all: false, preemptive: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
-               ko_only, two_handed)
+               ko_only, two_handed, attack_all, preemptive)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -2157,7 +2161,12 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # between drains and how much each drain takes, for HP
                           # and SP. Appended last, for the same reason.
                           :hp_change_map_steps, :hp_change_map_val,
-                          :sp_change_map_steps, :sp_change_map_val)
+                          :sp_change_map_steps, :sp_change_map_val,
+                          # ... and the stat-halving/doubling fields (0 halve /
+                          # 1 double / 2 no change, plus which stat(s)).
+                          # Appended last for the same reason again.
+                          :affect_type, :affect_attack, :affect_defense,
+                          :affect_spirit, :affect_agility)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -2166,13 +2175,17 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                restrict_magic: false, restrict_magic_level: 0,
                name: '', color: Game::States::DEFAULT_COLOR, priority: 50,
                actor_msg: nil, enemy_msg: nil, recovery_msg: nil,
-               hp_map_steps: 0, hp_map_val: 0, sp_map_steps: 0, sp_map_val: 0)
+               hp_map_steps: 0, hp_map_val: 0, sp_map_steps: 0, sp_map_val: 0,
+               affect_type: 2, affect_attack: false, affect_defense: false,
+               affect_spirit: false, affect_agility: false)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
                    restrict_magic, restrict_magic_level,
                    name, color, priority, actor_msg, enemy_msg, recovery_msg,
-                   hp_map_steps, hp_map_val, sp_map_steps, sp_map_val)
+                   hp_map_steps, hp_map_val, sp_map_steps, sp_map_val,
+                   affect_type, affect_attack, affect_defense,
+                   affect_spirit, affect_agility)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -6497,6 +6510,46 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
 
+check 'battle_skill_command respects a stat-halving state on the caster' do
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  states = { 1 => fake_state(affect_type: 0, affect_spirit: true) } # 0 = halve
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8, int: 20, agi: 7) }
+  db = FakeActorDB.new(players, [1], {}, skills, {}, states)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  foe = combatant('Foe', 0, 0, 5, 100)
+
+  plain = Game::Battle.from_actor(st.party.actor_by_id(1))
+  eq(-20, st.party.battle_skill_command(st.party.db_skill(7), plain, foe)[:hp],
+     "unweakened: 40 * spirit 20 / 40")
+
+  weak = Game::Battle.from_actor(st.party.actor_by_id(1))
+  weak.states = [1]
+  eq(-10, st.party.battle_skill_command(st.party.db_skill(7), weak, foe)[:hp],
+     'weakened spirit (10): 40 * 10 / 40')
+end
+
+check 'battle_skill_command respects a stat-doubling state on the target' do
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  states = { 2 => fake_state(affect_type: 1, affect_spirit: true) } # 1 = double
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8, int: 20, agi: 7) }
+  db = FakeActorDB.new(players, [1], {}, skills, {}, states)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # skill_effect = 20
+
+  plain_foe = combatant('Foe', 0, 0, 5, 100)
+  plain_foe.spi = 20
+  eq(-10, st.party.battle_skill_command(st.party.db_skill(7), caster, plain_foe)[:hp],
+     'undoubled: 20 base - 40*20/80 (10)')
+
+  tough_foe = combatant('Foe', 0, 0, 5, 100)
+  tough_foe.spi = 20
+  tough_foe.states = [2]
+  eq(-1, st.party.battle_skill_command(st.party.db_skill(7), caster, tough_foe)[:hp],
+     'doubled spirit (40): 20 base - 40*40/80 (20) = 0, floored to 1')
+end
+
 check 'a skill flagged "attribute defence up/down" shifts the target rank, ' \
       'capped at +-1 from base' do
   # scope 3 (single, non-attack) so this exercises the shift without also
@@ -6900,6 +6953,80 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   bat.command_defend(hero)                                # tries to defend...
   bat.run_round
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
+end
+
+# -- stat-halving/doubling states (affect_type / affect_attack & friends) ----
+
+check 'battle: a state that halves ATK weakens a basic attack' do
+  states = { 1 => fake_state(affect_type: 0, affect_attack: true) } # 0 = halve
+  plain_hero = combatant('Hero', 40, 0, 5, 100)
+  foe1 = combatant('Foe', 0, 0, 5, 100)
+  bat1 = Game::Battle.new([plain_hero], [foe1], Game::Rng.new(1), states)
+  eq 20, bat1.send(:deal_attack, plain_hero, foe1)[:damage],
+     'unweakened: atk 40 / 2 - def 0 / 4'
+
+  weak_hero = combatant('Hero', 40, 0, 5, 100)
+  weak_hero.states = [1]
+  foe2 = combatant('Foe', 0, 0, 5, 100)
+  bat2 = Game::Battle.new([weak_hero], [foe2], Game::Rng.new(1), states)
+  eq 10, bat2.send(:deal_attack, weak_hero, foe2)[:damage],
+     'weakened: half of 40 is 20, 20 / 2 - 0 = 10'
+end
+
+check 'battle: a state that doubles ATK strengthens a basic attack' do
+  states = { 2 => fake_state(affect_type: 1, affect_attack: true) } # 1 = double
+  hero = combatant('Hero', 40, 0, 5, 100)
+  hero.states = [2]
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  eq 40, bat.send(:deal_attack, hero, foe)[:damage], 'doubled atk: 80 / 2 - 0 = 40'
+end
+
+check 'battle: halving and doubling ATK states on the same battler cancel out' do
+  states = { 1 => fake_state(affect_type: 0, affect_attack: true),
+             2 => fake_state(affect_type: 1, affect_attack: true) }
+  hero = combatant('Hero', 40, 0, 5, 100)
+  hero.states = [1, 2]
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  eq 20, bat.send(:deal_attack, hero, foe)[:damage],
+     'weaken + berserk cancel out (AdjustParam dbl != half): plain atk 40 / 2 - 0'
+end
+
+check 'battle: a state that doubles DEF blunts incoming damage' do
+  states = { 3 => fake_state(affect_type: 1, affect_defense: true) }
+  hero = combatant('Hero', 40, 0, 5, 100)
+  tough_foe = combatant('Foe', 0, 40, 5, 100)
+  tough_foe.states = [3]
+  bat = Game::Battle.new([hero], [tough_foe], Game::Rng.new(1), states)
+  eq 1, bat.send(:deal_attack, hero, tough_foe)[:damage],
+     'doubled def 80: 40 / 2 - 80 / 4 = 0, floored to 1'
+
+  plain_foe = combatant('Foe', 0, 40, 5, 100)
+  bat2 = Game::Battle.new([hero], [plain_foe], Game::Rng.new(1), states)
+  eq 10, bat2.send(:deal_attack, hero, plain_foe)[:damage], 'undoubled: 40 / 2 - 40 / 4 = 10'
+end
+
+check 'battle: a state that halves AGI drops a battler behind a slower one in turn order' do
+  states = { 4 => fake_state(affect_type: 0, affect_agility: true) }
+  fast = combatant('Fast', 0, 0, 20, 100)
+  slow = combatant('Slow', 0, 0, 15, 100)
+  bat = Game::Battle.new([fast], [slow], Game::Rng.new(1), states)
+  eq [fast, slow], bat.send(:turn_order), 'agi 20 > 15: the ally goes first as usual'
+
+  fast.states = [4] # halved to 10, now slower than the 15-agi foe
+  bat2 = Game::Battle.new([fast], [slow], Game::Rng.new(1), states)
+  eq [slow, fast], bat2.send(:turn_order), 'halved to 10 agi: now behind the foe'
+end
+
+check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
+  states = { 1 => fake_state(affect_type: 1, affect_attack: true) } # double
+  bomber = combatant('Bomber', 40, 0, 5, 1)
+  bomber.states = [1]
+  ally = combatant('Ally', 0, 0, 5, 100)
+  bat = Game::Battle.new([ally], [bomber], Game::Rng.new(1), states)
+  entry = bat.send(:enemy_autodestruct, bomber).first
+  eq 80, entry[:damage], 'doubled atk 80 - def 0 / 2 = 80'
 end
 
 # -- the state table's display side (Game::States) ----------------------------
@@ -7361,6 +7488,83 @@ check 'battle: 必中 still suffers the wielder\'s own blindness' do
   eq 45, bat.send(:to_hit, bat.allies[0], swift), 'the weapon is sure, the wielder is blind'
 end
 
+check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy side' do
+  items = { 7 => fake_item(type: 1, atk: 20, attack_all: true),
+            8 => fake_item(type: 1, atk: 20) }
+  st = geared_party(items)
+  hero = st.party.leader
+  foe1 = combatant('Foe1', 0, 5, 5, 50)
+  foe2 = combatant('Foe2', 0, 5, 5, 50)
+
+  hero.equip([8, 0, 0, 0, 0])                      # plain weapon
+  plain = Game::Battle.new([Game::Battle.from_actor(hero)], [foe1, foe2], Game::Rng.new(1))
+  plain.command_attack(plain.allies[0], foe1)
+  entry = plain.send(:strike, plain.allies[0])
+  ok entry.is_a?(Hash), 'a plain weapon still hits only the one chosen target'
+  eq 50, foe2.hp, 'the second Foe took nothing'
+
+  hero.equip([7, 0, 0, 0, 0])                      # 全体化
+  foe1b = combatant('Foe1', 0, 5, 5, 50)
+  foe2b = combatant('Foe2', 0, 5, 5, 50)
+  spread = Game::Battle.new([Game::Battle.from_actor(hero)], [foe1b, foe2b], Game::Rng.new(1))
+  spread.command_attack(spread.allies[0], foe1b) # aimed at Foe1...
+  entries = spread.send(:strike, spread.allies[0])
+  eq 2, entries.size, '...but 全体化 hits every living enemy, not just the chosen one'
+  ok foe1b.hp < 50 && foe2b.hp < 50, 'both enemies took damage'
+end
+
+check 'battle: 全体化 spreads a forced (confused) attack across the whole ally side too' do
+  # EasyRPG's Normal::vStart spreads across whichever side the already-
+  # resolved single target belongs to -- confusion resolves that target from
+  # the attacker's own side, so a 全体化 weapon spreads across allies here,
+  # the attacker included (AddTargets pushes the whole party with no
+  # self-exclusion).
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
+  hero = combatant('Hero', 40, 0, 1, 100)
+  hero.states = [6]
+  hero.attack_all = true
+  ally2 = combatant('Ally2', 0, 0, 5, 100)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero, ally2], [slime], Game::Rng.new(1), states)
+  bat.command_attack(hero, slime)
+  entries = bat.send(:strike, hero)
+  eq 100, slime.hp, 'confusion still spares the enemy side'
+  eq 2, entries.size, 'one hit for the confused attacker, one for its ally'
+  ok hero.hp < 100, 'the confused attacker struck itself too'
+  ok ally2.hp < 100, 'and its ally'
+end
+
+check "battle: a 先制攻撃 weapon jumps a basic Attack to the front of the round" do
+  items = { 7 => fake_item(type: 1, atk: 5, preemptive: true),
+            8 => fake_item(type: 1, atk: 5) }
+  st = geared_party(items)
+  hero = st.party.leader
+  fast_foe = combatant('FastFoe', 0, 0, 999, 100) # far faster than the hero
+
+  hero.equip([8, 0, 0, 0, 0])                     # plain weapon
+  plain = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1))
+  eq [fast_foe, plain.allies[0]], plain.send(:turn_order),
+     'agility alone decides: the far faster foe goes first'
+
+  hero.equip([7, 0, 0, 0, 0])                     # 先制攻撃
+  fast_foe2 = combatant('FastFoe', 0, 0, 999, 100)
+  jump = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe2], Game::Rng.new(1))
+  eq [jump.allies[0], fast_foe2], jump.send(:turn_order),
+     "先制攻撃 jumps the hero's Attack ahead of a far faster foe"
+end
+
+check '先制攻撃 does not jump the turn order for a Skill, Item or Defend' do
+  items = { 7 => fake_item(type: 1, atk: 5, preemptive: true) }
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 0, 0, 0, 0])
+  fast_foe = combatant('FastFoe', 0, 0, 999, 100)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1))
+  bat.command_defend(bat.allies[0])
+  eq [fast_foe, bat.allies[0]], bat.send(:turn_order),
+     'Defend keeps the ordinary agility slot, even with the weapon still equipped'
+end
+
 check 'battle: 強力防御 halves damage a second time' do
   st = geared_party({}, true)
   hero = st.party.leader
@@ -7782,9 +7986,13 @@ end
 check 'BattlePage.active? fails a condition the runtime cannot answer' do
   b = battle_with
   st = new_state
-  # The chosen-command test needs the battler whose action triggered the check,
-  # which a once-per-turn evaluation has no equivalent of (RPG_RT bails on a
-  # null source too), so such a page must not fire unchecked.
+  # The chosen-command test needs the battler whose action triggered the
+  # check, and RPG_RT's own RPG2000 battle scene never has one to give it
+  # (Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents always schedules
+  # pages with a null source; only the separate 2k3 ATB scene ever passes a
+  # real one) -- so this is not a stand-in for a future acting-battler
+  # context, it is RPG2000's own battle system never satisfying the
+  # condition either.
   eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
                                    command_id: 1), st.switches, st.variables, b)
   # Nor may one keyed to a battler that is not in this fight.

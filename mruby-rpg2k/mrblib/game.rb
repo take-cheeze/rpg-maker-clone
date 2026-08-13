@@ -1483,6 +1483,25 @@ module Game
     # term for such a weapon. 13 of Nepheshel's weapons carry it.
     def ignores_evasion?; equipment_flag?(:ignore_evasion, true); end
 
+    # 全体化 — an equipped weapon that turns a basic Attack into a strike
+    # against every living member of the chosen target's side, rather than
+    # just the one target (EasyRPG's `HasAttackAll` /
+    # `Normal::vStart`: "if this weapon attacks all, then attack all enemies
+    # regardless of original targeting" — "enemies" there means whichever
+    # side the already-resolved target belongs to, so a forced attack-ally
+    # restriction or confusion spreads across the *ally* side instead).
+    def attack_all?; equipment_flag?(:attack_all, true); end
+
+    # 先制攻撃 — an equipped weapon that jumps its wielder's basic Attack to
+    # the front of the round's turn order (EasyRPG's `HasPreemptiveAttack` /
+    # `Scene_Battle_Rpg2k::CreateExecutionOrder`, which adds 9999 to the
+    # battler's computed order for exactly this case — effectively always
+    # first, since ordinary agility values never approach that). Only a
+    # basic Attack earns the jump; a Skill, Item or Defend with the same
+    # weapon still equipped keeps its ordinary agility slot, matching
+    # `CreateExecutionOrder`'s own `Type::Normal` guard.
+    def preemptive?; equipment_flag?(:preemptive, true); end
+
     # MP消費半分 — gear that halves what a skill costs to cast. Any slot, not just
     # the weapon (Nepheshel's 賢者の指輪 is an accessory).
     def half_sp_cost?; equipment_flag?(:half_sp_cost); end
@@ -2798,6 +2817,53 @@ module Game
       row && row.respond_to?(:type) && row.type == 0 ? true : false
     end
 
+    # -- stat-affecting states (halve/double ATK/DEF/SPI/AGI), for skills -----
+    #
+    # A state's `affect_type` (0 halve / 1 double / 2 no change) and its
+    # `affect_attack` / `affect_defense` / `affect_spirit` flags (see
+    # Game::Battle's own copy of this, which #skill_effect / #skill_defence_term
+    # used not to read at all) apply here too -- ported the same way, against
+    # this class's own `@db.situation` rather than a Battle's `@states`, since
+    # a skill's caster/target is sometimes a bare Game::Actor with no Battle
+    # behind it at all (field/menu skill use, where states matter just as
+    # much: a Weaken picked up mid-fight should blunt a Cure cast on the map
+    # afterwards too, matching EasyRPG's Game_Battler::GetAtk() being the one
+    # accessor every context reads through, not a battle-only variant).
+    def stat_mode(b, stat_flag)
+      return :normal unless @db.respond_to?(:situation) && @db.situation
+      half = false; dbl = false
+      (b.respond_to?(:states) ? (b.states || []) : []).each do |sid|
+        d = @db.situation[sid]
+        next unless d && d.respond_to?(stat_flag) && d.send(stat_flag)
+        case d.respond_to?(:affect_type) ? d.affect_type : 2
+        when 0 then half = true
+        when 1 then dbl = true
+        end
+      end
+      return :double if dbl && !half
+      return :half if half && !dbl
+      :normal
+    end
+
+    def adjust_stat(value, mode)
+      case mode
+      when :double then value * 2
+      when :half then [value / 2, 1].max
+      else value
+      end
+    end
+
+    def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
+    def effective_int(b); adjust_stat(b.int, stat_mode(b, :affect_spirit)); end
+
+    def effective_def(b)
+      adjust_stat((b.respond_to?(:def) ? b.def : 0) || 0, stat_mode(b, :affect_defense))
+    end
+
+    def effective_spi(b)
+      adjust_stat((b.respond_to?(:spi) ? b.spi : 0) || 0, stat_mode(b, :affect_spirit))
+    end
+
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula
     # `power + physical_rate*attack/20 + magical_rate*spirit/40` (spirit is the
     # `int` stat), computed from the caster deterministically -- battle applies a
@@ -2805,8 +2871,8 @@ module Game
     # Algo::CalcSkillEffect (the ally-heal path has no target-defence term).
     def skill_effect(sk, caster)
       (sk.power || 0) +
-        (sk.physical_rate || 0) * caster.atk / 20 +
-        (sk.magical_rate || 0) * caster.int / 40
+        (sk.physical_rate || 0) * effective_atk(caster) / 20 +
+        (sk.magical_rate || 0) * effective_int(caster) / 40
     end
 
     # How much of an enemy-scope skill's effect the target's own stats absorb.
@@ -2825,10 +2891,8 @@ module Game
     # there is no target to read stats from.
     def skill_defence_term(sk, target)
       return 0 if target.nil? || skill_ignores_defence?(sk)
-      dfn = (target.respond_to?(:def) ? target.def : 0) || 0
-      # A battle fixture (and an enemy row that leaves the field out) may carry
-      # no spirit at all; a missing stat absorbs nothing rather than raising.
-      spi = (target.respond_to?(:spi) ? target.spi : 0) || 0
+      dfn = effective_def(target)
+      spi = effective_spi(target)
       (sk.physical_rate || 0) * dfn / 40 + (sk.magical_rate || 0) * spi / 80
     end
 
@@ -5547,6 +5611,12 @@ module Game
                            # whether skills cost half.
                            :strikes, :ignores_evasion, :strong_defence,
                            :half_sp_cost,
+                           # A basic Attack spread across the target's whole
+                           # side (attack_all?) or jumped to the front of the
+                           # round's turn order (preemptive?) -- see #turn_order
+                           # and #strike. Actor-only; an enemy Combatant leaves
+                           # both nil/false, so it never qualifies for either.
+                           :attack_all, :preemptive,
                            # The ranks #attr_ranks started the battle at --
                            # never itself written to, only read to cap how far
                            # an "attribute defence up/down" skill (see
@@ -5625,6 +5695,8 @@ module Game
                     state_ranks_of(a))
       c.strikes = flag_of(a, :dual_attack?) ? 2 : 1
       c.ignores_evasion = flag_of(a, :ignores_evasion?)
+      c.attack_all = flag_of(a, :attack_all?)
+      c.preemptive = flag_of(a, :preemptive?)
       c.strong_defence = flag_of(a, :strong_defence?)
       c.half_sp_cost = flag_of(a, :half_sp_cost?)
       c.attr_base_ranks = c.attr_ranks.dup
@@ -5791,12 +5863,18 @@ module Game
       100 - (2 * num + den) / (2 * den)
     end
 
-    # RPG2000 also remembers each actor's chosen battle command, which the
-    # `command_actor` page condition tests. RPG_RT only answers it for the
-    # battler whose action triggered the check (EasyRPG's AreConditionsMet bails
-    # on a null `source`), and this runtime evaluates pages once per turn with no
-    # acting battler, so the condition reports "unknown" (nil) and
-    # Game::BattlePage fails that page rather than firing it unchecked.
+    # The `command_actor` page condition (which battle command an actor just
+    # chose) is answered "unknown" (nil), which Game::BattlePage reads as
+    # "fails the page" rather than firing it unchecked — and this is not a
+    # gap to close, it is what RPG_RT itself does for RPG2000's battle system.
+    # EasyRPG's `AreConditionsMet` only evaluates the condition when it is
+    # handed a `source` battler (`if (!source) return false;`), and
+    # `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents` — the *only* call
+    # site `Scene_Battle_Rpg2k` has — always calls `ScheduleNextPage(nullptr)`.
+    # A per-actor `source` only ever exists in `Scene_Battle_Rpg2k3`, the
+    # separate ATB scene this runtime does not model (see the Toggle ATB Mode
+    # note); a page gated on `command_actor` is therefore *never satisfiable*
+    # under RPG2000's own battle system, not merely unimplemented here.
     def actor_command(_id); nil; end
 
     # Force Flee (1006), target 0: let the party leave whenever it next tries.
@@ -5909,11 +5987,12 @@ module Game
       ally.action = nil; ally.defending = false; ally.command = nil; ally.skip = true
     end
 
-    # Average agility of the living battlers on `side` (0 when the side is wiped).
+    # Average agility of the living battlers on `side` (0 when the side is wiped),
+    # state-adjusted (see #effective_agi).
     def avg_agi(side)
       living = side.reject(&:dead?)
       return 0 if living.empty?
-      living.reduce(0) { |s, b| s + b.agi } / living.size
+      living.reduce(0) { |s, b| s + effective_agi(b) } / living.size
     end
 
     # The party's current escape chance as a percentage (0..100). On the first
@@ -5963,9 +6042,9 @@ module Game
         if attacker.ignores_evasion
           Game.clamp(base, 0, 100)
         else
-          src = attacker.agi
+          src = effective_agi(attacker)
           src = 1 if src < 1
-          tgt = target.agi
+          tgt = effective_agi(target)
           Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
         end
       raw * hit_modifier(attacker) / 100
@@ -5998,6 +6077,60 @@ module Game
       v = d.reduce_hit_ratio
       v.nil? ? 100 : v
     end
+
+    # -- stat-affecting states (halve/double ATK/DEF/SPI/AGI) ----------------
+    #
+    # A state can carry an `affect_type` (0 halve / 1 double / 2 no change,
+    # the schema's own default) alongside four independent flags naming which
+    # stat(s) it touches (`affect_attack` / `affect_defense` / `affect_spirit`
+    # / `affect_agility`). Ported from EasyRPG's `Game_Battler::AdjustParam`,
+    # minus its `mod` term: that is a battle-only ATK/DEF/SPI/AGI offset this
+    # runtime has no equivalent of (the closest thing, an attribute-defence
+    # shift skill, moves #attr_ranks instead of a raw stat).
+    #
+    # #deal_attack / #enemy_autodestruct (basic-attack and self-destruct
+    # damage), #to_hit / #avg_agi (accuracy and escape chance) and #turn_order
+    # all read the adjusted value here. A battle **Skill**'s power formula
+    # (`Game::Party#skill_effect` / `#skill_defence_term`) reads it too, but
+    # through its own copy of this same logic (`Game::Party#stat_mode` and
+    # friends) rather than this one, since a skill's caster/target is
+    # sometimes a bare `Game::Actor` with no `Battle` -- and no `@states` --
+    # behind it at all (field/menu skill use).
+
+    # :half, :double or :normal for `stat_flag` (:affect_attack and friends)
+    # on `b` right now. A battler carrying both a halving and a doubling state
+    # for the same stat cancels out to :normal, exactly as AdjustParam's own
+    # `dbl != half` guard reads -- so Berserk (double ATK) and Weaken (halve
+    # ATK) on the same battler net out to its ordinary attack.
+    def stat_mode(b, stat_flag)
+      half = false; dbl = false
+      (b.states || []).each do |sid|
+        d = state_def(sid)
+        next unless d && state_flag(d, stat_flag)
+        case d.respond_to?(:affect_type) ? d.affect_type : 2
+        when 0 then half = true
+        when 1 then dbl = true
+        end
+      end
+      return :double if dbl && !half
+      return :half if half && !dbl
+      :normal
+    end
+
+    # `value` halved (floored at 1, matching every other halving path in this
+    # class) or doubled per `mode`, unchanged for :normal.
+    def adjust_stat(value, mode)
+      case mode
+      when :double then value * 2
+      when :half then [value / 2, 1].max
+      else value
+      end
+    end
+
+    def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
+    def effective_def(b); adjust_stat(b.def, stat_mode(b, :affect_defense)); end
+    def effective_spi(b); adjust_stat(b.spi, stat_mode(b, :affect_spirit)); end
+    def effective_agi(b); adjust_stat(b.agi, stat_mode(b, :affect_agility)); end
 
     # Queue a single-target Skill for `ally`: cast on `target` (an enemy for an
     # attack skill, an ally / the caster for a recovery skill), spending `cost`
@@ -6201,10 +6334,30 @@ module Game
       @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
     end
 
-    # Battlers ordered by agility (highest first); ties keep their listed order.
+    # Battlers ordered by agility (highest first, ties keeping their listed
+    # order) -- except a battler whose round is about to be a basic Attack
+    # with a `preemptive` weapon equipped sorts before everyone else
+    # (EasyRPG's `CreateExecutionOrder` adding 9999 to such a battler's
+    # computed order, which in practice always outruns ordinary agility).
+    # Ties between two preemptive battlers still fall back to agility.
     def turn_order
       (@allies + @enemies).reject(&:out_of_play?).each_with_index
-                          .sort_by { |b, i| [-b.agi, i] }.map { |b, _| b }
+                          .sort_by { |b, i| [preemptive_boost?(b) ? 0 : 1, -effective_agi(b), i] }
+                          .map { |b, _| b }
+    end
+
+    # Whether `b`'s action this round earns the `preemptive` weapon's
+    # turn-order jump: only a basic Attack qualifies (a Skill, Item or Defend
+    # with the same weapon equipped keeps its ordinary agility slot, matching
+    # `CreateExecutionOrder`'s own `Type::Normal` guard), including a
+    # forced attack-enemy/attack-ally restriction, which is still a basic
+    # Attack under the hood. `preemptive` is actor-only (see Combatant), so
+    # an enemy never qualifies.
+    def preemptive_boost?(b)
+      return false unless b.preemptive
+      r = battler_restriction(b)
+      return true if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
+      b.command.nil? && !b.defending && !b.skip
     end
 
     # `b` attacks its target, returning a log entry (or nil when it defends or
@@ -6218,7 +6371,8 @@ module Game
       r = battler_restriction(b)
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
-        return target ? deal_attack(b, target) : nil
+        return nil unless target
+        return b.attack_all ? attack_side(b, side_targets(target)) : deal_attack(b, target)
       end
       return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
@@ -6232,7 +6386,36 @@ module Game
       end
       target = attack_target(b)
       return nil unless target
+      return swing_side(b, side_targets(target)) if b.attack_all
       swing(b, target)
+    end
+
+    # The living members of `target`'s own side -- what an `attack_all`
+    # weapon spreads a basic Attack across (EasyRPG's `Normal::vStart`:
+    # "attack all enemies regardless of original targeting", where "enemies"
+    # means whichever side the already-resolved single target belongs to, so
+    # a forced attack-ally restriction or confusion spreads across the
+    # *ally* side instead of the usual one).
+    def side_targets(target)
+      (side_of(target) == :ally ? @allies : @enemies).reject(&:out_of_play?)
+    end
+
+    # attack_all under an ordinary Attack: every target swings (dual-wield
+    # included, matching a single-target #swing), flattened into one array of
+    # log entries for #record_action to drain one hit at a time.
+    def swing_side(b, targets)
+      # Not Array(swing(...)) -- Array() on a Hash (an ordinary single swing's
+      # log entry) explodes it into [key, value] pairs rather than wrapping
+      # it, since Hash is Enumerable. Same guard #record_action already uses.
+      targets.flat_map { |t| r = swing(b, t); r.is_a?(Array) ? r : [r] }
+    end
+
+    # attack_all under a forced restriction (berserk / confused): one hit per
+    # target, matching the single-target restricted branch's own use of
+    # #deal_attack rather than #swing (a forced attack does not get the
+    # dual-wield bonus either).
+    def attack_side(b, targets)
+      targets.map { |t| deal_attack(b, t) }
     end
 
     # -- enemy AI (行動パターン) ------------------------------------------------
@@ -6399,7 +6582,7 @@ module Game
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
       entries = targets.map do |t|
-        dmg = b.atk - t.def / 2
+        dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
         dmg = [dmg / 2, 1].max if t.defending && dmg > 0
@@ -6528,7 +6711,7 @@ module Game
                  critical: false, target_hp: target.hp < 0 ? 0 : target.hp,
                  defeated: false, target_ally: ally?(target) }
       end
-      dmg = Battle.attack_damage(b.atk, target.def)
+      dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       # An elemental weapon scales its damage by the target's resistance before
       # variance / criticals (EasyRPG's ApplyAttributeNormalAttackMultiplier).
       dmg = dmg * attr_multiplier(b.atk_attrs, target) / 100
