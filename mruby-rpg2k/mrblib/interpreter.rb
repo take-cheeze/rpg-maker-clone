@@ -165,6 +165,8 @@ module Game
     # thing (RPG_RT's `GetCharacter` maps both), which is why every reference
     # goes through #character_ref before it is looked up.
     CHAR_PLAYER     = 10001
+    CHAR_BOAT       = 10002
+    CHAR_AIRSHIP    = 10004
     CHAR_THIS_EVENT = 10005
 
     # Show Choices holds at most four selectable options; a fifth (index 4) is
@@ -1352,10 +1354,14 @@ module Game
     end
 
     # Operand type 6: a positional value of a character. param5 selects it (10001
-    # the hero / party, "this event" as 0 / 10005, any other positive id a map
-    # event); param6 the value (0 map id, 1 x tile, 2 y tile, 3 facing in
-    # RPG2000's 2/4/6/8 numpad convention, 4 screen x, 5 screen y). Matching a
-    # long-standing RPG_RT quirk, a *map event's* map id reads 0. An unresolvable
+    # the hero / party, 10002-10004 a vehicle (boat/ship/airship), "this event"
+    # as 0 / 10005, any other positive id a map event); param6 the value (0 map
+    # id, 1 x tile, 2 y tile, 3 facing in RPG2000's 2/4/6/8 numpad convention,
+    # 4 screen x, 5 screen y). Matching a long-standing RPG_RT quirk, a *map
+    # event's* map id reads 0 -- a vehicle's does not, since (unlike a map
+    # event) it is a real piece of state that exists independently of whatever
+    # map is currently loaded (yado.tk: a vehicle's position can be read from a
+    # different map than the one it currently occupies). An unresolvable
     # reference (no map_info hook, unknown event, "this event" outside a map
     # event) reads 0.
     def event_operand(cmd)
@@ -1371,6 +1377,8 @@ module Game
         when 3 then @state.direction
         else 0
         end
+      elsif ref >= CHAR_BOAT && ref <= CHAR_AIRSHIP
+        vehicle_operand(ref, attr)
       elsif ref > 0 && ref < 10000 && @map_info.respond_to?(:event_position)
         pos = @map_info.event_position(ref)
         return 0 unless pos
@@ -1382,6 +1390,24 @@ module Game
         end
       else
         0
+      end
+    end
+
+    # A vehicle's own stored position, read straight off `Game::State` rather
+    # than through `@map_info` -- unlike a map event, a vehicle is tracked
+    # independently of any loaded map (`Scene::Map#follow_vehicle` keeps the
+    # ridden one's position live every step, and an unridden one simply sits
+    # wherever it was last placed), so this needs no scene hook and works the
+    # same whether or not the vehicle's own map is the one currently loaded.
+    def vehicle_operand(ref, attr)
+      v = @state.vehicle(Vehicle::TYPES[ref - CHAR_BOAT])
+      return 0 unless v
+      case attr
+      when 0 then v.map_id
+      when 1 then v.x
+      when 2 then v.y
+      when 3 then v.direction
+      else 0
       end
     end
 
