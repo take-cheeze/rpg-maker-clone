@@ -2251,11 +2251,20 @@ not yet verified:
   the destination's `.lmu` fresh) rather than reusing or caching one — so
   a substitution cannot survive a Teleport, including one back to the same
   map, without any explicit reset code needed. Regression-covered by a new
-  `scripts/rpg2k_scene_check.rb` check. **Encounter Steps Change is not
-  actionable yet**: `Game::State#encounter_rate` records the override and
-  round-trips through the save, but no random-encounter system reads it at
-  all (see the Screen effects section) — there is nothing to reset until
-  that system exists.
+  `scripts/rpg2k_scene_check.rb` check. ✅ **Encounter Steps Change is now
+  fixed too** — it had stopped being the "not actionable, no reader exists"
+  case this bullet originally described the moment the wandering-monster
+  system landed (`Scene::Map#current_encounter_steps` reads
+  `@state.encounter_rate` when set), but nothing then reset the override on
+  a map change the way the tileset/parallax/pan resets already did a few
+  lines up in the same method. `perform_teleport` now sets
+  `@state.encounter_rate = nil` alongside those, so a Change Encounter Rate
+  command's effect ends the moment the party leaves the map, matching this
+  bullet's other three confirmed members. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (an override recorded via Change
+  Encounter Rate, then a Teleport back to the same map id, falls back to
+  the map tree node's own `encount_steps`), confirmed to fail against the
+  pre-fix code before the fix.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**
