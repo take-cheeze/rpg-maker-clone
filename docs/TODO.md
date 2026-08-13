@@ -504,12 +504,28 @@ The work below is roughly ordered by the critical path to a walkable game
   (アンチドーテ and ユニコーンの角 name all fifteen states; 気付け薬 /
   ドラゴンブラッド / ドラゴンハート name 戦闘不能 alone, so they are revives)
   and mtf-meido-action four. `reverse_state_effect` is what flips a medicine into
-  *inflicting*, exactly as it does for a skill; nothing in either bed sets it, so
-  that half is left unbuilt rather than guessed at. A fixture check cannot catch
+  *inflicting*, exactly as it does for a skill. A fixture check cannot catch
   a polarity error — it is written to match whatever the code does, and four of
   them encoded the wrong reading quite happily — so
   `rpg2k_testbed_logic_check.rb` now asserts against the **real** item table that
   every curative medicine cures exactly the states it names.
+  ✅ **The inflict half (`reverse_state_effect` set) is now built too**, not
+  guessed at: `Game::Party#item_inflicted_states` mirrors `#item_cured_states`
+  the same way `#skill_inflicted_states` already mirrors `#skill_cured_states`
+  for a field skill — both port the identical EasyRPG `reverse_state_effect`
+  branch (`Item::vExecute` for an item, `Game_Battler::UseSkill` for a skill),
+  and the item side's own doc comment already named the skill side as the
+  reference before this landed. `#use_medicine` inflicts a reverse item's
+  listed states on each target not already carrying them (applying RPG_RT's
+  state-crowding-out prune, `Game::States.prune`, exactly as `#cast_skill`
+  does for a landed skill state) and `#item_effective?` offers such an item
+  when the target lacks a state it would inflict, so the menu does not grey
+  out a poison item on an unafflicted target. No item in either test bed sets
+  the flag, so this is unexercised by `rpg2k_testbed_logic_check.rb`'s
+  real-data sweep — covered instead by new `scripts/rpg2k_logic_check.rb`
+  checks built the same way the mirrored skill-side inflict behaviour already
+  was, confirmed to fail against the pre-fix code (a `NoMethodError` for the
+  missing accessor, then a wrong-effective-flag failure) before the fix.
   The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
   `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
   (zeroing HP), a downed actor can't be healed by HP changes, and curing the
@@ -535,7 +551,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Simulated Attack damage floor — Nepheshel runs 850 of them — could kill the
   party and leave the player walking the map with it. Enemies inflict states
   too now, by casting the status skills in their action pattern (see the
-  行動パターン entry below). Still remaining here: the non-reverse item case.
+  行動パターン entry below). ✅ The item polarity gap this line used to flag
+  (items only cured, never inflicted) is closed — see the item `state_set`
+  paragraph above.
   ✅ **A wipe an event's Parallel Process itself causes now reaches Game Over
   too**, matching the foreground half above. `check_game_over` raises the same
   `:game_over` wait regardless of which interpreter calls it, but only

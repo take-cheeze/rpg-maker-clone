@@ -2477,16 +2477,36 @@ module Game
     # "cures nothing" made every antidote and every revive item in both games
     # inert, in the menu and in a fight alike.
     #
-    # A medicine that really does *inflict* (the flag set) is left unbuilt rather
-    # than guessed at: no item in either bed sets it, so there is nothing to
-    # measure an implementation against.
+    # A medicine that really does *inflict* (the flag set): see
+    # #item_inflicted_states below, which mirrors this the same way
+    # #skill_inflicted_states mirrors #skill_cured_states for a field skill.
     def item_cured_states(it)
       return [] if it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      item_state_ids(it)
+    end
+
+    # The states item `it` names in its `state_set` (a 0/1 byte per state, index
+    # i -> state id i+1), regardless of polarity. Shared by #item_cured_states
+    # and #item_inflicted_states, mirroring #skill_state_ids.
+    def item_state_ids(it)
       set = it.state_set
       return [] unless set
       out = []
       set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
       out
+    end
+
+    # The states item `it` inflicts (the reverse case, `reverse_state_effect`
+    # set): the opposite polarity to #item_cured_states, exactly as
+    # #skill_inflicted_states is to #skill_cured_states for a field skill (both
+    # port EasyRPG's identical `reverse_state_effect` branch, `Item::vExecute`
+    # for an item and `Game_Battler::UseSkill` for a skill). No item in either
+    # test bed sets the flag, so this was previously left unbuilt entirely --
+    # unlike the skill side, which already has the mechanism -- even though
+    # using the item this way was reachable and silently did nothing at all.
+    def item_inflicted_states(it)
+      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      item_state_ids(it)
     end
 
     # 蘇生専用 (`ko_only`): an item that does nothing at all to a target who is
@@ -2538,7 +2558,8 @@ module Game
         return false if ko_only_blocked?(it, actor)
         hp, mp = item_recovery(it, actor)
         (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
-          item_cured_states(it).any? { |s| actor.state?(s) }
+          item_cured_states(it).any? { |s| actor.state?(s) } ||
+          item_inflicted_states(it).any? { |s| !actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
         !s.nil? && s != 0 && !actor.knows_skill?(s)
@@ -2590,6 +2611,7 @@ module Game
     def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
       cured = item_cured_states(it)
+      inflicted = item_inflicted_states(it)
       affected = []
       targets.each do |t|
         # A 蘇生専用 item passes over anyone still standing without touching
@@ -2607,6 +2629,20 @@ module Game
             changed = true
           end
         end
+        landed = false
+        inflicted.each do |s|
+          unless t.state?(s)
+            t.add_state(s)
+            changed = true
+            landed = true
+          end
+        end
+        # RPG_RT's crowding-out rule (see Game::States::PRUNE_GAP): a state a
+        # poison item just inflicted may itself immediately push out one
+        # already held, or be pushed out by one already held that outranks it
+        # -- the same prune #cast_skill applies for a skill's own inflicted
+        # states.
+        t.states = Game::States.prune(t.states, state_table) if landed
         hp, mp = item_recovery(it, t)
         before_hp = t.hp
         before_mp = t.mp
