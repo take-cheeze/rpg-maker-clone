@@ -1877,10 +1877,22 @@ Everything below is unverified against the codebase.
 - **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
   above).
-- **Encounter** — standing on a "hero touches event" tile suppresses random
-  encounters there (**related to the already-fixed priority-type work but
-  itself unverified** — check `try_encounter`/equivalent); Ctrl during test
-  play disables encounters.
+- **Encounter** — ✅ **standing on a "hero touches event" tile suppresses
+  random encounters there.** `Scene::Map#check_random_encounter` rolled for
+  a wandering-monster fight on every ordinary step regardless of what stood
+  on the landed tile; a Hero Touch (trigger 1) event's own tile answers
+  random encounters too (multiply corroborated — see the fuller writeup
+  under "Full-site sweep" below), which this codebase did not implement at
+  all. Fixed by adding an early-out, right after the existing flying
+  exemption: `event_at(@state.x, @state.y)` (the same tile lookup
+  `#try_action_trigger`/`#passable?` already use) and, if that tile holds an
+  event whose currently active page's trigger is `TRIGGER_PLAYER_TOUCH`,
+  the roll (and the encounter_total accumulation for that step) is skipped
+  entirely, exactly like flying or a forced-route step. A same-tile *Event
+  Touch* (trigger 2) event does **not** suppress it — only Hero Touch does —
+  covered by a new control case in `scripts/rpg2k_scene_check.rb`. Ctrl
+  during test play disabling encounters is a separate, still-open fact, not
+  addressed by this change.
 - **Screen Flash / Character Flash** — only one of each can be active at
   once (a second supersedes, doesn't stack); both are capped to 1/30s
   display while a Battle Animation plays concurrently (the animation's own
@@ -2150,9 +2162,13 @@ not yet verified:
   contact: fires instantly on overlap for a below/above-characters page,
   or repeatedly while a direction key is held against a same-as-characters
   (blocking) one.
-- Standing on a "Hero Touch" trigger's tile suppresses random encounters
-  there (multiply corroborated); moving via Set Move Route, Jump, or
-  holding Ctrl in test-play also all suppress encounters.
+- ✅ **Standing on a "Hero Touch" trigger's tile suppresses random
+  encounters there** (multiply corroborated) — see the fuller writeup under
+  "Untriaged backlog, from `2k/01_shoshin/011_siyou/`" above (the
+  `**Encounter**` bullet). Moving via Set Move Route or Jump already
+  suppressed encounters before this pass (the `@player_forced_step` /
+  random-encounters fix above); holding Ctrl in test-play doing the same is
+  a separate, still-open fact.
 
 **Move Route / Character Movement command**
 - Only **one pending move route per character** — issuing a second while

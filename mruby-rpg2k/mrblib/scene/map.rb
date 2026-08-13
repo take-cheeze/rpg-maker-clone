@@ -5378,6 +5378,15 @@ class RPG2k
       # event, common event or forced route can be running underneath it.
       def check_random_encounter
         return if @state.party.flying?(@state)
+        # yado.tk quirk, multiply corroborated: a Hero Touch (trigger 1)
+        # event's own tile also answers random encounters -- the party can
+        # land on one without ever running it (an autonomously-moving event
+        # only fires its *Event Touch* trigger on overlap, never Hero Touch,
+        # see #touch_trigger?'s comment), and while standing there the
+        # wandering-monster roll is suppressed for that step, same as
+        # flying or a forced-route step above/below.
+        ev = event_at(@state.x, @state.y)
+        return if ev && ev[:trigger] == TRIGGER_PLAYER_TOUCH
         steps = current_encounter_steps
         if steps <= 0
           @state.encounter_total = 0
