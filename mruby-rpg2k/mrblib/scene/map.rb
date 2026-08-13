@@ -215,8 +215,17 @@ class RPG2k
         end
         # The timers keep counting during events too. A fight is running when the
         # battle UI is up, and a timer without the "run in battle" flag pauses
-        # (and hides) for its duration rather than being stopped.
-        @state.tick_timer(!@battle_ui.nil?)
+        # (and hides) for its duration rather than being stopped. A timer that
+        # *does* carry the flag force-ends the battle outright the instant it
+        # reaches 0:00 (yado.tk), regardless of encounter source (default or
+        # scripted) -- #tick_timer only ever reports true for one mid-battle
+        # (an in_battle-less timer is held frozen instead, never reaching zero
+        # then), so any true here is unambiguously that case. Mirrors Terminate
+        # Battle's own :abort outcome (#finish_terminated_battle), just reachable
+        # from any battle phase rather than only the battle-event one.
+        if @state.tick_timer(!@battle_ui.nil?) && @battle_ui
+          finish_battle(:abort)
+        end
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
