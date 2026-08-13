@@ -4,22 +4,30 @@ set -euo pipefail
 
 # `nix develop -c "$@"`, retried when the Nix store database is locked.
 #
-# CI installs Nix single-user (nixbuild/nix-quick-install-action), so there is
-# no nix-daemon serialising store access: every `nix` process opens
+# CI's own steps no longer call this — `scripts/nix-develop-export-env.bash`
+# realises the dev shell once per job and exports its environment into
+# $GITHUB_ENV / $GITHUB_PATH, so every step after that just runs its command
+# directly. This script is what the bug report template
+# (.github/ISSUE_TEMPLATE/bug_report.yml) points contributors at for running
+# the built binary inside the dev shell locally, e.g. to attach a repro
+# command, and is generally useful any time you want `nix develop -c <cmd>`
+# without babysitting a lock error by hand.
+#
+# CI installs Nix single-user (nixbuild/nix-quick-install-action), and a
+# single-user local install has the same property: there is no nix-daemon
+# serialising store access, so every `nix` process opens
 # /nix/var/nix/db/db.sqlite itself and takes the SQLite write lock directly.
-# The workflow deliberately runs several `nix develop` steps at once
-# (`background: true`), so two of them can want that lock at the same moment —
-# each registering the store paths it just substituted — and the loser dies
-# with
+# Two concurrent `nix` processes — e.g. this and another `nix` command running
+# at the same time — can then race for that lock, and the loser dies with
 #
 #     error: SQLite database '/nix/var/nix/db/db.sqlite' is busy
 #
 # SQLite returns SQLITE_BUSY immediately rather than waiting out the busy
 # timeout when a reader has to upgrade to a writer, and nix turns that straight
-# into a fatal error, so the step fails even though nothing is actually wrong.
-# Retry here instead, backing off to give the winner time to finish. Only that
-# error is retried; any other failure exits with the command's own status.
-# Every caller runs an idempotent command, so a repeat attempt costs nothing.
+# into a fatal error, even though nothing is actually wrong. Retry here
+# instead, backing off to give the winner time to finish. Only that error is
+# retried; any other failure exits with the command's own status. The caller
+# runs an idempotent command, so a repeat attempt costs nothing.
 #
 # The evaluation cache reports the same contention as
 # `error (ignored): SQLite database '.../eval-cache-v6/<hash>.sqlite' is busy`.
@@ -28,15 +36,6 @@ set -euo pipefail
 
 attempts=${NIX_DEVELOP_ATTEMPTS:-4}
 delay=${NIX_DEVELOP_RETRY_DELAY:-5}
-
-# Whether stdout has to stay free of nix's own diagnostics. Off by default: the
-# usual caller is a build or smoke check whose output goes straight to the CI
-# log, and folding stderr in keeps it streaming live, which matters when a step
-# hangs and the log is all there is to look at. Callers that *capture* stdout —
-# the `... >> "$GITHUB_STEP_SUMMARY"` stats steps — set this so a stray nix
-# warning cannot land in what they capture; the cost is that stderr is held
-# back until the command exits.
-separate=${NIX_DEVELOP_SEPARATE_STREAMS:-0}
 
 # `nix develop` fetches this flake with `self.submodules = true`, which makes
 # nix fetch every submodule from its remote with the refspec `refs/*:refs/*`
@@ -53,17 +52,11 @@ trap 'rm -f "$log"' EXIT
 
 for ((attempt = 1; ; attempt++)); do
     set +e
-    if [ "$separate" = 1 ]; then
-        nix develop -c "$@" 2>"$log"
-        status=$?
-        "$drop_fetch_noise" <"$log" >&2
-    else
-        # `tee` is what lets the retry check read nix's diagnostics while they
-        # still stream live, hence PIPESTATUS for the real exit status — which
-        # is still element 0 with the filter spliced in ahead of `tee`.
-        nix develop -c "$@" 2>&1 | "$drop_fetch_noise" | tee "$log"
-        status=${PIPESTATUS[0]}
-    fi
+    # `tee` is what lets the retry check read nix's diagnostics while they
+    # still stream live, hence PIPESTATUS for the real exit status — which is
+    # still element 0 with the filter spliced in ahead of `tee`.
+    nix develop -c "$@" 2>&1 | "$drop_fetch_noise" | tee "$log"
+    status=${PIPESTATUS[0]}
     set -e
 
     if [ "$status" -eq 0 ]; then

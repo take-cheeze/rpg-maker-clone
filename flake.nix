@@ -145,7 +145,9 @@
             '';
           };
         };
-        devShell = self.packages.${system}.build.overrideAttrs {
+        # `devShells.default`, the current flake schema's spelling of what
+        # used to be the singular `devShell` output.
+        devShells.default = self.packages.${system}.build.overrideAttrs {
           CMAKE_C_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
           CMAKE_CXX_COMPILER_LAUNCHER = "${pkgs.sccache}/bin/sccache";
         };
