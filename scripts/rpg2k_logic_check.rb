@@ -7490,6 +7490,25 @@ check 'battle: a state that halves AGI drops a battler behind a slower one in tu
   eq [slow, fast], bat2.send(:turn_order), 'halved to 10 agi: now behind the foe'
 end
 
+# Anything responding to #id, standing in for the Game::Actor a real allied
+# Combatant carries in its #actor field (see Game::Battle.from_actor).
+FakeActorRef = Struct.new(:id)
+
+check 'battle: an agility tie among allies breaks by actor id, not seat order' do
+  # Actor id 2 sits in the party's first seat, actor id 1 in the second --
+  # mirrors a party where a lower-id member left and rejoined behind a
+  # higher-id one, so seat order and id order genuinely disagree.
+  b = combatant('B', 0, 0, 10, 100)
+  b.actor = FakeActorRef.new(2)
+  a = combatant('A', 0, 0, 10, 100)
+  a.actor = FakeActorRef.new(1)
+  foe = combatant('Foe', 0, 0, 10, 100) # also agi 10, but has no #actor at all
+  bat = Game::Battle.new([b, a], [foe], Game::Rng.new(1))
+  eq [a, b, foe], bat.send(:turn_order),
+     "actor id 1 acts before id 2 despite sitting in the later seat; both allies " \
+     'still act before the equally-fast foe'
+end
+
 check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
   states = { 1 => fake_state(affect_type: 1, affect_attack: true) } # double
   bomber = combatant('Bomber', 40, 0, 5, 1)

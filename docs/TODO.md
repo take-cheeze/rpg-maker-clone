@@ -2695,8 +2695,32 @@ not yet verified:
   high-ATK, always-critical normal attack against a defenceless target
   clamps at 999 rather than the uncapped 6000 (2000 base × 3 crit), and an
   attack skill computing a raw 5000 HP hit likewise clamps at 999.
-- Turn-order tie-break on equal Agility: hero acts before an equal-agility
-  enemy; among tied heroes, lower actor ID acts first.
+- ✅ **Turn-order tie-break on equal Agility: an ally acts before an
+  equal-agility enemy; among tied allies, the lower actor id acts first.**
+  The ally-before-enemy half was already correct by construction —
+  `Game::Battle#turn_order`'s `sort_by` tie-broke on each battler's index in
+  `(@allies + @enemies).reject(&:out_of_play?).each_with_index`, and since
+  `@allies` is concatenated first, every surviving ally always carried a
+  lower index than every surviving enemy — but the **among-tied-allies**
+  half was a genuine gap: that same index reflects party **seat/join
+  order**, not actor id. `Game::Party#add_actor` (`mruby-rpg2k/mrblib/
+  game.rb`) appends to `@actors` on join, so seat order only matches id
+  order until a member has left and rejoined behind a different one (the
+  same seat-vs-id split already documented in the "Hero X is in the party"
+  bullet above) — at that point two same-agility allies would tie-break by
+  whichever happened to occupy the earlier seat, not by the lower id RPG_RT
+  actually uses. Fixed by widening `turn_order`'s sort key: a new
+  `b.actor ? 0 : 1` term ranks any battler carrying a source `Game::Actor`
+  (i.e. an ally — `Game::Battle.from_actor` always sets `Combatant#actor`,
+  and an enemy `Combatant` never does) ahead of one that doesn't,
+  independent of array position, making the ally-before-enemy rule
+  structural rather than incidental; the final tie key is `b.actor.id` for
+  an ally instead of the old positional `i`. An enemy tie has no documented
+  ordering rule and keeps its prior troop-definition-order tie-break via
+  `i`, unchanged. Covered by a new `scripts/rpg2k_logic_check.rb` check (two
+  allies seated out of id order, plus an equally-fast enemy, resolve
+  ally-id-1 → ally-id-2 → enemy), confirmed to fail against the pre-fix
+  code.
 - The party "exhaustion %" battle-event condition is computed as
   `100 − 100×((ΣHP/ΣMaxHP×2 + ΣMP/ΣMaxMP)÷3)` — HP weighted twice MP's
   weight.
