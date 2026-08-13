@@ -4571,6 +4571,30 @@ check "Show Battle Animation targeting a vehicle uses the vehicle's own live pos
      "targeted the boat's own live position, not the player's or the event's"
 end
 
+# A map-triggered Show Battle Animation's target is always drawn from a
+# Game::CharSet frame -- the player, a map event or a vehicle, see
+# #draw_vehicles sizing a vehicle sprite off the same constant -- so
+# #start_map_animation can hand #animation_position_offset a real height
+# unconditionally, unlike the battle path's ally-side "no sprite" fallback.
+check "a map-triggered Show Battle Animation carries the target's CharSet height" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0), # animation, player, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  anim = nil
+  40.times do
+    scene.update
+    anim = scene.instance_variable_get(:@map_animation)
+    break if anim
+  end
+  ok anim, 'the animation actually started'
+  eq Game::CharSet::HEIGHT, anim[:target_height],
+     "the player's own CharSet sprite height, not the battle-only nil fallback"
+end
+
 # yado.tk: only one Battle Animation is ever on screen at once -- true of the
 # map-level Show Battle Animation command (11210) same as an in-battle one.
 # That only means anything if a *parallel process* can show one at all: before
@@ -6562,6 +6586,59 @@ check 'the battle animation draws in screen pixels, not map ones' do
   call = bmp.blt_calls.first
   eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
      'placed from the target pixel itself, ignoring the camera'
+end
+
+# The battle_anime row's own `position` field (0 head / 1 center / 2 feet,
+# LCF chunk 19 field 10 -- mruby-lcf/mrblib/schema.rb) was decoded into
+# build_animation's `position:` and then never read anywhere, so an animation
+# authored to play at a target's head or feet drew centred exactly like one
+# left at the default. #animation_position_offset is the pure-logic half:
+# symmetric around the plain centre pixel, split at the target's own known
+# sprite height (nil, as every caller passed before this fix, always reads as
+# "no offset", so an old caller/fixture that never learned a height keeps the
+# exact old behaviour).
+check 'animation_position_offset splits head/center/feet around the target sprite' do
+  scene, = battle_at_command
+  eq 0, scene.send(:animation_position_offset, { position: 1, target_height: 32 }),
+     'center is the plain centre pixel, unmoved'
+  eq(-16, scene.send(:animation_position_offset, { position: 0, target_height: 32 }),
+     'head rises half the sprite height above centre')
+  eq 16, scene.send(:animation_position_offset, { position: 2, target_height: 32 }),
+     'feet sink half the sprite height below centre'
+  eq 0, scene.send(:animation_position_offset, { position: 0, target_height: nil }),
+     'no known height (the ally-side screen-centre fallback) is never offset'
+end
+
+check 'a head/feet Show Battle Animation position offsets where it draws over the enemy sprite' do
+  scene, = battle_at_command
+  scene.send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ma = scene.instance_variable_get(:@map_animation)
+  bmp = scene.instance_variable_get(:@animation_bmp)
+  ok ma[:target_height], 'start_battle_animation carried the enemy sprite\'s real height through'
+  half_height = ma[:target_height] / 2
+
+  ma[:position] = 0
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  call = bmp.blt_calls.first
+  eq [ma[:tx] - 48, ma[:ty] - 48 - half_height], [call[0], call[1]],
+     'position 0 (head) draws half the sprite height above the plain centre'
+
+  ma[:position] = 2
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  call = bmp.blt_calls.first
+  eq [ma[:tx] - 48, ma[:ty] - 48 + half_height], [call[0], call[1]],
+     'position 2 (feet) draws half the sprite height below the plain centre'
+
+  ma[:position] = 1
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  call = bmp.blt_calls.first
+  eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
+     'position 1 (center), the schema default, is unchanged from the plain centre pixel'
 end
 
 check 'the battle status window shows each ally condition, or the normal term' do

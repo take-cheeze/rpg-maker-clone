@@ -1784,9 +1784,32 @@ The work below is roughly ordered by the critical path to a walkable game
   over the middle of the screen for an action aimed at a party member, since
   RPG2000's first-person battle draws no ally sprite. Left for their own changes:
   a **plain attack's** animation (RPG2000 takes it from the equipped weapon,
-  which the entry does not carry), the `position` field (whole screen / target /
-  above / below — carried but not acted on, so everything draws centred), and
-  per-cell tone and scale, which the map path has never had either. See ADR 0037.
+  which the entry does not carry), and per-cell tone and scale, which the map
+  path has never had either. See ADR 0037.
+  ✅ **The `position` field (0 head / 1 center / 2 feet, `battle_anime` chunk
+  19 field 10) now actually offsets where an animation draws**, instead of
+  being decoded (`build_animation`'s own `position:`) and never read again —
+  every animation drew centred on its target regardless of what it asked
+  for. A new `Scene::Map#animation_position_offset` splits symmetrically
+  around the existing centre pixel by half the target's own sprite height —
+  `Game::CharSet::HEIGHT` (32px) for a map target (the player, a map event or
+  a vehicle, all drawn from a CharSet frame of that fixed size — see
+  `#draw_vehicles`), the battler bitmap's real height for an in-battle one
+  (`#battle_animation_pixel` now returns it alongside the centre pixel it
+  already computed). A target with no known height — the ally-side "middle
+  of the screen" fallback, which has no sprite to split — is never offset,
+  so every existing caller that never learned a height (and every animation
+  that never sets the field away from its schema default of 1) keeps its
+  exact old behaviour. The *direction* is confirmed by the schema's own
+  field comment; the exact split RPG_RT itself draws at is still
+  approximate pending a wine diff, the same status the Message window's own
+  relocation-zone boundary carries above. Covered by new
+  `scripts/rpg2k_scene_check.rb` checks (the pure offset math for head /
+  center / feet and a missing height; a battle animation's draw position
+  shifting by half the enemy sprite's height for head/feet and staying put
+  for center; a map-triggered animation carrying the player's
+  `Game::CharSet::HEIGHT`), confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **Which fields the games set that the runtime never reads** —
   `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
   and always exits 0): for every scalar database field it counts the rows of the
