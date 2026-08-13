@@ -2391,13 +2391,20 @@ module Game
     # thrown bomb. That is what keeps Nepheshel's 火炎玉 out of the field menu —
     # its skill targets an enemy — while 天使の翼, whose skill targets an ally,
     # stays in.
-    def field_usable?(id)
+    #
+    # `state` is optional and threaded straight through to #field_skill? for the
+    # same reason #field_skills takes it: a special item invoking an Escape or
+    # Teleport skill needs `Game::State` to know whether one is actually
+    # available (access flag + a registered target), which a bare item lookup
+    # has no way to answer. Omitting it reads such an item as unusable, exactly
+    # as the old hard-coded "no state" call always did.
+    def field_usable?(id, state = nil)
       it = db_item(id)
       return false unless it && item_count(id) > 0
       case it.type
       when ITEM_MEDICINE, ITEM_SKILL_BOOK, ITEM_SEED then true
       when ITEM_SWITCH then item_field_occasion?(it)
-      when ITEM_SPECIAL then field_skill?(db_skill(it.skill_id))
+      when ITEM_SPECIAL then field_skill?(db_skill(it.skill_id), state)
       else false
       end
     end
@@ -2448,9 +2455,11 @@ module Game
     end
 
     # The bag's field-usable items as `[id, count]` pairs in ascending id order,
-    # for the item menu's list.
-    def field_items
-      @items.keys.sort.select { |id| field_usable?(id) }
+    # for the item menu's list. `state` is optional, passed straight through to
+    # #field_usable? (see there) for a special item invoking an Escape/Teleport
+    # skill.
+    def field_items(state = nil)
+      @items.keys.sort.select { |id| field_usable?(id, state) }
             .map { |id| [id, item_count(id)] }
     end
 
@@ -2596,11 +2605,48 @@ module Game
     # the item taking the place of the SP cost: the user pays nothing and need not
     # have learnt the skill. One is consumed only when the cast actually did
     # something, matching how the other item kinds here refuse to be wasted.
+    #
+    # Only for a skill #cast_skill can express -- one that changes HP/SP or a
+    # status condition. An Escape or Teleport skill returns a warp destination
+    # instead of a set of affected actors, which does not fit this method's
+    # return shape (and needs `Game::State` besides), so those go through
+    # #use_special_escape_item / #use_special_teleport_item instead -- the same
+    # reason a switch item bypasses #use_item for #use_switch_item.
     def use_special_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
       affected = cast_skill(actor, it.skill_id, actor, true)
       lose_item(id, 1) unless affected.empty?
       affected
+    end
+
+    # A special item (特殊) invoking an **Escape**-type skill: consumes the item
+    # and returns the registered escape destination for the caller to warp to
+    # (the same `{map_id:, x:, y:}` shape #cast_escape_skill returns), free —
+    # mirroring #use_special_item's own "the item is the cost" rule via
+    # #cast_escape_skill's `free` flag, so the user need not know the skill and
+    # spends no SP for it. nil when `id` does not name a special item invoking
+    # an Escape skill, `actor` may not use it (#item_usable_by?), or Escape is
+    # not currently available (#escape_skill_available?) — and then nothing is
+    # consumed, mirroring `Scene::SkillMenu#apply_escape_skill`'s own gate.
+    def use_special_escape_item(id, actor, state)
+      it = db_item(id)
+      return nil unless it && it.type == ITEM_SPECIAL && actor && item_usable_by?(it, actor.id)
+      target = cast_escape_skill(actor, it.skill_id, state, true)
+      return nil unless target
+      lose_item(id, 1)
+      target
+    end
+
+    # The same for a special item invoking a **Teleport**-type skill, to the
+    # registered destination named by `map_id` (the caller's own picker chooses
+    # which — see `Scene::SkillMenu`'s teleport list, which this mirrors).
+    def use_special_teleport_item(id, actor, state, map_id)
+      it = db_item(id)
+      return nil unless it && it.type == ITEM_SPECIAL && actor && item_usable_by?(it, actor.id)
+      target = cast_teleport_skill(actor, it.skill_id, state, map_id, true)
+      return nil unless target
+      lose_item(id, 1)
+      target
     end
 
     # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
@@ -2917,13 +2963,19 @@ module Game
     # to, or nil when `sid` is not a castable, available Escape skill. Matches
     # EasyRPG's Scene_Skill, which jumps straight to `Game_Targets`' single
     # escape target with no picker.
-    def cast_escape_skill(caster, sid, state)
+    #
+    # `free`, like #cast_skill's own flag, casts without the knows-it /
+    # can-afford-it gate and without spending SP — used by
+    # #use_special_escape_item for a special item invoking this type, where the
+    # item is the cost.
+    def cast_escape_skill(caster, sid, state, free = false)
       sk = db_skill(sid)
       return nil unless sk && sk.type == SKILL_ESCAPE
-      return nil unless can_cast?(caster, sid) && escape_skill_available?(state)
+      return nil unless (free ? !caster.nil? : can_cast?(caster, sid)) &&
+                         escape_skill_available?(state)
       target = state.escape_target
       return nil unless target
-      caster.change_mp(-skill_cost(sk, caster))
+      caster.change_mp(-skill_cost(sk, caster)) unless free
       { map_id: target[:map_id], x: target[:x], y: target[:y] }
     end
 
@@ -2932,13 +2984,17 @@ module Game
     # `sid` is not a castable, available Teleport skill or `map_id` names no
     # registered target (the picker only offers ids that do, so this is a
     # defensive check rather than one real play can trigger).
-    def cast_teleport_skill(caster, sid, state, map_id)
+    #
+    # `free` mirrors #cast_escape_skill's own flag, for
+    # #use_special_teleport_item.
+    def cast_teleport_skill(caster, sid, state, map_id, free = false)
       sk = db_skill(sid)
       return nil unless sk && sk.type == SKILL_TELEPORT
-      return nil unless can_cast?(caster, sid) && teleport_skill_available?(state)
+      return nil unless (free ? !caster.nil? : can_cast?(caster, sid)) &&
+                         teleport_skill_available?(state)
       target = state.teleport_targets[map_id]
       return nil unless target
-      caster.change_mp(-skill_cost(sk, caster))
+      caster.change_mp(-skill_cost(sk, caster)) unless free
       { map_id: map_id, x: target[:x], y: target[:y] }
     end
 

@@ -5,9 +5,15 @@ class RPG2k
     # whole party (an all-ally item) or asks which ally to use it on (a
     # single-target item). Using an item consumes one and refreshes the list; an
     # item that would have no effect (everyone already full) is reported and not
-    # consumed. All decision logic lives in Game::Party (field_items / use_item /
-    # item_effective?), which the host harnesses test; this class is the RGSS UI
-    # over it, mirroring Scene::Menu's window/cursor/message helpers.
+    # consumed. A special item invoking an Escape or Teleport skill warps the
+    # party instead, the same as Scene::SkillMenu's own Escape/Teleport skills:
+    # Escape jumps straight to its one registered target, Teleport opens a
+    # picker of every registered destination, and either closes the whole menu
+    # stack rather than showing a "Used on ..." message. All decision logic
+    # lives in Game::Party (field_items / use_item / item_effective? /
+    # use_special_escape_item / use_special_teleport_item), which the host
+    # harnesses test; this class is the RGSS UI over it, mirroring
+    # Scene::Menu's window/cursor/message helpers.
     class ItemMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -17,9 +23,10 @@ class RPG2k
         super parent
         @state = state
         @skin = make_windowskin
-        @mode = :items          # :items list, or :target selection
+        @mode = :items          # :items list, :target selection, or :teleport_target
         @item_index = 0
         @target_index = 0
+        @teleport_index = 0
         @pending_item = nil
         @message = nil
         build_item_window
@@ -29,18 +36,25 @@ class RPG2k
         close_message
         @item_window.dispose if @item_window
         @target_window.dispose if @target_window
+        @teleport_window.dispose if @teleport_window
       end
 
       def update
         return drive_message if @message
-        @mode == :target ? update_target : update_items
+        case @mode
+        when :target then update_target
+        when :teleport_target then update_teleport_target
+        else update_items
+        end
       end
 
       private
 
       # Cached list of [id, count] pairs; invalidated after a use changes counts.
+      # `@state` decides whether a special item invoking an Escape/Teleport
+      # skill belongs in it (see Game::Party#field_items).
       def items
-        @items ||= @state.party.field_items
+        @items ||= @state.party.field_items(@state)
       end
 
       def invalidate_items
@@ -75,7 +89,19 @@ class RPG2k
           apply_switch_item(id)
         elsif it && it.type == Game::Party::ITEM_SPECIAL
           sk = @state.party.db_skill(it.skill_id)
-          if sk && (sk.scope == 2 || sk.scope == 4)
+          if sk && sk.type == Game::Party::SKILL_ESCAPE
+            # Escape has one registered target and no picker -- mirroring
+            # Scene::SkillMenu#apply_escape_skill, a successful cast warps
+            # straight there with no confirmation message.
+            apply_escape_item(id)
+          elsif sk && sk.type == Game::Party::SKILL_TELEPORT
+            # Teleport opens a third list of every registered destination, the
+            # same as Scene::SkillMenu's own teleport picker.
+            @pending_item = id
+            @mode = :teleport_target
+            @teleport_index = 0
+            build_teleport_window
+          elsif sk && (sk.scope == 2 || sk.scope == 4)
             # Unlike a medicine (whose all-ally scope needs no actor at all --
             # #use_medicine reads the whole party off `@actors`, ignoring the
             # argument), a special item's `actor` argument is the *caster*
@@ -109,6 +135,111 @@ class RPG2k
         sid = @state.party.use_switch_item(id)
         @state.switches[sid] = true if sid
         show_message(sid ? "Switch turned on." : "It had no effect.", :used)
+      end
+
+      # A special item invoking an Escape-type skill: cast from the party
+      # leader (mirroring the self/all-ally special-item branch above), free.
+      # A successful cast closes the whole menu stack at once, matching
+      # Scene::SkillMenu#apply_escape_skill -- there is no field-menu message
+      # shown afterwards, since the map that would show it is gone before the
+      # next frame draws.
+      def apply_escape_item(id)
+        target = @state.party.use_special_escape_item(id, @state.party.leader, @state)
+        if target
+          queue_teleport(target)
+        else
+          show_message("It had no effect.")
+        end
+      end
+
+      # The same for a Teleport-type skill, once a destination is chosen from
+      # the list built by #build_teleport_window.
+      def apply_teleport_item(id, map_id)
+        target = @state.party.use_special_teleport_item(id, @state.party.leader, @state, map_id)
+        if target
+          queue_teleport(target)
+        else
+          show_message("It had no effect.")
+        end
+      end
+
+      # Queue the warp for Scene::Map (see Game::State#pending_teleport) and pop
+      # every menu on top of it in one step -- the same shape
+      # Scene::SkillMenu#queue_teleport uses.
+      def queue_teleport(target)
+        @state.pending_teleport = [target[:map_id], target[:x], target[:y], 0]
+        @parent.pop_to_map
+      end
+
+      def update_teleport_target
+        targets = teleport_targets
+        if Input.trigger?(Input::B)
+          leave_teleport_target
+        elsif Input.trigger?(Input::DOWN) && !targets.empty?
+          @teleport_index += 1
+          @teleport_index %= targets.size
+          refresh_teleport_cursor
+        elsif Input.trigger?(Input::UP) && !targets.empty?
+          @teleport_index -= 1
+          @teleport_index %= targets.size
+          refresh_teleport_cursor
+        elsif Input.trigger?(Input::C) && !targets.empty?
+          map_id, = targets[@teleport_index]
+          apply_teleport_item(@pending_item, map_id)
+        end
+      end
+
+      def leave_teleport_target
+        @pending_item = nil
+        @mode = :items
+        if @teleport_window
+          @teleport_window.dispose
+          @teleport_window = nil
+        end
+      end
+
+      # The registered teleport destinations as `[map_id, name]` pairs,
+      # ascending by map id -- see Scene::SkillMenu#teleport_targets, which
+      # this mirrors exactly.
+      def teleport_targets
+        @state.teleport_targets.keys.sort.map { |id| [id, map_display_name(id)] }
+      end
+
+      # A map's editor name for the teleport picker, or its bare id when the
+      # tree carries no name for it -- see Scene::SkillMenu#map_display_name.
+      def map_display_name(map_id)
+        row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
+        name = row && row.respond_to?(:name) ? row.name.to_s : nil
+        name.nil? || name.empty? ? "Map #{map_id}" : name
+      end
+
+      def build_teleport_window
+        @teleport_window.dispose if @teleport_window
+        rows = teleport_targets
+        inner_w = SCREEN_W - Window::BORDER * 2
+        h = [rows.size, 1].max * LINE_H
+        @teleport_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
+                                      SCREEN_W, h + Window::BORDER * 2)
+        @teleport_window.z = 450
+        @teleport_window.windowskin = @skin
+        c = Bitmap.new(inner_w, h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        if rows.empty?
+          c.draw_text 0, 0, inner_w, LINE_H, "No destinations"
+        else
+          rows.each_with_index do |(_id, name), i|
+            c.draw_text 0, i * LINE_H, inner_w, LINE_H, name
+          end
+        end
+        @teleport_window.contents = c
+        refresh_teleport_cursor
+      end
+
+      def refresh_teleport_cursor
+        return unless @teleport_window
+        h = teleport_targets.empty? ? 0 : LINE_H
+        @teleport_window.cursor_rect =
+          Rect.new(0, @teleport_index * LINE_H, @teleport_window.contents.width, h)
       end
 
       def update_target

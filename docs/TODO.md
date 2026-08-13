@@ -1597,11 +1597,42 @@ The work below is roughly ordered by the critical path to a walkable game
   with no map or interpreter behind it, so it still cannot tell "this skill is
   legitimately state-gated" from "no menu reaches this skill" on its own, and
   keeps deferring those two types to this note instead of flagging them as
-  unreachable. Left unbuilt still: the battle-time skill variance, and a
-  **special item** (type 9) invoking an Escape/Teleport skill —
-  `#field_usable?` does not thread `Game::State` through to `#field_skill?`
-  the way the field menu does, so such an item (neither test bed has one)
-  would still read as unusable rather than warping.
+  unreachable. Left unbuilt still: the battle-time skill variance.
+  ✅ **A special item (type 9) invoking an Escape/Teleport skill is castable
+  from the field Item menu now.** `#field_usable?` used to call
+  `#field_skill?(db_skill(it.skill_id))` with no `Game::State` at all, so its
+  Escape/Teleport arm (`#escape_skill_available?` / `#teleport_skill_available?`,
+  both `return false unless state`) always read "unsupported" — the exact gap
+  `#field_skills` used to have before it started taking `state`, just never
+  closed on the item side, and Nepheshel and mtf-meido-action both happen to
+  have no such item to have caught it. `#field_usable?` / `#field_items` now
+  take an optional `state`, threaded through the identical way
+  `Scene::SkillMenu` already threads it into `#field_skills`
+  (`Scene::ItemMenu#items` now calls `@state.party.field_items(@state)`).
+  Casting is a new problem `#use_special_item` doesn't solve, though: it
+  invokes `#cast_skill`, which has no notion of a warp destination, and even
+  if it read as usable an Escape/Teleport special item would still do
+  nothing on use. New `Game::Party#use_special_escape_item` /
+  `#use_special_teleport_item` cast through `#cast_escape_skill` /
+  `#cast_teleport_skill` instead — each gained a `free` flag (mirroring
+  `#cast_skill`'s own) so the item pays instead of the caster's SP, and the
+  caster need not know the skill, exactly like every other special item.
+  `Scene::ItemMenu` routes a special item by the *skill's* type the same way
+  `Scene::SkillMenu` already does for an ordinary cast: Escape warps straight
+  to its one registered target with no prompt, Teleport opens a destination
+  picker (a new `:teleport_target` mode, `build_teleport_window` and
+  friends — copied from `Scene::SkillMenu`'s own, since a menu-owned item and
+  a menu-owned skill land in the identical place), and either closes the
+  whole menu stack via `@parent.pop_to_map` rather than showing a "Used on
+  ..." message, matching `Scene::SkillMenu#queue_teleport`. Covered by two
+  new `scripts/rpg2k_logic_check.rb` checks (an Escape/Teleport special item
+  is hidden with no state, gated on access/target exactly like the skill
+  path, and warps for free without spending SP) and three new
+  `scripts/rpg2k_scene_check.rb` checks (the item queues the escape target
+  and closes the menu with no message; the item opens the destination list
+  and queues the chosen one; cancelling the list returns to the item list),
+  all confirmed to fail against the pre-fix code before the fix. Still
+  untested by the real data, since neither test bed has such an item.
   **Dual-wield equipping is done too, the opposite rule to two-handed.** A
   weapon's own *combat* effect (a 二刀流 weapon swinging twice) was read
   already (ADR 0033); what remained was the *actor*-row 二刀流 (`double_hand`,
