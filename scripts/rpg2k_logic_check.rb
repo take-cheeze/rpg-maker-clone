@@ -7135,6 +7135,58 @@ check 'battle skill damage varies by the skill variance when the fight rolls it'
   ok dmgs.all? { |d| d >= 26 && d <= 38 }, "within 26..38 (#{dmgs.inspect})"
 end
 
+check 'battle heal skill recovery varies by the skill variance when the fight rolls it' do
+  skills = { 8 => fake_skill(name: 'Heal', scope: 3, sp_cost: 0, power: 20,
+                             mrate: 40, hp: true, variance: 4) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # spi 12 -> effect 32
+  ally = combatant('Ally', 0, 0, 5, 1000)                   # tall max HP headroom
+  bat = Game::Battle.new([caster, ally], [combatant('Foe', 0, 0, 1, 1)],
+                        Game::Rng.new(1), nil, true)         # variance on
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, ally) # base 32
+  heals = []
+  20.times do
+    ally.hp = 1 # reset below the cap each cast so the spread is never clipped
+    bat.command_skill(caster, ally, name: 'Heal', cost: c[:cost], hp: c[:hp],
+                      mp: c[:mp], variance: c[:variance])
+    bat.begin_round
+    e = bat.step_action # the faster caster (agi 7) heals before ally/foe act
+    heals << e[:recover_hp] if e && e[:recover]
+  end
+  # base 32, var 4 -> adj = 12, spread 32-6 .. 32+12-6 = 26..38, same range the
+  # attack-side variance check above measures for the identical base/variance --
+  # `#apply_skill_hit`'s heal branch used to skip `#varied` entirely, so every
+  # cast landed exactly 32 (this check would have failed on that count alone).
+  ok heals.uniq.length > 1, "heal recovery varies (#{heals.uniq.sort.inspect})"
+  ok heals.all? { |h| h >= 26 && h <= 38 }, "within 26..38 (#{heals.inspect})"
+end
+
+check 'without variance a seeded fight heals exactly the base amount' do
+  skills = { 8 => fake_skill(name: 'Heal', scope: 3, sp_cost: 0, power: 20,
+                             mrate: 40, hp: true, variance: 4) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  ally = combatant('Ally', 0, 0, 5, 1000)
+  ally.hp = 1
+  bat = Game::Battle.new([caster, ally], [combatant('Foe', 0, 0, 1, 1)],
+                        Game::Rng.new(1)) # 3-arg: variance off
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, ally)
+  bat.command_skill(caster, ally, name: 'Heal', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], variance: c[:variance])
+  bat.begin_round
+  e = bat.step_action # the faster caster (agi 7) heals before ally/foe act
+  eq 32, e[:recover_hp], 'exact base, unaffected without the fight rolling variance'
+end
+
+check 'battle_skill_command carries the skill variance on its heal branch too' do
+  skills = { 8 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5, power: 20,
+                             mrate: 40, hp: true, variance: 7) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, nil)
+  eq 7, c[:variance], 'the heal branch reports the skill row variance, not 0'
+end
+
 check 'Battle: a stronger party wins, a weaker one is defeated' do
   hero = combatant('Hero', 40, 20, 20, 200)
   slime = combatant('Slime', 8, 4, 5, 30)
@@ -7351,10 +7403,10 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   eq({ cost: 6, hp: -24, mp: 0, inflict: [], chance: 100, variance: 4,
        attributes: [], absorb: false, attr_shift: nil, attr_ids: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
-  eq({ cost: 5, hp: 32, mp: 0, attr_shift: nil, attr_ids: [] },
+  eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [] },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
-  eq({ cost: 4, hp: 22, mp: 22, attr_shift: nil, attr_ids: [] },
+  eq({ cost: 4, hp: 22, mp: 22, variance: 4, attr_shift: nil, attr_ids: [] },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
 

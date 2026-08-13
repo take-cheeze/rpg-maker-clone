@@ -3407,6 +3407,9 @@ module Game
     # to the target — negative HP for an attack skill (base effect less a quarter
     # of the target's defence, min 1), positive HP / SP for a recovery skill. An
     # attack skill also carries the states it may inflict and the roll chance.
+    # Both branches carry the skill's own `variance` now — `Game::Battle#apply_
+    # skill_hit` is what actually spreads either sign of effect by it, this
+    # method just reports the number the skill row names.
     def battle_skill_command(sk, caster, target)
       cost = skill_cost(sk, caster)
       base = skill_effect(sk, caster)
@@ -3429,7 +3432,7 @@ module Game
           absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
-          attr_shift: shift, attr_ids: shift_ids }
+          variance: skill_variance(sk), attr_shift: shift, attr_ids: shift_ids }
       end
     end
 
@@ -7419,6 +7422,22 @@ module Game
           skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed }
       else
+        # Spread the recovery by the skill's own variance when the fight rolls
+        # it, the same way the attack branch above does: EasyRPG's
+        # `Algo::VarianceAdjustEffect` is one function applied to whichever
+        # signed effect `CalcSkillEffect` produced, not a damage-only step, so
+        # a Cure spell's heal wobbles exactly like a Fire spell's damage does.
+        # HP and SP roll independently (`#varied` draws its own random offset
+        # each call) since a skill can restore both from the same base effect
+        # and RPG_RT does not correlate the two rolls. An item's fixed effect
+        # never carries a `variance` (items have no such field), so this is a
+        # no-op there; a 0 (or absent) `hp`/`mp` clears #varied's own `base >
+        # 0` guard, so a skill that only restores one of the two leaves the
+        # other alone.
+        if @variance && cmd[:variance] && cmd[:variance] > 0
+          hp = varied(hp, cmd[:variance])
+          mp = varied(mp, cmd[:variance])
+        end
         before_hp = target.hp
         before_mp = target.mp || 0
         hp = RECOVER_CAP if hp > RECOVER_CAP
