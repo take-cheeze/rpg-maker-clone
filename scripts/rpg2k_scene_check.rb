@@ -6657,7 +6657,33 @@ check 'an item names its animation the same way a skill does' do
      'the fixture Potion names none'
   eq 8, scene.send(:battle_animation_id, { skill_id: 8 })
   eq nil, scene.send(:battle_animation_id, { attacker: 'Hero' }),
-     'a plain attack carries no animation yet'
+     'a plain attack with no attack_animation_id resolved (a bare fixture Combatant, or an enemy) carries none'
+  eq 5, scene.send(:battle_animation_id, { attacker: 'Hero', attack_animation_id: 5 }),
+     'a plain attack falls back to the id Game::Battle#deal_attack already resolved onto the entry'
+end
+
+# A plain Attack now plays its attacker's own weapon/unarmed animation too,
+# not just a Skill/Item -- Game::Battle#deal_attack resolves
+# Actor#attack_animation_id onto the log entry, and #battle_animation_id reads
+# it once neither skill_id nor item_id claims the entry (see the check above).
+check 'a plain attack with a resolved weapon animation plays it over the targeted enemy' do
+  scene, ui = battle_at_command
+  entry = { attacker: 'Hero', target: 'Slime', damage: 7,
+            attack_animation_id: 8, target_index: 0, target_ally: false }
+  ok scene.send(:start_battle_animation, entry), 'an animation started, same as a skill would'
+  ma = scene.instance_variable_get(:@map_animation)
+  ok ma, 'the player was armed'
+  spr = ui[:enemy_sprites][0]
+  eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
+     [ma[:tx], ma[:ty]], 'centred on the targeted enemy sprite, same as a skill/item animation'
+end
+
+check 'a plain attack with nothing resolved plays no animation' do
+  scene, = battle_at_command
+  ok !scene.send(:start_battle_animation,
+                 { attacker: 'Hero', target: 'Slime', damage: 7, target_index: 0 }),
+     'an unarmed attacker with no unarmed_animation configured, or an enemy, carries no id'
+  eq nil, scene.instance_variable_get(:@map_animation)
 end
 
 check 'the battle animation draws in screen pixels, not map ones' do

@@ -966,9 +966,13 @@ The work below is roughly ordered by the critical path to a walkable game
   battler's computed order — this build sorts the flag ahead of agility
   instead of reproducing that literal offset, since the per-round agility
   jitter `CreateExecutionOrder` also rolls is not itself modelled here, and
-  the offset's only observable effect is "always first"). Still unread:
-  **`raise_evasion`**, which has nowhere to land until the to-hit formula
-  grows an evasion term separate from agility. **Elemental attributes**
+  the offset's only observable effect is "always first"). ✅ **`raise_evasion`
+  is read now too** — this line used to end here calling it unread with
+  "nowhere to land until the to-hit formula grows an evasion term separate
+  from agility"; the to-hit formula grew that term (see the "Assets &
+  infrastructure" section's own 物理回避率アップ entry, `Actor#
+  physical_evasion_up?` and `Battle#to_hit`'s flat -25 against a wearer's
+  attacker), just not documented back onto this paragraph. **Elemental attributes**
   scale damage too: a weapon's `attribute_set` / a skill's `attribute_effects`
   are matched against the target's per-attribute defence ranks (A..E, strongest
   element winning) — the rates come from each attribute's own `a_rate` .. `e_rate`
@@ -1912,9 +1916,37 @@ The work below is roughly ordered by the critical path to a walkable game
   by the target's **index** so two monsters sharing a name cannot be confused, or
   over the middle of the screen for an action aimed at a party member, since
   RPG2000's first-person battle draws no ally sprite. Left for their own changes:
-  a **plain attack's** animation (RPG2000 takes it from the equipped weapon,
-  which the entry does not carry), and per-cell tone and scale, which the map
-  path has never had either. See ADR 0037.
+  per-cell tone and scale, which the map path has never had either. See ADR
+  0037.
+  ✅ **A plain Attack now plays its own animation too**, closing the "left for
+  their own changes" gap this line used to name. RPG2000 keeps a basic
+  attack's animation on the *equipped weapon* (item field 20, the weapon
+  editor's own "アニメーション" picker) or, unarmed, on the actor row's own
+  `unarmed_animation` (field 56, 素手戦闘アニメID) — both decoded by the schema
+  and read by nothing, so a Fire spell flashed while the sword swing right
+  before it stayed silent. `Game::Actor#attack_animation_id`
+  (`mruby-rpg2k/mrblib/game.rb`) resolves the primary weapon slot's
+  `animation_id` when one is worn and set, falling back to the unarmed id
+  otherwise (a 二刀流 actor's second weapon, in the shield slot, is not
+  consulted — RPG_RT keeps this as one property per actor rather than one per
+  swing, so both of a dual-wielder's blows play the identical animation), and
+  `Game::Battle#deal_attack` attaches it — plus the target's `@enemies`
+  index, needed to centre on the right sprite and, like the animation id
+  itself, never carried by a plain-attack log entry before this — to every
+  entry it returns, a miss included (the swing still happens; only its
+  damage is what a miss zeroes). `Scene::Map#battle_animation_id` falls back
+  to that field once neither a skill nor an item claims the entry. An
+  enemy's own basic attack still plays nothing, matching RPG2000 (there is
+  no per-monster equivalent field; `Combatant#actor` is nil for an enemy
+  snapshot, which `#attack_animation_id`'s caller reads as "nothing to
+  resolve"). Covered by new `scripts/rpg2k_logic_check.rb` checks (the
+  weapon/unarmed fallback itself; a plain attack's entry carrying the
+  resolved id and target index; a 二刀流 weapon's two swings carrying the
+  identical id; an enemy attacker carrying none) and new
+  `scripts/rpg2k_scene_check.rb` checks (a plain attack with a resolved id
+  plays over the targeted enemy sprite the same way a skill/item does; one
+  with nothing resolved plays nothing), confirmed to fail against the
+  pre-fix code before the fix.
   ✅ **The `position` field (0 head / 1 center / 2 feet, `battle_anime` chunk
   19 field 10) now actually offsets where an animation draws**, instead of
   being decoded (`build_animation`'s own `position:`) and never read again —
