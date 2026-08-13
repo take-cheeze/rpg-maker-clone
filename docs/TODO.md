@@ -3700,10 +3700,33 @@ above are repeated here)
   value-increase / value-decrease / low-HP-MP warning), and a State's own
   configured display-color field is a pointer into that **same** shared
   palette.
-- Call Event invoked from an Auto-Start parent runs the called content
-  under **Auto-Start semantics** (blocks input) even if the called
-  common event's own configured trigger is Parallel Process; Call Event
-  always **bypasses** the target's own condition-switch state entirely.
+- **Call Event invoked from an Auto-Start parent runs the called content
+  under Auto-Start semantics (blocks input) even if the called common
+  event's own configured trigger is Parallel Process; Call Event always
+  bypasses the target's own condition-switch state entirely — confirmed
+  already correct**, both halves, no code change needed.
+  `Game::Interpreter#do_call_event`/`#resolve_call`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) never reads a trigger or a gate
+  switch at all — it just splices the target's raw command list onto the
+  *calling* interpreter's own `@call_stack` and keeps running it inline, so
+  whatever is already true of the caller (an Auto-Start's foreground,
+  input-blocking execution included) mechanically stays true for the whole
+  call, with no separate scheduling path a Parallel Process's trigger could
+  route through instead. The condition-switch bypass is even more
+  structural: `Scene::Map#build_resolver` hands the Call Event resolver a
+  plain `id => commands` hash built from `@common`
+  (`common[c[:id]] = c[:commands]`), discarding each common event's
+  `:trigger`/`:need_flag`/`:switch_id` in that same line — the resolver
+  `do_call_event` reads from has no gate to consult in the first place, so a
+  Call Event cannot observe the callee's switch state even if a future
+  change tried to add such a check without separately plumbing the gate
+  through this hash. `interpreter.rb` has no trigger/switch-related constant
+  or read anywhere, corroborating the same conclusion from the other
+  direction. Covered by a new `scripts/rpg2k_scene_check.rb` check (an
+  Auto-Start event Call-Events a Parallel-Process common event whose gate
+  switch is off for the whole run; its content still executes), confirmed to
+  fail when `build_resolver` is temporarily made to honour the gate switch,
+  restored before finalizing since nothing here needed to change.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

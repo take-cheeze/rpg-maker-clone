@@ -1301,6 +1301,34 @@ check 'parallel common event runs only while its switch gate is on' do
   ok st.variables[3] > 0, 'it should run once the gate switch is on'
 end
 
+# yado.tk (01_shoshin/011_siyou, "Call Event"): a Call Event always bypasses
+# the target common event's own condition-switch state entirely, regardless
+# of whether the common event is configured Parallel Process, Auto-Start, or
+# call-only, and regardless of its gate switch's live value. Confirmed
+# already correct: Scene::Map#build_resolver (mruby-rpg2k/mrblib/scene/
+# map.rb) hands the Call Event resolver a plain `id => commands` hash built
+# from `@common`, discarding `:trigger`/`:need_flag`/`:switch_id` in the same
+# line -- the resolver Game::Interpreter#do_call_event reads from structurally
+# has no gate/trigger to consult, so nothing could conditionally block it even
+# if a future change tried to add such a check without also plumbing it
+# through here.
+check "Call Event bypasses a target common event's own gate switch" do
+  ic = Game::Interpreter::Cmd
+  # Common event 1 is a Parallel Process gated on switch 9, which stays off
+  # for this entire check -- Scene::Map#step_parallels would never run it on
+  # its own while that holds.
+  ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 9,
+                      event: [add_var_cmd(3)])
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::CALL_EVENT, [0, 1, 0])] # call common event 1
+  scene = new_scene({ 1 => event(2, 2, pg) }, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update }
+  ok !st.switches[9], 'the gate switch never turned on during this check'
+  ok st.variables[3] > 0,
+     "Call Event should run the gated common event's content regardless of its own switch"
+end
+
 # A Common Event's own Parallel Process, unlike a Map Event's, is supposed to
 # keep running from wherever it was across a Transfer Player and a save/load
 # (docs/TODO.md's "Common-event Parallel Process state should survive map
