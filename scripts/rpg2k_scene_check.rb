@@ -4257,6 +4257,40 @@ check 'Show Battle Animation plays: an animation sprite shows and a flash fires'
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
+# yado.tk: Show Battle Animation targeting a Vehicle position reads that
+# vehicle's real, currently-live x/y (the same source the Control Variables
+# vehicle-position fix reads), not the player's or the triggering event's own
+# tile. #animation_target_pixel had no branch for a vehicle's Move-Event-style
+# target id (10002-10004) at all, so it fell through to the generic "map event
+# by id" lookup, found none, and silently defaulted to the player's own
+# position.
+check "Show Battle Animation targeting a vehicle uses the vehicle's own live position" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # animation 8 (a drawable one in the fake db) targeting the boat (10002).
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10002, 1], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  # Placed well away from both the player (0,0) and the triggering event
+  # (2,2), so either one substituting for the boat would be caught.
+  st.vehicle(:boat).map_id = st.map_id
+  st.vehicle(:boat).x = 5
+  st.vehicle(:boat).y = 7
+  tile = RPG2k::Scene::Map::TILE
+  anim = nil
+  40.times do
+    scene.update
+    anim = scene.instance_variable_get(:@map_animation)
+    break if anim || st.switches[6]
+  end
+  ok anim, 'the animation actually started'
+  eq [5 * tile, 7 * tile], [anim[:tx], anim[:ty]],
+     "targeted the boat's own live position, not the player's or the event's"
+end
+
 # yado.tk: only one Battle Animation is ever on screen at once -- true of the
 # map-level Show Battle Animation command (11210) same as an in-battle one.
 # That only means anything if a *parallel process* can show one at all: before

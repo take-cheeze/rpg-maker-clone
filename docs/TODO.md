@@ -2080,8 +2080,9 @@ Everything below is unverified against the codebase.
   lowest/topmost. Covered by a new `scripts/rpg2k_scene_check.rb` check
   (two events sharing a tile, `Store Event ID` resolves to the higher one).
 - **Battle Animation** — only one can display at once (second supersedes);
-  each frame is exactly 1/30s; targeting a Vehicle position reads that
-  vehicle's live x/y even from a different map than the one shown.
+  each frame is exactly 1/30s; ✅ **targeting a Vehicle position now reads
+  that vehicle's live x/y even from a different map than the one shown** —
+  see the fuller writeup under "Full-site sweep" below.
 - **Material data** — an imported asset takes priority over a same-named RTP
   one; dropping files directly into asset folders bypasses size/transparent-
   colour-index validation.
@@ -3164,6 +3165,26 @@ not yet verified:
   animation actually renders — sprite shown, screen flash fired — for a
   parallel-process request, not just a foreground one), both confirmed to
   fail against the pre-fix code before the fix.
+- ✅ **Show Battle Animation (11210) targeting a vehicle now plays over that
+  vehicle's own live position**, instead of silently defaulting to the
+  player's. `Scene::Map#animation_target_pixel` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) resolved a Move-Event-style target id to the player, "this
+  event," or a map event by id — but had no case at all for a vehicle slot
+  (10002-10004, boat/ship/airship): a vehicle id never matches a real map
+  event id, so it fell straight through to the "map event by id, defaulting
+  to the player" branch and silently drew the animation over the player
+  instead. Fixed with a new `#vehicle_pixel`, reading the target `Game::
+  Vehicle`'s live `x`/`y` straight off `Game::State` — the same source
+  `#event_operand`'s Control Variables "character position" vehicle fix
+  reads (see the "Vehicles" bullet under "Party / Actor / Vehicle" above) —
+  which needs no scene-side camera hook and, matching that fix's own
+  quirk, does not check whether the vehicle is actually on the map this
+  scene has loaded before reading its position: a vehicle target reads its
+  real x/y even when a different map is on screen, exactly as yado.tk
+  describes. Covered by a new `scripts/rpg2k_scene_check.rb` check (a Show
+  Battle Animation targeting the boat lands at the boat's own tile, not the
+  player's or the triggering event's), confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a

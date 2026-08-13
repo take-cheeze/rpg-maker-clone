@@ -5236,16 +5236,33 @@ class RPG2k
       end
 
       # The target character's map-pixel position: the player, the running event
-      # ("this event" / 0), or a map event by id, defaulting to the player.
+      # ("this event" / 0), a vehicle slot, or a map event by id, defaulting to
+      # the player. yado.tk: a vehicle target reads that vehicle's real,
+      # currently-live x/y off `Game::State` (the same source
+      # `#event_operand`'s Control Variables "character position" vehicle fix
+      # reads) even when the vehicle is not on the map this scene has loaded --
+      # RPG_RT does not check that the two agree before placing the animation,
+      # the same blind-read quirk as the Control Variables fix.
       def animation_target_pixel(target)
         case target
         when MOVE_TARGET_PLAYER then player_pixel
         when 0, MOVE_TARGET_THIS
           @active_event ? event_pixel(@active_event) : player_pixel
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          vehicle_pixel(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
         else
           ev = @events.find { |e| e[:id] == target }
           ev ? event_pixel(ev) : player_pixel
         end
+      end
+
+      # A vehicle's own map-pixel position, read straight off its live
+      # `Game::Vehicle` record -- no interpolation, unlike a walking
+      # player/event, since nothing here animates a standing vehicle's slide.
+      def vehicle_pixel(type)
+        v = @state.vehicle(type)
+        return player_pixel unless v
+        [v.x * TILE, v.y * TILE]
       end
 
       # Fire the screen flashes the current frame's timings request (flash_scope
