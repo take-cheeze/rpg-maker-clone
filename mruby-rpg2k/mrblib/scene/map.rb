@@ -4576,13 +4576,15 @@ class RPG2k
         req = @interpreter.name_input_request
         return @interpreter.resume_name_input('') unless req
         if @name_ui.nil?
+          background = build_field_background(@windowskin)
           if req[:charset] == 2
-            @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false }
+            @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false,
+                         background: background }
             draw_name_input
           else
             @name_ui = { name: req[:seed] || '', sel: 0, kana: true,
                          page: req[:charset] == 1 ? :katakana : :hiragana,
-                         actor_id: req[:actor_id] }
+                         actor_id: req[:actor_id], background: background }
             draw_kana_name_input
           end
           return
@@ -4829,6 +4831,7 @@ class RPG2k
 
       def close_name_input
         return unless @name_ui
+        @name_ui[:background].dispose if @name_ui[:background]
         if @name_ui[:kana]
           @name_ui[:face_win].dispose if @name_ui[:face_win]
           @name_ui[:name_win].dispose if @name_ui[:name_win]
