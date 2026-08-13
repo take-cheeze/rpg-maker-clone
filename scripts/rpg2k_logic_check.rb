@@ -1820,6 +1820,30 @@ check 'a timer only counts in battle when it carries the battle flag' do
   ok t.drawn?(true), 'and keeps drawing'
 end
 
+check 'Timer Operation "set" clamps to 99:59 (5999 s) when a Variable feeds it an out-of-range value' do
+  t = Game::Timer.new
+  # Direct clamp check: RPG_RT's timer display never grows past two minute
+  # digits, so a value above the 99:59 ceiling is clamped, not wrapped.
+  t.set(9999)
+  eq 5999, t.seconds, '9999 s clamps down to the 99:59 ceiling'
+  eq '99:59', t.display_text
+  eq Game::Timer::MAX_SECONDS * 60 + 59, t.frames
+
+  st = new_state
+  st.variables[1] = 9999 # a Control Variables value the player could reach
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TIMER_OPERATION, [0, 1, 1])]) # set = var 1
+  it.update
+  eq 5999, st.timer(0).seconds, 'a variable-sourced set clamps the same way'
+  eq '99:59', st.timer_display_text
+
+  # An ordinary in-range set (constant or variable) is unaffected.
+  st.variables[2] = 30
+  it.start([FakeCmd.new(IC::TIMER_OPERATION, [0, 1, 2])]) # set = var 2
+  it.update
+  eq 30, st.timer(0).seconds, 'a normal small value is untouched by the clamp'
+end
+
 check "Timer Operation addresses RPG2003's second timer through param5" do
   st = new_state
   it = Game::Interpreter.new(st)
@@ -2040,6 +2064,38 @@ check 'Play Memorized BGM with nothing memorized does nothing' do
   it.update
   eq 0, RGSS::Audio.log.select { |e| e[0] == :bgm }.size, 'no BGM was played'
   eq nil, st.memorized_bgm
+end
+
+check 'Play BGM with the file already playing does not restart it' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Same file re-triggered with different vol/tempo: RPG_RT keeps the track
+  # playing uninterrupted (single BGM channel, no break/restart) rather than
+  # calling into the backend a second time.
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 50, 120], string: 'town'),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town], names, 'only the first Play BGM actually reached the backend'
+  eq 'town', st.current_bgm[:name]
+  eq 50, st.current_bgm[:volume], 'state still tracks the latest requested volume'
+  eq 120, st.current_bgm[:tempo], 'state still tracks the latest requested tempo'
+end
+
+check 'Play BGM with a different file still restarts (or starts) playback' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'field'),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town field], names, 'a different file always reaches the backend'
 end
 
 # -- actor HP / MP commands ---------------------------------------------------
@@ -6019,6 +6075,36 @@ check 'battle: the attribute multiplier takes the strongest matching element' do
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
   bat.begin_round
   eq 60, bat.step_action[:damage]                    # max(50%, 300%) -> 60
+  # No attribute (property) table at all -> every id defaults to magic-type, so
+  # this is really a same-type case (see the multiply check below) rather than
+  # a counter-example to it.
+end
+
+check 'battle: a weapon-type and a magic-type element multiply instead of picking the strongest (yado.tk)' do
+  # Element 1 is weapon-type, element 2 magic-type (property table `type`
+  # field, as in the can_cast? weapon-attribute-gating check above).
+  props = { 1 => AttrTypeRow.new(0), 2 => AttrTypeRow.new(1) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0, 2 => 3 }  # weapon rank A (300%), magic rank D (50%)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.begin_round
+  eq 30, bat.step_action[:damage]  # 20 * (300% * 50%) = 20 * 150% = 30, not max(300,50)=60
+
+  # Within one type bucket, the strongest element still wins (the doc only
+  # disputes cross-type combination); a type with no ids at all contributes
+  # 100% unchanged.
+  props2 = { 1 => AttrTypeRow.new(0), 3 => AttrTypeRow.new(0) } # both weapon-type
+  hero2 = combatant('Hero', 40, 0, 20, 100)
+  hero2.atk_attrs = [1, 3]
+  slime2 = combatant('Slime', 0, 0, 5, 100_000)
+  slime2.attr_ranks = { 1 => 3, 3 => 0 } # weapon: resists 1 (50%), weak to 3 (300%)
+  bat2 = Game::Battle.new([hero2], [slime2], Game::Rng.new(1), nil, false, false,
+                          false, false, props2)
+  bat2.begin_round
+  eq 60, bat2.step_action[:damage] # max(50%, 300%) within the weapon bucket * 100% magic
 end
 
 check 'battle: an unlisted element deals full (C = 100%) damage' do

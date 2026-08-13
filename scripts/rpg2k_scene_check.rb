@@ -205,7 +205,7 @@ def fake_map_with_counters(id, events, counters)
 end
 
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
-            airship_land: true, airship_pass: true)
+            airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
@@ -310,7 +310,8 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # terrain 42 — so this one row decides whether walking hurts, and (for the
     # airship checks) whether it may fly over / land on any tile.
     terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth,
-                                    airship_land: airship_land, airship_pass: airship_pass) },
+                                    airship_land: airship_land, airship_pass: airship_pass,
+                                    boat_pass: boat_pass, ship_pass: ship_pass) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -467,9 +468,11 @@ end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
               members: [], terrain_damage: 0, bush_depth: 0,
-              airship_land: true, airship_pass: true, map_tree: nil)
+              airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
+              map_tree: nil)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
-               airship_land: airship_land, airship_pass: airship_pass)
+               airship_land: airship_land, airship_pass: airship_pass,
+               boat_pass: boat_pass, ship_pass: ship_pass)
   state = Game::State.new(fake_party(members), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   parent = fake_parent(db)
@@ -3287,6 +3290,46 @@ check 'boarding a boat and disembarking onto the shore' do
   ok !st.boarded?, 'disembarked back onto foot'
   eq [0, 0], [st.x, st.y], 'stepped off onto the shore tile'
   eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
+end
+
+check 'a boarded boat cannot overlap a below-characters event unless it has Through Mode on' do
+  # yado.tk: a below-characters, passable-graphic event lets the *walking*
+  # hero overlap it fine (LAYER_BELOW is not LAYER_SAME, see the priority-type
+  # checks above) -- but a ship ignores that gating entirely and just asks
+  # whether the blocking event's own move route has Through Mode on. Put a
+  # LAYER_BELOW event one tile past a boarded boat, on a boat_pass tile, and
+  # confirm the boat is stopped cold by it despite the layer mismatch that
+  # would let the hero glide over it.
+  blocker = event(0, 2, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker }, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq [0, 1], [st.x, st.y], 'stepped onto the boat tile'
+
+  RGSS::Input.dir_value = 2 # hold down, toward the below-characters event
+  20.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 1], [st.x, st.y],
+     'a below-characters event stops a boat even though its layer would let ' \
+     "the hero overlap it (got #{[st.x, st.y]})"
+
+  # Turn the blocking event's own Through Mode on and try again: now the boat
+  # passes it, matching real RPG_RT's ship-specific rule.
+  chars(scene)[1].through = true
+  RGSS::Input.dir_value = 2
+  20.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq 0, st.x, 'only moved along the column it was already sailing'
+  ok st.y > 1,
+     "Through Mode on the blocking event let the boat pass it (was at y=1, now #{st.y})"
 end
 
 check 'the airship flies over a tile blocked on foot, and follows the party' do

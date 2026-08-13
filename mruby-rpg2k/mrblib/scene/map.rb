@@ -1209,6 +1209,17 @@ class RPG2k
       # the tile's terrain to allow it (boat_pass / ship_pass) with no event in
       # the way, falling back to on-foot passability when the map has no terrain
       # data.
+      #
+      # A boat / ship's event-blocking rule is a real divergence from the
+      # hero's own (yado.tk quirk): the walking hero is priority-type-gated —
+      # a below/above-characters event with a passable graphic never blocks it
+      # (see `passable?` / `char_passable?`, which key off `blocker[:layer]`).
+      # A ship ignores that entirely and just asks whether the blocking
+      # event's *own* move route has Through Mode on
+      # (`blocker[:char].through`, the same accessor `char_passable?` and
+      # `passable?` check for the mover's own Through Mode) — a below-
+      # characters, passable-graphic event the hero strolls over still stops
+      # a ship dead unless that specific event has Through Mode enabled.
       def vehicle_passable?(x, y, dir, type)
         return false unless @map.in_bounds?(x, y)
         row = terrain_row_at(x, y)
@@ -1217,7 +1228,7 @@ class RPG2k
           return row.airship_pass ? true : false
         end
         blocker = @event_tiles[[x, y]]
-        return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
+        return false if blocker && !blocker[:char].through
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
       end

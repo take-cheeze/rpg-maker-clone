@@ -6883,10 +6883,14 @@ module Game
     # 200%-physical, 50%-magical attack nets 100%, not 200%). Ported
     # truncation-order and all (`magical * (physical * dmg / 100) / 100`)
     # rather than precomputing a combined percentage first, since the two
-    # can round differently. Unchanged for an attribute-less attack; a rank
-    # the target doesn't list defaults to C (100%). RPG2000 attribute rates
-    # never go negative, so EasyRPG's "one side is negative" fallback branch
-    # (2003's `attribute.type` add-on) never applies here.
+    # can round differently -- a combined-percentage shortcut
+    # ((weapon_best || 100) * (magic_best || 100) / 100, applied by the
+    # caller as `dmg * combined / 100`) was tried and dropped in an earlier
+    # revision of this method for exactly that reason. Unchanged for an
+    # attribute-less attack; a rank the target doesn't list defaults to C
+    # (100%). RPG2000 attribute rates never go negative, so EasyRPG's "one
+    # side is negative" fallback branch (2003's `attribute.type` add-on)
+    # never applies here.
     def apply_attr_multiplier(dmg, attr_ids, target)
       return dmg if attr_ids.nil? || attr_ids.empty?
       ranks = target.attr_ranks || {}
@@ -7230,6 +7234,13 @@ module Game
   class Timer
     FPS = 60
 
+    # RPG_RT's timer display never grows past two minute digits, so 99:59
+    # (5999 s) is the largest value it can show; a Timer Operation "set"
+    # sourced from a Control Variables value (arbitrary, player-reachable —
+    # e.g. an accidental or intentional overflowed computation) is clamped to
+    # this ceiling rather than wrapping or overflowing the frame counter.
+    MAX_SECONDS = 5999
+
     # Remaining time in frames; whether it is counting; whether it is drawn; and
     # whether it keeps counting (and drawing) during a battle — the Timer
     # Operation start command's second flag.
@@ -7243,8 +7254,10 @@ module Game
     end
 
     # Timer Operation, "set": load the timer with `seconds` (see the note above
-    # about the extra 59 frames).
+    # about the extra 59 frames). Clamped to MAX_SECONDS (99:59) since this can
+    # be fed an out-of-range Variable value via Control Variables.
     def set(seconds)
+      seconds = MAX_SECONDS if seconds > MAX_SECONDS
       @frames = seconds * FPS + (FPS - 1)
     end
 

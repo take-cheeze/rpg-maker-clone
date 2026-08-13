@@ -2058,9 +2058,28 @@ not yet verified:
   separate rule from whether the parallel process's own non-picture commands
   keep ticking, and is **not** addressed by this change — still open if not
   covered elsewhere.)
+- ✅ **Timer max 99:59 (5999s), clamped not wrapped when set higher via a
+  variable.** `Game::Timer#set` (`mruby-rpg2k/mrblib/game.rb`) computed
+  `@frames = seconds * FPS + (FPS - 1)` with no upper bound at all, and
+  `Game::Interpreter#do_timer`'s Timer Operation "set" command can source
+  `seconds` from an arbitrary Control-Variables value
+  (`variables[cmd.param(2)]`), so an out-of-range variable reached the frame
+  counter unclamped. Real RPG_RT's timer display never grows past two minute
+  digits, so it caps the loaded value at 99:59 (5999 s) rather than wrapping
+  or overflowing. Fixed by adding `Game::Timer::MAX_SECONDS = 5999` and
+  clamping in `#set` (`seconds = MAX_SECONDS if seconds > MAX_SECONDS`)
+  before the frame math runs; 5999 s is confirmed to land exactly on 99:59
+  via `#seconds`/`#display_text` (5999 / 60 = 99 minutes remainder 59
+  seconds). Regression coverage added to `scripts/rpg2k_logic_check.rb`:
+  a direct `Game::Timer#set(9999)` clamps to 5999 s / "99:59", a Timer
+  Operation "set" sourced from a Control Variable holding 9999 clamps the
+  same way through the interpreter, and an ordinary in-range variable-sourced
+  set (30 s) is left untouched. The other numeric constants originally
+  bundled with this bullet (battle damage cap, HP recovery cap, switch/
+  variable caps and ranges, recursion ceiling, party/stack/picture caps, move
+  speed, transparency steps) remain unverified — see below.
 - **Numeric constants worth asserting directly**: battle damage hard-cap
-  under 1000; special-skill HP recovery cap 999; Timer max 99:59 (5999s),
-  clamped not wrapped when set higher via variable; switches/variables cap
+  under 1000; special-skill HP recovery cap 999; switches/variables cap
   at 5000 (expandable), variable value range −999999..999999 in RPG2000 vs
   7-digit in RPG2003 (already partially modelled per `LCF::MODE`, worth
   checking the variable-write clamp specifically); Call Event / Event Call
@@ -2321,14 +2340,28 @@ not yet verified:
   the running effect.
 
 **BGM / SE**
-- BGM has a **single channel** — a new Play BGM force-stops whatever's
+- 🚧 BGM has a **single channel** — a new Play BGM force-stops whatever's
   playing; re-triggering the exact same file that's already playing does
   **not** restart it (applies new vol/tempo/pan without a break); field
   and battle BGM sharing the same file continue seamlessly across the
   transition. Memorize/Play-Memorized BGM only remembers the *filename*,
   never playback position — replaying always restarts from the top, and
   uses the vol/tempo/pan settings active **at memorize time**, not replay
-  time.
+  time. **The no-restart half is now implemented**:
+  `Game::Interpreter#play_audio`'s `:bgm` branch (`mruby-rpg2k/mrblib/
+  interpreter.rb`) compares the command's filename against
+  `@state.current_bgm[:name]` and skips the `RGSS::Audio.bgm_play` call
+  (and the `bgm_looped` reset) when they match, so a same-file re-trigger
+  leaves the still-playing track alone. `@state.current_bgm` is still
+  updated unconditionally to the command's latest vol/tempo, so Memorize
+  BGM continues to stash whatever was most recently requested. **The
+  vol/tempo/pan-without-restart half is not addressed**: this build's
+  `RGSS::Audio` exposes no primitive to adjust an already-playing BGM's
+  volume, pitch, or pan in place — `bgm_play` (`mruby-rgss/src/audio.cxx`,
+  backed by `SDL_mixer`) is the only entry point that takes those
+  parameters, and it always starts playback from the top. Implementing
+  this half would need a new native backend primitive (e.g. an
+  `Mix_VolumeMusic`-style setter) that does not exist today.
 - SE is truly polyphonic (unlike BGM); SE "OFF" stops all playing SEs at
   once; SE never loops natively.
 - SE files must be WAVE; BGM accepts MIDI/WAVE/MP3 — an asymmetric format
@@ -2536,12 +2569,29 @@ not yet verified:
   regardless of terrain, and Set Vehicle Location has **no** landability
   validation at all (will happily place it somewhere unlandable). Random
   encounters stay active on ships (governed by terrain settings) but are
-  **hard-disabled** on airships with no database toggle. Small/large ships
-  can never overlap an event's tile even with a passable graphic +
-  below-characters priority (which *does* let the walking hero overlap it
-  fine) — ships need the event's own move route to use Through Mode
-  instead; this is a real divergence from the hero's priority-type-gated
-  passability already implemented.
+  **hard-disabled** on airships with no database toggle.
+- ✅ **Small/large ships can never overlap an event's tile even with a
+  passable graphic + below-characters priority** (which *does* let the
+  walking hero overlap it fine via the already-implemented priority-type
+  gating) — a ship needs the *blocking event's own* move route to have
+  Through Mode on instead; ships ignore priority-type/`overlap_forbidden`
+  gating for this purpose entirely and just check the blocked event's own
+  Through Mode flag. `Scene::Map#vehicle_passable?`'s boat/ship branch
+  (`mruby-rpg2k/mrblib/scene/map.rb`) used to reuse the exact same
+  `blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden]` occupancy
+  test the hero's own `passable?`/`char_passable?` use, so a below-
+  characters event never blocked a ship at all — the opposite of RPG_RT,
+  which always blocks a ship on such a tile unless that specific event has
+  Through Mode enabled. The blocker check is now `blocker &&
+  !blocker[:char].through`, reading the same `Game::Character#through`
+  accessor (`attr_accessor :through`, toggled by the Set Move Route
+  Through Mode ON/OFF commands) that the hero's own Through Mode already
+  uses — this is a one-line, ship-specific divergence from the hero's rule,
+  not a change to the hero's passability or to the airship branch (which
+  ignores events entirely and flies over everything, unaffected). Covered
+  by a new `scripts/rpg2k_scene_check.rb` check (a boarded boat is stopped
+  by a below-characters event on an otherwise boat-passable tile; setting
+  that event's own Through Mode on lets the boat sail through it).
 
 **Save / Load persistence — consolidated master list**
 Runtime state that does **not** survive a map re-visit (leave and return,

@@ -2787,11 +2787,22 @@ module Game
         # default to 100 when the command carries a shorter list.
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
+        # BGM has a single channel, and RPG_RT special-cases re-triggering Play
+        # BGM with the file that's already current: it does NOT break and
+        # restart the track from the top the way any other Play BGM does
+        # (yado.tk). It also re-applies the command's vol/tempo/pan to the
+        # still-playing track, but RGSS::Audio here has no primitive for that
+        # (mruby-rgss/src/audio.cxx's bgm_play is the only vol/pitch entry
+        # point, and it always restarts via SDL_mixer) — that half is
+        # deliberately left unimplemented rather than faked; see docs/TODO.md.
+        same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
         # as the "current system BGM" regardless of whether playback succeeds).
         @state.current_bgm = { name: name, volume: volume, tempo: pitch }
-        @state.bgm_looped = false # a fresh track has not looped yet
-        RGSS::Audio.bgm_play(name, volume, pitch)
+        unless same_file_already_playing
+          @state.bgm_looped = false # a fresh track has not looped yet
+          RGSS::Audio.bgm_play(name, volume, pitch)
+        end
       else
         # PlaySE parameters: [volume, tempo, balance].
         volume = cmd.parameters.size > 0 ? cmd.param(0) : 100
