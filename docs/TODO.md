@@ -1679,14 +1679,24 @@ The work below is roughly ordered by the critical path to a walkable game
   (10450, `do_change_equipment` in `interpreter.rb`), which EasyRPG's
   `ChangeEquipment` gates through the identical `IsItemUsable` call — checked
   per target there too, since a command can target the whole party at once.
-  **Left open**: the battle screen's own ally-target picker for a restricted
-  medicine/item (`Scene::Map#draw_battle_ally_target`) still lists every
-  living ally regardless of the item's `actor_set` — the pure
-  `Game::Party#battle_item_command` formula is not wrong, nothing upstream of
-  it in the battle scene enforces the restriction on which target can be
-  chosen in the first place. Covered by new `scripts/rpg2k_logic_check.rb`
-  checks (the read itself, the all-party-scope per-target skip, menu
-  greying-out, equip-menu filtering, and the event command).
+  Covered by new `scripts/rpg2k_logic_check.rb` checks (the read itself, the
+  all-party-scope per-target skip, menu greying-out, equip-menu filtering,
+  and the event command). **The previously-left-open half is now fixed
+  too**: the battle screen's own ally-target picker
+  (`Scene::Map#draw_battle_ally_target` / `#drive_battle_ally_target`) used
+  to read straight off `#living_allies` with no `actor_set` awareness at
+  all, so a restricted medicine/item could still be picked — and its effect
+  actually applied — against a party member the field menu already refused
+  to let it touch. Fixed with a new `Scene::Map#battle_ally_targets`, which
+  narrows the candidate list by `item_usable_by?` whenever the pending
+  action is a Battle Item (a pending skill is untouched, since `actor_set`
+  never gates skills); `Game::Party#battle_item_command` itself stays pure
+  arithmetic, unchanged — the gate is about which target may be *offered* at
+  all, not what the formula computes once one legitimately is. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (a two-actor party where the item
+  excludes the second actor: the picker offers only the first, and moving
+  the cursor has nowhere to go), confirmed to fail against the pre-fix code
+  before the fix.
 
 ### yado.tk quirks backlog
 

@@ -1439,8 +1439,8 @@ class BattleStubActor
   attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
   # a defeat test passes weaker stats.
-  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [])
-    @exp = 0; @id = 1; @name = 'Hero'
+  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1)
+    @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
   end
@@ -4723,6 +4723,47 @@ check 'Enemy Encounter scene: the ally target cursor wraps around' do
   eq 1, ui[:ally_i], 'Up from the first ally wraps to the last (2 actors)'
   press_key(scene, RGSS::Input::DOWN)
   eq 0, ui[:ally_i], 'Down from the last ally wraps to the first'
+end
+
+# Two actors (distinct ids) with an item_usable_by? that restricts the
+# Potion (item 5) to actor 1 only -- a real Game::Party derives this from the
+# item's 使用可能キャラ / actor_set field (Game::Party#item_usable_by?); this
+# stub hardcodes the same answer so the scene-level wiring can be checked
+# without building a full item database.
+class BattleRestrictedItemParty < BattleMagicParty
+  def initialize(hurt: false)
+    super(hurt: hurt)
+    @hero2 = BattleStubActor.new(atk: 10, agi: 5, mp: 5, hp: 150, id: 2)
+    @actors = [@hero, @hero2]
+  end
+  def item_usable_by?(_it, actor_id); actor_id != 2; end
+end
+
+check "Enemy Encounter scene: a restricted item's ally-target picker skips the actor it excludes" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleRestrictedItemParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
+  eq :ally_target, ui[:phase]
+  eq 2, ui[:allies].reject(&:dead?).length, 'both actors are alive and in the fight'
+  targets = scene.send(:battle_ally_targets)
+  eq 1, targets.length, 'the restricted actor never appears as a choice'
+  eq 1, targets.first.actor.id, 'only the allowed actor is offered'
+  eq 0, ui[:ally_i], 'starts on the sole remaining candidate'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 0, ui[:ally_i], 'a single candidate has nowhere to move to, unlike the ' \
+                     'unrestricted two-actor cursor above'
+  press_key(scene, RGSS::Input::C) # confirm -> queues the item on the allowed actor
+  eq :command, ui[:phase], 'hero 2 still has to pick their own action'
+  eq ui[:allies].first, ui[:allies].first.command[:target],
+     'the queued Item command targets actor 1, never the restricted actor 2'
 end
 
 check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death' do
