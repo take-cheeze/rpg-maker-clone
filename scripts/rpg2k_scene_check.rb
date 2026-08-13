@@ -2406,6 +2406,74 @@ check 'an explicit \c[0] in the Show Text stops the colour bleeding into Show Ch
      'the reset before the text ends carries a colour 0 into the choices, not 2'
 end
 
+check 'a \\^ in a standalone Show Choices label is confirmed already inert (yado.tk)' do
+  # yado.tk: "\^ doesn't work inside Show Choices even though other codes
+  # do." A standalone choice window (no preceding Show Text) is what
+  # Game::Message.scan's own :auto_close flag is computed from (open_message
+  # sums it across every label's scan) -- but #drive_message dispatches a
+  # `choice: true` message straight into the Down/Up/C/B navigation branch
+  # and never reaches #drive_text_message, the only place `reveal.auto_close?`
+  # is ever read. A choice list can only ever close on player input, matching
+  # real RPG_RT (choices always wait for a pick), so this stays open here too.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes\\^'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'no'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'the choice window opened'
+  5.times { RGSS::Input.reset; scene.update }
+  ok scene.instance_variable_get(:@message),
+     'the \\^ in the first label did not auto-close the window with no input'
+  eq 2, scene.instance_variable_get(:@message)[:count], 'both options are still listed'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm option 0 ("yes\^")
+  scene.update
+  ok !scene.instance_variable_get(:@message),
+     'the window closes on an actual player pick, same as any other choice'
+end
+
+check 'a \\^ in a choice merged onto a preceding Show Text stays inert there too' do
+  # The merged path (Show Text immediately followed by Show Choices, kept in
+  # one window -- see #append_choice_lines) never even records auto_close
+  # from the choice labels' own scans, so the same yado.tk finding holds
+  # there for a different structural reason than the standalone case above.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], indent: 0, string: 'hi'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes\\^'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'no'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  12.times { scene.update; break if scene.instance_variable_get(:@message) }
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # completes the reveal; window stays open
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # a Show Choices follows directly, so it keeps the window open
+  RGSS::Input.reset
+  merged = nil
+  8.times do
+    scene.update
+    merged = scene.instance_variable_get(:@message)
+    break if merged && merged[:choice]
+  end
+  ok merged, 'the choices merged onto the still-open text window'
+  5.times { RGSS::Input.reset; scene.update }
+  ok scene.instance_variable_get(:@message),
+     'the \\^ in the merged choice label did not auto-close the window either'
+end
+
 check 'a Show Text keeps its window open when an Input Number follows directly' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

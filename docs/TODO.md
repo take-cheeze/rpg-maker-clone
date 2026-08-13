@@ -3396,7 +3396,28 @@ not yet verified:
   so a pause or more text right after one of these three codes now reveals
   one frame later than it would with the code removed — previously they were
   pure no-ops in the reveal counter.
-- `\^` doesn't work inside Show Choices even though other codes do.
+- ✅ **`\^` inside Show Choices is confirmed already inert, no code change
+  needed** — both the ways a choice list can appear stop it from ever being
+  read. A **standalone** Show Choices (`open_message` in
+  `mruby-rpg2k/mrblib/scene/map.rb`) does compute `:auto_close` off every
+  label's own `Game::Message.scan` and folds it into the `reveal` it builds
+  — but `#drive_message` dispatches a `choice: true` message straight into
+  its Down/Up/C/B navigation branch and never calls `#drive_text_message`,
+  the only place `reveal.auto_close?` is ever consulted; a choice window can
+  only close on an actual player pick or a cancel, exactly matching real
+  RPG_RT (a choice always waits for one). A choice list **merged** onto a
+  preceding Show Text (`#append_choice_lines`, the "text on top, choices
+  below" case one open window shares) does not even reach that far: its own
+  `Game::Message.scan` calls thread `color` through the labels for the
+  \c[]-bleed fix above but discard the returned `:auto_close` outright, so a
+  `\^` there is dropped before a reveal object is even built. Covered by two
+  new `scripts/rpg2k_scene_check.rb` checks (a `\^` in a standalone choice
+  label leaves the window open with no input, closing only once the player
+  actually picks one; the same in a label merged onto a preceding Show
+  Text), both confirmed to fail against a temporarily-patched build that
+  makes `#drive_message` honour `auto_close?` for a choice window (and,
+  for the merged case, makes `#append_choice_lines` thread the scanned
+  `:auto_close` into its own `reveal` too) before being reverted.
 - Message Options (window transparency/position) are **sticky global
   state** — once set, they apply to every subsequent message window for
   the rest of the game (or until reset), not scoped to the current event.
