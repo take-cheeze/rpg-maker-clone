@@ -615,6 +615,14 @@ end
 # owning sprites of their own.
 MAP_LAYER_IVARS = %i[@parallax_sprite @lower_sprite @airship_shadow
                      @player_sprite @animation_sprite @upper_sprite].freeze
+# The subset of MAP_LAYER_IVARS the map's own tone must actually reach --
+# @animation_sprite is deliberately excluded: it sits at its own z between
+# @player_sprite and @upper_sprite (so the order test above still holds), but
+# it is Show Battle Animation's shared renderer, and yado.tk documents battle
+# animations as tone-exempt just like a picture -- it lives outside both
+# @map_viewport and @upper_viewport for exactly this reason (see
+# Scene::Map#setup_sprites).
+MAP_TONED_IVARS = (MAP_LAYER_IVARS - %i[@animation_sprite]).freeze
 # ... and everything that draws *over* the map, which the screen tone must not
 # touch: pictures carry their own tone, and the weather / flash / fade overlays
 # are screen effects in their own right.
@@ -4378,20 +4386,52 @@ end
 check 'the tone reaches the map layers and nothing above them' do
   scene = tint_scene(0, 0, 0, 100, 0, 0)
   vp = scene.instance_variable_get(:@map_viewport)
-  MAP_LAYER_IVARS.each do |i|
+  vp2 = scene.instance_variable_get(:@upper_viewport)
+  ok vp2, 'the upper chip layer has its own viewport'
+  ok vp2.tone, 'a tone reached the upper viewport too'
+  eq vp.tone, vp2.tone,
+     'the upper chip layer takes the identical tone as the rest of the map'
+  MAP_TONED_IVARS.each do |i|
     spr = scene.instance_variable_get(i)
     next unless spr # a layer this scene did not build
-    ok spr.viewport.equal?(vp), "#{i} is tinted with the map"
+    ok spr.viewport.equal?(vp) || spr.viewport.equal?(vp2),
+       "#{i} is tinted with the map"
   end
   ABOVE_MAP_IVARS.each do |i|
     spr = scene.instance_variable_get(i)
     next unless spr
-    ok !spr.viewport.equal?(vp),
+    ok !spr.viewport.equal?(vp) && !spr.viewport.equal?(vp2),
        "#{i} must not be tinted -- it draws over the map"
   end
   scene.instance_variable_get(:@vehicle_sprites).each_value do |spr|
     ok spr.viewport.equal?(vp), 'a vehicle is tinted with the map it sits on'
   end
+end
+
+# yado.tk: "Change Screen Tone affects only the map tile+character layer --
+# pictures, screen/character flash, battle animations, and message text are
+# all completely unaffected even at a maximal dark tone." @animation_sprite
+# (Show Battle Animation's shared renderer, field/parallel-process and
+# in-battle alike, see Scene::Map#step_map_animation) used to live inside
+# @map_viewport along with the tiles and hero, so an active map tone wrongly
+# tinted every animation play too. Confirmed to fail against the pre-fix code
+# (the sprite's viewport equalled @map_viewport).
+check "an active map tone does not reach Show Battle Animation's sprite" do
+  scene = tint_scene(0, 0, 0, 100, 0, 0)
+  vp = scene.instance_variable_get(:@map_viewport)
+  vp2 = scene.instance_variable_get(:@upper_viewport)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  ok spr, 'the animation sprite exists'
+  ok !spr.viewport, 'it is a top-level sprite, not a child of any toned viewport'
+  ok !spr.viewport.equal?(vp) && !spr.viewport.equal?(vp2),
+     'either way, it does not share a viewport with the tinted map layers'
+  # And it still draws in the same slot it always has: over the hero, under
+  # the upper (above-character) chip layer -- the tone fix must not have
+  # reordered anything.
+  ok spr.z > sprite_z(scene, :@player_sprite),
+     'still drawn over the player sprite'
+  ok spr.z < sprite_z(scene, :@upper_sprite),
+     'still drawn under the upper chip layer'
 end
 
 check 'the choice window plays the cursor and decision system sounds' do

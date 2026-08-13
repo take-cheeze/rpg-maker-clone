@@ -207,8 +207,9 @@ class RPG2k
         (@timer_windows || []).each { |w| w.dispose if w }
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
-        # After the sprites it holds, so nothing is orphaned inside it.
+        # After the sprites they hold, so nothing is orphaned inside them.
         @map_viewport.dispose if @map_viewport
+        @upper_viewport.dispose if @upper_viewport
         @flash_buffer.dispose if @flash_buffer
         @flash_out_buffer.dispose if @flash_out_buffer
         @chipset_bmp.dispose if @chipset_bmp
@@ -311,8 +312,17 @@ class RPG2k
         @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
         @lower_sprite.bitmap = @lower_bmp
 
-        @upper_sprite = Sprite.new(@map_viewport)
-        @upper_sprite.z = 200
+        # The upper (above-character) chip layer lives in its own viewport
+        # rather than @map_viewport, purely so a Show Battle Animation sprite
+        # can be sandwiched between the two (see @animation_sprite below)
+        # without moving into or out of a toned viewport itself -- it keeps
+        # exactly the tone @map_viewport gets, applied in lockstep by
+        # #update_map_tone, matching "the map tile+character layer" the
+        # yado.tk finding scopes Change Screen Tone to.
+        @upper_viewport = Viewport.new(0, 0, SCREEN_W, SCREEN_H)
+        @upper_viewport.z = 200 # same top-level slot the sprite held inside @map_viewport
+        @upper_sprite = Sprite.new(@upper_viewport)
+        @upper_sprite.z = 200 # sole child of @upper_viewport, so this is only for parity
         @upper_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
         @upper_sprite.bitmap = @upper_bmp
 
@@ -345,8 +355,22 @@ class RPG2k
         @airship_shadow.bitmap = shadow
 
         # A screen-sized layer the Show Battle Animation renderer composites the
-        # current frame's cells into, over the map (above the hero).
-        @animation_sprite = Sprite.new(@map_viewport)
+        # current frame's cells into, over the map (above the hero). A
+        # top-level sprite, not a child of @map_viewport: yado.tk documents
+        # Change Screen Tone as affecting only the map tile+character layer --
+        # pictures, screen/character flash, battle animations and message text
+        # all stay unaffected even at a maximal dark tone, but this sprite used
+        # to live inside the same toned viewport as the tiles and hero, so an
+        # active map tone wrongly tinted every Show Battle Animation (11210)
+        # play, both the field/parallel-process one and an in-battle attack's
+        # own, since both render through this one shared sprite (#step_map_animation).
+        # Its z (150) is unchanged, so it still draws in the same slot between
+        # @map_viewport (z 100) and the upper layer's own @upper_viewport
+        # (z 200) it always has -- top-level z ordering compares a Viewport as
+        # one block against its siblings (gfx_update's per-parent z sort), so
+        # pulling this one sprite out changes only whether the map's tone
+        # reaches it, not where it draws relative to the layers around it.
+        @animation_sprite = Sprite.new
         @animation_sprite.z = 150
         @animation_sprite.visible = false
         @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
@@ -567,8 +591,14 @@ class RPG2k
       end
 
       # Apply a Tint Screen tone (`[r, g, b, sat]`, each 0..200 with 100 neutral)
-      # to the whole map view, by setting it on the viewport every map sprite
-      # lives in.
+      # to the map tile+character layer, by setting it on the two viewports
+      # that layer's sprites live in -- @map_viewport (tiles below the upper
+      # chip layer, the hero, vehicles) and @upper_viewport (the above-character
+      # chip layer, split out so @animation_sprite can sit between the two
+      # without itself being a child of either, see its own comment). Both get
+      # the identical tone in lockstep, so the split is invisible to anything
+      # that only cares about "is the map tinted" -- only @animation_sprite,
+      # the picture layer and everything above it are exempt.
       #
       # This used to be approximated by a black overlay whose opacity tracked how
       # far the channels averaged *below* neutral, which meant brightening did
@@ -586,11 +616,20 @@ class RPG2k
         r, g, b, sat = tint
         return if @map_tint == tint
         @map_tint = tint.dup
-        @map_viewport.tone = Tone.new(Scene::Map.tone_channel(r),
-                                      Scene::Map.tone_channel(g),
-                                      Scene::Map.tone_channel(b),
-                                      -Scene::Map.tone_channel(sat))
+        tr = Scene::Map.tone_channel(r)
+        tg = Scene::Map.tone_channel(g)
+        tb = Scene::Map.tone_channel(b)
+        tsat = -Scene::Map.tone_channel(sat)
+        @map_viewport.tone = Tone.new(tr, tg, tb, tsat)
         @map_viewport.update if @map_viewport.respond_to?(:update)
+        if @upper_viewport
+          # A separate Tone instance, not the same object shared across both
+          # viewports -- Tone has mutable component setters (red=, etc.), so
+          # aliasing one between two viewports would risk a later in-place
+          # tweak to one silently retuning the other.
+          @upper_viewport.tone = Tone.new(tr, tg, tb, tsat)
+          @upper_viewport.update if @upper_viewport.respond_to?(:update)
+        end
       rescue StandardError => e
         $stderr.puts "[RPG2k] screen tone failed, map drawn untinted: #{e.message}"
         nil
