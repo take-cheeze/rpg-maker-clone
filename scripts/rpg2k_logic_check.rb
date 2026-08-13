@@ -3587,16 +3587,35 @@ check 'a heal+cure item counts either the heal or the cure as a use' do
   eq 1, st.party.item_count(5)
 end
 
-check 'a reverse medicine cures nothing: inflicting is deliberately unbuilt' do
-  # The flag flips a medicine from curing to inflicting, the same way it does for
-  # a skill. No item in either test bed sets it, so there is nothing to measure
-  # an implementation of the inflict half against and it is left unbuilt -- but
-  # such an item must not be treated as a cure either.
+check 'a reverse medicine inflicts its listed states instead of curing them' do
+  # The flag flips a medicine from curing to inflicting, the same way it already
+  # does for a field skill (#skill_inflicted_states / #cast_skill) -- the same
+  # EasyRPG reverse_state_effect branch, just on the item side. No item in
+  # either test bed sets it, but the mechanism is the identical, already-tested
+  # one the skill side runs.
   st = item_party({})
   it = fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true)
   eq [], st.party.item_cured_states(it)
+  eq [3], st.party.item_inflicted_states(it)
   eq [3], st.party.item_cured_states(fake_item(type: 6, state_set: [0, 0, 1])),
      'the same row without the flag does cure'
+  eq [], st.party.item_inflicted_states(fake_item(type: 6, state_set: [0, 0, 1])),
+     'and does not also inflict'
+end
+
+check 'a reverse medicine actually inflicts on use, and is greyed out once landed' do
+  items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
+  st = item_party(items)
+  st.party.gain_item(5, 2)
+  hero = st.party.leader
+  eq false, hero.state?(3)
+  eq true, st.party.item_effective?(5, hero)
+  eq [hero], st.party.use_item(5, hero)
+  eq true, hero.state?(3)                       # inflicted
+  eq 1, st.party.item_count(5)                  # consumed
+  eq false, st.party.item_effective?(5, hero), 'already afflicted -> no longer effective'
+  eq [], st.party.use_item(5, hero)
+  eq 1, st.party.item_count(5), 'a no-op use does not consume another'
 end
 
 check 'field_items includes skill books alongside medicines' do
