@@ -2378,6 +2378,25 @@ module Game
       !actor.dead?
     end
 
+    # 使用可能キャラ (`actor_set`, item field 62): whether item `it` names
+    # `actor_id` among the specific characters allowed to use or equip it at
+    # all. The one restriction list gates both uses (EasyRPG's
+    # `Game_Actor::IsItemUsable`, read by `Game_Party::IsItemUsable`'s
+    # per-target overload for using an item and by `ChangeEquipment` for
+    # equipping one) — a book, seed, medicine or piece of gear can all be
+    # limited to a named cast member this way, not just weapons/armour. An
+    # actor id the array is too short to reach defaults to allowed, the same
+    # "missing entry reads as the field's default" rule this runtime's other
+    # bit-array fields (terrain_set, class_set-adjacent ones) already follow.
+    def item_usable_by?(it, actor_id)
+      return true unless it.respond_to?(:actor_set) && it.actor_set
+      return true if actor_id.nil?
+      set = it.actor_set
+      idx = actor_id - 1
+      return true if idx < 0 || set.size <= idx
+      set[idx] ? true : false
+    end
+
     # Whether using item `id` on `actor` would change anything, so the menu can
     # grey out a no-op. A medicine is effective when the target is below full
     # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
@@ -2386,6 +2405,7 @@ module Game
     def item_effective?(id, actor)
       it = db_item(id)
       return false unless it && actor
+      return false unless item_usable_by?(it, actor.id)
       case it.type
       when ITEM_MEDICINE
         return false if ko_only_blocked?(it, actor)
@@ -2429,6 +2449,7 @@ module Game
     # have learnt the skill. One is consumed only when the cast actually did
     # something, matching how the other item kinds here refuse to be wasted.
     def use_special_item(it, id, actor)
+      return [] unless actor && item_usable_by?(it, actor.id)
       affected = cast_skill(actor, it.skill_id, actor, true)
       lose_item(id, 1) unless affected.empty?
       affected
@@ -2446,8 +2467,10 @@ module Game
       targets.each do |t|
         # A 蘇生専用 item passes over anyone still standing without touching
         # them -- not even the HP restore -- which is what keeps an all-party
-        # revive from topping up the members who never fell.
-        next if ko_only_blocked?(it, t)
+        # revive from topping up the members who never fell. An actor_set
+        # restriction does the same for a member the item simply is not
+        # usable on, even under an all-party scope.
+        next if ko_only_blocked?(it, t) || !item_usable_by?(it, t.id)
         changed = false
         # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
         # the HP recovery below lands instead of being blocked as a no-op.
@@ -2474,7 +2497,8 @@ module Game
     # actor who already knows the skill, does nothing and is not consumed.
     def use_skill_book(it, id, actor)
       skill = it.skill_id
-      return [] unless actor && skill && skill != 0 && !actor.knows_skill?(skill)
+      return [] unless actor && item_usable_by?(it, actor.id) &&
+                       skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
       lose_item(id, 1)
       [actor]
@@ -2495,7 +2519,7 @@ module Game
     # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
     # it carries any boost; a seed with no boost does nothing and is not consumed.
     def use_seed(it, id, actor)
-      return [] unless actor
+      return [] unless actor && item_usable_by?(it, actor.id)
       boosts = seed_boosts(it)
       return [] unless boosts.any? { |b| b != 0 }
       boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
@@ -2516,25 +2540,33 @@ module Game
 
     # Held items equippable in equipment `slot` (0..4) on `actor`, as
     # [id, count] pairs in ascending id order -- the candidate list for the
-    # equip menu's chosen slot. `actor` only matters for the shield slot (1):
-    # a 二刀流 (double_hand) actor's shield slot is a second weapon slot, so it
-    # lists weapons there instead of shields -- mirroring EasyRPG's
+    # equip menu's chosen slot. `actor` matters two ways: for the shield slot
+    # (1), a 二刀流 (double_hand) actor's shield slot is a second weapon slot,
+    # so it lists weapons there instead of shields -- mirroring EasyRPG's
     # `Window_EquipItem`, which retargets the whole slot to `weapon` for such
-    # an actor before filtering, rather than offering both kinds.
+    # an actor before filtering, rather than offering both kinds; and an
+    # actor_set restriction (#item_usable_by?) drops an item this particular
+    # actor cannot wear at all, matching `Game_Actor::IsItemUsable` (which
+    # `ChangeEquipment` reads the same way). Both actor-dependent filters are
+    # simply skipped when no `actor` is given.
     def equip_candidates(slot, actor = nil)
       slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
-      @items.keys.sort.select { |id| item_count(id) > 0 && equip_slot_for(id) == slot }
-            .map { |id| [id, item_count(id)] }
+      @items.keys.sort.select do |id|
+        item_count(id) > 0 && equip_slot_for(id) == slot &&
+          (actor.nil? || item_usable_by?(db_item(id), actor.id))
+      end.map { |id| [id, item_count(id)] }
     end
 
     # Whether held item `id` is a genuine #equip_candidates entry for `slot` on
-    # `actor` -- mirrors that method's own retargeting exactly, so a `slot`
-    # argument #equip_from_bag receives can never accept anything the
-    # candidate list would not itself have offered (in either direction: a
-    # 二刀流 actor's shield slot accepts a weapon, not a weapon *and* a shield).
+    # `actor` -- mirrors that method's own retargeting and actor_set filter
+    # exactly, so a `slot` argument #equip_from_bag receives can never accept
+    # anything the candidate list would not itself have offered (in either
+    # direction: a 二刀流 actor's shield slot accepts a weapon, not a weapon
+    # *and* a shield; an actor this item is not usable by accepts nothing).
     def equip_candidate_for?(actor, id, slot)
       base = equip_slot_for(id)
       return false if base.nil?
+      return false if actor && !item_usable_by?(db_item(id), actor.id)
       if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
         base == Actor::WEAPON_SLOT
       else
@@ -6721,7 +6753,7 @@ module Game
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       # An elemental weapon scales its damage by the target's resistance before
       # variance / criticals (EasyRPG's ApplyAttributeNormalAttackMultiplier).
-      dmg = dmg * attr_multiplier(b.atk_attrs, target) / 100
+      dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
       dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # No critical on a same-side hit (e.g. a confused ally striking an ally) or
       # against a target whose gear prevents criticals, matching EasyRPG.
@@ -6829,46 +6861,61 @@ module Game
       ATTR_RATE_PCT[rank]
     end
 
-    # Whether attribute `aid` is the database `property` table's weapon-type
-    # (field `type`, value 0, as opposed to magic-type 1) -- same field and
-    # same permissive default (an id the table doesn't define reads as
-    # magic-type) as `Game::Party#attribute_weapon_type?`, which this
-    # duplicates rather than shares since that method reads `@db.property`
-    # off a live database and this one reads `@attributes`, the same table
-    # handed to `Game::Battle.new` from a fixture-friendlier source.
-    def attribute_weapon_type?(aid)
+    # Whether attribute `aid` is the database's weapon-type (property field 2,
+    # value 0) rather than magic-type (1) -- the same reading
+    # Game::Party#attribute_weapon_type? uses (for skill-usability gating),
+    # duplicated here since Battle reaches the property table through its own
+    # `@attributes` rather than a database reference shared with Party. An id
+    # the table doesn't define reads as magic-type, the permissive default
+    # #attribute_weapon_type? also falls back to.
+    def attribute_physical?(aid)
       row = @attributes ? @attributes[aid] : nil
       row && row.respond_to?(:type) && row.type == 0 ? true : false
     end
 
-    # The percentage `attr_ids` scale damage against `target`. yado.tk: an
-    # attack naming both a weapon-type and a magic-type attribute multiplies
-    # the two rates as fractions (e.g. 200% weapon x 50% magic = 100%), not a
-    # single strongest-of-all-ids pick the way EasyRPG's
-    # Attribute::ApplyAttributeMultiplier (this method's own prior model)
-    # does it. Within each type bucket the strongest (largest) rate among
-    # that bucket's ids still wins -- the doc only disputes cross-type
-    # combination, not same-type stacking. A bucket with no ids in it
-    # contributes 100% (unchanged), so an attack with only one type behaves
-    # exactly as before. 100 (unchanged) for an attribute-less attack; a rank
-    # the target doesn't list defaults to C (100%).
-    def attr_multiplier(attr_ids, target)
-      return 100 if attr_ids.nil? || attr_ids.empty?
+    # Scale `dmg` by `attr_ids`'s rate against `target`'s per-attribute
+    # defence ranks: EasyRPG's Attribute::ApplyAttributeMultiplier. Each
+    # attribute is either weapon-type (physical) or magic-type; the
+    # strongest (largest) rate *within* each type is kept, and an attack
+    # carrying both types at once multiplies the two rates as two successive
+    # percentage scalings of `dmg` -- not an average, and not just the
+    # single strongest rate across every attribute regardless of type (a
+    # 200%-physical, 50%-magical attack nets 100%, not 200%). Ported
+    # truncation-order and all (`magical * (physical * dmg / 100) / 100`)
+    # rather than precomputing a combined percentage first, since the two
+    # can round differently -- a combined-percentage shortcut
+    # ((weapon_best || 100) * (magic_best || 100) / 100, applied by the
+    # caller as `dmg * combined / 100`) was tried and dropped in an earlier
+    # revision of this method for exactly that reason. Unchanged for an
+    # attribute-less attack; a rank the target doesn't list defaults to C
+    # (100%). RPG2000 attribute rates never go negative, so EasyRPG's "one
+    # side is negative" fallback branch (2003's `attribute.type` add-on)
+    # never applies here.
+    def apply_attr_multiplier(dmg, attr_ids, target)
+      return dmg if attr_ids.nil? || attr_ids.empty?
       ranks = target.attr_ranks || {}
-      weapon_best = nil
-      magic_best = nil
+      physical = nil
+      magical = nil
       attr_ids.each do |aid|
         rank = ranks[aid] || 2
         rank = 0 if rank < 0
         rank = 4 if rank > 4
         pct = attr_rate(aid, rank)
-        if attribute_weapon_type?(aid)
-          weapon_best = pct if weapon_best.nil? || pct > weapon_best
+        if attribute_physical?(aid)
+          physical = pct if physical.nil? || pct > physical
         else
-          magic_best = pct if magic_best.nil? || pct > magic_best
+          magical = pct if magical.nil? || pct > magical
         end
       end
-      (weapon_best || 100) * (magic_best || 100) / 100
+      if physical && magical
+        magical * (physical * dmg / 100) / 100
+      elsif physical
+        physical * dmg / 100
+      elsif magical
+        magical * dmg / 100
+      else
+        dmg
+      end
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act
@@ -6952,7 +6999,7 @@ module Game
         dmg = -hp
         # An elemental skill scales its damage by the target's resistance first
         # (EasyRPG's ApplyAttributeSkillMultiplier), then spreads by variance.
-        dmg = dmg * attr_multiplier(cmd[:attributes], target) / 100
+        dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
         # 吸収: the caster takes what the target loses, and can take no more than

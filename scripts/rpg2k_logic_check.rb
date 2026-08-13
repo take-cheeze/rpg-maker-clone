@@ -2174,7 +2174,10 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # 全体化: spreads a basic Attack across the target's whole
                       # side. 先制攻撃: jumps a basic Attack to the front of the
                       # round's turn order.
-                      :attack_all, :preemptive)
+                      :attack_all, :preemptive,
+                      # 使用可能キャラ: the specific actor ids (0-based index,
+                      # bool per actor) allowed to use/equip this item at all.
+                      :actor_set)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2182,13 +2185,13 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
-              two_handed: 0, attack_all: false, preemptive: false)
+              two_handed: 0, attack_all: false, preemptive: false, actor_set: nil)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
-               ko_only, two_handed, attack_all, preemptive)
+               ko_only, two_handed, attack_all, preemptive, actor_set)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -3121,6 +3124,23 @@ check 'Change Equipment command equips into the type slot and removes' do
   eq 8, a.equipment[2] # armour still on
 end
 
+check 'Change Equipment command respects an actor_set restriction, per actor' do
+  items = { 7 => fake_item(atk: 15, type: 1, actor_set: [true, false]) } # actor 1 only
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]),
+      2 => CurveRow.new('Ally', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1, 2], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  eq 18, hero.atk, 'Hero (actor 1) is allowed the item'
+  eq 7, hero.equipment[0]
+
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 2, 0, 0, 7])]); it.update }
+  eq 3, ally.atk, 'Ally (actor 2) is restricted away from it: the command is a no-op'
+  eq 0, ally.equipment[0]
+end
+
 # -- Field item menu (Game::Party medicine use) ------------------------------
 
 # A two-actor party (Hero max 100/30, Ally max 50/20) plus the given item table,
@@ -3741,6 +3761,56 @@ check 'equip_from_bag rejects a non-equippable or unheld item' do
   eq false, st.party.equip_from_bag(a, 7)   # not held
   eq 1, st.party.item_count(5)              # untouched
   eq 0, a.equipment[0]
+end
+
+# -- 使用可能キャラ (actor_set): items/gear restricted to named characters ----
+
+check 'item_usable_by? reads actor_set, defaulting a missing entry to allowed' do
+  restricted = fake_item(type: 6, rhp: 10, actor_set: [true, false]) # only actor 1
+  unrestricted = fake_item(type: 6, rhp: 10)                        # no actor_set at all
+  st = skill_party({})
+  ok st.party.item_usable_by?(restricted, 1), 'actor 1 is explicitly allowed'
+  eq false, st.party.item_usable_by?(restricted, 2), 'actor 2 is explicitly excluded'
+  ok st.party.item_usable_by?(restricted, 3), 'actor_set too short to reach id 3: defaults to allowed'
+  ok st.party.item_usable_by?(unrestricted, 2), 'no actor_set at all: unrestricted'
+end
+
+check 'a medicine restricted by actor_set only heals the actors it names, ' \
+     'even under an all-party scope' do
+  items = { 5 => fake_item(type: 6, scope: 1, rhp: 20, actor_set: [true, false]) } # actor 1 only
+  st = skill_party({}, items)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.change_hp(-50)
+  ally.change_hp(-50)
+  st.party.gain_item(5, 1)
+  affected = st.party.use_item(5, nil) # all-ally: target arg ignored
+  eq [hero], affected, 'only the named actor is healed, even though the item is scope 1 (all allies)'
+  eq hero.max_hp - 30, hero.hp, 'Hero was healed by 20'
+  eq ally.max_hp - 50, ally.hp, "Ally's HP is untouched"
+end
+
+check 'item_effective? is false for an actor an actor_set restriction excludes' do
+  items = { 5 => fake_item(type: 6, rhp: 20, actor_set: [true, false]) }
+  st = skill_party({}, items)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.change_hp(-10)
+  ally.change_hp(-10)
+  ok st.party.item_effective?(5, hero)
+  eq false, st.party.item_effective?(5, ally), 'restricted away, even though it would otherwise heal'
+end
+
+check 'equip_candidates / equip_from_bag respect an actor_set restriction' do
+  items = { 7 => fake_item(atk: 15, type: 1, actor_set: [true, false]) } # actor 1 only
+  st = skill_party({}, items)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  st.party.gain_item(7, 2)
+  eq [[7, 2]], st.party.equip_candidates(0, hero)
+  eq [], st.party.equip_candidates(0, ally), "the ally isn't offered a weapon reserved for the hero"
+  ok st.party.equip_from_bag(hero, 7)
+  eq false, st.party.equip_from_bag(ally, 7), 'and cannot force-equip it either'
 end
 
 # RPG_RT's item-possession test counts an equipped copy even though equipping
@@ -6058,7 +6128,12 @@ check 'battle: an elemental skill scales its damage by the target resistance' do
 end
 
 # A property/state row carrying the RPG2000 A..E rank rates (property table).
-RateRow = Struct.new(:a_rate, :b_rate, :c_rate, :d_rate, :e_rate)
+# `type` (weapon 0 / magic 1, property field 2) is appended rather than
+# fitted in at its real field position so the existing 5-positional-arg
+# calls below keep working unmodified -- omitted, it defaults to nil, which
+# #attribute_physical? already reads as "magic-type" the same way an
+# attribute the table doesn't define at all does.
+RateRow = Struct.new(:a_rate, :b_rate, :c_rate, :d_rate, :e_rate, :type)
 
 check "battle: a database attribute's own rank rates override the defaults" do
   props = { 1 => RateRow.new(250, 180, 100, 40, 0) } # element 1: rank A = 250%
@@ -6071,6 +6146,38 @@ check "battle: a database attribute's own rank rates override the defaults" do
                          false, false, props)
   bat.begin_round
   eq 50, bat.step_action[:damage]                    # 20 * 250% (its own rate, not 300)
+end
+
+check 'battle: a weapon-type and a magic-type attribute on one attack multiply, ' \
+     'not just the strongest rate' do
+  props = { 1 => RateRow.new(200, 150, 100, 50, 0, 0),  # weapon-type
+            2 => RateRow.new(200, 150, 100, 50, 0, 1) } # magic-type
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]
+  foe = combatant('Foe', 0, 0, 5, 100_000)
+  foe.attr_ranks = { 1 => 0, 2 => 3 } # weapon rank A (200%), magic rank D (50%)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.command_attack(hero, foe)
+  bat.begin_round
+  # base atk damage = 40 / 2 - 0 / 4 = 20; 200% weapon * 50% magic = 100%,
+  # unchanged at 20 -- not 40, which is what "the single strongest rate
+  # (200%) wins regardless of type" would have given.
+  eq 20, bat.step_action[:damage]
+end
+
+check 'battle: two attributes of the same type keep the strongest rate, not multiply' do
+  props = { 1 => RateRow.new(200, 150, 100, 50, 0, 0),
+            2 => RateRow.new(200, 150, 100, 50, 0, 0) } # both weapon-type
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]
+  foe = combatant('Foe', 0, 0, 5, 100_000)
+  foe.attr_ranks = { 1 => 3, 2 => 0 } # 50% and 200%, same type: keep the 200%
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.command_attack(hero, foe)
+  bat.begin_round
+  eq 40, bat.step_action[:damage] # base 20 * 200%, not 200% * 200%
 end
 
 check "battle: a database state's own rank rate gates the infliction" do

@@ -1602,6 +1602,32 @@ The work below is roughly ordered by the critical path to a walkable game
   which turns the shield slot into a second weapon slot — the same pair and the
   opposite rule, and the menu's candidate list for slot 1 has to change with it.
   See ADR 0040.
+- ✅ **使用可能キャラ item restriction** (`actor_set` / `actor_set_size`, item
+  field 62/61) — parsed by the schema but never consulted, so an item or piece
+  of gear reserved for one named character (a signature weapon, a class-locked
+  scroll) could be equipped or used by anyone. `Party#item_usable_by?(it,
+  actor_id)` reads the bit at `actor_id - 1`, defaulting an entry the array is
+  too short to reach to allowed — the same "missing = the field's default"
+  reading every other bit-array field here follows (EasyRPG's
+  `Game_Actor::IsItemUsable`). Wired into every path that reaches an item:
+  `item_effective?` (menu grey-out) and `use_medicine` / `use_skill_book` /
+  `use_seed` / `use_special_item` (the effect itself — `use_medicine` checks it
+  **per target** the same way `ko_only_blocked?` already had to, so a
+  restricted member is skipped even under an all-party scope rather than only
+  being caught by the single-target menu gate); `equip_candidates` /
+  `equip_candidate_for?` (the equip menu's own candidate list and
+  `equip_from_bag`'s validation); and the **Change Equipment** event command
+  (10450, `do_change_equipment` in `interpreter.rb`), which EasyRPG's
+  `ChangeEquipment` gates through the identical `IsItemUsable` call — checked
+  per target there too, since a command can target the whole party at once.
+  **Left open**: the battle screen's own ally-target picker for a restricted
+  medicine/item (`Scene::Map#draw_battle_ally_target`) still lists every
+  living ally regardless of the item's `actor_set` — the pure
+  `Game::Party#battle_item_command` formula is not wrong, nothing upstream of
+  it in the battle scene enforces the restriction on which target can be
+  chosen in the first place. Covered by new `scripts/rpg2k_logic_check.rb`
+  checks (the read itself, the all-party-scope per-target skip, menu
+  greying-out, equip-menu filtering, and the event command).
 
 ### yado.tk quirks backlog
 
@@ -2461,22 +2487,24 @@ not yet verified:
   of "a weapon carrying **that** attribute", not confirmed against a
   multi-attribute skill since neither test bed ships one. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the pre-fix
-  code. ✅ **Weapon-type × magic-type attribute stacking on one attack now
-  multiplies the two rates as fractions (200%×50%=100%)**, not the single
-  strongest-of-all-ids pick `Game::Battle#attr_multiplier` used before (an
-  EasyRPG `Attribute::ApplyAttributeMultiplier`-derived simplification this
-  method's own comment already flagged as not modelling the weapon/magic
-  split) — a separate question from equip gating, in the damage formula
-  rather than usability. `#attr_multiplier` now buckets `attr_ids` by the
-  same `property` table `type` field (a private `attribute_weapon_type?`
-  duplicated onto `Game::Battle`, since it reads `@attributes` — the table
-  `Game::Battle.new` is handed — rather than `Game::Party`'s live `@db`),
-  takes the strongest rate *within* each bucket (same-type stacking is
-  unchanged, the site's own wording never disputed that half), then
-  multiplies the two bucket results as fractions; a bucket with no ids
-  contributes 100% unchanged, so a single-type attack behaves exactly as
-  before. Covered by a new `scripts/rpg2k_logic_check.rb` check, confirmed to
-  fail against the pre-fix code.
+  code. **Weapon-type × magic-type attribute stacking is built now too** — a
+  separate question from equip gating, in the damage formula rather than
+  usability. EasyRPG's `Attribute::ApplyAttributeMultiplier` keeps the
+  *strongest* rate within each type (physical/weapon and magical/magic
+  tracked independently) and, when an attack carries both at once,
+  **multiplies** the two as successive percentage scalings of the damage
+  (200%×50% nets 100%, not an average and not just the single strongest
+  rate across every attribute regardless of type). `Game::Battle#apply_attr_multiplier`
+  (renamed from `#attr_multiplier`, which returned a percentage rather than
+  the scaled damage — the truncation order between the two isn't always the
+  same, so it now takes and returns the actual damage figure, matching
+  `ApplyAttributeMultiplier`'s own signature) reads each attribute's type
+  off the same `@attributes` (`property`) table `#attr_rate` already uses.
+  RPG2000 attribute rates never go negative, so EasyRPG's "one side
+  negative" fallback branch (a 2003 `attribute.type` add-on) never applies
+  here. Covered by new `scripts/rpg2k_logic_check.rb` checks (both types at
+  once multiplying, and two attributes of the *same* type still keeping the
+  strongest rather than multiplying against each other).
 - Battle Animation: only one on screen at a time (a second forcibly cuts
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle

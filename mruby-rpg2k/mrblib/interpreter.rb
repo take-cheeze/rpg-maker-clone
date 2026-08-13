@@ -1849,7 +1849,12 @@ module Game
       targets = stat_targets(cmd)
       if cmd.param(2) == 0
         item = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-        targets.each { |a| a.equip_item(item) }
+        it = @state.party.db_item(item)
+        # An actor_set restriction blocks this command the same way it blocks
+        # the equip menu (EasyRPG's ChangeEquipment reads Game_Actor::
+        # IsItemUsable too) -- per target, since one target of a multi-actor
+        # command might be allowed the item and another not.
+        targets.each { |a| a.equip_item(item) if @state.party.item_usable_by?(it, a.id) }
       else
         targets.each { |a| a.unequip(cmd.param(4)) }
       end
