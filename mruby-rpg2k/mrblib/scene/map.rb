@@ -1153,14 +1153,22 @@ class RPG2k
       end
 
       # Whether the airship may land on tile (x, y): the database terrain's
-      # airship_land flag (default true), with no LAYER_SAME event occupying
-      # the ground underneath (a below/above-layer event doesn't collide, same
-      # as ordinary movement). A tile with no terrain data (a bare fixture) is
-      # landable.
+      # airship_land flag (default true), with no map event occupying the
+      # ground underneath at all — yado.tk: an airship can never land on a
+      # tile a map event occupies, regardless of terrain. Flying itself
+      # ignores events entirely (#vehicle_passable?'s airship branch never
+      # reads @event_tiles, so the airship can cruise directly over a
+      # below-characters event a walking hero would just as happily overlap),
+      # so this is the one place events reach it at all — and, once they do,
+      # this follows the same vehicle-specific rule #vehicle_passable? already
+      # uses for a boat/ship (`!blocker[:char].through`): any layer blocks,
+      # priority-type/overlap_forbidden gating is ignored entirely, and only
+      # the blocking event's own Through Mode lets it through. A tile with no
+      # terrain data (a bare fixture) is landable.
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
         blocker = @event_tiles[[x, y]]
-        return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
+        return false if blocker && !blocker[:char].through
         row = terrain_row_at(x, y)
         return true if row.nil?
         row.airship_land ? true : false

@@ -3499,6 +3499,43 @@ check 'the airship lands in place where the terrain allows it' do
   eq [0, 0], [air.x, air.y], 'the airship stayed where it landed'
 end
 
+check 'the airship cannot land on a tile a map event occupies unless it has Through Mode on' do
+  # yado.tk: an airship can never land on a tile a map event occupies,
+  # regardless of terrain. Flying itself ignores events entirely
+  # (#vehicle_passable?'s airship branch never reads @event_tiles), so the
+  # airship can cruise -- and be boarded -- directly over a below-characters
+  # event a walking hero would just as happily overlap; landing there must
+  # still refuse it, the same vehicle-specific "any layer, only the blocking
+  # event's own Through Mode lets it through" rule already confirmed for a
+  # boarded boat/ship (see the boat/below-characters-event check above).
+  blocker = event(0, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker }, player: [0, 0], airship_land: true)
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship in place, directly over the event'
+  # Try to land: the below-characters event on this tile still blocks it,
+  # despite airship_land: true and despite its layer being one the hero's own
+  # passability would happily overlap.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'a below-characters event on the tile still blocked landing'
+
+  # Turn the blocking event's own Through Mode on and try again: now it lands.
+  chars(scene)[1].through = true
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'Through Mode on the blocking event let the airship land'
+  eq [0, 0], [st.x, st.y], 'the party stands where the airship touched down'
+end
+
 check 'Show Battle Animation with the wait flag holds the event then resumes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

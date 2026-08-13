@@ -2033,9 +2033,11 @@ Everything below is unverified against the codebase.
   checking against `step_parallel`/touch-trigger dispatch.
 - **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
   Ship aren't hardcoded to water, their passability follows the terrain
-  table's boat/ship-pass flags like any other vehicle rule; an airship
-  can't land on a tile a map event currently occupies; airships get no
-  random encounters by default; hero-targeted Set Move Route commands (Dash,
+  table's boat/ship-pass flags like any other vehicle rule; ✅ an airship
+  can't land on a tile a map event currently occupies (now fixed — see the
+  "Party / Actor / Vehicle" section under "Full-site sweep" below); airships
+  get no random encounters by default (**confirmed already correct**, same
+  section); hero-targeted Set Move Route commands (Dash,
   Jump, etc.) still run normally while mounted and must be manually guarded
   off; **setting a map event's trigger to Parallel Process and running "Set
   Vehicle Position" from it crashes RPG_RT** (any other trigger type does
@@ -2752,14 +2754,24 @@ not yet verified:
 - "Hero X is in the party" always evaluates in **database ID order**, not
   current seat/slot order — there is no built-in way to read a member's
   current seat position.
-- Vehicles: an un-placed vehicle defaults to Map ID 0, (0,0). An airship's
-  *initial* position can be set on unlandable terrain and boarded there
-  without issue (the landability check is skipped only for the starting
-  placement), but it can never land on a tile a map event occupies
-  regardless of terrain, and Set Vehicle Location has **no** landability
-  validation at all (will happily place it somewhere unlandable). Random
-  encounters stay active on ships (governed by terrain settings) but are
-  **hard-disabled** on airships with no database toggle.
+- Vehicles: an un-placed vehicle defaults to Map ID 0, (0,0) — **confirmed
+  already correct**, `Game::Vehicle#initialize`'s own defaults
+  (`mruby-rpg2k/mrblib/game.rb`). An airship's *initial* position can be set
+  on unlandable terrain and boarded there without issue (the landability
+  check is skipped only for the starting placement) — already true here too,
+  since nothing validates a vehicle's position outside of `#disembark_vehicle`
+  — and Set Vehicle Location has **no** landability validation at all (will
+  happily place it somewhere unlandable) — likewise already correct,
+  `Game::Interpreter#do_set_vehicle_location` writes the given map/x/y
+  straight through with no passability check of any kind. Random encounters
+  stay active on ships (governed by terrain settings) but are **hard-disabled**
+  on airships with no database toggle — already correct too,
+  `Scene::Map#check_random_encounter`'s `return if @state.party.flying?(@state)`
+  early-out (`Game::Party#flying?` — true only while `boarded == :airship`)
+  skips the roll entirely regardless of terrain, with no equivalent early-out
+  for a boarded boat/ship. ("It can never land on a tile a map event occupies
+  regardless of terrain" was the one genuine gap in this bullet — now fixed,
+  see below.)
 - ✅ **Small/large ships can never overlap an event's tile even with a
   passable graphic + below-characters priority** (which *does* let the
   walking hero overlap it fine via the already-implemented priority-type
@@ -2782,6 +2794,25 @@ not yet verified:
   by a new `scripts/rpg2k_scene_check.rb` check (a boarded boat is stopped
   by a below-characters event on an otherwise boat-passable tile; setting
   that event's own Through Mode on lets the boat sail through it).
+- ✅ **An airship can never land on a tile a map event occupies, regardless
+  of terrain** — the same vehicle-specific Through-Mode rule as the boat/ship
+  fix directly above, applied to landing rather than sailing. Flying itself
+  already ignored events entirely (`#vehicle_passable?`'s airship branch
+  never reads `@event_tiles`, so an airship can cruise directly over a
+  below-characters event a walking hero would just as happily overlap), but
+  `Scene::Map#airship_landable?` — the one place events reach it at all, via
+  `#disembark_vehicle`'s airship branch — was gating its own blocker check on
+  the hero's priority-type occupancy test
+  (`blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden]`), the exact
+  same reused-hero-rule mistake the boat/ship fix above already corrected for
+  sailing: a below-characters event was silently landable on instead of
+  refusing the landing. The blocker check is now `blocker &&
+  !blocker[:char].through`, textually identical to `#vehicle_passable?`'s
+  boat/ship branch; the terrain's own `airship_land` flag and flight itself
+  are untouched. Covered by a new `scripts/rpg2k_scene_check.rb` check (an
+  airship boarded directly over a below-characters event cannot land there
+  despite `airship_land: true`; turning that event's own Through Mode on lets
+  it land), confirmed to fail against the pre-fix code before the fix.
 
 **Save / Load persistence — consolidated master list**
 Runtime state that does **not** survive a map re-visit (leave and return,
