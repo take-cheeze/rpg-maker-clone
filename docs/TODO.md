@@ -2238,7 +2238,7 @@ not yet verified:
   be a non-issue rather than a gap — nothing here enforces a count ceiling on
   how many distinct ids get used, which is a different question from a single
   variable's *value* range, now fixed); picture id range 1-50.
-- **Runtime per-map overrides that reset on leaving-and-returning to the
+- ✅ **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
   source — Save/Teleport/Escape Prohibition changes. `perform_teleport`
@@ -2251,11 +2251,24 @@ not yet verified:
   the destination's `.lmu` fresh) rather than reusing or caching one — so
   a substitution cannot survive a Teleport, including one back to the same
   map, without any explicit reset code needed. Regression-covered by a new
-  `scripts/rpg2k_scene_check.rb` check. **Encounter Steps Change is not
-  actionable yet**: `Game::State#encounter_rate` records the override and
-  round-trips through the save, but no random-encounter system reads it at
-  all (see the Screen effects section) — there is nothing to reset until
-  that system exists.
+  `scripts/rpg2k_scene_check.rb` check. **Encounter Steps Change is now
+  fixed too.** It was flagged not-yet-actionable in an earlier pass —
+  `Game::State#encounter_rate` recorded the override and round-tripped
+  through the save, but no random-encounter system read it at all — and
+  stayed that way until this session's own wandering-monster-encounter work
+  (`Scene::Map#current_encounter_steps`) made it a genuine, reachable gap:
+  `#current_encounter_steps` reads `encounter_rate` when set, falling back to
+  the map-tree node's own `encount_steps`, but `perform_teleport` never
+  cleared it alongside the sibling tileset/parallax/pan resets right next to
+  it — so a Change Encounter Steps command issued on one map silently kept
+  overriding every map visited afterwards instead of yielding back to each
+  destination's own setting. Fixed by adding `@state.encounter_rate = nil` to
+  `perform_teleport`, the one call site both an ordinary Transfer Player and
+  a queued Teleport/Escape field-skill warp route through; the value still
+  round-trips through save/load untouched, matching the "leaving-and-
+  returning to the map" reset condition rather than a save/load one. Covered
+  by a new `scripts/rpg2k_scene_check.rb` check, confirmed to fail against
+  the pre-fix code before the fix.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**

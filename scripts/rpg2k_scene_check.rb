@@ -7213,6 +7213,22 @@ check 'a map with no tree data defaults to 25 encounter steps' do
   eq 25, scene.send(:current_encounter_steps)
 end
 
+check 'Change Encounter Rate does not survive leaving and returning to the map' do
+  # yado.tk: a Change Encounter Steps (11740) override is one of the per-map
+  # overrides (alongside Chipset/Panorama/Tile Substitution) that resets on
+  # leaving-and-returning to a map, not just on an ordinary Transfer Player to
+  # a *different* map -- #perform_teleport is the one call site for both.
+  tree = fake_map_tree(1 => FakeEncounterNode.new({}, 25))
+  scene = new_scene({}, map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  st.encounter_rate = 4
+  eq 4, scene.send(:current_encounter_steps), 'the override applies on the original map'
+
+  scene.send(:perform_teleport, [st.map_id, 0, 0, 0]) # leave and return to the same map
+  eq 25, scene.send(:current_encounter_steps),
+     "a fresh map load on Teleport drops the override, back to the tree node's own steps"
+end
+
 check 'an encounter-steps of 0 disables random encounters and resets the accumulator' do
   tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 0))
   scene = new_scene({}, map_tree: tree)

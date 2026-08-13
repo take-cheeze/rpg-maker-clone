@@ -5212,6 +5212,13 @@ class RPG2k
         # from (304, 352) -- entirely outside a 320x240 map, i.e. a blank screen.
         @state.screen.pan_clear
         @locked_cam = nil
+        # A Change Encounter Steps (11740) override does not survive a teleport
+        # either; the destination map's own encount_steps applies again, exactly
+        # like Chipset/Panorama above (yado.tk: this is one of the per-map
+        # overrides that resets on leaving-and-returning to a map, not just on
+        # save/load). #current_encounter_steps falls back to the map-tree node's
+        # own field once this is nil again.
+        @state.encounter_rate = nil
         @tileset_id = nil # a Change Map Tileset override does not survive a teleport
         @chipset = build_chipset
         # The new map may use a different chipset graphic, so reload it too;
