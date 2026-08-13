@@ -1850,6 +1850,48 @@ check 'a Show Text keeps its window open when a Show Choices follows directly' d
   ok !st.switches[2], 'and the other did not'
 end
 
+def show_text_then_choices(text)
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], indent: 0, string: text),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0), # cancel forbidden
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'no'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  12.times { scene.update; break if scene.instance_variable_get(:@message) }
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # completes the reveal; window stays open
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # a Show Choices follows directly, so it keeps the window open
+  RGSS::Input.reset
+  choice_msg = nil
+  8.times do
+    scene.update
+    choice_msg = scene.instance_variable_get(:@message)
+    break if choice_msg && choice_msg[:choice]
+  end
+  choice_msg
+end
+
+check "a colour left open in a Show Text bleeds into an attached Show Choices list (yado.tk)" do
+  choice_msg = show_text_then_choices('\c[2]hi')
+  ok choice_msg && choice_msg[:choice], 'the choices appeared, merged into the same window'
+  choice_segs = choice_msg[:seg_lines][choice_msg[:choice_start]..]
+  ok choice_segs.all? { |segs| segs.all? { |s| s[:color] == 2 } },
+     "both choice labels inherit the text's trailing colour with no reset in either"
+end
+
+check 'an explicit \c[0] in the Show Text stops the colour bleeding into Show Choices' do
+  choice_msg = show_text_then_choices('\c[2]hi\c[0]')
+  choice_segs = choice_msg[:seg_lines][choice_msg[:choice_start]..]
+  ok choice_segs.all? { |segs| segs.all? { |s| s[:color] == 0 } },
+     'the reset before the text ends carries a colour 0 into the choices, not 2'
+end
+
 check 'a Show Text keeps its window open when an Input Number follows directly' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

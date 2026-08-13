@@ -2315,10 +2315,23 @@ not yet verified:
   execution content (not just the next message) and is auto-cleared when
   the event ends, but not before — it must be explicitly "erased" to stop
   mid-event. It also shrinks the per-line text capacity vs. no portrait.
-- \c[]/\s[] (color/speed) control codes set inside Show Text **bleed into
+- 🚧 \c[]/\s[] (color/speed) control codes set inside Show Text **bleed into
   an attached Show Choices list** when the two merge into one window
   (≤4 combined lines) — an explicit `\c[0]` reset is needed to stop
-  choices inheriting the preceding text's color.
+  choices inheriting the preceding text's color. **The colour half is now
+  implemented**: `Game::Message.scan` takes an optional `start_color` and
+  reports the colour still in effect at the end of the line as `:end_color`
+  (`mruby-rpg2k/mrblib/game.rb`), and `Scene::Map#open_message` records a
+  Show Text's trailing colour on `@message`, which `#append_choice_lines`
+  now seeds its own scans with instead of always starting at 0 — chained
+  across the choice labels themselves too, so the whole merged window (text
+  then choices) reads as one continuous colour stream that an explicit
+  `\c[0]` breaks, matching the finding. **The speed half is not addressed**:
+  this codebase drops `\s[]` outright today (see the Message window doc
+  above, "the remaining display code (`\s` speed) is dropped") rather than
+  varying the reveal rate at all, so there is no speed *state* yet for
+  anything to bleed — implementing the bleed would first need `\s[]` itself,
+  a larger, separate feature.
 - `\>` (instant display) only affects the current line — must be repeated
   per line for a fully-instant multi-line message.
 - ✅ **`\<`, `\$`, `\^` each cost one character's worth of display time even

@@ -565,6 +565,25 @@ check 'Message.scan records pacing codes in revealed-char coordinates' do
   eq [{ at: 2, kind: :key }], s2[:pauses], '42 is two chars, so \\! sits at 2'
 end
 
+check 'Message.scan threads a starting/ending colour for a caller to chain across calls' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  # No \c[] at all: the seeded start_color colours the segment and rides
+  # straight through to end_color, so a caller can chain scans across lines
+  # (Scene::Map#append_choice_lines threading a Show Text's trailing colour
+  # into an attached Show Choices list, yado.tk).
+  s = Game::Message.scan('plain', vars, names, 2)
+  eq 2, s[:segments].first[:color], 'the whole run picks up the seeded colour'
+  eq 2, s[:end_color], 'and it is still in effect at the end of the line'
+  # An explicit \c[] overrides it for the rest of the line.
+  s2 = Game::Message.scan('ab\c[5]cd', vars, names, 2)
+  eq [{ text: 'ab', color: 2 }, { text: 'cd', color: 5 }], s2[:segments]
+  eq 5, s2[:end_color], 'end_color reflects the last colour set, not the seed'
+  # Defaults to 0 when omitted, matching every existing call site.
+  eq 0, Game::Message.scan('x', vars, names)[:end_color]
+end
+
 check 'Message.scan flags \$ (show gold) and drops it from the text' do
   vars = Object.new
   def vars.[](_i); 0; end

@@ -102,8 +102,14 @@ module Game
     #   :auto_close — `\^` (close the window without a keypress once revealed);
     #   :instants — [[start, end)] spans that reveal at once (`\>` … `\<`);
     #   :show_gold — `\$` (show the party's gold in a small window);
-    #   :length  — the visible character count (what the reveal counts).
-    def self.scan(text, variables, names)
+    #   :length  — the visible character count (what the reveal counts);
+    #   :end_color — the colour still in effect once the line ends, for a
+    #                caller that wants to carry it into the next scan (a Show
+    #                Choices list merged onto a preceding Show Text, e.g. —
+    #                see Scene::Map#append_choice_lines — inherits the text's
+    #                trailing colour, yado.tk). `start_color` seeds the run in
+    #                effect from the very first character.
+    def self.scan(text, variables, names, start_color = 0)
       segs = []
       pauses = []
       instants = []
@@ -111,7 +117,7 @@ module Game
       auto_close = false
       show_gold = false
       cur = ''
-      color = 0
+      color = start_color
       count = 0 # visible characters emitted so far (pause positions index this)
       i = 0
       n = text.nil? ? 0 : text.length
@@ -157,7 +163,8 @@ module Game
       segs << { text: cur, color: color } unless cur.empty?
       instants << [instant_start, count] if instant_start # unclosed `\>` runs to EOL
       { segments: segs, pauses: pauses, auto_close: auto_close,
-        instants: instants, show_gold: show_gold, length: count }
+        instants: instants, show_gold: show_gold, length: count,
+        end_color: color }
     end
 
     # Truncate per-line colour segments to the first `revealed` characters
