@@ -6829,23 +6829,46 @@ module Game
       ATTR_RATE_PCT[rank]
     end
 
-    # The percentage `attr_ids` scale damage against `target`: the strongest
-    # (largest) rate among the attack's elements, per EasyRPG's
-    # Attribute::ApplyAttributeMultiplier (the physical / magical split isn't
-    # modelled). 100 (unchanged) for an attribute-less attack; a rank the target
-    # doesn't list defaults to C (100%).
+    # Whether attribute `aid` is the database `property` table's weapon-type
+    # (field `type`, value 0, as opposed to magic-type 1) -- same field and
+    # same permissive default (an id the table doesn't define reads as
+    # magic-type) as `Game::Party#attribute_weapon_type?`, which this
+    # duplicates rather than shares since that method reads `@db.property`
+    # off a live database and this one reads `@attributes`, the same table
+    # handed to `Game::Battle.new` from a fixture-friendlier source.
+    def attribute_weapon_type?(aid)
+      row = @attributes ? @attributes[aid] : nil
+      row && row.respond_to?(:type) && row.type == 0 ? true : false
+    end
+
+    # The percentage `attr_ids` scale damage against `target`. yado.tk: an
+    # attack naming both a weapon-type and a magic-type attribute multiplies
+    # the two rates as fractions (e.g. 200% weapon x 50% magic = 100%), not a
+    # single strongest-of-all-ids pick the way EasyRPG's
+    # Attribute::ApplyAttributeMultiplier (this method's own prior model)
+    # does it. Within each type bucket the strongest (largest) rate among
+    # that bucket's ids still wins -- the doc only disputes cross-type
+    # combination, not same-type stacking. A bucket with no ids in it
+    # contributes 100% (unchanged), so an attack with only one type behaves
+    # exactly as before. 100 (unchanged) for an attribute-less attack; a rank
+    # the target doesn't list defaults to C (100%).
     def attr_multiplier(attr_ids, target)
       return 100 if attr_ids.nil? || attr_ids.empty?
       ranks = target.attr_ranks || {}
-      best = nil
+      weapon_best = nil
+      magic_best = nil
       attr_ids.each do |aid|
         rank = ranks[aid] || 2
         rank = 0 if rank < 0
         rank = 4 if rank > 4
         pct = attr_rate(aid, rank)
-        best = pct if best.nil? || pct > best
+        if attribute_weapon_type?(aid)
+          weapon_best = pct if weapon_best.nil? || pct > weapon_best
+        else
+          magic_best = pct if magic_best.nil? || pct > magic_best
+        end
       end
-      best || 100
+      (weapon_best || 100) * (magic_best || 100) / 100
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act

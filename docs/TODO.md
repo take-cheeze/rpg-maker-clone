@@ -2461,12 +2461,22 @@ not yet verified:
   of "a weapon carrying **that** attribute", not confirmed against a
   multi-attribute skill since neither test bed ships one. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the pre-fix
-  code. **Still open**: weapon-type × magic-type attribute stacking on one
-  attack **multiplies** the two rates as fractions (200%×50%=100%), not an
-  average despite the site's own wording — a separate question from equip
-  gating, in the damage formula (`Game::Battle#attr_multiplier` currently
-  takes the strongest single rate, not a weapon/magic product) rather than
-  usability.
+  code. ✅ **Weapon-type × magic-type attribute stacking on one attack now
+  multiplies the two rates as fractions (200%×50%=100%)**, not the single
+  strongest-of-all-ids pick `Game::Battle#attr_multiplier` used before (an
+  EasyRPG `Attribute::ApplyAttributeMultiplier`-derived simplification this
+  method's own comment already flagged as not modelling the weapon/magic
+  split) — a separate question from equip gating, in the damage formula
+  rather than usability. `#attr_multiplier` now buckets `attr_ids` by the
+  same `property` table `type` field (a private `attribute_weapon_type?`
+  duplicated onto `Game::Battle`, since it reads `@attributes` — the table
+  `Game::Battle.new` is handed — rather than `Game::Party`'s live `@db`),
+  takes the strongest rate *within* each bucket (same-type stacking is
+  unchanged, the site's own wording never disputed that half), then
+  multiplies the two bucket results as fractions; a bucket with no ids
+  contributes 100% unchanged, so a single-type attack behaves exactly as
+  before. Covered by a new `scripts/rpg2k_logic_check.rb` check, confirmed to
+  fail against the pre-fix code.
 - Battle Animation: only one on screen at a time (a second forcibly cuts
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle
