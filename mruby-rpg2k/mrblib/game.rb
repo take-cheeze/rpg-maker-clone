@@ -1180,10 +1180,12 @@ module Game
     # Set the actor's level and recompute the six base stats from the database
     # growth curve at that level (see #base_stats), then the equipment-boosted
     # effective stats. Current HP/MP are re-clamped so lowering the level never
-    # leaves a vital over its cap.
+    # leaves a vital over its cap. A fresh level-derived base is a new baseline
+    # for #change_param's unclamped tracking too -- see @base_raw there.
     def set_level(level)
       @level = level && level >= 1 ? level : 1
       @base = base_stats(@level)
+      @base_raw = @base.dup
       learn_level_skills
       recompute_stats
     end
@@ -1820,10 +1822,20 @@ module Game
     # base stat (the equipment bonus stays on top) and clamps to RPG2000's limits
     # (max HP/MP 1..9999, the four battle stats 1..999); recomputing re-clamps the
     # current HP/MP so a lowered maximum never leaves a vital over its cap.
+    #
+    # yado.tk's `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
+    # that range, but RPG_RT keeps accumulating the *unclamped* running total
+    # underneath -- lower Attack far past 1 with one call, then raise it back
+    # only part way, and the effective value stays pinned at the old clamp
+    # until the raw total genuinely climbs back past it, rather than reacting
+    # to the partial raise immediately. @base_raw is that shadow total; @base
+    # (read by #recompute_stats and everything else) stays the clamped,
+    # display/effective value throughout.
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
       limit = (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
-      @base[type] = Game.clamp(@base[type] + delta, 1, limit)
+      @base_raw[type] += delta
+      @base[type] = Game.clamp(@base_raw[type], 1, limit)
       recompute_stats
     end
 
@@ -1875,6 +1887,10 @@ module Game
       when CLASS_PARAM_HALF      then @base = old_base.map { |v| v / 2 }
       when CLASS_PARAM_RESET_LV1 then @base = base_stats(1)
       end
+      # Whichever branch (or none, for CLASS_PARAM_RESET_LEVEL) ran, @base is
+      # a fresh baseline -- reset #change_param's unclamped shadow to match,
+      # the same rule set_level's own reset above already follows.
+      @base_raw = @base.dup
       recompute_stats
 
       @hp = Game.clamp(hp, 0, @max_hp) if hp
