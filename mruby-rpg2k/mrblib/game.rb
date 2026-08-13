@@ -7516,6 +7516,11 @@ module Game
   end
 
   class State
+    # RPG2000's Show Picture editor field only offers picture numbers 1-50 (a
+    # fixed-size internal slot array); an id outside that range is not a real
+    # picture and Show Picture on one is a no-op (yado.tk).
+    MAX_PICTURE_ID = 50
+
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction
     # Whether the player may open the main menu / save, toggled by the Change
@@ -7709,9 +7714,12 @@ module Game
     # neither does this.
     def walk_step; @steps += 1; end
 
-    # Show (or replace) picture `id` with the given Picture options hash.
+    # Show (or replace) picture `id` with the given Picture options hash. An id
+    # outside 1..MAX_PICTURE_ID does nothing -- #move_picture/#erase_picture
+    # need no matching guard of their own, since neither can ever find such an
+    # id shown in the first place.
     def show_picture(id, opts)
-      @pictures[id] = Picture.new(id, opts) if id && id > 0
+      @pictures[id] = Picture.new(id, opts) if id && id > 0 && id <= MAX_PICTURE_ID
     end
 
     # Start a move on picture `id` (a no-op if it is not shown). `args` are the

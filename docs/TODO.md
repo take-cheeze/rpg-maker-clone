@@ -2301,7 +2301,8 @@ not yet verified:
   switches/variables capping at 5000 (configurable in the editor, so this may
   be a non-issue rather than a gap — nothing here enforces a count ceiling on
   how many distinct ids get used, which is a different question from a single
-  variable's *value* range, now fixed); picture id range 1-50.
+  variable's *value* range, now fixed). Picture id range 1-50 is now fixed
+  too, see the "Pictures" bullet under "Full-site sweep" below.
 - **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
@@ -2688,6 +2689,22 @@ not yet verified:
   asserting the composite draws the lower id first). Still open: Battle
   Animation drawing above the picture layer specifically, and "map/
   characters always draw below all pictures" as its own assertion.
+- ✅ **Show Picture now no-ops on a picture id outside 1..50** — the "Still
+  open: picture id range 1-50" gap left by the numeric-constants bullet
+  above. RPG2000's editor caps the Show Picture id field at 50 (a
+  fixed-size internal slot array, the same fact the "50 concurrent picture
+  slots" confirmation just above already relies on), so an id past it is
+  not a real picture and RPG_RT does nothing with it.
+  `Game::State#show_picture` (`mruby-rpg2k/mrblib/game.rb`) only ever
+  rejected `id <= 0`, so an out-of-range high id was tracked, drawn and
+  addressable by Move/Erase Picture like any other. Fixed with a new
+  `Game::State::MAX_PICTURE_ID = 50` and an upper bound alongside the
+  existing `id > 0` check on `#show_picture`; `#move_picture`/
+  `#erase_picture` need no matching guard of their own, since neither can
+  ever find such an id shown in the first place once `#show_picture`
+  refuses to create one. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (id 51 is silently dropped; the boundary id 50 still works),
+  confirmed to fail against the pre-fix code before the fix.
 - Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
   (multiply corroborated). ✅ **The Teleport/Escape skill/item half of this
