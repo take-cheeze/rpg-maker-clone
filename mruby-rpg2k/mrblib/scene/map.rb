@@ -386,10 +386,13 @@ class RPG2k
         @animation_sprite.visible = false
         @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
         @animation_sprite.bitmap = @animation_bmp
-        # Fallback marker when the CharSet graphic is unavailable.
+        # Fallback marker when the CharSet graphic is unavailable -- a debug
+        # aid, so it only shows during Test Play; a released game with a
+        # missing hero graphic draws nothing, same as RPG_RT.
         unless @charset
+          alpha = parent.test_play ? 255 : 0
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
-                                Color.new(240, 240, 80, 255)
+                                Color.new(240, 240, 80, alpha)
         end
         setup_parallax
         setup_pictures
