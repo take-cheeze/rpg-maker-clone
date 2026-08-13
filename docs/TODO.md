@@ -2381,10 +2381,21 @@ not yet verified:
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle
   Animation calls back-to-back produces a visible one-frame stutter.
-- A Timer with "valid during battle" checked **force-ends the battle**
+- ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a
-  non-combat countdown.
+  non-combat countdown. `Game::Timer#tick` (`mruby-rpg2k/mrblib/game.rb`)
+  already returned `true` on exactly that frame — it only ever does so for a
+  timer carrying the battle flag while a fight is running, since one without
+  it is held frozen (never reaching zero) for the duration — but
+  `Scene::Map#update` threw the `Game::State#tick_timer` return value away.
+  Now, when it reports a finish while `@battle_ui` is present, the scene
+  calls `#finish_battle(:abort)` directly, the same outcome Terminate
+  Battle's own `#finish_terminated_battle` produces, just reachable from any
+  battle phase (command/target/event/result) rather than only from a running
+  battle-event page. Matches Terminate Battle in satisfying neither the
+  Win/Escape/Defeat handler branch — an unlabeled third outcome the event
+  resumes past.
 - Common events (including Parallel Process ones) **never run during
   battle**, even if their trigger switch flips mid-battle — execution is
   deferred until control returns to the map.

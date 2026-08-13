@@ -4602,6 +4602,26 @@ check 'Terminate Battle from a page ends the fight and resumes the event' do
      'the battle closed without a result window'
 end
 
+check 'a battle-valid Timer reaching 0:00 force-ends the fight (yado.tk)' do
+  scene, st = battle_scene_with_pages({})
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  # A timer already at 0:00-next-tick, marked to count during battle.
+  t = st.timer(0)
+  t.frames = 1
+  t.running = true
+  t.visible = true
+  t.in_battle = true
+  scene.update
+  eq nil, scene.instance_variable_get(:@battle_ui),
+     'the battle force-ends the instant the timer reaches 0:00, mid-command-phase'
+  ok !st.switches[1] && !st.switches[2] && !st.switches[3],
+     'no Win/Escape/Defeat handler matched -- an unlabeled third outcome, same as Terminate Battle'
+end
+
 check 'a page can wound a monster through Change Monster HP' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 7, 1])]) }
