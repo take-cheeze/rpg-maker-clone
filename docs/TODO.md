@@ -2122,15 +2122,35 @@ Everything below is unverified against the codebase.
   `Scene::Map#follow_vehicle` already keeps a ridden vehicle's stored
   position live every step. A vehicle's map id operand returns its real
   value rather than the map-event quirk's hardcoded 0, the same way the
-  hero's own map id read already does. **Screen x/y (attr 4/5) are not
-  covered by this fix** — those still read 0 for a vehicle, the same
-  degenerate answer an unresolvable map-event screen position already gets,
-  since resolving them would need a scene-side camera hook this fix
-  deliberately avoids depending on. Covered by a new
+  hero's own map id read already does. Covered by a new
   `scripts/rpg2k_logic_check.rb` check (a boat and an airship's map id/x/y/
   facing read correctly from an interpreter positioned on an unrelated map;
   an unplaced vehicle reads its (0,0) default), confirmed to fail against
-  the pre-fix code before the fix.
+  the pre-fix code before the fix. ✅ **Screen x/y (attr 4/5) are now covered
+  too** — the one deliberately-scoped-out half of the fix above, since it
+  needs a live camera that only the currently-loaded map's own scene has.
+  `Scene::Map#character_screen_position` (the method
+  `Interpreter#screen_operand` calls through the `@map_info` hook) only
+  recognised the hero (10001) and map-event ids, so a vehicle ref
+  (10002-10004) fell through to its "nothing to place" branch and read 0
+  the same way an unresolvable map event does — not the vehicle's actual
+  on-screen position. A new `#vehicle_pixel(type)` reads `Game::State`'s
+  `Game::Vehicle` and returns the ridden vehicle's own interpolated pixel
+  position (`#player_pixel`, so it reads in lockstep with the hero mid-step)
+  or a parked one's tile position — the exact same rule `#draw_vehicles`
+  already renders a vehicle's sprite by — and nil when the vehicle isn't
+  placed on the currently loaded map at all (unplaced, or parked on a
+  different one), which `#character_screen_position` treats the same as an
+  unresolvable map event: falls back to 0 one level up in
+  `#screen_operand`. `#character_screen_position` dispatches to it for refs
+  10002-10004 before falling through to the map-event lookup, reusing the
+  same `MOVE_TARGET_BOAT`/`MOVE_TARGET_AIRSHIP` range Set Move Route's own
+  vehicle-target resolution already uses. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (an unplaced boat reads nil; a parked
+  one reads the same tile-centre/tile-bottom position a map event at that
+  tile would; one parked on a different map reads nil again; a boarded one
+  reports the identical screen position the hero riding it does), confirmed
+  to fail against the pre-fix code before the fix.
 - **Battle Event** — separate command set from Map/Common events entirely;
   no Pictures on the battle screen; Parallel Process can't run in battle;
   no further pages run once battle ends.
