@@ -466,16 +466,17 @@ module Game
   class ChipSet
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
-    # The non-directional bits of the same passage byte (EasyRPG's `Passable`).
-    # `ABOVE_BIT` marks an upper tile as *see-through* ground rather than a
-    # solid object in its own right: `IsPassableTile` only falls through to
-    # the lower layer's own passability when this bit is set, so a
-    # painted-on decoration (a rug, a patch of flowers) still collides with
-    # whatever the lower layer says underneath it, while a genuine obstacle
-    # (a boulder, a fence post, a shop counter) is decided by the upper tile
-    # alone. `COUNTER_BIT` marks a tile you may talk *across* — the shop
-    # counter an NPC stands behind.
-    ABOVE_BIT = 0x20
+    # The non-directional bits of the same passage byte (EasyRPG's `Passable`,
+    # src/map_data.h: Down=0x01, Left=0x02, Right=0x04, Up=0x08, Above=0x10,
+    # Wall=0x20, Counter=0x40). `ABOVE_BIT` marks an upper tile as *see-through*
+    # ground rather than a solid object in its own right: `IsPassableTile` only
+    # falls through to the lower layer's own passability when this bit is set,
+    # so a painted-on decoration (a rug, a patch of flowers) still collides
+    # with whatever the lower layer says underneath it, while a genuine
+    # obstacle (a boulder, a fence post, a shop counter) is decided by the
+    # upper tile alone. `COUNTER_BIT` marks a tile you may talk *across* — the
+    # shop counter an NPC stands behind.
+    ABOVE_BIT = 0x10
     COUNTER_BIT = 0x40
     # Every directional bit ORed together, for a jump's any-side landing check.
     ALL_DIRS = (DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]).freeze
