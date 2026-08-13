@@ -6906,7 +6906,7 @@ class MenuStubParty
   def initialize
     @actors = [MenuStubActor.new]; @gold = 0; @leader = nil; @revision = 0
   end
-  def field_items; []; end
+  def field_items(_state = nil); []; end
   def field_skills(_actor, _state = nil); []; end
 end
 
@@ -6927,7 +6927,7 @@ class WrapMenuParty < MenuStubParty
     super
     @actors = [MenuStubActor.new, MenuStubActor.new]
   end
-  def field_items; [[1, 3], [2, 1]]; end
+  def field_items(_state = nil); [[1, 3], [2, 1]]; end
   def field_skills(_actor, _state = nil); [[10, 2], [11, 4]]; end
   def db_item(id); OpenStruct.new(name: "Item#{id}"); end
   def db_skill(id); OpenStruct.new(name: "Skill#{id}"); end
@@ -7068,7 +7068,7 @@ class SpecialItemStubParty < MenuStubParty
   end
 
   def leader; @actors.first; end
-  def field_items; [[SPECIAL_ID, 3]]; end
+  def field_items(_state = nil); [[SPECIAL_ID, 3]]; end
 
   def db_item(id)
     return nil unless id == SPECIAL_ID
@@ -7098,6 +7098,125 @@ check 'Scene::ItemMenu: an all-ally special item is cast by the party leader, ' 
   RGSS::Input.triggered = []
   eq [[SpecialItemStubParty::SPECIAL_ID, st.party.leader]], st.party.use_item_calls,
      'the party leader casts it, rather than a nil actor #use_special_item rejects outright'
+end
+
+# A party whose only item is a special (type 9) one invoking either an Escape
+# or a Teleport skill -- Game::Party's own decision logic
+# (#field_usable? / #use_special_escape_item / #use_special_teleport_item) is
+# covered by scripts/rpg2k_logic_check.rb; this stub only has to hand the
+# scene something that behaves the same way, mirroring
+# EscapeTeleportStubParty below for Scene::SkillMenu, so these checks stay
+# about the RGSS wiring (does confirming the item actually warp the party and
+# close the menu stack?) rather than repeating that coverage under RGSS stubs.
+class EscapeTeleportItemStubParty < MenuStubParty
+  ESCAPE_ID = 50
+  TELEPORT_ID = 51
+
+  def field_items(state = nil)
+    return [] unless state
+    rows = []
+    rows << [ESCAPE_ID, 1] if state.escape_access && state.escape_target
+    rows << [TELEPORT_ID, 1] if state.teleport_access && !state.teleport_targets.empty?
+    rows
+  end
+
+  def db_item(id)
+    case id
+    when ESCAPE_ID
+      OpenStruct.new(name: 'Escape Scroll', type: Game::Party::ITEM_SPECIAL, skill_id: 30)
+    when TELEPORT_ID
+      OpenStruct.new(name: 'Warp Scroll', type: Game::Party::ITEM_SPECIAL, skill_id: 31)
+    end
+  end
+
+  def db_skill(id)
+    case id
+    when 30 then OpenStruct.new(name: 'Escape', type: Game::Party::SKILL_ESCAPE)
+    when 31 then OpenStruct.new(name: 'Warp', type: Game::Party::SKILL_TELEPORT)
+    end
+  end
+
+  def use_special_escape_item(id, _actor, state)
+    return nil unless id == ESCAPE_ID && state.escape_target
+    state.escape_target
+  end
+
+  def use_special_teleport_item(id, _actor, state, map_id)
+    return nil unless id == TELEPORT_ID
+    target = state.teleport_targets[map_id]
+    return nil unless target
+    { map_id: map_id, x: target[:x], y: target[:y] }
+  end
+end
+
+def escape_teleport_item_state
+  st = Game::State.new(EscapeTeleportItemStubParty.new, 1, 0, 0)
+  st.escape_access = true
+  st.escape_target = { map_id: 9, x: 1, y: 2, switch_id: nil }
+  st.teleport_access = true
+  st.teleport_targets[10] = { x: 11, y: 12, switch_id: nil }
+  st.teleport_targets[20] = { x: 21, y: 22, switch_id: nil }
+  st
+end
+
+check 'Scene::ItemMenu: a special item invoking Escape queues its target and ' \
+      'closes the menu, with no confirmation message' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_item_state
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  eq [[EscapeTeleportItemStubParty::ESCAPE_ID, 1],
+      [EscapeTeleportItemStubParty::TELEPORT_ID, 1]], scene.send(:items)
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the first row, Escape
+  scene.update
+  RGSS::Input.reset
+  eq [9, 1, 2, 0], state.pending_teleport, 'queued straight from the one registered escape target'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+  ok scene.instance_variable_get(:@message).nil?, 'no "Used on ..." message, matching Scene::SkillMenu'
+end
+
+check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
+      'list and queues the chosen one' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_item_state
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the Teleport item (row 2)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq :teleport_target, scene.instance_variable_get(:@mode)
+  eq [[10, 'Map 10'], [20, 'Map 20']], scene.send(:teleport_targets),
+     'both registered destinations, ascending by map id (this fixture parent carries no map tree)'
+  ok state.pending_teleport.nil?, 'opening the list does not warp yet'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm it
+  scene.update
+  RGSS::Input.reset
+  eq [20, 21, 22, 0], state.pending_teleport
+  ok parent.pop_to_map_called
+end
+
+check 'Scene::ItemMenu: cancelling the Teleport destination list returns to the item list' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_item_state
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :teleport_target, scene.instance_variable_get(:@mode)
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
+  ok state.pending_teleport.nil?
+  ok !parent.pop_to_map_called
 end
 
 check 'Scene::SkillMenu: the skill list, caster and target cursors wrap around' do

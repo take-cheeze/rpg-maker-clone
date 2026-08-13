@@ -3802,6 +3802,66 @@ check 'a special item invokes its skill, free of SP and without knowing it' do
   eq 1, st.party.item_count(3), 'one was consumed'
 end
 
+check 'a special item invoking an Escape skill is hidden with no runtime ' \
+      'state, then gated on access/target like the skill itself, and warps ' \
+      'for free without spending an SP the item never had' do
+  # #field_usable? used to call #field_skill? with no `state` at all, so an
+  # item wrapping an Escape/Teleport skill always read unusable -- the same
+  # gap #field_skills used to have before it started threading `state`
+  # through, just never closed on the item side. See docs/TODO.md's "Menu
+  # scene" entry.
+  skills = { 6 => fake_skill(name: 'Scroll of Escape',
+                             type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
+  items = { 3 => fake_item(type: 9, skill_id: 6, name: 'Scroll') }
+  st = skill_party(skills, items)
+  hero = st.party.actor_by_id(1)
+  ok !hero.knows_skill?(6), 'the item is the cost -- the caster need not know it'
+  st.party.gain_item(3, 2)
+  ok !st.party.field_usable?(3), 'unsupported with no state to gate on'
+  ok st.party.use_special_escape_item(3, hero, nil).nil?, 'and casts nothing'
+  eq 2, st.party.item_count(3), 'nothing consumed'
+  # State present, but access off (the RPG2000 default) and no target set.
+  ok !st.party.field_usable?(3, st)
+  st.escape_access = true
+  ok !st.party.field_usable?(3, st), 'access alone is not enough -- no target yet'
+  st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
+  ok st.party.field_usable?(3, st)
+  eq [[3, 2]], st.party.field_items(st)
+  before = hero.mp
+  eq({ map_id: 3, x: 4, y: 5 }, st.party.use_special_escape_item(3, hero, st))
+  eq before, hero.mp, 'free -- the item pays, not the caster'
+  eq 1, st.party.item_count(3), 'one was consumed'
+  # Flying bars it even with access and a target set, same as the skill path.
+  st.boarded = :airship
+  ok !st.party.field_usable?(3, st), 'the airship blocks it'
+  ok st.party.use_special_escape_item(3, hero, st).nil?
+  eq 1, st.party.item_count(3), 'and nothing more is consumed by a failed cast'
+end
+
+check 'a special item invoking a Teleport skill offers every registered ' \
+      'destination and warps to the one chosen, for free' do
+  skills = { 7 => fake_skill(name: 'Scroll of Teleport',
+                             type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
+  items = { 4 => fake_item(type: 9, skill_id: 7, name: 'Scroll') }
+  st = skill_party(skills, items)
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(4, 1)
+  ok !st.party.field_usable?(4, st), 'no destinations registered yet'
+  st.teleport_access = true
+  st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
+  st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
+  ok st.party.field_usable?(4, st), 'access plus any target offers it'
+  before = hero.mp
+  eq({ map_id: 5, x: 8, y: 9 }, st.party.use_special_teleport_item(4, hero, st, 5))
+  eq before, hero.mp, 'free -- no SP spent for an item cast'
+  eq 0, st.party.item_count(4), 'consumed'
+  # An id that was never registered casts nothing and consumes nothing --
+  # there is no second one left to consume anyway, so gain one more first.
+  st.party.gain_item(4, 1)
+  ok st.party.use_special_teleport_item(4, hero, st, 999).nil?
+  eq 1, st.party.item_count(4), 'an unregistered destination consumes nothing'
+end
+
 check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
   # effect = power 20 + physical_rate 0 * atk/20 + magical_rate 40 * spirit 12 /40
   #        = 20 + 0 + 12 = 32
