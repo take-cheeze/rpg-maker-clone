@@ -3515,16 +3515,16 @@ RPGツクール2000 category) and the `200X共通` pages it transcludes
 source from the yado.tk backlog above — corroborates it in places (the
 parallel-process-goes-first-if-both-fire-the-same-frame rule, the 999 damage
 cap) but adds new specifics, especially around per-frame event step
-accounting and a documented RPG_RT loop-exit bug this codebase does not
-reproduce.
+accounting and a documented RPG_RT loop-exit bug (Break Loop's own nesting
+bug — now reproduced, see the "Fixed" bullet below).
 
 **Flagged for priority triage** — checked against the current code this
 session (reading + documenting only, not fixed — see below):
-- **Break Loop does not reproduce RPG_RT's own nesting bug.**
+- ✅ **Break Loop now reproduces RPG_RT's own nesting bug.**
   `Game::Interpreter#do_break_loop` (`mruby-rpg2k/mrblib/interpreter.rb:1008`)
-  scans forward for the first `End Loop` whose `indent < cmd.indent`,
-  i.e. it deliberately skips any `End Loop` at the break command's own
-  nesting depth or deeper and lands exactly on the *enclosing* loop's own
+  used to scan forward for the first `End Loop` whose `indent < cmd.indent`,
+  i.e. it deliberately skipped any `End Loop` at the break command's own
+  nesting depth or deeper and landed exactly on the *enclosing* loop's own
   end — which is the behaviourally "correct" outcome, but not what real
   RPG_RT does. The wiki's worked example: a Loop containing (in order) a
   Break Loop, then a second, empty, more-deeply-nested Loop/End Loop pair,
@@ -3535,10 +3535,22 @@ session (reading + documenting only, not fixed — see below):
   the outer one — control falls into the inner loop's body (the first Show
   Text) and then loops back via the *outer* End Loop forever, so the
   second Show Text after the outer loop is never reached and the first one
-  repeats indefinitely. This codebase's `indent`-aware scan means that
-  exact repro would correctly exit here instead of hanging — a
+  repeats indefinitely. This codebase's old `indent`-aware scan meant that
+  exact repro would have correctly exited here instead of hanging — a
   compatibility gap for any game whose logic (deliberately or not) depends
-  on this specific bug, not yet fixed.
+  on this specific bug. Fixed by dropping the indent comparison entirely:
+  `do_break_loop` now jumps past whichever `End Loop` command it meets first
+  scanning forward by list position alone, matching RPG_RT's own scan and
+  reproducing the bug rather than "fixing" it into the sane behaviour a
+  literal reading of "break the loop" would suggest — consistent with this
+  project's general stance of modelling RPG_RT's own quirks over a
+  better-behaved reading of the spec. The common case (nothing but the
+  enclosing loop's own `End Loop` between the break and it) is unaffected,
+  since an indent-blind scan finds the same command an indent-aware one
+  would. Covered by two new `scripts/rpg2k_logic_check.rb` checks (the
+  common, unaffected case; and the wiki's own worked nested-loop example,
+  asserting the command after the outer loop is never reached), the second
+  confirmed to fail against the pre-fix code before the fix.
 - **Autorun (auto-start) events run at most once per map visit, not once
   per frame.** `Scene::Map#start_autostart` (`mruby-rpg2k/mrblib/scene/
   map.rb:919`) picks the single lowest-id not-yet-started eligible

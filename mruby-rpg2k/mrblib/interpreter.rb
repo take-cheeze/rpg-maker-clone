@@ -1006,12 +1006,23 @@ module Game
       end
     end
 
-    # Break Loop: jump past the enclosing loop's End Loop marker.
-    def do_break_loop(cmd)
+    # Break Loop: real RPG_RT does *not* scan for the enclosing loop's own End
+    # Loop the way a nesting-aware reading of "break" would suggest -- it
+    # searches downward for the very next End Loop command by list position
+    # alone, with no regard for indent/nesting depth at all, and jumps just
+    # past whichever one it hits first (viprpg-dev wiki: 200X共通/基本的な仕様
+    # ・バグ, worked example: a Break Loop followed by a second, more-deeply-
+    # nested, empty Loop/End Loop pair before the enclosing loop's own End
+    # Loop lands on the *inner* End Loop, falls into a Show Text meant to run
+    # only once the outer loop truly exits, and then loops forever through the
+    # outer loop's own End Loop -- the code after the outer loop is never
+    # reached). Reproduced here rather than "fixed" into the sane behavior,
+    # matching this codebase's general stance of modelling RPG_RT's own
+    # quirks rather than a better-behaved reading of the spec.
+    def do_break_loop(_cmd)
       j = @index
       while j < @list.size
-        c = @list[j]
-        if c.code == Cmd::END_LOOP && c.indent < cmd.indent
+        if @list[j].code == Cmd::END_LOOP
           @index = j + 1
           return
         end
