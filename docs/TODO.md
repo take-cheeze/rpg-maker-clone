@@ -2274,6 +2274,40 @@ not yet verified:
   Player and a save/load" above. A **Map Event's** parallel process always
   restarts from the top on every re-trigger (matches this codebase's
   current — correct — per-visit behavior).
+- ✅ **A Map Event's own Parallel Process no longer restarts from the top
+  when a *different* event's page flips.** `Scene::Map#pages_changed?` (see
+  above) is a map-wide check — any Control Switch/Variable/item/party write
+  that flips *any* event's active page runs
+  `#rebuild_events_preserving_positions`, which rebuilds every event's
+  `Game::Character` and, via `#build_parallels`, every parallel-process
+  interpreter, an unrelated bystander event's parallel process included even
+  though that event's own page never changed. `#build_parallels` had no
+  reuse mechanism for a Map Event's own parallel process at all — only a
+  Common Event's, keyed by common-event id, already survived this kind of
+  rebuild (see the already-fixed Common Event bullet just above) — so the
+  bystander's Parallel Process silently lost its entire in-flight state
+  (call stack, a paused Wait's countdown, everything) and restarted at index
+  0 on every unrelated page flip anywhere on the map — a stricter, more
+  frequent reset than "restarts from the top on every re-trigger" describes,
+  since nothing about *this* event was re-triggered at all. Fixed with a new
+  `preserve_map_events:` keyword on `#build_parallels`, passed only by
+  `#rebuild_events_preserving_positions` (a same-map, in-place page
+  reselection, where a map event's own id still means the same thing before
+  and after) and left off at the other two call sites — the initial build
+  and a genuine Transfer Player — where a map event's parallel-process id
+  means nothing carried over from a different map/visit and a fresh restart
+  stays correct (unchanged, still pinned by the existing "a map event's
+  parallel process still gets a brand-new interpreter every visit" check).
+  When set, a still-running Parallel Process whose own page selection did
+  not move (the same `commands` array, compared by object identity) keeps
+  its interpreter across the rebuild; one whose own page *did* just change
+  still gets a fresh interpreter either way, so "always restarts from the
+  top on every re-trigger" (the bullet just above) is untouched. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check (a bystander event's Parallel
+  Process — mid-Wait — keeps its command position and in-flight countdown
+  intact across an unrelated event's switch-triggered page change),
+  confirmed to fail against the pre-fix code (the bystander's first command
+  re-running) before the fix.
 - Multiple simultaneous parallel processes are **not concurrent** — the
   engine advances one command block at a time, round-robin, yielding at a
   blocking command (Wait/Show Text/Show Picture), in definition/event-ID
