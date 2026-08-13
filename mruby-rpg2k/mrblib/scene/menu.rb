@@ -27,6 +27,12 @@ class RPG2k
         @commands = COMMAND_KEYS.map { |key, term_name, fallback|
           [key, term(term_name, fallback)]
         }
+        # yado.tk: opening the Menu (Save included — it has no scene of its own,
+        # see the :save command below) auto-cancels an Erase Screen black-out
+        # with no "Show Screen" involved, and RPG_RT never restores it when the
+        # menu closes. An instant cut rather than #show's default fade, since
+        # this snap happens the moment the menu opens, not over 35 frames.
+        @state.screen.show(Game::Transition::CUT_IN, 0)
         build_windows
       end
 

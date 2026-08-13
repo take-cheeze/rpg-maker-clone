@@ -1938,7 +1938,8 @@ Everything below is unverified against the codebase.
   can be called except the dedicated Save-screen command; can't open during
   battle; opening it pauses *all* event processing including active
   timers/parallel processes; Erase Screen's black-out is undone if the
-  player opens and closes the menu.
+  player opens and closes the menu (✅ implemented — see the "Screen
+  effects" bullet below, same fact from a different site page).
 - **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
@@ -2218,8 +2219,17 @@ not yet verified:
   are all completely unaffected even at a maximal dark tone; Erase Screen,
   by contrast, hides literally everything. Screen tone **persists across
   map transfers** with no auto-reset (unlike most per-map overrides).
-- **Erase Screen's blackout is auto-cancelled by opening and closing the
-  Menu or Save screen**, even though no "Show Screen" ran.
+- ✅ **Erase Screen's blackout is auto-cancelled by opening and closing the
+  Menu or Save screen**, even though no "Show Screen" ran. `Scene::Menu`
+  (Save is one of its commands, not a scene of its own — see the Menu screen
+  bullet above) now calls `@state.screen.show(Game::Transition::CUT_IN, 0)`
+  in its `#initialize`, the instant the menu opens: an explicit `frames: 0`
+  forces a same-frame settle to fully visible regardless of the style's own
+  length, and `Game::Transition::CUT_IN` (rather than `NONE`, which is a
+  true no-op) so an already-visible screen is left alone. `Game::Screen` is
+  shared off `Game::State` between `Scene::Map` and `Scene::Menu`, so
+  nothing re-erases it on return — matching RPG_RT never restoring the
+  black-out once the menu has been opened and closed.
 - Shake strength increases in fixed 2px increments per level; duration 0
   or flash intensity 0 both produce no visible effect (too brief to
   render, not merely "instant").
