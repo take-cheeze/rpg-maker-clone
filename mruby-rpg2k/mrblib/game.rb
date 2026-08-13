@@ -468,14 +468,31 @@ module Game
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
     # The non-directional bits of the same passage byte (EasyRPG's `Passable`,
     # src/map_data.h: Down=0x01, Left=0x02, Right=0x04, Up=0x08, Above=0x10,
-    # Wall=0x20, Counter=0x40). `ABOVE_BIT` marks an upper tile as *see-through*
-    # ground rather than a solid object in its own right: `IsPassableTile` only
-    # falls through to the lower layer's own passability when this bit is set,
-    # so a painted-on decoration (a rug, a patch of flowers) still collides
-    # with whatever the lower layer says underneath it, while a genuine
-    # obstacle (a boulder, a fence post, a shop counter) is decided by the
-    # upper tile alone. `COUNTER_BIT` marks a tile you may talk *across* — the
-    # shop counter an NPC stands behind.
+    # Wall=0x20, Counter=0x40). `ABOVE_BIT` is the editor's upper-layer "star"
+    # toggle, and it decides two separate things, both keyed off the same bit:
+    #   - Passability: an upper tile is *see-through* ground rather than a
+    #     solid object in its own right when this bit is set. `IsPassableTile`
+    #     only falls through to the lower layer's own passability when it is
+    #     set, so a painted-on decoration (a rug, a patch of flowers) still
+    #     collides with whatever the lower layer says underneath it, while a
+    #     genuine obstacle (a boulder, a fence post, a shop counter) is
+    #     decided by the upper tile alone.
+    #   - Draw order (see Scene::Map#draw_layers / #elevated?): only a starred
+    #     upper tile draws in front of characters; an unstarred one draws at
+    #     the same z as the lower layer instead, so a character standing on or
+    #     against it composites normally rather than being masked by it.
+    #     Confirmed against a genuine RPG_RT.exe under wine: Nepheshel's
+    #     opening lies the hero down across a 3-tile bed graphic (headboard /
+    #     mattress / footer); only the footer is starred, so the headboard and
+    #     mattress alone would show him in full, but a *separate* map event
+    #     (layer: above, its own small pillow graphic) sits on the same tile
+    #     and is what actually covers him from the neck down, drawn through
+    #     the ordinary above-hero event path. Treating every upper tile as
+    #     always-above, as this renderer previously did, hid the headboard
+    #     tile's own contents as well and left him fully invisible instead of
+    #     tucked in.
+    # `COUNTER_BIT` marks a tile you may talk *across* — the shop counter an
+    # NPC stands behind.
     ABOVE_BIT = 0x10
     COUNTER_BIT = 0x40
     # Every directional bit ORed together, for a jump's any-side landing check.
@@ -510,6 +527,15 @@ module Game
       @passable_upper[idx]
     end
     private :upper_flags
+
+    # Whether an upper-layer tile is starred (ABOVE_BIT) and so draws in front
+    # of characters rather than behind them, per Scene::Map#draw_layers. A
+    # tile with no passability entry at all (id 0, or a chipset with no
+    # table) is not starred — see #upper_flags.
+    def elevated?(upper_tile_id)
+      flags = upper_flags(upper_tile_id)
+      !flags.nil? && (flags & ABOVE_BIT) != 0
+    end
 
     # Chip index into the lower passability table for a lower-layer tile id.
     def self.lower_index(tile_id)

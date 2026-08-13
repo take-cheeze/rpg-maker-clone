@@ -10637,6 +10637,26 @@ check 'landable_tile? applies the same solid-vs-see-through rule to jumps' do
      'ABOVE_BIT set defers to the lower layer, which is fully blocked'
 end
 
+# #elevated? is the same ABOVE_BIT read by Scene::Map#draw_layers to decide
+# which buffer an upper tile composites into -- see the flag's own comment.
+# Confirmed against a genuine RPG_RT.exe under wine: Nepheshel's opening lies
+# the hero across a 3-tile bed, none of whose tiles are starred, and drawing
+# every upper tile as always-above (as before this method existed) hid him
+# completely instead of showing his sleeping sprite through the unstarred
+# headboard/mattress the way RPG_RT does.
+check 'elevated? reads ABOVE_BIT off the upper passability table' do
+  upper = Array.new(144, 0)
+  upper[0] = Game::ChipSet::ALL_DIRS # passable every direction, not starred
+  upper[1] = Game::ChipSet::ALL_DIRS | ABOVE
+  cs = chipset_with_upper(nil, upper)
+  ok !cs.elevated?(BLOCK_F), 'an ordinary upper tile is not starred'
+  ok cs.elevated?(BLOCK_F + 1), 'ABOVE_BIT marks it starred'
+
+  ok !cs.elevated?(0), 'id 0 (no upper tile here) is never starred'
+  ok !chipset_with_upper(nil, nil).elevated?(BLOCK_F),
+     'a chipset with no upper table at all is never starred'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

@@ -7479,6 +7479,49 @@ check 'drawing the same event on plain ground emits one blit' do
   eq 255, buf.blt_calls[0][4]
 end
 
+# A map tile's *own* draw path (not an event's): only a starred (ABOVE_BIT)
+# upper tile belongs in the buffer that composites over the player, matching
+# Game::ChipSet#elevated?. See its comment for why this matters -- an
+# unstarred upper tile (most of a chipset's furniture/counters) has always
+# been treated as always-above here, which hid Nepheshel's sleeping hero
+# completely instead of showing him through the bed's own unstarred tiles.
+check 'draw_layers routes an unstarred upper tile behind the player, a starred one in front' do
+  up = Array.new(144, 0)
+  up[0] = Game::ChipSet::ALL_DIRS                             # unstarred (e.g. a headboard)
+  up[1] = Game::ChipSet::ALL_DIRS | Game::ChipSet::ABOVE_BIT  # starred
+  row_class = Struct.new(:name, :chipset_name, :passable_data_lower,
+                         :passable_data_upper, :terrain_data,
+                         :animation_type, :animation_speed)
+  db = fake_db
+  db.chipset[1] = row_class.new('cs', 'cs', nil, up, nil, 0, 0)
+  w = 6; h = 5
+  upper = Array.new(w * h, 0)
+  bf = Game::ChipsetLayout::BLOCK_F
+  upper[0] = bf       # (0, 0): unstarred
+  upper[1] = bf + 1   # (1, 0): starred
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = Game::Map.new(1, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                              lower_layer: Array.new(w * h, 0),
+                                              upper_layer: upper, events: {}))
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  lower = scene.instance_variable_get(:@lower_bmp)
+  upper_bmp = scene.instance_variable_get(:@upper_bmp)
+  lower.clear_blt_calls
+  upper_bmp.clear_blt_calls
+  scene.send(:draw_layers, 0, 0)
+  tile = RPG2k::Scene::Map::TILE
+  at = ->(calls, x, y) { calls.count { |c| c[0] == x && c[1] == y } }
+  # (0, 0) always gets one blit for its own (plain, id 0) lower tile; the
+  # unstarred upper tile at the same spot is a *second* blit into the same
+  # buffer, not one into the upper buffer.
+  eq 2, at.call(lower.blt_calls, 0, 0),
+     'the plain floor and the unstarred upper tile both land in the lower buffer'
+  eq 0, at.call(upper_bmp.blt_calls, 0, 0), 'the unstarred tile never reaches the upper buffer'
+  # (TILE, 0) also gets its own plain lower tile, but the starred upper tile
+  # there is the one that must reach the upper (above-player) buffer.
+  eq 1, at.call(upper_bmp.blt_calls, tile, 0), 'the starred tile lands in the upper buffer'
+end
+
 check 'a clear member walks the same ground untouched' do
   hero = SlipActor.new([])
   scene = new_scene({}, player: [0, 0], members: [hero])
