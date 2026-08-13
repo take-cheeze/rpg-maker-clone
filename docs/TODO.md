@@ -2666,6 +2666,31 @@ not yet verified:
   are all completely unaffected even at a maximal dark tone; Erase Screen,
   by contrast, hides literally everything. Screen tone **persists across
   map transfers** with no auto-reset (unlike most per-map overrides).
+  **The pictures / flash / message-text halves were already correct**:
+  `Scene::Map#setup_sprites` (`mruby-rpg2k/mrblib/scene/map.rb`) always built
+  `@picture_sprite`/`@flash_sprite`/`@fade_sprite`/`@weather_sprite` and every
+  message window as plain top-level sprites, never children of the toned
+  `@map_viewport`, so `#update_map_tone`'s viewport tone never reached them —
+  no code change needed. ✅ **Battle animations were the one genuine gap, now
+  fixed.** `@animation_sprite` — the single shared renderer both a field/
+  parallel-process Show Battle Animation (11210) and an in-battle attack's own
+  animation play through (`#step_map_animation`) — was a child of
+  `@map_viewport` too, so an active Tint Screen wrongly darkened/tinted every
+  animation play along with the tiles and hero. Fixed by making it a
+  top-level sprite (outside any toned viewport) and splitting the upper
+  (above-character) chip layer into its own `@upper_viewport`, tinted in
+  lockstep with `@map_viewport` by `#update_map_tone` — needed only so
+  `@animation_sprite` keeps drawing in its original slot (over the hero,
+  under the upper chip layer; gfx_update's per-parent z sort compares a
+  Viewport as one block against its siblings, so pulling one sprite out of a
+  shared viewport changes only whether that viewport's tone reaches it, not
+  where it draws relative to the layers around it) without itself living
+  inside either toned viewport. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (the upper chip layer still takes the
+  identical tone `@map_viewport` does; the animation sprite's viewport is
+  neither of the two tinted ones, and it still draws between the player and
+  upper-layer sprites), both confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **Erase Screen's blackout is auto-cancelled by opening and closing the
   Menu or Save screen**, even though no "Show Screen" ran. `Scene::Menu`
   (Save is one of its commands, not a scene of its own — see the Menu screen
