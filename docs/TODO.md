@@ -4727,8 +4727,24 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         one without, draw differently through the same program), and
         `drawArraysInstancedANGLE` paints one primitive per instance at its
         own per-instance offset.
-      - 🚧 Remaining: texture Y-flip and uniform-introspection polish as real
-        content exercises them.
+      - ✅ **`UNPACK_PREMULTIPLY_ALPHA_WEBGL`.** Grouped with Y-flip above as
+        one deferred "pixel-store polish" item, but unlike Y-flip (never set
+        `true` by a stock PIXI v5 build) this one already fires on every
+        ordinary texture upload — `BaseTexture`'s default `alphaMode` is
+        `UNPACK` (premultiply-on-upload), and PIXI's `NORMAL` blend mode
+        (`[ONE, ONE_MINUS_SRC_ALPHA]`) assumes the GPU did it. Silently
+        swallowing the enum (GLES has no equivalent) left every texture
+        uploaded with straight alpha blended as if premultiplied — every
+        partially-transparent pixel (window corners, any anti-aliased sprite
+        edge) rendered over-bright. Now premultiplied on the CPU before the
+        real `glTexImage2D`/`glTexSubImage2D` call, on all four upload paths
+        (raw `ArrayBufferView` and canvas-source, both `texImage2D` and
+        `texSubImage2D`). Covered by `gl_test.rb`: a raw upload and a
+        canvas-source upload each come back scaled by their own alpha with
+        the flag on, and untouched with it off (the default).
+      - 🚧 Remaining: `UNPACK_FLIP_Y_WEBGL` (genuinely inert against a stock
+        PIXI v5 build — never set `true`, only reset to `false`) and
+        uniform-introspection polish, as real content exercises them.
       - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
         under a game's `fonts/`, but **MZ projects ship `.woff`**
         (`mplus-1m-regular.woff` and friends), so it found nothing and every real

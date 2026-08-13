@@ -442,6 +442,184 @@ assert 'texSubImage2D updates a texture after its first upload' do
   assert_true rgb[0] < 60
 end
 
+# --- M6.3c: UNPACK_PREMULTIPLY_ALPHA_WEBGL -----------------------------------
+#
+# PIXI sets `gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, ...)` on every
+# ordinary texture upload (`libs/pixi.js` in a fetched MZ corescript, in
+# `TextureSystem.updateTexture`/`RenderTextureSystem` etc.), true whenever a
+# BaseTexture's `alphaMode` is the default `UNPACK` (= PREMULTIPLY_ON_UPLOAD,
+# what every plain image resource gets) — and its NORMAL blend mode is
+# `[gl.ONE, gl.ONE_MINUS_SRC_ALPHA]`, which assumes the source colour is
+# already scaled by its own alpha. js_gl_pixel_storei used to swallow this
+# enum entirely (real GLES has no equivalent), so every texture uploaded with
+# straight alpha and every partially-transparent pixel — window corners,
+# any anti-aliased sprite edge — blended over-bright. Unlike
+# UNPACK_FLIP_Y_WEBGL (never set true by a stock PIXI v5 build, see
+# js_gl_pixel_storei's comment), this one is live on the very first texture
+# any real MZ game uploads.
+
+assert 'UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies a raw texImage2D upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # A solid 1x1 half-alpha-red texture, sampled onto a full-viewport quad with
+  # blending disabled so the read-back pixel is exactly what is in the
+  # texture. Uploaded twice, once with the flag off (default) and once on;
+  # only the second should come back scaled by its own alpha.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 8, H = 8;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.BLEND);
+
+      var quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      function drawWith(premultiply) {
+        var tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premultiply);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA,
+                      gl.UNSIGNED_BYTE, new Uint8Array([200, 0, 0, 128]));
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); // PIXI resets it
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.finish();
+        var px = new Uint8Array(4);
+        gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        gl.deleteTexture(tex);
+        return px[0] + ':' + px[1] + ':' + px[2] + ':' + px[3];
+      }
+
+      return drawWith(false) + ' | ' + drawWith(true);
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  straight, premultiplied = out.split(" | ")
+  assert_equal "200:0:0:128", straight # flag off (default): untouched
+  s = premultiplied.split(":").map(&:to_i)
+  assert_equal 4, s.size
+  assert_true (s[0] - 100).abs <= 3 # 200 * 128 / 255 ~= 100.4
+  assert_equal 0, s[1]
+  assert_equal 0, s[2]
+  assert_equal 128, s[3] # alpha itself is untouched, only colour is scaled
+end
+
+assert 'UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies a texSubImage2D-from-canvas upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # The path that actually carries MZ's pixels (see the texSubImage2D test
+  # above): a Canvas2D source drawn with a fractional globalAlpha (so its
+  # straight RGBA has a non-trivial, non-hardcoded alpha), sub-uploaded with
+  # the flag on. The expected premultiplied colour is derived from the
+  # canvas' own *measured* straight pixel rather than an assumed constant, so
+  # this does not depend on the colour parser's own rounding.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 8, H = 8;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.BLEND);
+
+      var quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      var srcCv = document.createElement('canvas'); srcCv.width = 1; srcCv.height = 1;
+      var sctx = srcCv.getContext('2d');
+      sctx.globalAlpha = 0.5;
+      sctx.fillStyle = '#c80000';
+      sctx.fillRect(0, 0, 1, 1);
+      var truth = __mv_canvasGetPixel(srcCv.__h, 0, 0); // straight RGBA, measured
+
+      var tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, srcCv);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.finish();
+      var px = new Uint8Array(4);
+      gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return truth.join(':') + ' | ' + px[0] + ':' + px[1] + ':' + px[2] + ':' + px[3];
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  truth_s, got_s = out.split(" | ")
+  truth = truth_s.split(":").map(&:to_i)
+  got = got_s.split(":").map(&:to_i)
+  assert_equal 4, truth.size
+  assert_true truth[3] > 0 && truth[3] < 255 # the fixture really is partially transparent
+  assert_true (got[0] - truth[0] * truth[3] / 255).abs <= 3
+  assert_true (got[1] - truth[1] * truth[3] / 255).abs <= 3
+  assert_true (got[2] - truth[2] * truth[3] / 255).abs <= 3
+  assert_equal truth[3], got[3] # alpha itself is untouched
+end
+
 assert 'the stencil test masks inside a render texture, where MZ actually draws' do
   skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
 
