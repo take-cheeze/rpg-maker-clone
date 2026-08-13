@@ -2252,10 +2252,20 @@ not yet verified:
   (≤4 combined lines) — an explicit `\c[0]` reset is needed to stop
   choices inheriting the preceding text's color.
 - `\>` (instant display) only affects the current line — must be repeated
-  per line for a fully-instant multi-line message. `\<`, `\$`, `\^` each
-  cost one character's worth of display time even though they render
-  nothing; `\c[]`/`\s[]` cost none. `\^` doesn't work inside Show Choices
-  even though other codes do.
+  per line for a fully-instant multi-line message.
+- ✅ **`\<`, `\$`, `\^` each cost one character's worth of display time even
+  though they render nothing; `\c[]`/`\s[]` cost none.** `Game::Message.scan`
+  (`mruby-rpg2k/mrblib/game.rb`) now advances its `count` reveal-coordinate by
+  one for the closing `\<` of an instant span, `\$` (show gold) and `\^`
+  (auto-close) — the same coordinate space `\!`/`\./`\|` pauses and `\>`…`\<`
+  instant spans are recorded in — while leaving `\>` (span open) and
+  `\c[]`/`\s[]` untouched, matching the yado.tk finding that only those three
+  are "free". The instant span itself still only covers its literal
+  characters (the `\<` tick lands just after the span closes, not inside it),
+  so a pause or more text right after one of these three codes now reveals
+  one frame later than it would with the code removed — previously they were
+  pure no-ops in the reveal counter.
+- `\^` doesn't work inside Show Choices even though other codes do.
 - Message Options (window transparency/position) are **sticky global
   state** — once set, they apply to every subsequent message window for
   the rest of the game (or until reset), not scoped to the current event.

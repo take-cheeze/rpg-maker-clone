@@ -556,7 +556,7 @@ check 'Message.scan records pacing codes in revealed-char coordinates' do
   def vars.[](i); { 3 => 42 }[i]; end
   names = ->(_i) { 'X' }
   s = Game::Message.scan('ab\.cd\|e\!f\^', vars, names)
-  eq 6, s[:length], '"abcdef" = 6 visible characters'
+  eq 7, s[:length], '"abcdef" = 6 visible characters + 1 tick for the trailing \\^'
   eq [{ at: 2, kind: :quarter }, { at: 4, kind: :full }, { at: 5, kind: :key }],
      s[:pauses]
   ok s[:auto_close], '\\^ sets auto_close'
@@ -571,7 +571,7 @@ check 'Message.scan flags \$ (show gold) and drops it from the text' do
   names = ->(_i) { '' }
   s = Game::Message.scan('Gold:\$ here', vars, names)
   ok s[:show_gold], '\\$ sets show_gold'
-  eq 'Gold: here'.length, s[:length], '\\$ emits no visible character'
+  eq 'Gold: here'.length + 1, s[:length], '\\$ emits no visible character but costs one tick'
   # No \$ -> flag stays off.
   ok !Game::Message.scan('plain', vars, names)[:show_gold]
 end
@@ -581,11 +581,29 @@ check 'Message.scan records \> \< instant spans (and an unclosed one to EOL)' do
   def vars.[](_i); 0; end
   names = ->(_i) { '' }
   s = Game::Message.scan('ab\>cd\<ef', vars, names)
-  eq 6, s[:length], '"abcdef" = 6 visible characters'
-  eq [[2, 4]], s[:instants], 'cd is the instant span'
+  eq 7, s[:length], '"abcdef" = 6 visible characters + 1 tick for the closing \\<'
+  eq [[2, 4]], s[:instants], 'cd is the instant span (the \\< tick lands after it)'
   # An unclosed \> runs to the end of the line.
   s2 = Game::Message.scan('ab\>cd', vars, names)
   eq [[2, 4]], s2[:instants]
+end
+
+check '\^, \$ and the closing \< each delay what follows by one reveal tick' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  # A \! pause right after each code should land one position later than it
+  # would with no code there at all, since the code itself burns a tick.
+  baseline = Game::Message.scan('ab\!cd', vars, names)
+  eq [{ at: 2, kind: :key }], baseline[:pauses]
+  after_close = Game::Message.scan('ab\^\!cd', vars, names)
+  eq [{ at: 3, kind: :key }], after_close[:pauses], '\\^ pushes the pause one tick later'
+  after_gold = Game::Message.scan('ab\$\!cd', vars, names)
+  eq [{ at: 3, kind: :key }], after_gold[:pauses], '\\$ pushes the pause one tick later'
+  after_span = Game::Message.scan('ab\>x\<\!cd', vars, names)
+  eq [{ at: 4, kind: :key }], after_span[:pauses],
+     'the closing \\< pushes the pause one tick later (span "x" itself is unaffected)'
+  eq [[2, 3]], after_span[:instants], 'the instant span itself still only covers "x"'
 end
 
 check 'TextReveal reveals an instant span in a single advance' do
