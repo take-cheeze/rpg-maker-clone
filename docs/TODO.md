@@ -3481,8 +3481,26 @@ level-up).
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed
 above are repeated here)
-- Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
-  but free if placed in a shop's own buy list.
+- **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
+  but free if placed in a shop's own buy list — confirmed already
+  correct**, all three facts, no code change needed. `Game::Shop#sell_price`
+  (`mruby-rpg2k/mrblib/game.rb`) is `price(id) / 2`, plain Integer division
+  which truncates toward zero the same as `floor` for the non-negative
+  prices a database ever stores. `#sellable?` requires `price(id) > 0`
+  (alongside actually holding the item), so a price-0 item — RPG2000's own
+  way of marking a key item unsellable — can never be sold back regardless
+  of how it entered the party's bag. That price-0 exemption is scoped to
+  *selling*: `#max_buy` short-circuits to the 99-item stack cap alone
+  (`return room if cost <= 0`) rather than dividing the affordable count by
+  a zero price, so a shop that deliberately stocks a price-0 good in its
+  own buy list still lets the party take it for free, matching the second
+  half of the claim exactly. Already covered by existing
+  `scripts/rpg2k_logic_check.rb` checks predating this entry — `'Shop sell
+  refuses unowned, price-0 (key), or in a buy-only shop'`, `'Shop max_buy of
+  a free item is limited only by the cap'` (its own comment: "a price-0
+  good does not divide by zero") and `'Shop sellable_items lists only held,
+  priced goods in id order'` — none of them vacuous; each asserts a concrete
+  gold/item-count/list outcome.
 - State resistance rank A-E only gates **susceptibility** — the actual
   proc chance is entirely the *skill's own* occurrence-rate field (0%
   occurrence never applies regardless of rank) — **confirmed already
