@@ -2540,7 +2540,8 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
                                                     (sh - 1) / (c.HEIGHT - 1))),
                        0, static_cast<int>(sh) - 1);
       int sr = 255, sg = 255, sb = 255, sa = 255;
-      if (scol >= 0 && srow >= 0 && scol < src_bmp.width && srow < src_bmp.height)
+      if (scol >= 0 && srow >= 0 && scol < src_bmp.width &&
+          srow < src_bmp.height)
         bmp_read(src_bmp, scol, srow, sr, sg, sb, sa);
       for (unsigned j = 0; j < c.WIDTH; ++j) {
         const unsigned idx = i * c.WIDTH + j;
