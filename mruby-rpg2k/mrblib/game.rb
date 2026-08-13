@@ -5814,12 +5814,18 @@ module Game
       100 - (2 * num + den) / (2 * den)
     end
 
-    # RPG2000 also remembers each actor's chosen battle command, which the
-    # `command_actor` page condition tests. RPG_RT only answers it for the
-    # battler whose action triggered the check (EasyRPG's AreConditionsMet bails
-    # on a null `source`), and this runtime evaluates pages once per turn with no
-    # acting battler, so the condition reports "unknown" (nil) and
-    # Game::BattlePage fails that page rather than firing it unchecked.
+    # The `command_actor` page condition (which battle command an actor just
+    # chose) is answered "unknown" (nil), which Game::BattlePage reads as
+    # "fails the page" rather than firing it unchecked — and this is not a
+    # gap to close, it is what RPG_RT itself does for RPG2000's battle system.
+    # EasyRPG's `AreConditionsMet` only evaluates the condition when it is
+    # handed a `source` battler (`if (!source) return false;`), and
+    # `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents` — the *only* call
+    # site `Scene_Battle_Rpg2k` has — always calls `ScheduleNextPage(nullptr)`.
+    # A per-actor `source` only ever exists in `Scene_Battle_Rpg2k3`, the
+    # separate ATB scene this runtime does not model (see the Toggle ATB Mode
+    # note); a page gated on `command_actor` is therefore *never satisfiable*
+    # under RPG2000's own battle system, not merely unimplemented here.
     def actor_command(_id); nil; end
 
     # Force Flee (1006), target 0: let the party leave whenever it next tries.

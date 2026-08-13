@@ -1016,11 +1016,17 @@ The work below is roughly ordered by the critical path to a walkable game
   which is RPG_RT's reading of "no trigger" and the opposite of how every other
   RPG2000 page kind treats vacuous conditions; both test beds carry such pages
   (446 of Nepheshel's 3265, all 88 of mtf-meido-action's) and every one is empty,
-  so no real game changes behaviour. Still TODO here: the `command_actor`
-  (chosen battle command) condition, which RPG_RT only answers for the battler
-  whose action triggered the check — this runtime evaluates pages once per turn
-  with no acting battler, the same null-`source` case EasyRPG bails on, so such a
-  page deliberately does not fire rather than firing unchecked; and video
+  so no real game changes behaviour. **The `command_actor` (chosen battle
+  command) condition never firing is confirmed correct, not a gap**: it needs
+  the battler whose action triggered the check, and EasyRPG's
+  `AreConditionsMet` only evaluates it when handed one (`if (!source) return
+  false;`) — but `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents`, the
+  *only* page-scheduling call site RPG2000's own battle scene has, always
+  calls `ScheduleNextPage(nullptr)`. A real `source` only ever exists in
+  `Scene_Battle_Rpg2k3`, the separate ATB battle scene this runtime does not
+  model (see Toggle ATB Mode below), so a page gated on `command_actor` is
+  *never satisfiable* under RPG2000's own battle system — not a once-per-turn
+  evaluation standing in for a future per-actor one. Still open: video
   playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the

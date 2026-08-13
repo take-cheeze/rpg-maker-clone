@@ -7845,9 +7845,13 @@ end
 check 'BattlePage.active? fails a condition the runtime cannot answer' do
   b = battle_with
   st = new_state
-  # The chosen-command test needs the battler whose action triggered the check,
-  # which a once-per-turn evaluation has no equivalent of (RPG_RT bails on a
-  # null source too), so such a page must not fire unchecked.
+  # The chosen-command test needs the battler whose action triggered the
+  # check, and RPG_RT's own RPG2000 battle scene never has one to give it
+  # (Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents always schedules
+  # pages with a null source; only the separate 2k3 ATB scene ever passes a
+  # real one) -- so this is not a stand-in for a future acting-battler
+  # context, it is RPG2000's own battle system never satisfying the
+  # condition either.
   eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
                                    command_id: 1), st.switches, st.variables, b)
   # Nor may one keyed to a battler that is not in this fight.
