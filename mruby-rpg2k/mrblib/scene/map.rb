@@ -4778,7 +4778,13 @@ class RPG2k
                      inner_w: inner_w, seg_lines: seg_lines, face: face,
                      face_index: cfg.face_index,
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
-                     text_x: text_x, text_w: text_w, gold_window: gold_window }
+                     text_x: text_x, text_w: text_w, gold_window: gold_window,
+                     # The colour still in effect once this text ends -- a Show
+                     # Choices later merged onto this same window (see
+                     # #append_choice_lines) inherits it rather than starting
+                     # back at the default (yado.tk: an explicit `\c[0]` is
+                     # needed in the text to stop the choices inheriting it).
+                     trailing_color: scans.empty? ? 0 : scans.last[:end_color] }
         draw_message_contents
         win.contents = contents
         @choice_index = 0
@@ -4794,7 +4800,16 @@ class RPG2k
         names = ->(id) { actor_name(id) }
         raw = (labels || [])
         raw = [''] if raw.empty?
-        scans = raw.map { |l| Game::Message.scan(l.to_s, @state.variables, names) }
+        # Each choice label inherits the colour the preceding text (or an
+        # earlier label) left off at, unless it sets its own -- the whole
+        # merged window reads as one continuous colour stream (yado.tk).
+        color = @message[:trailing_color] || 0
+        scans = raw.map do |l|
+          s = Game::Message.scan(l.to_s, @state.variables, names, color)
+          color = s[:end_color]
+          s
+        end
+        @message[:trailing_color] = color
         new_seg_lines = scans.map { |s| s[:segments] }
         @message[:choice_start] = @message[:seg_lines].length
         @message[:seg_lines] = @message[:seg_lines] + new_seg_lines
