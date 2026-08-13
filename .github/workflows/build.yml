@@ -75,14 +75,10 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - run: ./scripts/nix-develop.bash echo test
-
-      # Export the dev shell's environment (PATH, compiler launchers, etc.)
-      # into $GITHUB_ENV / $GITHUB_PATH once, so every later step below runs
-      # its command directly instead of going through `nix develop -c`. The
-      # warm-up above already realised the shell and populated nix's
-      # git-fetch cache, so this second `nix` call hits warm caches and stays
-      # quiet.
+      # Realises the dev shell and exports its environment (PATH, compiler
+      # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
+      # below runs its command directly instead of going through
+      # `nix develop -c`.
       - run: ./scripts/nix-develop-export-env.bash
 
       - name: cache rtp
@@ -745,10 +741,9 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - run: ./scripts/nix-develop.bash echo test
-
-      # See the `build` job: exports the dev shell's environment once so the
-      # steps below run their commands directly, with no further `nix` calls.
+      # See the `build` job: realises the dev shell and exports its
+      # environment once so the steps below run their commands directly,
+      # with no further `nix` calls.
       - run: ./scripts/nix-develop-export-env.bash
 
       - name: cache test game
@@ -926,13 +921,11 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      # Realise the dev shell up front, exactly as the `build` job does.
-      - run: ./scripts/nix-develop.bash echo test
-
-      # See the `build` job: exports the dev shell's environment once so the
-      # steps below — including the concurrent `background: true` ones — run
-      # their commands directly, with no further `nix` calls and therefore no
-      # store-lock contention between them.
+      # See the `build` job: realises the dev shell and exports its
+      # environment once so the steps below — including the concurrent
+      # `background: true` ones — run their commands directly, with no
+      # further `nix` calls and therefore no store-lock contention between
+      # them.
       - run: ./scripts/nix-develop-export-env.bash
 
       # Fetch + build the MIT MV engine into the committed sample so it can be
@@ -1355,9 +1348,10 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
-      # Piped through the ref-noise filter for the same reason every
-      # `nix develop` is (scripts/nix-develop.bash): fetching this flake with
-      # `self.submodules = true` makes nix fetch each submodule with
+      # Piped through the same ref-noise filter every `nix` call in this
+      # workflow uses (see e.g. scripts/nix-develop-export-env.bash):
+      # fetching this flake with `self.submodules = true` makes nix fetch
+      # each submodule with
       # `refs/*:refs/*` and print a `* [new ref]` line per ref, ~20k of them
       # ahead of the first build log line. Merging stderr into stdout is what
       # lets one filter see both; `-L`'s build logs stay untouched, they are

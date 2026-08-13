@@ -4,24 +4,30 @@ set -euo pipefail
 
 # `nix develop -c "$@"`, retried when the Nix store database is locked.
 #
-# CI installs Nix single-user (nixbuild/nix-quick-install-action), so there is
-# no nix-daemon serialising store access: every `nix` process opens
+# CI's own steps no longer call this — `scripts/nix-develop-export-env.bash`
+# realises the dev shell once per job and exports its environment into
+# $GITHUB_ENV / $GITHUB_PATH, so every step after that just runs its command
+# directly. This script is what the bug report template
+# (.github/ISSUE_TEMPLATE/bug_report.yml) points contributors at for running
+# the built binary inside the dev shell locally, e.g. to attach a repro
+# command, and is generally useful any time you want `nix develop -c <cmd>`
+# without babysitting a lock error by hand.
+#
+# CI installs Nix single-user (nixbuild/nix-quick-install-action), and a
+# single-user local install has the same property: there is no nix-daemon
+# serialising store access, so every `nix` process opens
 # /nix/var/nix/db/db.sqlite itself and takes the SQLite write lock directly.
-# Each job now calls this exactly once, as a warm-up that realises the dev
-# shell before `nicknovitski/nix-develop` exports its environment into
-# $GITHUB_ENV / $GITHUB_PATH for every later step (see the `build` job) — so
-# there is no longer a second `nix` process around to race for that lock. The
-# retry stays as cheap insurance against a stray concurrent `nix` invocation
-# still hitting
+# Two concurrent `nix` processes — e.g. this and another `nix` command running
+# at the same time — can then race for that lock, and the loser dies with
 #
 #     error: SQLite database '/nix/var/nix/db/db.sqlite' is busy
 #
 # SQLite returns SQLITE_BUSY immediately rather than waiting out the busy
 # timeout when a reader has to upgrade to a writer, and nix turns that straight
-# into a fatal error, so the step fails even though nothing is actually wrong.
-# Retry here instead, backing off to give the winner time to finish. Only that
-# error is retried; any other failure exits with the command's own status.
-# Every caller runs an idempotent command, so a repeat attempt costs nothing.
+# into a fatal error, even though nothing is actually wrong. Retry here
+# instead, backing off to give the winner time to finish. Only that error is
+# retried; any other failure exits with the command's own status. The caller
+# runs an idempotent command, so a repeat attempt costs nothing.
 #
 # The evaluation cache reports the same contention as
 # `error (ignored): SQLite database '.../eval-cache-v6/<hash>.sqlite' is busy`.

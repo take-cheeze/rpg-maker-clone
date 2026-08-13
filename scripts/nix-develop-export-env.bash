@@ -27,10 +27,11 @@ set -euo pipefail
 # directories (nix can list one for a build input the shell does not
 # actually need), are skipped.
 #
-# The warm-up step before this one (`./scripts/nix-develop.bash echo test`)
-# already realised the shell and populated nix's git-fetch cache, so this
-# `nix develop` hits warm caches; its stderr is still piped through the
-# same noise filter as a precaution.
+# This is the first `nix` command of the job, so its stderr is piped through
+# the same noise filter `./scripts/nix-develop.bash` uses: fetching this
+# flake with `self.submodules = true` makes nix fetch every submodule with
+# `refs/*:refs/*`, a `* [new ref]` line per ref -- see the filter for the
+# full story.
 
 contains() {
     # -F: nix store paths and the base64 delimiter below can contain regex
