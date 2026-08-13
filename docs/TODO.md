@@ -1197,8 +1197,24 @@ The work below is roughly ordered by the critical path to a walkable game
   relocates to keep clear of the hero — top when the hero sits in the lower half
   of the screen, bottom otherwise — so talking to something at a map's bottom
   edge shows the text up top; the exact zone boundary is approximate pending a
-  wine diff, but the direction matches RPG_RT. The mirrored-face flag is a
-  later refinement
+  wine diff, but the direction matches RPG_RT. ✅ **The mirrored-face flag is
+  now honoured too.** Change Face Graphic's param2 (`cfg.face_flipped`) was
+  already read, stored on `Game::MessageConfig` and persisted through the
+  save, but `Scene::Map#draw_message_face` never looked at it — the flag was
+  wired end to end except for the one place that would have made it visible.
+  `RGSS::Bitmap#blt` has no flip primitive of its own (`mruby-rgss`'s own
+  `Sprite#mirror=` resorts to the same per-pixel software pass, for the same
+  reason), so a new `#build_face_cell` crops the selected 48x48 cell out of
+  the FaceSet sheet once, at message-open time, into a small dedicated
+  bitmap: a single blit normally, or 48 single-column blits in
+  source-column-reversed order when mirrored — done once per message rather
+  than re-deriving the crop rect from the raw sheet on every reveal frame,
+  since `#draw_message_face` runs every frame the typewriter is still
+  revealing. Covered by two new `scripts/rpg2k_scene_check.rb` checks (an
+  unmirrored face crops in a single blit from the right cell; a mirrored one
+  crops in 48, with the sheet's leftmost/rightmost source columns landing on
+  the destination's rightmost/leftmost columns), both confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
