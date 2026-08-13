@@ -1791,6 +1791,53 @@ following this paragraph as the original record.
   reusing the same "does nothing" mechanism a descending batch range
   already relies on. Covered by a new `scripts/rpg2k_logic_check.rb` check,
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A Common Event's Parallel Process now survives a Transfer Player and a
+  save/load**, instead of always restarting from the top. Within one map
+  visit this was already modelled correctly — `step_parallel`'s
+  `gate_switch` resumes the same interpreter, so a process paused by its own
+  gate switch turning off mid-run genuinely freezes at that exact command —
+  but `perform_teleport` and `Scene::Map#initialize` unconditionally rebuilt
+  *every* parallel process from scratch via `build_parallels`, and
+  `Game::State#to_h`/`to_lsd` had no field at all for an interpreter's
+  position. Fixed in two parts, matching the two ways this codebase's
+  `Scene::Map` is (re)built: `build_parallels` now keys its previous
+  `@parallels` entries by common-event id and, across a Transfer Player
+  (which mutates `@map`/`@state` on the *same* `Scene::Map` instance rather
+  than building a fresh one), reuses the still-running `Game::Interpreter`
+  entry outright — full fidelity (call stack, in-flight Wait countdown,
+  everything), since nothing is actually serialised. A genuine save/load
+  builds a brand-new `Scene::Map`, so there is no live object to reuse;
+  `Game::Interpreter#resumable_index` returns the interpreter's current
+  index whenever it is safely capturable (not paused inside a nested Call
+  Event, whose frames nothing tracks how to re-resolve — `@call_stack` must
+  be empty), `Scene::Map#step_parallel` records it on the new
+  `Game::State#common_event_progress` (id → index) every tick, and
+  `Scene::Map#new_parallel` seeds a fresh interpreter from it via the new
+  `Game::Interpreter#start_at` on the very first `build_parallels` for a
+  scene. A tick caught mid a nested call simply leaves the last known-good
+  checkpoint in place rather than clearing it, so a save taken there resumes
+  at the last clean position, not the top. A Map Event's own parallel
+  process is untouched — it has no common-event id to key either mechanism
+  off, and keeps restarting fresh on every visit, exactly as before. The
+  `.lsd` export still does not carry this: LCF save chunks 113
+  (`SAVE_FOREGROUND_EVENT`) and 114 (`SAVE_COMMON_EVENT`) are known to hold
+  exactly this kind of execution state (a real save taken from an on-screen
+  choice keeps that choice's option strings inside chunk 113's blob) but
+  their internal byte grammar is undocumented and stays an opaque
+  `int8_array`, so only the portable Marshal save persists a Common Event's
+  parallel-process position — decoding that grammar against a real save
+  taken mid a Parallel Process is a still-open follow-up. See ADR 0044.
+  Covered by new `scripts/rpg2k_logic_check.rb` checks (the plain
+  `#resumable_index`/`#start_at` contract, including the nested-call-stack
+  and finished-process nil cases, and `common_event_progress` round-tripping
+  through `#to_h`/`.load`) and new `scripts/rpg2k_scene_check.rb` checks (an
+  end-to-end Transfer Player check proving both the command index and the
+  in-flight Wait countdown survive untouched; an end-to-end save/load check
+  built around this section's own example — a gate switch turning off
+  mid-run, then a save/load, then the switch turning back on; and a check
+  pinning that a map event's own parallel process still gets a brand-new
+  interpreter, restarting at index 0, on every visit), all confirmed to fail
+  against the pre-fix code before the fix.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -1852,20 +1899,6 @@ following this paragraph as the original record.
   recomputes the three that have a map-tree setting. Regression-covered by
   extending an existing `scripts/rpg2k_scene_check.rb` check to also assert
   Save access resets with Teleport/Escape and Menu access does not.
-
-#### Confirmed genuine gaps, not yet fixed
-- **Common-event Parallel Process state should survive map changes and
-  saves, unlike a map event's.** Within one map visit this is already
-  modelled correctly (`step_parallel`'s `gate_switch` resumes the same
-  interpreter; a map event's parallel process restarts via `new_parallel` on
-  every page reselect) — but `perform_teleport` and `Scene::Map#initialize`
-  unconditionally rebuild *every* parallel process from scratch via
-  `build_parallels`, and `Game::State#to_h`/`to_lsd` have no field for
-  interpreter/parallel continuation state at all (LCF save chunks 113/114
-  are explicitly documented as opaque/unimplemented in
-  `mruby-lcf/mrblib/schema.rb`). **Architecturally significant — needs a
-  design decision (new save-chunk plumbing) before starting, not a small
-  patch.** Candidate for its own ADR.
 
 #### Untriaged backlog, from `2k/09_bug/` (bugs/errors pages read so far)
 - `016_ikinari_end/` — a Parallel Process can observe an all-KO'd party and
@@ -1977,7 +2010,8 @@ Everything below is unverified against the codebase.
   a target inside a Common Event (no map-event context) raises the invalid-
   event error; **interrupting a Common Event's Parallel Process (its switch
   turns off mid-run) and re-enabling it resumes exactly where it left off**
-  — this is the same fact as the "Confirmed genuine gap" above, restated.
+  — ✅ the same fact as the fixed "A Common Event's Parallel Process now
+  survives a Transfer Player and a save/load" item above, restated.
 - **Move All / Force Complete Move** — blocks Event Content at that command
   until every targeted character's route finishes; same freeze conditions
   as Set Move Route above.
@@ -2235,10 +2269,11 @@ not yet verified:
   for Autorun specifically.
 - A **Common Event's** parallel-process state (its interpreter position)
   **resumes exactly where it left off** when re-enabled, indefinitely,
-  persisting in every future save even after the condition goes false —
-  the known "genuine gap" already tracked above. A **Map Event's** parallel
-  process always restarts from the top on every re-trigger (matches this
-  codebase's current — correct — per-visit behavior).
+  persisting in every future save even after the condition goes false — ✅
+  fixed, see "A Common Event's Parallel Process now survives a Transfer
+  Player and a save/load" above. A **Map Event's** parallel process always
+  restarts from the top on every re-trigger (matches this codebase's
+  current — correct — per-visit behavior).
 - Multiple simultaneous parallel processes are **not concurrent** — the
   engine advances one command block at a time, round-robin, yielding at a
   blocking command (Wait/Show Text/Show Picture), in definition/event-ID
@@ -2855,8 +2890,10 @@ BGM/SE playback position (always restarts a track from the beginning even
 though the *filename* is remembered); Screen Scroll offset (saved but
 documented as broken/buggy after resuming — the site explicitly
 recommends never saving mid-scroll). A **Common Event's** parallel-process
-position **does** survive save/load (the known genuine gap tracked
-above) — the asymmetry with map events is the point.
+position **does** survive save/load (✅ fixed for the portable Marshal save,
+see "A Common Event's Parallel Process now survives a Transfer Player and a
+save/load" above; the `.lsd` export still does not, chunks 113/114 remain
+opaque) — the asymmetry with map events is the point.
 
 State that persists across **both** map-revisit and save/load: a
 Common Event's parallel-process interpreter position (until explicitly

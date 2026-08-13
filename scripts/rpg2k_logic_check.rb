@@ -1128,6 +1128,70 @@ check 'a self-calling common event terminates instead of hanging' do
   ok !it.running?, 'recursion was bounded and the process ended'
 end
 
+# #resumable_index / #start_at back a Common Event Parallel Process's own
+# save-file continuation (Game::State#common_event_progress, driven by
+# Scene::Map -- see scripts/rpg2k_scene_check.rb for the end-to-end version
+# through an actual map/save round trip). These pin the plain interpreter-level
+# contract in isolation.
+check '#resumable_index captures a clean mid-list position; #start_at resumes there' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  commands = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0]),
+              FakeCmd.new(IC::WAIT, [1]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0]),
+              FakeCmd.new(IC::WAIT, [1]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0])]
+  ok it.resumable_index.nil?, 'nothing captured before the process even starts'
+  it.start(commands)
+  it.update # switch 1 on, then parks at the first Wait
+  eq true, st.switches[1]
+  eq 2, it.resumable_index, 'parked right after the Wait, at the next command'
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.start_at(commands, it.resumable_index)
+  it2.update
+  st2 = it2.instance_variable_get(:@state)
+  eq false, st2.switches[1], '#start_at does not replay commands before the captured index'
+  eq true, st2.switches[2], 'it resumes exactly at the captured index'
+  ok it2.waiting?, 'and parks again at the second Wait, same as a fresh run would'
+end
+
+check '#resumable_index is nil while paused mid a nested Call Event' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]),
+            FakeCmd.new(IC::WAIT, [1])]
+  it.resolver = FakeResolver.new(common: { 5 => called })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update # enters the call, runs its first command, parks on its Wait
+  eq true, st.switches[9], 'inside the called common event'
+  eq false, st.switches[1], 'the caller has not resumed yet'
+  ok it.running?, 'still running, parked inside the call'
+  ok it.resumable_index.nil?,
+     'a position inside a called list is not capturable -- resuming it would ' \
+     'need to re-resolve the pending caller frame, which nothing here tracks ' \
+     '(see Game::Interpreter#resumable_index)'
+end
+
+check '#resumable_index is nil once the process has finished' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.running?
+  ok it.resumable_index.nil?, 'nothing to resume once the list is exhausted'
+end
+
+check '#start_at falls back to the top for an out-of-range index' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  commands = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  it.start_at(commands, 99) # stale index, e.g. edited event data since the save
+  it.update
+  eq true, st.switches[1], 'an out-of-range index is ignored, same as a fresh #start'
+end
+
 # A resolver that counts every Call Event lookup instead of answering with
 # real commands, so a Call Event round trip stays a one-command no-op (the
 # empty-target early return in do_call_event) whose count is still visible.
@@ -4668,6 +4732,25 @@ check 'player_transparent round-trips through the save' do
   legacy = st.to_h
   legacy.delete(:player_transparent)
   eq false, Game::State.load(db, legacy).player_transparent
+end
+
+check 'common_event_progress (a Parallel Process interpreter checkpoint) round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.common_event_progress[7] = 3
+  st.common_event_progress[12] = 0 # a real index, not a "no checkpoint" marker
+  loaded = Game::State.load(db, st.to_h)
+  eq({ 7 => 3, 12 => 0 }, loaded.common_event_progress)
+  # A save written before this field existed restores an empty table, so every
+  # common event's parallel process simply starts at the top -- the same
+  # behaviour as before this change existed at all.
+  legacy = st.to_h
+  legacy.delete(:common_event_progress)
+  eq({}, Game::State.load(db, legacy).common_event_progress)
 end
 
 check 'Return to Title Screen raises a :return_title request' do

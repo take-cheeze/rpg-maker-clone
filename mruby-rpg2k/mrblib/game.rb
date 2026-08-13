@@ -7487,6 +7487,21 @@ module Game
     # chunks 15 / 17); Scene::Map reloads the windowskin when the override
     # changes.
     attr_accessor :system_graphic, :font_id
+    # Last known-good resume position of each running Common Event Parallel
+    # Process, id => a command-list index (see Game::Interpreter
+    # #resumable_index). Unlike a Map Event's parallel process (which always
+    # restarts fresh on every re-trigger, per visit -- deliberately untouched
+    # here), a Common Event's own parallel-process position survives a map
+    # transfer *and* a save/load, so this is what a fresh Scene::Map (built by
+    # Continue, or after Return to Title -> New Game -> Continue) reads to
+    # resume it instead of starting at the top -- see Scene::Map#new_parallel.
+    # An ordinary Transfer Player, by contrast, does not go through this at
+    # all: Scene::Map#build_parallels keeps the live Game::Interpreter object
+    # across it, which preserves full fidelity (call stack, in-flight wait
+    # timer, everything), not just this coarser checkpoint. Persisted in the
+    # portable Marshal save; not yet in `.lsd` (chunks 113/114 are still
+    # opaque, see LCF::Schema::SAVE_FOREGROUND_EVENT / SAVE_COMMON_EVENT).
+    attr_accessor :common_event_progress
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -7518,6 +7533,7 @@ module Game
       @escape_count = 0
       @teleport_targets = {}
       @escape_target = nil
+      @common_event_progress = {}
       @system_bgm = {}
       @system_sfx = {}
       # nil = "not configured yet"; #seed_screen_transitions fills each slot in
@@ -7699,6 +7715,7 @@ module Game
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, encounter_total: @encounter_total,
         teleport_targets: @teleport_targets,
+        common_event_progress: @common_event_progress,
         steps: @steps,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
@@ -8088,6 +8105,7 @@ module Game
       state.defeat_count = h[:defeat_count] || 0
       state.escape_count = h[:escape_count] || 0
       state.teleport_targets = h[:teleport_targets] || {}
+      state.common_event_progress = h[:common_event_progress] || {}
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}

@@ -942,31 +942,61 @@ class RPG2k
       # parallel trigger plus parallel common events. Each gets its own
       # Game::Interpreter, looped by #step_parallels; a common event that needs a
       # flag carries its gate switch so it only runs while that switch is on.
+      #
+      # A Common Event's own parallel process, unlike a Map Event's, keeps its
+      # interpreter position across a Transfer Player: called again by
+      # #perform_teleport on this same live Scene::Map, this reuses the
+      # still-running Game::Interpreter for any common event id it already had
+      # one for -- full fidelity (call stack, in-flight wait timer, everything,
+      # since it is the very same object), not a reconstruction -- instead of
+      # building a fresh one. Map events are always rebuilt fresh from the
+      # destination map's own event table, matching the existing per-visit-reset
+      # behaviour (unchanged). On the very first build for this scene (a brand
+      # new game, or the fresh Scene::Map Continue/#initialize builds from a
+      # loaded save), there is no previous @parallels to reuse from, so
+      # #new_parallel instead fast-forwards a fresh interpreter to whatever
+      # position #step_parallel last recorded on Game::State before the game
+      # was last saved (see Game::State#common_event_progress) -- a coarser,
+      # index-only continuation, since nothing was kept alive across a save to
+      # resume with full fidelity.
       def build_parallels
+        previous_common = {}
+        (@parallels || []).each do |p|
+          previous_common[p[:common_event_id]] = p if p[:common_event_id]
+        end
         @parallels = []
         @events.each do |e|
           next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
-          @parallels.push new_parallel(e[:commands], nil, e)
+          @parallels.push new_parallel(e[:commands], nil, e, nil)
         end
         @common.each do |c|
           next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
-          @parallels.push new_parallel(c[:commands],
-                                       c[:need_flag] ? c[:switch_id] : nil, nil)
+          gate = c[:need_flag] ? c[:switch_id] : nil
+          @parallels.push(previous_common[c[:id]] ||
+                           new_parallel(c[:commands], gate, nil, c[:id]))
         end
       rescue StandardError
         @parallels = []
       end
 
       # Build one background process. `event` is the owning map event (so a Move
-      # Event targeting "this event" resolves) or nil for a common event.
-      def new_parallel(commands, gate_switch, event)
+      # Event targeting "this event" resolves) or nil for a common event;
+      # `common_event_id` is that common event's own id, nil for a map event --
+      # it keys both the teleport-time reuse in #build_parallels above and the
+      # save-file continuation this seeds from below.
+      def new_parallel(commands, gate_switch, event, common_event_id)
         it = Game::Interpreter.new(@state)
         it.resolver = @interpreter.resolver
         it.map_info = self
-        it.start(commands)
+        resume_at = common_event_id && @state.common_event_progress[common_event_id]
+        if resume_at
+          it.start_at(commands, resume_at)
+        else
+          it.start(commands)
+        end
         it.event_id = event && event[:id]
         { interp: it, commands: commands, gate_switch: gate_switch,
-          wait_timer: nil, event: event }
+          wait_timer: nil, event: event, common_event_id: common_event_id }
       end
 
       # Advance every background parallel process one frame. They loop their
@@ -992,7 +1022,10 @@ class RPG2k
           # resume, matching drive_event's foreground handling (see there for
           # why: Wait 0.0 sec must cost exactly one frame). Other wait kinds
           # keep their old one-frame-per-call pacing.
-          return apply_interpreter_requests(it, p[:event]) unless wait_kind == :wait && !it.waiting?
+          unless wait_kind == :wait && !it.waiting?
+            apply_interpreter_requests(it, p[:event])
+            return record_parallel_progress(p)
+          end
         end
         if it.running?
           it.update
@@ -1005,8 +1038,25 @@ class RPG2k
           it.update
         end
         apply_interpreter_requests(it, p[:event])
+        record_parallel_progress(p)
       rescue StandardError
         nil
+      end
+
+      # Snapshot a Common Event Parallel Process's current position onto
+      # Game::State, so a fresh Scene::Map built later from this state (a
+      # genuine save/load, not a Transfer Player -- see #build_parallels) can
+      # resume it instead of restarting at the top. Only overwrites the stored
+      # checkpoint when the interpreter's position is cleanly capturable right
+      # now (see Game::Interpreter#resumable_index); a tick that returns nil
+      # (mid a nested Call Event) simply leaves the last known-good checkpoint
+      # in place rather than clearing it. A no-op for a map event's own
+      # parallel process (p[:common_event_id] is nil there), which never gets a
+      # checkpoint at all -- it always restarts fresh, unchanged.
+      def record_parallel_progress(p)
+        return unless p[:common_event_id]
+        idx = p[:interp].resumable_index
+        @state.common_event_progress[p[:common_event_id]] = idx if idx
       end
 
       def drive_parallel_wait(p, it)

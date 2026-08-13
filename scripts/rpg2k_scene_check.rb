@@ -1212,6 +1212,125 @@ check 'parallel common event runs only while its switch gate is on' do
   ok st.variables[3] > 0, 'it should run once the gate switch is on'
 end
 
+# A Common Event's own Parallel Process, unlike a Map Event's, is supposed to
+# keep running from wherever it was across a Transfer Player and a save/load
+# (docs/TODO.md's "Common-event Parallel Process state should survive map
+# changes and saves, unlike a map event's"). The three checks below pin the
+# fix: full fidelity across a Transfer Player (the live interpreter object is
+# kept), a coarser index-only continuation across a save/load (Game::State
+# #common_event_progress), and that a map event's own parallel process is left
+# exactly as before -- always a fresh restart, per visit.
+
+check "a common event's Parallel Process interpreter survives a Transfer Player" do
+  ic = Game::Interpreter::Cmd
+  # Marker A, a multi-frame Wait, marker B: parks mid-list on the Wait, so a
+  # teleport mid-countdown can be told apart from a fresh restart (which would
+  # bump marker A a second time and reset the countdown).
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::WAIT, [3]), add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.update # marker A runs, then parks on the Wait (18 frames: Wait 0.3s)
+  eq 1, st.variables[3], 'marker A ran once, before the wait'
+  eq 0, st.variables[4], 'the wait has not elapsed yet'
+
+  # Scene::Map is reused in place across a Transfer Player (#perform_teleport
+  # mutates @map/@state in place, unlike Continue's fresh Scene::Map.new), so
+  # the fix only has to keep #build_parallels from discarding the still-live
+  # Game::Interpreter -- and its own in-flight wait countdown -- for this
+  # common event.
+  scene.send(:perform_teleport, [2, 0, 0, 0])
+  eq 1, st.variables[3], 'the teleport must not have restarted the process from the top'
+  eq 0, st.variables[4], 'nor reset the in-flight wait to a fresh countdown'
+
+  # The wait's countdown had not yet been touched pre-teleport (its timer only
+  # initialises on the next tick after the Wait command runs, see
+  # #drive_parallel_wait, which also spends that first tick), so it takes
+  # exactly 19 more ticks post-teleport to elapse (18 frames counted down plus
+  # the tick that observes zero and resumes) -- proving the countdown itself
+  # carried over untouched, not just the command index. One tick later the
+  # process loops and marker A legitimately runs again, so this stops short of
+  # that.
+  19.times { scene.update }
+  eq 1, st.variables[3], 'marker A still has not re-run'
+  eq 1, st.variables[4], 'the wait elapsed after exactly its original countdown'
+end
+
+check "Transfer Player reuses a common event's Parallel Process interpreter " \
+      "object, but always rebuilds a map event's" do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [add_var_cmd(1)]
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(2), ECmd.new(ic::WAIT, [3])])
+  events = { 1 => event(2, 2, pg) }
+  db = fake_db({ 7 => ce })
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, events)
+  # A custom map_maker that hands back the same event table on every load, so
+  # the map event's own parallel process still exists post-teleport to compare
+  # against -- new_scene's default fake_parent always teleports into an empty
+  # map (see the "Tile Substitution does not survive..." check above), which
+  # would make this comparison vacuous for the map-event side.
+  parent = FakeParent.new(db) { |id| fake_map(id, events) }
+  scene = RPG2k::Scene::Map.new(parent, state)
+
+  scene.update
+  parallels_before = scene.instance_variable_get(:@parallels)
+  common_before = parallels_before.find { |p| p[:common_event_id] == 7 }[:interp]
+  map_before = parallels_before.find { |p| p[:event] }[:interp]
+
+  scene.send(:perform_teleport, [1, 0, 0, 0]) # leave and return to the same map
+
+  parallels_after = scene.instance_variable_get(:@parallels)
+  common_after = parallels_after.find { |p| p[:common_event_id] == 7 }[:interp]
+  map_after = parallels_after.find { |p| p[:event] }[:interp]
+  ok common_before.equal?(common_after),
+     "a common event's parallel process keeps its own interpreter across a teleport"
+  ok !map_before.equal?(map_after),
+     "a map event's parallel process still gets a brand-new interpreter every " \
+     'visit -- unaffected by the reuse above, unchanged from before this fix'
+  ok map_after.instance_variable_get(:@index).zero?,
+     "the rebuilt map event's parallel process starts over at the top"
+end
+
+check "a common event's Parallel Process resumes where it left off after a " \
+      'save/load, not from the top' do
+  ic = Game::Interpreter::Cmd
+  # This is the TODO's own example: a Common Event's Parallel Process whose
+  # gate switch turns off mid-run. Marker A / Wait / marker B / Wait / marker C
+  # tells apart "resumed right after the wait it was parked at" from "restarted
+  # at the top" (which would bump marker A again instead of leaving it alone).
+  ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 2,
+                      event: [add_var_cmd(3), ECmd.new(ic::WAIT, [1]),
+                              add_var_cmd(4), ECmd.new(ic::WAIT, [1]),
+                              add_var_cmd(5)])
+  db = fake_db({ 7 => ce })
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+
+  state.switches[2] = true # the gate opens
+  scene.update # marker A runs, then parks at the first Wait
+  eq 1, state.variables[3], 'marker A ran before the wait'
+  state.switches[2] = false # "its switch turns off mid-run" -- ticking stops here
+
+  # A Marshal round trip stands in for an actual save/load, exactly like the
+  # other State round-trip checks in scripts/rpg2k_logic_check.rb.
+  restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
+  restored.map = fake_map(1, {})
+  eq false, restored.switches[2], 'the save preserved the gate switch off'
+  eq 1, restored.variables[3], 'and the run-so-far progress'
+
+  fresh = RPG2k::Scene::Map.new(fake_parent(db), restored)
+  restored.switches[2] = true # re-enable it, as the TODO's own example does
+  fresh.update
+  eq 1, restored.variables[3],
+     'must NOT restart from the top (that would bump this a second time)'
+  eq 1, restored.variables[4], 'instead it resumes right where the save left it'
+  eq 0, restored.variables[5], 'and parks again at the second wait, same as before the save'
+end
+
 # A lightweight party for the inn tests: resume_inn only needs gold + a party
 # roster whose members respond to full_heal, and Scene::Map reads party.leader.
 class InnStubActor
