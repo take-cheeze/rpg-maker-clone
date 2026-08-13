@@ -228,6 +228,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
                            battle_music: OpenStruct.new(file: 'BattleBGM', volume: 70, pitch: 110),
+                           inn_music: OpenStruct.new(file: 'InnBGM', volume: 75, pitch: 105),
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
                            ship_music: OpenStruct.new(file: 'ShipBGM', volume: 80, pitch: 100),
                            airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
@@ -1700,6 +1701,48 @@ check 'Show Inn scene: the Accept / Cancel cursor wraps around' do
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@inn_choice), 'Down from Cancel wraps back to Accept'
+end
+
+check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' do
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
+  RGSS::Audio.reset_bgm
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  eq [['InnBGM', 75, 105]], RGSS::Audio.bgm_calls,
+     'the database inn BGM played the moment the greeting opened'
+  eq 'InnBGM', st.current_bgm[:name], 'and is now the tracked current BGM'
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
+  scene.update # resumes with a stay
+  eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
+     'the field BGM that was playing before the stay replays once it resolves'
+  eq 'Field', st.current_bgm[:name]
+end
+
+check 'Show Inn scene: a Change System BGM inn override beats the database default' do
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  # System BGM slot 2 is inn -- see the Game::Interpreter::Cmd note near
+  # VEHICLE_SYSTEM_BGM_SLOT / SYSTEM_BGM_INN in scene/map.rb.
+  st.system_bgm[2] = { name: 'CustomInn', fadein: 0, volume: 60, tempo: 130, balance: 50 }
+  RGSS::Audio.reset_bgm
+  5.times { scene.update }
+  eq [['CustomInn', 60, 130]], RGSS::Audio.bgm_calls,
+     'the Change System BGM override played instead of the database inn_music'
+  eq 'CustomInn', st.current_bgm[:name]
+end
+
+check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BGM' do
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 0)) # price 0 skips the prompt
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  RGSS::Audio.reset_bgm
+  # No greeting window opens for a free stay, so this reaches both the BGM
+  # swap and the resolved Stay branch in a few frames of ordinary event
+  # processing (unlike the priced-prompt tests, no player input is needed).
+  3.times { scene.update }
+  eq [['InnBGM', 75, 105], ['Field', 100, 100]], RGSS::Audio.bgm_calls,
+     'the inn BGM played, then the field BGM was restored, in the same beat'
+  eq 'Field', st.current_bgm[:name]
+  ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
 end
 
 check 'Key Input Proc waits for a key, stores its code, then continues' do

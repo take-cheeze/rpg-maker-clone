@@ -118,6 +118,7 @@ class RPG2k
         build_parallels
         @message = nil
         @inn_window = nil
+        @inn_bgm_started = false
         @shop = nil
         @battle_ui = nil
         @name_ui = nil
@@ -1513,6 +1514,58 @@ class RPG2k
         $stderr.puts "[RPG2k] restoring BGM after battle failed: #{e.message}"
       end
 
+      # System BGM slot index for Change System BGM (10660)'s inn override,
+      # matching EasyRPG's Game_System::sys_bgm enum (Battle 0, Victory 1,
+      # Inn 2, ...) -- the same enum VEHICLE_SYSTEM_BGM_SLOT below resolves
+      # its own slots against.
+      SYSTEM_BGM_INN = 2
+
+      # Play the inn's own BGM when a Show Inn command opens its stay -- a
+      # Change System BGM override for the inn slot when one is set, else the
+      # database System inn_music -- remembering the BGM that was playing so
+      # #restore_pre_inn_bgm can bring it back once the stay is resolved. The
+      # same memorize/restore idiom #play_battle_bgm / #play_vehicle_bgm
+      # already use. A game with no inn BGM configured (override or
+      # database) leaves whatever was already playing alone.
+      def play_inn_bgm
+        music = inn_bgm
+        return unless music
+        @pre_inn_bgm = @state.current_bgm
+        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
+        @state.current_bgm = music
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] inn BGM failed: #{e.message}"
+      end
+
+      # The inn BGM to play as { name:, volume:, tempo: }, or nil when
+      # neither source names a file. Prefers a Change System BGM override for
+      # the inn slot over the database's own System inn_music -- the same
+      # override-then-default idiom #battle_bgm / #vehicle_bgm already use.
+      def inn_bgm
+        ov = @state.system_bgm[SYSTEM_BGM_INN]
+        if ov && ov[:name] && !ov[:name].to_s.empty?
+          return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100 }
+        end
+        name = music_name(db.system.inn_music)
+        return nil if name.nil? || name.empty?
+        { name: name, volume: music_volume(db.system.inn_music),
+          tempo: music_tempo(db.system.inn_music) }
+      end
+
+      # Restore the BGM that was playing before the inn stay began. A no-op
+      # when the inn never touched the music (no inn BGM configured), so the
+      # field/vehicle track was never interrupted and there is nothing to
+      # bring back.
+      def restore_pre_inn_bgm
+        bgm = @pre_inn_bgm
+        @pre_inn_bgm = nil
+        return unless bgm && bgm[:name] && !bgm[:name].empty?
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        @state.current_bgm = bgm
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] restoring BGM after inn failed: #{e.message}"
+      end
+
       # System BGM slot indices for Change System BGM (10660), matching
       # EasyRPG's Game_System::sys_bgm enum (Battle 0, Victory 1, Inn 2,
       # Boat 3, Ship 4, Airship 5, GameOver 6) — the boat/ship/airship slots
@@ -2878,11 +2931,18 @@ class RPG2k
       # Drive a Show Inn wait: a free stay (price 0) resumes at once; otherwise a
       # greeting window with Accept / Cancel choices and a gold window is shown,
       # Accept selectable only when the party can afford the price. The
-      # interpreter charges gold and heals the party in resume_inn.
+      # interpreter charges gold and heals the party in resume_inn. The inn's
+      # own BGM (#play_inn_bgm) starts the first frame a request is seen and
+      # #restore_pre_inn_bgm brings the prior track back once the stay resolves
+      # -- either path, prompted or free.
       def drive_inn
         req = @interpreter.inn_request
         return @interpreter.resume_inn(false) unless req
-        return @interpreter.resume_inn(true) unless req[:prompt]
+        unless @inn_bgm_started
+          play_inn_bgm
+          @inn_bgm_started = true
+        end
+        return finish_inn(true) unless req[:prompt]
 
         if @inn_window.nil?
           open_inn_window(req) # opened this frame; take input from the next one
@@ -2901,16 +2961,24 @@ class RPG2k
             # Accept: only honoured when the party can pay; otherwise ignored.
             if req[:can_afford]
               close_inn_window
-              @interpreter.resume_inn(true)
+              finish_inn(true)
             end
           else
             close_inn_window
-            @interpreter.resume_inn(false)
+            finish_inn(false)
           end
         elsif Input.trigger?(Input::B)
           close_inn_window
-          @interpreter.resume_inn(false)
+          finish_inn(false)
         end
+      end
+
+      # Restore the pre-inn BGM and resume the interpreter with the player's
+      # stay/no-stay decision -- the common tail of every #drive_inn exit path.
+      def finish_inn(stayed)
+        @inn_bgm_started = false
+        restore_pre_inn_bgm
+        @interpreter.resume_inn(stayed)
       end
 
       # RPG2000 inn term set (A or B) selected by the command's type parameter.
