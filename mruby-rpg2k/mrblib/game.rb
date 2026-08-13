@@ -5776,6 +5776,15 @@ module Game
 
     MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
 
+    # RPG_RT's battle damage popup is a fixed three digits, so every single hit
+    # -- normal attack, dual-wield swing, attack-skill, self-destruct, and
+    # per-turn state slip damage alike -- is hard-clamped to 999 before it is
+    # subtracted from the target's HP, no matter how large the underlying ATK/
+    # DEF/attribute math computes. A yado.tk-quirks build with no cap could
+    # one-shot a target well past what the original engine could ever display
+    # or apply in a single blow.
+    DAMAGE_CAP = 999
+
     attr_reader :allies, :enemies, :rounds, :result, :log, :rng
 
     # `states` is an optional state-definition lookup (`[id]` -> a row exposing
@@ -6342,6 +6351,7 @@ module Game
           next
         end
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
+        hp = DAMAGE_CAP if hp > DAMAGE_CAP # 999 hard-cap applies to slip damage too
         b.hp -= hp if hp > 0
         if b.max_mp && b.mp
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
@@ -6625,6 +6635,7 @@ module Game
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
         dmg = [dmg / 2, 1].max if t.defending && dmg > 0
+        dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
         t.hp -= dmg
         { attacker: b.name, target: t.name, damage: dmg, critical: false,
           autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
@@ -6776,6 +6787,9 @@ module Game
         dmg = [dmg / 2, 1].max
         dmg = [dmg / 2, 1].max if target.strong_defence
       end
+      # RPG_RT's damage popup tops out at three digits -- a crit/charge blow
+      # that would compute past it still only ever takes 999.
+      dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
       target.hp -= dmg
       woke = target.dead? ? [] : shake_off_states(target)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
@@ -6965,6 +6979,15 @@ module Game
     # then a negative-HP command (an attack skill) subtracts HP and reads like an
     # attack (`skill:` names it), while a recovery command (heal skill / medicine)
     # restores HP / SP clamped to the target's maxima and reads as a `recover`.
+    #
+    # This `target.dead?` gate is also what keeps a plain heal from reviving a
+    # downed (0 HP) combatant: a fizzled command never reaches #apply_skill_hit
+    # at all, so its HP-raising branch never runs against a dead target in the
+    # first place -- the in-battle mirror of Game::Actor#change_hp's own
+    # `return @hp if dead?` guard on the field. An explicit state-cure (Full
+    # Recovery, a revive item/skill) is the only thing modelled here that can
+    # stand a combatant back up, and it does so by writing HP directly rather
+    # than through this command path.
     def apply_command(b)
       cmd = b.command
       return apply_command_all(b, cmd) if cmd[:all]
@@ -6977,7 +7000,10 @@ module Game
     # An all-target Skill (scope 1 all enemies / 4 all allies): spend the SP once,
     # then apply the per-target effect to every living target, returning one log
     # entry per hit (which #step_action surfaces one at a time). Fizzles — nil, no
-    # SP spent — when every listed target has already fallen this round.
+    # SP spent — when every listed target has already fallen this round. Same
+    # per-target `dead?` filter as #apply_command, and for the same reason: a
+    # downed member of an all-ally heal is skipped rather than topped up back to
+    # life (see #apply_command's comment).
     def apply_command_all(b, cmd)
       live = (cmd[:targets] || []).select { |t| t[:target] && !t[:target].dead? }
       return nil if live.empty?
@@ -7002,6 +7028,9 @@ module Game
         dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
+        # Same 999 hard-cap as a normal attack (#deal_attack), applied before
+        # absorption so a drain skill can't smuggle a bigger hit past it either.
+        dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
         # 吸収: the caster takes what the target loses, and can take no more than
         # the target has. EasyRPG clamps the effect to the target's current HP
         # *before* applying it ("Only absorb the hp that were left"), so a

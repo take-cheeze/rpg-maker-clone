@@ -2078,8 +2078,9 @@ not yet verified:
   bundled with this bullet (battle damage cap, HP recovery cap, switch/
   variable caps and ranges, recursion ceiling, party/stack/picture caps, move
   speed, transparency steps) remain unverified — see below.
-- **Numeric constants worth asserting directly**: battle damage hard-cap
-  under 1000; special-skill HP recovery cap 999; switches/variables cap
+- **Numeric constants worth asserting directly**: special-skill HP
+  recovery cap 999 (battle damage's own hard-cap under 1000 is now ✅
+  above); switches/variables cap
   at 5000 (expandable), variable value range −999999..999999 in RPG2000 vs
   7-digit in RPG2003 (already partially modelled per `LCF::MODE`, worth
   checking the variable-write clamp specifically); Call Event / Event Call
@@ -2420,8 +2421,32 @@ not yet verified:
   the battle ends. **Every** satisfied page fires that turn (lower page
   number first), unlike map/common events (already confirmed correct
   above).
-- Damage is hard-capped below 1000 by engine spec; special-skill HP
-  recovery is capped at 999 per use; item drop rate has a 1% floor.
+- ✅ **Damage is hard-capped below 1000 (999) by engine spec.** RPG_RT's
+  battle damage popup is a fixed three digits, so no single hit — however
+  the underlying ATK/DEF/attribute/variance math computes it — can ever
+  apply more than 999 to a target's HP in one go. `Game::Battle`
+  (`mruby-rpg2k/mrblib/game.rb`) had no such ceiling anywhere on its damage
+  path: a normal attack (`#deal_attack`, including a critical's ×3 or a
+  charged hit's ×2), an attack skill/item (`#apply_skill_hit`'s negative-HP
+  branch, both single- and all-target), an enemy's self-destruct
+  (`#enemy_autodestruct`), and per-turn state slip damage
+  (`#apply_turn_states`) all subtracted whatever they computed straight from
+  `target.hp` with no upper bound — a high enough ATK/attack-power stat
+  could one-shot for thousands, something the original engine's fixed-width
+  damage display could never even show. Fixed by adding
+  `Game::Battle::DAMAGE_CAP = 999` and clamping the final per-hit damage
+  value (after variance/attribute scaling and the crit/charge/defend
+  multipliers, so the *displayed* number is what's capped) at each of the
+  four sites above, right before it's subtracted from HP. Special-skill HP
+  recovery's own 999-per-use cap and the item drop rate's 1% floor —
+  bundled into this same bullet originally — are separate, still-unverified
+  facts and remain open (see the "Numeric constants worth asserting
+  directly" bullet above, which has had "battle damage hard-cap under 1000"
+  removed now that it's covered here).
+  Regression coverage added to `scripts/rpg2k_logic_check.rb`: a
+  high-ATK, always-critical normal attack against a defenceless target
+  clamps at 999 rather than the uncapped 6000 (2000 base × 3 crit), and an
+  attack skill computing a raw 5000 HP hit likewise clamps at 999.
 - Turn-order tie-break on equal Agility: hero acts before an equal-agility
   enemy; among tied heroes, lower actor ID acts first.
 - The party "exhaustion %" battle-event condition is computed as
@@ -2435,10 +2460,28 @@ not yet verified:
   state, then rolls RNG against those weights. A turn-condition shorthand
   like "3×?+5" means: first candidate on turn 5, then every 3 turns
   after.
-- Enemy HP-increase **cannot revive** a downed (0 HP) enemy; healing a
-  knocked-out ally's HP likewise does **not** clear the KO/death state —
-  it must be cleared separately via Change State or Full Recovery even
-  after HP is restored above 0.
+- ✅ **In-battle HP-increase cannot revive a downed (0 HP) combatant** —
+  already correctly implemented, not a gap. `Game::Battle#apply_command` /
+  `#apply_command_all` (`mruby-rpg2k/mrblib/game.rb`) gate every Skill/Item
+  command — single- and all-target alike — on `target.dead?` (`hp <= 0`)
+  *before* ever calling `#apply_skill_hit`: a command aimed at a downed
+  combatant fizzles outright (no SP spent, no log entry, HP untouched)
+  rather than reaching `#apply_skill_hit`'s HP-raising branch at all. That
+  is the in-battle mirror of the field-side rule
+  `Game::Actor#change_hp` already enforces with its own `return @hp if
+  dead?` guard (unchanged by this PR — it was already correct); the field
+  and battle paths now document the same reasoning at both sites so the
+  parity is explicit rather than coincidental. Verified — not fixed, since
+  no bug existed here — with regression coverage in
+  `scripts/rpg2k_logic_check.rb`: an all-ally heal aimed at both a downed
+  member and a wounded one skips the downed member entirely (HP stays 0)
+  while still healing the wounded member normally, confirmed to hold
+  against the pre-this-PR code exactly as it does after (this fact was
+  never broken; the two facts were bundled in one backlog line, and only
+  the damage-cap half above needed an actual fix). An explicit state-cure
+  (Full Recovery, a revive item/skill) remains the only modelled way to
+  stand a downed combatant back up, and does so by writing HP directly
+  rather than through this command path.
 - Damage Processing (the raw event command) uses a **different formula**
   from the built-in normal attack: normal attack = `(ATK÷2) − (DEF÷4)`,
   but this command computes `AttackPower − (DEF÷4)` with **no automatic
