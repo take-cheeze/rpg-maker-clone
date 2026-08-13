@@ -5049,6 +5049,27 @@ check 'boarding plays the vehicle BGM; disembarking restores the map BGM' do
   eq 'Field', st.current_bgm[:name], 'the map BGM resumes on disembark'
 end
 
+check 'boarding a vehicle plays a Change System BGM override instead of the database default' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  st.direction = 2
+  # System BGM slot 3 is boat -- see the matching interpreter.rb note.
+  st.system_bgm[3] = { name: 'CustomBoat', fadein: 0, volume: 55, tempo: 90, balance: 50 }
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded
+  eq 'CustomBoat', st.current_bgm[:name], 'the override plays instead of the database BoatBGM'
+  eq 55, st.current_bgm[:volume]
+  eq 90, st.current_bgm[:tempo]
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
