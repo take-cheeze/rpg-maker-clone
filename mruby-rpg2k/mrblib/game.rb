@@ -5785,6 +5785,12 @@ module Game
     # or apply in a single blow.
     DAMAGE_CAP = 999
 
+    # Same fixed-width-popup reasoning as DAMAGE_CAP, for the opposite
+    # direction: RPG_RT's HP-recovery popup is the same fixed 3-digit widget
+    # as the damage one, so a single heal can't display (or apply) more than
+    # 999 either, no matter how large `recover_hp_rate` x max_hp computes it.
+    RECOVER_CAP = 999
+
     attr_reader :allies, :enemies, :rounds, :result, :log, :rng
 
     # `states` is an optional state-definition lookup (`[id]` -> a row exposing
@@ -7070,6 +7076,7 @@ module Game
       else
         before_hp = target.hp
         before_mp = target.mp || 0
+        hp = RECOVER_CAP if hp > RECOVER_CAP
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
         # Cure the item's status conditions from the target (an antidote / herb),

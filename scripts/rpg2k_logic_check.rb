@@ -6994,6 +6994,23 @@ check 'Battle command_skill: an attack skill also hard-caps at 999' do
   eq 100_000 - 999, foe.hp
 end
 
+check 'Battle command_skill: a recovery skill also hard-caps at 999 (yado.tk)' do
+  # Same fixed-width-popup reasoning as the damage cap above, for a heal:
+  # a high max_hp target given a huge recovery amount clamps at 999, not
+  # the uncapped raw value, before it is added to (and re-clamped by) HP.
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  ally = combatant('Ally', 0, 0, 5, 100_000)
+  ally.hp = 1
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([mage, ally], [foe], Game::Rng.new(1))
+  b.command_skill(mage, ally, name: 'Mega Heal', cost: 10, hp: 5000)
+  b.command_defend(ally)
+  b.begin_round
+  e = b.step_action # the faster mage heals first
+  eq 1000, ally.hp, 'capped to +999 (1 + 999), not the uncapped 5000'
+  eq 999, e[:recover_hp], 'capped, not the uncapped 5000'
+end
+
 check 'battle: an all-ally heal skips a downed member but still heals the wounded' do
   # Mirrors Game::Actor#change_hp's `return @hp if dead?` guard on the field: a
   # downed (0 HP) Combatant is filtered out before #apply_skill_hit's HP-raising
