@@ -2100,15 +2100,20 @@ FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost
                        :state_effects, :reverse_state_effect, :hit, :variance,
                        :attribute_effects, :switch_id,
                        # 防御無視: the effect lands undiminished.
-                       :ignore_defense)
+                       :ignore_defense,
+                       # 属性有効度変化 (attribute defence up/down, field 45):
+                       # shifts the target's rank for each attribute_effects id
+                       # by one step, direction shared with reverse_state_effect.
+                       :affect_attr_defence)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
                variance: 4, attribute_effects: nil, switch_id: 1,
-               ignore_defense: false)
+               ignore_defense: false, affect_attr_defence: false)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
-                variance, attribute_effects, switch_id, ignore_defense)
+                variance, attribute_effects, switch_id, ignore_defense,
+                affect_attr_defence)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -6423,13 +6428,61 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   # magical_rate 40), so RPG_RT blunts it with the target's *spirit* and not at
   # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
   eq({ cost: 6, hp: -24, mp: 0, inflict: [], chance: 100, variance: 4,
-       attributes: [], absorb: false },
+       attributes: [], absorb: false, attr_shift: nil, attr_ids: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
-  eq({ cost: 5, hp: 32, mp: 0 },
+  eq({ cost: 5, hp: 32, mp: 0, attr_shift: nil, attr_ids: [] },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
-  eq({ cost: 4, hp: 22, mp: 22 },
+  eq({ cost: 4, hp: 22, mp: 22, attr_shift: nil, attr_ids: [] },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
+end
+
+check 'a skill flagged "attribute defence up/down" shifts the target rank, ' \
+      'capped at +-1 from base' do
+  # scope 3 (single, non-attack) so this exercises the shift without also
+  # tripping battle_skill_command's separate "scope 0/1 always deals at
+  # least 1 damage" behaviour -- a different, pre-existing question.
+  down = fake_skill(name: 'Weaken Fire', scope: 3, sp_cost: 0, power: 0,
+                    attribute_effects: [1], affect_attr_defence: true,
+                    reverse_state: true) # down: toward a worse (higher) rank
+  up = fake_skill(name: 'Ward Fire', scope: 3, sp_cost: 0, power: 0,
+                  attribute_effects: [1], affect_attr_defence: true,
+                  reverse_state: false) # up: toward a better (lower) rank
+  skills = { 7 => down, 8 => up }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.attr_ranks = { 1 => 2 }        # C to start
+  foe.attr_base_ranks = { 1 => 2 }
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq 1, c[:attr_shift], 'reverse_state_effect set -> down (worse)'
+  eq [1], c[:attr_ids]
+  bat.command_skill(caster, foe, name: 'Weaken Fire', cost: c[:cost],
+                    hp: c[:hp], mp: c[:mp], attr_shift: c[:attr_shift],
+                    attr_ids: c[:attr_ids])
+  bat.run_round
+  eq 3, foe.attr_ranks[1], 'shifted one step down (C -> D)'
+
+  # A second cast does not stack past the +-1 cap from the base rank (2).
+  bat.command_skill(caster, foe, name: 'Weaken Fire', cost: c[:cost],
+                    hp: c[:hp], mp: c[:mp], attr_shift: c[:attr_shift],
+                    attr_ids: c[:attr_ids])
+  bat.run_round
+  eq 3, foe.attr_ranks[1], 'capped at one step from base, does not keep sliding'
+
+  # The opposite skill shifts it back the other way, past base and up to its
+  # own +-1 (better) cap -- three casts, still capped at one step from base.
+  c2 = st.party.battle_skill_command(st.party.db_skill(8), caster, foe)
+  eq(-1, c2[:attr_shift], 'reverse_state_effect unset -> up (better)')
+  3.times do
+    bat.command_skill(caster, foe, name: 'Ward Fire', cost: c2[:cost],
+                      hp: c2[:hp], mp: c2[:mp], attr_shift: c2[:attr_shift],
+                      attr_ids: c2[:attr_ids])
+    bat.run_round
+  end
+  eq 1, foe.attr_ranks[1], 'capped one step better than base (C -> B)'
 end
 
 check 'a battle attack skill inflicts its state_effects on a surviving enemy' do

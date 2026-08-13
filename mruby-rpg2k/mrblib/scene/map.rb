@@ -3132,7 +3132,9 @@ class RPG2k
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
                                           variance: c[:variance] || 0,
-                                          attributes: c[:attributes])
+                                          attributes: c[:attributes],
+                                          attr_shift: c[:attr_shift],
+                                          attr_ids: c[:attr_ids])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -3157,7 +3159,9 @@ class RPG2k
                                               cost: meta[:cost],
                                               inflict: meta[:inflict], chance: meta[:chance],
                                               variance: meta[:variance] || 0,
-                                              attributes: meta[:attributes])
+                                              attributes: meta[:attributes],
+                                              attr_shift: meta[:attr_shift],
+                                              attr_ids: meta[:attr_ids])
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor

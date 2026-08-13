@@ -2975,6 +2975,24 @@ module Game
       ids
     end
 
+    # Whether skill `sk` is flagged "attribute defence up/down" (`affect_attr_
+    # defence`, field 45) and, if so, which direction: -1 (up, a rank toward A
+    # / better resistance) or +1 (down, a rank toward E / worse). yado.tk's
+    # note on the feature ("shifts the target's elemental rank by exactly one
+    # step, capped at +-1 from the character's base rank, resets automatically
+    # at battle end") says what it does but not which flag chooses the
+    # direction; this reuses `reverse_state_effect` (field 20) on the
+    # assumption RPG2000's skill editor drives its one "raise/lower" toggle
+    # for both the state-effect list and the attribute-defence list, the same
+    # way it already does for state infliction vs cure (see
+    # #skill_cured_states) -- not confirmed against real RPG_RT or either test
+    # bed, since neither ships a skill with the flag set. nil when the skill
+    # does not touch attribute defence at all.
+    def skill_attr_shift(sk)
+      return nil unless sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence
+      sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect ? 1 : -1
+    end
+
     # The command numbers for casting `sk` from `caster` on `target` (both
     # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
     # to the target — negative HP for an attack skill (base effect less a quarter
@@ -2983,6 +3001,12 @@ module Game
     def battle_skill_command(sk, caster, target)
       cost = skill_cost(sk, caster)
       base = skill_effect(sk, caster)
+      # Attribute-defence shifting isn't scoped to attack skills -- a "raise
+      # my own resistance" buff and a "lower the enemy's" debuff are both this
+      # same flag, just cast on a different side -- so it rides on both
+      # branches below rather than only the attack one.
+      shift = skill_attr_shift(sk)
+      shift_ids = shift ? skill_attributes(sk) : []
       if sk.scope == 0 || sk.scope == 1 # single or all enemies: an attack skill
         dmg = base - skill_defence_term(sk, target)
         dmg = 1 if dmg < 1
@@ -2993,9 +3017,10 @@ module Game
           # only on an *offensive* skill (EasyRPG's `skill.absorb_damage &&
           # !IsPositive()`), so it rides only on this branch: a healing skill
           # that sets it drains nothing.
-          absorb: skill_absorbs?(sk) }
+          absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids }
       else
-        { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0 }
+        { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
+          attr_shift: shift, attr_ids: shift_ids }
       end
     end
 
@@ -5437,7 +5462,18 @@ module Game
                            # can be evaded, whether Defend halves twice, and
                            # whether skills cost half.
                            :strikes, :ignores_evasion, :strong_defence,
-                           :half_sp_cost) do
+                           :half_sp_cost,
+                           # The ranks #attr_ranks started the battle at --
+                           # never itself written to, only read to cap how far
+                           # an "attribute defence up/down" skill (see
+                           # #skill_attr_shift) may move #attr_ranks in either
+                           # direction. Since #attr_ranks is a fresh Hash per
+                           # Combatant (Game::Actor#attribute_ranks builds one
+                           # from the database row on every call, not a cached
+                           # one) and #apply_to_party never writes it back to
+                           # the actor, a shift is battle-scoped for free: it
+                           # dies with the Combatant, no separate reset needed.
+                           :attr_base_ranks) do
       def dead?; hp <= 0; end
 
       # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
@@ -5507,6 +5543,7 @@ module Game
       c.ignores_evasion = flag_of(a, :ignores_evasion?)
       c.strong_defence = flag_of(a, :strong_defence?)
       c.half_sp_cost = flag_of(a, :half_sp_cost?)
+      c.attr_base_ranks = c.attr_ranks.dup
       c
     end
 
@@ -5531,6 +5568,7 @@ module Game
       # The Monster/<name> graphic, carried so the battle screen can redraw a
       # combatant whose transformation swapped it.
       c.battler_name = e.respond_to?(:battler_name) ? e.battler_name : nil
+      c.attr_base_ranks = c.attr_ranks.dup
       c
     end
 
@@ -5884,12 +5922,13 @@ module Game
     # order by #apply_command when the round runs.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
-                      absorb: false)
+                      absorb: false, attr_shift: nil, attr_ids: nil)
       ally.command = { kind: :skill, target: target, name: name,
                        skill_id: skill_id, absorb: absorb,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
-                       attributes: attributes || [] }
+                       attributes: attributes || [],
+                       attr_shift: attr_shift, attr_ids: attr_ids || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -5898,14 +5937,18 @@ module Game
     # signed HP / SP deltas #command_skill takes, one per target, since attack
     # damage varies with each target's defence). The SP `cost` is spent once when
     # the action resolves; the shared `inflict` / `chance` / `variance` /
-    # `attributes` apply to every target. #apply_command produces one log entry
-    # per living target, drained one at a time by #step_action.
+    # `attributes` / `attr_shift` / `attr_ids` apply to every target -- unlike
+    # damage, which attribute (or none) a skill affects and which way is a
+    # property of the skill itself, not of who it lands on. #apply_command
+    # produces one log entry per living target, drained one at a time by
+    # #step_action.
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
                           variance: 0, attributes: nil, skill_id: nil,
-                          absorb: false)
+                          absorb: false, attr_shift: nil, attr_ids: nil)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
                        skill_id: skill_id, absorb: absorb, cost: cost, inflict: inflict || [], chance: chance,
-                       variance: variance, attributes: attributes || [] }
+                       variance: variance, attributes: attributes || [],
+                       attr_shift: attr_shift, attr_ids: attr_ids || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -6627,12 +6670,18 @@ module Game
         end
         target.hp -= dmg
         b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
-        # An attack skill may inflict its states on a surviving target, each
-        # rolled against the skill's accuracy.
-        inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
+        # An attack skill may inflict its states -- and shift attribute
+        # defence ranks -- on a surviving target, each rolled/applied only if
+        # it lived through the damage.
+        if target.dead?
+          inflicted = already = shifted = []
+        else
+          inflicted, already = roll_inflict(target, cmd)
+          shifted = apply_attr_shift(target, cmd)
+        end
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          inflicted: inflicted, already: already,
+          inflicted: inflicted, already: already, attr_shifted: shifted,
           target_ally: ally?(target), skill: cmd[:name],
           skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed }
@@ -6645,13 +6694,39 @@ module Game
         # unconditionally, matching the field item cure.
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
         target.states = (target.states || []) - cured unless cured.empty?
+        shifted = target.dead? ? [] : apply_attr_shift(target, cmd)
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
           target_index: @enemies.index(target),
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
-          cured: cured, target_ally: ally?(target),
+          cured: cured, target_ally: ally?(target), attr_shifted: shifted,
           target_hp: target.hp, target_mp: target.mp }
       end
+    end
+
+    # Shift `target`'s attribute-defence ranks per `cmd[:attr_shift]` (see
+    # #skill_attr_shift): one step per landing, capped at +-1 from the rank
+    # the battle started with (Combatant#attr_base_ranks) rather than
+    # stacking further on repeat casts, and always inside the valid 0..4
+    # (A..E) range. Returns the attribute ids actually moved -- an attribute
+    # already at its cap, or a skill that doesn't touch attribute defence at
+    # all, moves nothing.
+    def apply_attr_shift(target, cmd)
+      shift = cmd[:attr_shift]
+      ids = cmd[:attr_ids]
+      return [] unless shift && ids && !ids.empty?
+      target.attr_ranks ||= {}
+      base = target.attr_base_ranks || {}
+      moved = []
+      ids.each do |aid|
+        b = Game.clamp(base[aid] || 2, 0, 4)
+        cur = target.attr_ranks[aid] || b
+        nxt = Game.clamp(cur + shift, Game.clamp(b - 1, 0, 4), Game.clamp(b + 1, 0, 4))
+        next if nxt == cur
+        target.attr_ranks[aid] = nxt
+        moved << aid
+      end
+      moved
     end
 
     # RPG2000's default state rate table (liblcf's RPG::State defaults): a

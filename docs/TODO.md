@@ -2409,11 +2409,29 @@ above are repeated here)
   occurrence never applies regardless of rank); Death/Knockout is exempt
   and always applies. Attribute resistance rank A-E maps to the Attribute
   database's own per-rank effect-% table (e.g. 50% halves).
-- A skill flagged "attribute defense up/down" shifts the target's
-  elemental rank by **exactly one step**, capped at ±1 from the
-  character's base rank, and **resets automatically at battle end**.
-  Attribute ranks must be configured strictly `A>B>C>D>E` for that ±1-step
-  logic to make sense.
+- ✅ A skill flagged "attribute defense up/down" (field 45,
+  `affect_attr_defence`) now shifts the target's rank for each attribute in
+  its `attribute_effects` list by **exactly one step**, capped at ±1 from the
+  rank the battle started at (`Game::Battle::Combatant#attr_base_ranks`), for
+  every attack (scope enemy) *and* buff/recovery-style (scope self/ally)
+  skill alike — `Game::Party#battle_skill_command` computes the shift on both
+  branches, `Game::Battle#apply_attr_shift` applies and caps it. It
+  **resets automatically at battle end** for free rather than needing an
+  explicit reset: `attr_ranks` is a fresh `Hash` built from the database row
+  on every `Combatant#attr_ranks_of` call (`Game::Actor#attribute_ranks`
+  caches nothing), and `Battle#apply_to_party` never writes it back to the
+  actor — so a shift dies with the Combatant along with everything else the
+  fight didn't ask to persist. **The direction is this build's own reading,
+  not confirmed against RPG_RT or either test bed**: it reuses
+  `reverse_state_effect` (unset = up/better, set = down/worse), the same
+  polarity flag a skill's state effects already use, on the assumption
+  RPG2000's skill editor drives one shared "raise/lower" toggle for both the
+  state-effect list and the attribute-defence list rather than a separate
+  field of its own — neither Nepheshel nor mtf-meido-action ships a skill
+  with the flag set, so there is nothing to check it against. Attribute
+  ranks must be configured strictly `A>B>C>D>E` for the ±1-step logic to make
+  sense. Covered by a new `scripts/rpg2k_logic_check.rb` check (both
+  directions, and that repeat casts don't stack past the cap).
 - Enemy group members are numbered by add-order; **lower number renders
   in front** (closer to camera); deleting a middle member shifts every
   later member's number down by one, which can silently repoint any
