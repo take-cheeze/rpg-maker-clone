@@ -1488,6 +1488,38 @@ check 'Erase Event removes the running event from the map' do
   ok !tiles[[2, 2]], 'its occupied tile is cleared (no marker, no collision)'
 end
 
+check "an event's occupied tile updates the instant it steps, before the " \
+      "sprite finishes sliding (yado.tk: \"hero touches event\" case (a))" do
+  # A same-layer event stepping right once. RPG_RT's hit-test (what a
+  # touch-trigger or the player's own passability check reads) is grid-based
+  # on the character's *logical* tile, updated the moment the step commits --
+  # not the sprite's on-screen position, which eases toward it over several
+  # more frames (#event_sliding? / #reoccupy).
+  pg = page(x_move_type: Game::MoveType::CUSTOM,
+            route: move_route([R::MOVE_RIGHT], repeat: false, skippable: false),
+            frequency: 8)
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [5, 5])
+  tiles = scene.instance_variable_get(:@event_tiles)
+  ok tiles[[2, 2]] && tiles[[2, 2]][:id] == 1, 'starts on its own tile'
+
+  # Advance to the first frame the character's logical tile reads (3, 2).
+  ev = nil
+  20.times do
+    scene.update
+    ev = event_hashes(scene)[1]
+    break if [ev[:char].x, ev[:char].y] == [3, 2]
+  end
+  eq [3, 2], [ev[:char].x, ev[:char].y], 'the character stepped to (3, 2)'
+  ok ev[:moving], 'and the sprite is still easing toward it, not there yet'
+
+  tiles = scene.instance_variable_get(:@event_tiles)
+  ok tiles[[2, 2]].nil?,
+     "the vacated tile's hit-test cleared the instant the step committed, " \
+     'even though the sprite is still drawn overlapping it'
+  ok tiles[[3, 2]] && tiles[[3, 2]][:id] == 1,
+     'and the destination tile is claimed for hit-testing immediately too'
+end
+
 check 'Erase Event stops a parallel process that erases itself' do
   ic = Game::Interpreter::Cmd
   par = page(trigger: 4) # parallel: bump var 1, then erase myself

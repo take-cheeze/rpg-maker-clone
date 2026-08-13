@@ -1913,9 +1913,18 @@ Everything below is unverified against the codebase.
   drawing on top, independent of show order, is confirmed already correct —
   see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
-  cases: (a) the event has already logically started moving into its next
+  cases: (a) ✅ the event has already logically started moving into its next
   tile (hit-test uses the target tile, even if the sprite still visually
-  overlaps the old one); (b) the event moved onto the hero's own tile
+  overlaps the old one) — **already correctly modelled**. `Scene::Map
+  #reoccupy` rewrites `@event_tiles` (what a touch trigger / the player's own
+  passability check reads) to the destination tile the instant a step
+  commits, in the same call that starts the pixel slide (`#start_event_slide`)
+  toward it — the vacated tile's hit-test clears immediately, well before
+  `#event_sliding?` (`disp_x`/`disp_y` catching up to the logical tile) says
+  the sprite has visually arrived. No code change; covered by a new
+  `scripts/rpg2k_scene_check.rb` check pinning that exact gap between the
+  logical and display position mid-step. (b) the event moved onto the hero's
+  own tile
   (event-initiated contact doesn't count for this trigger — **already
   correctly modelled**, `move_autonomous` only checks trigger 2 for that
   case); (c) hero and event simultaneously swap tiles by crossing paths —
