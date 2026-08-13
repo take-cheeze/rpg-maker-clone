@@ -1566,6 +1566,23 @@ module Game
       row.respond_to?(:equipment_fixed) ? (row.equipment_fixed ? true : false) : false
     end
 
+    # 呪われた装備 -- an item flagged `cursed` (item field 29, alongside the other
+    # armour-property flags) refuses to leave the slot it is worn in: RPG_RT's
+    # equip menu will not remove or replace it. Unlike #equipment_fixed? above
+    # this is a property of the *item currently sitting in the slot*, not of
+    # the actor, so it is read fresh from whatever `slot` holds rather than
+    # cached. Same split as #equipment_fixed?: RPG_RT's Change Equipment event
+    # command still forces it off (`Game_Actor::ChangeEquipment` does not
+    # consult the flag either), so only the equip menu gates on this -- Game
+    # ::Party's #equip_from_bag / #unequip_to_bag stay unguarded on purpose.
+    def slot_cursed?(slot)
+      return false unless slot >= 0 && slot < EQUIP_ORDER.size && @db.respond_to?(:item)
+      item_id = @equipment[slot]
+      return false if item_id.nil? || item_id == 0
+      it = @db.item[item_id]
+      it && it.respond_to?(:cursed) ? (it.cursed ? true : false) : false
+    end
+
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
     def normalize_equipment(spec)

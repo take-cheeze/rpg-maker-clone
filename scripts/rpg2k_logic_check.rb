@@ -2177,7 +2177,10 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :attack_all, :preemptive,
                       # 使用可能キャラ: the specific actor ids (0-based index,
                       # bool per actor) allowed to use/equip this item at all.
-                      :actor_set)
+                      :actor_set,
+                      # 呪われた装備: once equipped, the equip menu refuses to
+                      # remove or replace it (Actor#slot_cursed?).
+                      :cursed)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2185,13 +2188,14 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               attribute_set: nil, switch_id: 0, occ_field: true,
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
-              two_handed: 0, attack_all: false, preemptive: false, actor_set: nil)
+              two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
+              cursed: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
-               ko_only, two_handed, attack_all, preemptive, actor_set)
+               ko_only, two_handed, attack_all, preemptive, actor_set, cursed)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -9846,6 +9850,50 @@ check 'equipment_fixed? does not itself block Party#equip_from_bag / #unequip_to
   eq 1, hero.equipment[0]
   ok st.party.unequip_to_bag(hero, 0) != 0
   eq 0, hero.equipment[0]
+end
+
+# -- 呪われた装備 cursed items (Actor#slot_cursed?) ----------------------------
+# The item's own `cursed` flag, not an actor/class trait: once a cursed item
+# sits in a slot the equip menu refuses to reopen that slot's item list, the
+# same way it does for #equipment_fixed?. Read fresh off whatever occupies the
+# slot, so equipping a cursed item and then a non-cursed one over it (via a
+# caller that is not gated, e.g. an event command) clears the lock again.
+
+check 'Actor#slot_cursed? reads the equipped item\'s own flag' do
+  items = { 1 => fake_item(type: 1, atk: 20, cursed: true),
+            2 => fake_item(type: 1, atk: 5) }
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 10 })
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+
+  ok !hero.slot_cursed?(Game::Actor::WEAPON_SLOT), 'empty slot is never cursed'
+
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(hero, 2)
+  ok !hero.slot_cursed?(Game::Actor::WEAPON_SLOT), 'a plain weapon does not lock the slot'
+
+  st.party.gain_item(1, 1)
+  ok st.party.equip_from_bag(hero, 1)
+  ok hero.slot_cursed?(Game::Actor::WEAPON_SLOT), 'the cursed weapon locks its own slot'
+  ok !hero.slot_cursed?(Game::Actor::SHIELD_SLOT), 'an unrelated empty slot is unaffected'
+end
+
+check 'slot_cursed? does not itself block Party#equip_from_bag / #unequip_to_bag' do
+  # Same split as #equipment_fixed?: the gate belongs to the equip menu, not
+  # the bag-swap logic, so a caller that already knows better (an event
+  # command, this test) can still force a cursed item off.
+  items = { 1 => fake_item(type: 1, atk: 20, cursed: true) }
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 10 })
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  ok st.party.equip_from_bag(hero, 1)
+  ok hero.slot_cursed?(Game::Actor::WEAPON_SLOT)
+  ok st.party.unequip_to_bag(hero, 0) != 0
+  eq 0, hero.equipment[0]
+  ok !hero.slot_cursed?(Game::Actor::WEAPON_SLOT), 'empty again, no longer cursed'
 end
 
 # -- chipset terrain tags -----------------------------------------------------
