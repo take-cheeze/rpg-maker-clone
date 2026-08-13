@@ -6257,6 +6257,40 @@ check 'a forced move route does not roll for a random encounter' do
      'the whole forced route ran without ever rolling for an encounter'
 end
 
+check 'standing on a Hero Touch event tile suppresses the random-encounter roll' do
+  # yado.tk quirk, multiply corroborated: the tile under a Hero Touch
+  # (trigger 1) event answers random encounters too, not just the event
+  # itself. Without the fix, this guaranteed-roll setup (encount_steps 1,
+  # default terrain rate -- see the "opens a battle" check above) would
+  # start a battle on the very first check regardless.
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  touch = page(trigger: 1)
+  touch.event_commands = [ECmd.new(0)] # a real page needs *a* command list
+  scene = new_scene({ 1 => event(0, 0, touch) }, player: [0, 0], map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  scene.send(:check_random_encounter)
+  scene.update # give it a frame too, in case a battle wait was queued anyway
+  ok scene.instance_variable_get(:@battle_ui).nil?,
+     "the party is standing on a Hero Touch event's own tile: no roll"
+  eq 0, st.encounter_total, 'the step never accumulated, matching the flying early-out above'
+end
+
+check 'standing on an Event Touch tile still rolls for a random encounter' do
+  # Control for the Hero Touch check above: an otherwise-identical setup,
+  # but the event on the party's tile uses a different trigger (Event
+  # Touch, 2) -- the guaranteed roll must still fire, proving the
+  # suppression is keyed to the trigger type and not "any event is here".
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  other = page(trigger: 2)
+  other.event_commands = [ECmd.new(0)]
+  scene = new_scene({ 1 => event(0, 0, other) }, player: [0, 0], map_tree: tree)
+  scene.send(:check_random_encounter)
+  scene.update # the roll only queues a :battle wait; a frame turns it into @battle_ui
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'an Event Touch event on the tile does not suppress the roll'
+  eq 1, ui[:troop].id, "the map tree node's own troop"
+end
+
 check "current_encounter_steps reads the map tree node's own setting, " \
      'overridden by Change Encounter Rate' do
   tree = fake_map_tree(1 => FakeEncounterNode.new({}, 25))
