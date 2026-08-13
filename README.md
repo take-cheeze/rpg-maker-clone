@@ -84,6 +84,14 @@
   centre-to-border windows are drawn as a mask over the map; the styles that need
   the scene itself moved or resampled (scrolls, zoom, mosaic, wave, random
   blocks) still run as a fade of the correct length
+- **Random ("wandering monster") encounters** start a fight on their own while
+  the party walks around, not just from a scripted Enemy Encounter event
+  command: the map tree's own encounter list and step count drive the same
+  probability curve RPG_RT uses (the longer a walk goes without a fight, the
+  likelier the next step is to have one), a hit picks a troop from the map's
+  list (honouring each troop's own terrain restriction), and the party can be
+  ambushed by RPG2000's 1-in-32 first-strike roll. Flying past it on the
+  airship, or being marched by a forced move route, never rolls
 - A troop's **battle-event pages** run during a fight: their conditions (switch,
   variable, turn, enemy/actor HP, plus RPG2003's per-battler turn counters and
   party fatigue) are re-checked each turn, and a matching page runs the ordinary
