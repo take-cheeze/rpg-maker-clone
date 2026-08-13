@@ -133,13 +133,17 @@ module Game
           when '.'      then pauses << { at: count, kind: :quarter }
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
-          when '^'      then auto_close = true
-          when '$'      then show_gold = true # show the gold window
+          # `\^`, `\$` and the closing `\<` render nothing but still burn one
+          # tick of display time, same as a revealed character would (yado.tk);
+          # `\>` (span open) stays free, as does `\c[]`/`\s[]`.
+          when '^'      then auto_close = true; count += 1
+          when '$'      then show_gold = true; count += 1 # show the gold window
           when '>'      then instant_start = count if instant_start.nil?
           when '<'
             if instant_start
               instants << [instant_start, count]
               instant_start = nil
+              count += 1
             end
           # the remaining display code (`\s` speed) produces no characters and no
           # pacing here: dropped.
