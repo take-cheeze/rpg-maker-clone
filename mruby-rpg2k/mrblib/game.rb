@@ -8210,6 +8210,11 @@ module Game
       actors = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
       @party.roster.each do |a|
         e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
+        # Field 1 carries the actor's *current* name (renamed or not, matching
+        # a genuine save), so a Change Actor Name override on any roster
+        # member -- not just the leader, who also gets it via chunk 100's
+        # title -- survives Save/Continue.
+        e[1] = a.name
         e[31] = a.level
         e[32] = a.exp
         e[51] = a.skills.size
@@ -8289,6 +8294,9 @@ module Game
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
           actor.states = sa.states if sa.states
+          # A Change Actor Name override on *any* roster member, not just the
+          # leader (whose name chunk 100's title also carries below).
+          actor.name = sa.actor_name if sa.actor_name && !sa.actor_name.empty?
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
@@ -8350,8 +8358,10 @@ module Game
       sg = sys.system_graphic
       state.system_graphic = sg unless sg.nil? || sg.empty?
       state.font_id = sys.font || 0
-      # The leader's display name from the file-screen title chunk (a Change
-      # Actor Name override survives for the leader).
+      # The leader's display name from the file-screen title chunk. Redundant
+      # with chunk 108 field 1 above (both hold the same live name in a
+      # genuine save, and in our own #to_lsd output) but applied last so it
+      # still wins for a foreign save that sets one and not the other.
       title = save[100]
       if title && party.leader
         nm = title.hero_name
