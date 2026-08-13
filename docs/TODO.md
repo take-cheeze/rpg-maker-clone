@@ -2695,6 +2695,24 @@ not yet verified:
   high-ATK, always-critical normal attack against a defenceless target
   clamps at 999 rather than the uncapped 6000 (2000 base × 3 crit), and an
   attack skill computing a raw 5000 HP hit likewise clamps at 999.
+  **A fifth site was missed by this fix and is now covered too: Simulated
+  Attack (10500, "Damage Processing" in the yado.tk write-up), the raw
+  event command that hurts a target with no attacker at all.**
+  `Game::Interpreter#do_simulated_attack` (`mruby-rpg2k/mrblib/
+  interpreter.rb`) computes its own damage independently of `Game::Battle` —
+  `atk - def * p_def / 400 - int * p_spi / 800`, matching the yado.tk
+  finding that this command's defence/spirit "effectiveness" percentages
+  divide by 4 and 8 respectively rather than the normal attack's own
+  `ATK÷2 − DEF÷4` formula (**confirmed already correct**, no change needed
+  for the formula itself) — and had no ceiling on the result, so a large
+  enough Attack Power parameter could apply (and report through the
+  command's store-in-variable option) far more than 999 in one hit. Fixed
+  by clamping to the same `Game::Battle::DAMAGE_CAP` before it reaches
+  `Actor#change_hp` or the result variable. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a 5000-power Simulated Attack
+  against a defenceless, high-max-HP target clamps at 999, both in the HP
+  change and the stored variable), confirmed to fail against the pre-fix
+  code.
 - Turn-order tie-break on equal Agility: hero acts before an equal-agility
   enemy; among tied heroes, lower actor ID acts first.
 - The party "exhaustion %" battle-event condition is computed as
@@ -2737,12 +2755,17 @@ not yet verified:
   member and a wounded one confirms the Skill/Item path skips the downed
   member entirely while still healing the wounded member normally (true
   both before and after, since that path was never broken).
-- Damage Processing (the raw event command) uses a **different formula**
-  from the built-in normal attack: normal attack = `(ATK÷2) − (DEF÷4)`,
-  but this command computes `AttackPower − (DEF÷4)` with **no automatic
-  halving** of the given Attack Power — replicating a normal attack
-  requires manually halving the parameter first. Defense-effectiveness
-  100% = DEF/4 (not full DEF); Spirit-effectiveness 100% = Mind/8.
+- ✅ Damage Processing (the raw event command, Simulated Attack 10500) uses a
+  **different formula** from the built-in normal attack: normal attack =
+  `(ATK÷2) − (DEF÷4)`, but this command computes `AttackPower − (DEF÷4)`
+  with **no automatic halving** of the given Attack Power — replicating a
+  normal attack requires manually halving the parameter first.
+  Defense-effectiveness 100% = DEF/4 (not full DEF); Spirit-effectiveness
+  100% = Mind/8. **Confirmed already correct** —
+  `Game::Interpreter#do_simulated_attack` already implements exactly this
+  formula — but the command was missing the same 999 damage cap every other
+  damage path has, which is now fixed; see the fuller writeup under the
+  "Damage is hard-capped below 1000 (999)" bullet above.
 - ✅ Multiple active states: only the highest-priority one is **displayed**
   (`Game::States.significant`, unchanged), but all active states still
   mechanically apply (a hidden poison keeps ticking under a displayed

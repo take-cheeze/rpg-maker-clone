@@ -8171,6 +8171,22 @@ check 'Simulated Attack floors the damage at zero' do
   eq 100, st.party.actor_by_id(1).hp
 end
 
+# Same fixed-3-digit-popup reasoning as the normal-attack/skill/self-destruct/
+# slip-damage cap (Game::Battle::DAMAGE_CAP) applies to this raw event
+# command's own damage too -- it shares no code path with any of those four,
+# so it needed its own clamp.
+check 'Simulated Attack hard-caps damage at 999, matching the battle damage cap' do
+  players = { 1 => FakePlayerRow.new('Tank', '', 0, 5, max_hp: 5000, max_mp: 0, atk: 0, def: 0) }
+  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1])), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, atk 5000, def-weight 0, spi-weight 0, variance 0,
+  # store-damage flag 1 -> var 1.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 5000, 0, 0, 0, 1, 1])])
+  it.update
+  eq 999, st.variables[1], 'capped, not the uncapped 5000'
+  eq 5000 - 999, st.party.actor_by_id(1).hp
+end
+
 check 'Change Actor Face overrides the actor FaceSet' do
   st = party_state
   it = Game::Interpreter.new(st)
