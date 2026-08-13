@@ -3900,6 +3900,29 @@ check 'Control Variables batch random-assign rolls independently per variable' d
   ok vals.uniq.size > 1, "every variable in the batch got the same roll: #{vals}"
 end
 
+check 'a variable clamps to +-999999 instead of overflowing' do
+  # RPG_RT never lets a variable's stored value leave +-999999 in RPG2000
+  # (+-9999999 in RPG2003, LCF.var_max/var_min) -- a Control Variables write
+  # that would land outside it clamps at the boundary instead.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1_500_000]),   # var 1 = 1500000 (constant operand)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 0, -1_500_000]),  # var 2 = -1500000
+  ])
+  it.update
+  eq 999_999, st.variables[1], 'an over-range constant assign clamps at the max'
+  eq(-999_999, st.variables[2], 'an under-range constant assign clamps at the min')
+
+  # A batch add that pushes an in-range value past the ceiling clamps too,
+  # not just a single out-of-range assign.
+  st.variables[3] = 999_998
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 1, 0, 10])]) # var 3 += 10
+  it2.update
+  eq 999_999, st.variables[3], 'an add that overflows the range clamps at the max'
+end
+
 check 'a descending batch range silently no-ops for both Switches and Variables' do
   # yado.tk: a batch (range) Control Switches/Variables whose high end is
   # below its low end does nothing at all, no error. range(cmd) returns the

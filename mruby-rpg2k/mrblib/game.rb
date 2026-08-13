@@ -1008,6 +1008,19 @@ module Game
 
   # Game variables: a 1-indexed set of integers, defaulting to 0.
   class Variables
+    # RPG_RT clamps a variable's value to a fixed range rather than letting it
+    # overflow -- +-999999 in RPG2000 (mruby-lcf's LCF.var_min/max carry the
+    # same figures for the schema side, but this file deliberately touches
+    # neither RGSS nor the native LCF parser at load time, so the bound is
+    # its own local constant rather than a cross-gem reference). Multiplying
+    # before dividing (the standard `x1.5` = `x15/10` workaround) can
+    # legitimately blow past +-999999 mid-expression, and Control Variables
+    # can also assign an arbitrary Input Number / random / constant straight
+    # past the range, so the clamp belongs on the single write path every
+    # source funnels through, not on any one caller.
+    MAX = 999_999
+    MIN = -999_999
+
     # See Switches#revision: page conditions read variables too.
     attr_reader :revision
 
@@ -1015,6 +1028,8 @@ module Game
     def [](id); @data[id] || 0; end
 
     def []=(id, v)
+      v = MAX if v > MAX
+      v = MIN if v < MIN
       return v if self[id] == v
       @data[id] = v
       @revision += 1
