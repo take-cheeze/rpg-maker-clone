@@ -4353,39 +4353,67 @@ class RPG2k
         lines
       end
 
-      BATTLE_LINE_H = 14
+      # RPG_RT's battle windows share one fixed panel: a 320x80 strip along the
+      # bottom edge with 16px rows -- not the content-fitted, 14px-row windows
+      # this screen used to draw. EasyRPG's Scene_Battle_Rpg2k / Scene_Battle
+      # construct status_window / command_window / target_window / item_window /
+      # skill_window / battle_message_window all at
+      # `(x, screen_height - 80, w, 80)`, and Window_Selectable's own
+      # `menu_item_height` (16, matching this screen's message-window
+      # `MSG_LINE_H`) is what actually spaces their rows.
+      BATTLE_LINE_H = 16
+      BATTLE_PANEL_Y = SCREEN_H - 80
+      BATTLE_PANEL_H = 80
+      # The actor-command window is a fixed 76px (`option_command_mov` in
+      # EasyRPG), docked to the right edge; the status window takes the rest of
+      # the row (`MENU_WIDTH - option_command_mov`).
+      BATTLE_CMD_W = 76
+      BATTLE_STATUS_W = SCREEN_W - BATTLE_CMD_W
+      # The enemy target list (`CreateBattleTargetWindow`) is a fixed 136px, and
+      # only ever covers the status window's footprint -- the command window
+      # stays on screen beside it.
+      BATTLE_TARGET_W = 136
+      # How many rows show at once before a longer list (an 8-monster troop, a
+      # long skill list) scrolls: the panel's fixed 64px content area (80 minus
+      # the 8px border on each side) divided by the 16px row height.
+      BATTLE_VISIBLE_ROWS = 4
 
       # Column origins within the status panel's contents, in the order RPG_RT's
       # battle status window uses them: who, what condition they are in, then the
       # gauges. The condition column is why this window is laid out in columns at
       # all — a state is drawn in its *own* palette colour, which a single
-      # `draw_text` of a whole line cannot do.
-      STATUS_NAME_X  = 0
-      STATUS_STATE_X = 84
-      STATUS_HP_X    = 156
-      STATUS_MP_X    = 220
+      # `draw_text` of a whole line cannot do. (EasyRPG's
+      # `Window_BattleStatus::Refresh`, RPG2k branch: name at 4, state at 86,
+      # HP at 142, SP at 202 for a party with no maxima over 999.)
+      STATUS_NAME_X  = 4
+      STATUS_STATE_X = 86
+      STATUS_HP_X    = 142
+      STATUS_MP_X    = 202
 
-      # Rebuild the status panel near the top: the enemy troop, then each party
-      # member with their HP and SP. Every battler also shows the one condition
-      # RPG_RT shows — the significant state, or the database's "normal" term
-      # when there is none — so a status inflicted by a skill or by a battle
-      # page's Change Monster Condition is visible rather than only simulated.
+      # Rebuild the status panel: the party's HP and SP, each with the one
+      # condition RPG_RT shows — the significant state, or the database's
+      # "normal" term when there is none — so a status inflicted by a skill or
+      # by a battle page's Change Monster Condition is visible rather than only
+      # simulated. RPG2000 is front-view: the enemy troop is never listed here
+      # (EasyRPG's Scene_Battle_Rpg2k builds exactly one Window_BattleStatus,
+      # defaulted to `enemy: false`) -- it is represented only by its battler
+      # sprites and, when targeted, by the target window's name list. The row
+      # of whichever actor is currently being commanded gets the cursor,
+      # mirroring `status_window->SetIndex` in EasyRPG's `SelectNextActor`.
       def refresh_battle_status
         @battle_ui[:status_win].dispose if @battle_ui[:status_win]
-        rows = @battle_ui[:foes].map { |e| battle_status_row(e, false) }
-        rows += @battle_ui[:allies].map { |a| battle_status_row(a, true) }
-        @battle_ui[:status_win] = battle_status_window(rows, 6, 300)
+        rows = @battle_ui[:allies].map { |a| battle_status_row(a) }
+        idx = @battle_ui[:allies].index(current_actor)
+        @battle_ui[:status_win] = battle_status_window(rows, idx)
       end
 
-      # One battler's row as [text, x, colour index] segments. Enemies have no
-      # gauges on an RPG2000 battle screen, so they stop after their condition.
-      def battle_status_row(b, ally)
-        state = battle_state_segment(b)
-        row = [[b.name, STATUS_NAME_X, 0], state]
-        return row unless ally
+      # One party member's row as [text, x, colour index] segments: name,
+      # condition, then the HP / SP gauges.
+      def battle_status_row(b)
         hp = b.hp < 0 ? 0 : b.hp
-        row + [["HP #{hp}/#{b.max_hp}", STATUS_HP_X, 0],
-               ["MP #{b.mp}/#{b.max_mp}", STATUS_MP_X, 0]]
+        [[b.name, STATUS_NAME_X, 0], battle_state_segment(b),
+         ["HP #{hp}/#{b.max_hp}", STATUS_HP_X, 0],
+         ["MP #{b.mp}/#{b.max_mp}", STATUS_MP_X, 0]]
       end
 
       # The condition column, as a status-panel segment: the same reading the
@@ -4395,52 +4423,42 @@ class RPG2k
         [text, STATUS_STATE_X, color]
       end
 
-      # The current actor's command menu — their name as a header, then Attack /
-      # Skill / Item / Defend with a cursor.
+      # The current actor's command menu — Attack / Skill / Item / Defend, with
+      # a cursor. RPG_RT does not put the actor's name in this window at all
+      # (EasyRPG's `CreateBattleCommandWindow` builds it once from the four
+      # command terms, full stop): the acting actor is shown by the cursor
+      # `#refresh_battle_status` puts on their row in the status window instead
+      # (EasyRPG's `status_window->SetIndex(actor_index)`).
       def draw_battle_command
         actor = current_actor
         return unless actor
         @battle_ui[:cmd_win].dispose if @battle_ui[:cmd_win]
-        labels = [actor.name] + battle_commands
-        w = 96
-        inner_h = labels.length * BATTLE_LINE_H
-        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         w, inner_h + Window::BORDER * 2)
+        labels = battle_commands
+        win = Window.new(BATTLE_STATUS_W, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
         win.z = 320
         win.windowskin = @windowskin
-        c = Bitmap.new(w - Window::BORDER * 2, inner_h)
+        inner_w = BATTLE_CMD_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
-          c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, label
+          c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
         end
         win.contents = c
-        # The cursor sits over the commands (rows 1..N, below the name header).
         win.cursor_rect =
-          Rect.new(0, (1 + @battle_ui[:cmd]) * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
+          Rect.new(0, @battle_ui[:cmd] * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
         @battle_ui[:cmd_win] = win
+        refresh_battle_status
       end
 
-      # The target-selection menu — the living enemies, with a cursor.
+      # The target-selection menu — the living enemies, with a cursor. Fixed at
+      # `CreateBattleTargetWindow`'s own rect: it covers the status window's
+      # footprint (not the command window's, which stays on screen beside it).
       def draw_battle_target
         foes = living_foes
         @battle_ui[:target_win].dispose if @battle_ui[:target_win]
-        w = 120
-        inner_h = [foes.length, 1].max * BATTLE_LINE_H
-        win = Window.new(SCREEN_W - w - 10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         w, inner_h + Window::BORDER * 2)
-        win.z = 330
-        win.windowskin = @windowskin
-        c = Bitmap.new(w - Window::BORDER * 2, inner_h)
-        c.font.color = Color.new(255, 255, 255, 255)
-        foes.each_with_index do |e, i|
-          c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, e.name
-        end
-        win.contents = c
-        unless foes.empty?
-          win.cursor_rect =
-            Rect.new(0, @battle_ui[:target_i] * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
-        end
-        @battle_ui[:target_win] = win
+        @battle_ui[:target_win] =
+          battle_list_window(0, BATTLE_TARGET_W, foes.map(&:name),
+                             @battle_ui[:target_i], 330)
       end
 
       def close_battle_target
@@ -4450,34 +4468,44 @@ class RPG2k
       end
 
       # A bottom-anchored list window of `labels` with the cursor on `sel`, at
-      # left edge `x` and width `w` — the shared shape of the Skill / Item and
-      # ally-target menus.
+      # left edge `x` and width `w`, fixed to the panel's own height (80px, the
+      # shape every RPG_RT battle list window shares) — the shared shape of the
+      # Skill / Item / target / ally-target menus. A list longer than
+      # `BATTLE_VISIBLE_ROWS` scrolls, keeping `sel` in view, the way
+      # `Window_Selectable`'s own scrolling does for an oversized troop or
+      # skill list.
       def battle_list_window(x, w, labels, sel, z)
-        inner_h = [labels.length, 1].max * BATTLE_LINE_H
-        win = Window.new(x, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         w, inner_h + Window::BORDER * 2)
+        rows = BATTLE_VISIBLE_ROWS
+        scroll = labels.length > rows ? [[sel - rows + 1, 0].max, labels.length - rows].min : 0
+        win = Window.new(x, BATTLE_PANEL_Y, w, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = @windowskin
-        c = Bitmap.new(w - Window::BORDER * 2, inner_h)
+        inner_w = w - Window::BORDER * 2
+        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
-          c.draw_text 0, i * BATTLE_LINE_H, c.width, BATTLE_LINE_H, label
+          next if i < scroll || i >= scroll + rows
+          c.draw_text 0, (i - scroll) * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
         end
         win.contents = c
         unless labels.empty?
-          win.cursor_rect = Rect.new(0, sel * BATTLE_LINE_H, c.width, BATTLE_LINE_H)
+          win.cursor_rect = Rect.new(0, (sel - scroll) * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
         end
         win
       end
 
-      # The current actor's battle skills as "Name  cost", with a cursor.
+      # The current actor's battle skills as "Name  cost", with a cursor. Full
+      # width, same rect as the item menu — RPG_RT's skill and item windows
+      # cover both the status and command windows while open (EasyRPG's
+      # `skill_window` / `item_window`, `(0, screen_height - 80, MENU_WIDTH,
+      # 80)`).
       def draw_battle_skill
         @battle_ui[:skill_win].dispose if @battle_ui[:skill_win]
         labels = @battle_ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
           "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
         end
-        @battle_ui[:skill_win] = battle_list_window(10, 130, labels, @battle_ui[:skill_i], 325)
+        @battle_ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @battle_ui[:skill_i], 325)
       end
 
       def close_battle_skill
@@ -4493,7 +4521,7 @@ class RPG2k
           it = @state.party.db_item(id)
           "#{it ? it.name : "Item #{id}"}  x#{count}"
         end
-        @battle_ui[:item_win] = battle_list_window(10, 130, labels, @battle_ui[:item_i], 325)
+        @battle_ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @battle_ui[:item_i], 325)
       end
 
       def close_battle_item
@@ -4504,14 +4532,18 @@ class RPG2k
 
       # The living party members selectable as a heal target ("Name HP h/mh"),
       # with a cursor -- narrowed by #battle_ally_targets when a pending item's
-      # actor_set excludes some of them.
+      # actor_set excludes some of them. RPG_RT reuses the status window itself
+      # for this (`status_window->SetChoiceMode`); this screen still draws a
+      # separate window, but at the status window's own rect and footprint so
+      # it reads the same way -- covering the party's HP display, leaving the
+      # command window in view beside it.
       def draw_battle_ally_target
         @battle_ui[:ally_win].dispose if @battle_ui[:ally_win]
         labels = battle_ally_targets.map do |a|
           "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.max_hp}"
         end
         @battle_ui[:ally_win] =
-          battle_list_window(SCREEN_W - 130 - 10, 130, labels, @battle_ui[:ally_i], 335)
+          battle_list_window(0, BATTLE_STATUS_W, labels, @battle_ui[:ally_i], 335)
       end
 
       def close_battle_ally_target
@@ -4534,8 +4566,7 @@ class RPG2k
       # the round settles.
       def show_battle_banner(lines)
         @battle_ui[:action_win].dispose if @battle_ui[:action_win]
-        y = SCREEN_H - lines.length * BATTLE_LINE_H - Window::BORDER * 2 - 6
-        @battle_ui[:action_win] = battle_text_window(lines, y, 340)
+        @battle_ui[:action_win] = battle_panel_window(lines, 340)
       end
 
       # The system SFX a landed action plays, alongside its banner. Each check
@@ -4610,12 +4641,33 @@ class RPG2k
       end
 
       def open_battle_result(lines)
-        @battle_ui[:result_win] =
-          battle_text_window(lines, SCREEN_H - lines.length * BATTLE_LINE_H -
-                                    Window::BORDER * 2 - 6, 320)
+        @battle_ui[:result_win] = battle_panel_window(lines, 320)
       end
 
-      # A full-width text panel of `lines` at vertical position `y` and depth `z`.
+      # RPG_RT's battle message window (the per-action banner, the result
+      # panel) is a fixed 320x80 strip at the bottom of the screen -- the same
+      # rect as the status/command windows it visually replaces while it is up
+      # (EasyRPG's `Window_BattleMessage`, `(0, screen_height - 80, MENU_WIDTH,
+      # 80)`) -- not a panel sized to fit its text.
+      def battle_panel_window(lines, z)
+        inner_w = SCREEN_W - Window::BORDER * 2
+        win = Window.new(0, BATTLE_PANEL_Y, SCREEN_W, BATTLE_PANEL_H)
+        win.z = z
+        win.windowskin = @windowskin
+        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c.font.color = Color.new(255, 255, 255, 255)
+        lines.each_with_index do |line, i|
+          c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
+        end
+        win.contents = c
+        win
+      end
+
+      # A text panel of `lines` at vertical position `y` and depth `z`, sized to
+      # fit its content -- used for the battle-event page message window, which
+      # this screen deliberately keeps off the bottom panel's rect (see
+      # `BATTLE_EVENT_MSG_Y`) so a page talking mid-round does not fight the
+      # action banner for the same row.
       def battle_text_window(lines, y, z)
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
         inner_h = [lines.length, 1].max * BATTLE_LINE_H
@@ -4631,18 +4683,19 @@ class RPG2k
         win
       end
 
-      # The same panel, but each row is a list of [text, x, colour index]
+      # The party status panel: each row is a list of [text, x, colour index]
       # segments rather than one string, so a row can mix colours. Drawn through
       # `draw_system_text`, which fills the glyphs from the System graphic's own
       # palette swatch (and falls back to flat white text when the project ships
-      # no windowskin) — the way RPG_RT colours a state name.
-      def battle_status_window(rows, y, z)
-        inner_w = SCREEN_W - 20 - Window::BORDER * 2
-        inner_h = [rows.length, 1].max * BATTLE_LINE_H
-        win = Window.new(10, y, SCREEN_W - 20, inner_h + Window::BORDER * 2)
-        win.z = z
+      # no windowskin) — the way RPG_RT colours a state name. Fixed at the
+      # bottom-left of the panel (`Window_BattleStatus`'s own rect), with a
+      # cursor on `cursor_idx`'s row when the acting actor is one of these rows.
+      def battle_status_window(rows, cursor_idx = nil)
+        inner_w = BATTLE_STATUS_W - Window::BORDER * 2
+        win = Window.new(0, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
+        win.z = 300
         win.windowskin = @windowskin
-        c = Bitmap.new(inner_w, inner_h)
+        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         rows.each_with_index do |segments, i|
           segments.each do |text, x, color|
@@ -4651,6 +4704,9 @@ class RPG2k
           end
         end
         win.contents = c
+        if cursor_idx
+          win.cursor_rect = Rect.new(0, cursor_idx * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
+        end
         win
       end
 
