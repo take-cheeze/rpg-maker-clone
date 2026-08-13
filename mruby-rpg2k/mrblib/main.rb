@@ -578,9 +578,12 @@ class RPG2k
   # Tear down all scenes and show the Game Over screen; dismissing it returns to
   # the title. Replaces the stack the way return_to_title does rather than
   # pushing, so the map underneath is gone for good — the run is over.
-  def show_game_over
+  # `state` is the running Game::State (the map's own, when this is reached
+  # through a battle/event game over); Scene::GameOver reads a Change System
+  # BGM game-over override off it when one is present.
+  def show_game_over(state = nil)
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
-    @scenes = [Scene::GameOver.new(self)]
+    @scenes = [Scene::GameOver.new(self, state)]
   end
 
   # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...
