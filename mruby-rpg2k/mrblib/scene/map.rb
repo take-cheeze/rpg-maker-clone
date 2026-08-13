@@ -171,6 +171,7 @@ class RPG2k
         @player_jumping = false
         @dest_x = @state.x
         @dest_y = @state.y
+        @slide_was_active = false
         @tile_colors = {}
         @last_frame = nil
         # Frame counter driving the chipset's water/animated-tile animation.
@@ -270,6 +271,60 @@ class RPG2k
         # start anything this frame, matching "if both are set to fire the
         # same frame, parallel process goes first".
         step_parallels unless parallels_paused?
+        # A forced move route (Move Event / Set Move Route, on the player, an
+        # event or a vehicle) keeps stepping every frame no matter what the
+        # foreground interpreter is doing -- RPG_RT does not pause a route it
+        # was told not to wait for (no Proceed With Movement) just because the
+        # event that issued it kept running its own next commands. This is the
+        # ordinary "walk in the background while the narration continues"
+        # idiom (e.g. Nepheshel's hero rising out of bed while Iris explains
+        # where he is, on the same event that then shows several lines of
+        # dialogue and a name-entry prompt without ever waiting on the route).
+        # Stepped before the busy-gate below, which still correctly holds back
+        # the foreground event itself and autonomous (page move-type) movement
+        # -- see #step_event's own event_busy? check, which now exempts only
+        # e[:forced_route]. Without this, every such route sat frozen for as
+        # long as its own event kept the interpreter busy and then played out
+        # all at once the instant the whole event finally ended.
+        #
+        # The party's own pixel slide (started by a route's step, above) also
+        # advances unconditionally: #advance_player_slide is what actually
+        # commits @state.x/y once the slide completes, and it has to keep
+        # pace with the route stepping it or the party position would never
+        # catch up to a route that ran while busy (#step_movement no longer
+        # calls it itself -- see its comment).
+        #
+        # Skipped while the interpreter is itself waiting on Proceed With
+        # Movement (#step_forced_movement, driven from #drive_event's :movement
+        # case below): that command's whole point is to wait for these same
+        # routes, which it already steps and resumes on completion, so
+        # stepping them again here would double-step every route for as long
+        # as that wait lasts.
+        unless movement_wait?
+          # #step_player_route before #advance_player_slide, not after: this
+          # is the pre-existing order the plain (non-:movement-wait) path
+          # always ran them in, one frame apart inside the old single
+          # #step_movement call, and #step_player_route's own `return if
+          # @moving` depends on it -- landing a slide and letting the route
+          # advance to its next queued step are still two different frames,
+          # not the same one, even though both calls moved out here. (The
+          # separate #step_forced_movement path used during an actual
+          # Proceed With Movement wait has always ordered these the other
+          # way around; the two have never agreed, and this keeps it that
+          # way rather than changing either.)
+          step_player_route
+          step_events
+          step_vehicle_routes
+          # Captured rather than inspecting @moving afterward:
+          # #advance_player_slide returns true through the landing frame
+          # itself (it entered with @moving already true), and
+          # #step_movement's own guard has always relied on that -- a new
+          # input-driven move must not start on the very frame the previous
+          # one lands, only the frame after. Checking @moving there instead
+          # would lose that one-frame gap now that the call moved out of
+          # #step_movement.
+          @slide_was_active = advance_player_slide
+        end
         if event_busy?
           drive_event
         else
@@ -277,9 +332,6 @@ class RPG2k
           if event_busy?
             drive_event
           else
-            step_player_route
-            step_events
-            step_vehicle_routes
             step_movement
             # Boarding / disembarking claims the action button when it applies;
             # otherwise it falls through to the usual event trigger.
@@ -923,6 +975,15 @@ class RPG2k
         @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
+      # Whether the foreground interpreter is parked on a Proceed With
+      # Movement wait -- the one busy state whose forced-route stepping is
+      # already fully owned by #step_forced_movement (see #update and
+      # #drive_event's :movement case), so #update's own unconditional
+      # stepping must skip it rather than step every route a second time.
+      def movement_wait?
+        @interpreter.waiting? && @interpreter.wait_kind == :movement
+      end
+
       # Whether a message window or choice list (Show Message / Show Choices /
       # an Input Number embedded in one) is currently on screen -- queried by
       # the interpreter via map_info (see #event_position, #character_screen_
@@ -1460,14 +1521,17 @@ class RPG2k
         nil
       end
 
-      # Advance autonomous / custom-route event movement one frame. Skipped
-      # while an event process is running so the map holds still during messages.
+      # Advance autonomous / custom-route event movement one frame. Autonomous
+      # (page move-type) and page-level custom-route movement hold still while
+      # an event process is running, so the map holds still during messages;
+      # a *forced* route (e[:forced_route], from Move Event / Set Move Route)
+      # is exempt and keeps stepping regardless -- see #update's own comment.
       def step_events
         @events.each { |e| step_event(e) }
       end
 
       def step_event(e)
-        return if event_busy? # an event fired earlier this frame; hold the rest
+        return if event_busy? && !e[:forced_route] # hold autonomous/custom movement; a forced route keeps going
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
@@ -5973,7 +6037,13 @@ class RPG2k
       end
 
       def step_movement
-        return if advance_player_slide
+        # The pixel slide itself now advances unconditionally every frame (see
+        # #update), forced route or not. Checked via @slide_was_active (what
+        # that call returned) rather than @moving: a new input-driven move
+        # must not start on the very frame the previous one lands, only the
+        # frame after, and @moving itself has already gone false by the time
+        # this runs on a landing frame.
+        return if @slide_was_active
 
         return if event_busy? # don't start a new move while an event runs
         return if @player_route # a forced route controls the player

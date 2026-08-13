@@ -1938,6 +1938,31 @@ check 'Erase Event stops a parallel process that erases itself' do
      'its background process was removed'
 end
 
+check 'a forced player route keeps stepping while its own event shows a message (no Proceed With Movement)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Move Event with no following Proceed With Movement is the ordinary "walk
+  # in the background while the narration continues" idiom -- Nepheshel's own
+  # hero-wakes-up-in-bed opening uses exactly this shape (a Move Event on the
+  # hero, then several Show Text / Name Input commands with no Proceed in
+  # between). The route must keep animating even though the very next command
+  # in the same event parks the interpreter on a message window waiting for
+  # input this check never gives.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+                                  [10001, 8, 0, 0, R::MOVE_DOWN, R::MOVE_DOWN, R::MOVE_DOWN]),
+                         ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  msg = nil
+  10.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'the message window opened -- the event (and event_busy?) is now busy'
+
+  30.times { scene.update }
+  eq 3, st.y, 'the forced route walked all three steps despite the open message'
+  ok scene.instance_variable_get(:@player_route).nil?, 'and the route itself finished'
+end
+
 check 'Halt All Movement cancels a forced player route in the scene' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
