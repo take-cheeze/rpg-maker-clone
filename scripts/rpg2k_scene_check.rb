@@ -4097,6 +4097,9 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
   eq 80 - sprites[0].bitmap.height / 2, sprites[0].y, 'sprite centred on its y'
   ok sprites[0].z < 300, 'battlers sit below the UI windows (z >= 300)'
   ok ui[:back_sprite].z < sprites[0].z, 'the backdrop sits behind the battlers'
+  # yado.tk: troop members are numbered by add-order and the *lower*-numbered
+  # one renders in front (closer to camera) -- member 0 here, added first.
+  ok sprites[0].z > sprites[1].z, 'the lower-numbered troop member renders on top'
 
   battle_attack_to_end(scene) # both Slimes fall
   ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
