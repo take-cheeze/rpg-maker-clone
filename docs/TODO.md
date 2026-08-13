@@ -2049,18 +2049,43 @@ Everything below is unverified against the codebase.
 - **Move All / Force Complete Move** — blocks Event Content at that command
   until every targeted character's route finishes; same freeze conditions
   as Set Move Route above.
-- **Autorun** — blocks hero control (unlike Parallel Process) and blocks
-  other events too, unless "move other events during message wait" is on;
-  runs to completion even if its own appearance condition goes false mid-
-  run, *including across a map transfer*; only one Autorun engine-wide at a
-  time, and none can start while any non-parallel event is already running;
-  a self-targeted Set Move Route with a real movement command can let hero
-  control through during an Autorun. **Bug**: an "event touches hero"
-  event approaching via "Approach Hero" that simultaneously triggers a
-  Common Event Autorun can permanently freeze that map event (fixes: touch
-  it again, toggle its appearance switch, or issue any move-route command
-  at it — "Cancel Move Route" alone does not clear it). Related to the
+- **Autorun** — blocks hero control (unlike Parallel Process); runs to
+  completion even if its own appearance condition goes false mid-run,
+  *including across a map transfer*; only one Autorun engine-wide at a time,
+  and none can start while any non-parallel event is already running; a
+  self-targeted Set Move Route with a real movement command can let hero
+  control through during an Autorun. **Bug**: an "event touches hero" event
+  approaching via "Approach Hero" that simultaneously triggers a Common
+  Event Autorun can permanently freeze that map event (fixes: touch it
+  again, toggle its appearance switch, or issue any move-route command at it
+  — "Cancel Move Route" alone does not clear it). Related to the
   already-fixed priority-type/touch-trigger work but distinct and unverified.
+  ✅ **It also blocks other events too, unless "move other events during
+  message wait" is on — now wired up.** `Game::MessageConfig#continue_events`
+  (LCF field 44, `message_continue_events`) was already parsed from the
+  database/save and settable via the Message Options event command, but
+  `Scene::Map` never once read it: `#step_events` (autonomous move types and
+  forced/custom routes for every non-parallel map event) only ever ran from
+  `#update`'s not-busy branch, so a bystander event held still for the whole
+  time any message window stayed open regardless of this flag. Fixed by
+  calling `#step_events(allow_trigger: false)` a second way, from inside the
+  busy branch, whenever a new `#events_move_during_message?` (a message
+  window is open **and** `continue_events` is set) answers true — scoped to
+  an open message window specifically, not `#event_busy?` in general, so an
+  Autorun grinding through non-blocking commands with no message shown still
+  freezes the map either way, unaffected. `allow_trigger: false` (threaded
+  through `#step_event`/`#move_autonomous`) still lets a bystander walk,
+  turn and finish its route, but never lets one start a *new* event over the
+  player's — there is only one foreground `@interpreter`, already busy with
+  the open message, and RPG2000 never shows two message windows at once, so
+  an event-touch (trigger 2) bystander reaching the player's tile during
+  this window still stops adjacent to it without starting its own commands,
+  the same as the ordinary nothing-else-running case. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a bystander holds still with the
+  flag off, the existing default; a bystander keeps walking with the flag
+  on; an approaching trigger-2 bystander still never starts its own event
+  while the flag is on), two confirmed to fail against the pre-fix code
+  before the fix.
 - **Hero & party** — removing a hero preserves their equipment/level/EXP/HP/
   status; the field sprite is always party member 1's; only the front member
   draws on the field at all; a hero's name can't be copied to another via any

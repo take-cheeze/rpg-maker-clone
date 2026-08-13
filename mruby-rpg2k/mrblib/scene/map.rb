@@ -272,6 +272,14 @@ class RPG2k
         step_parallels unless parallels_paused?
         if event_busy?
           drive_event
+          # Message Options' "move other events during message" toggle: other
+          # map events keep their own autonomous movement / forced routes
+          # going while this message window sits open (see
+          # #events_move_during_message?). `allow_trigger: false` still lets
+          # them walk, turn and finish routes, but never lets one start a new
+          # event over the player's -- there is only one foreground
+          # interpreter, and it is already busy with this message.
+          step_events(allow_trigger: false) if events_move_during_message?
         else
           start_autostart
           if event_busy?
@@ -938,6 +946,20 @@ class RPG2k
       end
       public :message_window_open?
 
+      # Whether bystander map events should keep stepping their own autonomous
+      # movement / forced routes while a message window sits open -- RPG2000's
+      # Message Options command has a dedicated "move other events during
+      # message" toggle (LCF field 44, `message_continue_events` /
+      # `Game::MessageConfig#continue_events`) for exactly this, defaulting off
+      # (RPG_RT's own default is "other events hold still"). Scoped to a message
+      # window specifically, not #event_busy? in general -- an Autorun grinding
+      # through non-blocking commands with no message up still freezes the rest
+      # of the map either way, matching yado.tk ("Autorun ... blocks other
+      # events too, unless 'move other events during message wait' is on").
+      def events_move_during_message?
+        message_window_open? && @state.message_config.continue_events
+      end
+
       # Whether #step_parallels should sit this frame out. Per yado.tk, real
       # RPG_RT only pauses background parallel processes for the Menu screen
       # (already structural here -- Scene::Map#update simply is not called
@@ -1482,13 +1504,19 @@ class RPG2k
       end
 
       # Advance autonomous / custom-route event movement one frame. Skipped
-      # while an event process is running so the map holds still during messages.
-      def step_events
-        @events.each { |e| step_event(e) }
+      # while an event process is running so the map holds still during messages
+      # -- unless a Message Options command turned `continue_events` on, in which
+      # case #update calls this a second way (allow_trigger: false) while a
+      # message window is open; see #events_move_during_message?.
+      def step_events(allow_trigger: true)
+        @events.each { |e| step_event(e, allow_trigger: allow_trigger) }
       end
 
-      def step_event(e)
-        return if event_busy? # an event fired earlier this frame; hold the rest
+      def step_event(e, allow_trigger: true)
+        # An event fired earlier this frame; hold the rest -- except when this
+        # is the "keep moving during the message" pass, which is *always*
+        # called while busy (that is the point) and must not immediately bail.
+        return if allow_trigger && event_busy?
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
@@ -1513,7 +1541,7 @@ class RPG2k
           e[:route].step(ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
-          move_autonomous(e, dir) if dir
+          move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
         end
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
@@ -1560,13 +1588,18 @@ class RPG2k
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
       # an event-touch (trigger 2) event instead of moving; any other obstacle
-      # just turns the event to face it.
-      def move_autonomous(e, dir)
+      # just turns the event to face it. `allow_trigger: false` (the "keep
+      # moving during an open message" pass, see #step_events) still turns the
+      # event to face the player but never starts one -- there is only one
+      # foreground @interpreter, already mid-message, and RPG2000 never shows
+      # two message windows at once, so a second event's commands have nowhere
+      # safe to run until the first message closes.
+      def move_autonomous(e, dir, allow_trigger: true)
         ch = e[:char]
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
           ch.face(dir)
-          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+          start_event(e) if allow_trigger && e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
         elsif @world.passable?(ch, dir)
           ch.move(dir)
         else
