@@ -4903,6 +4903,24 @@ check 'Erase Picture removes the picture' do
   ok st.pictures[5].nil?, 'erased'
 end
 
+check 'Show Picture on an id past the 50-slot range is a no-op' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHOW_PICTURE,
+                        [51, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                        string: 'p')])
+  it.update
+  ok st.pictures[51].nil?, 'id 51 is past RPG2000\'s 1..50 picture range'
+  eq 0, st.pictures.size, 'nothing was shown at all'
+  # The boundary id itself still works.
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::SHOW_PICTURE,
+                         [50, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0],
+                         string: 'p')])
+  it2.update
+  ok st.pictures[50], 'id 50 is the last valid slot'
+end
+
 # -- Player Visibility / Return to Title --------------------------------------
 
 check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
