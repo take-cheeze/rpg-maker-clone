@@ -182,6 +182,37 @@ class RPG2k
           Rect.new(0, @slot_index * LINE_H, @slot_window.contents.width, LINE_H)
       end
 
+      # yado.tk: the equip-list comparison arrow is the *sum* of all four
+      # combat-stat deltas between a candidate and whatever currently
+      # occupies the slot, not four separate per-stat verdicts -- a weapon
+      # that trades -2 Atk for +3 Def still draws a single Up arrow (net +1),
+      # never a mixed per-stat readout. The four fields are RPG2000's own
+      # "points1" equip-bonus set (`Game::Actor::EQUIP_BONUS_FIELD`'s combat
+      # quarter -- max HP/SP have no comparison arrow, only the four battle
+      # stats do).
+      STAT_POINT_FIELDS = [:atk_points1, :def_points1, :spi_points1, :agi_points1].freeze
+
+      # The summed equip-bonus points of item `id` (0 for an empty slot, a
+      # missing database row, or a fixture item lacking these fields).
+      def item_stat_sum(id)
+        return 0 if id.nil? || id == 0
+        row = @state.party.db_item(id)
+        return 0 unless row
+        STAT_POINT_FIELDS.reduce(0) do |s, f|
+          s + ((row.respond_to?(f) ? row.send(f) : nil) || 0)
+        end
+      end
+
+      # '^' the candidate's combined stat points beat what is equipped now,
+      # 'v' it falls short, '-' the two are equal (RPG_RT draws small
+      # triangle icons here; plain glyphs stand in since this build has no
+      # icon-cell blit for them yet).
+      def equip_compare_arrow(delta)
+        return '^' if delta > 0
+        return 'v' if delta < 0
+        '-'
+      end
+
       def build_cand_window
         @cand_window.dispose if @cand_window
         rows = candidates
@@ -193,11 +224,14 @@ class RPG2k
         @cand_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
+        equipped_sum = item_stat_sum(actor.equipment[@slot_index])
         rows.each_with_index do |(id, count), i|
           if id == 0
             c.draw_text 0, i * LINE_H, inner_w, LINE_H, "(Remove)"
           else
-            c.draw_text 0, i * LINE_H, inner_w - 40, LINE_H, item_name(id)
+            c.draw_text 0, i * LINE_H, inner_w - 80, LINE_H, item_name(id)
+            c.draw_text inner_w - 80, i * LINE_H, 40, LINE_H,
+                        equip_compare_arrow(item_stat_sum(id) - equipped_sum)
             c.draw_text inner_w - 40, i * LINE_H, 40, LINE_H, ":#{count}"
           end
         end

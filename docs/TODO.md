@@ -3261,9 +3261,28 @@ above are repeated here)
   ○/×/★/□ icon shown per-tile in the editor only means "at least one of
   the 4 directions is passable" — a tile can show ○ and still block the
   specific direction actually being attempted.
-- The shop equipment-comparison arrow (Up/Same/Down) is computed from the
-  **sum** of all four stat deltas between currently-equipped and
-  candidate item, not evaluated per-stat.
+- ✅ **The equip-menu comparison arrow (Up/Same/Down) is computed from the
+  sum of all four stat deltas between the currently-equipped and candidate
+  item, not evaluated per-stat.** (The bullet's own wording says "shop", but
+  RPG2000 shops never compare equipment stats — only the field Equip screen's
+  own candidate list does; `01_shoshin`/`11_db` both describe this same
+  indicator on that screen.) `Scene::EquipMenu#build_cand_window`
+  (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) drew each candidate as a bare
+  name + bag count, with no comparison of any kind. Fixed by summing each
+  side's `atk_points1`/`def_points1`/`spi_points1`/`agi_points1` fields (the
+  combat quarter of `Game::Actor::EQUIP_BONUS_FIELD`'s five, max HP/SP
+  excluded) via a new `#item_stat_sum`, and drawing a third column between
+  the name and count holding the *sign* of `candidate_sum - equipped_sum`
+  only — `^`/`v`/`-` for the whole combined delta, never a per-stat verdict,
+  which is the actual yado.tk claim (a candidate trading `-2` Atk for `+3`
+  Def still draws a single Up arrow). RPG_RT draws small triangle icons here;
+  this build has no icon-cell blit for them yet, so a plain glyph stands in
+  — a later, purely-visual refinement, not a behaviour gap. The "Remove"
+  entry draws no arrow (nothing to compare an empty slot's combined points
+  against is confirmed either way). Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a strictly-better, a strictly-worse
+  and an exactly-equal candidate against a fixed worn item each draw the
+  right glyph), confirmed to fail against the pre-fix code before the fix.
 - Text color slots 1-4 have hardcoded semantic roles (stat label /
   value-increase / value-decrease / low-HP-MP warning), and a State's own
   configured display-color field is a pointer into that **same** shared
