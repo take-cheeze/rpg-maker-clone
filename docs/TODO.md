@@ -4805,6 +4805,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `texSubImage2D`). Covered by `gl_test.rb`: a raw upload and a
         canvas-source upload each come back scaled by their own alpha with
         the flag on, and untouched with it off (the default).
+      - ✅ **`OES_element_index_uint`.** Found against a real freem.ne.jp MZ
+        release (encrypted images/audio, booted through `New Game` and a full
+        map walk with no engine changes — see the `.woff`/premultiply-alpha
+        entries below for the same game paying off twice already), which
+        logged `Provided WebGL context does not support 32 index buffer` on
+        boot: `ContextSystem.getExtensions` reads this unconditionally into
+        `context.extensions.uint32ElementIndex`, and without it
+        `GeometrySystem` caps every index buffer at 65536 vertices
+        (`Uint16Array`), forcing smaller, more numerous draw calls than
+        necessary — a real, if minor, perf gap rather than a correctness one
+        (the underlying draw still worked; PIXI was just being needlessly
+        conservative). Unlike VAO/instancing this needs no native entry
+        points: it has no methods, and our backend is GLES 3.0+ core
+        throughout (mvgl.cxx's `bind_context` is ES3-first), where
+        `UNSIGNED_INT` indices are unconditionally legal — so it is a pure
+        always-on capability flag. Covered by `gl_test.rb`: the flag is
+        advertised and cached like the other two, and a `Uint32Array`-indexed
+        draw (with an index value that would not fit a 16-bit buffer) renders
+        correctly.
       - 🚧 Remaining: `UNPACK_FLIP_Y_WEBGL` (genuinely inert against a stock
         PIXI v5 build — never set `true`, only reset to `false`) and
         uniform-introspection polish, as real content exercises them.

@@ -1898,14 +1898,25 @@ const char* kWebGLPreamble = R"MVJS(
              premultipliedAlpha: true, preserveDrawingBuffer: false,
              failIfMajorPerformanceCaveat: false };
   };
-  // Extensions: only the two PIXI's GeometrySystem checks for a fast path
+  // Extensions: the two PIXI's GeometrySystem checks for a fast path
   // (OES_vertex_array_object, ANGLE_instanced_arrays -- see the native-side
-  // comment above js_gl_ext_vao_available). Everything else PIXI probes
-  // (anisotropy, float textures, ...) still degrades gracefully to null; PIXI
-  // handles a missing extension for those the same way it always has. Cached
-  // per context in `this._ext` so repeat calls return the same object, as the
-  // WebGL spec requires and PIXI's own caching (`context.extensions.*`)
-  // expects.
+  // comment above js_gl_ext_vao_available) plus OES_element_index_uint, which
+  // PIXI's ContextSystem.getExtensions reads unconditionally into
+  // `context.extensions.uint32ElementIndex` and GeometrySystem.contextChange
+  // turns into `canUseUInt32ElementIndex` -- false without it, which caps
+  // every index buffer at 65536 vertices (Uint16Array) and forces smaller,
+  // more numerous draw calls than a real browser would need. Unlike the other
+  // two this needs no native entry points at all: WebGL1 gates
+  // `UNSIGNED_INT` in drawElements/element buffers behind this extension, but
+  // our backend is GLES 3.0+ core throughout (see mvgl.cxx's bind_context),
+  // where that type is unconditionally legal -- so this is a pure
+  // capability flag, always on, with no methods to wire up (confirmed against
+  // a real MZ game: without it, the boot log warns "does not support 32 index
+  // buffer"). Everything else PIXI probes (anisotropy, float textures, ...)
+  // still degrades gracefully to null; PIXI handles a missing extension for
+  // those the same way it always has. Cached per context in `this._ext` so
+  // repeat calls return the same object, as the WebGL spec requires and
+  // PIXI's own caching (`context.extensions.*`) expects.
   P.getExtension = function (name) {
     if (Object.prototype.hasOwnProperty.call(this._ext, name)) {
       return this._ext[name];
@@ -1925,12 +1936,14 @@ const char* kWebGLPreamble = R"MVJS(
         drawArraysInstancedANGLE: function (m, f, c, p) { g.__mv_glExtDrawArraysInstanced(gl, m, f, c, p); },
         drawElementsInstancedANGLE: function (m, c, t, o, p) { g.__mv_glExtDrawElementsInstanced(gl, m, c, t, o, p); },
       };
+    } else if (name === 'OES_element_index_uint') {
+      ext = {};
     }
     this._ext[name] = ext;
     return ext;
   };
   P.getSupportedExtensions = function () {
-    var out = [];
+    var out = ['OES_element_index_uint'];
     if (g.__mv_glExtVaoAvailable(this.__gl)) out.push('OES_vertex_array_object');
     if (g.__mv_glExtInstancedAvailable(this.__gl)) out.push('ANGLE_instanced_arrays');
     return out;
