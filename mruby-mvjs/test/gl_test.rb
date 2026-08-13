@@ -733,9 +733,13 @@ end
 # fallback -- correct but slower. These prove the extension objects are real
 # and functionally correct, not just present.
 
-assert 'getExtension advertises OES_vertex_array_object / ANGLE_instanced_arrays with working methods, cached per call' do
+assert 'getExtension advertises OES_vertex_array_object / ANGLE_instanced_arrays / OES_element_index_uint with working methods, cached per call' do
   skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
 
+  # OES_element_index_uint has no methods (see the native-side comment above
+  # js_gl_ext_vao_available) -- it is a pure capability flag PIXI reads once
+  # into `context.extensions.uint32ElementIndex` and never calls anything on,
+  # so this only checks it is present, non-null and cached, not any method.
   out = MV::JS.eval(<<~'JS')
     (function () {
       var cv = document.createElement('canvas'); cv.width = 4; cv.height = 4;
@@ -745,10 +749,13 @@ assert 'getExtension advertises OES_vertex_array_object / ANGLE_instanced_arrays
       var vao2 = gl.getExtension('OES_vertex_array_object');
       var inst1 = gl.getExtension('ANGLE_instanced_arrays');
       var inst2 = gl.getExtension('ANGLE_instanced_arrays');
+      var idx1 = gl.getExtension('OES_element_index_uint');
+      var idx2 = gl.getExtension('OES_element_index_uint');
       var bogus = gl.getExtension('NOT_A_REAL_EXTENSION');
       var flags = [
         supported.indexOf('OES_vertex_array_object') >= 0,
         supported.indexOf('ANGLE_instanced_arrays') >= 0,
+        supported.indexOf('OES_element_index_uint') >= 0,
         !!vao1,
         vao1 === vao2,
         typeof vao1.createVertexArrayOES === 'function',
@@ -760,14 +767,90 @@ assert 'getExtension advertises OES_vertex_array_object / ANGLE_instanced_arrays
         typeof inst1.vertexAttribDivisorANGLE === 'function',
         typeof inst1.drawArraysInstancedANGLE === 'function',
         typeof inst1.drawElementsInstancedANGLE === 'function',
+        !!idx1,
+        idx1 === idx2,
         bogus === null,
       ];
       return flags.map(function (f) { return f ? 1 : 0; }).join(',');
     })()
   JS
   flags = out.split(",").map(&:to_i)
-  assert_equal 14, flags.size
+  assert_equal 17, flags.size
   flags.each_with_index { |f, i| assert_equal 1, f, "flag #{i}" }
+end
+
+assert 'a Uint32Array element index buffer draws correctly (OES_element_index_uint)' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # The actual capability the flag stands for: PIXI only switches its index
+  # buffer to Uint32Array (instead of splitting into multiple Uint16Array
+  # batches) once this reads true, so what matters is that UNSIGNED_INT
+  # indices really do draw correctly -- not just that the flag is set. A
+  # full-viewport quad indexed with Uint32Array values, including one large
+  # enough to overflow a Uint16Array (65536+).
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 16, H = 16;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvoid main(){ gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvoid main(){ gl_FragColor = vec4(0.0,1.0,0.0,1.0); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // Vertex 70000 is padding, unreferenced by any index -- only there so
+      // a real 16-bit index buffer could not represent index 3 (the actual
+      // last quad corner) without wrapping/corrupting.
+      var verts = new Float32Array((70001) * 2);
+      verts[0 * 2] = -1; verts[0 * 2 + 1] = -1;
+      verts[1 * 2] = 1;  verts[1 * 2 + 1] = -1;
+      verts[2 * 2] = -1; verts[2 * 2 + 1] = 1;
+      verts[3 * 2] = 1;  verts[3 * 2 + 1] = 1;
+      verts[70000 * 2] = 0; verts[70000 * 2 + 1] = 0;
+
+      var vbuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
+      gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+      var idx = new Uint32Array([0, 1, 2, 1, 3, 2, 70000]);
+      var ibuf = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibuf);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+      gl.finish();
+      var err = gl.getError();
+
+      var px = new Uint8Array(4);
+      gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return err + ',' + px[0] + ',' + px[1] + ',' + px[2];
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  parts = out.split(",")
+  assert_equal 4, parts.size
+  assert_equal "0", parts[0] # GL_NO_ERROR
+  assert_true parts[2].to_i > 200 # green: the UNSIGNED_INT-indexed quad drew
+  assert_true parts[1].to_i < 60
 end
 
 assert 'a VAO round-trips vertex attribute state (OES_vertex_array_object)' do
