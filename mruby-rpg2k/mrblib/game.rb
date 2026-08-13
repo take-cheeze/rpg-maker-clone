@@ -5036,6 +5036,54 @@ module Game
       @did_transaction = true
       true
     end
+
+    # The equipment slot (0..4) item `id` occupies by its database type, or nil
+    # when it is not equipment -- the same `type - 1` mapping
+    # `Party#equip_slot_for` uses, kept local so the shop's stat-arrow lookup
+    # below works against a bare `@db`/`@party` pair (this test suite's
+    # `ShopStubParty` included) without requiring the full `Party` interface.
+    def item_equip_slot(id)
+      it = @db.item[id]
+      return nil unless it
+      t = it.respond_to?(:type) ? it.type : nil
+      (t.is_a?(Integer) && t >= 1 && t <= 5) ? t - 1 : nil
+    end
+    private :item_equip_slot
+
+    # The four battle-stat equip-bonus fields the arrow below sums, in
+    # `Actor::EQUIP_BONUS_FIELD`'s own order minus max_hp/max_sp -- the same
+    # four stats the Equip screen's own stat readout shows.
+    STAT_ARROW_FIELDS = [:atk_points1, :def_points1, :spi_points1, :agi_points1].freeze
+
+    # Item `id`'s own contribution to those four stats (0 for a non-equipment
+    # item, a missing item, or item 0/nil -- "nothing currently worn there").
+    def item_stat_sum(id)
+      return 0 if id.nil? || id == 0
+      it = @db.item[id]
+      return 0 unless it
+      STAT_ARROW_FIELDS.sum { |f| it.respond_to?(f) ? (it.send(f) || 0) : 0 }
+    end
+    private :item_stat_sum
+
+    # The buy-list Up/Same/Down indicator (yado.tk): comparing an equippable
+    # `id` against whatever the party's front actor -- the shop screen has no
+    # actor-select UI, unlike the Equip menu -- currently has worn in that
+    # same slot. RPG_RT's own arrow is one aggregate symbol from the *sum* of
+    # all four battle-stat deltas, not four separate per-stat arrows, so a
+    # weapon trading Atk for Agi in a way that nets positive still shows Up.
+    # Returns 1 (up) / 0 (same) / -1 (down), or nil when there is nothing to
+    # compare -- `id` is not equipment, or the party has no front actor.
+    # Comparing against the *front* actor specifically is this build's own
+    # reading, not confirmed against real RPG_RT: neither test bed's shop
+    # stock exercises a multi-member party, so which actor (if the choice
+    # even varies per member) stays an open question.
+    def stat_arrow(id)
+      slot = item_equip_slot(id)
+      return nil if slot.nil?
+      leader = @party.actors[0]
+      return nil unless leader && leader.respond_to?(:equipment)
+      (item_stat_sum(id) - item_stat_sum(leader.equipment[slot])) <=> 0
+    end
   end
 
   # Which battle backdrop (Backdrop/<name>) a fight on a given map uses.

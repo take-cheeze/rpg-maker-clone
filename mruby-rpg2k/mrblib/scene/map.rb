@@ -2840,7 +2840,15 @@ class RPG2k
           [["#{verb} #{m.name(q[:id])} x#{q[:count]}  " \
             "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
         when :buy
-          m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
+          m.goods.map do |id|
+            # yado.tk: an equippable good's row carries a one-symbol Up/Same/
+            # Down indicator against the front actor's currently-worn item in
+            # that slot (Game::Shop#stat_arrow); a non-equipment good (a
+            # medicine, a skill book) gets no suffix at all, matching nil.
+            arrow = m.stat_arrow(id)
+            suffix = arrow == 1 ? ' +' : (arrow == -1 ? ' -' : '')
+            ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}#{suffix}", id]
+          end
         else # :sell
           m.sellable_items.map do |id|
             ["#{m.name(id)} x#{@state.party.item_count(id)}  " \

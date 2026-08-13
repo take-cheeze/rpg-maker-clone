@@ -5728,6 +5728,44 @@ check 'Shop max_buy of a free item is limited only by the cap' do
   eq 99, shop.max_buy(4), 'a price-0 good does not divide by zero'
 end
 
+check 'Shop stat_arrow compares an equippable good to the front actor\'s slot' do
+  items = {
+    1 => fake_item(name: 'Long Sword', type: 1, atk: 5, price: 100),  # stronger
+    2 => fake_item(name: 'Dagger', type: 1, atk: 1, price: 50),       # weaker
+    3 => fake_item(name: 'Short Sword', type: 1, atk: 3, price: 60),  # currently worn
+    5 => fake_item(name: 'Potion', type: 0, price: 40)                # not equipment
+  }
+  db = FakeActorDB.new(
+    { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) },
+    [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.actors.first.equip_item(3) # Short Sword worn (atk_points1 3)
+  shop = Game::Shop.new(db, st.party, items.keys, true, true)
+  eq 1, shop.stat_arrow(1), 'a stronger weapon shows up (+1)'
+  eq(-1, shop.stat_arrow(2), 'a weaker weapon shows down (-1)')
+  eq 0, shop.stat_arrow(3), 'the currently-worn item itself nets to same (0)'
+  eq nil, shop.stat_arrow(5), 'a non-equipment good has nothing to compare (nil)'
+end
+
+check 'Shop stat_arrow reads an empty equipment slot as contributing zero' do
+  items = { 1 => fake_item(name: 'Long Sword', type: 1, atk: 5, price: 100) }
+  db = FakeActorDB.new(
+    { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) },
+    [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  shop = Game::Shop.new(db, st.party, items.keys, true, true)
+  eq 1, shop.stat_arrow(1), 'nothing worn there compares as zero, so any bonus is up'
+end
+
+check 'Shop stat_arrow is nil with no front actor to compare against' do
+  items = { 1 => fake_item(name: 'Long Sword', type: 1, atk: 5, price: 100) }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.actors.clear # an empty active party -- nothing to compare against
+  shop = Game::Shop.new(db, st.party, items.keys, true, true)
+  eq nil, shop.stat_arrow(1)
+end
+
 check 'Shop max_buy is 0 for unstocked goods and in a sell-only shop' do
   _st, shop = shop_setup(500, { 3 => 100 })
   eq 0, shop.max_buy(7), 'not stocked'

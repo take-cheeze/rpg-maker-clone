@@ -3115,6 +3115,42 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   ok !st.switches[2], 'the No Transaction branch was skipped'
 end
 
+# A shop model stub exposing exactly what Scene::Map#shop_lines reads for a
+# :buy screen (#goods/#name/#price/#stat_arrow), so the row's arrow-suffix
+# formatting can be pinned without teaching the shared fake_db item table any
+# equipment fields -- Game::Shop#stat_arrow's own correctness (comparing
+# against the party's front actor) is covered directly in
+# scripts/rpg2k_logic_check.rb.
+class ShopArrowStubModel
+  NAMES = { 1 => 'Up Sword', 2 => 'Down Sword', 3 => 'Potion' }.freeze
+  PRICES = { 1 => 100, 2 => 100, 3 => 40 }.freeze
+  ARROWS = { 1 => 1, 2 => -1, 3 => nil }.freeze
+  def goods; NAMES.keys; end
+  def name(id); NAMES[id]; end
+  def price(id); PRICES[id]; end
+  def stat_arrow(id); ARROWS[id]; end
+end
+
+check 'Open Shop buy list: an equippable good carries the stat-comparison arrow' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only, goods 3/5
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+  shop = scene.instance_variable_get(:@shop)
+  shop[:model] = ShopArrowStubModel.new
+  scene.send(:draw_shop)
+  labels = shop[:window].contents.draw_calls.map { |a| a[4] }
+  ok labels.include?('Up Sword  100G +'), 'a stat-improving good is suffixed +'
+  ok labels.include?('Down Sword  100G -'), 'a stat-lowering good is suffixed -'
+  ok labels.include?('Potion  40G'), 'a non-equipment good gets no suffix at all'
+end
+
 check 'Open Shop scene: the buy list cursor wraps around' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

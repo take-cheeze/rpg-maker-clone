@@ -3290,9 +3290,33 @@ above are repeated here)
   ○/×/★/□ icon shown per-tile in the editor only means "at least one of
   the 4 directions is passable" — a tile can show ○ and still block the
   specific direction actually being attempted.
-- The shop equipment-comparison arrow (Up/Same/Down) is computed from the
-  **sum** of all four stat deltas between currently-equipped and
-  candidate item, not evaluated per-stat.
+- ✅ **The shop equipment-comparison arrow (Up/Same/Down) is computed from the
+  sum of all four stat deltas between currently-equipped and candidate item,
+  not evaluated per-stat.** The Open Shop buy list (`Scene::Map#shop_lines`,
+  `mruby-rpg2k/mrblib/scene/map.rb`) drew a plain `name  price` row for every
+  good with no comparison indicator at all — this was a genuine gap, not
+  merely undrawn: nothing in `Game::Shop` computed the comparison either.
+  Fixed with `Game::Shop#stat_arrow(id)` (`mruby-rpg2k/mrblib/game.rb`): for
+  an equippable good (its database `type` field maps to one of the five
+  equipment slots, mirroring `Party#equip_slot_for`'s own `type - 1`), it
+  sums `atk_points1`/`def_points1`/`spi_points1`/`agi_points1` — the same
+  four stats the Equip screen's own stat readout shows, HP/MP excluded — for
+  the candidate and for whatever currently occupies that slot on the party's
+  **front** actor, and returns the sign of the difference (1 up / 0 same / -1
+  down); a non-equipment good (a medicine, a skill book) or an empty party
+  returns `nil`, drawing no suffix. `shop_lines` appends a ` +`/` -` marker to
+  the row accordingly. **Comparing against the front actor specifically is
+  this build's own reading, not confirmed against real RPG_RT**: the shop
+  screen has no actor-select UI the way the Equip menu does, and neither test
+  bed's shop stock exercises a multi-member party, so whether RPG_RT's own
+  arrow is keyed to the front actor, the whole party, or something else
+  stays an open question — flagged in the code rather than guessed past.
+  Covered by new `scripts/rpg2k_logic_check.rb` checks (`stat_arrow` against
+  a stronger/weaker/identical candidate, a non-equipment good, an empty
+  slot, and an empty party) and a new `scripts/rpg2k_scene_check.rb` check
+  (the buy-list row text carries the right suffix, or none, per good),
+  confirmed to fail against the pre-fix code (`stat_arrow` undefined) before
+  the fix.
 - Text color slots 1-4 have hardcoded semantic roles (stat label /
   value-increase / value-decrease / low-HP-MP warning), and a State's own
   configured display-color field is a pointer into that **same** shared
