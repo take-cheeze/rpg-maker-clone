@@ -2143,7 +2143,12 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # between drains and how much each drain takes, for HP
                           # and SP. Appended last, for the same reason.
                           :hp_change_map_steps, :hp_change_map_val,
-                          :sp_change_map_steps, :sp_change_map_val)
+                          :sp_change_map_steps, :sp_change_map_val,
+                          # ... and the stat-halving/doubling fields (0 halve /
+                          # 1 double / 2 no change, plus which stat(s)).
+                          # Appended last for the same reason again.
+                          :affect_type, :affect_attack, :affect_defense,
+                          :affect_spirit, :affect_agility)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -2152,13 +2157,17 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                restrict_magic: false, restrict_magic_level: 0,
                name: '', color: Game::States::DEFAULT_COLOR, priority: 50,
                actor_msg: nil, enemy_msg: nil, recovery_msg: nil,
-               hp_map_steps: 0, hp_map_val: 0, sp_map_steps: 0, sp_map_val: 0)
+               hp_map_steps: 0, hp_map_val: 0, sp_map_steps: 0, sp_map_val: 0,
+               affect_type: 2, affect_attack: false, affect_defense: false,
+               affect_spirit: false, affect_agility: false)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
                    restrict_magic, restrict_magic_level,
                    name, color, priority, actor_msg, enemy_msg, recovery_msg,
-                   hp_map_steps, hp_map_val, sp_map_steps, sp_map_val)
+                   hp_map_steps, hp_map_val, sp_map_steps, sp_map_val,
+                   affect_type, affect_attack, affect_defense,
+                   affect_spirit, affect_agility)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -6886,6 +6895,80 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   bat.command_defend(hero)                                # tries to defend...
   bat.run_round
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
+end
+
+# -- stat-halving/doubling states (affect_type / affect_attack & friends) ----
+
+check 'battle: a state that halves ATK weakens a basic attack' do
+  states = { 1 => fake_state(affect_type: 0, affect_attack: true) } # 0 = halve
+  plain_hero = combatant('Hero', 40, 0, 5, 100)
+  foe1 = combatant('Foe', 0, 0, 5, 100)
+  bat1 = Game::Battle.new([plain_hero], [foe1], Game::Rng.new(1), states)
+  eq 20, bat1.send(:deal_attack, plain_hero, foe1)[:damage],
+     'unweakened: atk 40 / 2 - def 0 / 4'
+
+  weak_hero = combatant('Hero', 40, 0, 5, 100)
+  weak_hero.states = [1]
+  foe2 = combatant('Foe', 0, 0, 5, 100)
+  bat2 = Game::Battle.new([weak_hero], [foe2], Game::Rng.new(1), states)
+  eq 10, bat2.send(:deal_attack, weak_hero, foe2)[:damage],
+     'weakened: half of 40 is 20, 20 / 2 - 0 = 10'
+end
+
+check 'battle: a state that doubles ATK strengthens a basic attack' do
+  states = { 2 => fake_state(affect_type: 1, affect_attack: true) } # 1 = double
+  hero = combatant('Hero', 40, 0, 5, 100)
+  hero.states = [2]
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  eq 40, bat.send(:deal_attack, hero, foe)[:damage], 'doubled atk: 80 / 2 - 0 = 40'
+end
+
+check 'battle: halving and doubling ATK states on the same battler cancel out' do
+  states = { 1 => fake_state(affect_type: 0, affect_attack: true),
+             2 => fake_state(affect_type: 1, affect_attack: true) }
+  hero = combatant('Hero', 40, 0, 5, 100)
+  hero.states = [1, 2]
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  eq 20, bat.send(:deal_attack, hero, foe)[:damage],
+     'weaken + berserk cancel out (AdjustParam dbl != half): plain atk 40 / 2 - 0'
+end
+
+check 'battle: a state that doubles DEF blunts incoming damage' do
+  states = { 3 => fake_state(affect_type: 1, affect_defense: true) }
+  hero = combatant('Hero', 40, 0, 5, 100)
+  tough_foe = combatant('Foe', 0, 40, 5, 100)
+  tough_foe.states = [3]
+  bat = Game::Battle.new([hero], [tough_foe], Game::Rng.new(1), states)
+  eq 1, bat.send(:deal_attack, hero, tough_foe)[:damage],
+     'doubled def 80: 40 / 2 - 80 / 4 = 0, floored to 1'
+
+  plain_foe = combatant('Foe', 0, 40, 5, 100)
+  bat2 = Game::Battle.new([hero], [plain_foe], Game::Rng.new(1), states)
+  eq 10, bat2.send(:deal_attack, hero, plain_foe)[:damage], 'undoubled: 40 / 2 - 40 / 4 = 10'
+end
+
+check 'battle: a state that halves AGI drops a battler behind a slower one in turn order' do
+  states = { 4 => fake_state(affect_type: 0, affect_agility: true) }
+  fast = combatant('Fast', 0, 0, 20, 100)
+  slow = combatant('Slow', 0, 0, 15, 100)
+  bat = Game::Battle.new([fast], [slow], Game::Rng.new(1), states)
+  eq [fast, slow], bat.send(:turn_order), 'agi 20 > 15: the ally goes first as usual'
+
+  fast.states = [4] # halved to 10, now slower than the 15-agi foe
+  bat2 = Game::Battle.new([fast], [slow], Game::Rng.new(1), states)
+  eq [slow, fast], bat2.send(:turn_order), 'halved to 10 agi: now behind the foe'
+end
+
+check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
+  states = { 1 => fake_state(affect_type: 1, affect_attack: true) } # double
+  bomber = combatant('Bomber', 40, 0, 5, 1)
+  bomber.states = [1]
+  ally = combatant('Ally', 0, 0, 5, 100)
+  bat = Game::Battle.new([ally], [bomber], Game::Rng.new(1), states)
+  entry = bat.send(:enemy_autodestruct, bomber).first
+  eq 80, entry[:damage], 'doubled atk 80 - def 0 / 2 = 80'
 end
 
 # -- the state table's display side (Game::States) ----------------------------

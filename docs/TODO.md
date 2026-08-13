@@ -643,8 +643,25 @@ The work below is roughly ordered by the critical path to a walkable game
   deliberately undecoded, so a resumed real save starts counting from 0.
   mtf-meido-action's Poison (1 HP every 4 steps) is the only state in either test
   bed that carries the field, and `rpg2k_testbed_logic_check.rb` walks the real
-  party through the real interval against it. Still unread: `affect_type` stat
-  halving / doubling plus the RPG2003-only `avoid_attacks` / `reflect_magic`,
+  party through the real interval against it. **`affect_type` stat
+  halving/doubling is read now too**: a state's `affect_type` (0 halve / 1
+  double / 2 no change, the schema default) plus its four independent
+  `affect_attack` / `affect_defense` / `affect_spirit` / `affect_agility`
+  flags say which stat(s) it touches. `Battle#effective_atk` / `#effective_def`
+  / `#effective_spi` / `#effective_agi` (EasyRPG's `Game_Battler::AdjustParam`,
+  minus its battle-only stat-`mod` term, which this runtime has no equivalent
+  of) feed basic-attack and self-destruct damage, to-hit's agility term,
+  average agility (so escape chance answers it too) and turn order — so a
+  Weaken-style state that halves ATK now actually softens a hit, and two
+  states that cancel out (one halving, one doubling the same stat) net to no
+  change, exactly as `AdjustParam`'s own `dbl != half` guard reads. **Left
+  scoped out on purpose**: a battle Skill's power formula
+  (`Game::Party#skill_effect` / `#skill_defence_term`) still reads a
+  battler's plain `#atk` / `#def` / `#spi` directly rather than the
+  state-adjusted value — wiring that in needs the state-definitions table
+  threaded into `Game::Party`, which does not hold one today, so a basic
+  Attack answers a stat-affecting state correctly while a Skill does not yet.
+  Also still unread: the RPG2003-only `avoid_attacks` / `reflect_magic`,
   which no state in either test bed sets.
   **The ground drains it too** — RPG2000's 地形ダメージ, the 地形 row's `damage`
   field (ADR 0034). Stepping onto a tile whose terrain carries one takes that
