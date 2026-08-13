@@ -493,6 +493,41 @@ module Game
       true
     end
 
+    # The position to record for a Common Event Parallel Process that needs to
+    # resume here after a map load (see Game::State#common_event_progress),
+    # instead of restarting at the top -- or nil when the current position
+    # cannot be captured that way.
+    #
+    # @index always points at the next not-yet-executed command, whether or not
+    # we are currently #waiting? on it (a blocking command increments @index
+    # before raising its wait), so it is always a safe resume point on its
+    # own -- restoring it just means a resumed process skips replaying any
+    # remaining Wait duration rather than serving it again, which is the
+    # deliberate scope of what this captures. What it does *not* capture is a
+    # position inside a called list (@call_stack non-empty): unwinding that
+    # would need to re-resolve every pending caller frame (a common or map
+    # event id/page) from scratch, which nothing here tracks. A process
+    # captured mid-call simply keeps whatever position was last recorded before
+    # the call started (see Scene::Map#step_parallel, which only overwrites the
+    # stored checkpoint when this returns non-nil).
+    def resumable_index
+      return nil unless @running && @call_stack.empty?
+      return nil if @index <= 0 || @index >= @list.size
+      @index
+    end
+
+    # Start (or restart) at a previously #resumable_index-captured position
+    # instead of the top of the list. `commands` must be the same command list
+    # (or an equivalent rebuild of it, e.g. the same common event reloaded from
+    # the same database) the index was captured against -- like #start, this
+    # trusts its caller to be resuming the right process rather than validating
+    # it. An out-of-range index (a stale save against edited event data) falls
+    # back to the top, same as #start alone.
+    def start_at(commands, index)
+      start(commands)
+      @index = index if index && index > 0 && index < @list.size
+    end
+
     # Resume after a message/wait/teleport request has been handled.
     def resume
       # A stat command may have queued several level-up messages; show the next
