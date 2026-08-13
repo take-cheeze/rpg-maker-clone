@@ -873,6 +873,21 @@ class RPG2k
         @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
+      # Whether a message window or choice list (Show Message / Show Choices /
+      # an Input Number embedded in one) is currently on screen -- queried by
+      # the interpreter via map_info (see #event_position, #character_screen_
+      # position for the same pattern) so Show/Move/Erase Picture can suppress
+      # themselves per yado.tk: picture commands are fully suppressed while any
+      # message window or choice list is open, anywhere in the scene, *including*
+      # a still-running parallel process (#step_parallels keeps parallel
+      # processes advancing during a message window; see #parallels_paused?,
+      # which does *not* treat a message window as a pause condition -- this is
+      # the separate, narrower rule that does).
+      def message_window_open?
+        !!(@message || @number_input)
+      end
+      public :message_window_open?
+
       # Whether #step_parallels should sit this frame out. Per yado.tk, real
       # RPG_RT only pauses background parallel processes for the Menu screen
       # (already structural here -- Scene::Map#update simply is not called

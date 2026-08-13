@@ -2564,6 +2564,19 @@ module Game
       @waiting = true
     end
 
+    # Whether Show/Move/Erase Picture must no-op this call: per yado.tk, real
+    # RPG_RT fully suppresses all three picture commands while any message
+    # window or choice list is open, anywhere in the scene — including a
+    # picture command reached by an already-running parallel process while a
+    # *different* interpreter's message window sits on screen (parallel
+    # processes keep advancing during a message window, see
+    # Scene::Map#parallels_paused?; this is the narrower rule layered on top
+    # of that). Without a map_info hook (a headless interpreter, or a battle
+    # page) there is no message window to suppress against.
+    def picture_commands_suppressed?
+      @map_info.respond_to?(:message_window_open?) && @map_info.message_window_open?
+    end
+
     # Show Picture (11110): display picture param0 from the string file name at
     # the centre position param2/param3 (literal, or read from those variables
     # when the position-mode param1 is non-zero), at zoom param5 (%), transparency
@@ -2574,6 +2587,7 @@ module Game
     def do_show_picture(cmd)
       id = cmd.param(0)
       return if id <= 0
+      return if picture_commands_suppressed?
       @state.show_picture(id,
                           name: picture_name(cmd),
                           x: picture_coord(cmd, 2), y: picture_coord(cmd, 3),
@@ -2591,6 +2605,7 @@ module Game
     # and resumes us once none is moving. Same parameter layout as Show Picture,
     # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture).
     def do_move_picture(cmd)
+      return if picture_commands_suppressed?
       id = cmd.param(0)
       frames = cmd.param(14) * FRAMES_PER_TENTH
       @state.move_picture(id, picture_coord(cmd, 2), picture_coord(cmd, 3),
@@ -2605,6 +2620,7 @@ module Game
 
     # Erase Picture (11130): remove picture param0 from the screen.
     def do_erase_picture(cmd)
+      return if picture_commands_suppressed?
       @state.erase_picture(cmd.param(0))
     end
 

@@ -2127,8 +2127,8 @@ not yet verified:
   without reaching a wait). (Picture commands specifically *are* suppressed
   during a message window per several other pages, which is a narrower,
   separate rule from whether the parallel process's own non-picture commands
-  keep ticking, and is **not** addressed by this change — still open if not
-  covered elsewhere.)
+  keep ticking, and was **not** addressed by this change — now fixed
+  separately, see the "Pictures" bullet under "Full-site sweep" below.)
 - ✅ **Timer max 99:59 (5999s), clamped not wrapped when set higher via a
   variable.** `Game::Timer#set` (`mruby-rpg2k/mrblib/game.rb`) computed
   `@frames = seconds * FPS + (FPS - 1)` with no upper bound at all, and
@@ -2394,10 +2394,37 @@ not yet verified:
 - Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
   (multiply corroborated).
-- Picture commands (Show/Move/Erase) are **fully suppressed while any
+- ✅ **Picture commands (Show/Move/Erase) are now fully suppressed while any
   message window or choice list is open**, anywhere, including inside an
-  already-running parallel process — stated as an unconditional engine
-  limitation with no workaround.
+  already-running parallel process — an unconditional engine limitation with
+  no workaround. This was a real, reachable gap: `Game::Interpreter#
+  do_show_picture`/`#do_move_picture`/`#do_erase_picture` called straight
+  into `Game::State#show_picture`/`#move_picture`/`#erase_picture` with no
+  gating at all, and the sibling "parallel processes were paused too
+  broadly" fix above (`Scene::Map#step_parallels`/`#parallels_paused?`)
+  means a parallel process keeps executing commands — including these three
+  — while the foreground (or another interpreter) has a message window or
+  choice list open. Fixed with a new `Scene::Map#message_window_open?`
+  predicate (`!!(@message || @number_input)`, true for a plain message, a
+  choice list, and a standalone or embedded Input Number widget, all of
+  which set one of those two ivars) queried by the interpreter through the
+  existing `map_info` hook — the same `@map_info.respond_to?(:x) &&
+  @map_info.x` pattern `#event_operand`/`#screen_operand` already use for
+  `#event_position`/`#character_screen_position` — so a headless interpreter
+  (no `map_info`, or a battle page) is unaffected. All three picture
+  commands now return immediately when it answers true; a suppressed Move
+  Picture's wait flag is not honoured either (nothing moved, so there is
+  nothing to wait for), matching "no workaround". Covered by four new
+  `scripts/rpg2k_scene_check.rb` checks, confirmed to fail against the
+  pre-fix code: a direct interpreter poke while its own message window is
+  open, the same poke against an open choice list, and a full scene
+  simulation proving a parallel process's Show/Move/Erase Picture attempts
+  are dropped while a message window (opened via `#open_message`, sidestepping
+  the `#step_parallels`-before-`#start_autostart` ordering that would
+  otherwise let the parallel process's first lap land before the window is
+  actually open) is up and take effect on the very next lap once it closes —
+  while confirming the same process's non-picture commands (`Control
+  Variables`) keep advancing throughout, so the sibling fix stays intact.
 - Re-issuing **Show Picture** every tick (rather than reusing an
   already-shown picture via Move Picture) is expensive enough to cause
   real frame drops; Move Picture, even at 0.0s duration, is cheap and can
