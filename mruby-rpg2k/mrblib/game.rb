@@ -6458,15 +6458,26 @@ module Game
       @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
     end
 
-    # Battlers ordered by agility (highest first, ties keeping their listed
-    # order) -- except a battler whose round is about to be a basic Attack
-    # with a `preemptive` weapon equipped sorts before everyone else
-    # (EasyRPG's `CreateExecutionOrder` adding 9999 to such a battler's
-    # computed order, which in practice always outruns ordinary agility).
-    # Ties between two preemptive battlers still fall back to agility.
+    # Battlers ordered by agility (highest first) -- except a battler whose
+    # round is about to be a basic Attack with a `preemptive` weapon equipped
+    # sorts before everyone else (EasyRPG's `CreateExecutionOrder` adding
+    # 9999 to such a battler's computed order, which in practice always
+    # outruns ordinary agility). Ties between two preemptive battlers still
+    # fall back to agility. On an agility tie, an ally always acts before an
+    # enemy (whether `Combatant#actor` is set ranks 0 below an unset one's 1,
+    # independent of either's magnitude, rather than relying on array
+    # position happening to list every ally before every enemy); among tied
+    # allies specifically, the
+    # **lower actor id** acts first -- not party seat/join order, which can
+    # diverge from id order once a member has left and rejoined in a
+    # different slot (`Game::Party#add_actor` appends to `@actors` in join
+    # order, not id order -- see the "seat order" note on `Party#actors`).
+    # An enemy tie has no documented ordering rule, so it keeps its troop
+    # (definition) order via `i`, same as before.
     def turn_order
       (@allies + @enemies).reject(&:out_of_play?).each_with_index
-                          .sort_by { |b, i| [preemptive_boost?(b) ? 0 : 1, -effective_agi(b), i] }
+                          .sort_by { |b, i| [preemptive_boost?(b) ? 0 : 1, -effective_agi(b),
+                                              b.actor ? 0 : 1, b.actor ? b.actor.id : i] }
                           .map { |b, _| b }
     end
 
