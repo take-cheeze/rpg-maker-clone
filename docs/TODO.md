@@ -2549,8 +2549,23 @@ not yet verified:
   parameters, and it always starts playback from the top. Implementing
   this half would need a new native backend primitive (e.g. an
   `Mix_VolumeMusic`-style setter) that does not exist today.
-- SE is truly polyphonic (unlike BGM); SE "OFF" stops all playing SEs at
-  once; SE never loops natively.
+- SE is truly polyphonic (unlike BGM); ✅ **SE "OFF" now stops all playing
+  SEs at once**, instead of silently doing nothing. `Game::Interpreter
+  #play_audio` (`mruby-rpg2k/mrblib/interpreter.rb`) returned immediately on
+  a blank filename for both Play BGM and Play SE alike, which is correct for
+  a blank Play BGM (nothing establishes RPG_RT treats that as anything but a
+  no-op) but wrong for Play SE: the editor's "(OFF)" choice is encoded the
+  same way, as an empty filename, and since SE is truly polyphonic (no
+  single "current" track the way BGM has one), a blank Play SE genuinely
+  halts every in-flight sound effect rather than leaving one alone. The
+  blank-name branch now calls `RGSS::Audio.se_stop` (already defined as an
+  `Audio` module wrapper in `mruby-rgss`, previously unused from this
+  codebase) when the command is a Play SE; Play BGM's own blank-name case is
+  untouched. Covered by two new `scripts/rpg2k_logic_check.rb` checks (a
+  blank-name Play SE reaches the stop-all backend call and plays nothing; an
+  ordinary named Play SE still plays normally, not a stop-all), confirmed to
+  fail against the pre-fix code before the fix. SE never loops natively
+  (unverified, separate claim).
 - SE files must be WAVE; BGM accepts MIDI/WAVE/MP3 — an asymmetric format
   restriction.
 

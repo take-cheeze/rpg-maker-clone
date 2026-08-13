@@ -2867,7 +2867,18 @@ module Game
 
     def play_audio(kind, cmd)
       name = cmd.string
-      return if name.nil? || name.empty?
+      if name.nil? || name.empty?
+        # Selecting "(OFF)" for the SE field (an empty string, same encoding
+        # as any other blank filename) is not a no-op like a blank BGM field
+        # is: real RPG_RT stops every currently-playing sound effect at once
+        # (SE is truly polyphonic, unlike the single-channel BGM slot, so
+        # there is no single "current" track for an empty name to leave
+        # alone the way Play BGM does — yado.tk). Play BGM's own blank-name
+        # case stays an untouched no-op; nothing here establishes RPG_RT
+        # treats a blank Play BGM the same way, so that stays unaddressed.
+        RGSS::Audio.se_stop if kind == :se
+        return
+      end
       if kind == :bgm
         # PlayBGM parameters: [fade_in, volume, tempo, balance]. Volume/tempo
         # default to 100 when the command carries a shorter list.

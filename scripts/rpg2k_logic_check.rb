@@ -24,6 +24,7 @@ module RGSS
       def bgm_play(*a); (@log ||= []) << [:bgm, *a]; end
       def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
+      def se_stop(*a);  (@log ||= []) << [:se_stop, *a]; end
     end
   end
   def self.warn_stub(*); end
@@ -2217,6 +2218,26 @@ check 'Play BGM with a different file still restarts (or starts) playback' do
   it.update
   names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
   eq %w[town field], names, 'a different file always reaches the backend'
+end
+
+# -- Play SE "(OFF)" ----------------------------------------------------------
+
+check 'Play SE with a blank name (the editor\'s "(OFF)" choice) stops every SE' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: '')])
+  it.update
+  eq [[:se_stop]], RGSS::Audio.log, 'the SE-stop-all backend call ran, and no SE played'
+end
+
+check 'Play SE with a real file name plays it, not a stop-all' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: 'cursor')])
+  it.update
+  eq [[:se, 'cursor', 80, 100]], RGSS::Audio.log
 end
 
 # -- actor HP / MP commands ---------------------------------------------------
