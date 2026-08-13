@@ -6221,6 +6221,19 @@ check 'Scene::Map: a pending teleport queued by the field skill menu is applied'
   ok state.pending_teleport.nil?, 'the request is consumed, not reapplied every frame'
 end
 
+check 'a Teleport/Escape field skill warp does not clear shown pictures' do
+  # Unlike the Transfer Player event command ('a teleport clears every shown
+  # picture' above), yado.tk documents the Teleport/Escape field skill's own
+  # warp as a deliberate exception -- pictures survive it.
+  scene = new_scene({}, player: [0, 0])
+  state = scene.instance_variable_get(:@state)
+  state.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  state.pending_teleport = [1, 3, 4, 6] # same map id, elsewhere on it, facing left
+  scene.update
+  eq 1, state.map_id, 'teleported'
+  ok state.pictures.key?(1), 'the picture survived the field-skill warp'
+end
+
 # One map-tree node's save/teleport/escape tri-states (parent_map_id left nil
 # -- MapAccess#allowed? reads a missing one as 0, the tree root). Mirrors
 # scripts/rpg2k_logic_check.rb's own fixture of the same name; reused here to

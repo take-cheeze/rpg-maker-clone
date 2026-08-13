@@ -2430,7 +2430,22 @@ not yet verified:
   characters always draw below all pictures" as its own assertion.
 - Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
-  (multiply corroborated).
+  (multiply corroborated). ✅ **The Teleport/Escape skill/item half of this
+  is now implemented.** `Scene::Map#perform_teleport` (the one method both
+  an ordinary map change and a Teleport/Escape field skill's warp route
+  through — the latter via `@state.pending_teleport`, queued by
+  `Game::Party#cast_teleport_skill`/`#cast_escape_skill` and applied in
+  `Scene::Map#update`, see the "a pending teleport queued by the field
+  skill menu is applied" check) called `@state.erase_all_pictures`
+  unconditionally, so a Teleport/Escape warp wrongly dropped the party's
+  pictures the same way an ordinary Transfer Player does. `perform_teleport`
+  now takes a `keep_pictures:` keyword, `false` by default (the interpreter's
+  own `:teleport` wait — Transfer Player, Recall to Location — still clears
+  pictures, matching the already-covered "a teleport clears every shown
+  picture" check) and `true` at the `pending_teleport` call site. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check ("a Teleport/Escape field skill
+  warp does not clear shown pictures"), confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **Picture commands (Show/Move/Erase) are now fully suppressed while any
   message window or choice list is open**, anywhere, including inside an
   already-running parallel process — an unconditional engine limitation with
