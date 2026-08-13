@@ -513,8 +513,8 @@ module Game
     # Chip index into the lower passability table for a lower-layer tile id.
     def self.lower_index(tile_id)
       return nil if tile_id.nil?
-      if tile_id >= 10000 then 18 + (tile_id - 10000)
-      elsif tile_id >= 5000 then 6 + (tile_id - 5000) / 50
+      if tile_id >= 5000 then 18 + (tile_id - 5000)
+      elsif tile_id >= 4000 then 6 + (tile_id - 4000) / 50
       elsif tile_id >= 3000 then 3 + (tile_id - 3000) / 50
       else tile_id / 1000
       end
