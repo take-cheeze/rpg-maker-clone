@@ -4249,7 +4249,44 @@ codebase yet):
   stat; a partial raise that doesn't cross back over 1 stays floored; a
   further raise that does cross back over unclamps to the real total; an
   ordinary never-clamped sequence is unaffected), confirmed to fail against
-  the pre-fix code before the fix. ✅ **"Party wipe" for game-over purposes is now "every
+  the pre-fix code before the fix.
+  ✅ **The save/load gap flagged above is closed too: `@base_raw` now
+  survives Continue.** `Party#to_h` simply never wrote `@base`/`@base_raw`
+  into `actor_meta` at all, and `Continue` always rebuilds the whole roster
+  as fresh `Actor` objects (`Game::State.load` → a new `Game::Party`, whose
+  actors are seeded by `Actor#initialize` from the database's own
+  `initial_level`) — so a Change Parameters edit had nowhere to land on the
+  new objects even before `#load_state` touches them, unconditionally, not
+  just for the out-of-clamp-range case the paragraph above measured. It is
+  also actively overwritten in the common case: `#load_state` restores the
+  level from saved EXP through `#set_exp`, which calls `#set_level`
+  whenever the computed level differs from the fresh object's own — one of
+  the four places (alongside `#change_class`'s three branches) that
+  deliberately re-seeds `@base`/`@base_raw` from the level-derived
+  growth-curve baseline on the reasoning that a level-up establishes a
+  fresh one, correct for a genuine level-up but firing on essentially every
+  real Continue too, since almost any save has gained EXP since the fresh
+  object's own starting level. `Party#to_h` now writes each roster actor's
+  `base_raw` (the same array `#change_param` accumulates onto) into
+  `actor_meta` alongside the existing name/title/sprite overrides, and
+  `load_state` calls a new `Actor#restore_base` right after `#set_exp` —
+  deliberately after, since `#set_exp` is what does the re-seeding that
+  needs undoing — which re-applies the saved unclamped total and re-derives
+  the clamped `@base` from it with the identical clamp `#change_param`
+  itself uses (now shared as `#base_param_limit`), then calls
+  `#recompute_stats` so the restored total's effective stats (and,
+  transitively, the max HP/MP the next line's saved `hp`/`mp` clamp
+  against) are current before they load. A save written before `base_raw`
+  existed simply has no `m[:base_raw]` and the actor keeps the
+  level-derived baseline, unchanged from before this fix. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a Change Parameters adjustment —
+  including one still resting on the unclamped floor from a bigger drop —
+  round-trips through `Party#to_h` / `#load_state` into a fresh `Party`
+  unchanged, both effective stat and the hidden shadow total, while a party
+  with no such adjustment round-trips unaffected), confirmed to fail
+  against the pre-fix code (the restored actor's stats reverted to the
+  level-derived baseline) before the fix.
+  ✅ **"Party wipe" for game-over purposes is now "every
   member is both unable to act and does not recover naturally," not
   literally "every member's HP is 0"** — why Stone status can wipe a party
   without zeroing anyone's HP. `Game::Battle#alive?` (`mruby-rpg2k/mrblib/
