@@ -2090,8 +2090,9 @@ not yet verified:
   bundled with this bullet (battle damage cap, HP recovery cap, switch/
   variable caps and ranges, recursion ceiling, party/stack/picture caps, move
   speed, transparency steps) remain unverified — see below.
-- **Numeric constants worth asserting directly**: battle damage hard-cap
-  under 1000; special-skill HP recovery cap 999; switches/variables cap
+- **Numeric constants worth asserting directly**: special-skill HP
+  recovery cap 999 (battle damage's own hard-cap under 1000 is now ✅
+  above); switches/variables cap
   at 5000 (expandable), variable value range −999999..999999 in RPG2000 vs
   7-digit in RPG2003 (already partially modelled per `LCF::MODE`, worth
   checking the variable-write clamp specifically); Call Event / Event Call
@@ -2460,8 +2461,32 @@ not yet verified:
   never after the battle ends. Covered by a new `scripts/rpg2k_scene_check.rb`
   check (an enemy-HP-conditioned page firing before the round settles back to
   `:command`), confirmed to fail against the pre-fix code.
-- Damage is hard-capped below 1000 by engine spec; special-skill HP
-  recovery is capped at 999 per use; item drop rate has a 1% floor.
+- ✅ **Damage is hard-capped below 1000 (999) by engine spec.** RPG_RT's
+  battle damage popup is a fixed three digits, so no single hit — however
+  the underlying ATK/DEF/attribute/variance math computes it — can ever
+  apply more than 999 to a target's HP in one go. `Game::Battle`
+  (`mruby-rpg2k/mrblib/game.rb`) had no such ceiling anywhere on its damage
+  path: a normal attack (`#deal_attack`, including a critical's ×3 or a
+  charged hit's ×2), an attack skill/item (`#apply_skill_hit`'s negative-HP
+  branch, both single- and all-target), an enemy's self-destruct
+  (`#enemy_autodestruct`), and per-turn state slip damage
+  (`#apply_turn_states`) all subtracted whatever they computed straight from
+  `target.hp` with no upper bound — a high enough ATK/attack-power stat
+  could one-shot for thousands, something the original engine's fixed-width
+  damage display could never even show. Fixed by adding
+  `Game::Battle::DAMAGE_CAP = 999` and clamping the final per-hit damage
+  value (after variance/attribute scaling and the crit/charge/defend
+  multipliers, so the *displayed* number is what's capped) at each of the
+  four sites above, right before it's subtracted from HP. Special-skill HP
+  recovery's own 999-per-use cap and the item drop rate's 1% floor —
+  bundled into this same bullet originally — are separate, still-unverified
+  facts and remain open (see the "Numeric constants worth asserting
+  directly" bullet above, which has had "battle damage hard-cap under 1000"
+  removed now that it's covered here).
+  Regression coverage added to `scripts/rpg2k_logic_check.rb`: a
+  high-ATK, always-critical normal attack against a defenceless target
+  clamps at 999 rather than the uncapped 6000 (2000 base × 3 crit), and an
+  attack skill computing a raw 5000 HP hit likewise clamps at 999.
 - Turn-order tie-break on equal Agility: hero acts before an equal-agility
   enemy; among tied heroes, lower actor ID acts first.
 - The party "exhaustion %" battle-event condition is computed as
@@ -2475,21 +2500,35 @@ not yet verified:
   state, then rolls RNG against those weights. A turn-condition shorthand
   like "3×?+5" means: first candidate on turn 5, then every 3 turns
   after.
-- ✅ **Enemy HP-increase cannot revive a downed (0 HP) enemy, and healing a
-  knocked-out ally's HP likewise does not clear the KO/death state.** The
-  actor/field half was already correct: `Game::Actor#change_hp` returns
-  early with `return @hp if dead?`, so no HP change (heal or further
-  damage) touches a downed party member until Change State or Full
-  Recovery clears the death state. The enemy/battle half was the gap —
-  `Game::Interpreter#do_change_monster_hp` (Change Monster HP, code
-  13110) applied its delta straight to the `Game::Battle::Combatant`
-  with no such guard, so a positive amount on a 0 HP enemy (`dead?` is
-  `hp <= 0` for a Combatant) unconditionally raised it back above 0,
-  silently reviving it. Fixed by making a positive amount a no-op once
-  the target is already dead, mirroring `Actor#change_hp`; a further
-  (negative) hit on an already-dead enemy is untouched by the guard and
-  simply re-clamps to the command's existing lethal-flag floor as
-  before.
+- ✅ **An HP-increase cannot revive a downed (0 HP) combatant**, checked
+  across all three paths that can raise HP. The **field actor** path
+  (`Game::Actor#change_hp`, `mruby-rpg2k/mrblib/game.rb`) was already
+  correct: it returns early with `return @hp if dead?`, so no HP change
+  (heal or further damage) touches a downed party member until Change
+  State or Full Recovery clears the death state. The **enemy/battle-event**
+  path was the actual gap: `Game::Interpreter#do_change_monster_hp` (Change
+  Monster HP, code 13110, `mruby-rpg2k/mrblib/interpreter.rb`) applied its
+  delta straight to the `Game::Battle::Combatant` with no such guard, so a
+  positive amount on a 0 HP enemy (`dead?` is `hp <= 0` for a Combatant)
+  unconditionally raised it back above 0, silently reviving it — fixed by
+  making a positive amount a no-op once the target is already dead,
+  mirroring `Actor#change_hp`; a further (negative) hit on an already-dead
+  enemy is untouched by the guard and simply re-clamps to the command's
+  existing lethal-flag floor as before. The **in-battle Skill/Item
+  command** path (a heal spell/item cast mid-fight) was checked too and
+  found already correct: `Game::Battle#apply_command` / `#apply_command_all`
+  gate every Skill/Item command — single- and all-target alike — on
+  `target.dead?` *before* ever calling `#apply_skill_hit`, so a command
+  aimed at a downed combatant fizzles outright (no SP spent, no log entry,
+  HP untouched) rather than reaching the HP-raising branch at all. An
+  explicit state-cure (Full Recovery, a revive item/skill) remains the only
+  modelled way to stand a downed combatant back up, writing HP directly
+  rather than through any of these three paths. Regression coverage in
+  `scripts/rpg2k_logic_check.rb`: the Change Monster HP fix is confirmed to
+  fail against its pre-fix code, and an all-ally heal aimed at both a downed
+  member and a wounded one confirms the Skill/Item path skips the downed
+  member entirely while still healing the wounded member normally (true
+  both before and after, since that path was never broken).
 - Damage Processing (the raw event command) uses a **different formula**
   from the built-in normal attack: normal attack = `(ATK÷2) − (DEF÷4)`,
   but this command computes `AttackPower − (DEF÷4)` with **no automatic

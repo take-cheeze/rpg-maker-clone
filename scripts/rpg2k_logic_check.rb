@@ -5886,6 +5886,21 @@ check 'battle: a zero crit_chance never criticals even with criticals on' do
   ok !e[:critical]
 end
 
+# RPG_RT's damage popup is a fixed three digits, so a single hit can never
+# apply more than 999 -- even an absurdly high-ATK critical against a
+# defenceless target (Game::Battle::DAMAGE_CAP).
+check 'battle: a normal-attack critical hard-caps damage at 999' do
+  hero = combatant('Hero', 4000, 0, 20, 100)         # base 2000, uncapped x3 crit = 6000
+  hero.crit_chance = Game::CRIT_SCALE                # always crits
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
+  bat.begin_round
+  e = bat.step_action
+  eq true, e[:critical]
+  eq 999, e[:damage], 'capped, not the uncapped 6000 (2000 base x3 crit)'
+  eq 100_000 - 999, slime.hp
+end
+
 # A party whose actors carry their own critical-hit rate, for the weapon-bonus
 # checks: the hero crits 1-in-30 (RPG2000's own default), the ally never does.
 def crit_party(items)
@@ -6966,6 +6981,39 @@ check 'Battle command_skill resolves an attack skill: damage lands, SP is spent'
   eq 70, foe.hp
   eq 4, mage.mp, 'the caster paid 6 SP'
   ok e[:skill] && !e[:recover], 'an attack skill reads as an attack, not a recovery'
+end
+
+check 'Battle command_skill: an attack skill also hard-caps at 999' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  foe  = combatant('Foe', 0, 0, 5, 100_000)
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'Meteor', cost: 10, hp: -5000)
+  b.begin_round
+  e = b.step_action
+  eq 999, e[:damage], 'capped, not the uncapped 5000'
+  eq 100_000 - 999, foe.hp
+end
+
+check 'battle: an all-ally heal skips a downed member but still heals the wounded' do
+  # Mirrors Game::Actor#change_hp's `return @hp if dead?` guard on the field: a
+  # downed (0 HP) Combatant is filtered out before #apply_skill_hit's HP-raising
+  # branch ever runs, so a heal cannot silently revive it -- only an explicit
+  # state-cure (not modelled by a plain recovery command) stands it back up.
+  healer = combatant_mp('Healer', 0, 0, 20, 100, 10)
+  downed = combatant('Downed', 0, 0, 5, 50)
+  downed.hp = 0
+  wounded = combatant('Wounded', 0, 0, 4, 50)
+  wounded.hp = 20
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([healer, downed, wounded], [foe], Game::Rng.new(1))
+  b.command_skill_all(healer, [{ target: downed, hp: 40 }, { target: wounded, hp: 40 }],
+                      name: 'Heal All', cost: 6)
+  b.begin_round
+  e = b.step_action
+  eq 'Wounded', e[:target], 'the downed member is skipped entirely, not merely left at 0'
+  eq 50, wounded.hp, 'clamped to max HP (20 + 40 -> 50): no regression on a live target'
+  eq 0, downed.hp, 'still 0 -- a heal cannot revive it'
+  eq 4, healer.mp, 'SP is spent since the volley still landed on the wounded ally'
 end
 
 check 'Battle command_skill resolves a heal, clamped to max HP' do
