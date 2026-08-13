@@ -2314,14 +2314,28 @@ not yet verified:
   the running effect.
 
 **BGM / SE**
-- BGM has a **single channel** — a new Play BGM force-stops whatever's
+- 🚧 BGM has a **single channel** — a new Play BGM force-stops whatever's
   playing; re-triggering the exact same file that's already playing does
   **not** restart it (applies new vol/tempo/pan without a break); field
   and battle BGM sharing the same file continue seamlessly across the
   transition. Memorize/Play-Memorized BGM only remembers the *filename*,
   never playback position — replaying always restarts from the top, and
   uses the vol/tempo/pan settings active **at memorize time**, not replay
-  time.
+  time. **The no-restart half is now implemented**:
+  `Game::Interpreter#play_audio`'s `:bgm` branch (`mruby-rpg2k/mrblib/
+  interpreter.rb`) compares the command's filename against
+  `@state.current_bgm[:name]` and skips the `RGSS::Audio.bgm_play` call
+  (and the `bgm_looped` reset) when they match, so a same-file re-trigger
+  leaves the still-playing track alone. `@state.current_bgm` is still
+  updated unconditionally to the command's latest vol/tempo, so Memorize
+  BGM continues to stash whatever was most recently requested. **The
+  vol/tempo/pan-without-restart half is not addressed**: this build's
+  `RGSS::Audio` exposes no primitive to adjust an already-playing BGM's
+  volume, pitch, or pan in place — `bgm_play` (`mruby-rgss/src/audio.cxx`,
+  backed by `SDL_mixer`) is the only entry point that takes those
+  parameters, and it always starts playback from the top. Implementing
+  this half would need a new native backend primitive (e.g. an
+  `Mix_VolumeMusic`-style setter) that does not exist today.
 - SE is truly polyphonic (unlike BGM); SE "OFF" stops all playing SEs at
   once; SE never loops natively.
 - SE files must be WAVE; BGM accepts MIDI/WAVE/MP3 — an asymmetric format
