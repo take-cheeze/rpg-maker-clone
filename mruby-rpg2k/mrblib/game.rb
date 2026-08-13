@@ -1062,6 +1062,9 @@ module Game
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
     attr_reader :id, :level, :exp, :charset_name, :charset_index
+    # The actor's default FaceSet portrait (chunk 15/16), shown by the Enter
+    # Hero Name screen and, once a message picks it explicitly, by Show Text.
+    attr_reader :face_name, :face_index
     attr_accessor :hp, :mp
     # Name and title (the status-screen subtitle) are mutable via the Change
     # Actor Name / Title event commands. `transparent` hides the actor's map
@@ -1109,6 +1112,8 @@ module Game
       @title = a.respond_to?(:title) ? (a.title || '') : ''
       @charset_name = a.charset_name
       @charset_index = a.charset_index
+      @face_name = a.faceset_name || ''
+      @face_index = a.faceset_index || 0
       @transparent = a.respond_to?(:semi_transparent) ? (a.semi_transparent ? true : false) : false
       @db_row = a
       set_class_id(a.respond_to?(:class_id) ? (a.class_id || 0) : 0)

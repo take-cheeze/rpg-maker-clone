@@ -2117,7 +2117,10 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # construction keeps working with it defaulting nil.
                            :double_hand,
                            # 装備固定 -- Actor#equipment_fixed?. Same reasoning.
-                           :equipment_fixed)
+                           :equipment_fixed,
+                           # The actor's default FaceSet portrait (Enter Hero
+                           # Name's face box). Same reasoning: appended last.
+                           :faceset_name, :faceset_index)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -5024,12 +5027,15 @@ end
 # independent status hash or a full per-level stat curve (int16_values(31)).
 class ExpRow
   attr_reader :name, :charset_name, :charset_index, :initial_level, :max_level,
-              :status, :exp_basic, :exp_increase, :exp_correction
+              :status, :exp_basic, :exp_increase, :exp_correction,
+              :faceset_name, :faceset_index
   def initialize(initial_level: 1, max_level: 10, exp_basic: 100,
                  exp_increase: 0, exp_correction: 0, status: nil, curve: nil)
     @name = 'Hero'
     @charset_name = ''
     @charset_index = 0
+    @faceset_name = ''
+    @faceset_index = 0
     @initial_level = initial_level
     @max_level = max_level
     @exp_basic = exp_basic

@@ -3220,6 +3220,176 @@ check 'Enter Hero Name: the character grid cursor wraps around' do
   eq 66, ui[:sel], 'Up from row 0 wraps to row 5, column 10 % 3 == 1'
 end
 
+check 'Enter Hero Name: hiragana/katakana grid opens on the requested page, seeded' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 1, 1], indent: 0), # actor 1, katakana, seeded
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  ok ui[:kana], 'opens the kana widget, not the letters grid'
+  eq :katakana, ui[:page], 'charset 1 opens on the katakana page'
+  eq 'Hero', ui[:name], 'seeded with the actor current name'
+  eq 0, ui[:sel], 'cursor starts on the first cell'
+end
+
+check 'Enter Hero Name: typing a kana and confirming renames the actor' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0), # actor 1, hiragana, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  eq 'あ', rows[0][0], 'the first cell is あ'
+
+  # The cursor starts on あ; C types it.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'あ', ui[:name], 'confirming the first cell types あ'
+
+  # Jump the cursor to the confirm cell (last row, last logical column) and
+  # confirm to commit.
+  last_row = rows.length - 1
+  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+  eq :confirm, rows[last_row][rows[last_row].length - 1], 'landed on the confirm cell'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'あ', st.party.actor_by_id(1).name, 'the actor was renamed on confirm'
+  eq nil, scene.instance_variable_get(:@name_ui), 'the widget closed'
+  3.times { scene.update }
+  ok st.switches[5], 'the event resumed after entry'
+end
+
+check 'Enter Hero Name: the toggle cell swaps the hiragana/katakana page' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq :hiragana, ui[:page], 'opens hiragana (charset 0)'
+
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  last_row = rows.length - 1
+  toggle_col = rows[last_row].index(:toggle)
+  ui[:sel] = last_row * cols + toggle_col
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :katakana, ui[:page], 'toggling from hiragana switches to katakana'
+  ok scene.instance_variable_get(:@name_ui), 'the widget stays open after toggling'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :hiragana, ui[:page], 'toggling again switches back to hiragana'
+end
+
+check 'Enter Hero Name: the kana field stops at NAME_KANA_MAX characters' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  max = RPG2k::Scene::Map::NAME_KANA_MAX
+  eq 6, max, 'RPG2000 default name length is 6 kana'
+  (max + 2).times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  eq max, ui[:name].length, 'typing past the limit stops adding characters'
+end
+
+check 'Enter Hero Name: the kana grid cursor wraps around' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  eq 10, cols
+  eq 9, rows.length, '8 full rows plus a ragged last row'
+  eq 8, rows.last.length, '6 kana plus the double-width toggle/confirm cells'
+
+  # Row-local wrap: Right past the end of a full (10-cell) row wraps to that
+  # same row's start.
+  ui[:sel] = 9 # row 0, col 9 (last cell of row 0)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 0, ui[:sel], 'Right from the last cell of row 0 wraps to its first cell'
+
+  # ...and respects the ragged last row's narrower width (8 cells).
+  last_row = rows.length - 1
+  ui[:sel] = last_row * cols + (rows[last_row].length - 1) # the confirm cell
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = []
+  eq last_row * cols, ui[:sel], 'Right from the last cell of the ragged row wraps to its own first cell'
+
+  # Column wrap: Down from the last row wraps to row 0, keeping the column.
+  ui[:sel] = last_row * cols + 1
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 1, ui[:sel], 'Down from the last row wraps to row 0, same column (1)'
+
+  # Up from row 0 wraps to the last row, column clamped modulo its narrower
+  # width (col 9 in a 10-wide row becomes col 1 of the 8-wide last row).
+  ui[:sel] = 9
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.triggered = []
+  eq last_row * cols + 1, ui[:sel], 'Up from row 0 wraps to the last row, column 9 % 8 == 1'
+end
+
 # A party whose actor levels up on demand, for the level-up-message check.
 class LevelStubActor
   attr_reader :name, :id

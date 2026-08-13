@@ -4311,11 +4311,20 @@ class RPG2k
       end
 
       # -- Enter Hero Name (name-entry widget) --------------------------------
+      #
+      # RPG2000's own screen offers three character sets, chosen by the
+      # command's "initial character type" parameter: hiragana (0), katakana
+      # (1) or, for English-patched games, the Latin alphabet (2). The
+      # hiragana/katakana pages share one gojuuon grid with a face portrait
+      # and a name-so-far field above it (#draw_kana_name_input and friends);
+      # the alphabet page keeps the flat Latin/digit grid this widget always
+      # had (#draw_name_input and friends) — RPG_RT never lets the two mix,
+      # so neither does this build.
+
+      # -- Letters page (charset 2) --------------------------------------
 
       # The selectable cells: the character set, then two control cells — BS
-      # (backspace) and OK (confirm). RPG2000's own screen also offers hiragana /
-      # katakana / symbol pages; this build enters the Latin letters, digits and a
-      # few punctuation marks (the kana pages are a later refinement).
+      # (backspace) and OK (confirm).
       NAME_CHARS = (('A'..'Z').to_a + ('a'..'z').to_a + ('0'..'9').to_a +
                     [' ', '-', "'", '.']).freeze
       NAME_CELLS = (NAME_CHARS + %w[BS OK]).freeze
@@ -4324,20 +4333,75 @@ class RPG2k
       NAME_CELL_W = 14
       NAME_CELL_H = 14
 
-      # Drive the name-entry screen shown during a :name_input wait. It opens a
-      # character grid (seeded with the actor's current name when the command asked
-      # for it); arrows move the cursor, C types the highlighted character or acts
-      # on BS / OK, and B backspaces. Confirming on OK commits the name to the
-      # actor and resumes the event.
+      # -- Kana pages (charset 0 hiragana / 1 katakana) --------------------
+
+      # RPG2000's fixed gojuuon layout: eight full rows of the plain kana
+      # beside their voiced (゛) / semi-voiced (゜) column, small kana and the
+      # long-vowel mark, then a symbol row, and a final row of six kana plus
+      # the page-toggle and confirm cells (each drawn two columns wide, so the
+      # last row fills the same 10 columns as the rows above it).
+      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ゔ] + %i[toggle confirm]).freeze
+      NAME_KANA_LAST_KATAKANA = (%w[ラ リ ル レ ロ ヴ] + %i[toggle confirm]).freeze
+      NAME_HIRAGANA_ROWS = [
+        %w[あ い う え お が ぎ ぐ げ ご],
+        %w[か き く け こ ざ じ ず ぜ ぞ],
+        %w[さ し す せ そ だ ぢ づ で ど],
+        %w[た ち つ て と ば び ぶ べ ぼ],
+        %w[な に ぬ ね の ぱ ぴ ぷ ぺ ぽ],
+        %w[は ひ ふ へ ほ ぁ ぃ ぅ ぇ ぉ],
+        %w[ま み む め も ゃ ゅ ょ っ ー],
+        %w[や ゆ よ わ ん ー 〜 ・ ＝ ★],
+        NAME_KANA_LAST_HIRAGANA
+      ].freeze
+      NAME_KATAKANA_ROWS = [
+        %w[ア イ ウ エ オ ガ ギ グ ゲ ゴ],
+        %w[カ キ ク ケ コ ザ ジ ズ ゼ ゾ],
+        %w[サ シ ス セ ソ ダ ヂ ヅ デ ド],
+        %w[タ チ ツ テ ト バ ビ ブ ベ ボ],
+        %w[ナ ニ ヌ ネ ノ パ ピ プ ペ ポ],
+        %w[ハ ヒ フ ヘ ホ ァ ィ ゥ ェ ォ],
+        %w[マ ミ ム メ モ ャ ュ ョ ッ ー],
+        %w[ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ★],
+        NAME_KANA_LAST_KATAKANA
+      ].freeze
+      NAME_KANA_COLS = 10
+      NAME_KANA_CELL_W = 28
+      NAME_KANA_CELL_H = 16
+      NAME_KANA_MAX = 6 # RPG2000's default name length, one kana per slot
+
+      # Layout, measured in screen pixels: a face box and a name-so-far box
+      # share a top row, a gojuuon grid fills the rest of the screen below
+      # them, and the whole group is centred with the same left/right edges
+      # top and bottom (296px wide: 10 * NAME_KANA_CELL_W + Window::BORDER*2).
+      NAME_TOP_X = 12
+      NAME_TOP_Y = 8
+      NAME_TOP_GAP = 8
+      NAME_FACE_WIN = 64 # FACE_SIZE (48) + Window::BORDER (8) * 2
+      NAME_GRID_W = 296  # NAME_KANA_COLS * NAME_KANA_CELL_W (280) + 16
+      NAME_GRID_H = 160  # 9 rows * NAME_KANA_CELL_H (144) + 16
+      NAME_GRID_Y = 80   # NAME_TOP_Y + NAME_FACE_WIN + NAME_TOP_GAP
+
+      # Drive the name-entry screen shown during a :name_input wait. Charset 2
+      # (Latin alphabet) opens the flat letters grid; charsets 0 and 1 open the
+      # kana grid on the matching page. Either way the widget is seeded with
+      # the actor's current name when the command asked for it, and commits to
+      # the actor and resumes the event when confirmed.
       def drive_name_input
         req = @interpreter.name_input_request
         return @interpreter.resume_name_input('') unless req
         if @name_ui.nil?
-          @name_ui = { name: req[:seed] || '', sel: 0, win: nil }
-          draw_name_input
+          if req[:charset] == 2
+            @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false }
+            draw_name_input
+          else
+            @name_ui = { name: req[:seed] || '', sel: 0, kana: true,
+                         page: req[:charset] == 1 ? :katakana : :hiragana,
+                         actor_id: req[:actor_id] }
+            draw_kana_name_input
+          end
           return
         end
-        handle_name_input
+        @name_ui[:kana] ? handle_kana_name_input : handle_name_input
       end
 
       # Cell count in `row` (0-indexed): a full NAME_COLS for every row except
@@ -4387,7 +4451,7 @@ class RPG2k
 
       def name_input_backspace
         @name_ui[:name] = @name_ui[:name].chop
-        draw_name_input
+        @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
 
       def commit_name_input
@@ -4423,9 +4487,169 @@ class RPG2k
         ui[:win] = win
       end
 
+      # -- Kana grid driving --------------------------------------------
+
+      def name_kana_rows(page)
+        page == :katakana ? NAME_KATAKANA_ROWS : NAME_HIRAGANA_ROWS
+      end
+
+      def handle_kana_name_input
+        ui = @name_ui
+        rows = name_kana_rows(ui[:page])
+        row = ui[:sel] / NAME_KANA_COLS
+        col = ui[:sel] % NAME_KANA_COLS
+        if Input.trigger?(Input::RIGHT)
+          ui[:sel] = row * NAME_KANA_COLS + (col + 1) % rows[row].length
+          draw_kana_name_input
+        elsif Input.trigger?(Input::LEFT)
+          ui[:sel] = row * NAME_KANA_COLS + (col - 1) % rows[row].length
+          draw_kana_name_input
+        elsif Input.trigger?(Input::DOWN)
+          new_row = (row + 1) % rows.length
+          ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
+          draw_kana_name_input
+        elsif Input.trigger?(Input::UP)
+          new_row = (row - 1) % rows.length
+          ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
+          draw_kana_name_input
+        elsif Input.trigger?(Input::C)
+          kana_name_input_confirm
+        elsif Input.trigger?(Input::B)
+          name_input_backspace
+        end
+      end
+
+      # Act on the highlighted cell: :confirm commits, :toggle swaps the
+      # hiragana/katakana page, any kana cell types its character (up to
+      # NAME_KANA_MAX).
+      def kana_name_input_confirm
+        ui = @name_ui
+        rows = name_kana_rows(ui[:page])
+        cell = rows[ui[:sel] / NAME_KANA_COLS][ui[:sel] % NAME_KANA_COLS]
+        case cell
+        when :confirm then commit_name_input
+        when :toggle
+          ui[:page] = ui[:page] == :hiragana ? :katakana : :hiragana
+          draw_kana_name_input
+        else
+          ui[:name] += cell if ui[:name].length < NAME_KANA_MAX
+          draw_kana_name_input
+        end
+      end
+
+      # The label drawn for `cell`: a kana glyph as-is, or the toggle/confirm
+      # cell's own text. The toggle names the page it switches *to* — "カナ"
+      # (katakana) on the hiragana page, "かな" (hiragana) on the katakana one
+      # — matching RPG_RT's own screen.
+      def kana_cell_label(cell, page)
+        case cell
+        when :toggle then page == :hiragana ? 'カナ' : 'かな'
+        when :confirm then '決定'
+        else cell
+        end
+      end
+
+      # Pixel geometry of `rows[row][col]` within the grid's content bitmap.
+      # Every cell is one column wide except :toggle/:confirm, which are two —
+      # the reason this walks the row summing widths rather than a flat
+      # `col * NAME_KANA_CELL_W`.
+      def kana_cell_rect(rows, row, col)
+        x = 0
+        rows[row][0...col].each { |c| x += (c.is_a?(Symbol) ? 2 : 1) * NAME_KANA_CELL_W }
+        w = (rows[row][col].is_a?(Symbol) ? 2 : 1) * NAME_KANA_CELL_W
+        [x, row * NAME_KANA_CELL_H, w, NAME_KANA_CELL_H]
+      end
+
+      # (Re)draw all three windows of the kana widget: the actor's face, the
+      # name-so-far field (seeded characters, a blinking cursor box on the
+      # next empty slot, underscores past that) and the gojuuon grid itself.
+      def draw_kana_name_input
+        ui = @name_ui
+        if ui[:face_win]
+          ui[:face_win].dispose
+          ui[:name_win].dispose
+          ui[:grid_win].dispose
+        end
+
+        actor = roster_actor(ui[:actor_id])
+        face_name = actor && actor.respond_to?(:face_name) ? actor.face_name : nil
+        face_index = actor && actor.respond_to?(:face_index) ? (actor.face_index || 0) : 0
+
+        draw_kana_face(ui, face_name, face_index)
+        draw_kana_name_field(ui)
+        draw_kana_grid(ui)
+      end
+
+      def draw_kana_face(ui, face_name, face_index)
+        win = Window.new(NAME_TOP_X, NAME_TOP_Y, NAME_FACE_WIN, NAME_FACE_WIN)
+        win.z = 400
+        win.windowskin = @windowskin
+        c = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        face = load_face_bitmap(face_name)
+        if face
+          src = Rect.new((face_index % 4) * FACE_SIZE, (face_index / 4) * FACE_SIZE,
+                         FACE_SIZE, FACE_SIZE)
+          c.blt 0, 0, face, src
+        end
+        win.contents = c
+        ui[:face_win] = win
+      end
+
+      def draw_kana_name_field(ui)
+        win_x = NAME_TOP_X + NAME_FACE_WIN + NAME_TOP_GAP
+        win_w = NAME_TOP_X + NAME_GRID_W - win_x
+        win = Window.new(win_x, NAME_TOP_Y, win_w, NAME_FACE_WIN)
+        win.z = 400
+        win.windowskin = @windowskin
+        inner_w = win_w - Window::BORDER * 2
+        inner_h = NAME_FACE_WIN - Window::BORDER * 2
+        slot_y = (inner_h - NAME_KANA_CELL_H) / 2
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        name = ui[:name]
+        NAME_KANA_MAX.times do |i|
+          c.draw_text i * NAME_KANA_CELL_W, slot_y, NAME_KANA_CELL_W, NAME_KANA_CELL_H,
+                     name[i] || '_', 1
+        end
+        win.contents = c
+        if name.length < NAME_KANA_MAX
+          win.cursor_rect = Rect.new(name.length * NAME_KANA_CELL_W, slot_y,
+                                     NAME_KANA_CELL_W, NAME_KANA_CELL_H)
+        end
+        ui[:name_win] = win
+      end
+
+      def draw_kana_grid(ui)
+        win = Window.new(NAME_TOP_X, NAME_GRID_Y, NAME_GRID_W, NAME_GRID_H)
+        win.z = 400
+        win.windowskin = @windowskin
+        inner_w = NAME_GRID_W - Window::BORDER * 2
+        inner_h = NAME_GRID_H - Window::BORDER * 2
+        c = Bitmap.new(inner_w, inner_h)
+        c.font.color = Color.new(255, 255, 255, 255)
+        rows = name_kana_rows(ui[:page])
+        rows.each_with_index do |row_cells, r|
+          row_cells.each_with_index do |cell, ci|
+            x, y, w, h = kana_cell_rect(rows, r, ci)
+            c.draw_text x, y, w, h, kana_cell_label(cell, ui[:page]), 1
+          end
+        end
+        win.contents = c
+        sel_row = ui[:sel] / NAME_KANA_COLS
+        sel_col = ui[:sel] % NAME_KANA_COLS
+        win.cursor_rect = Rect.new(*kana_cell_rect(rows, sel_row, sel_col))
+        ui[:grid_win] = win
+      end
+
       def close_name_input
         return unless @name_ui
-        @name_ui[:win].dispose if @name_ui[:win]
+        if @name_ui[:kana]
+          @name_ui[:face_win].dispose if @name_ui[:face_win]
+          @name_ui[:name_win].dispose if @name_ui[:name_win]
+          @name_ui[:grid_win].dispose if @name_ui[:grid_win]
+        else
+          @name_ui[:win].dispose if @name_ui[:win]
+        end
         @name_ui = nil
       end
 
@@ -4918,13 +5142,20 @@ class RPG2k
 
       # Load the FaceSet graphic named by the message config, or nil when no face
       # is selected or the file is missing (the message then shows text only).
-      # Colour-keyed like the other character art: a FaceSet's palette entry 0 is
-      # its background, and drawing it opaque boxes the portrait in.
       def load_face(cfg)
         return nil unless cfg.face?
-        Bitmap.new "FaceSet/#{cfg.face_name}", true
+        load_face_bitmap(cfg.face_name)
+      end
+
+      # Load a FaceSet graphic by name, or nil for a blank name or a missing
+      # file (the caller then shows no portrait). Colour-keyed like the other
+      # character art: a FaceSet's palette entry 0 is its background, and
+      # drawing it opaque boxes the portrait in.
+      def load_face_bitmap(name)
+        return nil unless name && !name.empty?
+        Bitmap.new "FaceSet/#{name}", true
       rescue StandardError => e
-        $stderr.puts "[RPG2k] face graphic '#{cfg.face_name}' load failed: #{e.message}"
+        $stderr.puts "[RPG2k] face graphic '#{name}' load failed: #{e.message}"
         nil
       end
 
