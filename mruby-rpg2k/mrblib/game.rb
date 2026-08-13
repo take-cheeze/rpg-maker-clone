@@ -3390,6 +3390,17 @@ module Game
     attr_accessor :layer, :overlap_forbidden
     attr_reader :graphic_name, :graphic_index, :x, :y
 
+    # The direction actually walked/jumped by the last successful move,
+    # distinct from #direction (the displayed sprite facing): a Direction
+    # Fix lock or an explicit Face command can turn the sprite without the
+    # character having moved a step in that direction, and the reverse --
+    # a locked move steps somewhere the sprite never turns to face. Only
+    # #move / #jump / #move_diagonal update this; #face!/#turn_* (no
+    # movement) and a blocked #do_move (turns to face an obstruction but
+    # never steps) leave it alone. yado.tk: a move-route "One Step Forward"
+    # continues in *this* direction, not the sprite's #direction.
+    attr_reader :last_move_direction
+
     # Placing a character outright -- Change Event Location, a page refresh
     # restoring where an event stood -- is not a move, so it clears #jumped.
     # Without this a character that had jumped would arc again the next time
@@ -3401,6 +3412,7 @@ module Game
       @x = x
       @y = y
       @direction = direction
+      @last_move_direction = direction
       @move_speed = 3
       @move_frequency = 3
       @through = false          # ignore collision while moving
@@ -3460,6 +3472,7 @@ module Game
     # Move one tile in `dir`, updating facing (subject to the lock).
     def move(dir)
       face(dir)
+      @last_move_direction = dir
       dx, dy = DIR_DELTA[dir] || [0, 0]
       @x += dx
       @y += dy
@@ -3471,14 +3484,16 @@ module Game
     #
     # RPG_RT faces the jump's **dominant axis**, vertical winning a tie, which is
     # not the direction of the last enclosed move: a jump two right and two down
-    # lands facing down. A jump that ends where it started leaves the facing
-    # alone — the genuine runtime sets its movement direction there but never
-    # touches the sprite's, and this model has the one field for both.
+    # lands facing down. A jump that ends where it started leaves both the
+    # facing and #last_move_direction alone -- there is no axis to be
+    # dominant when neither one moved.
     def jump(x, y)
       dx = x - @x
       dy = y - @y
       unless dx == 0 && dy == 0
-        face(dy.abs >= dx.abs ? (dy >= 0 ? 2 : 8) : (dx >= 0 ? 6 : 4))
+        dir = dy.abs >= dx.abs ? (dy >= 0 ? 2 : 8) : (dx >= 0 ? 6 : 4)
+        face(dir)
+        @last_move_direction = dir
       end
       @x = x
       @y = y
@@ -3489,6 +3504,7 @@ module Game
     # RPG2000 keeps a cardinal facing on diagonals, so we face the vertical part.
     def move_diagonal(horizontal, vertical)
       face(vertical)
+      @last_move_direction = vertical
       hx, = DIR_DELTA[horizontal] || [0, 0]
       _, vy = DIR_DELTA[vertical] || [0, 0]
       @x += hx
@@ -3670,7 +3686,11 @@ module Game
       when MOVE_AWAY_HERO
         do_move(character, world, away_hero(character, world))
       when MOVE_FORWARD
-        do_move(character, world, character.direction)
+        # yado.tk: continues in the direction actually last walked/jumped,
+        # not the sprite's displayed facing -- the two can diverge under a
+        # Direction Fix lock or an explicit Face command (see
+        # Character#last_move_direction).
+        do_move(character, world, character.last_move_direction)
       # A Face Direction sub-command always turns the sprite, even right after
       # a Direction Fix ON earlier in the same route (yado.tk) -- #face!, not
       # the lock-respecting #face movement uses.

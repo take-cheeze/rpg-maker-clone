@@ -2356,15 +2356,25 @@ not yet verified:
   unchanged. Covered by a new `scripts/rpg2k_logic_check.rb` check (Direction
   Fix ON, then a Move Right that keeps the facing frozen, then a Face Up that
   turns north despite the still-active lock), confirmed to fail against the
-  pre-fix code (asserting direction 8, getting 2) before the fix. **Still
-  open, a related but separate question, not addressed by this fix**: after a
-  Fixed-Direction move (or a diagonal move), "One Step Forward" is documented
-  to continue in the *last direction actually moved* rather than the
-  displayed facing — this codebase's `Game::Character` has only the one
-  `@direction` field for both (see its `#jump` doc comment), so implementing
-  this would need a second "last movement direction" field threaded through
-  `#move`/`#jump`/`#move_diagonal` and read by Move Route's `MOVE_FORWARD`
-  instead of `#direction`, a distinct enough change to scope out here. The
+  pre-fix code (asserting direction 8, getting 2) before the fix. ✅ **The
+  related, separate "One Step Forward" question this fix scoped out is now
+  fixed too**: a move-route "One Step Forward" is documented to continue in
+  the *last direction actually moved* rather than the displayed facing, which
+  a Direction Fix lock or an explicit Face command can leave pointing
+  somewhere else entirely (a locked `Move Right` steps east without turning
+  the sprite; a `Face Up` right after turns the sprite north without moving).
+  `Game::Character` had only the one `@direction` field for both, and
+  `Game::MoveRoute`'s `MOVE_FORWARD` handler read it — the sprite's facing,
+  not the walked direction. Fixed by adding a second `Character#last_move_direction`
+  reader, updated by `#move`/`#jump`/`#move_diagonal` alongside (but
+  independently of) `#direction` — a blocked `#do_move` still turns to face
+  the obstruction without setting it, matching "actually moved" — and
+  `MOVE_FORWARD` now reads that instead of `#direction`. A jump that lands
+  where it started (`dx == 0 && dy == 0`) updates neither field, since there
+  is no axis to be dominant when nothing moved. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (Direction Fix ON, a locked Move
+  Right, an explicit Face Up, then One Step Forward continues east, not
+  north), confirmed to fail against the pre-fix code before the fix. The
   "Animation Type" half of the original claim (whether an Animation Type
   setting is also overridden by a Face Direction command) is unverified
   either way.
