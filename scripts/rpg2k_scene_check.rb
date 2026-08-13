@@ -86,6 +86,24 @@ module RGSS
     attr_reader :viewport
     def initialize(viewport = nil, *); @viewport = viewport; end
     def dispose; end
+    # #flash/#update, as the target-scope Battle Animation flash
+    # (Scene::Map#fire_target_flash/#update_enemy_flashes) uses them: mirrors
+    # the real native contract (mruby-rgss/src/lib.cxx's spr_flash/spr_update)
+    # closely enough for the wiring checks -- #flash records the colour/duration
+    # requested, #update decays it by one frame and clears it once the
+    # duration runs out, the same "fades over the duration, then gone" shape
+    # the real Sprite gives a caller who drives it every frame.
+    attr_reader :flash_color, :flash_calls
+    def flash(color, duration)
+      (@flash_calls ||= []) << [color, duration]
+      @flash_color = color
+      @flash_count = duration
+    end
+    def update
+      return unless @flash_count && @flash_count > 0
+      @flash_count -= 1
+      @flash_color = nil if @flash_count == 0
+    end
   end
 
   class Viewport
@@ -388,8 +406,10 @@ class FakeParent
   # every other check wants -- no tree, so save/teleport/escape all default
   # to Allow.
   attr_accessor :map_tree
-  # Test Play, off by default (a released game): see RPG2k#test_play. A check
-  # that wants Ctrl/Shift/F9's debug behaviour sets this true.
+  # Mirrors RPG2k::Game#test_play (see mruby-rpg2k/mrblib/main.rb). Writable
+  # so a check can exercise the Test-Play-only behaviour it gates (the hero's
+  # missing-graphic debug marker; Ctrl/Shift/F9's debug behaviour); every
+  # other check wants the same default (false) a plainly-launched game gets.
   attr_accessor :test_play
   def initialize(db, &map_maker)
     @db = db
@@ -6283,6 +6303,50 @@ check 'a skill that names an animation plays it over the targeted enemy' do
      [ma[:tx], ma[:ty]], 'centred on the enemy sprite'
 end
 
+# flash_scope 1 ("target") -- previously dropped outright, since
+# #fire_animation_flashes only ever handled flash_scope 2 (the whole screen).
+# yado.tk / the LCF schema's own flash_scope enum (0 none / 1 target / 2
+# screen) both name this as a distinct case from the screen flash already
+# covered by the check above; a hand-built timing entry (rather than a
+# fixture animation) isolates it from the screen-flash timing that check
+# already exercises on the shared fixture animation.
+check 'a target-scope animation flash pulses the hit enemy, not the screen or a bystander' do
+  scene, ui = battle_at_command
+  spr = ui[:enemy_sprites][0]
+  bystander = ui[:enemy_sprites][1]
+  timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
+                          flash_blue: 0, flash_power: 20)
+  ma = { frame_i: 0, target_index: 0, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma)
+  ok spr.flash_color, 'the targeted enemy sprite was flashed'
+  eq [248, 0, 0, 160],
+     [spr.flash_color.red, spr.flash_color.green, spr.flash_color.blue, spr.flash_color.alpha],
+     'scaled from the LCF 0..31 fixture fields the same *8 way the screen flash already is'
+  anim_flash_frames = RPG2k::Scene::Map::ANIM_FLASH_FRAMES
+  eq anim_flash_frames, spr.flash_calls.last[1],
+     'held for the same duration a screen flash from an animation gets'
+  st = scene.instance_variable_get(:@state)
+  ok !st.screen.flashing?, 'flash_scope 1 never touches the screen flash, unlike flash_scope 2'
+  eq nil, bystander.flash_color, 'the other, untargeted enemy sprite is untouched'
+  # Driven every frame the way #drive_battle already does (#update_enemy_flashes),
+  # the flash fades out and clears after its own duration -- not left stuck on.
+  anim_flash_frames.times { scene.send(:update_enemy_flashes) }
+  eq nil, spr.flash_color, 'the flash faded out after its duration'
+end
+
+# An ally-targeted entry (RPG2000's battle is front-view: no sprite for a
+# party member, so target_index is nil there -- see #battle_animation_pixel)
+# has nothing to flash; #fire_target_flash must not raise reaching for a
+# nonexistent sprite.
+check 'a target-scope flash with no resolvable target sprite is a silent no-op' do
+  scene, = battle_at_command
+  timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
+                          flash_blue: 0, flash_power: 20)
+  ma = { frame_i: 0, target_index: nil, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma) # must not raise
+  ok true, 'no exception targeting nothing'
+end
+
 check 'a skill that names none plays nothing' do
   scene, = battle_at_command
   ok !scene.send(:start_battle_animation,
@@ -7415,6 +7479,49 @@ check 'drawing the same event on plain ground emits one blit' do
   scene.send(:draw_event, e, 0, 0)
   eq 1, buf.blt_calls.size
   eq 255, buf.blt_calls[0][4]
+end
+
+# A map tile's *own* draw path (not an event's): only a starred (ABOVE_BIT)
+# upper tile belongs in the buffer that composites over the player, matching
+# Game::ChipSet#elevated?. See its comment for why this matters -- an
+# unstarred upper tile (most of a chipset's furniture/counters) has always
+# been treated as always-above here, which hid Nepheshel's sleeping hero
+# completely instead of showing him through the bed's own unstarred tiles.
+check 'draw_layers routes an unstarred upper tile behind the player, a starred one in front' do
+  up = Array.new(144, 0)
+  up[0] = Game::ChipSet::ALL_DIRS                             # unstarred (e.g. a headboard)
+  up[1] = Game::ChipSet::ALL_DIRS | Game::ChipSet::ABOVE_BIT  # starred
+  row_class = Struct.new(:name, :chipset_name, :passable_data_lower,
+                         :passable_data_upper, :terrain_data,
+                         :animation_type, :animation_speed)
+  db = fake_db
+  db.chipset[1] = row_class.new('cs', 'cs', nil, up, nil, 0, 0)
+  w = 6; h = 5
+  upper = Array.new(w * h, 0)
+  bf = Game::ChipsetLayout::BLOCK_F
+  upper[0] = bf       # (0, 0): unstarred
+  upper[1] = bf + 1   # (1, 0): starred
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = Game::Map.new(1, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                              lower_layer: Array.new(w * h, 0),
+                                              upper_layer: upper, events: {}))
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  lower = scene.instance_variable_get(:@lower_bmp)
+  upper_bmp = scene.instance_variable_get(:@upper_bmp)
+  lower.clear_blt_calls
+  upper_bmp.clear_blt_calls
+  scene.send(:draw_layers, 0, 0)
+  tile = RPG2k::Scene::Map::TILE
+  at = ->(calls, x, y) { calls.count { |c| c[0] == x && c[1] == y } }
+  # (0, 0) always gets one blit for its own (plain, id 0) lower tile; the
+  # unstarred upper tile at the same spot is a *second* blit into the same
+  # buffer, not one into the upper buffer.
+  eq 2, at.call(lower.blt_calls, 0, 0),
+     'the plain floor and the unstarred upper tile both land in the lower buffer'
+  eq 0, at.call(upper_bmp.blt_calls, 0, 0), 'the unstarred tile never reaches the upper buffer'
+  # (TILE, 0) also gets its own plain lower tile, but the starred upper tile
+  # there is the one that must reach the upper (above-player) buffer.
+  eq 1, at.call(upper_bmp.blt_calls, tile, 0), 'the starred tile lands in the upper buffer'
 end
 
 check 'a clear member walks the same ground untouched' do

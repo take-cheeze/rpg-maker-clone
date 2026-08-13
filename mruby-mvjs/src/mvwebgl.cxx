@@ -29,6 +29,7 @@
     __has_include(<GLES2/gl2.h>)
 #define MVJS_HAVE_WEBGL 1
 
+#include <EGL/egl.h>
 #include <GLES2/gl2.h>
 
 #include <cstring>
@@ -55,6 +56,12 @@ namespace {
 // The GL contexts backing live WebGLRenderingContext objects, referenced from
 // JS by integer handle (index + 1; 0 is the null handle), mirroring g_canvases.
 std::vector<mvgl::Context*> g_gl;
+
+// UNPACK_PREMULTIPLY_ALPHA_WEBGL's current value per context (see
+// js_gl_pixel_storei and premultiply_rgba below) -- WebGL pixel-store state
+// with no real GL equivalent to hold it in, so it is tracked here instead.
+// Parallel to g_gl (same handle, grown in lockstep in js_gl_create).
+std::vector<bool> g_premultiply;
 
 // Handle -> context, making it (and its FBO) current on the calling thread.
 // Tracks the last-bound handle so the common single-context case skips the
@@ -163,6 +170,7 @@ JSValue js_gl_create(JSContext* ctx,
   if (!c)
     return JS_NewInt32(ctx, 0);
   g_gl.push_back(c);
+  g_premultiply.push_back(false);
   g_current = static_cast<int>(g_gl.size());
   return JS_NewInt32(ctx, g_current);
 }
@@ -377,15 +385,31 @@ JSValue js_gl_front_face(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// WebGL's own UNPACK_FLIP_Y_WEBGL enum value (see kWebGLPreamble's `K`); no
+// real GL equivalent, tracked below instead of forwarded.
+constexpr GLenum kUnpackPremultiplyAlphaWebGL = 0x9241;
+
 // WebGL's own UNPACK_* pixel-store parameters (FLIP_Y, PREMULTIPLY_ALPHA,
-// COLORSPACE_CONVERSION; 0x9240..0x9243) are not real GL enums and would raise
-// GL_INVALID_ENUM. Swallow those; forward the real ones
-// (UNPACK/PACK_ALIGNMENT). Honouring FLIP_Y for texture uploads is M6.3c.
+// COLORSPACE_CONVERSION; 0x9240..0x9245) are not real GL enums and would
+// raise GL_INVALID_ENUM if forwarded, so real ones (UNPACK/PACK_ALIGNMENT)
+// aside, this only swallows them -- except PREMULTIPLY_ALPHA, which PIXI
+// actually sets on every ordinary texture upload (BaseTexture's default
+// alphaMode premultiplies on upload) and is now honoured by premultiplying
+// pixels before the real upload call (see premultiply_rgba and its callers).
+// FLIP_Y stays a pure swallow: nothing in a stock PIXI v5 build ever sets it
+// true (only an explicit `false` reset), so there is nothing to reproduce yet.
 JSValue js_gl_pixel_storei(JSContext* ctx,
                            JSValueConst,
                            int argc,
                            JSValueConst* argv) {
   const GLenum pname = static_cast<GLenum>(gi(ctx, argc, argv, 1));
+  if (pname == kUnpackPremultiplyAlphaWebGL) {
+    const int handle = gi(ctx, argc, argv, 0);
+    if (handle >= 1 && static_cast<size_t>(handle) <= g_premultiply.size())
+      g_premultiply[static_cast<size_t>(handle) - 1] =
+          gi(ctx, argc, argv, 2) != 0;
+    return JS_UNDEFINED;
+  }
   if (pname >= 0x9240 && pname <= 0x9245)
     return JS_UNDEFINED;
   if (bind(gi(ctx, argc, argv, 0)))
@@ -886,6 +910,37 @@ JSValue js_gl_uniform_matrix(JSContext* ctx,
 
 // -- textures ----------------------------------------------------------------
 
+// Premultiply RGBA8 pixel data's colour channels by their own alpha (a/255),
+// matching what UNPACK_PREMULTIPLY_ALPHA_WEBGL does during a real browser's
+// texture upload. GLES has no equivalent pixel-store flag (js_gl_pixel_storei
+// above), so PIXI telling the (real) GL to premultiply on upload -- which it
+// does for every ordinary texture, since BaseTexture's default alphaMode is
+// UNPACK (= PREMULTIPLY_ON_UPLOAD) -- silently did nothing: textures uploaded
+// with straight alpha, then blended by PIXI's NORMAL blend mode
+// ([ONE, ONE_MINUS_SRC_ALPHA], which assumes premultiplied input) came out
+// over-bright on every partially-transparent pixel -- window corners, any
+// anti-aliased sprite edge. `src` is left untouched (it may be a canvas' own
+// live pixel buffer, read again later by game code); the premultiplied copy
+// goes into `out`.
+void premultiply_rgba(const uint8_t* src,
+                      size_t pixel_count,
+                      std::vector<uint8_t>& out) {
+  out.assign(src, src + pixel_count * 4);
+  for (size_t i = 0; i < pixel_count; ++i) {
+    uint8_t* p = &out[i * 4];
+    const unsigned a = p[3];
+    p[0] = static_cast<uint8_t>(p[0] * a / 255);
+    p[1] = static_cast<uint8_t>(p[1] * a / 255);
+    p[2] = static_cast<uint8_t>(p[2] * a / 255);
+  }
+}
+
+// Whether context `handle` currently has UNPACK_PREMULTIPLY_ALPHA_WEBGL set.
+bool premultiply_enabled(int handle) {
+  return handle >= 1 && static_cast<size_t>(handle) <= g_premultiply.size() &&
+         g_premultiply[static_cast<size_t>(handle) - 1];
+}
+
 JSValue js_gl_create_texture(JSContext* ctx,
                              JSValueConst,
                              int argc,
@@ -924,7 +979,8 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
                            JSValueConst,
                            int argc,
                            JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   const GLenum target = static_cast<GLenum>(gi(ctx, argc, argv, 1));
   const GLint level = gi(ctx, argc, argv, 2);
@@ -938,6 +994,12 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
     JSValue hold;
     size_t len = 0;
     uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
+    std::vector<uint8_t> premul;
+    if (p && format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
+        premultiply_enabled(handle)) {
+      premultiply_rgba(p, len / 4, premul);
+      p = premul.data();
+    }
     glTexImage2D(target, level, internalformat, w, h, border, format, type, p);
     JS_FreeValue(ctx, hold);
   } else {
@@ -948,21 +1010,29 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
 }
 
 // texImage2D from a 2D canvas source: upload the canvas' RGBA buffer. The
-// source overload PIXI uses to turn a rendered canvas into a texture. (Image
-// elements and the UNPACK_FLIP_Y convention come in M6.3c.)
+// source overload PIXI uses to turn a rendered canvas into a texture. (The
+// UNPACK_FLIP_Y convention stays open -- see js_gl_pixel_storei's comment.)
 JSValue js_gl_tex_image_2d_canvas(JSContext* ctx,
                                   JSValueConst,
                                   int argc,
                                   JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   int cw = 0, ch = 0;
   const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 6), &cw, &ch);
-  if (px)
+  if (px) {
+    std::vector<uint8_t> premul;
+    if (premultiply_enabled(handle)) {
+      premultiply_rgba(px, static_cast<size_t>(cw) * static_cast<size_t>(ch),
+                       premul);
+      px = premul.data();
+    }
     glTexImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
                  gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3), cw, ch, 0,
                  static_cast<GLenum>(gi(ctx, argc, argv, 4)),
                  static_cast<GLenum>(gi(ctx, argc, argv, 5)), px);
+  }
   return JS_UNDEFINED;
 }
 
@@ -975,19 +1045,28 @@ JSValue js_gl_tex_sub_image_2d(JSContext* ctx,
                                JSValueConst,
                                int argc,
                                JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   if (argc <= 9 || JS_IsNull(argv[9]) || JS_IsUndefined(argv[9]))
     return JS_UNDEFINED;
   JSValue hold;
   size_t len = 0;
   uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
-  if (p)
-    glTexSubImage2D(
-        static_cast<GLenum>(gi(ctx, argc, argv, 1)), gi(ctx, argc, argv, 2),
-        gi(ctx, argc, argv, 3), gi(ctx, argc, argv, 4), gi(ctx, argc, argv, 5),
-        gi(ctx, argc, argv, 6), static_cast<GLenum>(gi(ctx, argc, argv, 7)),
-        static_cast<GLenum>(gi(ctx, argc, argv, 8)), p);
+  if (p) {
+    const GLenum format = static_cast<GLenum>(gi(ctx, argc, argv, 7));
+    const GLenum type = static_cast<GLenum>(gi(ctx, argc, argv, 8));
+    std::vector<uint8_t> premul;
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
+        premultiply_enabled(handle)) {
+      premultiply_rgba(p, len / 4, premul);
+      p = premul.data();
+    }
+    glTexSubImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                    gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
+                    gi(ctx, argc, argv, 4), gi(ctx, argc, argv, 5),
+                    gi(ctx, argc, argv, 6), format, type, p);
+  }
   JS_FreeValue(ctx, hold);
   return JS_UNDEFINED;
 }
@@ -1004,16 +1083,24 @@ JSValue js_gl_tex_sub_image_2d_canvas(JSContext* ctx,
                                       JSValueConst,
                                       int argc,
                                       JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   int cw = 0, ch = 0;
   const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 7), &cw, &ch);
-  if (px)
+  if (px) {
+    std::vector<uint8_t> premul;
+    if (premultiply_enabled(handle)) {
+      premultiply_rgba(px, static_cast<size_t>(cw) * static_cast<size_t>(ch),
+                       premul);
+      px = premul.data();
+    }
     glTexSubImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
                     gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
                     gi(ctx, argc, argv, 4), cw, ch,
                     static_cast<GLenum>(gi(ctx, argc, argv, 5)),
                     static_cast<GLenum>(gi(ctx, argc, argv, 6)), px);
+  }
   return JS_UNDEFINED;
 }
 
@@ -1286,6 +1373,199 @@ JSValue js_gl_flush(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// -- extensions: OES_vertex_array_object, ANGLE_instanced_arrays -------------
+//
+// PIXI's GeometrySystem.contextChange (see libs/pixi.js in a fetched MZ
+// corescript) checks `gl.createVertexArray`/`gl.vertexAttribDivisor` first
+// (the WebGL2 names) and, missing those, falls back to
+// `gl.getExtension('OES_vertex_array_object')` /
+// `gl.getExtension('ANGLE_instanced_arrays')` and calls the *ANGLE/OES-suffixed
+// methods on the returned object. Both extensions were previously unavailable
+// (getExtension always returned null, see its comment below), so every draw
+// went through PIXI's own no-VAO fallback path (`gl.createVertexArray` a
+// no-op, `hasVao`/`hasInstance` false) -- functionally correct but slower.
+//
+// The functions the two extensions need (glGenVertexArrays,
+// glVertexAttribDivisor, ...) are GLES 3.0 core, absent from the GLES2 header
+// this file compiles against, so they are loaded dynamically via
+// eglGetProcAddress -- the same idiom mvgl.cxx uses for its own EGL
+// extensions. mvgl.cxx's context is created ES3-first (falling back to ES2
+// only where ES3 is unavailable, see bind_context), so the bare core name is
+// tried first here too: on the apt/nix llvmpipe driver this is confirmed
+// genuinely functional, while eglGetProcAddress happily hands back a non-null
+// pointer for the legacy ANGLE-suffixed names too (per spec, an
+// implementation may resolve any name) that silently drew nothing when tried
+// first -- ANGLE_instanced_arrays is not a driver extension llvmpipe actually
+// implements, unlike OES_vertex_array_object, whose OES-suffixed entry points
+// did work; non-null is not sufficient evidence of "real", so core-first is
+// the safe default and the suffixed name is only the fallback for a genuine
+// GLES2-only driver with no core entry points at all. A null pointer after
+// both lookups means the driver has neither, and the extension is then not
+// advertised -- PIXI's existing fallback runs exactly as before M6.3c.
+typedef void(GL_APIENTRYP PFNMVGENVERTEXARRAYSPROC)(GLsizei, GLuint*);
+typedef void(GL_APIENTRYP PFNMVBINDVERTEXARRAYPROC)(GLuint);
+typedef void(GL_APIENTRYP PFNMVDELETEVERTEXARRAYSPROC)(GLsizei, const GLuint*);
+typedef GLboolean(GL_APIENTRYP PFNMVISVERTEXARRAYPROC)(GLuint);
+typedef void(GL_APIENTRYP PFNMVVERTEXATTRIBDIVISORPROC)(GLuint, GLuint);
+typedef void(GL_APIENTRYP PFNMVDRAWARRAYSINSTANCEDPROC)(GLenum,
+                                                        GLint,
+                                                        GLsizei,
+                                                        GLsizei);
+typedef void(GL_APIENTRYP PFNMVDRAWELEMENTSINSTANCEDPROC)(GLenum,
+                                                          GLsizei,
+                                                          GLenum,
+                                                          const void*,
+                                                          GLsizei);
+
+// eglGetProcAddress under `core`, falling back to `suffixed` (see the section
+// comment above); nullptr if neither resolves.
+void* load_ext_proc(const char* core, const char* suffixed) {
+  void* p = reinterpret_cast<void*>(eglGetProcAddress(core));
+  return p ? p : reinterpret_cast<void*>(eglGetProcAddress(suffixed));
+}
+
+struct VaoExt {
+  bool tried = false;
+  PFNMVGENVERTEXARRAYSPROC gen = nullptr;
+  PFNMVBINDVERTEXARRAYPROC bind_vao = nullptr;
+  PFNMVDELETEVERTEXARRAYSPROC del = nullptr;
+  PFNMVISVERTEXARRAYPROC is_vao = nullptr;
+  bool ok() const { return gen && bind_vao && del && is_vao; }
+};
+VaoExt& vao_ext() {
+  static VaoExt v;
+  if (v.tried)
+    return v;
+  v.tried = true;
+  v.gen = reinterpret_cast<PFNMVGENVERTEXARRAYSPROC>(
+      load_ext_proc("glGenVertexArrays", "glGenVertexArraysOES"));
+  v.bind_vao = reinterpret_cast<PFNMVBINDVERTEXARRAYPROC>(
+      load_ext_proc("glBindVertexArray", "glBindVertexArrayOES"));
+  v.del = reinterpret_cast<PFNMVDELETEVERTEXARRAYSPROC>(
+      load_ext_proc("glDeleteVertexArrays", "glDeleteVertexArraysOES"));
+  v.is_vao = reinterpret_cast<PFNMVISVERTEXARRAYPROC>(
+      load_ext_proc("glIsVertexArray", "glIsVertexArrayOES"));
+  return v;
+}
+
+struct InstancedExt {
+  bool tried = false;
+  PFNMVVERTEXATTRIBDIVISORPROC divisor = nullptr;
+  PFNMVDRAWARRAYSINSTANCEDPROC draw_arrays = nullptr;
+  PFNMVDRAWELEMENTSINSTANCEDPROC draw_elements = nullptr;
+  bool ok() const { return divisor && draw_arrays && draw_elements; }
+};
+InstancedExt& instanced_ext() {
+  static InstancedExt v;
+  if (v.tried)
+    return v;
+  v.tried = true;
+  v.divisor = reinterpret_cast<PFNMVVERTEXATTRIBDIVISORPROC>(
+      load_ext_proc("glVertexAttribDivisor", "glVertexAttribDivisorANGLE"));
+  v.draw_arrays = reinterpret_cast<PFNMVDRAWARRAYSINSTANCEDPROC>(
+      load_ext_proc("glDrawArraysInstanced", "glDrawArraysInstancedANGLE"));
+  v.draw_elements = reinterpret_cast<PFNMVDRAWELEMENTSINSTANCEDPROC>(
+      load_ext_proc("glDrawElementsInstanced", "glDrawElementsInstancedANGLE"));
+  return v;
+}
+
+JSValue js_gl_ext_vao_available(JSContext* ctx,
+                                JSValueConst,
+                                int argc,
+                                JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_NewBool(ctx, 0);
+  return JS_NewBool(ctx, vao_ext().ok());
+}
+
+JSValue js_gl_ext_create_vertex_array(JSContext* ctx,
+                                      JSValueConst,
+                                      int argc,
+                                      JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)) || !vao_ext().ok())
+    return JS_NewInt32(ctx, 0);
+  GLuint v = 0;
+  vao_ext().gen(1, &v);
+  return JS_NewInt32(ctx, static_cast<int32_t>(v));
+}
+
+JSValue js_gl_ext_bind_vertex_array(JSContext* ctx,
+                                    JSValueConst,
+                                    int argc,
+                                    JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)) && vao_ext().ok())
+    vao_ext().bind_vao(static_cast<GLuint>(gi(ctx, argc, argv, 1)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_gl_ext_delete_vertex_array(JSContext* ctx,
+                                      JSValueConst,
+                                      int argc,
+                                      JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)) && vao_ext().ok()) {
+    GLuint v = static_cast<GLuint>(gi(ctx, argc, argv, 1));
+    vao_ext().del(1, &v);
+  }
+  return JS_UNDEFINED;
+}
+
+JSValue js_gl_ext_is_vertex_array(JSContext* ctx,
+                                  JSValueConst,
+                                  int argc,
+                                  JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)) || !vao_ext().ok())
+    return JS_NewBool(ctx, 0);
+  return JS_NewBool(
+      ctx, vao_ext().is_vao(static_cast<GLuint>(gi(ctx, argc, argv, 1))));
+}
+
+JSValue js_gl_ext_instanced_available(JSContext* ctx,
+                                      JSValueConst,
+                                      int argc,
+                                      JSValueConst* argv) {
+  if (!bind(gi(ctx, argc, argv, 0)))
+    return JS_NewBool(ctx, 0);
+  return JS_NewBool(ctx, instanced_ext().ok());
+}
+
+// vertexAttribDivisorANGLE(index, divisor)
+JSValue js_gl_ext_vertex_attrib_divisor(JSContext* ctx,
+                                        JSValueConst,
+                                        int argc,
+                                        JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)) && instanced_ext().ok())
+    instanced_ext().divisor(static_cast<GLuint>(gi(ctx, argc, argv, 1)),
+                            static_cast<GLuint>(gi(ctx, argc, argv, 2)));
+  return JS_UNDEFINED;
+}
+
+// drawArraysInstancedANGLE(mode, first, count, primcount)
+JSValue js_gl_ext_draw_arrays_instanced(JSContext* ctx,
+                                        JSValueConst,
+                                        int argc,
+                                        JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)) && instanced_ext().ok())
+    instanced_ext().draw_arrays(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                                gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
+                                gi(ctx, argc, argv, 4));
+  return JS_UNDEFINED;
+}
+
+// drawElementsInstancedANGLE(mode, count, type, offset, primcount)
+JSValue js_gl_ext_draw_elements_instanced(JSContext* ctx,
+                                          JSValueConst,
+                                          int argc,
+                                          JSValueConst* argv) {
+  if (bind(gi(ctx, argc, argv, 0)) && instanced_ext().ok())
+    instanced_ext().draw_elements(
+        static_cast<GLenum>(gi(ctx, argc, argv, 1)), gi(ctx, argc, argv, 2),
+        static_cast<GLenum>(gi(ctx, argc, argv, 3)),
+        reinterpret_cast<const void*>(
+            static_cast<uintptr_t>(gi(ctx, argc, argv, 4))),
+        gi(ctx, argc, argv, 5));
+  return JS_UNDEFINED;
+}
+
 void reg(JSContext* ctx,
          JSValue g,
          const char* name,
@@ -1550,7 +1830,9 @@ const char* kWebGLPreamble = R"MVJS(
       } else if (src && src.canvas && src.canvas.__h !== undefined) {
         g.__mv_glTexImage2DCanvas(this.__gl, target, level, internalformat, a, b, src.canvas.__h);
       }
-      // Image-element uploads and Y-flip handling: M6.3c.
+      // Image elements route through the same __h canvas handle (they are
+      // backed by a canvas, see mvcanvas.cxx); UNPACK_FLIP_Y_WEBGL stays
+      // unimplemented (js_gl_pixel_storei's comment says why).
     }
   };
   // texSubImage2D has the same two overloads as texImage2D, one argument
@@ -1616,11 +1898,43 @@ const char* kWebGLPreamble = R"MVJS(
              premultipliedAlpha: true, preserveDrawingBuffer: false,
              failIfMajorPerformanceCaveat: false };
   };
-  // Extensions: none advertised yet. PIXI degrades gracefully (no-VAO geometry
-  // path, no float textures) when getExtension returns null. The specific set
-  // PIXI wants (VAO, anisotropy, ...) is filled in M6.3c.
-  P.getExtension = function () { return null; };
-  P.getSupportedExtensions = function () { return []; };
+  // Extensions: only the two PIXI's GeometrySystem checks for a fast path
+  // (OES_vertex_array_object, ANGLE_instanced_arrays -- see the native-side
+  // comment above js_gl_ext_vao_available). Everything else PIXI probes
+  // (anisotropy, float textures, ...) still degrades gracefully to null; PIXI
+  // handles a missing extension for those the same way it always has. Cached
+  // per context in `this._ext` so repeat calls return the same object, as the
+  // WebGL spec requires and PIXI's own caching (`context.extensions.*`)
+  // expects.
+  P.getExtension = function (name) {
+    if (Object.prototype.hasOwnProperty.call(this._ext, name)) {
+      return this._ext[name];
+    }
+    var gl = this.__gl;
+    var ext = null;
+    if (name === 'OES_vertex_array_object' && g.__mv_glExtVaoAvailable(gl)) {
+      ext = {
+        createVertexArrayOES: function () { return g.__mv_glExtCreateVertexArray(gl); },
+        bindVertexArrayOES: function (a) { g.__mv_glExtBindVertexArray(gl, a || 0); },
+        deleteVertexArrayOES: function (a) { g.__mv_glExtDeleteVertexArray(gl, a || 0); },
+        isVertexArrayOES: function (a) { return g.__mv_glExtIsVertexArray(gl, a || 0); },
+      };
+    } else if (name === 'ANGLE_instanced_arrays' && g.__mv_glExtInstancedAvailable(gl)) {
+      ext = {
+        vertexAttribDivisorANGLE: function (i, d) { g.__mv_glExtVertexAttribDivisor(gl, i, d); },
+        drawArraysInstancedANGLE: function (m, f, c, p) { g.__mv_glExtDrawArraysInstanced(gl, m, f, c, p); },
+        drawElementsInstancedANGLE: function (m, c, t, o, p) { g.__mv_glExtDrawElementsInstanced(gl, m, c, t, o, p); },
+      };
+    }
+    this._ext[name] = ext;
+    return ext;
+  };
+  P.getSupportedExtensions = function () {
+    var out = [];
+    if (g.__mv_glExtVaoAvailable(this.__gl)) out.push('OES_vertex_array_object');
+    if (g.__mv_glExtInstancedAvailable(this.__gl)) out.push('ANGLE_instanced_arrays');
+    return out;
+  };
 
   g.WebGLRenderingContext = WebGLRenderingContext;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -1733,6 +2047,18 @@ void mv_install_webgl(JSContext* ctx) {
   reg(ctx, g, "__mv_glGetError", js_gl_get_error, 1);
   reg(ctx, g, "__mv_glFinish", js_gl_finish, 1);
   reg(ctx, g, "__mv_glFlush", js_gl_flush, 1);
+  reg(ctx, g, "__mv_glExtVaoAvailable", js_gl_ext_vao_available, 1);
+  reg(ctx, g, "__mv_glExtCreateVertexArray", js_gl_ext_create_vertex_array, 1);
+  reg(ctx, g, "__mv_glExtBindVertexArray", js_gl_ext_bind_vertex_array, 2);
+  reg(ctx, g, "__mv_glExtDeleteVertexArray", js_gl_ext_delete_vertex_array, 2);
+  reg(ctx, g, "__mv_glExtIsVertexArray", js_gl_ext_is_vertex_array, 2);
+  reg(ctx, g, "__mv_glExtInstancedAvailable", js_gl_ext_instanced_available, 1);
+  reg(ctx, g, "__mv_glExtVertexAttribDivisor", js_gl_ext_vertex_attrib_divisor,
+      3);
+  reg(ctx, g, "__mv_glExtDrawArraysInstanced", js_gl_ext_draw_arrays_instanced,
+      5);
+  reg(ctx, g, "__mv_glExtDrawElementsInstanced",
+      js_gl_ext_draw_elements_instanced, 6);
   JS_FreeValue(ctx, g);
 
   JSValue r = JS_Eval(ctx, kWebGLPreamble, std::strlen(kWebGLPreamble),

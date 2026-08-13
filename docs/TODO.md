@@ -504,12 +504,28 @@ The work below is roughly ordered by the critical path to a walkable game
   (アンチドーテ and ユニコーンの角 name all fifteen states; 気付け薬 /
   ドラゴンブラッド / ドラゴンハート name 戦闘不能 alone, so they are revives)
   and mtf-meido-action four. `reverse_state_effect` is what flips a medicine into
-  *inflicting*, exactly as it does for a skill; nothing in either bed sets it, so
-  that half is left unbuilt rather than guessed at. A fixture check cannot catch
+  *inflicting*, exactly as it does for a skill. A fixture check cannot catch
   a polarity error — it is written to match whatever the code does, and four of
   them encoded the wrong reading quite happily — so
   `rpg2k_testbed_logic_check.rb` now asserts against the **real** item table that
   every curative medicine cures exactly the states it names.
+  ✅ **The inflict half (`reverse_state_effect` set) is now built too**, not
+  guessed at: `Game::Party#item_inflicted_states` mirrors `#item_cured_states`
+  the same way `#skill_inflicted_states` already mirrors `#skill_cured_states`
+  for a field skill — both port the identical EasyRPG `reverse_state_effect`
+  branch (`Item::vExecute` for an item, `Game_Battler::UseSkill` for a skill),
+  and the item side's own doc comment already named the skill side as the
+  reference before this landed. `#use_medicine` inflicts a reverse item's
+  listed states on each target not already carrying them (applying RPG_RT's
+  state-crowding-out prune, `Game::States.prune`, exactly as `#cast_skill`
+  does for a landed skill state) and `#item_effective?` offers such an item
+  when the target lacks a state it would inflict, so the menu does not grey
+  out a poison item on an unafflicted target. No item in either test bed sets
+  the flag, so this is unexercised by `rpg2k_testbed_logic_check.rb`'s
+  real-data sweep — covered instead by new `scripts/rpg2k_logic_check.rb`
+  checks built the same way the mirrored skill-side inflict behaviour already
+  was, confirmed to fail against the pre-fix code (a `NoMethodError` for the
+  missing accessor, then a wrong-effective-flag failure) before the fix.
   The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
   `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
   (zeroing HP), a downed actor can't be healed by HP changes, and curing the
@@ -535,7 +551,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Simulated Attack damage floor — Nepheshel runs 850 of them — could kill the
   party and leave the player walking the map with it. Enemies inflict states
   too now, by casting the status skills in their action pattern (see the
-  行動パターン entry below). Still remaining here: the non-reverse item case.
+  行動パターン entry below). ✅ The item polarity gap this line used to flag
+  (items only cured, never inflicted) is closed — see the item `state_set`
+  paragraph above.
   ✅ **A wipe an event's Parallel Process itself causes now reaches Game Over
   too**, matching the foreground half above. `check_game_over` raises the same
   `:game_over` wait regardless of which interpreter calls it, but only
@@ -3339,6 +3357,40 @@ not yet verified:
   Battle Animation targeting the boat lands at the boat's own tile, not the
   player's or the triggering event's), confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **A Battle Animation's per-frame target-scope flash (flash_scope 1) now
+  actually flashes its target**, instead of being silently dropped. The LCF
+  `animation_timing` schema (`mruby-lcf/mrblib/schema.rb`) documents
+  flash_scope as a three-way field — 0 none / 1 target / 2 screen — but
+  `Scene::Map#fire_animation_flashes` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  only ever checked for `== 2`, so a very common animation idiom (flash the
+  hit enemy red on a damage frame) silently did nothing. Scoped to the
+  battle-round path: a skill/item log entry already carries a
+  `target_index` (`Game::Battle#apply_skill_hit`, `@enemies.index(target)`)
+  that `#battle_animation_pixel` already uses to centre the animation on the
+  right `@battle_ui[:enemy_sprites]` entry, and the new `#fire_target_flash`
+  reuses the same index to flash that sprite — nil (an ally target) is a
+  silent no-op, since RPG2000's front-view battle draws no sprite for a
+  party member to flash (the same fact `#battle_animation_pixel`'s own
+  comment already documents) — nothing here invents ally-side behaviour. A
+  map-triggered Show Battle Animation (11210) aimed at a map character is a
+  different target class entirely (the CharSet-based Flash Sprite mechanism
+  already models flashing one) and is not addressed by this fix;
+  `#build_animation`'s map-triggered call site never sets `target_index`, so
+  a flash_scope-1 timing there stays a no-op too, same as before. The flash
+  itself uses the RGSS `Sprite#flash`/`#update` primitive
+  (`mruby-rgss/src/lib.cxx`) — already ported natively but unused anywhere
+  else in this codebase — decayed one frame at a time by a new
+  `#update_enemy_flashes`, driven every frame `@battle_ui` is up from
+  `#drive_battle`, the same way `#update_map_tone` already drives
+  `@map_viewport`/`@upper_viewport`'s tone per frame. Colour/strength scale
+  from the LCF's 0..31 fields the identical `*8` way the screen-flash branch
+  already does. Covered by two new `scripts/rpg2k_scene_check.rb` checks (a
+  target-scope timing flashes the targeted enemy sprite with the scaled LCF
+  colour for `ANIM_FLASH_FRAMES`, leaves the screen flash and an untargeted
+  bystander sprite untouched, and fades back to nothing once driven for its
+  full duration; a target-scope timing with no resolvable target sprite is a
+  silent no-op, not a crash), the first confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a
@@ -3703,9 +3755,37 @@ above are repeated here)
   it) is unverified — a separate question about troop-member identity/
   numbering, not the render-order this PR fixes.
 - The "airborne" enemy display flag **only** changes its Y position on
-  screen — it has no accuracy/hit-related effect. The "frequent miss"
-  enemy option is a hardcoded 90%→70% drop to *normal-attack* accuracy
-  only (skills unaffected).
+  screen — it has no accuracy/hit-related effect. **Still open**: the
+  monster schema's `levitate` field (LCF enemy field 28,
+  `mruby-lcf/mrblib/schema.rb`) is parsed but read nowhere in
+  `mruby-rpg2k`, so this codebase draws every enemy at its plain
+  centred position regardless — but yado.tk's own text names no pixel
+  offset or animation shape for the raise, and both the yado.tk and
+  viprpg-dev wiki mirrors were unreachable this session (`yado.tk`
+  itself 503'd; the viprpg-dev wiki 403'd WebFetch), so implementing this
+  would mean guessing a magnitude with no way to check it — left for a
+  session that can compare against real RPG_RT. ✅ **The "frequent miss"
+  enemy option is confirmed already correct: a hardcoded 90%→70% drop to
+  *normal-attack* accuracy only, skills unaffected.** `Game::Enemy#attack_hit_rate`
+  (`mruby-rpg2k/mrblib/game.rb`) already reads the schema's `miss` field
+  (LCF enemy field 26) exactly this way — `@miss ? 70 : 90` — and
+  `Game::Battle.hit_rate_of` dispatches to it polymorphically the same
+  way it reads an actor's own `attack_hit_rate`, feeding
+  `Game::Battle#to_hit`'s `base` term, the **one and only** call site
+  (`Battle#strike`'s basic-attack path). A skill's own hit chance
+  (`Game::Party#skill_hit`) reads the skill row's `hit` field directly and
+  never touches an attacker's `attack_hit_rate` at all, structurally
+  confirming the "skills unaffected" half — there is no code path between
+  the two. No change was needed; the claim only lacked its own regression
+  coverage, now added: a new `scripts/rpg2k_logic_check.rb` check
+  (`Game::Enemy#attack_hit_rate: the 'miss' flag...`) pins the bare
+  reader (70 flagged / 90 not), the polymorphic `Battle.hit_rate_of`
+  reader agreeing, and an end-to-end `Battle#to_hit` roll against a
+  same-agility target (so the agi-adjustment term drops out and the
+  result is the bare base) for both a flagged and an unflagged enemy in
+  the same fight — confirmed to fail (`expected 70, got 90`) against a
+  temporarily-neutered `attack_hit_rate` that always returned 90, then
+  restored.
 - Chipset passability: an upper-layer "passable" flag **overrides** a
   lower-layer "impassable" one (passable overall); an upper "impassable"
   flag **always** blocks regardless of the lower layer. The simplified
@@ -4630,10 +4710,42 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         (Worth noting the engine queues its own ops too — New Game's fade-out
         emits `bgm_fade`/`bgs_fade`/`me_fade` — so the path is exercised even
         without the probe.)
-      - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
-        back without it, and `getExtension` returns null so the fallback is what
-        runs); and texture Y-flip and uniform-introspection polish as real
-        content exercises them.
+      - ✅ **VAO / `vertexAttribDivisor` fast path.** `getExtension` returned
+        `null` unconditionally, so PIXI's `GeometrySystem.contextChange`
+        always fell back to its own no-VAO/no-instancing path — correct but
+        slower. `OES_vertex_array_object` and `ANGLE_instanced_arrays` (the
+        two PIXI actually asks for) are now real, working extension objects:
+        the GLES 3.0 core functions they wrap (absent from the GLES2 header
+        this builds against) are loaded via `eglGetProcAddress`, core name
+        first — `eglGetProcAddress` resolves the legacy `ANGLE`-suffixed names
+        to a non-null pointer too, but llvmpipe does not actually implement
+        that (non-Khronos) extension namespace and calling it silently drew
+        nothing; the OES-suffixed VAO names happened to work, so this only
+        surfaced once instancing was tested end to end, not just checked for
+        non-null. Covered by `gl_test.rb`: the extension objects are
+        advertised with working methods and cached per call, a VAO round-trips
+        real vertex-attribute state (two VAOs, one with a bound attribute and
+        one without, draw differently through the same program), and
+        `drawArraysInstancedANGLE` paints one primitive per instance at its
+        own per-instance offset.
+      - ✅ **`UNPACK_PREMULTIPLY_ALPHA_WEBGL`.** Grouped with Y-flip above as
+        one deferred "pixel-store polish" item, but unlike Y-flip (never set
+        `true` by a stock PIXI v5 build) this one already fires on every
+        ordinary texture upload — `BaseTexture`'s default `alphaMode` is
+        `UNPACK` (premultiply-on-upload), and PIXI's `NORMAL` blend mode
+        (`[ONE, ONE_MINUS_SRC_ALPHA]`) assumes the GPU did it. Silently
+        swallowing the enum (GLES has no equivalent) left every texture
+        uploaded with straight alpha blended as if premultiplied — every
+        partially-transparent pixel (window corners, any anti-aliased sprite
+        edge) rendered over-bright. Now premultiplied on the CPU before the
+        real `glTexImage2D`/`glTexSubImage2D` call, on all four upload paths
+        (raw `ArrayBufferView` and canvas-source, both `texImage2D` and
+        `texSubImage2D`). Covered by `gl_test.rb`: a raw upload and a
+        canvas-source upload each come back scaled by their own alpha with
+        the flag on, and untouched with it off (the default).
+      - 🚧 Remaining: `UNPACK_FLIP_Y_WEBGL` (genuinely inert against a stock
+        PIXI v5 build — never set `true`, only reset to `false`) and
+        uniform-introspection polish, as real content exercises them.
       - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
         under a game's `fonts/`, but **MZ projects ship `.woff`**
         (`mplus-1m-regular.woff` and friends), so it found nothing and every real

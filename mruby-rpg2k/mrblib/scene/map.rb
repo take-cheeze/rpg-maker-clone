@@ -387,10 +387,13 @@ class RPG2k
         @animation_sprite.visible = false
         @animation_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
         @animation_sprite.bitmap = @animation_bmp
-        # Fallback marker when the CharSet graphic is unavailable.
+        # Fallback marker when the CharSet graphic is unavailable -- a debug
+        # aid, so it only shows during Test Play; a released game with a
+        # missing hero graphic draws nothing, same as RPG_RT.
         unless @charset
+          alpha = parent.test_play ? 255 : 0
           @player_bmp.fill_rect 4, 0, TILE, Game::CharSet::HEIGHT,
-                                Color.new(240, 240, 80, 255)
+                                Color.new(240, 240, 80, alpha)
         end
         setup_parallax
         setup_pictures
@@ -3178,6 +3181,7 @@ class RPG2k
           open_battle(req) # opened this frame; take input from the next one
           return
         end
+        update_enemy_flashes
         case @battle_ui[:phase]
         when :command     then drive_battle_command
         when :target      then drive_battle_target
@@ -3393,6 +3397,17 @@ class RPG2k
         bmp = Bitmap.new(32, 32)
         bmp.fill_rect 0, 0, 32, 32, Color.new(180, 60, 60, 255)
         bmp
+      end
+
+      # Decay any in-flight target-scope Battle Animation flash (#fire_target_flash)
+      # by one frame. RGSS's native Sprite#flash bakes its colour into the
+      # composite and fades it linearly, but only when driven by an explicit
+      # Sprite#update each frame (mruby-rgss/src/lib.cxx) -- the same contract
+      # #update_map_tone already drives on @map_viewport/@upper_viewport, just
+      # for the per-enemy sprites instead of a viewport tone. A sprite with no
+      # flash in flight costs nothing here (native #update no-ops).
+      def update_enemy_flashes
+        (@battle_ui[:enemy_sprites] || []).each { |s| s.update if s }
       end
 
       # Show a living enemy's sprite, hide a defeated one — called after each
@@ -3894,7 +3909,7 @@ class RPG2k
         id = battle_animation_id(entry)
         return false unless id && id > 0
         tx, ty = battle_animation_pixel(entry)
-        anim = build_animation(id, tx, ty, true)
+        anim = build_animation(id, tx, ty, true, target_index: entry[:target_index])
         return false unless anim
         @map_animation = anim
         fire_animation_flashes(anim) # frame 0 flashes, as the map path does
@@ -5270,7 +5285,7 @@ class RPG2k
       # screen position rather than a map one, and that nothing is waiting on the
       # animation to finish. nil when the animation is unknown or its
       # Battle/<name> sheet is missing.
-      def build_animation(id, tx, ty, battle = false)
+      def build_animation(id, tx, ty, battle = false, target_index: nil)
         anim = animation_row(id)
         return nil unless anim
         frames = table_entries(anim.frames)
@@ -5279,7 +5294,7 @@ class RPG2k
         return nil unless sheet
         { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
           position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
-          timer: ANIM_CELL_FRAMES, battle: battle }
+          timer: ANIM_CELL_FRAMES, battle: battle, target_index: target_index }
       end
 
       def animation_row(id)
@@ -5335,17 +5350,46 @@ class RPG2k
         [v.x * TILE, v.y * TILE]
       end
 
-      # Fire the screen flashes the current frame's timings request (flash_scope
-      # 2 = whole screen); RPG2000 stores the colour / power as 0..31 (scaled up
-      # to the 0..255 the shared Game::Screen flash uses).
+      # Fire the current frame's timings request: flash_scope 2 (whole screen,
+      # already implemented) or flash_scope 1 (the animation's own target --
+      # see #fire_target_flash). RPG2000 stores the colour / power as 0..31,
+      # scaled up to the 0..255 range both flash paths use.
       def fire_animation_flashes(ma)
         ma[:timings].each do |t|
           next unless (t.frame || 0) == ma[:frame_i]
-          next unless (t.flash_scope || 0) == 2
-          @state.screen.flash((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
-                              (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
-                              ANIM_FLASH_FRAMES)
+          case (t.flash_scope || 0)
+          when 2
+            @state.screen.flash((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
+                                (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
+                                ANIM_FLASH_FRAMES)
+          when 1
+            fire_target_flash(ma[:target_index], t)
+          end
         end
+      end
+
+      # yado.tk / the LCF schema itself (`animation_timing`'s flash_scope field,
+      # 0 none / 1 target / 2 screen): a Battle Animation frame's flash can pulse
+      # its *target* instead of the whole screen -- previously dropped outright,
+      # since only flash_scope 2 was ever handled here. Scoped to the
+      # battle-round path (a skill/item's `target_index`, see
+      # #battle_animation_pixel): RPG2000's battle is front-view, so an
+      # ally-targeted entry has no on-screen sprite to flash (target_index is
+      # nil there, same as it already is for centring the animation itself) and
+      # a map-triggered Show Battle Animation (11210) aimed at a map character
+      # is a different target class entirely, one the Flash Sprite command's own
+      # CharSet tone mechanism already models -- left unaddressed here, since
+      # #build_animation's map path never sets target_index. Uses the RGSS
+      # Sprite#flash/#update primitive (mruby-rgss/src/lib.cxx) already ported
+      # natively but unused elsewhere in this codebase, decayed each frame by
+      # #update_enemy_flashes.
+      def fire_target_flash(target_index, t)
+        sprites = @battle_ui && @battle_ui[:enemy_sprites]
+        spr = target_index && sprites ? sprites[target_index] : nil
+        return unless spr
+        spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
+                            (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
+                  ANIM_FLASH_FRAMES)
       end
 
       # Collect an Array2D (or a plain Hash test double) into a dense array of its
@@ -6805,7 +6849,21 @@ class RPG2k
               # 0 means "no upper tile" (the upper layer's own ids start at
               # BLOCK_F); on the lower layer the same value is water set 0, so
               # only this call may skip it. See Game::ChipsetLayout.block.
-              draw_tile @upper_bmp, upper, dx, dy, abf, cf if upper && upper != 0
+              if upper && upper != 0
+                # Only a starred ("above hero") upper tile belongs in the
+                # buffer that composites over the player/events -- see
+                # Game::ChipSet#elevated? and its ABOVE_BIT comment. An
+                # unstarred one (most of a chipset's upper tiles: furniture,
+                # counters, anything meant to be walked *against* rather than
+                # *under*) goes in the same buffer as the lower layer instead,
+                # so it draws behind a character standing on or against it
+                # rather than masking them outright.
+                if @chipset.elevated?(upper)
+                  draw_tile @upper_bmp, upper, dx, dy, abf, cf
+                else
+                  draw_tile @lower_bmp, upper, dx, dy, abf, cf
+                end
+              end
             else
               # Fallback: solid colour blocks keyed by tile id (no chipset image).
               @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)

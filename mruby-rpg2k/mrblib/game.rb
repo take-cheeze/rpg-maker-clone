@@ -468,14 +468,31 @@ module Game
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
     # The non-directional bits of the same passage byte (EasyRPG's `Passable`,
     # src/map_data.h: Down=0x01, Left=0x02, Right=0x04, Up=0x08, Above=0x10,
-    # Wall=0x20, Counter=0x40). `ABOVE_BIT` marks an upper tile as *see-through*
-    # ground rather than a solid object in its own right: `IsPassableTile` only
-    # falls through to the lower layer's own passability when this bit is set,
-    # so a painted-on decoration (a rug, a patch of flowers) still collides
-    # with whatever the lower layer says underneath it, while a genuine
-    # obstacle (a boulder, a fence post, a shop counter) is decided by the
-    # upper tile alone. `COUNTER_BIT` marks a tile you may talk *across* — the
-    # shop counter an NPC stands behind.
+    # Wall=0x20, Counter=0x40). `ABOVE_BIT` is the editor's upper-layer "star"
+    # toggle, and it decides two separate things, both keyed off the same bit:
+    #   - Passability: an upper tile is *see-through* ground rather than a
+    #     solid object in its own right when this bit is set. `IsPassableTile`
+    #     only falls through to the lower layer's own passability when it is
+    #     set, so a painted-on decoration (a rug, a patch of flowers) still
+    #     collides with whatever the lower layer says underneath it, while a
+    #     genuine obstacle (a boulder, a fence post, a shop counter) is
+    #     decided by the upper tile alone.
+    #   - Draw order (see Scene::Map#draw_layers / #elevated?): only a starred
+    #     upper tile draws in front of characters; an unstarred one draws at
+    #     the same z as the lower layer instead, so a character standing on or
+    #     against it composites normally rather than being masked by it.
+    #     Confirmed against a genuine RPG_RT.exe under wine: Nepheshel's
+    #     opening lies the hero down across a 3-tile bed graphic (headboard /
+    #     mattress / footer); only the footer is starred, so the headboard and
+    #     mattress alone would show him in full, but a *separate* map event
+    #     (layer: above, its own small pillow graphic) sits on the same tile
+    #     and is what actually covers him from the neck down, drawn through
+    #     the ordinary above-hero event path. Treating every upper tile as
+    #     always-above, as this renderer previously did, hid the headboard
+    #     tile's own contents as well and left him fully invisible instead of
+    #     tucked in.
+    # `COUNTER_BIT` marks a tile you may talk *across* — the shop counter an
+    # NPC stands behind.
     ABOVE_BIT = 0x10
     COUNTER_BIT = 0x40
     # Every directional bit ORed together, for a jump's any-side landing check.
@@ -510,6 +527,15 @@ module Game
       @passable_upper[idx]
     end
     private :upper_flags
+
+    # Whether an upper-layer tile is starred (ABOVE_BIT) and so draws in front
+    # of characters rather than behind them, per Scene::Map#draw_layers. A
+    # tile with no passability entry at all (id 0, or a chipset with no
+    # table) is not starred — see #upper_flags.
+    def elevated?(upper_tile_id)
+      flags = upper_flags(upper_tile_id)
+      !flags.nil? && (flags & ABOVE_BIT) != 0
+    end
 
     # Chip index into the lower passability table for a lower-layer tile id.
     def self.lower_index(tile_id)
@@ -2451,16 +2477,36 @@ module Game
     # "cures nothing" made every antidote and every revive item in both games
     # inert, in the menu and in a fight alike.
     #
-    # A medicine that really does *inflict* (the flag set) is left unbuilt rather
-    # than guessed at: no item in either bed sets it, so there is nothing to
-    # measure an implementation against.
+    # A medicine that really does *inflict* (the flag set): see
+    # #item_inflicted_states below, which mirrors this the same way
+    # #skill_inflicted_states mirrors #skill_cured_states for a field skill.
     def item_cured_states(it)
       return [] if it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      item_state_ids(it)
+    end
+
+    # The states item `it` names in its `state_set` (a 0/1 byte per state, index
+    # i -> state id i+1), regardless of polarity. Shared by #item_cured_states
+    # and #item_inflicted_states, mirroring #skill_state_ids.
+    def item_state_ids(it)
       set = it.state_set
       return [] unless set
       out = []
       set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
       out
+    end
+
+    # The states item `it` inflicts (the reverse case, `reverse_state_effect`
+    # set): the opposite polarity to #item_cured_states, exactly as
+    # #skill_inflicted_states is to #skill_cured_states for a field skill (both
+    # port EasyRPG's identical `reverse_state_effect` branch, `Item::vExecute`
+    # for an item and `Game_Battler::UseSkill` for a skill). No item in either
+    # test bed sets the flag, so this was previously left unbuilt entirely --
+    # unlike the skill side, which already has the mechanism -- even though
+    # using the item this way was reachable and silently did nothing at all.
+    def item_inflicted_states(it)
+      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      item_state_ids(it)
     end
 
     # 蘇生専用 (`ko_only`): an item that does nothing at all to a target who is
@@ -2512,7 +2558,8 @@ module Game
         return false if ko_only_blocked?(it, actor)
         hp, mp = item_recovery(it, actor)
         (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
-          item_cured_states(it).any? { |s| actor.state?(s) }
+          item_cured_states(it).any? { |s| actor.state?(s) } ||
+          item_inflicted_states(it).any? { |s| !actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
         !s.nil? && s != 0 && !actor.knows_skill?(s)
@@ -2564,6 +2611,7 @@ module Game
     def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
       cured = item_cured_states(it)
+      inflicted = item_inflicted_states(it)
       affected = []
       targets.each do |t|
         # A 蘇生専用 item passes over anyone still standing without touching
@@ -2581,6 +2629,20 @@ module Game
             changed = true
           end
         end
+        landed = false
+        inflicted.each do |s|
+          unless t.state?(s)
+            t.add_state(s)
+            changed = true
+            landed = true
+          end
+        end
+        # RPG_RT's crowding-out rule (see Game::States::PRUNE_GAP): a state a
+        # poison item just inflicted may itself immediately push out one
+        # already held, or be pushed out by one already held that outranks it
+        # -- the same prune #cast_skill applies for a skill's own inflicted
+        # states.
+        t.states = Game::States.prune(t.states, state_table) if landed
         hp, mp = item_recovery(it, t)
         before_hp = t.hp
         before_mp = t.mp

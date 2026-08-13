@@ -442,6 +442,184 @@ assert 'texSubImage2D updates a texture after its first upload' do
   assert_true rgb[0] < 60
 end
 
+# --- M6.3c: UNPACK_PREMULTIPLY_ALPHA_WEBGL -----------------------------------
+#
+# PIXI sets `gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, ...)` on every
+# ordinary texture upload (`libs/pixi.js` in a fetched MZ corescript, in
+# `TextureSystem.updateTexture`/`RenderTextureSystem` etc.), true whenever a
+# BaseTexture's `alphaMode` is the default `UNPACK` (= PREMULTIPLY_ON_UPLOAD,
+# what every plain image resource gets) — and its NORMAL blend mode is
+# `[gl.ONE, gl.ONE_MINUS_SRC_ALPHA]`, which assumes the source colour is
+# already scaled by its own alpha. js_gl_pixel_storei used to swallow this
+# enum entirely (real GLES has no equivalent), so every texture uploaded with
+# straight alpha and every partially-transparent pixel — window corners,
+# any anti-aliased sprite edge — blended over-bright. Unlike
+# UNPACK_FLIP_Y_WEBGL (never set true by a stock PIXI v5 build, see
+# js_gl_pixel_storei's comment), this one is live on the very first texture
+# any real MZ game uploads.
+
+assert 'UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies a raw texImage2D upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # A solid 1x1 half-alpha-red texture, sampled onto a full-viewport quad with
+  # blending disabled so the read-back pixel is exactly what is in the
+  # texture. Uploaded twice, once with the flag off (default) and once on;
+  # only the second should come back scaled by its own alpha.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 8, H = 8;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.BLEND);
+
+      var quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      function drawWith(premultiply) {
+        var tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premultiply);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA,
+                      gl.UNSIGNED_BYTE, new Uint8Array([200, 0, 0, 128]));
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); // PIXI resets it
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.finish();
+        var px = new Uint8Array(4);
+        gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        gl.deleteTexture(tex);
+        return px[0] + ':' + px[1] + ':' + px[2] + ':' + px[3];
+      }
+
+      return drawWith(false) + ' | ' + drawWith(true);
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  straight, premultiplied = out.split(" | ")
+  assert_equal "200:0:0:128", straight # flag off (default): untouched
+  s = premultiplied.split(":").map(&:to_i)
+  assert_equal 4, s.size
+  assert_true (s[0] - 100).abs <= 3 # 200 * 128 / 255 ~= 100.4
+  assert_equal 0, s[1]
+  assert_equal 0, s[2]
+  assert_equal 128, s[3] # alpha itself is untouched, only colour is scaled
+end
+
+assert 'UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies a texSubImage2D-from-canvas upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # The path that actually carries MZ's pixels (see the texSubImage2D test
+  # above): a Canvas2D source drawn with a fractional globalAlpha (so its
+  # straight RGBA has a non-trivial, non-hardcoded alpha), sub-uploaded with
+  # the flag on. The expected premultiplied colour is derived from the
+  # canvas' own *measured* straight pixel rather than an assumed constant, so
+  # this does not depend on the colour parser's own rounding.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 8, H = 8;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.BLEND);
+
+      var quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      var srcCv = document.createElement('canvas'); srcCv.width = 1; srcCv.height = 1;
+      var sctx = srcCv.getContext('2d');
+      sctx.globalAlpha = 0.5;
+      sctx.fillStyle = '#c80000';
+      sctx.fillRect(0, 0, 1, 1);
+      var truth = __mv_canvasGetPixel(srcCv.__h, 0, 0); // straight RGBA, measured
+
+      var tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, srcCv);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.finish();
+      var px = new Uint8Array(4);
+      gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return truth.join(':') + ' | ' + px[0] + ':' + px[1] + ':' + px[2] + ':' + px[3];
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  truth_s, got_s = out.split(" | ")
+  truth = truth_s.split(":").map(&:to_i)
+  got = got_s.split(":").map(&:to_i)
+  assert_equal 4, truth.size
+  assert_true truth[3] > 0 && truth[3] < 255 # the fixture really is partially transparent
+  assert_true (got[0] - truth[0] * truth[3] / 255).abs <= 3
+  assert_true (got[1] - truth[1] * truth[3] / 255).abs <= 3
+  assert_true (got[2] - truth[2] * truth[3] / 255).abs <= 3
+  assert_equal truth[3], got[3] # alpha itself is untouched
+end
+
 assert 'the stencil test masks inside a render texture, where MZ actually draws' do
   skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
 
@@ -543,4 +721,194 @@ assert 'the stencil test masks inside a render texture, where MZ actually draws'
   assert_equal 3, parts.size
   assert_true parts[2].to_i > 200 # right: drawn
   assert_true parts[1].to_i < 60  # left: masked out
+end
+
+# --- M6.3c fast path: OES_vertex_array_object / ANGLE_instanced_arrays ------
+#
+# PIXI's GeometrySystem.contextChange (libs/pixi.js in a fetched MZ
+# corescript) checks `gl.createVertexArray`/`gl.vertexAttribDivisor` (WebGL2)
+# first and, missing those, asks `getExtension` for these two by name and
+# calls their ANGLE/OES-suffixed methods. `getExtension` used to always
+# return null, so every draw went through PIXI's no-VAO/no-instancing
+# fallback -- correct but slower. These prove the extension objects are real
+# and functionally correct, not just present.
+
+assert 'getExtension advertises OES_vertex_array_object / ANGLE_instanced_arrays with working methods, cached per call' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var cv = document.createElement('canvas'); cv.width = 4; cv.height = 4;
+      var gl = cv.getContext('webgl');
+      var supported = gl.getSupportedExtensions();
+      var vao1 = gl.getExtension('OES_vertex_array_object');
+      var vao2 = gl.getExtension('OES_vertex_array_object');
+      var inst1 = gl.getExtension('ANGLE_instanced_arrays');
+      var inst2 = gl.getExtension('ANGLE_instanced_arrays');
+      var bogus = gl.getExtension('NOT_A_REAL_EXTENSION');
+      var flags = [
+        supported.indexOf('OES_vertex_array_object') >= 0,
+        supported.indexOf('ANGLE_instanced_arrays') >= 0,
+        !!vao1,
+        vao1 === vao2,
+        typeof vao1.createVertexArrayOES === 'function',
+        typeof vao1.bindVertexArrayOES === 'function',
+        typeof vao1.deleteVertexArrayOES === 'function',
+        typeof vao1.isVertexArrayOES === 'function',
+        !!inst1,
+        inst1 === inst2,
+        typeof inst1.vertexAttribDivisorANGLE === 'function',
+        typeof inst1.drawArraysInstancedANGLE === 'function',
+        typeof inst1.drawElementsInstancedANGLE === 'function',
+        bogus === null,
+      ];
+      return flags.map(function (f) { return f ? 1 : 0; }).join(',');
+    })()
+  JS
+  flags = out.split(",").map(&:to_i)
+  assert_equal 14, flags.size
+  flags.each_with_index { |f, i| assert_equal 1, f, "flag #{i}" }
+end
+
+assert 'a VAO round-trips vertex attribute state (OES_vertex_array_object)' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # VAO A binds a full-screen (overflowing) triangle to attribute 0; VAO B
+  # never sets up attribute 0 at all. Drawing through each with the *same*
+  # program/draw call must produce different pixels only if the buffer
+  # binding, enable state and vertexAttribPointer really are captured and
+  # restored per-VAO rather than living in shared context state.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 64, H = 64;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      var vaoExt = gl.getExtension('OES_vertex_array_object');
+      if (!vaoExt) return 'no-vao-ext';
+
+      var vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs, '#version 100\nattribute vec2 aPos;\nvoid main(){ gl_Position = vec4(aPos,0.0,1.0); }\n');
+      gl.compileShader(vs);
+      var fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, '#version 100\nprecision mediump float;\nvoid main(){ gl_FragColor = vec4(0.0,1.0,0.0,1.0); }\n');
+      gl.compileShader(fs);
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+
+      var vaoA = vaoExt.createVertexArrayOES();
+      vaoExt.bindVertexArrayOES(vaoA);
+      var bufA = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufA);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+      // VAO B: created and bound, but attribute 0 is left disabled -- its
+      // "current value" defaults to (0,0,0,1) for every vertex, collapsing
+      // the triangle to a single point (nothing rasterises).
+      var vaoB = vaoExt.createVertexArrayOES();
+      vaoExt.bindVertexArrayOES(vaoB);
+      vaoExt.bindVertexArrayOES(null);
+
+      function draw(vao) {
+        gl.clearColor(0.6, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        vaoExt.bindVertexArrayOES(vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.finish();
+        var px = new Uint8Array(4);
+        gl.readPixels(W / 2, H / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px[1];
+      }
+
+      var greenA = draw(vaoA);
+      var greenB = draw(vaoB);
+      var wasVaoA = vaoExt.isVertexArrayOES(vaoA);
+      vaoExt.deleteVertexArrayOES(vaoA);
+      vaoExt.deleteVertexArrayOES(vaoB);
+      var isVaoAAfterDelete = vaoExt.isVertexArrayOES(vaoA);
+      return [greenA, greenB, wasVaoA ? 1 : 0, isVaoAAfterDelete ? 1 : 0].join(',');
+    })()
+  JS
+  parts = out.split(",")
+  assert_equal 4, parts.size
+  assert_true parts[0].to_i > 200 # VAO A: its own attribute state draws green
+  assert_true parts[1].to_i < 60  # VAO B: no attribute 0 set up, nothing drawn
+  assert_equal "1", parts[2]      # isVertexArrayOES true for a live VAO
+  assert_equal "0", parts[3]      # ...and false once deleted
+end
+
+assert 'drawArraysInstancedANGLE draws one primitive per instance at its own offset (ANGLE_instanced_arrays)' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # A per-vertex triangle big enough to fully cover a small square around the
+  # origin (the same "overflowing triangle" trick as the plain smoke test,
+  # scaled down), offset per-instance by a divisor-1 attribute. Two instances,
+  # at -0.5 and +0.5 on the x axis, must each paint their own small square and
+  # leave the gap between them (and everywhere else) untouched -- proof this
+  # is really two separate instanced draws and not one shape spanning both.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 64, H = 64;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      var instExt = gl.getExtension('ANGLE_instanced_arrays');
+      if (!instExt) return 'no-instance-ext';
+
+      var vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs,
+        '#version 100\nattribute vec2 aPos;\nattribute vec2 aOffset;\n' +
+        'void main(){ gl_Position = vec4(aPos * 0.15 + aOffset,0.0,1.0); }\n');
+      gl.compileShader(vs);
+      if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) return 'vs-failed';
+      var fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, '#version 100\nprecision mediump float;\nvoid main(){ gl_FragColor = vec4(0.0,1.0,0.0,1.0); }\n');
+      gl.compileShader(fs);
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.bindAttribLocation(p, 1, 'aOffset');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0.6, 0.0, 0.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      var posBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+      var offBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, offBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5,0, 0.5,0]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+      instExt.vertexAttribDivisorANGLE(1, 1);
+
+      instExt.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 3, 2);
+      gl.finish();
+
+      function px(x, y) {
+        var out = new Uint8Array(4);
+        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
+        return out[1];
+      }
+      return [px(16, 32), px(32, 32), px(48, 32)].join(',');
+    })()
+  JS
+  parts = out.split(",")
+  assert_equal 3, parts.size
+  assert_true parts[0].to_i > 200 # left instance (offset -0.5): drawn
+  assert_true parts[1].to_i < 60  # midpoint between them: untouched
+  assert_true parts[2].to_i > 200 # right instance (offset +0.5): drawn
 end
