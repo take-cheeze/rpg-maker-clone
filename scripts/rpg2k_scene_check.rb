@@ -4194,6 +4194,53 @@ check 'Show Battle Animation plays: an animation sprite shows and a flash fires'
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
+# yado.tk: only one Battle Animation is ever on screen at once -- true of the
+# map-level Show Battle Animation command (11210) same as an in-battle one.
+# That only means anything if a *parallel process* can show one at all: before
+# this fix, #drive_parallel_wait's wait-kind dispatch had no :animation branch,
+# so it fell into the generic "background: ignore message/choice/teleport
+# requests" case and called #resume immediately -- the animation was never
+# built or drawn, and the "wait until it finishes" flag did nothing.
+check "a Common Event Parallel Process's Show Battle Animation (wait) actually plays and blocks it" do
+  ic = Game::Interpreter::Cmd
+  # animation 7 has no drawable data in the fake db (see the fallback-wait
+  # check above), so this exercises the timed-wait fallback path.
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0),
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  3.times { scene.update }
+  ok !st.switches[5],
+     'the parallel process must be held while the animation plays, not resumed at once'
+  60.times { scene.update } # outlast the fallback animation length
+  ok st.switches[5], 'the parallel process resumes once the animation finishes'
+end
+
+check "a Common Event Parallel Process's Show Battle Animation draws a sprite and flash" do
+  ic = Game::Interpreter::Cmd
+  # animation 8 is the drawable one in the fake db (see the foreground check
+  # above) -- this pins that a parallel process's request reaches the same
+  # renderer, not just that its own wait resolves.
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  shown = false
+  flashed = false
+  40.times do
+    scene.update
+    shown ||= spr.visible
+    flashed ||= st.screen.flashing?
+    break if st.switches[6]
+  end
+  ok shown, 'the animation sprite was shown while the parallel process\'s animation played'
+  ok flashed, 'a screen-flash timing fired during it'
+  ok st.switches[6], 'the parallel process resumed after the animation'
+end
+
 check 'a vehicle placed on the current map is drawn; one off-map or absent is not' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
