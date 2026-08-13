@@ -2085,9 +2085,28 @@ Everything below is unverified against the codebase.
   Jump, etc.) still run normally while mounted and must be manually guarded
   off; **setting a map event's trigger to Parallel Process and running "Set
   Vehicle Position" from it crashes RPG_RT** (any other trigger type does
-  not) — an authentic engine crash, probably not worth reproducing; a
+  not) — an authentic engine crash, probably not worth reproducing; ✅ a
   vehicle's x/y/screen-x/y can be read via variable ops from a different map
-  than it currently occupies.
+  than it currently occupies — `Game::Interpreter#event_operand`'s Control
+  Variables "character position" operand (type 6) recognised the hero (ref
+  10001) and map event ids, but a vehicle ref (10002-10004, boat/ship/
+  airship) fell through to the same "no match" branch a nonexistent map
+  event does, always reading 0. A new `#vehicle_operand` reads the target
+  `Game::Vehicle` straight off `Game::State` — map id, x, y, facing — which
+  needs no scene hook at all, since a vehicle (unlike a map event) is
+  tracked independently of whichever map is currently loaded, and
+  `Scene::Map#follow_vehicle` already keeps a ridden vehicle's stored
+  position live every step. A vehicle's map id operand returns its real
+  value rather than the map-event quirk's hardcoded 0, the same way the
+  hero's own map id read already does. **Screen x/y (attr 4/5) are not
+  covered by this fix** — those still read 0 for a vehicle, the same
+  degenerate answer an unresolvable map-event screen position already gets,
+  since resolving them would need a scene-side camera hook this fix
+  deliberately avoids depending on. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a boat and an airship's map id/x/y/
+  facing read correctly from an interpreter positioned on an unrelated map;
+  an unplaced vehicle reads its (0,0) default), confirmed to fail against
+  the pre-fix code before the fix.
 - **Battle Event** — separate command set from Map/Common events entirely;
   no Pictures on the battle screen; Parallel Process can't run in battle;
   no further pages run once battle ends.

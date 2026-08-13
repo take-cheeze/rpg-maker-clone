@@ -4269,6 +4269,32 @@ check 'Control Variables reads a map event position (operand type 6)' do
   eq 0, st.variables[5]                                          # unknown event reads 0
 end
 
+check 'Control Variables reads a vehicle position (operand 6, ref 10002-10004)' do
+  st = new_state
+  st.vehicle(:boat).map_id = 3; st.vehicle(:boat).x = 11
+  st.vehicle(:boat).y = 4; st.vehicle(:boat).direction = 8
+  st.vehicle(:airship).map_id = 9; st.vehicle(:airship).x = 20
+  st.vehicle(:airship).y = 15; st.vehicle(:airship).direction = 6
+  it = Game::Interpreter.new(st)
+  # The interpreter's own map (id 1, from new_state) differs from either
+  # vehicle's -- yado.tk: a vehicle's position reads fine from another map.
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10002, 0]),  # boat map id
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 10002, 1]),  # boat x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 6, 10002, 2]),  # boat y
+            FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 0, 6, 10002, 3]),  # boat facing
+            FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 0, 6, 10004, 0]),  # airship map id
+            FakeCmd.new(IC::CONTROL_VARS, [0, 6, 6, 0, 6, 10004, 1]),  # airship x
+            FakeCmd.new(IC::CONTROL_VARS, [0, 7, 7, 0, 6, 10003, 1])]) # ship (unplaced) x -> 0
+  it.update
+  eq 3, st.variables[1]   # unlike a map event, a vehicle's real map id is readable
+  eq 11, st.variables[2]
+  eq 4, st.variables[3]
+  eq 8, st.variables[4]
+  eq 9, st.variables[5]
+  eq 20, st.variables[6]
+  eq 0, st.variables[7]   # an unplaced vehicle sits at its (0,0) default
+end
+
 check 'Control Variables reads "this event" (operand 6, ref 10005 / 0)' do
   st = new_state
   it = Game::Interpreter.new(st)
