@@ -6645,7 +6645,21 @@ class RPG2k
               # 0 means "no upper tile" (the upper layer's own ids start at
               # BLOCK_F); on the lower layer the same value is water set 0, so
               # only this call may skip it. See Game::ChipsetLayout.block.
-              draw_tile @upper_bmp, upper, dx, dy, abf, cf if upper && upper != 0
+              if upper && upper != 0
+                # Only a starred ("above hero") upper tile belongs in the
+                # buffer that composites over the player/events -- see
+                # Game::ChipSet#elevated? and its ABOVE_BIT comment. An
+                # unstarred one (most of a chipset's upper tiles: furniture,
+                # counters, anything meant to be walked *against* rather than
+                # *under*) goes in the same buffer as the lower layer instead,
+                # so it draws behind a character standing on or against it
+                # rather than masking them outright.
+                if @chipset.elevated?(upper)
+                  draw_tile @upper_bmp, upper, dx, dy, abf, cf
+                else
+                  draw_tile @lower_bmp, upper, dx, dy, abf, cf
+                end
+              end
             else
               # Fallback: solid colour blocks keyed by tile id (no chipset image).
               @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
