@@ -2187,14 +2187,16 @@ class ClassedRow < SkillRow
 end
 
 class FakeActorDB
-  attr_reader :player, :system, :item, :skill, :job, :situation
-  def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil)
+  attr_reader :player, :system, :item, :skill, :job, :situation, :property
+  def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
+                 property = nil)
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
     @skill = skills
     @job = jobs
     @situation = situation
+    @property = property
   end
 end
 
@@ -3422,6 +3424,45 @@ check 'field_skills lists only known field-usable ally skills; can_cast? checks 
   eq true, st.party.can_cast?(hero, 7)
   eq false, st.party.can_cast?(hero, 10)       # 99 SP > 30
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
+end
+
+# A property/attribute row exposing just the weapon (0) / magic (1) `type`
+# flag the equip-gating check reads (field 2 of the real `property` row).
+AttrTypeRow = Struct.new(:type)
+
+check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equipped" do
+  # Attribute 1 is weapon-type, attribute 2 is magic-type.
+  props = { 1 => AttrTypeRow.new(0), 2 => AttrTypeRow.new(1) }
+  items = {
+    10 => fake_item(type: 1, name: 'Flame Sword', attribute_set: [true]),  # weapon, attr 1
+    11 => fake_item(type: 3, name: 'Flame Armor', attribute_set: [true]),  # armour, attr 1
+    12 => fake_item(type: 1, name: 'Plain Sword'),                        # weapon, no attrs
+  }
+  skills = {
+    7 => fake_skill(name: 'Fire Slash', scope: 0, sp_cost: 1, power: 10,
+                    attribute_effects: [true]),               # attr 1, weapon-type
+    8 => fake_skill(name: 'Ice Bolt', scope: 0, sp_cost: 1, power: 10,
+                    attribute_effects: [false, true]),        # attr 2, magic-type
+  }
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  st = Game::State.new(
+    Game::Party.new(FakeActorDB.new(players, [1], items, skills, {}, nil, props)), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  hero.learn_skill(8)
+
+  eq false, st.party.can_cast?(hero, 7), 'no weapon at all -- the attribute is unmet'
+  hero.equip([12])
+  eq false, st.party.can_cast?(hero, 7), "a weapon that doesn't carry the attribute"
+  hero.equip([11])
+  eq false, st.party.can_cast?(hero, 7), 'armour carrying the attribute does not satisfy it'
+  hero.equip([10])
+  eq true, st.party.can_cast?(hero, 7), 'the matching weapon is equipped'
+
+  # The magic-type attribute never gates, equipped or not.
+  hero.equip([])
+  eq true, st.party.can_cast?(hero, 8)
 end
 
 check 'an all-ally heal skill heals the whole party (caster included) and spends SP' do

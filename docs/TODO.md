@@ -1723,11 +1723,13 @@ following this paragraph as the original record.
   literal top-left upper tile is the canonical "no tile" transparent chip,
   any other blank-looking one carries its own (possibly impassable)
   identity — content-authoring nuance, likely nothing to fix engine-side.
-- `028_tokushu_huka/` — a skill whose Attack/Defense Attribute is configured
+- ✅ `028_tokushu_huka/` — a skill whose Attack/Defense Attribute is configured
   as a **weapon** attribute (vs. a **magic** attribute) can only be used
   while a weapon carrying that same attribute is equipped; armour with the
-  same attribute does not satisfy it. Worth checking whether skill
-  usability currently models attribute-based equip-gating at all.
+  same attribute does not satisfy it. Skill usability modelled no
+  attribute-based equip-gating at all before this — see the "Database field
+  semantics" entry below, now implemented as `Game::Party#can_cast?` /
+  `#weapon_attribute_ready?`.
 - `033_load/` — editing a map in the *editor* after a save exists resets
   that save's event positions to default on load, and database edits (e.g.
   reordering Items) desync old saves since items are referenced by
@@ -2273,13 +2275,29 @@ not yet verified:
   priority gap to say whether the real messaging differs. Covered by new
   `scripts/rpg2k_logic_check.rb` checks (the pure `States.prune` rule, and
   one per infliction path), confirmed to fail against the pre-fix code.
-- A weapon-type Attribute (as opposed to a magic-type one) gates skill
+- ✅ A weapon-type Attribute (as opposed to a magic-type one) gates skill
   usability on having a matching-attribute **weapon** equipped — armor
   with the same attribute does not satisfy it (already flagged as a
   09_bug finding above; corroborated independently via the Attribute
-  database page too). Weapon-type × magic-type attribute stacking on one
-  attack **multiplies** the two rates as fractions (200%×50%=100%), not
-  an average despite the site's own wording.
+  database page too). `Game::Party#weapon_attribute_ready?` reads each of a
+  skill's `attribute_effects` ids, checks the database `property` table's
+  `type` field (0 weapon / 1 magic) for each, and — for the weapon-type ones
+  only — requires `Actor#weapon_attributes` (the union of the *equipped
+  weapon slot's* item(s) own `attribute_set`, already used for battle damage
+  scaling) to cover every one of them; a magic-type attribute, or a skill
+  with none at all, gates nothing. Wired into `#can_cast?`, the single choke
+  point every cast path (field, battle, escape/teleport/switch skills) already
+  runs through. A skill naming more than one weapon-type attribute needs all
+  of them covered (one weapon or several via dual-wield) — the literal reading
+  of "a weapon carrying **that** attribute", not confirmed against a
+  multi-attribute skill since neither test bed ships one. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the pre-fix
+  code. **Still open**: weapon-type × magic-type attribute stacking on one
+  attack **multiplies** the two rates as fractions (200%×50%=100%), not an
+  average despite the site's own wording — a separate question from equip
+  gating, in the damage formula (`Game::Battle#attr_multiplier` currently
+  takes the strongest single rate, not a weapon/magic product) rather than
+  usability.
 - Battle Animation: only one on screen at a time (a second forcibly cuts
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle

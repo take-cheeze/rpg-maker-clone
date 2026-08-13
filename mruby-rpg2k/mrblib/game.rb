@@ -2751,11 +2751,47 @@ module Game
       sk.switch_id
     end
 
-    # Whether `caster` can cast skill `sid` right now: it knows the skill and can
-    # pay its SP cost.
+    # Whether `caster` can cast skill `sid` right now: it knows the skill, can
+    # pay its SP cost, and (see #weapon_attribute_ready?) is not missing a
+    # required weapon-type Attribute.
     def can_cast?(caster, sid)
       sk = db_skill(sid)
-      !sk.nil? && caster && caster.knows_skill?(sid) && caster.mp >= skill_cost(sk, caster)
+      !sk.nil? && caster && caster.knows_skill?(sid) &&
+        caster.mp >= skill_cost(sk, caster) && weapon_attribute_ready?(caster, sk)
+    end
+
+    # Whether `caster` satisfies `sk`'s weapon-type Attribute requirement, if
+    # it has one: a skill whose Attack/Defense Attribute (`attribute_effects`,
+    # the same field #skill_attributes reads for damage scaling) names an
+    # attribute the database flags weapon-type (the `property` table's `type`
+    # field, 0) can only be cast while a weapon carrying that same attribute
+    # is equipped -- armour carrying it does not satisfy the requirement
+    # (yado.tk 028_tokushu_huka, corroborated independently via the Attribute
+    # database page). A magic-type attribute (`type` 1), or a skill with no
+    # attribute at all, gates nothing. A skill naming more than one
+    # weapon-type attribute needs all of them covered, one weapon or several
+    # (dual-wield) between them -- there is no test-bed skill with two to
+    # confirm that against, so it is the direct reading of "a weapon carrying
+    # that same attribute" applied per attribute rather than a guess at
+    # something looser.
+    def weapon_attribute_ready?(caster, sk)
+      return true unless sk
+      ids = skill_attributes(sk).select { |aid| attribute_weapon_type?(aid) }
+      return true if ids.empty?
+      equipped = caster.respond_to?(:weapon_attributes) ? caster.weapon_attributes : []
+      ids.all? { |aid| equipped.include?(aid) }
+    end
+
+    # Whether attribute `aid` is the database's weapon-type (field 2, value 0,
+    # as opposed to magic-type 1). An id the `property` table does not define
+    # (a fixture, or an id past what a real database ever leaves undefined)
+    # reads as magic-type -- the permissive default, since gating a skill on
+    # an attribute this build cannot look up would lock it out with no way
+    # for the player to fix it.
+    def attribute_weapon_type?(aid)
+      return false unless @db.respond_to?(:property) && @db.property
+      row = @db.property[aid]
+      row && row.respond_to?(:type) && row.type == 0 ? true : false
     end
 
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula
