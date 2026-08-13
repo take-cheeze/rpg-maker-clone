@@ -2882,6 +2882,27 @@ check 'Actor equipment adds item bonuses to the effective stats' do
   eq [8, 2, 4, 10], [a.atk, a.def, a.agi, a.max_hp]
 end
 
+check 'Change Parameters tracks an unclamped total under the displayed clamp' do
+  # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
+  # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
+  # total underneath -- a big drop below the floor doesn't "spend" any of a
+  # later raise until the raw total genuinely climbs back past the floor.
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
+  a = Game::Party.new(db).leader
+  eq 3, a.atk                                     # base atk starts at 3
+  a.change_param(Game::Actor::PARAM_ATK, -2000)    # raw 3 - 2000 = -1997
+  eq 1, a.atk                                      # clamped to the floor
+  a.change_param(Game::Actor::PARAM_ATK, 1000)     # raw -1997 + 1000 = -997
+  eq 1, a.atk                                      # still floored -- raw is still negative
+  a.change_param(Game::Actor::PARAM_ATK, 1000)     # raw -997 + 1000 = 3
+  eq 3, a.atk                                      # raw crossed back above 1: unclamps
+  # An ordinary, never-clamped sequence is untouched by the shadow tracking.
+  a.change_param(Game::Actor::PARAM_DEF, 5)        # base def 2 -> 7
+  eq 7, a.def
+  a.change_param(Game::Actor::PARAM_DEF, -3)       # 7 -> 4
+  eq 4, a.def
+end
+
 check 'Actor without a growth curve falls back to a level-independent status' do
   # party_state uses FakePlayerRow (a status hash, no int16_values): stats stay
   # put regardless of level, and the initial level is honoured.

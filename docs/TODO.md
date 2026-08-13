@@ -3722,15 +3722,41 @@ codebase yet):
   the `@2000_battle_bot` Twitter account — worth a dedicated read-through
   once battle-system work resumes rather than transcribing it piecemeal
   now. A few structurally-significant points worth flagging early so
-  they're not missed later: displayed ability-value changes clamp to
+  they're not missed later: ✅ **displayed ability-value changes clamp to
   1–999 but the *underlying* unclamped total is still tracked internally
-  and can un-clamp back into view after a later change (e.g. lower Attack
+  and can un-clamp back into view after a later change** (e.g. lower Attack
   by more than the display can show, then raise it partway back — the
   displayed value stays pinned at its old clamp until the raise actually
-  pushes the real total back above it); a special skill's ability-value
-  *decrease* rounds up on ÷2, a status effect's own halving rounds *down*;
-  dual-wielding's off-hand attack animation is offset by a few frames from
-  the main hand's. ✅ **"Party wipe" for game-over purposes is now "every
+  pushes the real total back above it) — now fixed, see below; a special
+  skill's ability-value *decrease* rounds up on ÷2, a status effect's own
+  halving rounds *down*; dual-wielding's off-hand attack animation is
+  offset by a few frames from the main hand's. **Change Parameters' hidden
+  unclamped total is now tracked.** `Game::Actor#change_param`
+  (`mruby-rpg2k/mrblib/game.rb`) clamped and overwrote `@base[type]` on
+  every call, permanently discarding how far past the 1..999 (1..9999 for
+  max HP/MP) limit the real total had gone — lowering Attack by 2000 off a
+  base of 3, then raising it back by 1000, landed at the clamp ceiling
+  (999) instead of staying floored, even though the real total
+  (3 − 2000 + 1000 = −997) is still deep underwater. Fixed with a parallel
+  `@base_raw` shadow that `#change_param` accumulates the signed delta on
+  before clamping the result into `@base` — the value `#recompute_stats`
+  and every other reader still uses, so nothing outside `#change_param`
+  itself changed. `@base_raw` is reset alongside every wholesale
+  replacement of `@base` (`#set_level`, and all three branches of
+  `#change_class`'s param-mode handling), since a level-up or class change
+  establishes a fresh baseline rather than carrying stale drift across it
+  — the same reasoning `#set_level`'s own existing HP/MP re-clamp already
+  follows for vitals. This build has no existing notion of a "raw" vs.
+  "effective" stat elsewhere, so `@base_raw` is new state, not a rename;
+  save/load persistence of `@base` itself is a separate, pre-existing gap
+  (`Game::Party#load_state` re-derives `@base` purely from saved EXP via
+  `#set_level`, so a live Change Parameters adjustment — clamped or not —
+  does not currently survive a save at all) left untouched here. Covered
+  by a new `scripts/rpg2k_logic_check.rb` check (a large drop floors the
+  stat; a partial raise that doesn't cross back over 1 stays floored; a
+  further raise that does cross back over unclamps to the real total; an
+  ordinary never-clamped sequence is unaffected), confirmed to fail against
+  the pre-fix code before the fix. ✅ **"Party wipe" for game-over purposes is now "every
   member is both unable to act and does not recover naturally," not
   literally "every member's HP is 0"** — why Stone status can wipe a party
   without zeroing anyone's HP. `Game::Battle#alive?` (`mruby-rpg2k/mrblib/
