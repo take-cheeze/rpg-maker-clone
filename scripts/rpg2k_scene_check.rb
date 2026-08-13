@@ -1410,6 +1410,123 @@ check 'parallel processes keep running while a message window is open (yado.tk)'
      'the parallel process advances despite the open message window'
 end
 
+check 'Show Picture is suppressed even for the foreground interpreter whose own window is open (yado.tk)' do
+  # A foreground event can never naturally reach a picture command while
+  # parked on its own Show Text wait (the interpreter is blocked until the
+  # window closes), so this pokes the interpreter directly to prove the
+  # suppression rule lives on the command itself (shared by every
+  # interpreter, foreground or parallel) and not just on the natural
+  # scheduling that happens to keep a foreground event from self-colliding.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+
+  interp = scene.instance_variable_get(:@interpreter)
+  interp.send(:do_show_picture,
+             ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
+                      string: 'pic'))
+  ok !st.pictures.key?(1),
+     'a picture command reaching the interpreter while its own message window is open must not apply'
+end
+
+check 'Show Picture is suppressed while a choice list is open (yado.tk)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0), # cancel forbidden
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'no'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'choice list opened'
+  ok msg[:choice], 'it is a choice window, not a plain message'
+
+  interp = scene.instance_variable_get(:@interpreter)
+  interp.send(:do_show_picture,
+             ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
+                      string: 'pic'))
+  ok !st.pictures.key?(1), 'a picture command must not apply while a choice list is open'
+end
+
+check 'Show/Move/Erase Picture from an independently-running parallel process are ' \
+      'suppressed while a message window is open, and apply once it closes (yado.tk)' do
+  ic = Game::Interpreter::Cmd
+
+  # Each sub-case opens the message window directly (via the same #open_message
+  # the foreground driver itself calls) instead of racing an autostart trigger
+  # against the parallel process's very first frame -- #step_parallels already
+  # runs before #start_autostart each frame (see Scene::Map#update), so a
+  # naturally-triggered message would not be open yet for the parallel
+  # process's first lap, and these commands are non-blocking no-ops once
+  # applied, not something a later suppression could retract.
+
+  # -- Show Picture ---------------------------------------------------------
+  par = page(trigger: 4)
+  par.event_commands = [
+    ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
+             string: 'pic'),
+    add_var_cmd(1),
+  ]
+  scene = new_scene({ 1 => event(4, 4, par) })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  ok !st.pictures.key?(1),
+     'Show Picture from a still-running parallel process must not apply while a message window is open'
+  ok st.variables[1] > 0,
+     'the parallel process keeps advancing its non-picture commands regardless -- the sibling ' \
+     '"parallel processes were paused too broadly" fix must stay intact'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  ok st.pictures.key?(1), 'Show Picture applies once the window closes'
+
+  # -- Move Picture -----------------------------------------------------------
+  par2 = page(trigger: 4)
+  par2.event_commands = [ECmd.new(ic::MOVE_PICTURE,
+                                  [1, 0, 200, 200, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0])]
+  scene2 = new_scene({ 1 => event(4, 4, par2) })
+  st2 = scene2.instance_variable_get(:@state)
+  st2.pictures[1] = Game::Picture.new(1, x: 100, y: 100)
+  scene2.send(:open_message, ['hi'], false)
+
+  10.times { scene2.update }
+  eq [100, 100], [st2.pictures[1].x, st2.pictures[1].y],
+     'Move Picture from the parallel process must not relocate it while the window is open'
+
+  scene2.send(:close_message)
+  5.times { scene2.update }
+  eq [200, 200], [st2.pictures[1].x, st2.pictures[1].y],
+     'Move Picture applies once the window closes'
+
+  # -- Erase Picture ----------------------------------------------------------
+  par3 = page(trigger: 4)
+  par3.event_commands = [ECmd.new(ic::ERASE_PICTURE, [1])]
+  scene3 = new_scene({ 1 => event(4, 4, par3) })
+  st3 = scene3.instance_variable_get(:@state)
+  st3.pictures[1] = Game::Picture.new(1, x: 100, y: 100)
+  scene3.send(:open_message, ['hi'], false)
+
+  10.times { scene3.update }
+  ok st3.pictures.key?(1), 'Erase Picture from the parallel process must not apply while the window is open'
+
+  scene3.send(:close_message)
+  5.times { scene3.update }
+  ok !st3.pictures.key?(1), 'Erase Picture applies once the window closes'
+end
+
 check 'parallel processes pause during battle' do
   ic = Game::Interpreter::Cmd
   par = page(trigger: 4)
