@@ -132,6 +132,9 @@
 - Message text reveals gradually (a typewriter effect; a button press completes
   it, then dismisses), expands the common control codes (`\v[n]` variable,
   `\n[n]` actor name, `\\`) and draws `\c[n]` colour changes
+- Windows unroll open and shut from their horizontal centre line instead of
+  popping in, matching RPG_RT: the title command window and the message
+  window (with its `\$` gold window) animate; battle messages appear instantly
 - Countdown timers can be set/started/stopped from events — RPG2000's one and
   RPG2003's second, each with its own on-screen window, read back by Control
   Variables and Conditional Branch, and pausing for a battle unless the start

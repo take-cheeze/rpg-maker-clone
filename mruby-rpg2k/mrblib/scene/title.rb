@@ -13,6 +13,11 @@ class RPG2k
       # three 48px-wide labels the window lands at (128, 148) 64x64.
       BOTTOM_NUM = 53
       BOTTOM_DEN = 60
+      # RPG_RT unrolls the title command window open over 8 frames (EasyRPG's
+      # scene_title.cpp: `command_window->SetOpenAnimation(8)`), skipped under
+      # HideTitle -- the centred window appears with the rest of the screen
+      # rather than flourishing in on its own.
+      OPEN_ANIM_FRAMES = 8
 
       def initialize parent
         super parent
@@ -56,6 +61,7 @@ class RPG2k
         @window = Window.new window_x, window_y, window_width, window_height
         skin = load_windowskin
         @window.windowskin = skin
+        @window.open_animation(hide_title? ? 0 : OPEN_ANIM_FRAMES)
 
         # Render the (unchanging) menu labels once, in the windowskin's own
         # default text colour with RPG_RT's one-pixel shadow. A disabled
@@ -80,6 +86,8 @@ class RPG2k
       end
 
       def update
+        @window.update
+
         if Input.trigger?(Input::DOWN)
           move_selection 1
         elsif Input.trigger?(Input::UP)
@@ -102,8 +110,6 @@ class RPG2k
             exit
           end
         end
-
-        @window.update
       end
 
       def dispose

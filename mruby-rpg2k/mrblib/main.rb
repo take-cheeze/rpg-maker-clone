@@ -63,6 +63,16 @@ class RPG2k
       @visible = true
       @pause = false
       @arrow_anim = 0
+      # Open/close animation: RPG_RT unrolls a window from its horizontal
+      # centre line rather than popping it in, ported from EasyRPG Player's
+      # Window::SetOpenAnimation/SetCloseAnimation (src/window.cpp). @openness
+      # is 0.0 (closed, nothing drawn) .. 1.0 (fully open); everything but the
+      # skin/frame is hidden until it reaches 1.0, matching RGSS::Window's own
+      # openness draw (mruby-rgss/src/lib.cxx) -- see #open_animation below.
+      @openness = 1.0
+      @anim_frames_left = 0
+      @anim_step = 0.0
+      @anim_closing = false
 
       # The viewport groups and clips the four layers to the window rect.
       @viewport = Viewport.new(x, y, [width, 1].max, [height, 1].max)
@@ -133,7 +143,7 @@ class RPG2k
 
     def contents=(bmp)
       @contents = bmp
-      @contents_sprite.visible = !bmp.nil?
+      @contents_sprite.visible = !bmp.nil? && fully_open?
       @contents_sprite.bitmap = bmp if bmp
       bmp
     end
@@ -154,6 +164,58 @@ class RPG2k
       @viewport.visible = v
     end
 
+    # Start the window unrolling open over `frames` frames (0 opens instantly,
+    # RPG_RT's own battle-message behaviour -- see EasyRPG's
+    # Game_Battle::IsBattleRunning() guard on message_animation_frames). Marks
+    # the window visible, same as EasyRPG's SetOpenAnimation.
+    def open_animation(frames)
+      @visible = true
+      @viewport.visible = true
+      if frames > 0
+        @openness = 0.0
+        @anim_frames_left = frames
+        @anim_step = 1.0 / frames
+        @anim_closing = false
+      else
+        @openness = 1.0
+        @anim_frames_left = 0
+      end
+      redraw_for_animation
+    end
+
+    # Start the window rolling shut over `frames` frames from its current
+    # openness (0 hides it instantly). Unlike #open_animation this does not
+    # dispose the window itself -- the caller drives #update until #closing?
+    # goes false and disposes then, so the rest of the scene keeps running
+    # while the box visibly shrinks (EasyRPG's Window_Message decouples the
+    # close animation from FinishMessageProcessing the same way).
+    def close_animation(frames)
+      if frames > 0 && @openness > 0.0
+        @anim_frames_left = frames
+        @anim_step = -@openness / frames
+        @anim_closing = true
+      else
+        @openness = 0.0
+        @anim_frames_left = 0
+        self.visible = false
+      end
+      redraw_for_animation
+    end
+
+    # Mid-animation: true from #open_animation until the window reaches full
+    # openness. Callers gate input/reveal progress on this the way EasyRPG's
+    # Window::Update() gates on IsOpeningOrClosing().
+    def opening?
+      @anim_frames_left > 0 && !@anim_closing
+    end
+
+    # Mid-animation: true from #close_animation until the window reaches zero
+    # openness. The caller (Scene::Map#update_closing_windows) disposes the
+    # window once this turns false.
+    def closing?
+      @anim_frames_left > 0 && @anim_closing
+    end
+
     # RPG2000's message-window "waiting for input" indicator: a small arrow
     # blinking at the bottom-centre of the window. Turning it on always starts
     # from a visible frame, matching RPG_RT.
@@ -167,11 +229,18 @@ class RPG2k
     end
 
     # Present so the game loop can drive per-frame behaviour: advances the
-    # pause-arrow blink while `pause` is set. The cursor highlight itself is
-    # drawn steadily (RPG_RT alternates two cursor frames, but Nepheshel's own
-    # skin draws both identically -- see Game::WindowCursor), so nothing else
-    # needs a per-frame tick yet.
+    # open/close animation while one is running, and the pause-arrow blink
+    # while `pause` is set. The cursor highlight itself is drawn steadily
+    # (RPG_RT alternates two cursor frames, but Nepheshel's own skin draws
+    # both identically -- see Game::WindowCursor), so nothing else needs a
+    # per-frame tick yet.
     def update
+      if @anim_frames_left > 0
+        @anim_frames_left -= 1
+        @openness = [[@openness + @anim_step, 0.0].max, 1.0].min
+        self.visible = false if @anim_closing && @anim_frames_left <= 0
+        redraw_for_animation
+      end
       return unless @pause
       @arrow_anim = (@arrow_anim + 1) % (ARROW_BLINK_FRAMES * 2)
       draw_arrow_visibility
@@ -233,63 +302,106 @@ class RPG2k
       end
     end
 
-    # Show the arrow sprite only while paused and in the "on" half of the
-    # blink cycle.
+    # Show the arrow sprite only while paused, fully open and in the "on" half
+    # of the blink cycle -- RPG_RT's pause arrow never shows while the window
+    # is still unrolling.
     def draw_arrow_visibility
-      @arrow_sprite.visible = @pause && @arrow_anim < ARROW_BLINK_FRAMES
+      @arrow_sprite.visible = @pause && fully_open? && @arrow_anim < ARROW_BLINK_FRAMES
     end
 
-    # Redraw the windowskin layer (background + frame, or the fallback panel).
+    def fully_open?
+      @openness >= 1.0
+    end
+
+    # How tall the skin/frame band currently is, centred vertically in the
+    # window rect -- the fraction of @height the animation has revealed so
+    # far. Mirrors RGSS::Window's own native openness draw (`full_h *
+    # openness / 255`, mruby-rgss/src/lib.cxx) so a fully-open window (the
+    # default @openness of 1.0) draws exactly as before.
+    def drawn_height
+      return @height if fully_open?
+      h = (@height * @openness).to_i
+      h.negative? ? 0 : h
+    end
+
+    # Redraw the skin at the current animation frame and show/hide the layers
+    # that only appear once fully open (contents, cursor, pause arrow) --
+    # called from #update while an animation runs and from #open_animation /
+    # #close_animation to reflect the frame the animation just jumped to.
+    def redraw_for_animation
+      draw_skin
+      open = fully_open?
+      @contents_sprite.visible = open && !@contents.nil?
+      @cursor_sprite.visible = open
+      draw_arrow_visibility
+    end
+
+    # Redraw the windowskin layer (background + frame, or the fallback panel),
+    # clipped to the currently-animated height and centred in the window rect.
     def draw_skin
       @skin_bmp.clear
       return if @transparent # transparent message window: no frame/background
+      h = drawn_height
+      return if h <= 0
+      y_off = (@height - h) / 2
       if @windowskin
-        draw_background
-        draw_frame
+        draw_background(y_off, h)
+        draw_frame(y_off, h)
       else
-        draw_fallback
+        draw_fallback(y_off, h)
       end
     end
 
-    # Stretch the 32x32 background tile over the whole window; the frame border
-    # is drawn on top of its outer edge afterwards.
-    def draw_background
-      @skin_bmp.stretch_blt Rect.new(0, 0, @width, @height), @windowskin,
+    # Stretch the 32x32 background tile over the [y_off, y_off+h) band; the
+    # frame border is drawn on top of its outer edge afterwards.
+    def draw_background(y_off, h)
+      @skin_bmp.stretch_blt Rect.new(0, y_off, @width, h), @windowskin,
                             Rect.new(0, 0, 32, 32)
     end
 
-    def draw_frame
+    def draw_frame(y_off, h)
       w = @width
-      h = @height
       b = BORDER
       sk = @windowskin
+      # Corner height clamped to half the drawn band so a barely-open window
+      # (mid open/close animation) keeps a frame instead of its top and
+      # bottom corners overlapping -- same clamp RGSS::Window's native draw
+      # uses. Reduces to the plain 8px corner when h >= 2 * BORDER, i.e.
+      # always, for a window that is not mid-animation.
+      ch = [b, h / 2].min
 
-      # Corners (8x8, drawn 1:1).
-      @skin_bmp.blt 0, 0, sk, Rect.new(32, 0, b, b)
-      @skin_bmp.blt w - b, 0, sk, Rect.new(56, 0, b, b)
-      @skin_bmp.blt 0, h - b, sk, Rect.new(32, 24, b, b)
-      @skin_bmp.blt w - b, h - b, sk, Rect.new(56, 24, b, b)
+      # Corners (8x8 source, top/bottom-clipped to `ch` rows when shrunk).
+      @skin_bmp.blt 0, y_off, sk, Rect.new(32, 0, b, ch)
+      @skin_bmp.blt w - b, y_off, sk, Rect.new(56, 0, b, ch)
+      @skin_bmp.blt 0, y_off + h - ch, sk, Rect.new(32, 24 + (b - ch), b, ch)
+      @skin_bmp.blt w - b, y_off + h - ch, sk,
+                    Rect.new(56, 24 + (b - ch), b, ch)
 
-      # Edges (stretched along the free axis).
-      @skin_bmp.stretch_blt Rect.new(b, 0, w - 2 * b, b), sk,
-                            Rect.new(40, 0, 16, b)
-      @skin_bmp.stretch_blt Rect.new(b, h - b, w - 2 * b, b), sk,
-                            Rect.new(40, 24, 16, b)
-      @skin_bmp.stretch_blt Rect.new(0, b, b, h - 2 * b), sk,
+      # Top/bottom edges (stretched horizontally, same `ch` clip as the
+      # corners they sit between).
+      @skin_bmp.stretch_blt Rect.new(b, y_off, w - 2 * b, ch), sk,
+                            Rect.new(40, 0, 16, ch)
+      @skin_bmp.stretch_blt Rect.new(b, y_off + h - ch, w - 2 * b, ch), sk,
+                            Rect.new(40, 24 + (b - ch), 16, ch)
+
+      # Left/right edges fill whatever is left between the corners.
+      mid_h = h - 2 * ch
+      return unless mid_h > 0
+      @skin_bmp.stretch_blt Rect.new(0, y_off + ch, b, mid_h), sk,
                             Rect.new(32, 8, b, 16)
-      @skin_bmp.stretch_blt Rect.new(w - b, b, b, h - 2 * b), sk,
+      @skin_bmp.stretch_blt Rect.new(w - b, y_off + ch, b, mid_h), sk,
                             Rect.new(56, 8, b, 16)
     end
 
     # Used when no windowskin could be loaded: a plain dark panel with a light
     # border so the window is still visible.
-    def draw_fallback
-      @skin_bmp.fill_rect 0, 0, @width, @height, Color.new(8, 8, 40, 224)
+    def draw_fallback(y_off, h)
+      @skin_bmp.fill_rect 0, y_off, @width, h, Color.new(8, 8, 40, 224)
       edge = Color.new(200, 200, 216, 255)
-      @skin_bmp.fill_rect 0, 0, @width, 1, edge
-      @skin_bmp.fill_rect 0, @height - 1, @width, 1, edge
-      @skin_bmp.fill_rect 0, 0, 1, @height, edge
-      @skin_bmp.fill_rect @width - 1, 0, 1, @height, edge
+      @skin_bmp.fill_rect 0, y_off, @width, 1, edge
+      @skin_bmp.fill_rect 0, y_off + h - 1, @width, 1, edge if h > 1
+      @skin_bmp.fill_rect 0, y_off, 1, h, edge
+      @skin_bmp.fill_rect @width - 1, y_off, 1, h, edge
     end
 
     # Highlight behind the selected item, on its own layer. cursor_rect is
