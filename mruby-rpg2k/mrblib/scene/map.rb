@@ -3278,6 +3278,28 @@ class RPG2k
       end
 
       def living_allies; @battle_ui[:allies].reject(&:dead?); end
+
+      # Living allies selectable as a manually-chosen Battle Item target right
+      # now: `#living_allies` narrowed by the pending item's own 使用可能キャラ
+      # (`actor_set`) restriction when there is one -- the same per-recipient
+      # gate `Game::Party#use_medicine` already applies in the field menu
+      # (`Game::Party#item_usable_by?`), which this picker had never
+      # consulted at all, so a party member the item cannot affect used to be
+      # offered as a choice anyway rather than not appearing in the first
+      # place. A pending skill is untouched -- actor_set only gates
+      # equipment/items, never skills. `@state.party` not answering
+      # `item_usable_by?` (a battle test's stub party, which never models
+      # equipment restrictions) degrades to "unrestricted", the same default
+      # the real method itself falls back to for an item with no actor_set at
+      # all.
+      def battle_ally_targets
+        allies = living_allies
+        return allies unless pending_kind == :item
+        return allies unless @state.party.respond_to?(:item_usable_by?)
+        it = @battle_ui[:pending] && @battle_ui[:pending][:it]
+        return allies unless it
+        allies.select { |a| a.actor.nil? || @state.party.item_usable_by?(it, a.actor.id) }
+      end
       # Targetable foes: alive *and* in play, so a troop member still flagged
       # invisible never appears in the target cursor.
       def living_foes;   @battle_ui[:foes].reject(&:out_of_play?); end
@@ -3560,7 +3582,7 @@ class RPG2k
       # -- Ally target (heal skill / medicine) --------------------------------
 
       def drive_battle_ally_target
-        allies = living_allies
+        allies = battle_ally_targets
         if Input.trigger?(Input::DOWN) && !allies.empty?
           @battle_ui[:ally_i] += 1
           @battle_ui[:ally_i] %= allies.length
@@ -3569,7 +3591,7 @@ class RPG2k
           @battle_ui[:ally_i] -= 1
           @battle_ui[:ally_i] %= allies.length
           draw_battle_ally_target
-        elsif Input.trigger?(Input::C)
+        elsif Input.trigger?(Input::C) && !allies.empty?
           target = allies[@battle_ui[:ally_i]]
           close_battle_ally_target
           if pending_kind == :skill
@@ -4411,10 +4433,12 @@ class RPG2k
         @battle_ui[:item_win] = nil
       end
 
-      # The living party members as heal targets ("Name HP h/mh"), with a cursor.
+      # The living party members selectable as a heal target ("Name HP h/mh"),
+      # with a cursor -- narrowed by #battle_ally_targets when a pending item's
+      # actor_set excludes some of them.
       def draw_battle_ally_target
         @battle_ui[:ally_win].dispose if @battle_ui[:ally_win]
-        labels = living_allies.map do |a|
+        labels = battle_ally_targets.map do |a|
           "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.max_hp}"
         end
         @battle_ui[:ally_win] =

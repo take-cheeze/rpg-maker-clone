@@ -3248,7 +3248,11 @@ module Game
 
     # The HP / SP a medicine restores to a battle `target` (Combatant snapshot)
     # plus the status conditions it cures, as `{ hp:, mp:, cured: [ids] }` — the
-    # same recovery and (antidote / herb) cure the field menu applies.
+    # same recovery and (antidote / herb) cure the field menu applies. Pure
+    # arithmetic: an actor_set (使用可能キャラ) restriction is a question of
+    # which target may be *offered* at all, not of what this formula computes
+    # once one legitimately is — see `Scene::Map#battle_ally_targets`, which is
+    # where that gate actually lives for a battle-cast item.
     def battle_item_command(it, target)
       hp, mp = item_recovery(it, target)
       { hp: hp, mp: mp, cured: item_cured_states(it) }
