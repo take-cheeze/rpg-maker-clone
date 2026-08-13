@@ -39,6 +39,14 @@
   camera). Nepheshel's town, an interior and an open-water map now render
   **pixel-identical** to RPG_RT — tile layers, autotiles, upper/lower layering
   and event sprites all on its exact pixels
+- RPG_RT's own **Test Play debug keys** work, gated on `--test_play`/`Game.ini`
+  `[Game] Test=1` the same way every other debug tool in this engine is (see
+  "Profiling" below) — a released game never sees any of them do anything:
+  hold **Ctrl** to ignore collision and turn off random encounters; hold
+  **Shift** to fast-forward the current message (same effect a C/B press
+  already has, held down instead of tapped); press **F9** to open a debug
+  menu listing every switch and variable, ten at a time, with a signed number
+  editor for variables
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
@@ -420,6 +428,13 @@
   `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit. The
   same reference is drawn as a one-line legend on the top row above the game
   image
+- The Test Play debug keys (see "Map exploration" above) work here too, held
+  the same hold-to-repeat way the movement keys are: `T` stands in for Ctrl
+  and `F` for Shift, since a raw terminal cannot tell a genuine Ctrl/Shift
+  modifier apart from an ordinary keypress (and Ctrl-C is already bound to
+  quit). `F9` opens the debug menu directly — most terminal emulators forward
+  it as a real function-key escape sequence, the same way `F12`'s
+  return-to-title already works here
 - `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
   and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
 - Either backend draws its emit rate (frame size, MB/s, fps) on-screen just

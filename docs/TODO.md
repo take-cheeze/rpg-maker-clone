@@ -2118,9 +2118,10 @@ Everything below is unverified against the codebase.
   the roll (and the encounter_total accumulation for that step) is skipped
   entirely, exactly like flying or a forced-route step. A same-tile *Event
   Touch* (trigger 2) event does **not** suppress it — only Hero Touch does —
-  covered by a new control case in `scripts/rpg2k_scene_check.rb`. Ctrl
-  during test play disabling encounters is a separate, still-open fact, not
-  addressed by this change.
+  covered by a new control case in `scripts/rpg2k_scene_check.rb`. ✅ Ctrl
+  during test play disabling encounters (a separate fact from this one) is
+  now also implemented — see `Scene::Map#debug_through?`, which the same
+  `#check_random_encounter` early-outs on.
 - **Screen Flash / Character Flash** — only one of each can be active at
   once (a second supersedes, doesn't stack); both are capped to 1/30s
   display while a Battle Animation plays concurrently (the animation's own
@@ -2610,8 +2611,8 @@ not yet verified:
   "Untriaged backlog, from `2k/01_shoshin/011_siyou/`" above (the
   `**Encounter**` bullet). Moving via Set Move Route or Jump already
   suppressed encounters before this pass (the `@player_forced_step` /
-  random-encounters fix above); holding Ctrl in test-play doing the same is
-  a separate, still-open fact.
+  random-encounters fix above); ✅ holding Ctrl in test-play doing the same
+  is now also implemented (`Scene::Map#debug_through?`).
 
 **Move Route / Character Movement command**
 - Only **one pending move route per character** — issuing a second while

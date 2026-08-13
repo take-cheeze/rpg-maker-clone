@@ -121,6 +121,7 @@ module RGSS
   # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
     C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6; SHIFT = 7
+    CTRL = 8; F9 = 9; L = 10; R = 11
     class << self
       attr_accessor :dir_value, :triggered
     end
@@ -408,8 +409,8 @@ class FakeParent
   attr_accessor :map_tree
   # Mirrors RPG2k::Game#test_play (see mruby-rpg2k/mrblib/main.rb). Writable
   # so a check can exercise the Test-Play-only behaviour it gates (the hero's
-  # missing-graphic debug marker); every other check wants the same default
-  # (false) a plainly-launched game gets.
+  # missing-graphic debug marker; Ctrl/Shift/F9's debug behaviour); every
+  # other check wants the same default (false) a plainly-launched game gets.
   attr_accessor :test_play
   def initialize(db, &map_maker)
     @db = db
@@ -494,7 +495,7 @@ end
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
               members: [], terrain_damage: 0, bush_depth: 0,
               airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
-              map_tree: nil)
+              map_tree: nil, test_play: false)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
                airship_land: airship_land, airship_pass: airship_pass,
                boat_pass: boat_pass, ship_pass: ship_pass)
@@ -502,6 +503,7 @@ def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: n
   state.map = fake_map(1, events, parallax: parallax)
   parent = fake_parent(db)
   parent.map_tree = map_tree if map_tree
+  parent.test_play = test_play
   RPG2k::Scene::Map.new(parent, state)
 end
 
@@ -7979,6 +7981,161 @@ check 'an encounter-steps of 0 disables random encounters and resets the accumul
   scene.send(:check_random_encounter)
   eq 0, st.encounter_total, 'the accumulator resets rather than piling up while encounters are off'
   ok scene.instance_variable_get(:@battle_ui).nil?
+end
+
+# -- Debug keys (RPG2k#test_play only -- see mruby-rpg2k/mrblib/scene/map.rb
+# #debug_through? and #try_open_debug_menu, and scene/debug_menu.rb) ---------
+
+check 'Ctrl during Test Play walks through a wall no ordinary move could cross' do
+  scene = walled_in_scene({}, [2, 2])
+  scene.parent.test_play = true
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 2 # down
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  20.times { scene.update }
+  ok st.y > 2, "Ctrl bypassed collision the same way Through Mode does (y=#{st.y})"
+end
+
+check 'Ctrl only bypasses collision during Test Play -- an ordinary run stays walled in' do
+  scene = walled_in_scene({}, [2, 2]) # test_play defaults false
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 2
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  20.times { scene.update }
+  eq 2, st.y, 'a released game never sees Ctrl do anything: the wall holds'
+end
+
+check 'Ctrl during Test Play suppresses the random-encounter roll' do
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  scene = new_scene({}, map_tree: tree, test_play: true)
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  scene.send(:check_random_encounter)
+  ok scene.instance_variable_get(:@battle_ui).nil?,
+     'Ctrl held: a guaranteed roll (encount_steps 1, default terrain rate) never fires'
+  eq 0, st.encounter_total, 'the accumulator never even started'
+end
+
+check 'holding Shift during Test Play fast-forwards a message\'s typing, but still waits ' \
+     'once it is fully shown' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hello'),
+                         ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5], test_play: true)
+  st = scene.instance_variable_get(:@state)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  ok !reveal.done?, 'text is not fully revealed as soon as it opens'
+
+  RGSS::Input.triggered = [RGSS::Input::SHIFT]
+  scene.update
+  ok reveal.done?, 'holding Shift completed the reveal, like a C/B press'
+  ok scene.instance_variable_get(:@message), 'message stays open on the completing frame'
+
+  # Unlike a C/B tap, Shift alone never advances past the now-fully-shown
+  # message -- it waits there (one paragraph at a time) no matter how long
+  # Shift stays held, until an actual confirm arrives.
+  10.times { scene.update }
+  ok scene.instance_variable_get(:@message), 'Shift alone never dismisses a finished message'
+  ok !st.switches[1], 'the interpreter has not resumed past the message yet'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'an actual confirm dismisses it'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
+check 'Shift only fast-forwards messages during Test Play' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hello')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5]) # test_play defaults false
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  RGSS::Input.triggered = [RGSS::Input::SHIFT]
+  scene.update
+  ok !reveal.done?, 'a released game never sees Shift fast-forward the reveal'
+end
+
+check 'F9 opens the debug menu during Test Play, and B returns to the map' do
+  scene = new_scene({}, test_play: true)
+  RGSS::Input.triggered = [RGSS::Input::F9]
+  scene.update
+  pushed = scene.parent.pushed
+  eq 1, pushed.size, 'F9 pushed exactly one scene'
+  ok pushed.first.is_a?(RPG2k::Scene::DebugMenu), 'the pushed scene is the debug menu'
+end
+
+check 'F9 does nothing outside Test Play' do
+  scene = new_scene({}) # test_play defaults false
+  RGSS::Input.triggered = [RGSS::Input::F9]
+  scene.update
+  ok scene.parent.pushed.empty?, 'a released game never sees F9 open anything'
+end
+
+check 'the debug menu toggles a switch on C and flips to Variable on Left/Right' do
+  st = menu_state
+  st.switches[1] = false
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok st.switches[1], 'C toggled switch 1 (the cursor starts on row 1) on'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok !st.switches[1], 'a second C toggles it back off'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq :variable, scene.instance_variable_get(:@mode), 'Left/Right flips to the Variable page'
+end
+
+check 'the debug menu edits a variable through the signed number editor' do
+  st = menu_state
+  st.variables[1] = 5
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  scene.instance_variable_set(:@mode, :variable)
+  scene.send(:refresh)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # open the editor on variable 1
+  scene.update
+  ok scene.instance_variable_get(:@editor), 'C on a Variable row opens the editor'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT] # sign cell -> the leftmost digit
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::UP] # that digit 0 -> 1 (5 -> 100005)
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::LEFT] # back to the sign cell
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::UP] # sign -> negative
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm
+  scene.update
+
+  ok !scene.instance_variable_get(:@editor), 'confirming closes the editor'
+  eq(-100_005, st.variables[1], 'the edited, now-negative value landed in the variable')
+end
+
+check 'B cancels the debug menu variable editor without changing the value' do
+  st = menu_state
+  st.variables[1] = 5
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  scene.instance_variable_set(:@mode, :variable)
+  scene.send(:refresh)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update # bump a digit, then cancel instead of confirming
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok !scene.instance_variable_get(:@editor), 'B closed the editor'
+  eq 5, st.variables[1], 'cancelling left the variable untouched'
 end
 
 check "a troop's terrain_set excludes it from a tile it does not cover" do

@@ -296,6 +296,7 @@ class RPG2k
             # otherwise it falls through to the usual event trigger.
             try_action_trigger unless try_board_vehicle
             try_open_menu
+            try_open_debug_menu
           end
         end
         animate_events
@@ -2662,6 +2663,18 @@ class RPG2k
         return unless @state.menu_access
         return unless Input.trigger?(Input::B)
         @parent.push Scene::Menu.new(@parent, @state)
+      end
+
+      # RPG_RT's F9 debug menu: a switch/variable viewer-editor, reachable from
+      # the field map only (not while an event holds the interpreter) and only
+      # during Test Play -- a released game (RPG2k#test_play false) never sees
+      # F9 open anything, same as every other test-play-gated tool (see
+      # changelog.d/test-play-gated-debug-tooling.added.md).
+      def try_open_debug_menu
+        return if event_busy?
+        return unless @parent.test_play
+        return unless Input.trigger?(Input::F9)
+        @parent.push Scene::DebugMenu.new(@parent, @state)
       end
 
       def drive_event
@@ -6032,7 +6045,16 @@ class RPG2k
 
       def drive_text_message
         reveal = @message[:reveal]
-        pressed = Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        confirm = Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        # Holding Shift during Test Play fast-forwards dialogue *while it is
+        # still typing* -- same effect a C/B tap already has there (complete
+        # the current reveal, releasing any inline `\!`/`\.`/`\|` pause along
+        # the way). Once the whole message is shown, though, it always waits
+        # for an actual confirm below, the same as with no Shift held: Shift
+        # speeds up one paragraph's reveal, it does not blow through
+        # paragraph after paragraph on its own. Gated on RPG2k#test_play the
+        # same way #debug_through? is, so a released game never sees it.
+        fast_forward = confirm || (@parent.test_play && Input.press?(Input::SHIFT))
         unless reveal.done?
           pause = reveal.pending_pause
           # The blinking pause arrow only stands for a player-input wait
@@ -6040,8 +6062,8 @@ class RPG2k
           # `\.` / `\|` holds, which clear on their own.
           @message[:window].pause = pause ? pause[:kind] == :key : false
           if pause
-            drive_message_pause(reveal, pause, pressed)
-          elsif pressed
+            drive_message_pause(reveal, pause, fast_forward)
+          elsif fast_forward
             reveal.reveal_all
           else
             reveal.advance(MSG_REVEAL_SPEED)
@@ -6050,7 +6072,7 @@ class RPG2k
           return
         end
         # `\^` closes the finished window on its own; otherwise wait for a button.
-        if reveal.auto_close? || pressed
+        if reveal.auto_close? || confirm
           followup = @interpreter.message_followup
           if followup
             # A Show Choices / Input Number immediately follows this Show Text:
@@ -6248,8 +6270,9 @@ class RPG2k
           # Through Mode (see @player_through) bypasses collision the same way
           # it does for an event's own #char_passable? -- touch triggers still
           # fire above regardless, since through-ness is purely a collision
-          # bypass, not a trigger suppression.
-          return unless @player_through || passable?(nx, ny, dir)
+          # bypass, not a trigger suppression. Holding Ctrl during Test Play
+          # (see #debug_through?) does the same.
+          return unless @player_through || debug_through? || passable?(nx, ny, dir)
         end
 
         @dest_x = nx
@@ -6356,6 +6379,17 @@ class RPG2k
         ts.size < tag || (ts[tag - 1] || 0) != 0
       end
 
+      # RPG_RT's own debug walk: holding Ctrl while Test Play is running (see
+      # RPG2k#test_play) ignores collision the same way Through Mode does (see
+      # #step_movement) and, below, suppresses random encounters outright --
+      # released games never run with test_play true, so neither effect can
+      # reach them. Matches EasyRPG's reverse-engineered behaviour
+      # (Game_Player::UpdateNextMovementAction / UpdateEncounterSteps: both
+      # gated on `Player::debug_flag && Input::IsPressed(Input::DEBUG_THROUGH)`).
+      def debug_through?
+        @parent.test_play && Input.press?(Input::CTRL)
+      end
+
       # One ordinary step's roll for a wandering-monster fight. A hit picks a
       # uniform-random troop from #candidate_troops (an empty list -- a map
       # with no encounter entries reaching this tile -- never interrupts the
@@ -6367,6 +6401,7 @@ class RPG2k
       # @player_forced_step), so the interpreter is always idle here -- no
       # event, common event or forced route can be running underneath it.
       def check_random_encounter
+        return if debug_through?
         return if @state.party.flying?(@state)
         # yado.tk quirk, multiply corroborated: a Hero Touch (trigger 1)
         # event's own tile also answers random encounters -- the party can
