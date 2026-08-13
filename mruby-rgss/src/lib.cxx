@@ -1352,6 +1352,20 @@ Bitmap& bmp_self(mrb_state* M, V self) {
   return DataType<Bitmap>::get(M, self);
 }
 
+// Bitmap#dispose nulls the data pointer but leaves the mruby wrapper object
+// alive and non-nil (see obj_dispose), so mrb_get_args's "d" specifier -- which
+// only raises on a type mismatch, not a null payload -- happily hands back a
+// NULL Bitmap* for an already-disposed source. Blt-style methods used to
+// dereference that pointer directly and segfault the whole process; this
+// turns it into a catchable RGSSError instead, matching real RGSS.
+Bitmap& bmp_require(mrb_state* M, Bitmap* p) {
+  if (!p) {
+    RClass* mod = mrb_module_get(M, "RGSS");
+    mrb_raise(M, mrb_class_get_under(M, mod, "RGSSError"), "disposed Bitmap");
+  }
+  return *p;
+}
+
 // Write an RGBA color into the bitmap at (x, y). LVGL stores ARGB8888 as
 // B, G, R, A bytes (and RGB888 as B, G, R), matching how images are loaded.
 void bmp_put(Bitmap& b,
@@ -1782,6 +1796,7 @@ mrb_value bmp_blt(mrb_state* M, V self) {
   mrb_get_args(M, "iido|i", &x, &y, &src, &DataType<Bitmap>::data_type, &srect,
                &opacity);
   Bitmap& dst = bmp_self(M, self);
+  Bitmap& sb = bmp_require(M, src);
   Rect& rc = DataType<Rect>::get(M, srect);
   if (opacity < 0)
     opacity = 0;
@@ -1789,10 +1804,10 @@ mrb_value bmp_blt(mrb_state* M, V self) {
     opacity = 255;
   for (mrb_int sy = rc.y; sy < rc.y + rc.height; ++sy) {
     for (mrb_int sx = rc.x; sx < rc.x + rc.width; ++sx) {
-      if (sx < 0 || sy < 0 || sx >= src->width || sy >= src->height)
+      if (sx < 0 || sy < 0 || sx >= sb.width || sy >= sb.height)
         continue;
       int r, g, bl, a;
-      bmp_read(*src, sx, sy, r, g, bl, a);
+      bmp_read(sb, sx, sy, r, g, bl, a);
       const int alpha = a * opacity / 255;
       const mrb_int dx = x + (sx - rc.x);
       const mrb_int dy = y + (sy - rc.y);
@@ -1824,6 +1839,7 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
   mrb_get_args(M, "odo|i", &drect_v, &src, &DataType<Bitmap>::data_type,
                &srect_v, &opacity);
   Bitmap& dst = bmp_self(M, self);
+  Bitmap& sb = bmp_require(M, src);
   Rect& dr = DataType<Rect>::get(M, drect_v);
   Rect& sr = DataType<Rect>::get(M, srect_v);
   if (opacity < 0)
@@ -1842,10 +1858,10 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
       if (dx < 0 || dx >= dst.width)
         continue;
       const mrb_int sx = sr.x + i * sr.width / dr.width;
-      if (sx < 0 || sy < 0 || sx >= src->width || sy >= src->height)
+      if (sx < 0 || sy < 0 || sx >= sb.width || sy >= sb.height)
         continue;
       int r, g, bl, a;
-      bmp_read(*src, sx, sy, r, g, bl, a);
+      bmp_read(sb, sx, sy, r, g, bl, a);
       const int alpha = a * opacity / 255;
       if (alpha <= 0)
         continue;
@@ -2492,12 +2508,13 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   Bitmap* src;
   mrb_get_args(M, "iiiisdiiii|i", &x, &y, &w, &h, &s, &len, &src,
                &DataType<Bitmap>::data_type, &sx, &sy, &sw, &sh, &align);
+  Bitmap& src_bmp = bmp_require(M, src);
   const std::string_view sv(s, len);
 
   const FontAttr fa = read_font(M, self);
   if (fa.ttf && fa.ttf->ok) {
     draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align),
-                      *src, static_cast<int>(sx), static_cast<int>(sy),
+                      src_bmp, static_cast<int>(sx), static_cast<int>(sy),
                       static_cast<int>(sw), static_cast<int>(sh));
     return self;
   }
@@ -2511,7 +2528,7 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
     x += w - tw;
 
   const int scol = static_cast<int>(sx + sw / 2);
-  auto draw = [&x, y, &bmp, src, scol, sy, sh](const auto& c) {
+  auto draw = [&x, y, &bmp, &src_bmp, scol, sy, sh](const auto& c) {
     for (unsigned i = 0; i < c.HEIGHT; ++i) {
       // Sample the swatch row for this glyph row so a shaded swatch gradients
       // down the text; a flat swatch reads as a single colour.
@@ -2523,8 +2540,8 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
                                                     (sh - 1) / (c.HEIGHT - 1))),
                        0, static_cast<int>(sh) - 1);
       int sr = 255, sg = 255, sb = 255, sa = 255;
-      if (scol >= 0 && srow >= 0 && scol < src->width && srow < src->height)
-        bmp_read(*src, scol, srow, sr, sg, sb, sa);
+      if (scol >= 0 && srow >= 0 && scol < src_bmp.width && srow < src_bmp.height)
+        bmp_read(src_bmp, scol, srow, sr, sg, sb, sa);
       for (unsigned j = 0; j < c.WIDTH; ++j) {
         const unsigned idx = i * c.WIDTH + j;
         const mrb_int px = x + j;
