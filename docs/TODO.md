@@ -654,14 +654,20 @@ The work below is roughly ordered by the critical path to a walkable game
   average agility (so escape chance answers it too) and turn order — so a
   Weaken-style state that halves ATK now actually softens a hit, and two
   states that cancel out (one halving, one doubling the same stat) net to no
-  change, exactly as `AdjustParam`'s own `dbl != half` guard reads. **Left
-  scoped out on purpose**: a battle Skill's power formula
-  (`Game::Party#skill_effect` / `#skill_defence_term`) still reads a
-  battler's plain `#atk` / `#def` / `#spi` directly rather than the
-  state-adjusted value — wiring that in needs the state-definitions table
-  threaded into `Game::Party`, which does not hold one today, so a basic
-  Attack answers a stat-affecting state correctly while a Skill does not yet.
-  Also still unread: the RPG2003-only `avoid_attacks` / `reflect_magic`,
+  change, exactly as `AdjustParam`'s own `dbl != half` guard reads. **A
+  battle Skill's power formula reads it too now**: `Game::Party#skill_effect`
+  / `#skill_defence_term` turned out not to need the state-definitions table
+  threaded in from anywhere new after all — `Game::Party` already holds the
+  whole database (`@db`), `.situation` is that table, so `Party` grew its own
+  copy of the same `stat_mode` / `effective_atk` / `effective_def` /
+  `effective_spi` shape `Battle` has (reading `@db.situation` instead of a
+  `Battle`'s own `@states`), used by both the caster and the target. It
+  applies to field/menu skill casting too, not just in-battle skills — a bare
+  `Game::Actor` (no `Battle` behind it at all) still has `#states`, and
+  EasyRPG's own `GetAtk()` / `GetSpi()` are the one accessor every context
+  reads through, not a battle-only variant, so a Weaken picked up mid-fight
+  blunts a Cure cast on the map afterwards too. Also still unread: the
+  RPG2003-only `avoid_attacks` / `reflect_magic`,
   which no state in either test bed sets.
   **The ground drains it too** — RPG2000's 地形ダメージ, the 地形 row's `damage`
   field (ADR 0034). Stepping onto a tile whose terrain carries one takes that

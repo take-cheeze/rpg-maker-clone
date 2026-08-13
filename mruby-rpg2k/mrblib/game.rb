@@ -2813,6 +2813,53 @@ module Game
       row && row.respond_to?(:type) && row.type == 0 ? true : false
     end
 
+    # -- stat-affecting states (halve/double ATK/DEF/SPI/AGI), for skills -----
+    #
+    # A state's `affect_type` (0 halve / 1 double / 2 no change) and its
+    # `affect_attack` / `affect_defense` / `affect_spirit` flags (see
+    # Game::Battle's own copy of this, which #skill_effect / #skill_defence_term
+    # used not to read at all) apply here too -- ported the same way, against
+    # this class's own `@db.situation` rather than a Battle's `@states`, since
+    # a skill's caster/target is sometimes a bare Game::Actor with no Battle
+    # behind it at all (field/menu skill use, where states matter just as
+    # much: a Weaken picked up mid-fight should blunt a Cure cast on the map
+    # afterwards too, matching EasyRPG's Game_Battler::GetAtk() being the one
+    # accessor every context reads through, not a battle-only variant).
+    def stat_mode(b, stat_flag)
+      return :normal unless @db.respond_to?(:situation) && @db.situation
+      half = false; dbl = false
+      (b.respond_to?(:states) ? (b.states || []) : []).each do |sid|
+        d = @db.situation[sid]
+        next unless d && d.respond_to?(stat_flag) && d.send(stat_flag)
+        case d.respond_to?(:affect_type) ? d.affect_type : 2
+        when 0 then half = true
+        when 1 then dbl = true
+        end
+      end
+      return :double if dbl && !half
+      return :half if half && !dbl
+      :normal
+    end
+
+    def adjust_stat(value, mode)
+      case mode
+      when :double then value * 2
+      when :half then [value / 2, 1].max
+      else value
+      end
+    end
+
+    def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
+    def effective_int(b); adjust_stat(b.int, stat_mode(b, :affect_spirit)); end
+
+    def effective_def(b)
+      adjust_stat((b.respond_to?(:def) ? b.def : 0) || 0, stat_mode(b, :affect_defense))
+    end
+
+    def effective_spi(b)
+      adjust_stat((b.respond_to?(:spi) ? b.spi : 0) || 0, stat_mode(b, :affect_spirit))
+    end
+
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula
     # `power + physical_rate*attack/20 + magical_rate*spirit/40` (spirit is the
     # `int` stat), computed from the caster deterministically -- battle applies a
@@ -2820,8 +2867,8 @@ module Game
     # Algo::CalcSkillEffect (the ally-heal path has no target-defence term).
     def skill_effect(sk, caster)
       (sk.power || 0) +
-        (sk.physical_rate || 0) * caster.atk / 20 +
-        (sk.magical_rate || 0) * caster.int / 40
+        (sk.physical_rate || 0) * effective_atk(caster) / 20 +
+        (sk.magical_rate || 0) * effective_int(caster) / 40
     end
 
     # How much of an enemy-scope skill's effect the target's own stats absorb.
@@ -2840,10 +2887,8 @@ module Game
     # there is no target to read stats from.
     def skill_defence_term(sk, target)
       return 0 if target.nil? || skill_ignores_defence?(sk)
-      dfn = (target.respond_to?(:def) ? target.def : 0) || 0
-      # A battle fixture (and an enemy row that leaves the field out) may carry
-      # no spirit at all; a missing stat absorbs nothing rather than raising.
-      spi = (target.respond_to?(:spi) ? target.spi : 0) || 0
+      dfn = effective_def(target)
+      spi = effective_spi(target)
       (sk.physical_rate || 0) * dfn / 40 + (sk.magical_rate || 0) * spi / 80
     end
 
@@ -6039,12 +6084,14 @@ module Game
     # runtime has no equivalent of (the closest thing, an attribute-defence
     # shift skill, moves #attr_ranks instead of a raw stat).
     #
-    # Only #deal_attack / #enemy_autodestruct (basic-attack and self-destruct
+    # #deal_attack / #enemy_autodestruct (basic-attack and self-destruct
     # damage), #to_hit / #avg_agi (accuracy and escape chance) and #turn_order
-    # read the adjusted value -- a battle **Skill**'s power formula
-    # (`Game::Party#skill_effect` / `#skill_defence_term`) still reads the
-    # battler's plain #atk / #def / #spi directly, which is a deliberately
-    # scoped-out follow-up (see docs/TODO.md), not an oversight.
+    # all read the adjusted value here. A battle **Skill**'s power formula
+    # (`Game::Party#skill_effect` / `#skill_defence_term`) reads it too, but
+    # through its own copy of this same logic (`Game::Party#stat_mode` and
+    # friends) rather than this one, since a skill's caster/target is
+    # sometimes a bare `Game::Actor` with no `Battle` -- and no `@states` --
+    # behind it at all (field/menu skill use).
 
     # :half, :double or :normal for `stat_flag` (:affect_attack and friends)
     # on `b` right now. A battler carrying both a halving and a doubling state

@@ -6492,6 +6492,46 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
 
+check 'battle_skill_command respects a stat-halving state on the caster' do
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  states = { 1 => fake_state(affect_type: 0, affect_spirit: true) } # 0 = halve
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8, int: 20, agi: 7) }
+  db = FakeActorDB.new(players, [1], {}, skills, {}, states)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  foe = combatant('Foe', 0, 0, 5, 100)
+
+  plain = Game::Battle.from_actor(st.party.actor_by_id(1))
+  eq(-20, st.party.battle_skill_command(st.party.db_skill(7), plain, foe)[:hp],
+     "unweakened: 40 * spirit 20 / 40")
+
+  weak = Game::Battle.from_actor(st.party.actor_by_id(1))
+  weak.states = [1]
+  eq(-10, st.party.battle_skill_command(st.party.db_skill(7), weak, foe)[:hp],
+     'weakened spirit (10): 40 * 10 / 40')
+end
+
+check 'battle_skill_command respects a stat-doubling state on the target' do
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  states = { 2 => fake_state(affect_type: 1, affect_spirit: true) } # 1 = double
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8, int: 20, agi: 7) }
+  db = FakeActorDB.new(players, [1], {}, skills, {}, states)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # skill_effect = 20
+
+  plain_foe = combatant('Foe', 0, 0, 5, 100)
+  plain_foe.spi = 20
+  eq(-10, st.party.battle_skill_command(st.party.db_skill(7), caster, plain_foe)[:hp],
+     'undoubled: 20 base - 40*20/80 (10)')
+
+  tough_foe = combatant('Foe', 0, 0, 5, 100)
+  tough_foe.spi = 20
+  tough_foe.states = [2]
+  eq(-1, st.party.battle_skill_command(st.party.db_skill(7), caster, tough_foe)[:hp],
+     'doubled spirit (40): 20 base - 40*40/80 (20) = 0, floored to 1')
+end
+
 check 'a skill flagged "attribute defence up/down" shifts the target rank, ' \
       'capped at +-1 from base' do
   # scope 3 (single, non-attack) so this exercises the shift without also
