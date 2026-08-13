@@ -6581,6 +6581,35 @@ check 'Scene::EquipMenu: a cursed item refuses to open the item list for its own
   eq :items, scene.instance_variable_get(:@mode)
 end
 
+# A party whose db_item rows carry the four RPG2000 "points1" equip-bonus
+# fields, so the comparison-arrow math has real numbers to add up. Item 1
+# is what the weapon slot already holds; 2/3/4 strictly beat, strictly fall
+# short of and exactly match its single non-zero field (atk_points1).
+class EquipCompareParty < MenuStubParty
+  ITEMS = {
+    1 => OpenStruct.new(name: 'Worn', atk_points1: 10),
+    2 => OpenStruct.new(name: 'Better', atk_points1: 15),
+    3 => OpenStruct.new(name: 'Worse', atk_points1: 5),
+    4 => OpenStruct.new(name: 'Same', atk_points1: 10)
+  }.freeze
+  def db_item(id); ITEMS[id]; end
+  def equip_candidates(_slot, _actor = nil); [[2, 1], [3, 1], [4, 1]]; end
+end
+
+check 'Scene::EquipMenu: the candidate arrow sums all four stat deltas against the worn item (yado.tk)' do
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  state.party.actors.first.equipment[0] = 1 # weapon slot already holds item 1 (atk 10)
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+  texts = window_texts(scene.instance_variable_get(:@cand_window))
+  # Row 0 is "(Remove)" (one draw_text call); each candidate row after it is
+  # three calls -- name, arrow, count -- so the arrows land at 2, 5, 8.
+  eq '^', texts[2], 'a candidate with strictly more combined points draws Up'
+  eq 'v', texts[5], 'one with strictly fewer draws Down'
+  eq '-', texts[8], 'an exact match draws Same, not counted per-stat'
+end
+
 check 'the status screen gives the condition a labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
