@@ -3980,8 +3980,9 @@ class RPG2k
       def start_battle_animation(entry)
         id = battle_animation_id(entry)
         return false unless id && id > 0
-        tx, ty = battle_animation_pixel(entry)
-        anim = build_animation(id, tx, ty, true, target_index: entry[:target_index])
+        tx, ty, height = battle_animation_pixel(entry)
+        anim = build_animation(id, tx, ty, true, target_index: entry[:target_index],
+                               target_height: height)
         return false unless anim
         @map_animation = anim
         fire_animation_flashes(anim) # frame 0 flashes, as the map path does
@@ -4003,14 +4004,17 @@ class RPG2k
 
       # Where it plays: over the targeted enemy's sprite. RPG2000 draws no sprite
       # for a party member -- its battle is first-person -- so an action aimed at
-      # one plays over the middle of the screen instead of nowhere.
+      # one plays over the middle of the screen instead of nowhere. The third
+      # element is the sprite's own pixel height, for #animation_position_offset
+      # to split into head/feet thirds -- nil for the screen-centre fallback,
+      # which has no sprite to measure and so never moves off it.
       def battle_animation_pixel(entry)
         i = entry[:target_index]
         sprites = @battle_ui[:enemy_sprites]
         spr = i && sprites ? sprites[i] : nil
         bmp = spr && spr.bitmap
-        return [SCREEN_W / 2, SCREEN_H / 2] unless bmp
-        [spr.x + bmp.width / 2, spr.y + bmp.height / 2]
+        return [SCREEN_W / 2, SCREEN_H / 2, nil] unless bmp
+        [spr.x + bmp.width / 2, spr.y + bmp.height / 2, bmp.height]
       end
 
       # Close out an animated round: clear the commands, drop the action banner,
@@ -5350,15 +5354,24 @@ class RPG2k
         req = it.battle_animation
         return nil unless req
         tx, ty = animation_target_pixel(req[:target])
-        build_animation(req[:animation], tx, ty)
+        # Every map target -- the player, a map event, a vehicle -- draws from
+        # a CharSet frame of this one fixed size (see #draw_vehicles, which
+        # sizes a vehicle sprite off the same constant), so the sprite bounding
+        # box #animation_position_offset needs is known without asking what
+        # kind of character this actually is.
+        build_animation(req[:animation], tx, ty, target_height: Game::CharSet::HEIGHT)
       end
 
       # The animation player itself, shared by the map's Show Battle Animation
       # command and by a battle round. `battle` says the pixel is already a
       # screen position rather than a map one, and that nothing is waiting on the
-      # animation to finish. nil when the animation is unknown or its
-      # Battle/<name> sheet is missing.
-      def build_animation(id, tx, ty, battle = false, target_index: nil)
+      # animation to finish. `target_height` is the target sprite's own pixel
+      # height, when known (see #animation_position_offset) -- nil when there is
+      # no real sprite to measure (the ally-side "middle of the screen"
+      # fallback), which leaves every position setting drawing at the plain
+      # centre pixel, same as before this field existed. nil when the animation
+      # is unknown or its Battle/<name> sheet is missing.
+      def build_animation(id, tx, ty, battle = false, target_index: nil, target_height: nil)
         anim = animation_row(id)
         return nil unless anim
         frames = table_entries(anim.frames)
@@ -5367,7 +5380,8 @@ class RPG2k
         return nil unless sheet
         { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
           position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
-          timer: ANIM_CELL_FRAMES, battle: battle, target_index: target_index }
+          timer: ANIM_CELL_FRAMES, battle: battle, target_index: target_index,
+          target_height: target_height }
       end
 
       def animation_row(id)
@@ -5494,10 +5508,39 @@ class RPG2k
         # A map animation is placed in map pixels and follows the camera; a
         # battle one is already where it belongs on screen.
         cx = ma[:battle] ? ma[:tx] : ma[:tx] - cam_x + TILE / 2
-        cy = ma[:battle] ? ma[:ty] : ma[:ty] - cam_y + TILE / 2
+        cy = (ma[:battle] ? ma[:ty] : ma[:ty] - cam_y + TILE / 2) +
+             animation_position_offset(ma)
         table_entries(frame.cells).each do |cell|
           next if cell.respond_to?(:visible) && cell.visible == false
           blit_animation_cell(ma[:sheet], cell, cx, cy)
+        end
+      end
+
+      # The vertical pixel offset the battle_anime row's own `position` field (0
+      # head / 1 center / 2 feet, LCF `battle_anime` chunk 19 field 10) adds on
+      # top of the target's plain centre pixel -- previously decoded and stored
+      # (`build_animation`'s `position:`) but never read, so every animation
+      # drew centred regardless of what it asked for. Symmetric around the
+      # existing centre pixel so position 1 -- the schema default, and every
+      # animation that never sets the field -- draws exactly where it always
+      # has; a target with no known height (the ally-side "middle of the
+      # screen" fallback battle_animation_pixel returns, or a headless/
+      # fixture animation nothing ever gave a height) is never offset, since
+      # there is no sprite to split. The split point is the target's own real
+      # sprite bounding box -- Game::CharSet's fixed 32px frame for a map
+      # target, the battler bitmap's actual height in a fight -- rather than a
+      # guessed fraction of it: the *direction* is confirmed by the schema's
+      # own field comment (mruby-lcf/mrblib/schema.rb), but the exact split
+      # RPG_RT itself draws at is still approximate pending a wine diff, the
+      # same status the message window's own relocation zone boundary has
+      # above.
+      def animation_position_offset(ma)
+        h = ma[:target_height]
+        return 0 unless h
+        case ma[:position]
+        when 0 then -(h / 2) # head: half the sprite's height above centre
+        when 2 then h / 2    # feet: half the sprite's height below centre
+        else 0
         end
       end
 
