@@ -2534,6 +2534,76 @@ check 'Message Options positions the message window at the top' do
   ok msg[:window].y < 60, "top-positioned window should sit near the top, y=#{msg[:window].y}"
 end
 
+check 'a bystander event holds still during an open message by default' do
+  # yado.tk: "Autorun blocks other events too, unless 'move other events
+  # during message wait' is on" -- Message Options' own continue_events flag
+  # (LCF field 44) defaults off, so a bystander's own custom route must not
+  # advance at all while the message stays open (no input pressed).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  mover = page(x_move_type: Game::MoveType::CUSTOM,
+              route: move_route([R::MOVE_RIGHT] * 3, repeat: false))
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(0, 4, mover) },
+                    player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  start_x = chars(scene)[2].x
+  20.times { scene.update }
+  eq start_x, chars(scene)[2].x,
+     'a bystander event must hold still while the message is open by default'
+  ok scene.instance_variable_get(:@message), 'the message should still be open (no input pressed)'
+end
+
+check 'Message Options "move other events" lets a bystander event keep walking while the message stays open' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MESSAGE_OPTIONS, [0, 0, 0, 1]), # continue_events on (param3 = 1)
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  mover = page(x_move_type: Game::MoveType::CUSTOM,
+              route: move_route([R::MOVE_RIGHT] * 3, repeat: false))
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(0, 4, mover) },
+                    player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  start_x = chars(scene)[2].x
+  20.times { scene.update }
+  ok chars(scene)[2].x > start_x,
+     "the bystander event should have advanced east while the message stayed " \
+     "open, got #{chars(scene)[2].x}"
+  ok scene.instance_variable_get(:@message), 'the message should still be open (no input pressed)'
+end
+
+check '"move other events" during a message never lets a bystander start a second event' do
+  # There is only one foreground @interpreter, already busy with this
+  # message -- an event-touch (trigger 2) bystander approaching the player
+  # while continue_events is on must still stop adjacent without starting its
+  # own commands (see #move_autonomous's allow_trigger), the same way a plain
+  # event-touch approach behaves when nothing else is running (see 'event-
+  # touch (trigger 2): an event walking into the player runs it' above).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MESSAGE_OPTIONS, [0, 0, 0, 1]), # continue_events on
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  toucher = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8)
+  toucher.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  scene = new_scene({ 1 => event(5, 4, auto), 2 => event(3, 0, toucher) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  20.times { scene.update }
+  ok !st.switches[9],
+     "the toucher's own commands must not run while the message interpreter is still busy"
+  ch = chars(scene)[2]
+  eq [1, 0], [ch.x, ch.y], 'the toucher still approached and stopped adjacent to the player'
+  ok scene.instance_variable_get(:@message), 'the original message must still be the one open'
+end
+
 check 'Change Face Graphic opens a message with a face and insets the text' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
