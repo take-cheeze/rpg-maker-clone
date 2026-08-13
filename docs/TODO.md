@@ -3702,9 +3702,37 @@ above are repeated here)
   it) is unverified — a separate question about troop-member identity/
   numbering, not the render-order this PR fixes.
 - The "airborne" enemy display flag **only** changes its Y position on
-  screen — it has no accuracy/hit-related effect. The "frequent miss"
-  enemy option is a hardcoded 90%→70% drop to *normal-attack* accuracy
-  only (skills unaffected).
+  screen — it has no accuracy/hit-related effect. **Still open**: the
+  monster schema's `levitate` field (LCF enemy field 28,
+  `mruby-lcf/mrblib/schema.rb`) is parsed but read nowhere in
+  `mruby-rpg2k`, so this codebase draws every enemy at its plain
+  centred position regardless — but yado.tk's own text names no pixel
+  offset or animation shape for the raise, and both the yado.tk and
+  viprpg-dev wiki mirrors were unreachable this session (`yado.tk`
+  itself 503'd; the viprpg-dev wiki 403'd WebFetch), so implementing this
+  would mean guessing a magnitude with no way to check it — left for a
+  session that can compare against real RPG_RT. ✅ **The "frequent miss"
+  enemy option is confirmed already correct: a hardcoded 90%→70% drop to
+  *normal-attack* accuracy only, skills unaffected.** `Game::Enemy#attack_hit_rate`
+  (`mruby-rpg2k/mrblib/game.rb`) already reads the schema's `miss` field
+  (LCF enemy field 26) exactly this way — `@miss ? 70 : 90` — and
+  `Game::Battle.hit_rate_of` dispatches to it polymorphically the same
+  way it reads an actor's own `attack_hit_rate`, feeding
+  `Game::Battle#to_hit`'s `base` term, the **one and only** call site
+  (`Battle#strike`'s basic-attack path). A skill's own hit chance
+  (`Game::Party#skill_hit`) reads the skill row's `hit` field directly and
+  never touches an attacker's `attack_hit_rate` at all, structurally
+  confirming the "skills unaffected" half — there is no code path between
+  the two. No change was needed; the claim only lacked its own regression
+  coverage, now added: a new `scripts/rpg2k_logic_check.rb` check
+  (`Game::Enemy#attack_hit_rate: the 'miss' flag...`) pins the bare
+  reader (70 flagged / 90 not), the polymorphic `Battle.hit_rate_of`
+  reader agreeing, and an end-to-end `Battle#to_hit` roll against a
+  same-agility target (so the agi-adjustment term drops out and the
+  result is the bare base) for both a flagged and an unflagged enemy in
+  the same fight — confirmed to fail (`expected 70, got 90`) against a
+  temporarily-neutered `attack_hit_rate` that always returned 90, then
+  restored.
 - Chipset passability: an upper-layer "passable" flag **overrides** a
   lower-layer "impassable" one (passable overall); an upper "impassable"
   flag **always** blocks regardless of the lower layer. The simplified
