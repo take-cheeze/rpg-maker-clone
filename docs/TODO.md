@@ -4624,11 +4624,13 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `glyf`) and is reported rather than half-parsed into garbage, as are a
         malformed WOFF and a font stb_truetype rejects — silent blank text is
         exactly what let this hide.
-      - 🚧 Remaining for fonts: no CI test covers the unpacker, because it
-        needs a redistributable font and the bed ships none. Verified locally
-        instead, against two real TTFs repacked as WOFF: the unpacked sfnt comes
-        back byte-for-byte the size of the original, stb_truetype accepts it, the
-        vertical metrics and every A-Z advance/lsb match the original exactly,
-        and a glyph rasterises with real ink. Authoring a tiny TTF we own (the
-        way the bed's PNGs are authored) would let the smoke render text and
-        close this.
+      - ✅ CI coverage for the unpacker: it needed a redistributable font and the
+        bed ships none, and its result sits behind `game_font()`'s
+        process-lifetime cache, invisible to a font dropped in after another
+        test has already drawn text. `MV::Font.unpack_woff`/`smoke_test`
+        (test-only mrb bindings) reach `woff_to_sfnt` and a fresh
+        `stb_truetype` rasterisation directly; `mz_test.rb` hand-authors the
+        smallest font that can prove the pipeline (one glyph mapped from
+        `'A'`, the way the MV image fixtures are built) and checks the
+        unpacked sfnt comes back byte-for-byte identical and rasterises the
+        same real ink as the bare original.

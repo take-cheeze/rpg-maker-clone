@@ -42,3 +42,22 @@ const uint8_t* mv_webgl_pixels(int handle, int* w, int* h);
 // here. Absolute paths and paths already under the base dir are returned
 // unchanged. Defined in mvjs.cxx and shared with the Canvas2D image loader.
 std::string mv_resolve_path(const std::string& p);
+
+// Unpack `in` to the bare sfnt it wraps if it is a WOFF 1.0 font, or pass it
+// through unchanged otherwise. Backs MV::Font.unpack_woff (mvjs.cxx), which
+// gives the WOFF unpacker (mvcanvas.cxx) CI coverage independent of the
+// game_font() cache -- see that function's comment. Returns false only when
+// `in` is a WOFF the unpacker rejects as malformed.
+bool mv_font_unpack(const std::string& in, std::string& out);
+
+// Rasterise `codepoint` at `pixel` em size from font bytes given directly
+// (WOFF or a bare sfnt) through a fresh stb_truetype font, bypassing the
+// game_font() cache. Backs MV::Font.smoke_test (mvjs.cxx). Sets *gw/*gh to
+// the glyph bitmap size and *ink to its count of non-zero coverage pixels;
+// returns false if the bytes do not parse as a font stb_truetype accepts.
+bool mv_font_smoke_test(const std::string& in,
+                        int codepoint,
+                        double pixel,
+                        int* gw,
+                        int* gh,
+                        int* ink);
