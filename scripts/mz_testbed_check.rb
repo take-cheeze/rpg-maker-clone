@@ -166,14 +166,24 @@ class Checker
     end
 
     party = system["partyMembers"]
-    if party.is_a?(Array) && !party.empty?
+    # Game_Party.setupStartingMembers just filters this through $gameActors,
+    # which returns null (silently skipped) for an id with no Actors.json
+    # entry — so an empty starting party is not a boot hazard the way a bad
+    # startMapId is: Scene_Title, New Game and a full map walk all work fine
+    # with $gameParty holding zero members, verified against a real game that
+    # ships exactly that (its first party member arrives via an intro event's
+    # Change Party Member command instead of System.json). Still expect an
+    # *array* — Game_Party would throw iterating something else — and still
+    # flag a listed id that Actors.json doesn't have, since that is a real
+    # authoring mistake the engine papers over rather than one it condones.
+    if party.is_a?(Array)
       party.each do |aid|
         expect(entry_at(actors, aid),
                "System.partyMembers references actor #{aid.inspect}, " \
                "which is missing from Actors.json")
       end
     else
-      fail("System.partyMembers must be a non-empty Array (got #{party.inspect})")
+      fail("System.partyMembers must be an Array (got #{party.inspect})")
     end
 
     size = system["tileSize"]
