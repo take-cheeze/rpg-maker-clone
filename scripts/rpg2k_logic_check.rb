@@ -5973,6 +5973,36 @@ check 'battle: the attribute multiplier takes the strongest matching element' do
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
   bat.begin_round
   eq 60, bat.step_action[:damage]                    # max(50%, 300%) -> 60
+  # No attribute (property) table at all -> every id defaults to magic-type, so
+  # this is really a same-type case (see the multiply check below) rather than
+  # a counter-example to it.
+end
+
+check 'battle: a weapon-type and a magic-type element multiply instead of picking the strongest (yado.tk)' do
+  # Element 1 is weapon-type, element 2 magic-type (property table `type`
+  # field, as in the can_cast? weapon-attribute-gating check above).
+  props = { 1 => AttrTypeRow.new(0), 2 => AttrTypeRow.new(1) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  slime.attr_ranks = { 1 => 0, 2 => 3 }  # weapon rank A (300%), magic rank D (50%)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.begin_round
+  eq 30, bat.step_action[:damage]  # 20 * (300% * 50%) = 20 * 150% = 30, not max(300,50)=60
+
+  # Within one type bucket, the strongest element still wins (the doc only
+  # disputes cross-type combination); a type with no ids at all contributes
+  # 100% unchanged.
+  props2 = { 1 => AttrTypeRow.new(0), 3 => AttrTypeRow.new(0) } # both weapon-type
+  hero2 = combatant('Hero', 40, 0, 20, 100)
+  hero2.atk_attrs = [1, 3]
+  slime2 = combatant('Slime', 0, 0, 5, 100_000)
+  slime2.attr_ranks = { 1 => 3, 3 => 0 } # weapon: resists 1 (50%), weak to 3 (300%)
+  bat2 = Game::Battle.new([hero2], [slime2], Game::Rng.new(1), nil, false, false,
+                          false, false, props2)
+  bat2.begin_round
+  eq 60, bat2.step_action[:damage] # max(50%, 300%) within the weapon bucket * 100% magic
 end
 
 check 'battle: an unlisted element deals full (C = 100%) damage' do
