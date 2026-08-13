@@ -613,10 +613,11 @@ The work below is roughly ordered by the critical path to a walkable game
   (11740) records its payload too and **is consumed** — see the random-
   encounter entry below (`Scene::Map#current_encounter_steps`) — while
   **Change System BGM** (10660) round-trips its per-slot overrides through
-  the save (`@state.system_bgm[cmd.param(0)]`); slot 0 (battle) is now read
-  back too (see the battle-BGM paragraph just below), so only the remaining
-  slots (victory / inn / boat / ship / airship / game over) are still
-  save-fidelity-only. **Change System
+  the save (`@state.system_bgm[cmd.param(0)]`); slot 0 (battle, see the
+  battle-BGM paragraph below) and slots 3-5 (boat / ship / airship, matching
+  EasyRPG's `Game_System::sys_bgm` enum, see the vehicle-boarding paragraph
+  below) are now read back too, so only slots 1/2/6 (victory / inn / game
+  over) are still modelled for save fidelity like the access flags. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
@@ -659,8 +660,9 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check (a Change System BGM override for
   slot 0 plays instead of the database `battle_music` the moment the battle
   UI opens), confirmed to fail against the pre-fix code before the fix. The
-  other System BGM slots (victory / inn / boat / ship / airship / game over)
-  are still save-fidelity-only, per the note above.
+  remaining System BGM slots (victory / inn / game over) are still
+  save-fidelity-only, per the note above — boat / ship / airship (slots 3-5)
+  are consumed too, see the vehicle-boarding paragraph below.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
@@ -1208,7 +1210,23 @@ The work below is roughly ordered by the critical path to a walkable game
   Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
   ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
-  boat / ship / airship music) and disembarking restores the map BGM. **Enter Hero Name**
+  boat / ship / airship music) and disembarking restores the map BGM.
+  ✅ **A Change System BGM override for a vehicle's slot is now honoured
+  too**, ahead of the database default. `Scene::Map#vehicle_bgm` used to read
+  `db.system.send("#{type}_music")` unconditionally, so an event that ran
+  Change System BGM (10660) before boarding had no effect on what played —
+  boat/ship/airship were exactly the "still-unconsumed" slots the paragraph
+  above used to name. `#vehicle_bgm` now resolves `@state.system_bgm[slot]`
+  first (slots 3/4/5 for boat/ship/airship, matching EasyRPG's
+  `Game_System::sys_bgm` enum: Battle 0, Victory 1, Inn 2, Boat 3, Ship 4,
+  Airship 5, GameOver 6) and falls back to the database field otherwise — the
+  same override-then-default idiom Change System SFX already gets from
+  `#system_se`. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (boarding a boat with a Change System BGM override on slot 3 plays that
+  override instead of the database `boat_music`), confirmed to fail against
+  the pre-fix code before the fix. Battle (slot 0) is consumed too, see the
+  battle-BGM paragraph above; victory / inn / game over (slots 1/2/6) are
+  still save-fidelity-only. **Enter Hero Name**
   (10740) opens a character-entry widget that renames a
   party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
   "show message" flag — a level-up queues one message per level gained, shown

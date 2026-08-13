@@ -2868,14 +2868,15 @@ module Game
       @parallax_changed = true
     end
 
-    # Change System BGM: override one of the system music slots (battle,
-    # victory, inn, ...) selected by param0. The remaining fields carry a Music
-    # struct: string = file name, param1 fade-in, param2 volume, param3 tempo,
-    # param4 balance. Stashed in a Game::State slot table; Scene::Map's
-    # #battle_bgm reads slot 0 (battle) back out ahead of the database
-    # default, the same override-then-default idiom Change System SFX already
-    # gets. The other slots (victory / inn / ...) still only round-trip
-    # through the save, since nothing plays them yet.
+    # Change System BGM: override one of the system music slots (0 battle,
+    # 1 victory, 2 inn, 3 boat, 4 ship, 5 airship, 6 game over) selected by
+    # param0. The remaining fields carry a Music struct: string = file name,
+    # param1 fade-in, param2 volume, param3 tempo, param4 balance. Stashed in
+    # a Game::State slot table; Scene::Map's #battle_bgm reads slot 0 (battle)
+    # and #vehicle_bgm reads slots 3-5 (boat/ship/airship) back out ahead of
+    # the database default, the same override-then-default idiom Change
+    # System SFX already gets. Victory (1), inn (2) and game over (6) still
+    # only round-trip through the save, since nothing plays them yet.
     def do_change_system_bgm(cmd)
       @state.system_bgm[cmd.param(0)] = {
         name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
