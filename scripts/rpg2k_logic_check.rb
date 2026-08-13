@@ -2419,7 +2419,10 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :actor_set,
                       # 呪われた装備: once equipped, the equip menu refuses to
                       # remove or replace it (Actor#slot_cursed?).
-                      :cursed)
+                      :cursed,
+                      # 物理回避率アップ: a normal attack against the wearer is
+                      # 25 points likelier to miss (Actor#physical_evasion_up?).
+                      :raise_evasion)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2428,13 +2431,14 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
-              cursed: false)
+              cursed: false, raise_evasion: false)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
-               ko_only, two_handed, attack_all, preemptive, actor_set, cursed)
+               ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
+               raise_evasion)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -6671,6 +6675,29 @@ check 'Battle#to_hit clamps to 0..100 and a 100% base never misses' do
   eq 100, b.to_hit(atk, b.enemies.first), 'a perfect base stays 100 despite fast target'
 end
 
+check 'Battle#to_hit subtracts 25 for a target with physical-evasion-up gear' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 10, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  tgt = b.enemies.first
+  atk.hit_rate = 90
+  eq 90, b.to_hit(atk, tgt), 'equal agility, no evasion gear -> the base hit rate'
+  tgt.evasion_up = true
+  eq 65, b.to_hit(atk, tgt), '90 - 25, applied after the (zero-effect) agility term'
+end
+
+check 'Battle#to_hit floors the evasion-up penalty at 0, and 必中 skips it entirely' do
+  b = Game::Battle.new([combatant('H', 0, 0, 10, 10)],
+                       [combatant('E', 0, 0, 10, 10)], Game::Rng.new(1))
+  atk = b.allies.first
+  tgt = b.enemies.first
+  atk.hit_rate = 10
+  tgt.evasion_up = true
+  eq 0, b.to_hit(atk, tgt), 'a 10% base minus 25 floors at 0, not negative'
+  atk.ignores_evasion = true
+  eq 10, b.to_hit(atk, tgt), '必中 returns before the evasion-up term is ever consulted'
+end
+
 check 'with accuracy off a basic attack always connects' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.hit_rate = 1                                  # would nearly always miss...
@@ -8226,6 +8253,33 @@ check 'battle: a 必中 weapon ignores the target\'s evasion' do
                           Game::Rng.new(1), nil, false, false, true)
   eq 90, sure.send(:to_hit, sure.allies[0], swift),
      "必中 drops the evasion term, leaving the weapon's own hit rate"
+end
+
+check 'shield/armour raise_evasion gear grants Actor#physical_evasion_up?, weapon slot excluded' do
+  items = { 7 => fake_item(type: 2, raise_evasion: true),   # a shield
+            8 => fake_item(type: 1, raise_evasion: true) }  # a (miscoded) weapon
+  st = geared_party(items)
+  hero = st.party.leader
+  eq false, hero.physical_evasion_up?
+  hero.equip([0, 7, 0, 0, 0])
+  ok hero.physical_evasion_up?, 'the shield grants it'
+  hero.equip([8, 0, 0, 0, 0])
+  eq false, hero.physical_evasion_up?, 'the weapon slot never counts, even flagged'
+end
+
+check "battle: physical-evasion-up gear drops a normal attack's hit chance by 25" do
+  items = { 7 => fake_item(type: 2, raise_evasion: true) }
+  st = geared_party(items)
+  hero = st.party.leader
+  foe = combatant('Foe', 0, 0, 10, 100)
+  foe.hit_rate = 90
+
+  bare = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  eq 90, bare.send(:to_hit, foe, bare.allies[0]), 'unarmoured, equal agility -> the base rate'
+
+  hero.equip([0, 7, 0, 0, 0])
+  geared = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  eq 65, geared.send(:to_hit, foe, geared.allies[0]), 'the shield drops it to 65'
 end
 
 check 'battle: 必中 still suffers the wielder\'s own blindness' do

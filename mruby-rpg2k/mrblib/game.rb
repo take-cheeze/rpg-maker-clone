@@ -1569,6 +1569,25 @@ module Game
     # mtf-meido-action's is a pair of boots, Nepheshel's four include a swimsuit.
     def prevents_terrain_damage?; equipment_flag?(:no_terrain_damage); end
 
+    # 物理回避率アップ — a shield/armour/helmet/accessory that makes a normal
+    # attack likelier to miss its wearer: RPG_RT subtracts a flat 25 from the
+    # attacker's already agi-adjusted hit chance (EasyRPG's
+    # `HasPhysicalEvasionUp`, consulted by `CalcNormalAttackToHit` right after
+    # its AGI term). The weapon slot never counts — `ForEachEquipment<false,
+    # true>` there excludes weapons by item *type*, not slot index, the same
+    # way #equip_bonus already reads every equipped slot, so a 二刀流 actor's
+    # second weapon (sitting in the shield slot) is correctly excluded too.
+    def physical_evasion_up?
+      return false unless @db.respond_to?(:item)
+      @equipment.any? do |iid|
+        next false if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next false unless it
+        next false if it.respond_to?(:type) && it.type == ITEM_WEAPON
+        it.respond_to?(:raise_evasion) && it.raise_evasion ? true : false
+      end
+    end
+
     # 強力防御 — an actor whose Defend halves damage a *second* time (a quarter
     # rather than a half, per EasyRPG's `AdjustDamageForDefend`). This one is a
     # property of the actor row (field 24), not of gear, and an RPG2003 class can
@@ -5772,6 +5791,12 @@ module Game
                            # whether skills cost half.
                            :strikes, :ignores_evasion, :strong_defence,
                            :half_sp_cost,
+                           # Whether this battler's own gear makes a normal
+                           # attack likelier to miss it (Actor#physical_evasion_up?,
+                           # a flat -25 to the attacker's to_hit -- see
+                           # Battle#to_hit). Enemy Combatants leave it nil/false;
+                           # monsters equip nothing.
+                           :evasion_up,
                            # A basic Attack spread across the target's whole
                            # side (attack_all?) or jumped to the front of the
                            # round's turn order (preemptive?) -- see #turn_order
@@ -5860,6 +5885,7 @@ module Game
       c.preemptive = flag_of(a, :preemptive?)
       c.strong_defence = flag_of(a, :strong_defence?)
       c.half_sp_cost = flag_of(a, :half_sp_cost?)
+      c.evasion_up = flag_of(a, :physical_evasion_up?)
       c.attr_base_ranks = c.attr_ranks.dup
       c
     end
@@ -6221,7 +6247,15 @@ module Game
           src = effective_agi(attacker)
           src = 1 if src < 1
           tgt = effective_agi(target)
-          Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
+          agi_adjusted = 100 - (100 - base) * (src + tgt) / (2 * src)
+          # 物理回避率アップ: a shield/armour/helmet/accessory flagged
+          # `raise_evasion` (Actor#physical_evasion_up?) subtracts a further
+          # flat 25 from the already agi-adjusted chance, right where
+          # EasyRPG's `CalcNormalAttackToHit` applies it -- after the AGI
+          # term, and never reached at all by a 必中 attacker (the branch
+          # above already returned).
+          agi_adjusted -= 25 if target.evasion_up
+          Game.clamp(agi_adjusted, 0, 100)
         end
       raw * hit_modifier(attacker) / 100
     end

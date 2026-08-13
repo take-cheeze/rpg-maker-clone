@@ -1737,6 +1737,27 @@ The work below is roughly ordered by the critical path to a walkable game
   excludes the second actor: the picker offers only the first, and moving
   the cursor has nowhere to go), confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **物理回避率アップ** (the item row's `raise_evasion`, field 26) — unread, so
+  a shield/armour/helmet/accessory bought specifically for its evasion bonus
+  was purely a stat stick against a normal attack. `ruby
+  scripts/rpg2k_field_audit.rb` against a freshly re-downloaded Nepheshel
+  flags it with 12 rows once `two_handed`/`actor_set`/the rest above stopped
+  crowding it out. EasyRPG's `Game_Actor::HasPhysicalEvasionUp` scans every
+  equipped **non-weapon** slot for the flag (`ForEachEquipment<false, true>`,
+  weapons excluded by item type, not slot index — the same rule
+  `#equip_bonus` already follows for stat sums, so a 二刀流 actor's second
+  weapon in the shield slot is correctly excluded too), and
+  `Algo::CalcNormalAttackToHit` subtracts a flat 25 from the already
+  agility-adjusted hit chance for such a target, right after the AGI term
+  and never reached at all when the attacker's own weapon is 必中 (that
+  branch already returns before either term). Ported as
+  `Game::Actor#physical_evasion_up?` and a new `Combatant#evasion_up` field
+  (`Battle.from_actor` wires it, an enemy Combatant leaves it nil/false —
+  monsters equip nothing) consulted by `Game::Battle#to_hit` in the same spot.
+  Covered by new `scripts/rpg2k_logic_check.rb` checks (the flat -25, the
+  0..100 floor, 必中 skipping the term entirely, weapon-slot exclusion, and
+  an end-to-end `Battle.from_actor` wiring check), confirmed to fail against
+  the pre-fix code before the fix.
 
 ### yado.tk quirks backlog
 
