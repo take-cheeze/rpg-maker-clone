@@ -7112,9 +7112,13 @@ end
 # -- Battle state susceptibility (state_ranks) --------------------------------
 
 def poison_cast(foe, seed = 1)
+  poison_cast_state(foe, 3, seed)
+end
+
+def poison_cast_state(foe, state_id, seed = 1)
   mage = combatant_mp('Mage', 10, 0, 20, 100, 30)    # faster -> acts first
   b = Game::Battle.new([mage], [foe], Game::Rng.new(seed))
-  b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [3], chance: 100)
+  b.command_skill(mage, foe, name: 'Poison', cost: 0, hp: -1, inflict: [state_id], chance: 100)
   b.begin_round
   b.step_action
 end
@@ -7154,6 +7158,28 @@ check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
   end
   ok results.any? { |r| r == [3] }, 'a 60% status sometimes lands'
   ok results.any?(&:empty?), 'and sometimes is resisted'
+end
+
+check 'battle: Knockout (state 1) ignores state_ranks -- rank E still lands' do
+  # RPG2000 has no separate instant-death mechanic; a skill's state-effect list
+  # names Knockout (id 1, Game::Actor::DEATH_STATE) directly, and yado.tk
+  # documents its landing chance as governed solely by the skill's own
+  # occurrence-rate operand -- never scaled down by the target's A-E rank the
+  # way every other state is.
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { Game::Actor::DEATH_STATE => 4 } # rank E -> 0% for any other state
+  e = poison_cast_state(foe, Game::Actor::DEATH_STATE)
+  eq [Game::Actor::DEATH_STATE], e[:inflicted], 'Knockout lands despite rank-E "immunity"'
+  ok foe.state?(Game::Actor::DEATH_STATE)
+end
+
+check 'battle: an ordinary state at the same rank E is still blocked' do
+  # Control: the same rank on a non-Knockout state id keeps resisting, proving
+  # the exemption above is specific to id 1, not a general susceptibility bypass.
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { 3 => 4 }
+  e = poison_cast_state(foe, 3)
+  eq [], e[:inflicted]
 end
 
 # A state the target already carries is not a silent no-op: RPG_RT reports it as

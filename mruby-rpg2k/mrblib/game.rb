@@ -7231,7 +7231,13 @@ module Game
     # rank in the target's `state_ranks` (default C / 60% for a listed-but-absent
     # state, EasyRPG's GetStateProbability). 100 (unscaled) when the target (a
     # bare fixture) models no ranks, so a plain sim keeps landing every status.
+    # The Knockout state (id 1, `Game::Actor::DEATH_STATE`) is exempt from rank
+    # scaling entirely -- a skill's "state change" effect list can name it
+    # directly (RPG2000 has no separate instant-death mechanic), and yado.tk
+    # documents its infliction chance as governed solely by the skill's own
+    # occurrence-rate operand, never reduced by the target's A-E resistance rank.
     def state_susceptibility(target, sid)
+      return 100 if sid == Game::Actor::DEATH_STATE
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
       rank = ranks[sid] || 2

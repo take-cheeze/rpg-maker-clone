@@ -3156,9 +3156,29 @@ above are repeated here)
   but free if placed in a shop's own buy list.
 - State resistance rank A-E only gates **susceptibility** — the actual
   proc chance is entirely the *skill's own* occurrence-rate field (0%
-  occurrence never applies regardless of rank); Death/Knockout is exempt
-  and always applies. Attribute resistance rank A-E maps to the Attribute
-  database's own per-rank effect-% table (e.g. 50% halves).
+  occurrence never applies regardless of rank) — **confirmed already
+  correct**: `Game::Battle#roll_inflict` (`mruby-rpg2k/mrblib/game.rb`)
+  computes `prob = chance * state_susceptibility(target, sid) / 100`, so a
+  0% `chance` (the skill's own occurrence-rate operand) always yields
+  `prob = 0` regardless of what `state_susceptibility` scales it by.
+  Attribute resistance rank A-E already maps to the Attribute database's own
+  per-rank effect-% table too (`Game::Battle#attr_rate`, `a_rate`..`e_rate`
+  with a `[300, 200, 100, 50, 0]` fallback — **confirmed already correct**,
+  no change needed). ✅ **Death/Knockout is now exempt from rank scaling and
+  always lands at the skill's own occurrence rate.** RPG2000 has no separate
+  instant-death mechanic — an "instant death" spell is just a skill whose
+  state-effect list names Knockout (state id 1, `Game::Actor::DEATH_STATE`)
+  directly — but `state_susceptibility` scaled it through the target's
+  ordinary `state_ranks` lookup exactly like any other status, so a rank-E
+  ("immune") target silently blocked Knockout too, the opposite of the
+  yado.tk finding. Fixed with an early `return 100 if sid ==
+  Game::Actor::DEATH_STATE` before `state_susceptibility` ever consults
+  `state_ranks`, leaving `roll_inflict`'s already-carried/"already" handling
+  and every other state's rank scaling untouched. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a rank-E target still catches
+  Knockout; the same rank on an ordinary state — the control case — still
+  resists it, pinning the exemption to state id 1 specifically), the first
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ A skill flagged "attribute defense up/down" (field 45,
   `affect_attr_defence`) now shifts the target's rank for each attribute in
   its `attribute_effects` list by **exactly one step**, capped at ±1 from the
