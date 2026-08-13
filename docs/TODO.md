@@ -3792,11 +3792,11 @@ not yet verified:
   silent no-op, since RPG2000's front-view battle draws no sprite for a
   party member to flash (the same fact `#battle_animation_pixel`'s own
   comment already documents) — nothing here invents ally-side behaviour. A
-  map-triggered Show Battle Animation (11210) aimed at a map character is a
+  map-triggered Show Battle Animation (11210) aimed at a map character was a
   different target class entirely (the CharSet-based Flash Sprite mechanism
-  already models flashing one) and is not addressed by this fix;
-  `#build_animation`'s map-triggered call site never sets `target_index`, so
-  a flash_scope-1 timing there stays a no-op too, same as before. The flash
+  already models flashing one) and was left unaddressed by this fix, since
+  `#build_animation`'s map-triggered call site never set `target_index` — see
+  the next bullet, which closes that half. The flash
   itself uses the RGSS `Sprite#flash`/`#update` primitive
   (`mruby-rgss/src/lib.cxx`) — already ported natively but unused anywhere
   else in this codebase — decayed one frame at a time by a new
@@ -3811,6 +3811,37 @@ not yet verified:
   full duration; a target-scope timing with no resolvable target sprite is a
   silent no-op, not a crash), the first confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **A map-triggered Show Battle Animation's flash_scope-1 timing now
+  flashes its target too**, closing the half the previous bullet's fix
+  explicitly left open. `#fire_animation_flashes`' flash_scope-1 case only
+  ever reached `#fire_target_flash`, the battle-only mechanism that tones an
+  entry in `@battle_ui[:enemy_sprites]` — a map scene run outside a fight has
+  no battle UI at all, so the very common "flash the hero on a damage frame"
+  animation idiom did nothing whenever the animation played over the map
+  rather than in a battle round, the gap the previous bullet named and
+  deferred rather than closed. `#fire_animation_flashes` now dispatches on
+  the animation's own `battle` flag — the enemy-sprite path unchanged for a
+  battle round, and a new `#fire_map_target_flash` for a map-triggered one —
+  which reuses the **Flash Sprite** command's (11320) own CharSet-tone
+  mechanism instead of inventing a second one: the same decaying `{red:,
+  green:, blue:, power:, frames:, total:}` hash `#apply_sprite_flash` already
+  builds, assigned to `@player_flash` or an `@events` entry's `[:flash]` and
+  driven every frame by the pre-existing `#update_sprite_flashes` (see the
+  "Flash Sprite" section above) — no new per-frame driver needed. A new
+  `#map_animation_flash_target` resolves the animation's own target id
+  exactly the way `#animation_target_pixel` already does for centring the
+  animation itself (the player, "this event" — falling back to the player
+  when there is none, matching a common event Parallel Process's own
+  animation — or a named map event), except a vehicle: `#draw_vehicles` has
+  no counterpart to `#flash_tone` at all, so a vehicle target stays a silent
+  no-op, matching `#fire_target_flash`'s own missing-sprite case rather than
+  inventing a third flash mechanism. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a player-targeted animation arms
+  `@player_flash` with the timing's scaled colour; a named-event-targeted
+  animation arms that event's own flash and never the player's;
+  `#map_animation_flash_target`'s own vehicle / unknown-id / "this event"
+  decoding), confirmed to fail against the pre-fix code (two `RuntimeError`s
+  and a `NoMethodError`) before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a

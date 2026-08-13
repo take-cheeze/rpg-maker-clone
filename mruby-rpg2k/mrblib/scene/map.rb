@@ -5476,7 +5476,28 @@ class RPG2k
         # sizes a vehicle sprite off the same constant), so the sprite bounding
         # box #animation_position_offset needs is known without asking what
         # kind of character this actually is.
-        build_animation(req[:animation], tx, ty, target_height: Game::CharSet::HEIGHT)
+        build_animation(req[:animation], tx, ty, target_height: Game::CharSet::HEIGHT,
+                         flash_target: map_animation_flash_target(req[:target]))
+      end
+
+      # The character a map-triggered flash_scope-1 timing (see
+      # #fire_map_target_flash) should pulse: `:player`, a specific `@events`
+      # entry (this event / a named map event id), or nil when the target has
+      # no CharSet-tone flash mechanism to hook (a vehicle -- #draw_vehicles
+      # has no counterpart to #flash_tone -- or an id no live event matches).
+      # Mirrors #animation_target_pixel's own target-id decoding exactly,
+      # including its "this event" -> player fallback when there is no active
+      # event (a common event Parallel Process's own Show Battle Animation).
+      def map_animation_flash_target(target)
+        case target
+        when MOVE_TARGET_PLAYER then :player
+        when 0, MOVE_TARGET_THIS
+          @active_event || :player
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          nil
+        else
+          @events.find { |e| e[:id] == target }
+        end
       end
 
       # The animation player itself, shared by the map's Show Battle Animation
@@ -5488,7 +5509,8 @@ class RPG2k
       # fallback), which leaves every position setting drawing at the plain
       # centre pixel, same as before this field existed. nil when the animation
       # is unknown or its Battle/<name> sheet is missing.
-      def build_animation(id, tx, ty, battle = false, target_index: nil, target_height: nil)
+      def build_animation(id, tx, ty, battle = false, target_index: nil, target_height: nil,
+                          flash_target: nil)
         anim = animation_row(id)
         return nil unless anim
         frames = table_entries(anim.frames)
@@ -5498,7 +5520,7 @@ class RPG2k
         { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
           position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
           timer: ANIM_CELL_FRAMES, battle: battle, target_index: target_index,
-          target_height: target_height }
+          target_height: target_height, flash_target: flash_target }
       end
 
       def animation_row(id)
@@ -5556,8 +5578,9 @@ class RPG2k
 
       # Fire the current frame's timings request: flash_scope 2 (whole screen,
       # already implemented) or flash_scope 1 (the animation's own target --
-      # see #fire_target_flash). RPG2000 stores the colour / power as 0..31,
-      # scaled up to the 0..255 range both flash paths use.
+      # #fire_target_flash in battle, #fire_map_target_flash on the map).
+      # RPG2000 stores the colour / power as 0..31, scaled up to the 0..255
+      # range every flash path uses.
       def fire_animation_flashes(ma)
         ma[:timings].each do |t|
           next unless (t.frame || 0) == ma[:frame_i]
@@ -5567,7 +5590,7 @@ class RPG2k
                                 (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
                                 ANIM_FLASH_FRAMES)
           when 1
-            fire_target_flash(ma[:target_index], t)
+            ma[:battle] ? fire_target_flash(ma[:target_index], t) : fire_map_target_flash(ma[:flash_target], t)
           end
         end
       end
@@ -5579,14 +5602,12 @@ class RPG2k
       # battle-round path (a skill/item's `target_index`, see
       # #battle_animation_pixel): RPG2000's battle is front-view, so an
       # ally-targeted entry has no on-screen sprite to flash (target_index is
-      # nil there, same as it already is for centring the animation itself) and
-      # a map-triggered Show Battle Animation (11210) aimed at a map character
-      # is a different target class entirely, one the Flash Sprite command's own
-      # CharSet tone mechanism already models -- left unaddressed here, since
-      # #build_animation's map path never sets target_index. Uses the RGSS
-      # Sprite#flash/#update primitive (mruby-rgss/src/lib.cxx) already ported
-      # natively but unused elsewhere in this codebase, decayed each frame by
-      # #update_enemy_flashes.
+      # nil there, same as it already is for centring the animation itself).
+      # A map-triggered Show Battle Animation (11210) aimed at a map character
+      # is a different target class entirely, handled by #fire_map_target_flash
+      # below. Uses the RGSS Sprite#flash/#update primitive
+      # (mruby-rgss/src/lib.cxx) already ported natively but unused elsewhere
+      # in this codebase, decayed each frame by #update_enemy_flashes.
       def fire_target_flash(target_index, t)
         sprites = @battle_ui && @battle_ui[:enemy_sprites]
         spr = target_index && sprites ? sprites[target_index] : nil
@@ -5594,6 +5615,34 @@ class RPG2k
         spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
                             (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
                   ANIM_FLASH_FRAMES)
+      end
+
+      # The map-triggered counterpart to #fire_target_flash: a flash_scope-1
+      # timing on a Show Battle Animation (11210) played over a map character
+      # now actually pulses that character, instead of being silently dropped
+      # (#fire_animation_flashes only ever reached #fire_target_flash's
+      # battle-only enemy-sprite mechanism before this). There is no separate
+      # "battle animation flash" primitive for a map character -- the Flash
+      # Sprite command (11320) already tones one, via the very same decaying
+      # {red:, green:, blue:, power:, frames:, total:} hash #apply_sprite_flash
+      # builds and #flash_tone/#update_sprite_flashes already drive every frame
+      # (see the "Flash Sprite" section above), so this reuses that mechanism
+      # rather than inventing a second one: `target` (from
+      # #map_animation_flash_target) is either `:player` (-> @player_flash) or
+      # an `@events` entry (-> its `[:flash]`), nil when the animated target
+      # has no such sprite (a vehicle, or an unresolved event id) -- a silent
+      # no-op, matching #fire_target_flash's own missing-sprite case.
+      def fire_map_target_flash(target, t)
+        return if target.nil?
+        flash = { red: (t.flash_red || 0) * 8, green: (t.flash_green || 0) * 8,
+                  blue: (t.flash_blue || 0) * 8, power: (t.flash_power || 0) * 8,
+                  frames: ANIM_FLASH_FRAMES, total: ANIM_FLASH_FRAMES }
+        if target == :player
+          @player_flash = flash
+          @last_frame = nil # force the hero's cached frame to be re-toned
+        else
+          target[:flash] = flash
+        end
       end
 
       # Collect an Array2D (or a plain Hash test double) into a dense array of its
