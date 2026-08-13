@@ -2090,9 +2090,24 @@ not yet verified:
   bundled with this bullet (battle damage cap, HP recovery cap, switch/
   variable caps and ranges, recursion ceiling, party/stack/picture caps, move
   speed, transparency steps) remain unverified — see below.
-- **Numeric constants worth asserting directly**: special-skill HP
-  recovery cap 999 (battle damage's own hard-cap under 1000 is now ✅
-  above); switches/variables cap
+- ✅ **Special-skill HP recovery is capped at 999 per use** — the same
+  fixed-3-digit-popup reasoning as the battle damage cap above, for the
+  opposite direction. `Game::Battle#apply_skill_hit`'s recovery branch
+  (`mruby-rpg2k/mrblib/game.rb`) clamped the healed amount only by the
+  target's `max_hp`, never by any fixed digit cap — since `max_hp` and a
+  skill/item's `recover_hp_rate`-of-`max_hp` can both exceed 999, a single
+  heal could legitimately compute (and apply) well past what RPG_RT's
+  heal popup — the same fixed 3-digit widget as the damage one — could ever
+  display. Fixed by adding `Game::Battle::RECOVER_CAP = 999` next to the
+  existing `DAMAGE_CAP` and clamping the recovery amount to it before it's
+  added to `target.hp`, in the one method (shared by single- and all-target
+  commands) that applies it — the field-menu item-use path
+  (`Game::Party#item_recovery`) doesn't show the same fixed-width popup and
+  is a separate, unconfirmed question left open. Regression coverage added
+  to `scripts/rpg2k_logic_check.rb`: a recovery skill computing a raw 5000
+  HP heal against a high-max-HP target clamps at 999, confirmed to fail
+  against the pre-fix code.
+- **Numeric constants worth asserting directly**: switches/variables cap
   at 5000 (expandable), variable value range −999999..999999 in RPG2000 vs
   7-digit in RPG2003 (already partially modelled per `LCF::MODE`, worth
   checking the variable-write clamp specifically); Call Event / Event Call
@@ -2478,11 +2493,11 @@ not yet verified:
   value (after variance/attribute scaling and the crit/charge/defend
   multipliers, so the *displayed* number is what's capped) at each of the
   four sites above, right before it's subtracted from HP. Special-skill HP
-  recovery's own 999-per-use cap and the item drop rate's 1% floor —
-  bundled into this same bullet originally — are separate, still-unverified
-  facts and remain open (see the "Numeric constants worth asserting
-  directly" bullet above, which has had "battle damage hard-cap under 1000"
-  removed now that it's covered here).
+  recovery's own 999-per-use cap — bundled into this same bullet
+  originally — is now ✅ too, its own bullet above (`RECOVER_CAP`); the
+  item drop rate's 1% floor remains open (see the "Numeric constants worth
+  asserting directly" bullet above, which has had both of these removed now
+  that they're covered).
   Regression coverage added to `scripts/rpg2k_logic_check.rb`: a
   high-ATK, always-critical normal attack against a defenceless target
   clamps at 999 rather than the uncapped 6000 (2000 base × 3 crit), and an
