@@ -226,6 +226,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
             airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false)
   OpenStruct.new(
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
+                           battle_music: OpenStruct.new(file: 'BattleBGM', volume: 70, pitch: 110),
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
                            ship_music: OpenStruct.new(file: 'ShipBGM', volume: 80, pitch: 100),
                            airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
@@ -3594,6 +3595,32 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   3.times { scene.update }
   ok st.switches[1], 'the Victory handler ran'
   ok !st.switches[2], 'the Escape handler was skipped'
+end
+
+check 'Enemy Encounter scene: battle BGM plays on entry, field BGM resumes after' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
+  RGSS::Audio.reset_bgm
+  # One update steps the Autorun's interpreter onto the :battle wait; a
+  # second is what actually opens the battle UI (like battle_attack_to_end's
+  # own "a nil ui just means the battle is still opening" allowance above).
+  2.times { scene.update }
+  eq [['BattleBGM', 70, 110]], RGSS::Audio.bgm_calls,
+     'the database battle BGM played, at its configured vol/tempo'
+  eq 'BattleBGM', st.current_bgm[:name], 'and is now the tracked current BGM'
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
+  scene.update
+  RGSS::Input.triggered = []
+  eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
+     'the field BGM that was playing before the fight replays once it ends'
+  eq 'Field', st.current_bgm[:name]
 end
 
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do

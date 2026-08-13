@@ -592,15 +592,42 @@ The work below is roughly ordered by the critical path to a walkable game
   and round-trip through the save; the field menu's Escape / Teleport skill
   types now consume them (see the field-skill-menu entry below) — an event can
   register a destination for a warp spell to use. **Change Encounter Rate**
-  (11740) and **Change System BGM** (10660) record their payloads too — the
-  encounter step rate and per-slot system music overrides — and round-trip
-  through the save, but nothing consumes them yet (the encounter system and
-  battle scene's use of a system BGM slot are not built), so they are modelled
-  for save fidelity like the access flags. **Change System
+  (11740) records its payload too and **is consumed** — see the random-
+  encounter entry below (`Scene::Map#current_encounter_steps`) — while
+  **Change System BGM** (10660) still only round-trips its per-slot overrides
+  through the save (`@state.system_bgm[cmd.param(0)]`) with nothing reading
+  them back yet, so they are modelled for save fidelity like the access
+  flags. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
   (`Scene::Map#system_se` / `play_system_se`).
+  ✅ **The battle scene now plays the database's own battle BGM too** —
+  independently of Change System BGM's still-unconsumed override slots.
+  `Scene::Map#open_battle` (both an Enemy Encounter event command and a
+  wandering-monster random encounter route through it) never touched the
+  music at all: a fight started in silence, or just let the field track
+  keep looping, no matter what `db.system.battle_music` named. New
+  `#play_battle_bgm` / `#restore_pre_battle_bgm` mirror the memorize/
+  restore idiom `#play_vehicle_bgm` / `#restore_pre_vehicle_bgm` already use
+  for boarding a boat/ship/airship: `#open_battle` remembers
+  `@state.current_bgm` and plays `battle_music` (via the same
+  `music_name`/`music_volume`/`music_tempo` helpers vehicle and title BGM
+  already use) when one is configured, and `#finish_battle` restores it —
+  but only on a victory, an allowed escape, or a defeat with a custom
+  `[Defeat]` handler; a game-over defeat skips the restore, since
+  `Scene::GameOver` plays its own `gameover_music` and the map is never
+  shown again. A game with no `battle_music` configured leaves whatever was
+  already playing alone, matching RPG_RT's own no-op on a blank Music
+  struct. Left unaddressed: the victory jingle (`battle_end_music`) and
+  RPG_RT's exact timing for when the field BGM resumes relative to it — that
+  needs a "play a fixed jingle, then resume" sequencing this build's
+  `RGSS::Audio` has no primitive for, so the field track resumes immediately
+  once the result window is dismissed rather than after a fanfare. Covered
+  by a new `scripts/rpg2k_scene_check.rb` check (an Enemy Encounter plays
+  the configured battle BGM at its own vol/tempo the moment the battle UI
+  opens, and the field BGM that was playing before replays once the fight
+  is won), confirmed to fail against the pre-fix code before the fix.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
