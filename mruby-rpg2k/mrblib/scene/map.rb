@@ -1295,10 +1295,16 @@ class RPG2k
         ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands] ? true : false
       end
 
-      # Whether a trigger is one of the two the party can set off by walking into
-      # the event (see the note in #try_move).
+      # Whether a trigger is one the party can set off by walking into the event
+      # (see the note in #step_movement). yado.tk: a Parallel Process page
+      # answers hero contact too, on top of the background loop #step_parallel
+      # already drives it through -- the two are independent, so a below/above-
+      # characters Parallel event fires the instant the party overlaps its
+      # tile and a same-as-characters one fires again on every repeat into it,
+      # exactly like the two dedicated touch triggers already do.
       def touch_trigger?(trigger)
-        trigger == TRIGGER_PLAYER_TOUCH || trigger == TRIGGER_EVENT_TOUCH
+        trigger == TRIGGER_PLAYER_TOUCH || trigger == TRIGGER_EVENT_TOUCH ||
+          trigger == TRIGGER_PARALLEL
       end
 
       # Whether (x, y) carries an upper-layer counter tile.
@@ -6451,7 +6457,10 @@ class RPG2k
           # the one the trigger names suggest — an "event touch" (2) event fires
           # whether it walked into the party or the party walked into it, while
           # a "player touch" (1) fires only on the party's own move (the event
-          # side checks trigger 2 alone, see #move_autonomous).
+          # side checks trigger 2 alone, see #move_autonomous). A **Parallel
+          # Process** (4) page answers here too (see #touch_trigger?) — its own
+          # background loop (#step_parallel) is untouched, so contact starts a
+          # second, independent run through the shared foreground @interpreter.
           touched = event_at(nx, ny)
           if touched && touch_trigger?(touched[:trigger]) && touched[:commands]
             start_event(touched)

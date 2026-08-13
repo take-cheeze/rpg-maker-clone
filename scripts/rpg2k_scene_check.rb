@@ -1264,6 +1264,29 @@ check 'parallel (trigger 4): a background event runs every frame' do
   ok v >= 8, "parallel event should have looped ~10 times, got #{v}"
 end
 
+check 'parallel (trigger 4) also answers hero touch, independent of its own ' \
+      'background loop (yado.tk)' do
+  # yado.tk: setting a page's trigger to Parallel Process also answers hero
+  # contact -- instantly on overlap for a below/above-characters page (the
+  # default layer here), same as the two dedicated touch triggers. Distinguish
+  # the foreground touch-triggered run from the event's own always-running
+  # background loop with a Show Message: a background interpreter's message
+  # request is silently ignored (#drive_parallel_wait's "background: ignore
+  # message/choice/teleport requests" branch), so @message only ever opens
+  # through the foreground #start_event/#drive_event path this fix adds.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4) # parallel process
+  pg.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, into the parallel event at (1,0)
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'walking into a Parallel Process event opened a message window ' \
+          'through the foreground touch path'
+  st = scene.instance_variable_get(:@state)
+  eq [0, 0], [st.x, st.y], 'the party did not step onto the event'
+end
+
 check 'Wait 0.0 sec pauses a foreground event for exactly one frame' do
   # RPG_RT pauses a Wait 0.0 command and resumes it on the very next frame,
   # since 0 seconds have already elapsed by then -- so it costs exactly one
