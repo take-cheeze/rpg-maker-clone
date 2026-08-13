@@ -1888,6 +1888,12 @@ module Game
       return unless target
       amount = monster_change_amount(cmd, target)
       amount = -amount if cmd.param(1) != 0
+      # yado.tk quirk: a downed (0 HP) enemy stays down. A positive amount
+      # here is a no-op on an already-dead target -- like Game::Actor#change_hp,
+      # clearing the KO needs Change State / Full Recovery even after this
+      # would otherwise put it back above 0. A further (negative) hit on a
+      # dead target is left alone: it just re-clamps to the same floor below.
+      return if target.dead? && amount > 0
       hp = target.hp + amount
       floor = cmd.param(4) != 0 ? 0 : 1
       hp = floor if hp < floor

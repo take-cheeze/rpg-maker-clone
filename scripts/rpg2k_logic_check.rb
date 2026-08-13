@@ -8323,6 +8323,20 @@ check 'Change Monster HP damages a troop member, honouring the lethal flag' do
   it.update
   eq 0, b.enemy(0).hp
   ok b.enemy(0).dead?
+
+  # yado.tk quirk: a positive HP change cannot revive a downed enemy --
+  # it stays dead at 0 HP until Change State / Full Recovery clears it.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 0, 999, 1])])
+  it.update
+  eq 0, b.enemy(0).hp, 'HP-increase must not revive a downed enemy'
+  ok b.enemy(0).dead?
+
+  # A further (negative) hit on an already-dead enemy is unaffected by the
+  # guard above -- it just re-clamps to the same floor as before.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 30, 1])])
+  it.update
+  eq 0, b.enemy(0).hp, 'further damage on a dead enemy stays at the lethal floor'
+  ok b.enemy(0).dead?
 end
 
 check 'Change Monster HP heals, reads a variable and a percentage' do
