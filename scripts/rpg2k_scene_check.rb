@@ -1431,6 +1431,41 @@ check "an unrelated event's page change does not restart another event's " \
   eq 1, st.variables[2], 'the wait elapsed after exactly its original countdown'
 end
 
+check "a map event's own Parallel Process keeps running after its own page " \
+      'stops matching mid-run, instead of being torn down' do
+  ic = Game::Interpreter::Cmd
+  # The event has a single page, gated on switch 4; its own Parallel Process
+  # runs marker A, waits 0.3s, turns switch 4 off itself (its own condition,
+  # so the very next page refresh drops it out of @events/@event_tiles
+  # entirely -- #build_events skips an event with no page whose conditions
+  # are satisfied -- with no other page to fall back to), waits another
+  # 0.3s, then runs marker B. yado.tk, multiply corroborated: real RPG_RT
+  # keeps a Parallel Process like this running to completion once started,
+  # rather than aborting it the instant nothing selects its owning event any
+  # more -- marker B must still fire even though the event itself is gone.
+  pg = page(trigger: 4)
+  pg.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 4)
+  pg.event_commands = [add_var_cmd(1), ECmd.new(ic::WAIT, [3]),
+                       ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 1]),
+                       ECmd.new(ic::WAIT, [3]), add_var_cmd(2)]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.switches[4] = true # the page is satisfied from the start
+
+  25.times { scene.update } # runs marker A, clears the first 0.3s wait
+  eq 1, st.variables[1], 'marker A ran once, before the first wait'
+  ok !st.switches[4], 'the process turned its own gating switch off'
+  ok event_hashes(scene)[1].nil?,
+     "the event itself is gone from @events -- no page's condition matches " \
+     'any more'
+  eq 0, st.variables[2], 'marker B has not run yet -- still parked at the second wait'
+
+  25.times { scene.update } # let the second 0.3s wait elapse
+  eq 1, st.variables[2],
+     'the Parallel Process kept running to completion once hidden, instead ' \
+     'of being torn down the moment its own page stopped matching'
+end
+
 check "a common event's Parallel Process resumes where it left off after a " \
       'save/load, not from the top' do
   ic = Game::Interpreter::Cmd

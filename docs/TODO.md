@@ -2350,7 +2350,45 @@ not yet verified:
 - An Autorun/parallel event whose appearance condition goes false
   mid-execution **keeps running to completion** rather than aborting —
   confirmed by many independent sources, including across a map transfer
-  for Autorun specifically.
+  for Autorun specifically. ✅ **The map event Parallel Process half is now
+  fixed too.** A foreground Autorun's own command list already kept
+  running unaffected regardless of `@events` (it steps its own captured
+  `commands` array via `@interpreter`, independent of whether its owning
+  event still has a live `Game::Character`), but a **map event's own
+  Parallel Process** was a real, reachable gap: `#build_events`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) already skips an event outright once
+  no page's conditions are satisfied — dropping it from `@events`/
+  `@event_tiles` entirely, the same "no `Game::Character` built at all"
+  fact already recorded for `event_id_at` above — but
+  `#build_parallels`'s bystander-preservation pass (`preserve_map_events:`,
+  see "A Map Event's own Parallel Process no longer restarts..." just
+  below) only ever looked for a still-running interpreter among the events
+  that survived into the freshly-rebuilt `@events`, so one whose *own*
+  page just stopped matching (e.g. its own script turning off its one
+  gating switch) fell out of `@parallels` on the very next page-reselection
+  sweep and was silently garbage-collected mid-script, instead of finishing
+  out its remaining commands the way this bullet's own claim describes.
+  Fixed by carrying forward any bystander-preserved entry whose event id
+  did *not* end up live this rebuild, under its now-stale event/character
+  reference (unreachable from `@events`/`@event_tiles`, so harmless) — it
+  keeps ticking exactly like an ordinary Parallel Process, indefinitely,
+  until something else stops it (an Erase Event still finds and removes it
+  by object identity) or its conditions later pick the very same page
+  again, in which case the existing same-page reuse check just reattaches
+  this same interpreter rather than starting a fresh one. Whether RPG_RT
+  lets such a hidden process loop forever versus refusing to start a new
+  lap once its script naturally reaches the end is not resolved by this
+  fix — only "does not get torn down mid-script" is confirmed by the
+  source material, so the simpler, more literal reading (treat it exactly
+  like a live one) is what's implemented; only scoped to `preserve_map_events:`
+  rebuilds (an in-place, same-map page reselection), matching every other
+  bystander-preservation rule in `#build_parallels` — a genuine map change
+  still discards it, unaffected. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a single-page event's own Parallel
+  Process runs a marker, waits, turns off its own gating switch — making
+  the event vanish from `@events` — waits again, then runs a second marker,
+  confirmed to still fire once the event is gone), confirmed to fail
+  against the pre-fix code before the fix.
 - A **Common Event's** parallel-process state (its interpreter position)
   **resumes exactly where it left off** when re-enabled, indefinitely,
   persisting in every future save even after the condition goes false — ✅

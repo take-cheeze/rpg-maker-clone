@@ -1043,8 +1043,10 @@ class RPG2k
           end
         end
         @parallels = []
+        live_map_ids = {}
         @events.each do |e|
           next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
+          live_map_ids[e[:id]] = true
           prior = previous_map[e[:id]]
           if prior && prior[:commands].equal?(e[:commands])
             # Same page, same command list -- only the surrounding
@@ -1055,6 +1057,25 @@ class RPG2k
             @parallels.push prior
           else
             @parallels.push new_parallel(e[:commands], nil, e, nil)
+          end
+        end
+        # yado.tk, multiply corroborated: a Parallel Process whose own event's
+        # appearance condition goes false *mid-run* keeps executing in the
+        # background rather than being aborted -- it just has nothing left to
+        # draw or collide with. #build_events already drops such an event from
+        # @events/@event_tiles entirely (no page satisfied its conditions), so
+        # without this it would silently vanish from @parallels too, on the
+        # very next in-place page-reselection sweep this same event's own
+        # write triggers. Carried forward under its stale event/character
+        # reference -- unreachable from @events/@event_tiles, so harmless --
+        # for as long as it keeps running; only while `preserve_map_events` is
+        # set (an in-place, same-map reselection), matching every other
+        # bystander-preservation rule in this method. If its conditions later
+        # pick the very same page again, the ordinary reuse above already
+        # reattaches this same interpreter instead of starting a fresh one.
+        if preserve_map_events
+          previous_map.each do |id, prior|
+            @parallels.push(prior) unless live_map_ids[id]
           end
         end
         @common.each do |c|
