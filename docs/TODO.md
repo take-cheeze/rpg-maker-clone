@@ -2314,8 +2314,28 @@ not yet verified:
   control-lock freeze if the hero is the target. The same freeze class
   applies to Move-All/jump-landing targeting a currently-hidden
   (appearance-condition-unmet) map event.
-- "Through Mode: Begin" without a matching "End" leaves the character
-  permanently able to pass through walls.
+- ✅ **"Through Mode: Begin" without a matching "End" leaves the character
+  *permanently* able to pass through walls — including across an unrelated
+  event's page change**, which used to silently turn it back off.
+  `Scene::Map#pages_changed?` is a map-wide check (see the "Event triggers &
+  page selection" section below), so any Control Switch/Variable/item/party
+  write that flips *any* event's active page runs
+  `#rebuild_events_preserving_positions`, which rebuilds **every** event's
+  `Game::Character` from scratch via `#build_events` — including events whose
+  own page never changed. The old-to-new copy loop only carried `x`/`y`/
+  `direction` (and, conditionally, an in-progress custom route) across that
+  rebuild; `through`, `facing_locked`, `animation_stopped` and `transparency`
+  were left at `Game::Character#initialize`'s defaults (Through Mode off,
+  Direction Fix off, animation running, fully opaque) on the fresh object,
+  silently undoing whatever a Move Route's Through Mode/Direction Fix/Stop
+  Animation/Transparency Up-Down sub-commands had set on an event that was
+  never touched by whatever triggered the rebuild — the opposite of "must be
+  explicitly ended or it never turns back off". Fixed by carrying those four
+  fields across the rebuild the same way position/direction already are.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a bystander event's
+  Through Mode, Direction Fix, Stop Animation and Transparency all survive a
+  *different* event's switch-triggered page change), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **A move-route "Face Direction" sub-command always overrides an earlier
   "Direction Fix ON" (Lock Facing) in the same route.** Direction Fix only
   ever suppresses the facing change an *ordinary move* would otherwise cause

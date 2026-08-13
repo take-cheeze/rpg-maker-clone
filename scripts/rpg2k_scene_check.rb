@@ -689,6 +689,43 @@ check 'flipping a switch re-selects an event page mid-map' do
   ok st.switches[5], 'and its parallel process now runs'
 end
 
+check "an unrelated event's page change does not reset another event's " \
+      'Through Mode / Direction Fix / Stop Animation / Transparency' do
+  # Event 1 (the bystander) never changes page; event 2 is the one gated on
+  # switch 3. #pages_changed? is a map-wide check, so flipping the switch
+  # rebuilds *every* event's Game::Character, event 1's included, even though
+  # event 1's own page selection never moves. These four fields are only ever
+  # set by a Move Route sub-command (Through Mode / Direction Fix / Stop
+  # Animation / Transparency Up-Down) -- a page never assigns them -- so a
+  # fresh Game::Character always starts back at their defaults; carrying
+  # position across the rebuild but not these would silently wipe them.
+  bystander = page(trigger: 0, charset_name: 'Bystander')
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 4, charset_name: 'Ghost')
+  scene = new_scene({ 1 => event(1, 1, bystander),
+                      2 => two_page_event(2, 2, 3, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+
+  ch = event_hashes(scene)[1][:char]
+  ch.through = true
+  ch.facing_locked = true
+  ch.animation_stopped = true
+  ch.transparency = 5
+
+  st.switches[3] = true # only event 2's page condition is gated on this
+  5.times { scene.update }
+
+  ev2 = event_hashes(scene)[2]
+  eq 4, ev2[:trigger], "event 2's page did flip (switch 3 went on)"
+
+  ch = event_hashes(scene)[1][:char]
+  ok ch.through, "event 1's Through Mode survived event 2's page rebuild"
+  ok ch.facing_locked, "event 1's Direction Fix survived it too"
+  ok ch.animation_stopped, 'as did Stop Animation'
+  eq 5, ch.transparency, 'and Transparency Up/Down'
+end
+
 check 'a page change keeps the event where it stands' do
   # The event walks east on page 1; when it flips to page 2 it must stay put
   # rather than snapping back to its spawn tile.
