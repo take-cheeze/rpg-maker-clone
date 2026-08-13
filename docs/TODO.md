@@ -2517,11 +2517,29 @@ Everything below is unverified against the codebase.
   since its context is gone post-transfer; "On Loss: Handle Separately" +
   an immediate recovery branch can still lose to Game Over if *any*
   Parallel Process is still running (must stop them all first) — same
-  family as the `016_ikinari_end` race above; **setting a map event's
+  family as the `016_ikinari_end` race above; ✅ **setting a map event's
   trigger to Parallel Process also fires it on hero contact** — instantly
   on overlap for below/above-characters priority, repeatedly while a
-  direction key is held against a same-as-characters (blocking) one. Worth
-  checking against `step_parallel`/touch-trigger dispatch.
+  direction key is held against a same-as-characters (blocking) one. This
+  was a real, reachable gap: `Scene::Map#touch_trigger?`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — the single check `#step_movement`
+  consults before letting the party step onto a tile — only recognised
+  Player Touch (1) and Event Touch (2), so a Parallel-triggered (4) event
+  never started through the foreground touch path at all; its own
+  always-running background loop (`#step_parallel`) was the only thing that
+  ever ran it. Fixed by adding `TRIGGER_PARALLEL` to `#touch_trigger?`'s
+  check, which inherits the exact dispatch shape the two dedicated touch
+  triggers already have for free — no other code needed to change. The two
+  runs are independent: contact starts a *second* pass through the shared
+  foreground `@interpreter`, alongside (not instead of) the event's own
+  background `@parallels` entry, which keeps looping untouched. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (a below-characters Parallel
+  event opens a message window through the foreground touch path the moment
+  the party walks into it, distinguishing the two runs by a Show Message a
+  background interpreter's own request is silently dropped, per
+  `#drive_parallel_wait`'s "background: ignore message/choice/teleport
+  requests" branch), confirmed to fail against the pre-fix code before the
+  fix.
 - **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
   Ship aren't hardcoded to water, their passability follows the terrain
   table's boat/ship-pass flags like any other vehicle rule; ✅ an airship
@@ -2896,10 +2914,11 @@ not yet verified:
   contact); hero and event simultaneously swap tiles. Also newly found
   this pass: touch triggers only fire on **forward** movement onto the
   tile, not on a "move backward" move-route step reaching the same tile.
-- Setting a page's trigger to **Parallel Process** *also* answers hero
+- ✅ Setting a page's trigger to **Parallel Process** *also* answers hero
   contact: fires instantly on overlap for a below/above-characters page,
   or repeatedly while a direction key is held against a same-as-characters
-  (blocking) one.
+  (blocking) one — now fixed, see the fuller writeup under the
+  "Full-site sweep" **Parallel Process** bullet above.
 - ✅ **Standing on a "Hero Touch" trigger's tile suppresses random
   encounters there** (multiply corroborated) — see the fuller writeup under
   "Untriaged backlog, from `2k/01_shoshin/011_siyou/`" above (the
