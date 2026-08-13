@@ -536,6 +536,30 @@ The work below is roughly ordered by the critical path to a walkable game
   party and leave the player walking the map with it. Enemies inflict states
   too now, by casting the status skills in their action pattern (see the
   行動パターン entry below). Still remaining here: the non-reverse item case.
+  ✅ **A wipe an event's Parallel Process itself causes now reaches Game Over
+  too**, matching the foreground half above. `check_game_over` raises the same
+  `:game_over` wait regardless of which interpreter calls it, but only
+  `Scene::Map#drive_event` (the foreground dispatch) ever answered it —
+  `#drive_parallel_wait`, the equivalent dispatch for a Common Event Parallel
+  Process's own interpreter, had no `:game_over` case at all, so the request
+  fell into the generic "background: ignore message/choice/teleport requests"
+  branch and was immediately `#resume`d: the wait was silently cleared and the
+  process carried on, leaving a fully-dead party free to keep wandering the
+  map with no Game Over screen ever shown — e.g. a Simulated Attack damage
+  floor or a poison Change HP running from a background Parallel Process
+  rather than a foreground event. Fixed with a new `:game_over` branch in
+  `#drive_parallel_wait` that calls `#perform_game_over`, now generalized
+  (`def perform_game_over(interp = @interpreter)`, the same
+  take-the-waiting-interpreter-explicitly pattern the Show Battle Animation
+  fix above already established for `#drive_map_animation`) to stop whichever
+  interpreter actually raised the wait rather than always the foreground one.
+  The still-open `016_ikinari_end` battle-context race (a Parallel Process's
+  own game-over check beating a concurrent Battle "On Lose" recovery branch)
+  is untouched — `check_game_over` already returns early while `@battle` is
+  set, so this fix only reaches the field/non-battle path. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a Parallel Process's own lethal Change
+  HP puts up the Game Over screen and stops the rest of that process from
+  running), confirmed to fail against the pre-fix code before the fix.
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
@@ -3525,7 +3549,19 @@ codebase yet):
   own game-over/party-wipe handling already behaves sanely in this exact
   scenario (HP hits 0 while a message window from the same or a parallel
   event is open) or has some other gap the freeze happened to have masked
-  in the original.
+  in the original. ✅ **Part of that question is answered now**: a Parallel
+  Process's own wipe reaching Game Over at all was a real, separate gap
+  (`Scene::Map#drive_parallel_wait` had no `:game_over` case — see the "Event
+  system" entry near the top of this file for the full writeup), now fixed
+  and regression-covered. **Still open**: this fix says nothing about the
+  specific "while a message window is open" timing the repro asks about — a
+  Parallel Process keeps advancing non-blocking commands during a message
+  window per the "parallel processes were paused too broadly" fix above, so a
+  lethal Change HP there would reach `check_game_over` and now correctly
+  raises Game Over, but whether the message window itself is torn down
+  cleanly (rather than leaking a disposed sprite reference, say) is
+  unverified — no test bed or session note here exercises that exact
+  interleaving yet.
 - **Save data location fallback.** If `RPG_RT.exe` itself is read-only,
   real RPG_RT reads/writes save files from `My Documents\<GameName>\`
   instead of the game folder, and stops listing game-folder saves (even

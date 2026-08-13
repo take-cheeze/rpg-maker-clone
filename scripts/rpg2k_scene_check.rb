@@ -4249,6 +4249,34 @@ check "a Common Event Parallel Process's Show Battle Animation draws a sprite an
   ok st.switches[6], 'the parallel process resumed after the animation'
 end
 
+# yado.tk: RPG_RT drops straight into Game Over the instant a wipe-triggering
+# command finds the whole party dead outside battle, regardless of which
+# event noticed it -- a Simulated Attack floor trap on a background Parallel
+# Process is exactly as fatal as an identical trap on a foreground event (see
+# the "an event that wipes the party drops into Game Over" check above for the
+# foreground half of the same fact). Before this fix #drive_parallel_wait's
+# wait-kind dispatch had no :game_over branch, so a Parallel Process's own
+# Game::Interpreter#check_game_over call fell into the generic "background:
+# ignore message/choice/teleport requests" #resume case -- the wait was
+# silently cleared and the process carried on, leaving a fully-dead party
+# free to keep wandering the map with no Game Over screen ever shown.
+check 'a Parallel Process that wipes the party drops into Game Over too' do
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::CHANGE_HP, [0, 0, 1, 0, 9999, 1], indent: 0), # party, lethal
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, WipeStubParty.new)
+  parent = scene.instance_variable_get(:@parent)
+  5.times do
+    scene.update
+    break if parent.game_over_shown
+  end
+  ok parent.game_over_shown, 'a Parallel Process wiping the party put up the Game Over screen'
+  ok !st.switches[5], 'and the rest of the parallel process never ran'
+end
+
 check 'a vehicle placed on the current map is drawn; one off-map or absent is not' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
