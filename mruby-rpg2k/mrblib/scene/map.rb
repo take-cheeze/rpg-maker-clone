@@ -4231,7 +4231,7 @@ class RPG2k
       def perform_game_over(interp = @interpreter)
         $stderr.puts '[RPG2k] game over'
         interp.stop
-        @parent.show_game_over
+        @parent.show_game_over(@state)
       rescue StandardError => e
         $stderr.puts "[RPG2k] Game over failed: #{e.message}"
         interp.stop

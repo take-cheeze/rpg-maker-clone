@@ -431,9 +431,14 @@ class FakeParent
   attr_reader :returned_to_title
   def return_to_title; @returned_to_title = true; end
   # Game Over (12420) and a game-over battle defeat put up Scene::GameOver,
-  # which returns to the title once dismissed. Record that it was reached.
-  attr_reader :game_over_shown
-  def show_game_over; @game_over_shown = true; end
+  # which returns to the title once dismissed. Record that it was reached
+  # along with whatever Game::State it was handed (nil from a bare fixture
+  # test that never sets one up).
+  attr_reader :game_over_shown, :game_over_state
+  def show_game_over(state = nil)
+    @game_over_shown = true
+    @game_over_state = state
+  end
   # Open Save Menu (11910) saves through the app; record the calls.
   def saved; @saved ||= []; end
   def save_game(state); saved << state; true; end
@@ -3791,6 +3796,49 @@ check 'the Game Over screen shows its picture, plays its BGM and waits' do
   scene.update
   ok parent.returned_to_title, 'and then hands back to the title'
   Input.reset
+end
+
+check 'the Game Over screen plays a Change System BGM override instead of the database gameover_music' do
+  parent = fake_parent(fake_db)
+  Audio.reset_bgm
+  Input.reset
+  state = OpenStruct.new(
+    system_bgm: { RPG2k::Scene::GameOver::SYSTEM_BGM_GAMEOVER =>
+                  { name: 'OverrideGameOverBGM', volume: 33, tempo: 66 } }
+  )
+  RPG2k::Scene::GameOver.new(parent, state)
+  eq [['OverrideGameOverBGM', 33, 66]], Audio.bgm_calls,
+     'the override plays, not the database GameOverBGM'
+  Input.reset
+end
+
+check 'a bare Game Over (no Game::State) still falls back to the database gameover_music' do
+  parent = fake_parent(fake_db)
+  Audio.reset_bgm
+  Input.reset
+  RPG2k::Scene::GameOver.new(parent) # state omitted, as every pre-existing caller does
+  eq [['GameOverBGM', 90, 100]], Audio.bgm_calls, 'unaffected by the new optional state arg'
+  Input.reset
+end
+
+check 'a game-over battle defeat hands its Game::State to the Game Over screen' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # A bare encounter with defeat mode 0 (game over) and no handler block, the
+  # same setup the "returns to the title" check above uses.
+  auto.event_commands = [ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  scene.update
+  battle_attack_to_end(scene)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result window
+  scene.update
+  RGSS::Input.triggered = []
+  parent = scene.instance_variable_get(:@parent)
+  ok parent.game_over_shown, 'the defeat reached Game Over'
+  eq st, parent.game_over_state, 'carrying the very Game::State the battle ran on'
 end
 
 check 'a button still held from the battle does not skip the Game Over screen' do

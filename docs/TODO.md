@@ -612,10 +612,11 @@ The work below is roughly ordered by the critical path to a walkable game
   register a destination for a warp spell to use. **Change Encounter Rate**
   (11740) records its payload too and **is consumed** — see the random-
   encounter entry below (`Scene::Map#current_encounter_steps`) — while
-  **Change System BGM** (10660) still only round-trips its per-slot overrides
-  through the save (`@state.system_bgm[cmd.param(0)]`) with nothing reading
-  them back yet, so they are modelled for save fidelity like the access
-  flags. **Change System
+  **Change System BGM** (10660) round-trips its per-slot overrides through
+  the save (`@state.system_bgm[cmd.param(0)]`); slot 6 (game over) is now
+  read back too (see the Game Over paragraph under "Menus, save, battle"
+  below), so only the remaining slots (battle / victory / inn / boat / ship
+  / airship) are still save-fidelity-only. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
@@ -1023,6 +1024,31 @@ The work below is roughly ordered by the critical path to a walkable game
   than running a `[Defeat]` handler. A game that names no picture (or whose file
   is missing) still reaches the screen, on plain black, rather than the defeat
   failing.
+  ✅ **A Change System BGM override for the game-over slot (slot 6) is now
+  consumed too**, matching EasyRPG's `Game_System::BGM_GameOver` /
+  `Scene_Gameover::Start` (`GetSystemBGM(BGM_GameOver)`, confirmed against
+  the real source rather than guessed). `Scene::GameOver#play_gameover_bgm`
+  used to read `db.system.gameover_music` unconditionally, so an event that
+  ran Change System BGM before a game-over defeat had no effect on what
+  played there — the exact "nothing reading them back yet" gap the
+  paragraph above used to describe, for this one slot. The screen could not
+  even see the override before this: `RPG2k#show_game_over` /
+  `Scene::GameOver.new` took no `Game::State` at all, since the whole scene
+  stack (and the state living on it) is normally torn down the instant this
+  screen replaces it. `Scene::Map#perform_game_over` now passes its own
+  `@state` through `#show_game_over` to the new screen, whose
+  `#gameover_bgm_override` reads `state.system_bgm[6]` first and falls back
+  to the database default otherwise (the same override-then-default
+  idiom the battle/vehicle BGM already follow), with `state` staying
+  optional (`nil` falls back unconditionally, unchanged) so the Game Over
+  event command's route and every pre-existing bare-fixture caller are
+  unaffected. Covered by three new `scripts/rpg2k_scene_check.rb` checks (an
+  override plays instead of the database `gameover_music`; omitting the
+  state argument still falls back to the database default; a game-over
+  battle defeat hands the screen the very `Game::State` the battle ran on),
+  confirmed to fail against the pre-fix code before the fix. The other
+  System BGM slots (battle / victory / inn / boat / ship / airship) are
+  still save-fidelity-only, per the note above.
   **The battle backdrop is chosen from the game's own data now** rather than
   always being the flat void. RPG2000 keeps it on the map-tree node, not the map:
   `Game::Backdrop.name_for` reads the node's `backdrop_type`, a tri-state the

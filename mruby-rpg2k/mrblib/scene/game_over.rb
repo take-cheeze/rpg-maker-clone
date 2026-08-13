@@ -9,8 +9,23 @@ class RPG2k
     # than running a [Defeat] handler — so both go through Scene::GameOver rather
     # than dropping straight back to the title as they used to.
     class GameOver < Base
-      def initialize(parent)
+      # System BGM slot for Change System BGM (10660), matching EasyRPG's
+      # Game_System::SystemBGM enum (BGM_GameOver = 6) — see
+      # Scene_Gameover::Start, which plays GetSystemBGM(BGM_GameOver) rather
+      # than the database's gameover_music directly.
+      SYSTEM_BGM_GAMEOVER = 6
+
+      # `state` is the running Game::State (nil when this screen is reached
+      # with no game session behind it, e.g. a bare fixture test): threaded
+      # through so a Change System BGM override for the game-over slot can be
+      # read back, the same override this build's battle/vehicle BGM already
+      # honour. `Scene::Map#perform_game_over` / `RPG2k#show_game_over` are
+      # what pass it along; the whole scene stack (and the Game::State that
+      # was living on it) is otherwise gone by the time this screen exists,
+      # since a game-over defeat never returns to the map.
+      def initialize(parent, state = nil)
         super parent
+        @game_state = state
 
         @picture = Sprite.new
         bmp = gameover_bitmap
@@ -49,14 +64,29 @@ class RPG2k
         nil
       end
 
+      # A Change System BGM (10660) override for the game-over slot, when the
+      # running game set one and it names a file, else the database's own
+      # gameover_music. Mirrors EasyRPG's Game_System::GetAudio: the override
+      # wins only when its own filename is non-empty.
       def play_gameover_bgm
-        bgm = db.system.gameover_music
-        return unless bgm
-        name = bgm.file
+        name, vol, tempo = gameover_bgm_override || database_gameover_bgm
         return if name.nil? || name.empty?
-        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100)
+        Audio.bgm_play name, vol, tempo
       rescue StandardError => e
         $stderr.puts "[RPG2k] game over BGM playback failed: #{e.message}"
+      end
+
+      def gameover_bgm_override
+        return nil unless @game_state
+        ov = @game_state.system_bgm[SYSTEM_BGM_GAMEOVER]
+        return nil unless ov && ov[:name] && !ov[:name].to_s.empty?
+        [ov[:name], ov[:volume] || 100, ov[:tempo] || 100]
+      end
+
+      def database_gameover_bgm
+        bgm = db.system.gameover_music
+        return [nil, 100, 100] unless bgm
+        [bgm.file, (bgm.volume || 100), (bgm.pitch || 100)]
       end
     end
 
