@@ -3535,15 +3535,47 @@ codebase yet):
   "party wipe" for game-over purposes is defined as "every member is both
   unable to act and does not recover naturally," not literally "every
   member's HP is 0" (why Stone status can wipe a party without zeroing
-  anyone's HP); dual-wielding's off-hand attack animation is offset by a
-  few frames from the main hand's; Berserk/Confusion override target
-  selection but still honour "hits twice"/"ignores evasion," while Berserk
-  additionally collapses an "attack all" weapon down to a single target
-  and disables "always acts first"; and hit rate has both a floor and a
-  ceiling relative to the skill's *configured* rate depending on relative
-  Agility (a 90%-accuracy skill can't exceed 95% actual hit even against a
-  much slower target; an 80% one caps at 90%; the same skew works in
-  reverse against a much faster target).
+  anyone's HP — `Game::Battle#alive?`/`#finished?`, `mruby-rpg2k/mrblib/
+  game.rb`, still key off `Combatant#dead?`'s plain `hp <= 0` alone, so a
+  fully-Stoned party currently keeps grinding through `MAX_ROUNDS` rather
+  than losing immediately — a real, separate gap, not yet fixed); dual-
+  wielding's off-hand attack animation is offset by a few frames from the
+  main hand's. ✅ **Berserk/Confusion override target selection but still
+  honour "hits twice"/"ignores evasion," while Berserk additionally
+  collapses an "attack all" weapon down to a single target and disables
+  "always acts first."** `Game::Battle#strike`'s forced-restriction branch
+  (shared by both, `RESTRICTION_ATTACK_ENEMY`/`_ALLY`) called a bare
+  `#deal_attack` instead of the `#swing` an ordinary Attack uses, so
+  dual-wield's extra hit never landed under either restriction (必中 already
+  worked either way, since `#to_hit` reads `attacker.ignores_evasion`
+  regardless of which method calls it); attack-all spread across the whole
+  opposing side under Berserk exactly as it does under Confusion, with no
+  single-target collapse; and `#preemptive_boost?` granted the "always acts
+  first" turn-order jump to both restrictions alike. Fixed by routing the
+  restricted branch through `#swing` (dual-wield restored for both), scoping
+  the attack-all spread to `RESTRICTION_ATTACK_ALLY` only (Berserk now always
+  hits its single forced target via `#swing` directly, so the now-redundant
+  `#attack_side` helper was removed in favour of the existing `#swing_side`),
+  and returning `false` from `#preemptive_boost?` for `RESTRICTION_ATTACK_ENEMY`
+  before the existing `RESTRICTION_ATTACK_ALLY` case. Covered by four new
+  `scripts/rpg2k_logic_check.rb` checks (Berserk plus attack-all hits one
+  target; a preemptive weapon's jump is dropped under Berserk; Berserk still
+  swings a dual-wield weapon twice; a confused, attack-all, dual-wield
+  attacker swings twice per target), all four confirmed to fail against the
+  pre-fix code. **Confirmed already correct, no change needed**: hit rate's
+  floor/ceiling relative to a skill's configured rate by relative Agility (a
+  90%-accuracy skill can't exceed 95% actual hit even against a much slower
+  target; an 80% one caps at 90%). `Game::Battle#to_hit`'s existing
+  `100 - (100 - base) * (src + tgt) / (2 * src)` (EasyRPG's
+  `CalcToHitAgiAdjustment`, already ported for the "hit rate has both a
+  floor and a ceiling" claim above) already produces exactly this: as the
+  target's agility shrinks toward 0 relative to the attacker's, the ratio
+  term approaches 1/2, so hit approaches `50 + base/2` — 95 for a 90-rate
+  skill, 90 for an 80-rate one, matching both cited numbers as an emergent
+  property of the formula rather than a separate clamp. The reverse-skew
+  half (a much *faster* target) already floors at the existing `Game.clamp(…,
+  0, 100)`, unverified against a specific nonzero floor since neither test
+  bed's own accuracy math suggests RPG_RT keeps one there.
 
 ## RPG Maker with RGSS (XP / VX / VXAce)
 

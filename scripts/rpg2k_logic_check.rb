@@ -7506,6 +7506,50 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
 end
 
+# デフォ戦botまとめ: "Berserk/Confusion override target selection but still
+# honour 'hits twice'/'ignores evasion,' while Berserk additionally collapses
+# an 'attack all' weapon down to a single target and disables 'always acts
+# first'." The confusion half (attack_all still spreading, hit-twice/必中
+# unaffected either way) was already covered by the 全体化/必中 checks above;
+# these four pin the berserk-specific divergence.
+check 'battle: a berserk battler with an attack_all weapon still hits only one target' do
+  states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
+  hero = combatant('Hero', 20, 0, 20, 100)
+  hero.states = [7]
+  hero.attack_all = true                                  # 全体化, would spread unforced
+  foe1 = combatant('Foe1', 0, 5, 5, 50)
+  foe2 = combatant('Foe2', 0, 5, 5, 50)
+  bat = Game::Battle.new([hero], [foe1, foe2], Game::Rng.new(1), states)
+  entry = bat.send(:strike, hero)
+  ok entry.is_a?(Hash), 'berserk forces a single target even with 全体化 equipped'
+  ok foe1.hp == 50 || foe2.hp == 50, 'only one of the two enemies actually took a hit'
+end
+
+check 'battle: a berserk battler still swings twice with a 二刀流 weapon' do
+  states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
+  hero = combatant('Hero', 20, 0, 20, 100)
+  hero.states = [7]
+  hero.strikes = 2                                        # 二刀流
+  slime = combatant('Slime', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  entries = bat.send(:strike, hero)
+  eq 2, entries.size, "berserk still gets the weapon's dual-wield extra swing"
+end
+
+check 'battle: a confused, dual-wielding, attack_all battler swings twice per target' do
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
+  hero = combatant('Hero', 20, 0, 1, 100)
+  hero.states = [6]
+  hero.attack_all = true
+  hero.strikes = 2                                        # 二刀流
+  ally2 = combatant('Ally2', 0, 0, 5, 999)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero, ally2], [slime], Game::Rng.new(1), states)
+  entries = bat.send(:strike, hero)
+  eq 4, entries.size,
+     'the confused, 全体化, 二刀流 attacker swings twice at itself and twice at its ally'
+end
+
 # -- stat-halving/doubling states (affect_type / affect_attack & friends) ----
 
 check 'battle: a state that halves ATK weakens a basic attack' do
@@ -8133,6 +8177,19 @@ check '先制攻撃 does not jump the turn order for a Skill, Item or Defend' do
   bat.command_defend(bat.allies[0])
   eq [fast_foe, bat.allies[0]], bat.send(:turn_order),
      'Defend keeps the ordinary agility slot, even with the weapon still equipped'
+end
+
+check "battle: berserk drops a 先制攻撃 weapon's turn-order jump" do
+  items = { 7 => fake_item(type: 1, atk: 5, preemptive: true) }
+  states = { 9 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 0, 0, 0, 0])                             # 先制攻撃
+  fast_foe = combatant('FastFoe', 0, 0, 999, 100)          # far faster than the hero
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1), states)
+  bat.allies[0].states = [9]
+  eq [fast_foe, bat.allies[0]], bat.send(:turn_order),
+     "berserk drops the weapon's jump: agility alone decides again"
 end
 
 check 'battle: 強力防御 halves damage a second time' do
