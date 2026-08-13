@@ -2872,11 +2872,13 @@ module Game
     # 1 victory, 2 inn, 3 boat, 4 ship, 5 airship, 6 game over) selected by
     # param0. The remaining fields carry a Music struct: string = file name,
     # param1 fade-in, param2 volume, param3 tempo, param4 balance. Stashed in
-    # a Game::State slot table; Scene::Map's #battle_bgm reads slot 0 (battle)
-    # and #vehicle_bgm reads slots 3-5 (boat/ship/airship) back out ahead of
-    # the database default, the same override-then-default idiom Change
-    # System SFX already gets. Victory (1), inn (2) and game over (6) still
-    # only round-trip through the save, since nothing plays them yet.
+    # a Game::State slot table; Scene::Map's #battle_bgm reads slot 0 (battle),
+    # #victory_bgm reads slot 1 (the "Victory!" result screen) and #vehicle_bgm
+    # reads slots 3-5 (boat/ship/airship) back out ahead of the database
+    # default, the same override-then-default idiom Change System SFX already
+    # gets; Scene::GameOver#gameover_bgm_override does the same for slot 6.
+    # Inn (2) still only round-trips through the save, since nothing plays it
+    # yet (no inn / lodging screen exists in this build).
     def do_change_system_bgm(cmd)
       @state.system_bgm[cmd.param(0)] = {
         name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),

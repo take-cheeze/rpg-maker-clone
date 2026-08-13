@@ -1295,8 +1295,25 @@ The work below is roughly ordered by the critical path to a walkable game
   (boarding a boat with a Change System BGM override on slot 3 plays that
   override instead of the database `boat_music`), confirmed to fail against
   the pre-fix code before the fix. Battle (slot 0) is consumed too, see the
-  battle-BGM paragraph above; victory / inn / game over (slots 1/2/6) are
-  still save-fidelity-only. **Enter Hero Name**
+  battle-BGM paragraph above; game over (slot 6) too, by
+  `Scene::GameOver#gameover_bgm_override`. ✅ **Victory (slot 1) is now
+  consumed as well: a battle win plays the fanfare over the result screen.**
+  Winning an Enemy Encounter used to cut straight to the "Victory! / EXP
+  gained" window with the battle track still running (or silence, if the
+  encounter had none) — RPG_RT instead swaps in the System's
+  `battle_end_music` the instant the result screen opens, restoring the
+  pre-battle field/vehicle track only once the player dismisses it. A new
+  `Scene::Map#victory_bgm` mirrors `#battle_bgm`'s override-then-default
+  lookup on slot 1, and `#play_victory_bgm` is called from
+  `#enter_battle_result` on `:victory`, leaving `#restore_pre_battle_bgm`
+  (called from `#finish_battle` as before) to do the same job it already did
+  for escape and defeat. Only inn (slot 2) is still save-fidelity-only, since
+  no inn / lodging screen exists in this build. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (the database `battle_end_music`
+  plays over the result screen and the field BGM resumes only once
+  dismissed; a Change System BGM override on slot 1 beats the database
+  default), both confirmed to fail against the pre-fix code before the fix.
+  **Enter Hero Name**
   (10740) opens a character-entry widget that renames a
   party actor; **Change Level** (10420) / **Change EXP** (10410) honour their
   "show message" flag — a level-up queues one message per level gained, shown
