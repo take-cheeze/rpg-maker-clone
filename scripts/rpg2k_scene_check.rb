@@ -467,12 +467,14 @@ end
 
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
               members: [], terrain_damage: 0, bush_depth: 0,
-              airship_land: true, airship_pass: true)
+              airship_land: true, airship_pass: true, map_tree: nil)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
                airship_land: airship_land, airship_pass: airship_pass)
   state = Game::State.new(fake_party(members), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
-  RPG2k::Scene::Map.new(fake_parent(db), state)
+  parent = fake_parent(db)
+  parent.map_tree = map_tree if map_tree
+  RPG2k::Scene::Map.new(parent, state)
 end
 
 # The scene builds a Game::Character per source event; movement updates those
@@ -6003,6 +6005,106 @@ check 'a transformed monster is redrawn with its new battler graphic' do
   same = ui[:enemy_sprites][0]
   scene.send(:refresh_battle_sprites)
   ok ui[:enemy_sprites][0].equal?(same), 'an unchanged battler is left alone'
+end
+
+# -- random ("wandering monster") encounters ----------------------------------
+#
+# Map-tree node field 41 (enemy_groups) / 44 (encount_steps), read the same
+# way #fake_map_tree already feeds Game::MapAccess's own per-node lookup.
+
+FakeEncounterNode = Struct.new(:enemy_groups, :encount_steps)
+
+check 'a random encounter opens a battle with the map-tree node\'s own troop' do
+  # encount_steps 1 with the default terrain rate (100) is a guaranteed roll
+  # on the very first step: ratio = 100/1 = 100, which lands on the table's
+  # pmod-2.0 row, and 2.0 * 100 / (100 * 1) is a 100% chance.
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  scene = new_scene({}, player: [0, 0], map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right
+  ui = nil
+  20.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui
+  end
+  RGSS::Input.dir_value = 0
+  ok ui, 'ordinary walking with a guaranteed roll opened a battle'
+  eq 1, ui[:troop].id, "the map tree node's own troop (id 1, the default Slimes)"
+  eq 0, st.encounter_total, 'the accumulator resets once a fight actually starts'
+end
+
+check 'an empty encounter list never starts a random battle' do
+  tree = fake_map_tree(1 => FakeEncounterNode.new({}, 1)) # same guaranteed roll, no troops
+  scene = new_scene({}, player: [0, 0], map_tree: tree)
+  RGSS::Input.dir_value = 6
+  15.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok scene.instance_variable_get(:@battle_ui).nil?,
+     'the roll succeeds but there is nothing to fight, so no battle opens'
+end
+
+check 'riding the airship skips the random-encounter roll entirely' do
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  scene = new_scene({}, player: [0, 0], map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  st.boarded = :airship
+  scene.send(:check_random_encounter)
+  ok scene.instance_variable_get(:@battle_ui).nil?, 'flying is RPG_RT\'s one blanket exemption'
+  eq 0, st.encounter_total, 'the accumulator never even started'
+end
+
+check 'a forced move route does not roll for a random encounter' do
+  # A Move Event route driving the player is a forced step (@player_forced_step),
+  # not ordinary input-driven walking -- EasyRPG's UpdateEncounterSteps only
+  # ever runs from the latter (see the comment on @player_forced_step).
+  ic = Game::Interpreter::Cmd
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  auto = page(trigger: 3)
+  # target 10001 (player), freq 8, repeat off, skippable on, three MOVE_RIGHTs.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+                                  [10001, 8, 0, 1, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT])]
+  scene = new_scene({ 1 => event(3, 3, auto) }, player: [0, 0], map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  30.times { scene.update }
+  ok st.x > 0, "the forced route actually moved the player, at x=#{st.x}"
+  ok scene.instance_variable_get(:@battle_ui).nil?,
+     'the whole forced route ran without ever rolling for an encounter'
+end
+
+check "current_encounter_steps reads the map tree node's own setting, " \
+     'overridden by Change Encounter Rate' do
+  tree = fake_map_tree(1 => FakeEncounterNode.new({}, 25))
+  scene = new_scene({}, map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  eq 25, scene.send(:current_encounter_steps), "the map tree node's own encount_steps"
+  st.encounter_rate = 4
+  eq 4, scene.send(:current_encounter_steps), 'Change Encounter Rate (11740) overrides it'
+end
+
+check 'a map with no tree data defaults to 25 encounter steps' do
+  scene = new_scene({})
+  eq 25, scene.send(:current_encounter_steps)
+end
+
+check 'an encounter-steps of 0 disables random encounters and resets the accumulator' do
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 0))
+  scene = new_scene({}, map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  st.encounter_total = 55
+  scene.send(:check_random_encounter)
+  eq 0, st.encounter_total, 'the accumulator resets rather than piling up while encounters are off'
+  ok scene.instance_variable_get(:@battle_ui).nil?
+end
+
+check "a troop's terrain_set excludes it from a tile it does not cover" do
+  scene = new_scene({})
+  scene.db.enemy_group[9] = OpenStruct.new(name: 'Wolves', members: {}, terrain_set: [0])
+  ok !scene.send(:troop_allowed_on_terrain?, 9, 1), 'terrain_set[0] (tag 1) is 0: forbidden'
+  ok scene.send(:troop_allowed_on_terrain?, 9, 2),
+     'terrain_set is only one entry long: an omitted tag defaults to allowed'
+  ok scene.send(:troop_allowed_on_terrain?, 1, 1),
+     'the default Slimes group carries no terrain_set at all: always allowed'
 end
 
 # -- summary ------------------------------------------------------------------

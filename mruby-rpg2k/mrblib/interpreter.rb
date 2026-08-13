@@ -1200,6 +1200,28 @@ module Game
       @waiting = true
     end
 
+    # Start a battle that no event triggered — a wandering-monster encounter
+    # the map rolled on its own (Scene::Map#check_random_encounter), which is
+    # not a command in any list. Same request shape #do_enemy_encounter
+    # builds and the same :battle wait, but with no [Victory]/[Escape]/[Defeat]
+    # handler to route into and nothing to end early on an "abort" escape
+    # mode, so #resume_battle's job shrinks to tallying the outcome and
+    # clearing the wait. Only valid while this interpreter is otherwise idle
+    # (Scene::Map only calls it from ordinary player movement, never while an
+    # event is running); escape is always allowed and a wipe is always game
+    # over, since a random encounter carries no encounter-specific settings of
+    # its own to say otherwise.
+    def start_random_battle(troop_id, first_strike: false)
+      @battle_has_handlers = false
+      @battle_escape_aborts = false
+      @battle_request = { troop_id: troop_id, allow_escape: true,
+                          first_strike: first_strike, defeat_game_over: true }
+      @state.battle_count += 1
+      @wait_kind = :battle
+      @waiting = true
+    end
+    public :start_random_battle
+
     # -- state commands -------------------------------------------------------
 
     def range(cmd)

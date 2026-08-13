@@ -7087,9 +7087,15 @@ module Game
     # off (the hero is shown) and is persisted in the save.
     attr_accessor :player_transparent
     # Random-encounter step rate set by Change Encounter Rate (11740); nil until
-    # a command overrides it (the map's own rate then applies). No encounter
-    # subsystem consumes it yet — kept for save fidelity.
+    # a command overrides it (the map's own rate then applies).
     attr_accessor :encounter_rate
+    # The wandering-monster accumulator Scene::Map's #check_random_encounter
+    # builds up each step (EasyRPG's Game_Player::total_encounter_rate) —
+    # persisted so a save mid-walk does not quietly reroll the chance of the
+    # next few steps. The table index that reads it (EasyRPG's
+    # last_encounter_idx) is deliberately *not* persisted, matching EasyRPG:
+    # it is a plain runtime counter, not part of the save.
+    attr_accessor :encounter_total
     # How many tiles the party has walked. RPG2000 divides this into each
     # status condition's own step interval to decide when a field ailment slips
     # HP / SP (see Party#apply_map_step_damage), which is the only thing reading
@@ -7151,6 +7157,7 @@ module Game
       @bgm_looped = false
       @player_transparent = false
       @encounter_rate = nil
+      @encounter_total = 0
       @steps = 0
       @save_count = 0
       @battle_count = 0
@@ -7338,7 +7345,8 @@ module Game
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         player_transparent: @player_transparent, weather: @weather.to_h,
         teleport_access: @teleport_access, escape_access: @escape_access,
-        encounter_rate: @encounter_rate, teleport_targets: @teleport_targets,
+        encounter_rate: @encounter_rate, encounter_total: @encounter_total,
+        teleport_targets: @teleport_targets,
         steps: @steps,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
@@ -7720,6 +7728,7 @@ module Game
       # Registries default empty / unset; a save written before these existed
       # simply restores nothing.
       state.encounter_rate = h[:encounter_rate]
+      state.encounter_total = h[:encounter_total] || 0
       state.steps = h[:steps] || 0
       state.save_count = h[:save_count] || 0
       state.battle_count = h[:battle_count] || 0

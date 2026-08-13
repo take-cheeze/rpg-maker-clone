@@ -148,6 +148,17 @@ class RPG2k
         @last_frame = nil
         # Frame counter driving the chipset's water/animated-tile animation.
         @anim_frame = 0
+        # Whether the slide in progress was started by a forced route (a Move
+        # Event on the player, or Proceed With Movement) rather than ordinary
+        # player-input walking. #check_random_encounter only rolls on the
+        # latter (see the comment there), matching EasyRPG's
+        # UpdateEncounterSteps, which UpdateNextMovementAction only calls from
+        # the input-driven path.
+        @player_forced_step = false
+        # The wandering-monster encounter table row #check_random_encounter is
+        # on (EasyRPG's Game_Player::last_encounter_idx) -- a plain runtime
+        # counter, not part of the save (see Game::State#encounter_total).
+        @encounter_idx = 0
 
         setup_sprites
         render
@@ -1970,6 +1981,7 @@ class RPG2k
         @moving = true
         @move_count = 0
         @player_jumping = @player_char.jumped
+        @player_forced_step = true
       end
 
       # Advance the party's pixel slide by one frame, landing it on the
@@ -1990,6 +2002,10 @@ class RPG2k
           @move_count = 0
           @player_jumping = false
           note_party_step
+          # Random (wandering-monster) encounters only roll for ordinary
+          # player-input steps, never for a forced route -- see
+          # #check_random_encounter and the @player_forced_step comment above.
+          check_random_encounter unless @player_forced_step
           follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
         end
         # True for the landing frame as well as the ones before it: that frame
@@ -5180,6 +5196,7 @@ class RPG2k
         @dest_y = ny
         @moving = true
         @move_count = 0
+        @player_forced_step = false
       end
 
       # One tile walked. Advance the party's step counter and let RPG2000's field
@@ -5210,6 +5227,118 @@ class RPG2k
         row = terrain_row_at(@state.x, @state.y)
         return [] unless row && row.respond_to?(:damage)
         @state.party.apply_terrain_damage(row.damage)
+      end
+
+      # -- Random ("wandering monster") encounters -----------------------------
+      #
+      # Port of EasyRPG's Game_Player::UpdateEncounterSteps: each ordinary step
+      # adds the stepped-on tile's terrain encounter_rate (database terrain
+      # field 3, 100 by default) to a running total; the ratio of that total to
+      # the map's own encounter-steps setting selects a row of this table, and
+      # the row's multiplier scales the chance a fight starts *this* step. The
+      # ratio only grows (nothing decays it) until a fight actually starts, so
+      # a long walk with no encounter becomes steadily more likely to end in
+      # one -- RPG2000's answer to "I haven't been ambushed in ages".
+      ENCOUNTER_TABLE = [
+        [0, 0.0625], [20, 0.125], [40, 0.25], [60, 0.5], [100, 2.0],
+        [140, 4.0], [160, 8.0], [180, 16.0], [Float::INFINITY, 16.0]
+      ].freeze
+
+      # p scaled to basis points over this and rolled through Rng#scaled rather
+      # than #random -- the fix Battle#critical? needed (see Game::Rng#scaled):
+      # a plain modulus biases a small, threshold-sized chance high, and this
+      # table's lower rows (as little as 1/16 of 1/encounter_steps) are exactly
+      # that shape.
+      ENCOUNTER_CHANCE_SCALE = 1_000_000
+
+      # How many steps the map currently expects between encounters: a live
+      # Change Encounter Rate (11740) override when one is set, else the
+      # current map-tree node's own encount_steps (field 44, 25 by default --
+      # RPG2000's editor default). 0 (from either source) turns encounters off
+      # for this map outright, matching EasyRPG's own steps<=0 exit.
+      def current_encounter_steps
+        return @state.encounter_rate if @state.encounter_rate
+        row = map_node_properties
+        row && row.respond_to?(:encount_steps) ? row.encount_steps : 25
+      end
+
+      # The current map's own map-tree node row -- Game::MapAccess's per-id
+      # lookup, minus the "walk up to the parent" half of it: a map's random
+      # encounters are its own list end to end, RPG_RT never inherits one from
+      # an ancestor node the way it does Save/Teleport/Escape access.
+      def map_node_properties
+        props = map_properties
+        props ? props[@state.map_id] : nil
+      end
+
+      # Troop ids the party's current tile can start a fight from: the map's
+      # own encounter list (map-tree field 41), filtered by each troop's own
+      # terrain_set (enemy_group chunk field 5) -- a per-terrain-tag allow list
+      # a troop's editor page can restrict it to. An omitted entry (the array
+      # too short to reach this tile's tag) defaults to allowed, the same
+      # "missing entry reads as the field's default" rule the rest of this
+      # runtime's bit tables already follow.
+      def candidate_troops
+        row = map_node_properties
+        return [] unless row && row.respond_to?(:enemy_groups) && row.enemy_groups
+        tag = terrain_id(@state.x, @state.y)
+        row.enemy_groups.map { |_, e| e.enemy_group_id }.select do |tid|
+          troop_allowed_on_terrain?(tid, tag)
+        end
+      end
+
+      def troop_allowed_on_terrain?(tid, tag)
+        return true unless tag && tag > 0 && db.respond_to?(:enemy_group)
+        troop = db.enemy_group[tid]
+        return true unless troop
+        ts = troop.respond_to?(:terrain_set) ? troop.terrain_set : nil
+        return true unless ts
+        ts.size < tag || (ts[tag - 1] || 0) != 0
+      end
+
+      # One ordinary step's roll for a wandering-monster fight. A hit picks a
+      # uniform-random troop from #candidate_troops (an empty list -- a map
+      # with no encounter entries reaching this tile -- never interrupts the
+      # walk) and opens the battle exactly as an Enemy Encounter event command
+      # would, through the same Game::Interpreter#start_random_battle the
+      # interpreter exposes for it.
+      #
+      # Only ever called from ordinary player-input movement (see
+      # @player_forced_step), so the interpreter is always idle here -- no
+      # event, common event or forced route can be running underneath it.
+      def check_random_encounter
+        return if @state.party.flying?(@state)
+        steps = current_encounter_steps
+        if steps <= 0
+          @state.encounter_total = 0
+          @encounter_idx = 0
+          return
+        end
+        terrain = terrain_row_at(@state.x, @state.y)
+        rate = terrain && terrain.respond_to?(:encounter_rate) ? terrain.encounter_rate : 100
+        @state.encounter_total += rate
+        ratio = @state.encounter_total / steps
+        @encounter_idx += 1 while ratio >= ENCOUNTER_TABLE[@encounter_idx + 1][0]
+        pmod = ENCOUNTER_TABLE[@encounter_idx][1]
+        chance = pmod * rate / (100.0 * steps)
+        return unless roll_encounter_chance(chance)
+        @state.encounter_total = 0
+        @encounter_idx = 0
+        troops = candidate_troops
+        return if troops.empty?
+        troop_id = troops[@rng.random(troops.size)]
+        # RPG2000's own first-strike roll for a wandering encounter (EasyRPG's
+        # Rand::ChanceOf(1, 32) under Feature::HasRpg2kBattleSystem; 2003's
+        # back-attack / pincer terrain rolls are a different battle system's
+        # feature and do not apply here).
+        @interpreter.start_random_battle(troop_id, first_strike: @rng.random(32).zero?)
+      end
+
+      def roll_encounter_chance(p)
+        chance = (p * ENCOUNTER_CHANCE_SCALE).round
+        chance = ENCOUNTER_CHANCE_SCALE if chance > ENCOUNTER_CHANCE_SCALE
+        chance = 0 if chance < 0
+        @rng.scaled(ENCOUNTER_CHANCE_SCALE) < chance
       end
 
       def target_tile(x, y, dir)
