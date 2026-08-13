@@ -86,6 +86,24 @@ module RGSS
     attr_reader :viewport
     def initialize(viewport = nil, *); @viewport = viewport; end
     def dispose; end
+    # #flash/#update, as the target-scope Battle Animation flash
+    # (Scene::Map#fire_target_flash/#update_enemy_flashes) uses them: mirrors
+    # the real native contract (mruby-rgss/src/lib.cxx's spr_flash/spr_update)
+    # closely enough for the wiring checks -- #flash records the colour/duration
+    # requested, #update decays it by one frame and clears it once the
+    # duration runs out, the same "fades over the duration, then gone" shape
+    # the real Sprite gives a caller who drives it every frame.
+    attr_reader :flash_color, :flash_calls
+    def flash(color, duration)
+      (@flash_calls ||= []) << [color, duration]
+      @flash_color = color
+      @flash_count = duration
+    end
+    def update
+      return unless @flash_count && @flash_count > 0
+      @flash_count -= 1
+      @flash_color = nil if @flash_count == 0
+    end
   end
 
   class Viewport
@@ -6275,6 +6293,50 @@ check 'a skill that names an animation plays it over the targeted enemy' do
   spr = ui[:enemy_sprites][0]
   eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
      [ma[:tx], ma[:ty]], 'centred on the enemy sprite'
+end
+
+# flash_scope 1 ("target") -- previously dropped outright, since
+# #fire_animation_flashes only ever handled flash_scope 2 (the whole screen).
+# yado.tk / the LCF schema's own flash_scope enum (0 none / 1 target / 2
+# screen) both name this as a distinct case from the screen flash already
+# covered by the check above; a hand-built timing entry (rather than a
+# fixture animation) isolates it from the screen-flash timing that check
+# already exercises on the shared fixture animation.
+check 'a target-scope animation flash pulses the hit enemy, not the screen or a bystander' do
+  scene, ui = battle_at_command
+  spr = ui[:enemy_sprites][0]
+  bystander = ui[:enemy_sprites][1]
+  timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
+                          flash_blue: 0, flash_power: 20)
+  ma = { frame_i: 0, target_index: 0, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma)
+  ok spr.flash_color, 'the targeted enemy sprite was flashed'
+  eq [248, 0, 0, 160],
+     [spr.flash_color.red, spr.flash_color.green, spr.flash_color.blue, spr.flash_color.alpha],
+     'scaled from the LCF 0..31 fixture fields the same *8 way the screen flash already is'
+  anim_flash_frames = RPG2k::Scene::Map::ANIM_FLASH_FRAMES
+  eq anim_flash_frames, spr.flash_calls.last[1],
+     'held for the same duration a screen flash from an animation gets'
+  st = scene.instance_variable_get(:@state)
+  ok !st.screen.flashing?, 'flash_scope 1 never touches the screen flash, unlike flash_scope 2'
+  eq nil, bystander.flash_color, 'the other, untargeted enemy sprite is untouched'
+  # Driven every frame the way #drive_battle already does (#update_enemy_flashes),
+  # the flash fades out and clears after its own duration -- not left stuck on.
+  anim_flash_frames.times { scene.send(:update_enemy_flashes) }
+  eq nil, spr.flash_color, 'the flash faded out after its duration'
+end
+
+# An ally-targeted entry (RPG2000's battle is front-view: no sprite for a
+# party member, so target_index is nil there -- see #battle_animation_pixel)
+# has nothing to flash; #fire_target_flash must not raise reaching for a
+# nonexistent sprite.
+check 'a target-scope flash with no resolvable target sprite is a silent no-op' do
+  scene, = battle_at_command
+  timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
+                          flash_blue: 0, flash_power: 20)
+  ma = { frame_i: 0, target_index: nil, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma) # must not raise
+  ok true, 'no exception targeting nothing'
 end
 
 check 'a skill that names none plays nothing' do
