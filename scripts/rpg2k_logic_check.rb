@@ -2907,6 +2907,46 @@ check 'Change Parameters tracks an unclamped total under the displayed clamp' do
   eq 4, a.def
 end
 
+check 'Party save round-trips a Change Parameters adjustment across Continue' do
+  # Continue always rebuilds the roster as fresh Actor objects (a new
+  # Game::Party seeded from the database's initial_level), so a live Change
+  # Parameters edit has nowhere to land on the reload unless the save itself
+  # carries it -- see the "save/load gap ... closed" paragraph in
+  # docs/TODO.md's Change Parameters section.
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.gain_exp(500) # level up, so Continue's #set_exp also re-derives @base via
+                      # #set_level -- the common case, not just the fresh-object one
+  hero.change_param(Game::Actor::PARAM_DEF, 5)      # ordinary, never-clamped: 2 -> 7
+  hero.change_param(Game::Actor::PARAM_ATK, -2000)  # floors atk at 1, raw deep negative
+  hero.change_param(Game::Actor::PARAM_ATK, 1000)   # raw still negative -- stays floored
+  eq 7, hero.def
+  eq 1, hero.atk
+  loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  eq hero.level, loaded.level      # the level-up itself round-tripped too
+  eq 7, loaded.def                 # ordinary adjustment survives Continue
+  eq 1, loaded.atk                 # still floored, not reverted to the level-derived base
+  # The floor is still the hidden shadow total (raw -997), not a fresh clamp:
+  # one more +1000 crosses it back above 1 on the reloaded actor exactly as it
+  # does on the live one, rather than needing a second raise the way a
+  # freshly-floored (raw -1997) actor would.
+  loaded.change_param(Game::Actor::PARAM_ATK, 1000)
+  hero.change_param(Game::Actor::PARAM_ATK, 1000)
+  eq 3, loaded.atk
+  eq hero.atk, loaded.atk
+end
+
+check 'A save written before base_raw existed keeps the level-derived baseline' do
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.actor_by_id(1).change_param(Game::Actor::PARAM_ATK, 5)
+  legacy = st.to_h
+  legacy[:party][:actor_meta].each_value { |m| m.delete(:base_raw) }
+  loaded = Game::State.load(db, legacy).party.actor_by_id(1)
+  eq 3, loaded.atk # base_raw missing (a pre-fix save) -> the level-derived default
+end
+
 check 'Actor without a growth curve falls back to a level-independent status' do
   # party_state uses FakePlayerRow (a status hash, no int16_values): stats stay
   # put regardless of level, and the initial level is honoured.

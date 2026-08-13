@@ -1141,6 +1141,9 @@ module Game
     # sprite (the Change Sprite Association transparency flag).
     attr_accessor :name, :title, :transparent
     attr_reader :max_hp, :max_mp, :atk, :def, :int, :agi
+    # The unclamped shadow total #change_param accumulates deltas onto (see
+    # #change_param and #restore_base) -- exposed so the save can carry it.
+    attr_reader :base_raw
 
     # The six base stats in database parameter-curve order (chunk 31 stores six
     # shorts -- maxHP, maxSP, atk, def, int, agi -- per level).
@@ -1879,9 +1882,29 @@ module Game
     # display/effective value throughout.
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
-      limit = (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
       @base_raw[type] += delta
-      @base[type] = Game.clamp(@base_raw[type], 1, limit)
+      @base[type] = Game.clamp(@base_raw[type], 1, base_param_limit(type))
+      recompute_stats
+    end
+
+    # RPG2000's clamp ceiling for a base parameter: HP/MP go to 9999, the four
+    # battle stats to 999. Shared by #change_param and #restore_base, which
+    # both need to re-derive the clamped @base from an unclamped total.
+    def base_param_limit(type)
+      (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
+    end
+
+    # Restore the unclamped shadow total a Change Parameters command left
+    # behind (#change_param's @base_raw) from a save. #set_exp/#set_level
+    # already re-seeded @base/@base_raw from the level-derived baseline by
+    # the time load_state calls this, discarding any live adjustment -- this
+    # re-applies the saved total and re-derives the clamped @base from it the
+    # same way #change_param itself does, rather than leaving a Change
+    # Parameters edit to silently revert on Continue.
+    def restore_base(base_raw)
+      return unless base_raw
+      @base_raw = base_raw.dup
+      @base = @base_raw.each_with_index.map { |v, i| Game.clamp(v, 1, base_param_limit(i)) }
       recompute_stats
     end
 
@@ -2167,6 +2190,11 @@ module Game
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
                        transparent: a.transparent, states: a.states.dup,
+                       # A Change Parameters command's unclamped shadow total
+                       # (see Actor#change_param / #restore_base) -- without
+                       # it a live adjustment reverts to the level-derived
+                       # baseline the moment #load_state re-seeds it from EXP.
+                       base_raw: a.base_raw.dup,
                        # RPG2003: a Change Class / Change Battle Commands is a
                        # permanent edit, so it has to outlive Save / Continue the
                        # way the name and sprite overrides do.
@@ -2179,8 +2207,10 @@ module Game
 
     # Restore item/gold, per-actor exp/hp/mp and the name/title/sprite overrides
     # from a saved party hash. EXP is restored first (it re-derives the level and
-    # its base stats), then the saved HP/MP are laid over the recomputed maxima.
-    # A save written before actor_meta existed simply keeps the database defaults.
+    # its base stats), then a saved Change Parameters shadow total (base_raw)
+    # is re-applied on top of that fresh baseline, then the saved HP/MP are
+    # laid over the recomputed maxima. A save written before actor_meta (or
+    # before base_raw) existed simply keeps the level-derived defaults.
     #
     # Every id the saved tables mention is restored, not just the current
     # members, so an actor waiting out of the party comes back as they left
@@ -2206,6 +2236,10 @@ module Game
         m = meta[id]
         a.restore_class(m[:class_id]) if m && m[:class_id]
         a.set_exp(exp[id]) if exp[id]
+        # #set_exp re-seeds @base/@base_raw from the level-derived baseline
+        # whenever it changes the level, discarding a live Change Parameters
+        # edit -- restore the saved shadow total after it, not before.
+        a.restore_base(m[:base_raw]) if m && m[:base_raw]
         a.hp = hp[id] if hp[id]
         a.mp = mp[id] if mp[id]
         apply_actor_meta(a, m)
