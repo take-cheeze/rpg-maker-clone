@@ -2032,9 +2032,28 @@ not yet verified:
   separate rule from whether the parallel process's own non-picture commands
   keep ticking, and is **not** addressed by this change — still open if not
   covered elsewhere.)
+- ✅ **Timer max 99:59 (5999s), clamped not wrapped when set higher via a
+  variable.** `Game::Timer#set` (`mruby-rpg2k/mrblib/game.rb`) computed
+  `@frames = seconds * FPS + (FPS - 1)` with no upper bound at all, and
+  `Game::Interpreter#do_timer`'s Timer Operation "set" command can source
+  `seconds` from an arbitrary Control-Variables value
+  (`variables[cmd.param(2)]`), so an out-of-range variable reached the frame
+  counter unclamped. Real RPG_RT's timer display never grows past two minute
+  digits, so it caps the loaded value at 99:59 (5999 s) rather than wrapping
+  or overflowing. Fixed by adding `Game::Timer::MAX_SECONDS = 5999` and
+  clamping in `#set` (`seconds = MAX_SECONDS if seconds > MAX_SECONDS`)
+  before the frame math runs; 5999 s is confirmed to land exactly on 99:59
+  via `#seconds`/`#display_text` (5999 / 60 = 99 minutes remainder 59
+  seconds). Regression coverage added to `scripts/rpg2k_logic_check.rb`:
+  a direct `Game::Timer#set(9999)` clamps to 5999 s / "99:59", a Timer
+  Operation "set" sourced from a Control Variable holding 9999 clamps the
+  same way through the interpreter, and an ordinary in-range variable-sourced
+  set (30 s) is left untouched. The other numeric constants originally
+  bundled with this bullet (battle damage cap, HP recovery cap, switch/
+  variable caps and ranges, recursion ceiling, party/stack/picture caps, move
+  speed, transparency steps) remain unverified — see below.
 - **Numeric constants worth asserting directly**: battle damage hard-cap
-  under 1000; special-skill HP recovery cap 999; Timer max 99:59 (5999s),
-  clamped not wrapped when set higher via variable; switches/variables cap
+  under 1000; special-skill HP recovery cap 999; switches/variables cap
   at 5000 (expandable), variable value range −999999..999999 in RPG2000 vs
   7-digit in RPG2003 (already partially modelled per `LCF::MODE`, worth
   checking the variable-write clamp specifically); Call Event / Event Call
