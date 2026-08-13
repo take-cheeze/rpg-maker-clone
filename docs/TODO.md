@@ -2428,9 +2428,38 @@ not yet verified:
   can't change mid-jump.
 - A move-route "Change Graphic" sub-command (hero, event, or vehicle) is
   **not persistent** — it reverts to the base graphic on save-load or map
-  transfer, unlike the dedicated Change Graphic event commands. (Already
-  fixed for the hero this session; vehicles and, per one source, non-hero
-  page-level graphic reverts on leave/return too, are not yet checked.)
+  transfer, unlike the dedicated Change Graphic event commands. ✅ **All three
+  targets are now confirmed correct.** The hero was fixed earlier this
+  session (`@player_char` reset on Transfer Player, see the "Fixed" section
+  above). A vehicle's own override was already correct by construction: the
+  Set Move Route vehicle work (see the "Full-site sweep" Event system section
+  below) landed its Change Graphic on a `Game::Character` mirror
+  (`@vehicle_chars`), never on the persisted `Game::Vehicle#charset_name`/
+  `#charset_index`, and `perform_teleport` clears `@vehicle_chars` outright —
+  reverting it on Transfer Player and save/load (`Scene::Map#initialize`
+  always builds a fresh `Scene::Map`) exactly like the hero, no code change
+  needed. **A map event's own override had a real, narrower gap**: it did
+  correctly revert on an actual map transfer (`build_events` derives
+  `graphic_name`/`graphic_index` fresh from the page every time, and a
+  Transfer Player never preserves anything), but
+  `Scene::Map#rebuild_events_preserving_positions` — the same in-place,
+  same-map rebuild that carries position/direction/Through Mode/Direction
+  Fix/Stop Animation/Transparency across an *unrelated* event's page change
+  (see the "Move Route / Character Movement command" fixes above) — had no
+  such carry-over for the graphic override, so any other event's Control
+  Switch/Variable write anywhere on the map silently snapped a bystander's
+  overridden sprite back to its page's own base graphic, well before any
+  genuine map transfer. Fixed by carrying `graphic_name`/`graphic_index`
+  across that rebuild too, but — unlike the four flags, which no page ever
+  sets — only for a bystander whose own page selection did not move
+  (`old[:page].equal?(e[:page])`, the same page-identity test
+  `#pages_changed?` and the move-route-continuation check already use): an
+  event whose own page genuinely changes to a different base sprite still
+  gets that new page's graphic, not a stale override painted back over it.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a bystander's
+  override survives an unrelated event's switch-triggered page change, while
+  a third event's own page change to a different base sprite still wins),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **Move Frequency set via a page now reasserts itself once a forced Move
   Route finishes** — the page's own frequency wins going forward, not
   whatever a Frequency Up/Down sub-command left it at. `Scene::Map#step_event`
