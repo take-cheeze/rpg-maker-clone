@@ -4629,9 +4629,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         (Worth noting the engine queues its own ops too — New Game's fade-out
         emits `bgm_fade`/`bgs_fade`/`me_fade` — so the path is exercised even
         without the probe.)
-      - 🚧 Remaining: optional VAO / `vertexAttribDivisor` fast path (PIXI falls
-        back without it, and `getExtension` returns null so the fallback is what
-        runs); and texture Y-flip and uniform-introspection polish as real
+      - ✅ **VAO / `vertexAttribDivisor` fast path.** `getExtension` returned
+        `null` unconditionally, so PIXI's `GeometrySystem.contextChange`
+        always fell back to its own no-VAO/no-instancing path — correct but
+        slower. `OES_vertex_array_object` and `ANGLE_instanced_arrays` (the
+        two PIXI actually asks for) are now real, working extension objects:
+        the GLES 3.0 core functions they wrap (absent from the GLES2 header
+        this builds against) are loaded via `eglGetProcAddress`, core name
+        first — `eglGetProcAddress` resolves the legacy `ANGLE`-suffixed names
+        to a non-null pointer too, but llvmpipe does not actually implement
+        that (non-Khronos) extension namespace and calling it silently drew
+        nothing; the OES-suffixed VAO names happened to work, so this only
+        surfaced once instancing was tested end to end, not just checked for
+        non-null. Covered by `gl_test.rb`: the extension objects are
+        advertised with working methods and cached per call, a VAO round-trips
+        real vertex-attribute state (two VAOs, one with a bound attribute and
+        one without, draw differently through the same program), and
+        `drawArraysInstancedANGLE` paints one primitive per instance at its
+        own per-instance offset.
+      - 🚧 Remaining: texture Y-flip and uniform-introspection polish as real
         content exercises them.
       - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
         under a game's `fonts/`, but **MZ projects ship `.woff`**
