@@ -4,22 +4,53 @@ class RPG2k
     # and a command list. Item, Skill, Equip and Status each push their own
     # scene (Scene::ItemMenu / SkillMenu / EquipMenu / StatusMenu); Save writes
     # through the app and End Game returns to the title. Any further command
-    # (there are none left in COMMAND_KEYS today) falls back to a "not
-    # implemented yet" message.
+    # (there are none left in the built command list today) falls back to a
+    # "not implemented yet" message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
-      # Command keys in menu order, paired with the database term (and its
-      # RPG_RT-standard English fallback) that names each on screen.
-      COMMAND_KEYS = [
+
+      # RPG2000's field menu is a *fixed* five commands with no separate Status
+      # entry -- EasyRPG's `Scene_Menu::CreateCommandWindow`'s `Player::IsRPG2k()`
+      # branch hardcodes exactly Item / Skill / Equipment / Save / Quit
+      # regardless of database content (a per-actor status readout has no
+      # screen of its own in RPG2000; the party list already shown here is
+      # what stands in for it, and Equip already shows the full stat block).
+      # RPG2003 replaces this fixed list with the System database's own
+      # customizable one -- see RPG2K3_COMMAND_IDS below -- so this constant
+      # is the RPG2000 (and RPG2003-without-a-menu_commands-chunk) default.
+      RPG2K_COMMAND_KEYS = [
         [:item, :battle_item, "Item"],
         [:skill, :battle_skill, "Skill"],
         [:equip, :battle_equipment, "Equip"],
-        [:status, :status, "Status"],
         [:save, :battle_save, "Save"],
         [:end_game, :battle_end_game, "End Game"]
       ].freeze
+
+      # RPG2003's System chunk 22 field 27 (`menu_commands`, schema.rb) lists
+      # the game's own command ids in the order the editor's "menu order" tab
+      # arranges them -- matching EasyRPG's `CommandOptionType` enum (Item=1,
+      # Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7, Wait=8; Quit=9
+      # is never itself in the list -- `Scene_Menu` appends it unconditionally
+      # after the loop, which #build_commands mirrors below). Row (battle
+      # front/back rank), Order (party reordering) and Wait (the ATB toggle)
+      # have no entry here and are silently skipped: they are RPG2003
+      # battle-system features this runtime does not model, the same
+      # reported-gap precedent the Toggle ATB Mode (5003) event command
+      # entry already establishes elsewhere. A real RPG2003 game's array
+      # (mtf-meido-action's is `[1, 2, 3, 4, 5, 6, 7, 8]`, confirmed by
+      # `db.rpg2003?` and reading chunk 22 by id under the CRuby host
+      # harness, where `db.system` itself collides with Kernel#system) can
+      # both omit a command (hiding it, e.g. a game with no Save on principle)
+      # and reorder the survivors, both of which #build_commands honours.
+      RPG2K3_COMMAND_IDS = {
+        1 => [:item, :battle_item, "Item"],
+        2 => [:skill, :battle_skill, "Skill"],
+        3 => [:equip, :battle_equipment, "Equip"],
+        4 => [:save, :battle_save, "Save"],
+        5 => [:status, :status, "Status"]
+      }.freeze
 
       def initialize parent, state
         super parent
@@ -28,9 +59,7 @@ class RPG2k
         @message = nil
         @skin = make_windowskin
         @background = build_field_background(@skin)
-        @commands = COMMAND_KEYS.map { |key, term_name, fallback|
-          [key, term(term_name, fallback)]
-        }
+        @commands = build_commands
         # yado.tk: opening the Menu (Save included — it has no scene of its own,
         # see the :save command below) auto-cancels an Erase Screen black-out
         # with no "Show Screen" involved, and RPG_RT never restores it when the
@@ -66,6 +95,23 @@ class RPG2k
       end
 
       private
+
+      # The command list this menu shows, in order: RPG2000's fixed five, or
+      # RPG2003's customizable subset (plus an unconditional End Game at the
+      # tail, matching EasyRPG's own unconditional `Quit` push) -- see the two
+      # constants above for the reference this ports. `db.rpg2003?` is nil
+      # (falsy) on the RPG2000-shaped fixtures the scene-check harness builds,
+      # which is the correct reading for them too: they carry no `menu_commands`
+      # chunk any more than a genuine RPG2000 database does.
+      def build_commands
+        keys = if db.rpg2003?
+                 ids = db.system.menu_commands || []
+                 ids.filter_map { |id| RPG2K3_COMMAND_IDS[id] } << RPG2K_COMMAND_KEYS.last
+               else
+                 RPG2K_COMMAND_KEYS
+               end
+        keys.map { |key, term_name, fallback| [key, term(term_name, fallback)] }
+      end
 
       def build_windows
         cw = 108
