@@ -6529,14 +6529,18 @@ module Game
     # Whether `b`'s action this round earns the `preemptive` weapon's
     # turn-order jump: only a basic Attack qualifies (a Skill, Item or Defend
     # with the same weapon equipped keeps its ordinary agility slot, matching
-    # `CreateExecutionOrder`'s own `Type::Normal` guard), including a
-    # forced attack-enemy/attack-ally restriction, which is still a basic
-    # Attack under the hood. `preemptive` is actor-only (see Combatant), so
-    # an enemy never qualifies.
+    # `CreateExecutionOrder`'s own `Type::Normal` guard). A forced
+    # attack-ally restriction (confusion) still counts, since the confused
+    # battler is still swinging a basic Attack under the hood; a forced
+    # attack-enemy restriction (berserk) does not -- per the site's own
+    # デフォ戦botまとめ trivia, berserk specifically drops the weapon's
+    # preemptive jump on top of forcing the target. `preemptive` is
+    # actor-only (see Combatant), so an enemy never qualifies either way.
     def preemptive_boost?(b)
       return false unless b.preemptive
       r = battler_restriction(b)
-      return true if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
+      return false if r == RESTRICTION_ATTACK_ENEMY
+      return true if r == RESTRICTION_ATTACK_ALLY
       b.command.nil? && !b.defending && !b.skip
     end
 
@@ -6547,12 +6551,23 @@ module Game
       # A battler that forfeited its turn (a failed escape) does nothing.
       return nil if b.skip
       # A "forced action" restriction (berserk / confused) overrides the chosen
-      # command / defend with a basic attack on a forced target.
+      # command / defend with a basic attack on a forced target -- still an
+      # ordinary basic Attack under the hood otherwise, so dual-wield's extra
+      # swing and 必中's evasion-skip both still apply (デフォ戦botまとめ:
+      # forced restrictions "override target selection but still honour
+      # 'hits twice'/'ignores evasion'"), via the same #swing an unforced
+      # Attack uses rather than a bare #deal_attack.
       r = battler_restriction(b)
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
         return nil unless target
-        return b.attack_all ? attack_side(b, side_targets(target)) : deal_attack(b, target)
+        # Berserk (attack-enemy) forces a single target even with an
+        # attack_all weapon in hand; confusion (attack-ally) still spreads
+        # one, same as an unforced Attack would (デフォ戦botまとめ: "Berserk
+        # additionally collapses an 'attack all' weapon down to a single
+        # target").
+        return swing_side(b, side_targets(target)) if r == RESTRICTION_ATTACK_ALLY && b.attack_all
+        return swing(b, target)
       end
       return apply_command(b) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
@@ -6588,14 +6603,6 @@ module Game
       # log entry) explodes it into [key, value] pairs rather than wrapping
       # it, since Hash is Enumerable. Same guard #record_action already uses.
       targets.flat_map { |t| r = swing(b, t); r.is_a?(Array) ? r : [r] }
-    end
-
-    # attack_all under a forced restriction (berserk / confused): one hit per
-    # target, matching the single-target restricted branch's own use of
-    # #deal_attack rather than #swing (a forced attack does not get the
-    # dual-wield bonus either).
-    def attack_side(b, targets)
-      targets.map { |t| deal_attack(b, t) }
     end
 
     # -- enemy AI (行動パターン) ------------------------------------------------
