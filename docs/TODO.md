@@ -3338,6 +3338,40 @@ not yet verified:
   Battle Animation targeting the boat lands at the boat's own tile, not the
   player's or the triggering event's), confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **A Battle Animation's per-frame target-scope flash (flash_scope 1) now
+  actually flashes its target**, instead of being silently dropped. The LCF
+  `animation_timing` schema (`mruby-lcf/mrblib/schema.rb`) documents
+  flash_scope as a three-way field — 0 none / 1 target / 2 screen — but
+  `Scene::Map#fire_animation_flashes` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  only ever checked for `== 2`, so a very common animation idiom (flash the
+  hit enemy red on a damage frame) silently did nothing. Scoped to the
+  battle-round path: a skill/item log entry already carries a
+  `target_index` (`Game::Battle#apply_skill_hit`, `@enemies.index(target)`)
+  that `#battle_animation_pixel` already uses to centre the animation on the
+  right `@battle_ui[:enemy_sprites]` entry, and the new `#fire_target_flash`
+  reuses the same index to flash that sprite — nil (an ally target) is a
+  silent no-op, since RPG2000's front-view battle draws no sprite for a
+  party member to flash (the same fact `#battle_animation_pixel`'s own
+  comment already documents) — nothing here invents ally-side behaviour. A
+  map-triggered Show Battle Animation (11210) aimed at a map character is a
+  different target class entirely (the CharSet-based Flash Sprite mechanism
+  already models flashing one) and is not addressed by this fix;
+  `#build_animation`'s map-triggered call site never sets `target_index`, so
+  a flash_scope-1 timing there stays a no-op too, same as before. The flash
+  itself uses the RGSS `Sprite#flash`/`#update` primitive
+  (`mruby-rgss/src/lib.cxx`) — already ported natively but unused anywhere
+  else in this codebase — decayed one frame at a time by a new
+  `#update_enemy_flashes`, driven every frame `@battle_ui` is up from
+  `#drive_battle`, the same way `#update_map_tone` already drives
+  `@map_viewport`/`@upper_viewport`'s tone per frame. Colour/strength scale
+  from the LCF's 0..31 fields the identical `*8` way the screen-flash branch
+  already does. Covered by two new `scripts/rpg2k_scene_check.rb` checks (a
+  target-scope timing flashes the targeted enemy sprite with the scaled LCF
+  colour for `ANIM_FLASH_FRAMES`, leaves the screen flash and an untargeted
+  bystander sprite untouched, and fades back to nothing once driven for its
+  full duration; a target-scope timing with no resolvable target sprite is a
+  silent no-op, not a crash), the first confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a
