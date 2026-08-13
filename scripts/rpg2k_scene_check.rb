@@ -5647,16 +5647,51 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
      'revealing an already-visible member again is a no-op, not a sprite rebuild'
 end
 
+# Run `scene` until @battle_ui first appears (asserting it does within
+# `open_budget` frames), then continue until it goes away again (asserting
+# that too within `close_budget` more frames). A single "break the instant
+# @battle_ui.nil?" loop is a trap here: @battle_ui reads exactly the same
+# (nil) before the battle has opened as it does after it has cleanly closed,
+# so a naive loop can "pass" by breaking on frame 0, before any battle-event
+# page -- Terminate Battle included -- ever actually ran.
+def open_then_close_battle(scene, open_budget: 10, close_budget: 20)
+  open_budget.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  close_budget.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui).nil?
+  end
+  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+end
+
 check 'Terminate Battle from a page ends the fight and resumes the event' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
   scene, _st = battle_scene_with_pages(pages)
-  12.times do
-    scene.update
-    break if scene.instance_variable_get(:@battle_ui).nil?
-  end
-  eq nil, scene.instance_variable_get(:@battle_ui),
-     'the battle closed without a result window'
+  open_then_close_battle(scene)
+end
+
+# yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
+# enclosing Enemy Encounter's [Victory] nor [Escape]/[Defeat] handler branch --
+# it resumes right after Branch End, an unlabeled third outcome -- and only
+# the "a battle was entered" tally (Control Variables operand "Other" type 4,
+# battle_count) counts it; win/escape/defeat counts, each scoped to their own
+# matching outcome, do not.
+check 'Terminate Battle matches neither Win/Escape/Defeat and only bumps the battle-entry count' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, st = battle_scene_with_pages(pages)
+  eq 0, st.battle_count, 'not yet entered'
+  open_then_close_battle(scene)
+  ok !st.switches[1], 'the [Victory] handler (switch 1) did not run'
+  ok !st.switches[2], 'the [Escape] handler (switch 2) did not run either'
+  eq 1, st.battle_count, 'the encounter was entered exactly once'
+  eq 0, st.win_count
+  eq 0, st.escape_count
+  eq 0, st.defeat_count
 end
 
 check 'a battle-valid Timer reaching 0:00 force-ends the fight (yado.tk)' do
