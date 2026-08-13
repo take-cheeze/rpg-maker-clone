@@ -194,7 +194,9 @@ class RPG2k
       attr_reader :state
 
       def dispose
-        close_message
+        close_message(animate: false)
+        (@closing_windows || []).each(&:dispose)
+        @closing_windows = nil
         close_inn_window
         close_shop
         close_battle
@@ -257,6 +259,7 @@ class RPG2k
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
+        update_closing_windows # a closed message keeps shrinking in the background
         watch_bgm_loop # so the "BGM played once" branch can be answered
         @anim_frame += 1 # water / animated tiles cycle even during events
         # An event page's conditions may have just stopped (or started) holding;
@@ -5515,6 +5518,12 @@ class RPG2k
       MSG_LINE_H = 16
       # Characters revealed per frame for the message typewriter effect.
       MSG_REVEAL_SPEED = 2
+      # RPG_RT unrolls the message window (and its `\$` gold window) open and
+      # shut over 7 frames rather than popping it, except during battle where
+      # it appears/disappears instantly (EasyRPG's window_message.cpp:
+      # `constexpr int message_animation_frames = 7`, gated on
+      # `Game_Battle::IsBattleRunning()`).
+      MSG_ANIM_FRAMES = 7
       # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells, drawn beside
       # the message text with a small gap.
       FACE_SIZE = 48
@@ -5606,6 +5615,10 @@ class RPG2k
         win.z = 300
         win.windowskin = @windowskin
         win.transparent = cfg.transparent
+        # No animation mid-battle: RPG_RT's own message/gold windows pop
+        # straight in there instead of unrolling (see MSG_ANIM_FRAMES above).
+        open_frames = @battle_ui.nil? ? MSG_ANIM_FRAMES : 0
+        win.open_animation(open_frames)
 
         contents = Bitmap.new(inner_w, inner_h)
 
@@ -5613,7 +5626,11 @@ class RPG2k
         reveal = Game::TextReveal.new(plain, 0, pauses, auto_close, instants)
         reveal.reveal_all if choice
         # `\$` shows the party's gold in a small window alongside the message.
-        gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
+        gold_window = nil
+        if show_gold
+          gold_window = build_inn_gold_window(nonblank(db.term.gold, 'G'))
+          gold_window.open_animation(open_frames)
+        end
         @message = { window: win, choice: choice, count: plain.length,
                      choice_start: 0, reveal: reveal, contents: contents,
                      inner_w: inner_w, seg_lines: seg_lines,
@@ -5817,9 +5834,16 @@ class RPG2k
       end
 
       def drive_message
-        # Advances the blink/pause animation each frame so the pause arrow
-        # (set below) actually flashes instead of sitting on one frame.
+        # Advances the open/close and blink/pause animation each frame so the
+        # window unrolls open, and so the pause arrow (set below) actually
+        # flashes instead of sitting on one frame. Text reveal and input are
+        # not held off while it unrolls -- unlike EasyRPG, which pauses
+        # Window_Message::Update() on IsOpeningOrClosing() -- since the window
+        # is a fresh object every message here rather than a persistent one
+        # game scripts can poll, and holding logic off it would only delay
+        # dismissal by MSG_ANIM_FRAMES with nothing else to show for it.
         @message[:window].update
+        @message[:gold_window].update if @message[:gold_window]
         if @message[:choice]
           if Input.trigger?(Input::DOWN)
             @choice_index += 1
@@ -5977,11 +6001,48 @@ class RPG2k
         end
       end
 
-      def close_message
+      # Dismiss the current message. By default this rolls the window (and its
+      # `\$` gold window) shut over MSG_ANIM_FRAMES frames rather than popping
+      # it away, mirroring #open_message; `animate: false` (scene teardown --
+      # see #dispose) skips straight to disposal instead. The closing window
+      # is handed off to #update_closing_windows rather than disposed here:
+      # RPG_RT's own message window keeps shrinking while the game underneath
+      # it already carries on (EasyRPG decouples FinishMessageProcessing's
+      # SetCloseAnimation from the interpreter the same way), so @message is
+      # cleared immediately and the caller (interpreter resume, choice
+      # selection, ...) is never blocked on the animation finishing.
+      def close_message(animate: true)
         return unless @message
-        @message[:window].dispose
-        @message[:gold_window].dispose if @message[:gold_window]
+        win = @message[:window]
+        gold = @message[:gold_window]
+        frames = (animate && @battle_ui.nil?) ? MSG_ANIM_FRAMES : 0
+        if frames > 0
+          win.close_animation(frames)
+          (@closing_windows ||= []) << win
+          if gold
+            gold.close_animation(frames)
+            @closing_windows << gold
+          end
+        else
+          win.dispose
+          gold.dispose if gold
+        end
         @message = nil
+      end
+
+      # Advance every window mid-close-animation (see #close_message) one
+      # frame, disposing each once its animation finishes. Called once a
+      # frame regardless of whether a message is open, since a window can
+      # still be shrinking after @message itself has already moved on.
+      def update_closing_windows
+        return unless @closing_windows
+        @closing_windows.reject! do |w|
+          w.update
+          unless w.closing?
+            w.dispose
+            true
+          end
+        end
       end
 
       # -- number input (Input Number command) --------------------------------
