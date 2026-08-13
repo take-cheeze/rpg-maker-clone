@@ -2435,10 +2435,21 @@ not yet verified:
   state, then rolls RNG against those weights. A turn-condition shorthand
   like "3×?+5" means: first candidate on turn 5, then every 3 turns
   after.
-- Enemy HP-increase **cannot revive** a downed (0 HP) enemy; healing a
-  knocked-out ally's HP likewise does **not** clear the KO/death state —
-  it must be cleared separately via Change State or Full Recovery even
-  after HP is restored above 0.
+- ✅ **Enemy HP-increase cannot revive a downed (0 HP) enemy, and healing a
+  knocked-out ally's HP likewise does not clear the KO/death state.** The
+  actor/field half was already correct: `Game::Actor#change_hp` returns
+  early with `return @hp if dead?`, so no HP change (heal or further
+  damage) touches a downed party member until Change State or Full
+  Recovery clears the death state. The enemy/battle half was the gap —
+  `Game::Interpreter#do_change_monster_hp` (Change Monster HP, code
+  13110) applied its delta straight to the `Game::Battle::Combatant`
+  with no such guard, so a positive amount on a 0 HP enemy (`dead?` is
+  `hp <= 0` for a Combatant) unconditionally raised it back above 0,
+  silently reviving it. Fixed by making a positive amount a no-op once
+  the target is already dead, mirroring `Actor#change_hp`; a further
+  (negative) hit on an already-dead enemy is untouched by the guard and
+  simply re-clamps to the command's existing lethal-flag floor as
+  before.
 - Damage Processing (the raw event command) uses a **different formula**
   from the built-in normal attack: normal attack = `(ATK÷2) − (DEF÷4)`,
   but this command computes `AttackPower − (DEF÷4)` with **no automatic
