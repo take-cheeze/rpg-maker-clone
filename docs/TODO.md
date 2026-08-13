@@ -2166,15 +2166,32 @@ not yet verified:
   to `scripts/rpg2k_logic_check.rb`: a recovery skill computing a raw 5000
   HP heal against a high-max-HP target clamps at 999, confirmed to fail
   against the pre-fix code.
-- **Numeric constants worth asserting directly**: switches/variables cap
-  at 5000 (expandable), variable value range −999999..999999 in RPG2000 vs
-  7-digit in RPG2003 (already partially modelled per `LCF::MODE`, worth
-  checking the variable-write clamp specifically); Call Event / Event Call
-  recursion ceiling of 1000; party cap of 4; item/equipment stack cap 99;
-  picture id range 1-50; move speed 1-6 (default 4), each step exactly
-  doubling/halving 2px/frame at standard speed (8 frames/tile, matching
-  `TILE`/`SPEED`already in this codebase — worth cross-checking the exact
-  numbers); character transparency 8 discrete steps (0..7).
+- ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
+  (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
+  of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
+  Variables assign/add sourced from a large constant, an Input Number, or an
+  expression like the standard `×1.5` = `×15÷10` workaround (which can
+  legitimately overshoot mid-computation, per the "Variables & Switches"
+  bullet above) landed outside the range the real engine ever lets a variable
+  hold. Fixed with a local `Game::Variables::MAX`/`MIN` pair rather than a
+  reference to `LCF.var_max`/`var_min` directly — this file deliberately
+  touches neither RGSS nor the native LCF parser at load time (see
+  `scripts/rpg2k_logic_check.rb`'s header), so the bound is its own constant,
+  matching the existing `EXP_MAX`/`DAMAGE_CAP`/`RECOVER_CAP` pattern rather
+  than a cross-gem call. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (an over/under-range constant assign clamps at the boundary; an
+  in-range add that would overflow clamps too), confirmed to fail against the
+  pre-fix code. **Other numeric constants in this same bullet are already
+  confirmed correct, no code change needed**: Call Event / Event Call
+  recursion ceiling of 1000 (`MAX_CALL_DEPTH`, `interpreter.rb`); party cap of
+  4 (`Game::Party::MAX_SIZE`); item/equipment stack cap 99 and gold cap
+  999999 (`Party#add_item`/`#gain_gold`); move speed 1-6 via `SPEED_UP`/
+  `SPEED_DOWN` clamping to `[1, 6]`; character transparency 8 discrete steps
+  (`TRANSP_UP`/`TRANSP_DOWN` clamping to `[0, 7]`). **Still open**:
+  switches/variables capping at 5000 (configurable in the editor, so this may
+  be a non-issue rather than a gap — nothing here enforces a count ceiling on
+  how many distinct ids get used, which is a different question from a single
+  variable's *value* range, now fixed); picture id range 1-50.
 - **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
