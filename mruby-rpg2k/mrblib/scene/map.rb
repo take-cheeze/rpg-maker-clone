@@ -6715,19 +6715,25 @@ class RPG2k
           spr.x = sx
           spr.y = sy
           spr.visible = true
-          draw_vehicle_frame(type, v, charset, vehicle_charset_index(v))
+          draw_vehicle_frame(type, v, charset, vehicle_charset_index(v), ridden)
         end
       end
 
-      # Blit the vehicle's CharSet cell into its sprite buffer (standing pattern),
-      # skipping the redraw when the graphic/index/direction haven't changed since
-      # the last frame — mirrors draw_player_frame's @last_frame memo.
-      def draw_vehicle_frame(type, v, charset, index)
-        frame = [index, v.direction, charset.object_id]
+      # Blit the vehicle's CharSet cell into its sprite buffer, skipping the
+      # redraw when the graphic/index/direction/pose haven't changed since the
+      # last frame — mirrors draw_player_frame's @last_frame memo. A *ridden*
+      # vehicle walk-cycles through #player_walk_pattern, the same pattern the
+      # hero's own sprite would show (see that method's comment); an unboarded
+      # one always draws its standing pose 1, since it snaps tile to tile
+      # rather than sliding (see the "Vehicle move-routes" note in
+      # docs/TODO.md) and so has no in-tile progress to animate against.
+      def draw_vehicle_frame(type, v, charset, index, ridden)
+        pat = ridden ? player_walk_pattern : 1
+        frame = [index, v.direction, charset.object_id, pat]
         return if frame == @vehicle_last_frame[type]
         @vehicle_last_frame[type] = frame
 
-        rx, ry, rw, rh = Game::CharSet.frame_rect(index, v.direction, 1)
+        rx, ry, rw, rh = Game::CharSet.frame_rect(index, v.direction, pat)
         bmp = @vehicle_bmps[type]
         bmp.clear
         bmp.blt 0, 0, charset, Rect.new(rx, ry, rw, rh)
@@ -7080,10 +7086,21 @@ class RPG2k
         end
       end
 
+      # The hero's own walk-cycle pattern (RPG2000's 3-frame charset animation,
+      # `Game::CharSet::WALK_PATTERNS` stepping with the in-tile slide) or the
+      # standing pose 1 when not sliding. Shared with #draw_vehicle_frame for a
+      # *ridden* vehicle: a boarded vehicle's sprite tracks the party's own
+      # pixel position frame for frame (#draw_vehicles' `ridden ? px : ...`),
+      # so it walks the identical cycle the hero's own sprite would have shown
+      # were it not hidden underneath the vehicle's.
+      def player_walk_pattern
+        @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
+      end
+
       def draw_player_frame
         charset, charset_index = player_draw_charset
         return unless charset
-        pat = @moving ? Game::CharSet::WALK_PATTERNS[(@move_count / 4) % 4] : 1
+        pat = player_walk_pattern
         bush = player_bush_depth
         # The sunken depth is part of the frame key, so walking into and out of
         # tall grass redraws the sprite even though the pose has not changed.

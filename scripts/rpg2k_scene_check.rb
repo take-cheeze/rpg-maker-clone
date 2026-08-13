@@ -4715,6 +4715,46 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   ok !shadow.visible, 'a boat casts no airship shadow'
 end
 
+check 'a ridden vehicle walk-cycles with the party; an unridden one holds its standing pose' do
+  scene = new_scene({}, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead (facing down by default)
+  scene.update
+  RGSS::Input.reset
+  eq :boat, st.boarded
+
+  RGSS::Input.dir_value = 2 # hold down -- sail further south
+  scene.update
+  pat = scene.send(:player_walk_pattern)
+  5.times do
+    break if pat != 1
+    scene.update
+    pat = scene.send(:player_walk_pattern)
+  end
+  RGSS::Input.dir_value = 0
+  ok scene.instance_variable_get(:@moving), 'the party (and the boat under it) is mid-slide'
+  ok pat != 1, 'a walk-cycle frame, not the standing pose'
+  frame = scene.instance_variable_get(:@vehicle_last_frame)[:boat]
+  eq [st.direction, pat], [frame[1], frame[3]],
+     'the ridden boat draws the same direction/walk-cycle frame the hero would have shown'
+
+  # An unridden vehicle always holds the standing pose 1, even while placed on
+  # the map: it snaps tile to tile rather than sliding, so it has no in-tile
+  # progress to walk-cycle against (see #draw_vehicle_frame's comment).
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id
+  ship.x = 5
+  ship.y = 4
+  ship.charset_name = 'Ship'
+  scene.update
+  eq 1, scene.instance_variable_get(:@vehicle_last_frame)[:ship][3]
+end
+
 def tint_scene(*params)
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
