@@ -387,9 +387,15 @@ class FakeParent
   # every other check wants -- no tree, so save/teleport/escape all default
   # to Allow.
   attr_accessor :map_tree
+  # Mirrors RPG2k::Game#test_play (see mruby-rpg2k/mrblib/main.rb). Writable
+  # so a check can exercise the Test-Play-only behaviour it gates (the hero's
+  # missing-graphic debug marker); every other check wants the same default
+  # (false) a plainly-launched game gets.
+  attr_accessor :test_play
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
+    @test_play = false
     @map_maker = map_maker
     @pushed = []
   end
