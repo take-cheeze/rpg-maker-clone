@@ -7215,9 +7215,11 @@ module Game
   # A boat / ship / airship's saved location. RPG2000 stores one per vehicle in
   # its own `.lsd` chunk (105 boat, 106 ship, 107 airship, each a SAVE_MOVABLE):
   # the map it sits on, its tile position and facing, and its on-map graphic.
-  # Only that saved location is modelled here -- enough to round-trip a save so a
-  # parked vehicle stays where the player left it. Boarding / piloting a vehicle
-  # is not built yet (`map_id` 0 means it has never been placed).
+  # This is plain data, not a Game::Character -- boarding (Scene::Map#board_vehicle
+  # et al.) and a Move Route driving one (Scene::Map#force_vehicle_route) both
+  # write straight into it (or a Game::Character mirror that writes back into
+  # it) rather than growing it into the Character protocol itself. `map_id` 0
+  # means it has never been placed.
   class Vehicle
     TYPES = [:boat, :ship, :airship].freeze
 

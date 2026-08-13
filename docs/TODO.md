@@ -278,7 +278,62 @@ The work below is roughly ordered by the critical path to a walkable game
   drawn at. And **Proceed With Movement drives the slide itself**, because the
   normal movement step is skipped while the interpreter waits on it; without
   that the route starts a step and then waits forever for a landing nothing is
-  advancing
+  advancing.
+  **Vehicle move-routes: a Move Event / Set Move Route targeting a boat, ship
+  or airship (10002-10004) now actually drives it**, previously a silent
+  no-op in `Scene::Map#apply_move_request` / `#char_location` /
+  `#set_char_location` (a literal `nil # vehicles are not modelled yet`,
+  despite the interpreter always decoding the target id fine).
+  `Game::Vehicle` (`mruby-rpg2k/mrblib/game.rb`) is plain save/render data —
+  position, facing, graphic — not a `Game::Character`, so it cannot be handed
+  to `Game::MoveRoute#step` directly; the fix mirrors the same "mirror a
+  `Game::Character`, write the result back" idiom the player's own forced
+  routes already use (`@player_char`/`start_player_route`): `#force_vehicle_route`
+  lazily builds a `Game::Character` mirror per type (`@vehicle_chars`), and
+  `#step_vehicle_routes` steps it each frame against a new `VehicleWorld`
+  (`scene/base.rb`, the same small `world` protocol `MapWorld` implements for
+  the hero/events, but routing passability through
+  `Scene::Map#vehicle_passable?` instead of the on-foot `#char_passable?` —
+  so a moving unboarded boat inherits the existing ship-specific Through-Mode
+  event-blocking quirk automatically). Unlike the player/events, a moving
+  vehicle is **not pixel-interpolated**: it snaps tile to tile at its route's
+  pace, the same instant feel Set Vehicle Location already had (a deliberate
+  scope choice, not an oversight — smooth sliding is a possible follow-up).
+  A route targeting the **currently-ridden** vehicle is dropped outright
+  (`force_vehicle_route`'s `@state.boarded == type` guard, checked again each
+  step): the party's own `#follow_vehicle` already claims the ridden
+  vehicle's position every frame, and no yado.tk source describes an
+  intentional "pilot the vehicle you're standing on by event" interaction, so
+  the simplest, safest reading is that boarding and a route on the same
+  vehicle just don't mix (a deliberate first-cut scope decision, not
+  something confirmed against real RPG_RT either way). A route's own
+  **Change Graphic** sub-command lands on the mirror, not on the persisted
+  `Game::Vehicle#charset_name`/`#charset_index` — `#vehicle_charset` /
+  `#vehicle_charset_index` prefer a live mirror's override, exactly the
+  not-persisted-like-the-dedicated-command shape `#player_draw_charset`
+  already established for the hero — so it reverts on Transfer Player (and
+  save/load, since Continue always builds a fresh `Scene::Map`) rather than
+  sticking the way the dedicated Change Vehicle Graphic command's write does.
+  Change / Trade Event Location targeting a vehicle now instantly repositions
+  it too (`#move_vehicle_to`), keeping a live route mirror in sync the same
+  way `#move_player_to` does for the hero. Proceed With Movement now also
+  waits on a vehicle's forced route (`#step_forced_movement`/
+  `#forced_movement_done?`), which would otherwise have resumed the
+  interpreter while the vehicle was still mid-route. **Out of scope for this
+  first cut, flagged as follow-ups**: smooth position interpolation for a
+  moving unboarded vehicle; walk-cycle animation (vehicles already only ever
+  draw one standing pattern regardless, even ridden, so this is a pre-existing
+  gap, not a regression); hero/event collision with a moving unboarded
+  vehicle (vehicles are not in the `@event_tiles` occupancy table); a vehicle
+  parked on a map other than the one currently loaded (nothing simulates an
+  unloaded map); autonomous move types for a vehicle (vehicles have no
+  "pages," only the forced route path applies). Covered by six new
+  `scripts/rpg2k_scene_check.rb` checks (driving an unboarded boat along a
+  route respecting `vehicle_passable?`; terrain blocking it the same way
+  ordinary sailing is blocked; a route on a ridden vehicle being dropped;
+  Change Event Location repositioning a vehicle; Proceed With Movement
+  waiting on a vehicle route; the Change Graphic override reverting on
+  Transfer Player), each confirmed to fail against the pre-fix code.
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
@@ -309,8 +364,12 @@ The work below is roughly ordered by the critical path to a walkable game
   Event) command is now wired up too: it decodes the route packed into the
   command's parameters and applies it as a forced route to the target — a map
   event (including "this event") or the player, overriding page movement until
-  it finishes. Vehicle targets (boat / ship / airship, 10002-10004) resolve as
-  well, so a route can drive one
+  it finishes. ✅ **Vehicle targets (boat / ship / airship, 10002-10004) now
+  drive the vehicle itself**, not just decode without effect as they used to
+  (this line previously overstated it — the interpreter always decoded the
+  target id fine, but `Scene::Map` silently no-opped it). See the "Vehicle
+  move-routes" paragraph in the Movement & collision entry above for the
+  implementation
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Change

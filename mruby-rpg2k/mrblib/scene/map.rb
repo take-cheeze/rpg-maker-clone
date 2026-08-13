@@ -61,7 +61,7 @@ class RPG2k
 
       # Move Event (Set Move Route) target ids: the player, the three vehicles
       # and "this event" (the event running the command). Any other id is a map
-      # event id. Vehicles are not modelled yet, so those targets are ignored.
+      # event id.
       MOVE_TARGET_PLAYER  = 10001
       MOVE_TARGET_BOAT    = 10002
       MOVE_TARGET_SHIP    = 10003
@@ -98,6 +98,11 @@ class RPG2k
         # routes / autonomous movement query the map.
         @rng = Game::Rng.new(0x2000)
         @world = MapWorld.new(self, @rng)
+        # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
+        # hero's own on-foot #char_passable? -- see #force_vehicle_route.
+        @vehicle_worlds = Game::Vehicle::TYPES.each_with_object({}) do |type, h|
+          h[type] = VehicleWorld.new(self, @rng, type)
+        end
         # Erased events, and the state revision the active pages were chosen at.
         @erased_events = {}
         @page_revision = page_revision
@@ -136,6 +141,17 @@ class RPG2k
         # aborts an in-progress route without unwinding its side effects, so a
         # route cancelled mid-Through-Mode leaves the hero stuck pass-through.
         @player_through = false
+
+        # A forced move route applied to a vehicle by a Move Event, keyed by
+        # type (:boat/:ship/:airship). Unlike the player/events, a moving
+        # vehicle's position is not pixel-interpolated -- it snaps tile to
+        # tile at its route's pace, the same instant feel Set Vehicle
+        # Location already has -- so there is no slide/mirror-vs-render split
+        # to track here beyond the mirror `Game::Character` itself (see
+        # #force_vehicle_route).
+        @vehicle_chars = {}
+        @vehicle_routes = {}
+        @vehicle_route_timers = {}
 
         # Player pixel position and step state. `player_jumping` marks the slide
         # as a hop, which is lifted along an arc (see player_jump_offset).
@@ -251,6 +267,7 @@ class RPG2k
           else
             step_player_route
             step_events
+            step_vehicle_routes
             step_movement
             # Boarding / disembarking claims the action button when it applies;
             # otherwise it falls through to the usual event trigger.
@@ -1233,6 +1250,30 @@ class RPG2k
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
       end
 
+      # #vehicle_passable? wired to the move-route `world` protocol
+      # (VehicleWorld, scene/base.rb): a step ahead of `character` in `dir`,
+      # honouring the mirror's own Through Mode first exactly as
+      # #char_passable? does for the hero/events (a route's Through Mode
+      # Begin/End sub-commands work the same way on a vehicle mirror).
+      def vehicle_char_passable?(character, dir, type)
+        return true if character.through
+        nx, ny = Game::Character.step_tile(character.x, character.y, dir)
+        vehicle_passable?(nx, ny, dir, type)
+      end
+      # Called by VehicleWorld (an external collaborator) with an explicit receiver.
+      public :vehicle_char_passable?
+
+      # #vehicle_passable? for a jump landing on (x, y), mirroring
+      # #char_can_land?: an in-place hop always lands (the tile is already
+      # occupied by the mover itself), and Through Mode bypasses the check
+      # entirely, same as stepping.
+      def vehicle_char_can_land?(character, x, y, type)
+        return true if character.through
+        return true if x == character.x && y == character.y
+        vehicle_passable?(x, y, character.direction, type)
+      end
+      public :vehicle_char_can_land?
+
       # The database terrain row under tile (x, y), or nil when the chipset / map
       # carry no terrain data (e.g. the colour-block fallback or a bare fixture).
       def terrain_row_at(x, y)
@@ -1872,7 +1913,8 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           force_event_route(this_event, route, r[:frequency]) if this_event
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
-          nil # vehicles are not modelled yet
+          type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
+          force_vehicle_route(type, route, r[:frequency])
         else
           ev = @events.find { |e| e[:id] == r[:target] }
           force_event_route(ev, route, r[:frequency]) if ev
@@ -1915,7 +1957,8 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           this_event ? [this_event[:char].x, this_event[:char].y] : nil
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
-          nil # vehicles are not modelled yet
+          v = @state.vehicle(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
+          [v.x, v.y]
         else
           ev = @events.find { |e| e[:id] == target }
           ev ? [ev[:char].x, ev[:char].y] : nil
@@ -1930,7 +1973,7 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           move_event_to(this_event, x, y) if this_event
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
-          nil # vehicles are not modelled yet
+          move_vehicle_to(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT], x, y)
         else
           ev = @events.find { |e| e[:id] == target }
           move_event_to(ev, x, y) if ev
@@ -1964,6 +2007,24 @@ class RPG2k
         reoccupy(ev, ox, oy)
       end
 
+      # Snap a vehicle to a tile (Change / Trade Event Location targeting a
+      # vehicle). A vehicle draws tile-snapped already (#draw_vehicles), so
+      # this is the whole of it -- no render slide to kick off. Keeps a
+      # forced route's mirror in sync too, the same reason #move_player_to
+      # does, so an in-flight route steps on from the new tile rather than
+      # immediately correcting the teleport back.
+      def move_vehicle_to(type, x, y)
+        v = @state.vehicle(type)
+        v.map_id = @state.map_id
+        v.x = x
+        v.y = y
+        ch = @vehicle_chars[type]
+        if ch
+          ch.x = x
+          ch.y = y
+        end
+      end
+
       # Give a map event a forced route, overriding its page movement until the
       # route finishes (a repeating route runs until replaced). It steps on the
       # next frame, paced by the requested frequency when one was given.
@@ -1971,6 +2032,56 @@ class RPG2k
         ev[:forced_route] = route
         ev[:forced_freq] = valid_move_freq(freq)
         ev[:move_timer] = 0
+      end
+
+      # Give vehicle `type` a forced route (Move Event / Set Move Route
+      # targeting a boat/ship/airship). A no-op when the vehicle is not
+      # placed on the current map (nothing here simulates a map that is not
+      # loaded) or is currently ridden -- the party's own #follow_vehicle
+      # already claims the ridden vehicle's position every frame, and RPG_RT
+      # has no documented "pilot the vehicle you're standing on by event"
+      # interaction, so the simplest, safest reading is that boarding and a
+      # route on the same vehicle just don't mix.
+      def force_vehicle_route(type, route, freq)
+        v = @state.vehicle(type)
+        return unless v.placed? && v.map_id == @state.map_id
+        return if @state.boarded == type
+        ch = (@vehicle_chars[type] ||= Game::Character.new(v.x, v.y, v.direction))
+        ch.x = v.x
+        ch.y = v.y
+        ch.direction = v.direction
+        ch.move_frequency = valid_move_freq(freq) || ch.move_frequency
+        @vehicle_routes[type] = route
+        @vehicle_route_timers[type] = 0
+      end
+
+      # Advance every vehicle's forced route one frame, each paced by its own
+      # timer. Unlike the player/events, a moving vehicle is not
+      # pixel-interpolated: it snaps straight onto the mirror's tile the
+      # instant a step lands (#draw_vehicles already draws a vehicle
+      # tile-snapped, whether parked, ridden, or -- now -- mid-route), so
+      # there is no separate slide phase to drive here.
+      def step_vehicle_routes
+        Game::Vehicle::TYPES.each { |type| step_vehicle_route(type) }
+      end
+
+      def step_vehicle_route(type)
+        route = @vehicle_routes[type]
+        return unless route
+        return if @state.boarded == type # frozen while ridden, see #force_vehicle_route
+        ch = @vehicle_chars[type]
+        @vehicle_route_timers[type] -= 1
+        return if @vehicle_route_timers[type] > 0
+        @vehicle_route_timers[type] = EVENT_MOVE_DELAY[ch.move_frequency] || 40
+        route.step(ch, @vehicle_worlds[type]) unless route.done?
+        v = @state.vehicle(type)
+        v.x = ch.x
+        v.y = ch.y
+        v.direction = ch.direction
+        @vehicle_routes[type] = nil if route.done?
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] vehicle move route failed: #{e.message}"
+        @vehicle_routes[type] = nil # drop a broken route so Proceed does not hang
       end
 
       # Drive the player along a forced route: the player has no Game::Character,
@@ -2075,6 +2186,7 @@ class RPG2k
         advance_player_slide
         step_player_route
         @events.each { |e| step_forced_event(e) if e[:forced_route] }
+        step_vehicle_routes
         forced_movement_done?
       end
 
@@ -2103,7 +2215,8 @@ class RPG2k
       # exists under the CRuby host checks but not in the shipped engine.
       def forced_movement_done?
         return false if @player_route
-        !@events.any? { |e| e[:forced_route] }
+        return false if @events.any? { |e| e[:forced_route] }
+        !@vehicle_routes.values.any? { |route| route }
       end
 
       # A move frequency the request may override the target's pace with (1..8),
@@ -4676,6 +4789,13 @@ class RPG2k
         # unlike the dedicated Change Hero Graphic command.
         @player_char = nil
         @player_through = false # ... nor does Through Mode
+        # Same for a vehicle's own forced route / Change Graphic override
+        # (#force_vehicle_route, #vehicle_charset): none of it survives a
+        # teleport, since the mirror was simulating movement against the map
+        # being left, not whatever loads next.
+        @vehicle_chars = {}
+        @vehicle_routes = {}
+        @vehicle_route_timers = {}
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
@@ -5655,34 +5775,51 @@ class RPG2k
           spr.x = sx
           spr.y = sy
           spr.visible = true
-          draw_vehicle_frame(type, v, charset)
+          draw_vehicle_frame(type, v, charset, vehicle_charset_index(v))
         end
       end
 
       # Blit the vehicle's CharSet cell into its sprite buffer (standing pattern),
       # skipping the redraw when the graphic/index/direction haven't changed since
       # the last frame — mirrors draw_player_frame's @last_frame memo.
-      def draw_vehicle_frame(type, v, charset)
-        frame = [v.charset_index, v.direction, charset.object_id]
+      def draw_vehicle_frame(type, v, charset, index)
+        frame = [index, v.direction, charset.object_id]
         return if frame == @vehicle_last_frame[type]
         @vehicle_last_frame[type] = frame
 
-        rx, ry, rw, rh = Game::CharSet.frame_rect(v.charset_index, v.direction, 1)
+        rx, ry, rw, rh = Game::CharSet.frame_rect(index, v.direction, 1)
         bmp = @vehicle_bmps[type]
         bmp.clear
         bmp.blt 0, 0, charset, Rect.new(rx, ry, rw, rh)
       end
 
-      # The CharSet graphic for a vehicle: its own (set by Change Vehicle Graphic /
-      # the initial placement) or the database default (System boat/ship/airship
-      # name), loaded through the shared event-charset cache. nil when it has none.
+      # The CharSet graphic for a vehicle: a Set Move Route "Change Graphic"
+      # override on its forced-route mirror (@vehicle_chars[v.type]) takes
+      # first priority -- exactly the same not-persisted-like-the-dedicated-
+      # command shape as the hero's own #player_draw_charset (see its
+      # comment): the override lives on the mirror, not on `v` itself, so it
+      # never survives a save/load or map transfer, only the current visit.
+      # Absent that, its own graphic (set by Change Vehicle Graphic / the
+      # initial placement) or the database default (System boat/ship/airship
+      # name). Loaded through the shared event-charset cache; nil when it has
+      # none.
       def vehicle_charset(v)
+        mirror = @vehicle_chars[v.type]
+        return event_charset(mirror.graphic_name) if mirror && mirror.graphic_name
         name = v.charset_name
         if (name.nil? || name.empty?)
           field = "#{v.type}_name"
           name = @db.system.send(field) if @db.system.respond_to?(field)
         end
         event_charset(name)
+      end
+
+      # The CharSet cell index to go with #vehicle_charset, from the same
+      # mirror-first source.
+      def vehicle_charset_index(v)
+        mirror = @vehicle_chars[v.type]
+        return mirror.graphic_index if mirror && mirror.graphic_name
+        v.charset_index
       end
 
       # Composite the Show Picture layer into its buffer, drawing lowest-id first
