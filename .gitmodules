@@ -28,7 +28,7 @@
 	url = https://github.com/mattn/mruby-onig-regexp.git
 [submodule "3rd/mruby-stringio"]
 	path = 3rd/mruby-stringio
-	url = https://github.com/ksss/mruby-stringio.git
+	url = https://github.com/take-cheeze/mruby-stringio.git
 [submodule "3rd/uni-algo"]
 	path = 3rd/uni-algo
 	url = https://github.com/uni-algo/uni-algo.git
