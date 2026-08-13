@@ -636,9 +636,10 @@ The work below is roughly ordered by the critical path to a walkable game
   the save (`@state.system_bgm[cmd.param(0)]`); slot 0 (battle, see the
   battle-BGM paragraph below), slots 3-5 (boat / ship / airship, matching
   EasyRPG's `Game_System::sys_bgm` enum, see the vehicle-boarding paragraph
-  below) and slot 6 (game over, see the Game Over paragraph under "Menus,
-  save, battle" below) are now read back too, so only slots 1/2 (victory /
-  inn) are still modelled for save fidelity like the access flags. **Change System
+  below), slot 6 (game over, see the Game Over paragraph under "Menus,
+  save, battle" below) and slot 2 (inn, see the Show Inn paragraph below)
+  are now read back too, so only slot 1 (victory) is still modelled for
+  save fidelity like the access flags. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
@@ -681,16 +682,38 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check (a Change System BGM override for
   slot 0 plays instead of the database `battle_music` the moment the battle
   UI opens), confirmed to fail against the pre-fix code before the fix. The
-  remaining System BGM slots (victory / inn / game over) are still
-  save-fidelity-only, per the note above — boat / ship / airship (slots 3-5)
-  are consumed too, see the vehicle-boarding paragraph below.
+  remaining System BGM slot (victory, slot 1) is still save-fidelity-only,
+  per the note above — inn (slot 2, see the Show Inn paragraph below), boat
+  / ship / airship (slots 3-5, see the vehicle-boarding paragraph below) and
+  game over (slot 6, see the Game Over paragraph under "Menus, save,
+  battle" below) are all consumed too.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
   party, and either outcome routes into the command's optional `[Stay]` /
   `[No Stay]` handler branches (structured and skipped like Show Choices).
   `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
-  `Scene::Map` drives; the inn fade and jingle are presentation still to come.
+  `Scene::Map` drives; the inn **fade** is presentation still to come.
+  ✅ **The inn now plays its own BGM.** `Scene::Map#drive_inn` never touched
+  the music at all — staying at an inn played in total silence, or just let
+  the field track keep looping, no matter what `db.system.inn_music` named,
+  the exact gap the "jingle... still to come" wording above used to
+  describe. New `#play_inn_bgm` / `#restore_pre_inn_bgm` mirror the
+  memorize/restore idiom `#play_battle_bgm` / `#play_vehicle_bgm` already
+  use: `#drive_inn` plays the resolved inn BGM (a Change System BGM slot-2
+  override, else the database default, via the same `#inn_bgm` /
+  `music_name`/`music_volume`/`music_tempo` helpers battle and vehicle BGM
+  already use) the first frame it sees a fresh Show Inn request — prompted
+  or free (price 0) alike, since a free stay still resumes through the same
+  `#drive_inn` call rather than a separate branch that could skip the swap —
+  and restores the prior track once the stay is resolved, whether by
+  Accept, Cancel or the free-stay auto-resume. A game with no inn BGM
+  configured leaves whatever was already playing alone, matching
+  `#battle_bgm`'s own no-op. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (the database default plays and the
+  field BGM resumes after a prompted stay; a Change System BGM override for
+  slot 2 beats the database default; a free stay plays and restores the BGM
+  too), confirmed to fail against the pre-fix code before the fix.
   **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
   goods and buy / sell rules and performs the transactions (buy at the database
   price, sell at half, party 99-item / gold caps enforced), tracking whether
