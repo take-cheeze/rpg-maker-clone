@@ -2747,6 +2747,61 @@ check "Proceed With Movement also waits on a vehicle's forced route" do
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check "a forced route auto-runs to completion before an immediately-following Show Text opens (yado.tk)" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Force event 2 to walk right 3 tiles (freq 4, repeat off), with no Proceed
+  # With Movement -- yado.tk: hitting a Show Text implicitly auto-runs any
+  # still-pending forced route to completion first, the same as an explicit
+  # Proceed With Movement would, before the window actually opens.
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
+                    player: [5, 5])
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: still moving, message not yet opened
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+  ok !scene.instance_variable_get(:@message),
+     'Show Text waits for the pending forced route to finish first'
+
+  200.times { scene.update } # enough frames for the freq-4 route to finish
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok scene.instance_variable_get(:@message),
+     'the message window opens only once the route has completed'
+end
+
+check "a forced route auto-runs to completion before an immediately-following Wait starts counting down (yado.tk)" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::WAIT, [5]), # half a second, once the route lets it start
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
+                    player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: the Wait must not have started yet
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+
+  # Stop the instant the route lands, so the half-second Wait has had no
+  # chance yet to also elapse within the same budget.
+  300.times { scene.update; break if c.x == 3 }
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok !st.switches[1], 'the half-second Wait only starts once the route is done'
+
+  40.times { scene.update } # enough for the half-second Wait itself to elapse
+  ok st.switches[1],
+     'the interpreter resumed once the Wait (started after the route) elapsed'
+end
+
 check 'Tint Screen with a wait holds the interpreter until the tint settles' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
