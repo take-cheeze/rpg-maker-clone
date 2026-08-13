@@ -5593,9 +5593,9 @@ class RPG2k
         # Message Options / Change Face Graphic settings in effect for this
         # window (position, transparency and an optional FaceSet graphic).
         cfg = @state.message_config
-        face = load_face(cfg)
-        face_left = face && !cfg.face_right
-        face_right = face && cfg.face_right
+        face_sheet = load_face(cfg)
+        face_left = face_sheet && !cfg.face_right
+        face_right = face_sheet && cfg.face_right
         text_x = face_left ? FACE_SIZE + FACE_MARGIN : 0
 
         inner_w = MSG_WIN_W - Window::BORDER * 2
@@ -5616,8 +5616,8 @@ class RPG2k
         gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
         @message = { window: win, choice: choice, count: plain.length,
                      choice_start: 0, reveal: reveal, contents: contents,
-                     inner_w: inner_w, seg_lines: seg_lines, face: face,
-                     face_index: cfg.face_index,
+                     inner_w: inner_w, seg_lines: seg_lines,
+                     face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
                      text_x: text_x, text_w: text_w, gold_window: gold_window,
                      # The colour still in effect once this text ends -- a Show
@@ -5722,6 +5722,29 @@ class RPG2k
         nil
       end
 
+      # Crop one 48x48 cell out of a FaceSet sheet into its own bitmap, mirrored
+      # horizontally when Change Face Graphic's own mirror flag (param2,
+      # `cfg.face_flipped`) is set. `RGSS::Bitmap#blt` has no flip of its own
+      # (mruby-rgss's `Sprite#mirror=` resorts to the same per-pixel software
+      # pass for the same reason), so a mirrored face is built one column at a
+      # time -- 48 single-column blits, done once here rather than once per
+      # #draw_message_face call, since that runs every frame the text is still
+      # revealing.
+      def build_face_cell(sheet, index, flipped)
+        return nil unless sheet
+        src_x = (index % 4) * FACE_SIZE
+        src_y = (index / 4) * FACE_SIZE
+        cell = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        unless flipped
+          cell.blt 0, 0, sheet, Rect.new(src_x, src_y, FACE_SIZE, FACE_SIZE)
+          return cell
+        end
+        FACE_SIZE.times do |col|
+          cell.blt FACE_SIZE - 1 - col, 0, sheet, Rect.new(src_x + col, src_y, 1, FACE_SIZE)
+        end
+        cell
+      end
+
       # (Re)draw the message body showing the currently revealed characters,
       # each colour run in its own colour, laid out left to right per line. The
       # face graphic (when present) is drawn first, and text is inset past it.
@@ -5758,15 +5781,13 @@ class RPG2k
         end
       end
 
-      # Blit the selected face cell (a 48x48 tile of the 4x4 FaceSet grid) into
-      # the message contents at its configured side.
+      # Blit the already-cropped (and possibly mirrored, see #build_face_cell)
+      # face cell into the message contents at its configured side.
       def draw_message_face
         face = @message[:face]
         return unless face
-        idx = @message[:face_index]
-        src = Rect.new((idx % 4) * FACE_SIZE, (idx / 4) * FACE_SIZE,
-                       FACE_SIZE, FACE_SIZE)
-        @message[:contents].blt @message[:face_x], 0, face, src
+        @message[:contents].blt @message[:face_x], 0, face,
+                                Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
       end
 
       # RPG2000 message text palette (`\c[n]`). A small built-in approximation

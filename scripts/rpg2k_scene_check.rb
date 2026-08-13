@@ -2615,8 +2615,37 @@ check 'Change Face Graphic opens a message with a face and insets the text' do
   msg = open_msg(scene)
   ok msg, 'message window opened'
   ok msg[:face], 'a face graphic was loaded for the message'
-  eq 2, msg[:face_index]
+  # The face is cropped once out of the FaceSet sheet at message-open time
+  # (see #build_face_cell): a single blit of cell 2 (the third 48x48 tile,
+  # x=96) into the dedicated 48x48 face bitmap, not a per-frame crop.
+  calls = msg[:face].blt_calls
+  eq 1, calls.length, 'an unmirrored face is cropped in one blit'
+  x, y, _src, rect = calls.first
+  eq [0, 0, 96, 0, 48, 48], [x, y, rect.x, rect.y, rect.width, rect.height],
+     'cropped cell 2 straight into the corner of the dedicated face bitmap'
   ok msg[:text_x] > 0, 'text is inset to the right of a left-side face'
+end
+
+check 'Change Face Graphic with the mirror flag draws a horizontally-flipped face' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 0, 1], string: 'Faces1'), # cell 0, left side, mirrored
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  calls = msg[:face].blt_calls
+  # RGSS::Bitmap#blt has no flip of its own, so a mirrored face is built one
+  # source column at a time instead of a single crop (see #build_face_cell).
+  eq 48, calls.length, 'a mirrored face is built one column at a time, not one crop'
+  first_x, _y, _src, first_rect = calls.first
+  last_x, _ly, _lsrc, last_rect = calls.last
+  eq 47, first_x, 'the sheet\'s leftmost column lands at the rightmost destination column'
+  eq 0, first_rect.x, 'the sheet\'s leftmost column lands at the rightmost destination column'
+  eq 0, last_x, 'the sheet\'s rightmost column lands at the leftmost destination column'
+  eq 47, last_rect.x, 'the sheet\'s rightmost column lands at the leftmost destination column'
 end
 
 check 'a right-side face draws on the right and does not inset the text' do
