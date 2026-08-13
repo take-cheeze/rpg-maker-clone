@@ -704,3 +704,184 @@ assert 'MZ.host_globals_js provides the FontFace MZ builds when a font is named'
   # document.fonts.add is what the resolved load() calls; it must exist too.
   assert_equal 'function', MV::JS.eval("typeof document.fonts.add")
 end
+
+# The WOFF unpacker (mvcanvas.cxx's woff_to_sfnt, exercised through
+# MV::Font.unpack_woff/smoke_test) is what lets an MZ project's fonts/*.woff
+# draw text at all -- see docs/TODO.md's ".woff fonts" entry. It had no CI
+# coverage because it needs a redistributable font and the test beds ship
+# none; MV::Font.smoke_test bypasses game_font()'s process-lifetime cache
+# (the normal load path, first text draw wins) so a font built fresh in a
+# test is actually exercised rather than shadowed by whatever an earlier test
+# already drew text with. So instead this authors the smallest font that can
+# prove the pipeline: one glyph mapped from 'A', built table-by-table by hand
+# the way the MV image fixtures in canvas_test.rb are (raw bytes, no
+# generator dependency) -- see 3rd/stb/stb_truetype.h's
+# stbtt_InitFont_internal for the required table set.
+module MZFontFixture
+  def self.u8(n)
+    (n & 0xff).chr
+  end
+
+  def self.u16(n)
+    ((n >> 8) & 0xff).chr + (n & 0xff).chr
+  end
+
+  def self.u32(n)
+    ((n >> 24) & 0xff).chr + ((n >> 16) & 0xff).chr + ((n >> 8) & 0xff).chr +
+      (n & 0xff).chr
+  end
+
+  # sfnt/WOFF tables are 4-byte aligned; padding beyond a table's real
+  # (unpadded) length is what its directory entry's length field omits.
+  def self.pad4(s)
+    s + ("\x00" * ((4 - s.bytesize % 4) % 4))
+  end
+
+  # glyph 0 (.notdef) is the empty glyph; glyph 1 is a filled square, wound as
+  # a single closed contour of on-curve points so it rasterises as solid ink
+  # with no quadratic curve handling needed.
+  def self.glyf
+    g = u16(1)                                    # numberOfContours = 1
+    g += u16(100) + u16(100) + u16(700) + u16(700) # xMin,yMin,xMax,yMax
+    g += u16(3)                                    # endPtsOfContours[0]
+    g += u16(0)                                    # instructionLength
+    g += u8(1) * 4                                 # flags: on-curve, full deltas
+    g += u16(100) + u16(600) + u16(0) + u16(-600)  # x deltas (a 600x600 box)
+    g += u16(100) + u16(0) + u16(600) + u16(0)      # y deltas
+    pad4(g)
+  end
+
+  # `glyf_len` is the (4-byte-aligned) total size of the glyf table, i.e. the
+  # offset just past glyph 1 -- glyph 0 (.notdef) is zero-length, so it starts
+  # and ends at 0.
+  def self.loca(glyf_len)
+    u16(0) + u16(0) + u16(glyf_len / 2) # short format: values are offset/2
+  end
+
+  def self.head
+    h = u32(0x00010000) + u32(0x00010000) + u32(0) + u32(0x5F0F3CF5) + u16(0)
+    h += u16(1000)          # unitsPerEm
+    h += "\x00" * 16        # created/modified
+    h += u16(100) + u16(100) + u16(700) + u16(700) # xMin,yMin,xMax,yMax
+    h += u16(0) + u16(8) + u16(2) + u16(0) + u16(0) # ...indexToLocFormat=0 (short)
+    h
+  end
+
+  def self.hhea
+    h = u32(0x00010000)
+    h += u16(800) + u16(-200) + u16(0) # ascent,descent,lineGap
+    h += u16(800)                      # advanceWidthMax
+    h += u16(100) + u16(100) + u16(700) + u16(1) + u16(0) + u16(0)
+    h += "\x00" * 8  # reserved
+    h += u16(0) + u16(2) # metricDataFormat, numberOfHMetrics (both glyphs)
+    h
+  end
+
+  def self.hmtx
+    u16(200) + u16(0) + u16(800) + u16(100) # glyph0(adv,lsb) glyph1(adv,lsb)
+  end
+
+  def self.maxp
+    u32(0x00005000) + u16(2) # version 0.5 (only numGlyphs is read); numGlyphs
+  end
+
+  def self.cmap
+    # Format 6 (trimmed table): codepoint 0x41 ('A') -> glyph 1. Platform 0
+    # (Unicode) is accepted regardless of encodingID by stb_truetype.
+    sub = u16(6) + u16(12) + u16(0) + u16(0x41) + u16(1) + u16(1)
+    c = u16(0) + u16(1)             # version, numTables
+    c += u16(0) + u16(3) + u32(12)  # platformID, encodingID, subtable offset
+    c + sub
+  end
+
+  def self.tables
+    glyf_data = glyf
+    {"cmap" => cmap, "glyf" => glyf_data, "head" => head, "hhea" => hhea,
+     "hmtx" => hmtx, "loca" => loca(glyf_data.bytesize), "maxp" => maxp}
+  end
+
+  # A bare sfnt: header + table directory (checksums left 0 -- stb_truetype
+  # does not verify them, see woff_to_sfnt's comment) + 4-byte-aligned tables,
+  # sorted by tag as woff/sfnt build below both do.
+  def self.build_sfnt(tables)
+    n = tables.size
+    entry_selector = 0
+    entry_selector += 1 while (1 << (entry_selector + 1)) <= n
+    search_range = (1 << entry_selector) * 16
+    range_shift = n * 16 - search_range
+
+    header = u32(0x00010000) + u16(n) + u16(search_range) +
+             u16(entry_selector) + u16(range_shift)
+    dir = String.new
+    data = String.new
+    offset = 12 + n * 16
+    tables.keys.sort.each do |tag|
+      dir += tag + u32(0) + u32(offset) + u32(tables[tag].bytesize)
+      padded = pad4(tables[tag])
+      data += padded
+      offset += padded.bytesize
+    end
+    header + dir + data
+  end
+
+  # The same tables wrapped as WOFF 1.0, every table stored (not deflated) --
+  # the "comp_len == orig_len" branch of woff_to_sfnt -- so this fixture needs
+  # no zlib dependency of its own.
+  def self.build_woff(tables)
+    n = tables.size
+    dir = String.new
+    data = String.new
+    offset = 44 + n * 20
+    tables.keys.sort.each do |tag|
+      bytes = tables[tag]
+      dir += tag + u32(offset) + u32(bytes.bytesize) + u32(bytes.bytesize) +
+             u32(0)
+      padded = pad4(bytes)
+      data += padded
+      offset += padded.bytesize
+    end
+    header = "wOFF" + u32(0x00010000) + u32(44 + dir.bytesize + data.bytesize) +
+             u16(n) + u16(0) + u32(0) + u16(0) + u16(0) + u32(0) + u32(0) +
+             u32(0) + u32(0) + u32(0)
+    header + dir + data
+  end
+end
+
+MZ_TINY_SFNT = MZFontFixture.build_sfnt(MZFontFixture.tables)
+MZ_TINY_WOFF = MZFontFixture.build_woff(MZFontFixture.tables)
+
+assert 'MZ tiny-font fixture: the bare sfnt rasterises real ink' do
+  # Baseline: the hand-authored sfnt itself (no WOFF unpacking involved) is a
+  # font stb_truetype accepts, and 'A' at 24px covers more than a handful of
+  # pixels -- proves the fixture itself is sound before trusting it to
+  # exercise the unpacker below.
+  gw, gh, ink = MV::Font.smoke_test(MZ_TINY_SFNT, 0x41, 24)
+  assert_true gw > 0 && gh > 0
+  assert_true ink > 50
+end
+
+assert 'MZ .woff unpacking: MV::Font.unpack_woff reproduces the sfnt byte-for-byte' do
+  # This is the actual WOFF unpacker (woff_to_sfnt in mvcanvas.cxx) round-
+  # tripping the tables straight back out, checksum field aside (never
+  # verified by stb_truetype either way).
+  unpacked = MV::Font.unpack_woff(MZ_TINY_WOFF)
+  assert_equal MZ_TINY_SFNT.bytesize, unpacked.bytesize
+  assert_equal MZ_TINY_SFNT, unpacked
+end
+
+assert 'MZ .woff unpacking: a real MZ-style .woff renders the same glyph ink' do
+  # End to end: WOFF bytes in, through woff_to_sfnt, through stb_truetype,
+  # to a rasterised glyph -- the path MZ boots through once a font is under
+  # fonts/*.woff (see mv_font_smoke_test's comment for why this needs its own
+  # entry point rather than going through game_font()).
+  sfnt_result = MV::Font.smoke_test(MZ_TINY_SFNT, 0x41, 24)
+  woff_result = MV::Font.smoke_test(MZ_TINY_WOFF, 0x41, 24)
+  assert_equal sfnt_result, woff_result
+  assert_true woff_result[2] > 50
+end
+
+assert 'MZ .woff unpacking: MV::Font.smoke_test/unpack_woff reject non-fonts' do
+  assert_nil MV::Font.smoke_test("wOF2" + ("\x00" * 40), 0x41, 24) # WOFF2, unsupported
+  assert_nil MV::Font.smoke_test("not a font", 0x41, 24)
+  assert_nil MV::Font.unpack_woff("wOFF" + ("\x00" * 4)) # too short to hold a table dir
+end

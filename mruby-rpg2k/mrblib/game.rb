@@ -466,9 +466,10 @@ module Game
   class ChipSet
     # numpad direction -> passability bit.
     DIR_BIT = { 2 => 0x01, 4 => 0x02, 6 => 0x04, 8 => 0x08 }.freeze
-    # The non-directional bits of the same passage byte (EasyRPG's `Passable`).
-    # `ABOVE_BIT` is the editor's upper-layer "star" toggle, and it decides two
-    # separate things, both keyed off the same bit:
+    # The non-directional bits of the same passage byte (EasyRPG's `Passable`,
+    # src/map_data.h: Down=0x01, Left=0x02, Right=0x04, Up=0x08, Above=0x10,
+    # Wall=0x20, Counter=0x40). `ABOVE_BIT` is the editor's upper-layer "star"
+    # toggle, and it decides two separate things, both keyed off the same bit:
     #   - Passability: an upper tile is *see-through* ground rather than a
     #     solid object in its own right when this bit is set. `IsPassableTile`
     #     only falls through to the lower layer's own passability when it is
@@ -482,16 +483,17 @@ module Game
     #     against it composites normally rather than being masked by it.
     #     Confirmed against a genuine RPG_RT.exe under wine: Nepheshel's
     #     opening lies the hero down across a 3-tile bed graphic (headboard /
-    #     mattress / footer), none of which are starred — the mattress alone
-    #     would show him in full, but a *separate* map event (layer: above,
-    #     its own small pillow graphic) sits on the same tile and is what
-    #     actually covers him from the neck down, drawn through the ordinary
-    #     above-hero event path. Treating every upper tile as always-above, as
-    #     this renderer previously did, hid the headboard tile's own contents
-    #     as well and left him fully invisible instead of tucked in.
+    #     mattress / footer); only the footer is starred, so the headboard and
+    #     mattress alone would show him in full, but a *separate* map event
+    #     (layer: above, its own small pillow graphic) sits on the same tile
+    #     and is what actually covers him from the neck down, drawn through
+    #     the ordinary above-hero event path. Treating every upper tile as
+    #     always-above, as this renderer previously did, hid the headboard
+    #     tile's own contents as well and left him fully invisible instead of
+    #     tucked in.
     # `COUNTER_BIT` marks a tile you may talk *across* — the shop counter an
     # NPC stands behind.
-    ABOVE_BIT = 0x20
+    ABOVE_BIT = 0x10
     COUNTER_BIT = 0x40
     # Every directional bit ORed together, for a jump's any-side landing check.
     ALL_DIRS = (DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]).freeze
@@ -538,8 +540,8 @@ module Game
     # Chip index into the lower passability table for a lower-layer tile id.
     def self.lower_index(tile_id)
       return nil if tile_id.nil?
-      if tile_id >= 10000 then 18 + (tile_id - 10000)
-      elsif tile_id >= 5000 then 6 + (tile_id - 5000) / 50
+      if tile_id >= 5000 then 18 + (tile_id - 5000)
+      elsif tile_id >= 4000 then 6 + (tile_id - 4000) / 50
       elsif tile_id >= 3000 then 3 + (tile_id - 3000) / 50
       else tile_id / 1000
       end
@@ -1205,10 +1207,12 @@ module Game
     # Set the actor's level and recompute the six base stats from the database
     # growth curve at that level (see #base_stats), then the equipment-boosted
     # effective stats. Current HP/MP are re-clamped so lowering the level never
-    # leaves a vital over its cap.
+    # leaves a vital over its cap. A fresh level-derived base is a new baseline
+    # for #change_param's unclamped tracking too -- see @base_raw there.
     def set_level(level)
       @level = level && level >= 1 ? level : 1
       @base = base_stats(@level)
+      @base_raw = @base.dup
       learn_level_skills
       recompute_stats
     end
@@ -1591,6 +1595,25 @@ module Game
     # mtf-meido-action's is a pair of boots, Nepheshel's four include a swimsuit.
     def prevents_terrain_damage?; equipment_flag?(:no_terrain_damage); end
 
+    # 物理回避率アップ — a shield/armour/helmet/accessory that makes a normal
+    # attack likelier to miss its wearer: RPG_RT subtracts a flat 25 from the
+    # attacker's already agi-adjusted hit chance (EasyRPG's
+    # `HasPhysicalEvasionUp`, consulted by `CalcNormalAttackToHit` right after
+    # its AGI term). The weapon slot never counts — `ForEachEquipment<false,
+    # true>` there excludes weapons by item *type*, not slot index, the same
+    # way #equip_bonus already reads every equipped slot, so a 二刀流 actor's
+    # second weapon (sitting in the shield slot) is correctly excluded too.
+    def physical_evasion_up?
+      return false unless @db.respond_to?(:item)
+      @equipment.any? do |iid|
+        next false if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next false unless it
+        next false if it.respond_to?(:type) && it.type == ITEM_WEAPON
+        it.respond_to?(:raise_evasion) && it.raise_evasion ? true : false
+      end
+    end
+
     # 強力防御 — an actor whose Defend halves damage a *second* time (a quarter
     # rather than a half, per EasyRPG's `AdjustDamageForDefend`). This one is a
     # property of the actor row (field 24), not of gear, and an RPG2003 class can
@@ -1845,10 +1868,20 @@ module Game
     # base stat (the equipment bonus stays on top) and clamps to RPG2000's limits
     # (max HP/MP 1..9999, the four battle stats 1..999); recomputing re-clamps the
     # current HP/MP so a lowered maximum never leaves a vital over its cap.
+    #
+    # yado.tk's `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
+    # that range, but RPG_RT keeps accumulating the *unclamped* running total
+    # underneath -- lower Attack far past 1 with one call, then raise it back
+    # only part way, and the effective value stays pinned at the old clamp
+    # until the raw total genuinely climbs back past it, rather than reacting
+    # to the partial raise immediately. @base_raw is that shadow total; @base
+    # (read by #recompute_stats and everything else) stays the clamped,
+    # display/effective value throughout.
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
       limit = (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
-      @base[type] = Game.clamp(@base[type] + delta, 1, limit)
+      @base_raw[type] += delta
+      @base[type] = Game.clamp(@base_raw[type], 1, limit)
       recompute_stats
     end
 
@@ -1900,6 +1933,10 @@ module Game
       when CLASS_PARAM_HALF      then @base = old_base.map { |v| v / 2 }
       when CLASS_PARAM_RESET_LV1 then @base = base_stats(1)
       end
+      # Whichever branch (or none, for CLASS_PARAM_RESET_LEVEL) ran, @base is
+      # a fresh baseline -- reset #change_param's unclamped shadow to match,
+      # the same rule set_level's own reset above already follows.
+      @base_raw = @base.dup
       recompute_stats
 
       @hp = Game.clamp(hp, 0, @max_hp) if hp
@@ -5780,6 +5817,12 @@ module Game
                            # whether skills cost half.
                            :strikes, :ignores_evasion, :strong_defence,
                            :half_sp_cost,
+                           # Whether this battler's own gear makes a normal
+                           # attack likelier to miss it (Actor#physical_evasion_up?,
+                           # a flat -25 to the attacker's to_hit -- see
+                           # Battle#to_hit). Enemy Combatants leave it nil/false;
+                           # monsters equip nothing.
+                           :evasion_up,
                            # A basic Attack spread across the target's whole
                            # side (attack_all?) or jumped to the front of the
                            # round's turn order (preemptive?) -- see #turn_order
@@ -5868,6 +5911,7 @@ module Game
       c.preemptive = flag_of(a, :preemptive?)
       c.strong_defence = flag_of(a, :strong_defence?)
       c.half_sp_cost = flag_of(a, :half_sp_cost?)
+      c.evasion_up = flag_of(a, :physical_evasion_up?)
       c.attr_base_ranks = c.attr_ranks.dup
       c
     end
@@ -6229,7 +6273,15 @@ module Game
           src = effective_agi(attacker)
           src = 1 if src < 1
           tgt = effective_agi(target)
-          Game.clamp(100 - (100 - base) * (src + tgt) / (2 * src), 0, 100)
+          agi_adjusted = 100 - (100 - base) * (src + tgt) / (2 * src)
+          # 物理回避率アップ: a shield/armour/helmet/accessory flagged
+          # `raise_evasion` (Actor#physical_evasion_up?) subtracts a further
+          # flat 25 from the already agi-adjusted chance, right where
+          # EasyRPG's `CalcNormalAttackToHit` applies it -- after the AGI
+          # term, and never reached at all by a 必中 attacker (the branch
+          # above already returned).
+          agi_adjusted -= 25 if target.evasion_up
+          Game.clamp(agi_adjusted, 0, 100)
         end
       raw * hit_modifier(attacker) / 100
     end
@@ -7541,6 +7593,11 @@ module Game
   end
 
   class State
+    # RPG2000's Show Picture editor field only offers picture numbers 1-50 (a
+    # fixed-size internal slot array); an id outside that range is not a real
+    # picture and Show Picture on one is a no-op (yado.tk).
+    MAX_PICTURE_ID = 50
+
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction
     # Whether the player may open the main menu / save, toggled by the Change
@@ -7734,9 +7791,12 @@ module Game
     # neither does this.
     def walk_step; @steps += 1; end
 
-    # Show (or replace) picture `id` with the given Picture options hash.
+    # Show (or replace) picture `id` with the given Picture options hash. An id
+    # outside 1..MAX_PICTURE_ID does nothing -- #move_picture/#erase_picture
+    # need no matching guard of their own, since neither can ever find such an
+    # id shown in the first place.
     def show_picture(id, opts)
-      @pictures[id] = Picture.new(id, opts) if id && id > 0
+      @pictures[id] = Picture.new(id, opts) if id && id > 0 && id <= MAX_PICTURE_ID
     end
 
     # Start a move on picture `id` (a no-op if it is not shown). `args` are the

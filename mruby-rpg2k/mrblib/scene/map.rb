@@ -171,7 +171,6 @@ class RPG2k
         @player_jumping = false
         @dest_x = @state.x
         @dest_y = @state.y
-        @slide_was_active = false
         @tile_colors = {}
         @last_frame = nil
         # Frame counter driving the chipset's water/animated-tile animation.
@@ -195,7 +194,9 @@ class RPG2k
       attr_reader :state
 
       def dispose
-        close_message
+        close_message(animate: false)
+        (@closing_windows || []).each(&:dispose)
+        @closing_windows = nil
         close_inn_window
         close_shop
         close_battle
@@ -258,6 +259,7 @@ class RPG2k
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
+        update_closing_windows # a closed message keeps shrinking in the background
         watch_bgm_loop # so the "BGM played once" branch can be answered
         @anim_frame += 1 # water / animated tiles cycle even during events
         # An event page's conditions may have just stopped (or started) holding;
@@ -271,67 +273,24 @@ class RPG2k
         # start anything this frame, matching "if both are set to fire the
         # same frame, parallel process goes first".
         step_parallels unless parallels_paused?
-        # A forced move route (Move Event / Set Move Route, on the player, an
-        # event or a vehicle) keeps stepping every frame no matter what the
-        # foreground interpreter is doing -- RPG_RT does not pause a route it
-        # was told not to wait for (no Proceed With Movement) just because the
-        # event that issued it kept running its own next commands. This is the
-        # ordinary "walk in the background while the narration continues"
-        # idiom (e.g. Nepheshel's hero rising out of bed while Iris explains
-        # where he is, on the same event that then shows several lines of
-        # dialogue and a name-entry prompt without ever waiting on the route).
-        # Stepped before the busy-gate below, which still correctly holds back
-        # the foreground event itself and autonomous (page move-type) movement
-        # -- see #step_event's own event_busy? check, which now exempts only
-        # e[:forced_route]. Without this, every such route sat frozen for as
-        # long as its own event kept the interpreter busy and then played out
-        # all at once the instant the whole event finally ended.
-        #
-        # The party's own pixel slide (started by a route's step, above) also
-        # advances unconditionally: #advance_player_slide is what actually
-        # commits @state.x/y once the slide completes, and it has to keep
-        # pace with the route stepping it or the party position would never
-        # catch up to a route that ran while busy (#step_movement no longer
-        # calls it itself -- see its comment).
-        #
-        # Skipped while the interpreter is itself waiting on Proceed With
-        # Movement (#step_forced_movement, driven from #drive_event's :movement
-        # case below): that command's whole point is to wait for these same
-        # routes, which it already steps and resumes on completion, so
-        # stepping them again here would double-step every route for as long
-        # as that wait lasts.
-        unless movement_wait?
-          # #step_player_route before #advance_player_slide, not after: this
-          # is the pre-existing order the plain (non-:movement-wait) path
-          # always ran them in, one frame apart inside the old single
-          # #step_movement call, and #step_player_route's own `return if
-          # @moving` depends on it -- landing a slide and letting the route
-          # advance to its next queued step are still two different frames,
-          # not the same one, even though both calls moved out here. (The
-          # separate #step_forced_movement path used during an actual
-          # Proceed With Movement wait has always ordered these the other
-          # way around; the two have never agreed, and this keeps it that
-          # way rather than changing either.)
-          step_player_route
-          step_events
-          step_vehicle_routes
-          # Captured rather than inspecting @moving afterward:
-          # #advance_player_slide returns true through the landing frame
-          # itself (it entered with @moving already true), and
-          # #step_movement's own guard has always relied on that -- a new
-          # input-driven move must not start on the very frame the previous
-          # one lands, only the frame after. Checking @moving there instead
-          # would lose that one-frame gap now that the call moved out of
-          # #step_movement.
-          @slide_was_active = advance_player_slide
-        end
         if event_busy?
           drive_event
+          # Message Options' "move other events during message" toggle: other
+          # map events keep their own autonomous movement / forced routes
+          # going while this message window sits open (see
+          # #events_move_during_message?). `allow_trigger: false` still lets
+          # them walk, turn and finish routes, but never lets one start a new
+          # event over the player's -- there is only one foreground
+          # interpreter, and it is already busy with this message.
+          step_events(allow_trigger: false) if events_move_during_message?
         else
           start_autostart
           if event_busy?
             drive_event
           else
+            step_player_route
+            step_events
+            step_vehicle_routes
             step_movement
             # Boarding / disembarking claims the action button when it applies;
             # otherwise it falls through to the usual event trigger.
@@ -975,15 +934,6 @@ class RPG2k
         @message || @number_input || @interpreter.running? || @interpreter.waiting?
       end
 
-      # Whether the foreground interpreter is parked on a Proceed With
-      # Movement wait -- the one busy state whose forced-route stepping is
-      # already fully owned by #step_forced_movement (see #update and
-      # #drive_event's :movement case), so #update's own unconditional
-      # stepping must skip it rather than step every route a second time.
-      def movement_wait?
-        @interpreter.waiting? && @interpreter.wait_kind == :movement
-      end
-
       # Whether a message window or choice list (Show Message / Show Choices /
       # an Input Number embedded in one) is currently on screen -- queried by
       # the interpreter via map_info (see #event_position, #character_screen_
@@ -998,6 +948,20 @@ class RPG2k
         !!(@message || @number_input)
       end
       public :message_window_open?
+
+      # Whether bystander map events should keep stepping their own autonomous
+      # movement / forced routes while a message window sits open -- RPG2000's
+      # Message Options command has a dedicated "move other events during
+      # message" toggle (LCF field 44, `message_continue_events` /
+      # `Game::MessageConfig#continue_events`) for exactly this, defaulting off
+      # (RPG_RT's own default is "other events hold still"). Scoped to a message
+      # window specifically, not #event_busy? in general -- an Autorun grinding
+      # through non-blocking commands with no message up still freezes the rest
+      # of the map either way, matching yado.tk ("Autorun ... blocks other
+      # events too, unless 'move other events during message wait' is on").
+      def events_move_during_message?
+        message_window_open? && @state.message_config.continue_events
+      end
 
       # Whether #step_parallels should sit this frame out. Per yado.tk, real
       # RPG_RT only pauses background parallel processes for the Menu screen
@@ -1104,8 +1068,10 @@ class RPG2k
           end
         end
         @parallels = []
+        live_map_ids = {}
         @events.each do |e|
           next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
+          live_map_ids[e[:id]] = true
           prior = previous_map[e[:id]]
           if prior && prior[:commands].equal?(e[:commands])
             # Same page, same command list -- only the surrounding
@@ -1116,6 +1082,25 @@ class RPG2k
             @parallels.push prior
           else
             @parallels.push new_parallel(e[:commands], nil, e, nil)
+          end
+        end
+        # yado.tk, multiply corroborated: a Parallel Process whose own event's
+        # appearance condition goes false *mid-run* keeps executing in the
+        # background rather than being aborted -- it just has nothing left to
+        # draw or collide with. #build_events already drops such an event from
+        # @events/@event_tiles entirely (no page satisfied its conditions), so
+        # without this it would silently vanish from @parallels too, on the
+        # very next in-place page-reselection sweep this same event's own
+        # write triggers. Carried forward under its stale event/character
+        # reference -- unreachable from @events/@event_tiles, so harmless --
+        # for as long as it keeps running; only while `preserve_map_events` is
+        # set (an in-place, same-map reselection), matching every other
+        # bystander-preservation rule in this method. If its conditions later
+        # pick the very same page again, the ordinary reuse above already
+        # reattaches this same interpreter instead of starting a fresh one.
+        if preserve_map_events
+          previous_map.each do |id, prior|
+            @parallels.push(prior) unless live_map_ids[id]
           end
         end
         @common.each do |c|
@@ -1521,17 +1506,20 @@ class RPG2k
         nil
       end
 
-      # Advance autonomous / custom-route event movement one frame. Autonomous
-      # (page move-type) and page-level custom-route movement hold still while
-      # an event process is running, so the map holds still during messages;
-      # a *forced* route (e[:forced_route], from Move Event / Set Move Route)
-      # is exempt and keeps stepping regardless -- see #update's own comment.
-      def step_events
-        @events.each { |e| step_event(e) }
+      # Advance autonomous / custom-route event movement one frame. Skipped
+      # while an event process is running so the map holds still during messages
+      # -- unless a Message Options command turned `continue_events` on, in which
+      # case #update calls this a second way (allow_trigger: false) while a
+      # message window is open; see #events_move_during_message?.
+      def step_events(allow_trigger: true)
+        @events.each { |e| step_event(e, allow_trigger: allow_trigger) }
       end
 
-      def step_event(e)
-        return if event_busy? && !e[:forced_route] # hold autonomous/custom movement; a forced route keeps going
+      def step_event(e, allow_trigger: true)
+        # An event fired earlier this frame; hold the rest -- except when this
+        # is the "keep moving during the message" pass, which is *always*
+        # called while busy (that is the point) and must not immediately bail.
+        return if allow_trigger && event_busy?
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
@@ -1556,7 +1544,7 @@ class RPG2k
           e[:route].step(ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
-          move_autonomous(e, dir) if dir
+          move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
         end
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
@@ -1603,13 +1591,18 @@ class RPG2k
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
       # an event-touch (trigger 2) event instead of moving; any other obstacle
-      # just turns the event to face it.
-      def move_autonomous(e, dir)
+      # just turns the event to face it. `allow_trigger: false` (the "keep
+      # moving during an open message" pass, see #step_events) still turns the
+      # event to face the player but never starts one -- there is only one
+      # foreground @interpreter, already mid-message, and RPG2000 never shows
+      # two message windows at once, so a second event's commands have nowhere
+      # safe to run until the first message closes.
+      def move_autonomous(e, dir, allow_trigger: true)
         ch = e[:char]
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
           ch.face(dir)
-          start_event(e) if e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+          start_event(e) if allow_trigger && e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
         elsif @world.passable?(ch, dir)
           ch.move(dir)
         else
@@ -2653,7 +2646,13 @@ class RPG2k
 
         if @interpreter.waiting?
           case @interpreter.wait_kind
-          when :message then open_message(@interpreter.message_lines, false)
+          when :message
+            # yado.tk: a still-pending forced move route (Move Event with no
+            # "wait for completion") implicitly auto-runs to completion the
+            # instant the event hits a Show Text, the same way an explicit
+            # Proceed With Movement would -- driven here exactly like the
+            # :movement branch below, before the window is actually opened.
+            open_message(@interpreter.message_lines, false) if step_forced_movement
           when :choice then open_message(@interpreter.choice_labels, true)
           when :number then open_number_input(@interpreter.input_digits)
           when :key_input then drive_key_input
@@ -2661,6 +2660,10 @@ class RPG2k
           when :shop then drive_shop
           when :battle then drive_battle
           when :wait
+            # Same implicit-Proceed-With-Movement rule as :message above, for a
+            # Wait command: the wait timer does not even start counting down
+            # until any pending forced route has finished.
+            return unless step_forced_movement
             drive_wait
             # RPG_RT resumes a Wait the instant its timer elapses and keeps
             # spending that same frame's step budget -- Wait 0.0 sec is
@@ -5290,16 +5293,33 @@ class RPG2k
       end
 
       # The target character's map-pixel position: the player, the running event
-      # ("this event" / 0), or a map event by id, defaulting to the player.
+      # ("this event" / 0), a vehicle slot, or a map event by id, defaulting to
+      # the player. yado.tk: a vehicle target reads that vehicle's real,
+      # currently-live x/y off `Game::State` (the same source
+      # `#event_operand`'s Control Variables "character position" vehicle fix
+      # reads) even when the vehicle is not on the map this scene has loaded --
+      # RPG_RT does not check that the two agree before placing the animation,
+      # the same blind-read quirk as the Control Variables fix.
       def animation_target_pixel(target)
         case target
         when MOVE_TARGET_PLAYER then player_pixel
         when 0, MOVE_TARGET_THIS
           @active_event ? event_pixel(@active_event) : player_pixel
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          vehicle_pixel(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
         else
           ev = @events.find { |e| e[:id] == target }
           ev ? event_pixel(ev) : player_pixel
         end
+      end
+
+      # A vehicle's own map-pixel position, read straight off its live
+      # `Game::Vehicle` record -- no interpolation, unlike a walking
+      # player/event, since nothing here animates a standing vehicle's slide.
+      def vehicle_pixel(type)
+        v = @state.vehicle(type)
+        return player_pixel unless v
+        [v.x * TILE, v.y * TILE]
       end
 
       # Fire the screen flashes the current frame's timings request (flash_scope
@@ -5498,6 +5518,12 @@ class RPG2k
       MSG_LINE_H = 16
       # Characters revealed per frame for the message typewriter effect.
       MSG_REVEAL_SPEED = 2
+      # RPG_RT unrolls the message window (and its `\$` gold window) open and
+      # shut over 7 frames rather than popping it, except during battle where
+      # it appears/disappears instantly (EasyRPG's window_message.cpp:
+      # `constexpr int message_animation_frames = 7`, gated on
+      # `Game_Battle::IsBattleRunning()`).
+      MSG_ANIM_FRAMES = 7
       # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells, drawn beside
       # the message text with a small gap.
       FACE_SIZE = 48
@@ -5576,9 +5602,9 @@ class RPG2k
         # Message Options / Change Face Graphic settings in effect for this
         # window (position, transparency and an optional FaceSet graphic).
         cfg = @state.message_config
-        face = load_face(cfg)
-        face_left = face && !cfg.face_right
-        face_right = face && cfg.face_right
+        face_sheet = load_face(cfg)
+        face_left = face_sheet && !cfg.face_right
+        face_right = face_sheet && cfg.face_right
         text_x = face_left ? FACE_SIZE + FACE_MARGIN : 0
 
         inner_w = MSG_WIN_W - Window::BORDER * 2
@@ -5589,6 +5615,10 @@ class RPG2k
         win.z = 300
         win.windowskin = @windowskin
         win.transparent = cfg.transparent
+        # No animation mid-battle: RPG_RT's own message/gold windows pop
+        # straight in there instead of unrolling (see MSG_ANIM_FRAMES above).
+        open_frames = @battle_ui.nil? ? MSG_ANIM_FRAMES : 0
+        win.open_animation(open_frames)
 
         contents = Bitmap.new(inner_w, inner_h)
 
@@ -5596,11 +5626,15 @@ class RPG2k
         reveal = Game::TextReveal.new(plain, 0, pauses, auto_close, instants)
         reveal.reveal_all if choice
         # `\$` shows the party's gold in a small window alongside the message.
-        gold_window = show_gold ? build_inn_gold_window(nonblank(db.term.gold, 'G')) : nil
+        gold_window = nil
+        if show_gold
+          gold_window = build_inn_gold_window(nonblank(db.term.gold, 'G'))
+          gold_window.open_animation(open_frames)
+        end
         @message = { window: win, choice: choice, count: plain.length,
                      choice_start: 0, reveal: reveal, contents: contents,
-                     inner_w: inner_w, seg_lines: seg_lines, face: face,
-                     face_index: cfg.face_index,
+                     inner_w: inner_w, seg_lines: seg_lines,
+                     face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
                      text_x: text_x, text_w: text_w, gold_window: gold_window,
                      # The colour still in effect once this text ends -- a Show
@@ -5705,6 +5739,29 @@ class RPG2k
         nil
       end
 
+      # Crop one 48x48 cell out of a FaceSet sheet into its own bitmap, mirrored
+      # horizontally when Change Face Graphic's own mirror flag (param2,
+      # `cfg.face_flipped`) is set. `RGSS::Bitmap#blt` has no flip of its own
+      # (mruby-rgss's `Sprite#mirror=` resorts to the same per-pixel software
+      # pass for the same reason), so a mirrored face is built one column at a
+      # time -- 48 single-column blits, done once here rather than once per
+      # #draw_message_face call, since that runs every frame the text is still
+      # revealing.
+      def build_face_cell(sheet, index, flipped)
+        return nil unless sheet
+        src_x = (index % 4) * FACE_SIZE
+        src_y = (index / 4) * FACE_SIZE
+        cell = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        unless flipped
+          cell.blt 0, 0, sheet, Rect.new(src_x, src_y, FACE_SIZE, FACE_SIZE)
+          return cell
+        end
+        FACE_SIZE.times do |col|
+          cell.blt FACE_SIZE - 1 - col, 0, sheet, Rect.new(src_x + col, src_y, 1, FACE_SIZE)
+        end
+        cell
+      end
+
       # (Re)draw the message body showing the currently revealed characters,
       # each colour run in its own colour, laid out left to right per line. The
       # face graphic (when present) is drawn first, and text is inset past it.
@@ -5741,15 +5798,13 @@ class RPG2k
         end
       end
 
-      # Blit the selected face cell (a 48x48 tile of the 4x4 FaceSet grid) into
-      # the message contents at its configured side.
+      # Blit the already-cropped (and possibly mirrored, see #build_face_cell)
+      # face cell into the message contents at its configured side.
       def draw_message_face
         face = @message[:face]
         return unless face
-        idx = @message[:face_index]
-        src = Rect.new((idx % 4) * FACE_SIZE, (idx / 4) * FACE_SIZE,
-                       FACE_SIZE, FACE_SIZE)
-        @message[:contents].blt @message[:face_x], 0, face, src
+        @message[:contents].blt @message[:face_x], 0, face,
+                                Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
       end
 
       # RPG2000 message text palette (`\c[n]`). A small built-in approximation
@@ -5779,9 +5834,16 @@ class RPG2k
       end
 
       def drive_message
-        # Advances the blink/pause animation each frame so the pause arrow
-        # (set below) actually flashes instead of sitting on one frame.
+        # Advances the open/close and blink/pause animation each frame so the
+        # window unrolls open, and so the pause arrow (set below) actually
+        # flashes instead of sitting on one frame. Text reveal and input are
+        # not held off while it unrolls -- unlike EasyRPG, which pauses
+        # Window_Message::Update() on IsOpeningOrClosing() -- since the window
+        # is a fresh object every message here rather than a persistent one
+        # game scripts can poll, and holding logic off it would only delay
+        # dismissal by MSG_ANIM_FRAMES with nothing else to show for it.
         @message[:window].update
+        @message[:gold_window].update if @message[:gold_window]
         if @message[:choice]
           if Input.trigger?(Input::DOWN)
             @choice_index += 1
@@ -5939,11 +6001,48 @@ class RPG2k
         end
       end
 
-      def close_message
+      # Dismiss the current message. By default this rolls the window (and its
+      # `\$` gold window) shut over MSG_ANIM_FRAMES frames rather than popping
+      # it away, mirroring #open_message; `animate: false` (scene teardown --
+      # see #dispose) skips straight to disposal instead. The closing window
+      # is handed off to #update_closing_windows rather than disposed here:
+      # RPG_RT's own message window keeps shrinking while the game underneath
+      # it already carries on (EasyRPG decouples FinishMessageProcessing's
+      # SetCloseAnimation from the interpreter the same way), so @message is
+      # cleared immediately and the caller (interpreter resume, choice
+      # selection, ...) is never blocked on the animation finishing.
+      def close_message(animate: true)
         return unless @message
-        @message[:window].dispose
-        @message[:gold_window].dispose if @message[:gold_window]
+        win = @message[:window]
+        gold = @message[:gold_window]
+        frames = (animate && @battle_ui.nil?) ? MSG_ANIM_FRAMES : 0
+        if frames > 0
+          win.close_animation(frames)
+          (@closing_windows ||= []) << win
+          if gold
+            gold.close_animation(frames)
+            @closing_windows << gold
+          end
+        else
+          win.dispose
+          gold.dispose if gold
+        end
         @message = nil
+      end
+
+      # Advance every window mid-close-animation (see #close_message) one
+      # frame, disposing each once its animation finishes. Called once a
+      # frame regardless of whether a message is open, since a window can
+      # still be shrinking after @message itself has already moved on.
+      def update_closing_windows
+        return unless @closing_windows
+        @closing_windows.reject! do |w|
+          w.update
+          unless w.closing?
+            w.dispose
+            true
+          end
+        end
       end
 
       # -- number input (Input Number command) --------------------------------
@@ -6037,13 +6136,7 @@ class RPG2k
       end
 
       def step_movement
-        # The pixel slide itself now advances unconditionally every frame (see
-        # #update), forced route or not. Checked via @slide_was_active (what
-        # that call returned) rather than @moving: a new input-driven move
-        # must not start on the very frame the previous one lands, only the
-        # frame after, and @moving itself has already gone false by the time
-        # this runs on a landing frame.
-        return if @slide_was_active
+        return if advance_player_slide
 
         return if event_busy? # don't start a new move while an event runs
         return if @player_route # a forced route controls the player
@@ -6309,8 +6402,10 @@ class RPG2k
 
       # Where a character sits on screen, for the Control Variables "character"
       # operand's screen-coordinate selectors. `ref` is the operand's reference:
-      # 10001 the hero, a positive id a map event. nil when it names something
-      # this scene cannot place.
+      # 10001 the hero, 10002-10004 a vehicle (boat/ship/airship), a positive id
+      # a map event. nil when it names something this scene cannot place — a
+      # vehicle not currently on this map included, the same degenerate answer
+      # an unresolvable map event already gets.
       #
       # RPG_RT measures X from the tile's centre and Y from its *bottom* — the
       # asymmetry is real (EasyRPG's GetScreenX subtracts half a tile after
@@ -6318,8 +6413,10 @@ class RPG2k
       # reproduced rather than tidied up.
       def character_screen_position(ref)
         pixel =
-          if ref == 10001
+          if ref == MOVE_TARGET_PLAYER
             player_pixel
+          elsif ref >= MOVE_TARGET_BOAT && ref <= MOVE_TARGET_AIRSHIP
+            vehicle_pixel(Game::Vehicle::TYPES[ref - MOVE_TARGET_BOAT])
           else
             e = @events.find { |ev| ev[:id] == ref }
             e && event_pixel(e)
@@ -6327,6 +6424,18 @@ class RPG2k
         return nil unless pixel
         cam_x, cam_y = camera_position
         { x: pixel[0] - cam_x + TILE / 2, y: pixel[1] - cam_y + TILE }
+      end
+
+      # Current position of vehicle `type` in map pixels: the party's own
+      # interpolated pixel position while it's the one being ridden
+      # (#player_pixel, so it reads in lockstep with the hero mid-step),
+      # otherwise wherever it sits parked — the same rule #draw_vehicles
+      # renders a vehicle's sprite by. nil when the vehicle isn't placed on the
+      # currently loaded map at all (unplaced, or sitting on a different one).
+      def vehicle_pixel(type)
+        v = @state.vehicle(type)
+        return nil unless v.placed? && v.map_id == @state.map_id
+        @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
       public :camera_position, :character_screen_position
 
@@ -6347,7 +6456,23 @@ class RPG2k
         draw_vehicles cam_x, cam_y, px, py
         draw_map_animation cam_x, cam_y
 
-        draw_pictures cam_x, cam_y
+        # Pictures never show on the battle screen (yado.tk / 01_shoshin's
+        # 011_siyou: "none show on Menu/Battle screens") -- unlike the Menu
+        # screen, which is already covered by its own opaque field background
+        # sitting above the picture layer (see Scene::Base#build_field_background),
+        # nothing else painted over @picture_sprite (z 250) while a fight is
+        # running: the battle backdrop (@battle_ui[:back_sprite]) sits well below
+        # it, so a picture shown before the encounter (or by a Parallel Process
+        # still running during it) would otherwise draw straight over the battle
+        # UI. Hidden for the fight's whole duration and stops compositing
+        # entirely (not just hidden with a stale frame underneath), then resumes
+        # -- and immediately redraws -- the instant the battle UI is gone.
+        if @battle_ui
+          @picture_sprite.visible = false
+        else
+          @picture_sprite.visible = true
+          draw_pictures cam_x, cam_y
+        end
         update_screen_overlay
         draw_timer
       end

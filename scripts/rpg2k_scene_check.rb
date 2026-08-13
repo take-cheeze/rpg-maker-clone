@@ -1301,6 +1301,34 @@ check 'parallel common event runs only while its switch gate is on' do
   ok st.variables[3] > 0, 'it should run once the gate switch is on'
 end
 
+# yado.tk (01_shoshin/011_siyou, "Call Event"): a Call Event always bypasses
+# the target common event's own condition-switch state entirely, regardless
+# of whether the common event is configured Parallel Process, Auto-Start, or
+# call-only, and regardless of its gate switch's live value. Confirmed
+# already correct: Scene::Map#build_resolver (mruby-rpg2k/mrblib/scene/
+# map.rb) hands the Call Event resolver a plain `id => commands` hash built
+# from `@common`, discarding `:trigger`/`:need_flag`/`:switch_id` in the same
+# line -- the resolver Game::Interpreter#do_call_event reads from structurally
+# has no gate/trigger to consult, so nothing could conditionally block it even
+# if a future change tried to add such a check without also plumbing it
+# through here.
+check "Call Event bypasses a target common event's own gate switch" do
+  ic = Game::Interpreter::Cmd
+  # Common event 1 is a Parallel Process gated on switch 9, which stays off
+  # for this entire check -- Scene::Map#step_parallels would never run it on
+  # its own while that holds.
+  ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 9,
+                      event: [add_var_cmd(3)])
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::CALL_EVENT, [0, 1, 0])] # call common event 1
+  scene = new_scene({ 1 => event(2, 2, pg) }, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  10.times { scene.update }
+  ok !st.switches[9], 'the gate switch never turned on during this check'
+  ok st.variables[3] > 0,
+     "Call Event should run the gated common event's content regardless of its own switch"
+end
+
 # A Common Event's own Parallel Process, unlike a Map Event's, is supposed to
 # keep running from wherever it was across a Transfer Player and a save/load
 # (docs/TODO.md's "Common-event Parallel Process state should survive map
@@ -1429,6 +1457,41 @@ check "an unrelated event's page change does not restart another event's " \
   18.times { scene.update }
   eq 1, st.variables[1], 'marker A still has not re-run'
   eq 1, st.variables[2], 'the wait elapsed after exactly its original countdown'
+end
+
+check "a map event's own Parallel Process keeps running after its own page " \
+      'stops matching mid-run, instead of being torn down' do
+  ic = Game::Interpreter::Cmd
+  # The event has a single page, gated on switch 4; its own Parallel Process
+  # runs marker A, waits 0.3s, turns switch 4 off itself (its own condition,
+  # so the very next page refresh drops it out of @events/@event_tiles
+  # entirely -- #build_events skips an event with no page whose conditions
+  # are satisfied -- with no other page to fall back to), waits another
+  # 0.3s, then runs marker B. yado.tk, multiply corroborated: real RPG_RT
+  # keeps a Parallel Process like this running to completion once started,
+  # rather than aborting it the instant nothing selects its owning event any
+  # more -- marker B must still fire even though the event itself is gone.
+  pg = page(trigger: 4)
+  pg.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 4)
+  pg.event_commands = [add_var_cmd(1), ECmd.new(ic::WAIT, [3]),
+                       ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 1]),
+                       ECmd.new(ic::WAIT, [3]), add_var_cmd(2)]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.switches[4] = true # the page is satisfied from the start
+
+  25.times { scene.update } # runs marker A, clears the first 0.3s wait
+  eq 1, st.variables[1], 'marker A ran once, before the first wait'
+  ok !st.switches[4], 'the process turned its own gating switch off'
+  ok event_hashes(scene)[1].nil?,
+     "the event itself is gone from @events -- no page's condition matches " \
+     'any more'
+  eq 0, st.variables[2], 'marker B has not run yet -- still parked at the second wait'
+
+  25.times { scene.update } # let the second 0.3s wait elapse
+  eq 1, st.variables[2],
+     'the Parallel Process kept running to completion once hidden, instead ' \
+     'of being torn down the moment its own page stopped matching'
 end
 
 check "a common event's Parallel Process resumes where it left off after a " \
@@ -1936,31 +1999,6 @@ check 'Erase Event stops a parallel process that erases itself' do
      'erased from the event list'
   ok scene.instance_variable_get(:@parallels).empty?,
      'its background process was removed'
-end
-
-check 'a forced player route keeps stepping while its own event shows a message (no Proceed With Movement)' do
-  ic = Game::Interpreter::Cmd
-  auto = page(trigger: 3)
-  # Move Event with no following Proceed With Movement is the ordinary "walk
-  # in the background while the narration continues" idiom -- Nepheshel's own
-  # hero-wakes-up-in-bed opening uses exactly this shape (a Move Event on the
-  # hero, then several Show Text / Name Input commands with no Proceed in
-  # between). The route must keep animating even though the very next command
-  # in the same event parks the interpreter on a message window waiting for
-  # input this check never gives.
-  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
-                                  [10001, 8, 0, 0, R::MOVE_DOWN, R::MOVE_DOWN, R::MOVE_DOWN]),
-                         ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
-  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
-  st = scene.instance_variable_get(:@state)
-
-  msg = nil
-  10.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
-  ok msg, 'the message window opened -- the event (and event_busy?) is now busy'
-
-  30.times { scene.update }
-  eq 3, st.y, 'the forced route walked all three steps despite the open message'
-  ok scene.instance_variable_get(:@player_route).nil?, 'and the route itself finished'
 end
 
 check 'Halt All Movement cancels a forced player route in the scene' do
@@ -2524,6 +2562,76 @@ check 'Message Options positions the message window at the top' do
   ok msg[:window].y < 60, "top-positioned window should sit near the top, y=#{msg[:window].y}"
 end
 
+check 'a bystander event holds still during an open message by default' do
+  # yado.tk: "Autorun blocks other events too, unless 'move other events
+  # during message wait' is on" -- Message Options' own continue_events flag
+  # (LCF field 44) defaults off, so a bystander's own custom route must not
+  # advance at all while the message stays open (no input pressed).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  mover = page(x_move_type: Game::MoveType::CUSTOM,
+              route: move_route([R::MOVE_RIGHT] * 3, repeat: false))
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(0, 4, mover) },
+                    player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  start_x = chars(scene)[2].x
+  20.times { scene.update }
+  eq start_x, chars(scene)[2].x,
+     'a bystander event must hold still while the message is open by default'
+  ok scene.instance_variable_get(:@message), 'the message should still be open (no input pressed)'
+end
+
+check 'Message Options "move other events" lets a bystander event keep walking while the message stays open' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MESSAGE_OPTIONS, [0, 0, 0, 1]), # continue_events on (param3 = 1)
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  mover = page(x_move_type: Game::MoveType::CUSTOM,
+              route: move_route([R::MOVE_RIGHT] * 3, repeat: false))
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(0, 4, mover) },
+                    player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  start_x = chars(scene)[2].x
+  20.times { scene.update }
+  ok chars(scene)[2].x > start_x,
+     "the bystander event should have advanced east while the message stayed " \
+     "open, got #{chars(scene)[2].x}"
+  ok scene.instance_variable_get(:@message), 'the message should still be open (no input pressed)'
+end
+
+check '"move other events" during a message never lets a bystander start a second event' do
+  # There is only one foreground @interpreter, already busy with this
+  # message -- an event-touch (trigger 2) bystander approaching the player
+  # while continue_events is on must still stop adjacent without starting its
+  # own commands (see #move_autonomous's allow_trigger), the same way a plain
+  # event-touch approach behaves when nothing else is running (see 'event-
+  # touch (trigger 2): an event walking into the player runs it' above).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MESSAGE_OPTIONS, [0, 0, 0, 1]), # continue_events on
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  toucher = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8)
+  toucher.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  scene = new_scene({ 1 => event(5, 4, auto), 2 => event(3, 0, toucher) },
+                    player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  20.times { scene.update }
+  ok !st.switches[9],
+     "the toucher's own commands must not run while the message interpreter is still busy"
+  ch = chars(scene)[2]
+  eq [1, 0], [ch.x, ch.y], 'the toucher still approached and stopped adjacent to the player'
+  ok scene.instance_variable_get(:@message), 'the original message must still be the one open'
+end
+
 check 'Change Face Graphic opens a message with a face and insets the text' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -2535,8 +2643,37 @@ check 'Change Face Graphic opens a message with a face and insets the text' do
   msg = open_msg(scene)
   ok msg, 'message window opened'
   ok msg[:face], 'a face graphic was loaded for the message'
-  eq 2, msg[:face_index]
+  # The face is cropped once out of the FaceSet sheet at message-open time
+  # (see #build_face_cell): a single blit of cell 2 (the third 48x48 tile,
+  # x=96) into the dedicated 48x48 face bitmap, not a per-frame crop.
+  calls = msg[:face].blt_calls
+  eq 1, calls.length, 'an unmirrored face is cropped in one blit'
+  x, y, _src, rect = calls.first
+  eq [0, 0, 96, 0, 48, 48], [x, y, rect.x, rect.y, rect.width, rect.height],
+     'cropped cell 2 straight into the corner of the dedicated face bitmap'
   ok msg[:text_x] > 0, 'text is inset to the right of a left-side face'
+end
+
+check 'Change Face Graphic with the mirror flag draws a horizontally-flipped face' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 0, 1], string: 'Faces1'), # cell 0, left side, mirrored
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  calls = msg[:face].blt_calls
+  # RGSS::Bitmap#blt has no flip of its own, so a mirrored face is built one
+  # source column at a time instead of a single crop (see #build_face_cell).
+  eq 48, calls.length, 'a mirrored face is built one column at a time, not one crop'
+  first_x, _y, _src, first_rect = calls.first
+  last_x, _ly, _lsrc, last_rect = calls.last
+  eq 47, first_x, 'the sheet\'s leftmost column lands at the rightmost destination column'
+  eq 0, first_rect.x, 'the sheet\'s leftmost column lands at the rightmost destination column'
+  eq 0, last_x, 'the sheet\'s rightmost column lands at the leftmost destination column'
+  eq 47, last_rect.x, 'the sheet\'s rightmost column lands at the leftmost destination column'
 end
 
 check 'a right-side face draws on the right and does not inset the text' do
@@ -2770,6 +2907,61 @@ check "Proceed With Movement also waits on a vehicle's forced route" do
   200.times { scene.update } # enough frames for the freq-4 route to finish
   eq 3, boat.x, 'the boat reached the end of its route'
   ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
+check "a forced route auto-runs to completion before an immediately-following Show Text opens (yado.tk)" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Force event 2 to walk right 3 tiles (freq 4, repeat off), with no Proceed
+  # With Movement -- yado.tk: hitting a Show Text implicitly auto-runs any
+  # still-pending forced route to completion first, the same as an explicit
+  # Proceed With Movement would, before the window actually opens.
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
+                    player: [5, 5])
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: still moving, message not yet opened
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+  ok !scene.instance_variable_get(:@message),
+     'Show Text waits for the pending forced route to finish first'
+
+  200.times { scene.update } # enough frames for the freq-4 route to finish
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok scene.instance_variable_get(:@message),
+     'the message window opens only once the route has completed'
+end
+
+check "a forced route auto-runs to completion before an immediately-following Wait starts counting down (yado.tk)" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::WAIT, [5]), # half a second, once the route lets it start
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
+                    player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: the Wait must not have started yet
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+
+  # Stop the instant the route lands, so the half-second Wait has had no
+  # chance yet to also elapse within the same budget.
+  300.times { scene.update; break if c.x == 3 }
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok !st.switches[1], 'the half-second Wait only starts once the route is done'
+
+  40.times { scene.update } # enough for the half-second Wait itself to elapse
+  ok st.switches[1],
+     'the interpreter resumed once the Wait (started after the route) elapsed'
 end
 
 check 'Tint Screen with a wait holds the interpreter until the tint settles' do
@@ -4227,6 +4419,40 @@ check 'Show Battle Animation plays: an animation sprite shows and a flash fires'
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
+# yado.tk: Show Battle Animation targeting a Vehicle position reads that
+# vehicle's real, currently-live x/y (the same source the Control Variables
+# vehicle-position fix reads), not the player's or the triggering event's own
+# tile. #animation_target_pixel had no branch for a vehicle's Move-Event-style
+# target id (10002-10004) at all, so it fell through to the generic "map event
+# by id" lookup, found none, and silently defaulted to the player's own
+# position.
+check "Show Battle Animation targeting a vehicle uses the vehicle's own live position" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # animation 8 (a drawable one in the fake db) targeting the boat (10002).
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10002, 1], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  # Placed well away from both the player (0,0) and the triggering event
+  # (2,2), so either one substituting for the boat would be caught.
+  st.vehicle(:boat).map_id = st.map_id
+  st.vehicle(:boat).x = 5
+  st.vehicle(:boat).y = 7
+  tile = RPG2k::Scene::Map::TILE
+  anim = nil
+  40.times do
+    scene.update
+    anim = scene.instance_variable_get(:@map_animation)
+    break if anim || st.switches[6]
+  end
+  ok anim, 'the animation actually started'
+  eq [5 * tile, 7 * tile], [anim[:tx], anim[:ty]],
+     "targeted the boat's own live position, not the player's or the event's"
+end
+
 # yado.tk: only one Battle Animation is ever on screen at once -- true of the
 # map-level Show Battle Animation command (11210) same as an in-battle one.
 # That only means anything if a *parallel process* can show one at all: before
@@ -4569,6 +4795,42 @@ check 'character_screen_position measures against the live camera' do
   eq 4 * tile + tile, ev[:y]
 
   eq nil, scene.character_screen_position(99), 'no such event on this map'
+end
+
+check "a vehicle's screen position now reads through the same operand a map event's does" do
+  # yado.tk: a vehicle's x/y/map id/facing can already be read via Control
+  # Variables from a different map than the one it currently occupies (see the
+  # vehicle_operand fix), but its *screen* x/y (attr 4/5) needs a live camera,
+  # which only the currently-loaded map's own scene has -- that half was left
+  # reading the same degenerate 0 an unresolvable map event gets. Ref 10002 is
+  # the boat, matching Scene::Map::MOVE_TARGET_BOAT.
+  scene = new_scene({}, player: [1, 2])
+  st = scene.instance_variable_get(:@state)
+  tile = RPG2k::Scene::Map::TILE
+  eq [0, 0], scene.camera_position, 'a map smaller than the view cannot scroll'
+
+  boat = st.vehicle(:boat)
+  eq nil, scene.character_screen_position(10002), 'an unplaced vehicle has nowhere on screen to report'
+
+  # Parked on this map, off to the side: reads exactly like a map event would
+  # at that same tile (the shared tile-centre/tile-bottom asymmetry included).
+  boat.map_id = st.map_id
+  boat.x = 3
+  boat.y = 4
+  parked = scene.character_screen_position(10002)
+  eq 3 * tile + tile / 2, parked[:x]
+  eq 4 * tile + tile, parked[:y]
+
+  boat.map_id = st.map_id + 1
+  eq nil, scene.character_screen_position(10002), "a vehicle parked on a different map isn't on this camera"
+  boat.map_id = st.map_id
+
+  # Boarded: it rides along with the hero's own interpolated pixel position,
+  # not wherever it was left parked.
+  st.boarded = :boat
+  ridden = scene.character_screen_position(10002)
+  hero = scene.character_screen_position(10001)
+  eq hero, ridden, 'a boarded vehicle reports the same screen position as the hero riding it'
 end
 
 check 'a scrolled camera shifts the screen position it reports' do
@@ -5725,6 +5987,40 @@ check 'Terminate Battle from a page ends the fight and resumes the event' do
   pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
   scene, _st = battle_scene_with_pages(pages)
   open_then_close_battle(scene)
+end
+
+# yado.tk / 01_shoshin's 011_siyou: "Picture -- none show on Menu/Battle
+# screens." The Menu half was already correct (Scene::Base#build_field_background
+# paints an opaque panel above the picture layer); the battle screen had no
+# equivalent -- the battle backdrop sits well below @picture_sprite's z, so a
+# picture shown before the encounter (or by a still-running Parallel Process)
+# used to draw straight over the battle UI.
+check 'pictures are hidden while the battle screen is up (yado.tk: none show on Menu/Battle screens)' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  sprite = scene.instance_variable_get(:@picture_sprite)
+  bmp = scene.instance_variable_get(:@picture_bmp)
+
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+    ok sprite.visible, 'the picture layer draws normally before any fight opens'
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  ok !sprite.visible, 'the picture layer is hidden the instant the battle screen is up'
+  bmp.clear_stretch_calls
+  scene.update
+  eq 0, bmp.stretch_calls.size, 'and stops compositing pictures entirely while the fight runs'
+
+  20.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui).nil?
+  end
+  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  ok sprite.visible, 'the picture layer reappears the instant the fight ends'
 end
 
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the

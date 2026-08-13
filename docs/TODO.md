@@ -1197,8 +1197,24 @@ The work below is roughly ordered by the critical path to a walkable game
   relocates to keep clear of the hero — top when the hero sits in the lower half
   of the screen, bottom otherwise — so talking to something at a map's bottom
   edge shows the text up top; the exact zone boundary is approximate pending a
-  wine diff, but the direction matches RPG_RT. The mirrored-face flag is a
-  later refinement
+  wine diff, but the direction matches RPG_RT. ✅ **The mirrored-face flag is
+  now honoured too.** Change Face Graphic's param2 (`cfg.face_flipped`) was
+  already read, stored on `Game::MessageConfig` and persisted through the
+  save, but `Scene::Map#draw_message_face` never looked at it — the flag was
+  wired end to end except for the one place that would have made it visible.
+  `RGSS::Bitmap#blt` has no flip primitive of its own (`mruby-rgss`'s own
+  `Sprite#mirror=` resorts to the same per-pixel software pass, for the same
+  reason), so a new `#build_face_cell` crops the selected 48x48 cell out of
+  the FaceSet sheet once, at message-open time, into a small dedicated
+  bitmap: a single blit normally, or 48 single-column blits in
+  source-column-reversed order when mirrored — done once per message rather
+  than re-deriving the crop rect from the raw sheet on every reveal frame,
+  since `#draw_message_face` runs every frame the typewriter is still
+  revealing. Covered by two new `scripts/rpg2k_scene_check.rb` checks (an
+  unmirrored face crops in a single blit from the right cell; a mirrored one
+  crops in 48, with the sheet's leftmost/rightmost source columns landing on
+  the destination's rightmost/leftmost columns), both confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
@@ -1721,6 +1737,27 @@ The work below is roughly ordered by the critical path to a walkable game
   excludes the second actor: the picker offers only the first, and moving
   the cursor has nowhere to go), confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **物理回避率アップ** (the item row's `raise_evasion`, field 26) — unread, so
+  a shield/armour/helmet/accessory bought specifically for its evasion bonus
+  was purely a stat stick against a normal attack. `ruby
+  scripts/rpg2k_field_audit.rb` against a freshly re-downloaded Nepheshel
+  flags it with 12 rows once `two_handed`/`actor_set`/the rest above stopped
+  crowding it out. EasyRPG's `Game_Actor::HasPhysicalEvasionUp` scans every
+  equipped **non-weapon** slot for the flag (`ForEachEquipment<false, true>`,
+  weapons excluded by item type, not slot index — the same rule
+  `#equip_bonus` already follows for stat sums, so a 二刀流 actor's second
+  weapon in the shield slot is correctly excluded too), and
+  `Algo::CalcNormalAttackToHit` subtracts a flat 25 from the already
+  agility-adjusted hit chance for such a target, right after the AGI term
+  and never reached at all when the attacker's own weapon is 必中 (that
+  branch already returns before either term). Ported as
+  `Game::Actor#physical_evasion_up?` and a new `Combatant#evasion_up` field
+  (`Battle.from_actor` wires it, an enemy Combatant leaves it nil/false —
+  monsters equip nothing) consulted by `Game::Battle#to_hit` in the same spot.
+  Covered by new `scripts/rpg2k_logic_check.rb` checks (the flat -25, the
+  0..100 floor, 必中 skipping the term entirely, weapon-slot exclusion, and
+  an end-to-end `Battle.from_actor` wiring check), confirmed to fail against
+  the pre-fix code before the fix.
 
 ### yado.tk quirks backlog
 
@@ -2049,18 +2086,43 @@ Everything below is unverified against the codebase.
 - **Move All / Force Complete Move** — blocks Event Content at that command
   until every targeted character's route finishes; same freeze conditions
   as Set Move Route above.
-- **Autorun** — blocks hero control (unlike Parallel Process) and blocks
-  other events too, unless "move other events during message wait" is on;
-  runs to completion even if its own appearance condition goes false mid-
-  run, *including across a map transfer*; only one Autorun engine-wide at a
-  time, and none can start while any non-parallel event is already running;
-  a self-targeted Set Move Route with a real movement command can let hero
-  control through during an Autorun. **Bug**: an "event touches hero"
-  event approaching via "Approach Hero" that simultaneously triggers a
-  Common Event Autorun can permanently freeze that map event (fixes: touch
-  it again, toggle its appearance switch, or issue any move-route command
-  at it — "Cancel Move Route" alone does not clear it). Related to the
+- **Autorun** — blocks hero control (unlike Parallel Process); runs to
+  completion even if its own appearance condition goes false mid-run,
+  *including across a map transfer*; only one Autorun engine-wide at a time,
+  and none can start while any non-parallel event is already running; a
+  self-targeted Set Move Route with a real movement command can let hero
+  control through during an Autorun. **Bug**: an "event touches hero" event
+  approaching via "Approach Hero" that simultaneously triggers a Common
+  Event Autorun can permanently freeze that map event (fixes: touch it
+  again, toggle its appearance switch, or issue any move-route command at it
+  — "Cancel Move Route" alone does not clear it). Related to the
   already-fixed priority-type/touch-trigger work but distinct and unverified.
+  ✅ **It also blocks other events too, unless "move other events during
+  message wait" is on — now wired up.** `Game::MessageConfig#continue_events`
+  (LCF field 44, `message_continue_events`) was already parsed from the
+  database/save and settable via the Message Options event command, but
+  `Scene::Map` never once read it: `#step_events` (autonomous move types and
+  forced/custom routes for every non-parallel map event) only ever ran from
+  `#update`'s not-busy branch, so a bystander event held still for the whole
+  time any message window stayed open regardless of this flag. Fixed by
+  calling `#step_events(allow_trigger: false)` a second way, from inside the
+  busy branch, whenever a new `#events_move_during_message?` (a message
+  window is open **and** `continue_events` is set) answers true — scoped to
+  an open message window specifically, not `#event_busy?` in general, so an
+  Autorun grinding through non-blocking commands with no message shown still
+  freezes the map either way, unaffected. `allow_trigger: false` (threaded
+  through `#step_event`/`#move_autonomous`) still lets a bystander walk,
+  turn and finish its route, but never lets one start a *new* event over the
+  player's — there is only one foreground `@interpreter`, already busy with
+  the open message, and RPG2000 never shows two message windows at once, so
+  an event-touch (trigger 2) bystander reaching the player's tile during
+  this window still stops adjacent to it without starting its own commands,
+  the same as the ordinary nothing-else-running case. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a bystander holds still with the
+  flag off, the existing default; a bystander keeps walking with the flag
+  on; an approaching trigger-2 bystander still never starts its own event
+  while the flag is on), two confirmed to fail against the pre-fix code
+  before the fix.
 - **Hero & party** — removing a hero preserves their equipment/level/EXP/HP/
   status; the field sprite is always party member 1's; only the front member
   draws on the field at all; a hero's name can't be copied to another via any
@@ -2080,8 +2142,9 @@ Everything below is unverified against the codebase.
   lowest/topmost. Covered by a new `scripts/rpg2k_scene_check.rb` check
   (two events sharing a tile, `Store Event ID` resolves to the higher one).
 - **Battle Animation** — only one can display at once (second supersedes);
-  each frame is exactly 1/30s; targeting a Vehicle position reads that
-  vehicle's live x/y even from a different map than the one shown.
+  each frame is exactly 1/30s; ✅ **targeting a Vehicle position now reads
+  that vehicle's live x/y even from a different map than the one shown** —
+  see the fuller writeup under "Full-site sweep" below.
 - **Material data** — an imported asset takes priority over a same-named RTP
   one; dropping files directly into asset folders bypasses size/transparent-
   colour-index validation.
@@ -2122,26 +2185,77 @@ Everything below is unverified against the codebase.
   `Scene::Map#follow_vehicle` already keeps a ridden vehicle's stored
   position live every step. A vehicle's map id operand returns its real
   value rather than the map-event quirk's hardcoded 0, the same way the
-  hero's own map id read already does. **Screen x/y (attr 4/5) are not
-  covered by this fix** — those still read 0 for a vehicle, the same
-  degenerate answer an unresolvable map-event screen position already gets,
-  since resolving them would need a scene-side camera hook this fix
-  deliberately avoids depending on. Covered by a new
+  hero's own map id read already does. Covered by a new
   `scripts/rpg2k_logic_check.rb` check (a boat and an airship's map id/x/y/
   facing read correctly from an interpreter positioned on an unrelated map;
   an unplaced vehicle reads its (0,0) default), confirmed to fail against
-  the pre-fix code before the fix.
+  the pre-fix code before the fix. ✅ **Screen x/y (attr 4/5) are now covered
+  too** — the one deliberately-scoped-out half of the fix above, since it
+  needs a live camera that only the currently-loaded map's own scene has.
+  `Scene::Map#character_screen_position` (the method
+  `Interpreter#screen_operand` calls through the `@map_info` hook) only
+  recognised the hero (10001) and map-event ids, so a vehicle ref
+  (10002-10004) fell through to its "nothing to place" branch and read 0
+  the same way an unresolvable map event does — not the vehicle's actual
+  on-screen position. A new `#vehicle_pixel(type)` reads `Game::State`'s
+  `Game::Vehicle` and returns the ridden vehicle's own interpolated pixel
+  position (`#player_pixel`, so it reads in lockstep with the hero mid-step)
+  or a parked one's tile position — the exact same rule `#draw_vehicles`
+  already renders a vehicle's sprite by — and nil when the vehicle isn't
+  placed on the currently loaded map at all (unplaced, or parked on a
+  different one), which `#character_screen_position` treats the same as an
+  unresolvable map event: falls back to 0 one level up in
+  `#screen_operand`. `#character_screen_position` dispatches to it for refs
+  10002-10004 before falling through to the map-event lookup, reusing the
+  same `MOVE_TARGET_BOAT`/`MOVE_TARGET_AIRSHIP` range Set Move Route's own
+  vehicle-target resolution already uses. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (an unplaced boat reads nil; a parked
+  one reads the same tile-centre/tile-bottom position a map event at that
+  tile would; one parked on a different map reads nil again; a boarded one
+  reports the identical screen position the hero riding it does), confirmed
+  to fail against the pre-fix code before the fix.
 - **Battle Event** — separate command set from Map/Common events entirely;
-  no Pictures on the battle screen; Parallel Process can't run in battle;
-  no further pages run once battle ends.
-- **Picture** — none show on Menu/Battle screens; halted entirely while a text
-  window is up; **changing maps clears all Pictures — except via Teleport
-  or Escape (skill/item), which don't clear them**; semi-transparent
-  (1-99%) opacity costs noticeably more than fully opaque/transparent;
-  Erase Picture is instant (no fade) — a gradual fade needs Move Picture to
-  the same spot at 0% opacity instead. (50 slots with the higher id always
-  drawing on top, independent of show order, is confirmed already correct —
-  see below.)
+  ✅ no Pictures on the battle screen (see the fuller writeup under the
+  **Picture** bullet directly below — the same fix); Parallel Process can't
+  run in battle; no further pages run once battle ends.
+- **Picture** — ✅ **none show on Menu/Battle screens — the Menu half was
+  already correct, the Battle half was a real gap, now fixed.**
+  `Scene::Base#build_field_background` already paints an opaque panel above
+  the picture layer (`@picture_sprite`, z 250) the instant `Scene::Menu`
+  opens, and `Scene::Map#update` — and with it `#render`, the one place
+  `@picture_sprite` is drawn — simply is not called while a menu scene sits
+  on top of it, so the picture layer never gets a chance to draw over the
+  menu in the first place. The battle screen has no equivalent scene push:
+  RPG2000's front-view battle runs inline on the very same `Scene::Map`,
+  gated only by `@battle_ui`, so `#render` kept calling `#draw_pictures`
+  every frame regardless — and the battle backdrop
+  (`@battle_ui[:back_sprite]`) sits at a much lower z than the picture
+  layer, so nothing painted over it. A picture shown before the encounter
+  (a field HUD element, say) or by a Parallel Process still running during
+  the fight (per the "parallel processes were paused too broadly" fix
+  above, one keeps ticking through a battle-adjacent message window, though
+  not through the battle itself — `#parallels_paused?` does gate on
+  `@battle_ui`) drew straight over the battle UI. Fixed by gating
+  `#render`'s picture step on `@battle_ui`: `@picture_sprite.visible = false`
+  and `#draw_pictures` is skipped entirely for as long as a fight is running
+  (not merely hidden with a stale composited frame underneath), and the
+  sprite un-hides and resumes drawing on the very first frame after
+  `@battle_ui` clears. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (a shown picture draws normally before the encounter, is hidden and
+  stops compositing the instant the battle screen is up, and reappears the
+  instant the fight ends), confirmed to fail against the pre-fix code
+  before the fix. Still open: halted entirely while a text window is up
+  (separate from the battle/menu case — a message window is not a scene
+  push, so a different mechanism would be needed, and this project's own
+  "Picture commands... suppressed while a message window is open" fix above
+  only stops new Show/Move/Erase Picture *commands* from taking effect, not
+  an already-shown picture's own visibility); **changing maps clears all
+  Pictures — except via Teleport or Escape (skill/item), which don't clear
+  them**; semi-transparent (1-99%) opacity costs noticeably more than fully
+  opaque/transparent; Erase Picture is instant (no fade) — a gradual fade
+  needs Move Picture to the same spot at 0% opacity instead. (50 slots with
+  the higher id always drawing on top, independent of show order, is
+  confirmed already correct — see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
   cases: (a) ✅ the event has already logically started moving into its next
   tile (hit-test uses the target tile, even if the sprite still visually
@@ -2280,7 +2394,8 @@ not yet verified:
   switches/variables capping at 5000 (configurable in the editor, so this may
   be a non-issue rather than a gap — nothing here enforces a count ceiling on
   how many distinct ids get used, which is a different question from a single
-  variable's *value* range, now fixed); picture id range 1-50.
+  variable's *value* range, now fixed). Picture id range 1-50 is now fixed
+  too, see the "Pictures" bullet under "Full-site sweep" below.
 - **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
@@ -2328,7 +2443,45 @@ not yet verified:
 - An Autorun/parallel event whose appearance condition goes false
   mid-execution **keeps running to completion** rather than aborting —
   confirmed by many independent sources, including across a map transfer
-  for Autorun specifically.
+  for Autorun specifically. ✅ **The map event Parallel Process half is now
+  fixed too.** A foreground Autorun's own command list already kept
+  running unaffected regardless of `@events` (it steps its own captured
+  `commands` array via `@interpreter`, independent of whether its owning
+  event still has a live `Game::Character`), but a **map event's own
+  Parallel Process** was a real, reachable gap: `#build_events`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) already skips an event outright once
+  no page's conditions are satisfied — dropping it from `@events`/
+  `@event_tiles` entirely, the same "no `Game::Character` built at all"
+  fact already recorded for `event_id_at` above — but
+  `#build_parallels`'s bystander-preservation pass (`preserve_map_events:`,
+  see "A Map Event's own Parallel Process no longer restarts..." just
+  below) only ever looked for a still-running interpreter among the events
+  that survived into the freshly-rebuilt `@events`, so one whose *own*
+  page just stopped matching (e.g. its own script turning off its one
+  gating switch) fell out of `@parallels` on the very next page-reselection
+  sweep and was silently garbage-collected mid-script, instead of finishing
+  out its remaining commands the way this bullet's own claim describes.
+  Fixed by carrying forward any bystander-preserved entry whose event id
+  did *not* end up live this rebuild, under its now-stale event/character
+  reference (unreachable from `@events`/`@event_tiles`, so harmless) — it
+  keeps ticking exactly like an ordinary Parallel Process, indefinitely,
+  until something else stops it (an Erase Event still finds and removes it
+  by object identity) or its conditions later pick the very same page
+  again, in which case the existing same-page reuse check just reattaches
+  this same interpreter rather than starting a fresh one. Whether RPG_RT
+  lets such a hidden process loop forever versus refusing to start a new
+  lap once its script naturally reaches the end is not resolved by this
+  fix — only "does not get torn down mid-script" is confirmed by the
+  source material, so the simpler, more literal reading (treat it exactly
+  like a live one) is what's implemented; only scoped to `preserve_map_events:`
+  rebuilds (an in-place, same-map page reselection), matching every other
+  bystander-preservation rule in `#build_parallels` — a genuine map change
+  still discards it, unaffected. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a single-page event's own Parallel
+  Process runs a marker, waits, turns off its own gating switch — making
+  the event vanish from `@events` — waits again, then runs a second marker,
+  confirmed to still fire once the event is gone), confirmed to fail
+  against the pre-fix code before the fix.
 - A **Common Event's** parallel-process state (its interpreter position)
   **resumes exactly where it left off** when re-enabled, indefinitely,
   persisting in every future save even after the condition goes false — ✅
@@ -2402,9 +2555,48 @@ not yet verified:
 - Move-route commands are asynchronous/fire-and-forget by default: the
   interpreter advances immediately while the character keeps sliding in
   the background; only "Proceed With Movement"/"Run All Designated Moves"
-  blocks until every pending route finishes. An implicit auto-run also
-  happens whenever the event's own command list ends or hits a
-  Wait/Show-Text — "Run All" is only needed to force it mid-list.
+  blocks until every pending route finishes. ✅ **An implicit auto-run now
+  also happens whenever the event hits a Wait or a Show Text** — "Run All"
+  is only needed to force it mid-list otherwise. This was a genuine gap:
+  `Game::Interpreter#do_show_message`/`#do_wait` (`mruby-rpg2k/mrblib/
+  interpreter.rb`) set their `:message`/`:wait` wait-kind unconditionally,
+  and `Scene::Map#drive_event`'s dispatch for both
+  (`mruby-rpg2k/mrblib/scene/map.rb`) opened the message window / started
+  the wait countdown immediately, with no awareness of a still-running
+  forced route (set by an earlier fire-and-forget Move Event in the same
+  script) at all — since a forced route only ever advances via
+  `#step_events` (skipped whenever `#event_busy?` is true, which it always
+  is while the triggering event's own interpreter is still running or
+  waiting) or the explicit `:movement` wait's `#step_forced_movement`, a
+  route left pending going into a Wait/Show Text sat completely frozen,
+  with zero progress, until the *whole* event's command list finished —
+  not "auto-running to completion" the way an inserted Proceed With
+  Movement would. Fixed by routing both branches through the same
+  `#step_forced_movement`/`#forced_movement_done?` machinery
+  `:movement` already uses: `:message` now only calls `#open_message` once
+  `#step_forced_movement` reports every forced route (player, every map
+  event, every vehicle — the same map-wide scope Proceed With Movement
+  itself already covers) done, driving it one frame further otherwise; `:wait`
+  gates `#drive_wait` the same way, so the wait timer does not even start
+  counting down until then. The "list ends" half of the original claim
+  needed no change: once the triggering event's own command list is
+  genuinely exhausted, `#event_busy?` already goes false on its own and
+  `#step_events` resumes driving the route at its normal pace — the same
+  outcome Proceed With Movement produces, just via the ordinary per-frame
+  path instead of the `:movement` wait, so nothing was actually broken
+  there. **Still open**: a fire-and-forget route sitting between two
+  *non-blocking* commands (e.g. a Move Event followed by several Control
+  Variables commands with no Wait/Show Text/Proceed before the list ends)
+  genuinely does not animate frame-by-frame while those commands run — it
+  stays frozen until one of the three trigger points above is reached,
+  same as before this fix; true concurrent background sliding while
+  arbitrary non-blocking commands keep executing is a larger,
+  unaddressed change. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a 3-tile forced route on a bystander event, immediately followed
+  by a Show Text with no Proceed With Movement, only opens the window once
+  the route lands; the same setup with a Wait in place of the Show Text
+  only starts that Wait's countdown once the route lands), both confirmed
+  to fail against the pre-fix code before the fix.
 - Moving onto an impassable tile without "Ignore If Can't Move" **hangs**
   at that command until the obstruction clears (not a skip) — a full
   control-lock freeze if the hero is the target. The same freeze class
@@ -2627,7 +2819,28 @@ not yet verified:
   `scripts/rpg2k_scene_check.rb` check (two pictures shown out of id order,
   asserting the composite draws the lower id first). Still open: Battle
   Animation drawing above the picture layer specifically, and "map/
-  characters always draw below all pictures" as its own assertion.
+  characters always draw below all pictures" as its own assertion. (Not the
+  same question as "no Pictures on the battle screen" — ✅ fixed, see the
+  **Picture** bullet under "Untriaged backlog, from `2k/01_shoshin/
+  011_siyou/`" above — which is about the picture layer being hidden
+  outright while a fight is running, not about its z-order relative to the
+  battle animation sprite while both are visible on the map.)
+- ✅ **Show Picture now no-ops on a picture id outside 1..50** — the "Still
+  open: picture id range 1-50" gap left by the numeric-constants bullet
+  above. RPG2000's editor caps the Show Picture id field at 50 (a
+  fixed-size internal slot array, the same fact the "50 concurrent picture
+  slots" confirmation just above already relies on), so an id past it is
+  not a real picture and RPG_RT does nothing with it.
+  `Game::State#show_picture` (`mruby-rpg2k/mrblib/game.rb`) only ever
+  rejected `id <= 0`, so an out-of-range high id was tracked, drawn and
+  addressable by Move/Erase Picture like any other. Fixed with a new
+  `Game::State::MAX_PICTURE_ID = 50` and an upper bound alongside the
+  existing `id > 0` check on `#show_picture`; `#move_picture`/
+  `#erase_picture` need no matching guard of their own, since neither can
+  ever find such an id shown in the first place once `#show_picture`
+  refuses to create one. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (id 51 is silently dropped; the boundary id 50 still works),
+  confirmed to fail against the pre-fix code before the fix.
 - Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
   (multiply corroborated). ✅ **The Teleport/Escape skill/item half of this
@@ -3105,6 +3318,26 @@ not yet verified:
   animation actually renders — sprite shown, screen flash fired — for a
   parallel-process request, not just a foreground one), both confirmed to
   fail against the pre-fix code before the fix.
+- ✅ **Show Battle Animation (11210) targeting a vehicle now plays over that
+  vehicle's own live position**, instead of silently defaulting to the
+  player's. `Scene::Map#animation_target_pixel` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) resolved a Move-Event-style target id to the player, "this
+  event," or a map event by id — but had no case at all for a vehicle slot
+  (10002-10004, boat/ship/airship): a vehicle id never matches a real map
+  event id, so it fell straight through to the "map event by id, defaulting
+  to the player" branch and silently drew the animation over the player
+  instead. Fixed with a new `#vehicle_pixel`, reading the target `Game::
+  Vehicle`'s live `x`/`y` straight off `Game::State` — the same source
+  `#event_operand`'s Control Variables "character position" vehicle fix
+  reads (see the "Vehicles" bullet under "Party / Actor / Vehicle" above) —
+  which needs no scene-side camera hook and, matching that fix's own
+  quirk, does not check whether the vehicle is actually on the map this
+  scene has loaded before reading its position: a vehicle target reads its
+  real x/y even when a different map is on screen, exactly as yado.tk
+  describes. Covered by a new `scripts/rpg2k_scene_check.rb` check (a Show
+  Battle Animation targeting the boat lands at the boat's own tile, not the
+  player's or the triggering event's), confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a
@@ -3384,8 +3617,26 @@ level-up).
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed
 above are repeated here)
-- Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
-  but free if placed in a shop's own buy list.
+- **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
+  but free if placed in a shop's own buy list — confirmed already
+  correct**, all three facts, no code change needed. `Game::Shop#sell_price`
+  (`mruby-rpg2k/mrblib/game.rb`) is `price(id) / 2`, plain Integer division
+  which truncates toward zero the same as `floor` for the non-negative
+  prices a database ever stores. `#sellable?` requires `price(id) > 0`
+  (alongside actually holding the item), so a price-0 item — RPG2000's own
+  way of marking a key item unsellable — can never be sold back regardless
+  of how it entered the party's bag. That price-0 exemption is scoped to
+  *selling*: `#max_buy` short-circuits to the 99-item stack cap alone
+  (`return room if cost <= 0`) rather than dividing the affordable count by
+  a zero price, so a shop that deliberately stocks a price-0 good in its
+  own buy list still lets the party take it for free, matching the second
+  half of the claim exactly. Already covered by existing
+  `scripts/rpg2k_logic_check.rb` checks predating this entry — `'Shop sell
+  refuses unowned, price-0 (key), or in a buy-only shop'`, `'Shop max_buy of
+  a free item is limited only by the cap'` (its own comment: "a price-0
+  good does not divide by zero") and `'Shop sellable_items lists only held,
+  priced goods in id order'` — none of them vacuous; each asserts a concrete
+  gold/item-count/list outcome.
 - State resistance rank A-E only gates **susceptibility** — the actual
   proc chance is entirely the *skill's own* occurrence-rate field (0%
   occurrence never applies regardless of rank) — **confirmed already
@@ -3486,10 +3737,33 @@ above are repeated here)
   value-increase / value-decrease / low-HP-MP warning), and a State's own
   configured display-color field is a pointer into that **same** shared
   palette.
-- Call Event invoked from an Auto-Start parent runs the called content
-  under **Auto-Start semantics** (blocks input) even if the called
-  common event's own configured trigger is Parallel Process; Call Event
-  always **bypasses** the target's own condition-switch state entirely.
+- **Call Event invoked from an Auto-Start parent runs the called content
+  under Auto-Start semantics (blocks input) even if the called common
+  event's own configured trigger is Parallel Process; Call Event always
+  bypasses the target's own condition-switch state entirely — confirmed
+  already correct**, both halves, no code change needed.
+  `Game::Interpreter#do_call_event`/`#resolve_call`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) never reads a trigger or a gate
+  switch at all — it just splices the target's raw command list onto the
+  *calling* interpreter's own `@call_stack` and keeps running it inline, so
+  whatever is already true of the caller (an Auto-Start's foreground,
+  input-blocking execution included) mechanically stays true for the whole
+  call, with no separate scheduling path a Parallel Process's trigger could
+  route through instead. The condition-switch bypass is even more
+  structural: `Scene::Map#build_resolver` hands the Call Event resolver a
+  plain `id => commands` hash built from `@common`
+  (`common[c[:id]] = c[:commands]`), discarding each common event's
+  `:trigger`/`:need_flag`/`:switch_id` in that same line — the resolver
+  `do_call_event` reads from has no gate to consult in the first place, so a
+  Call Event cannot observe the callee's switch state even if a future
+  change tried to add such a check without separately plumbing the gate
+  through this hash. `interpreter.rb` has no trigger/switch-related constant
+  or read anywhere, corroborating the same conclusion from the other
+  direction. Covered by a new `scripts/rpg2k_scene_check.rb` check (an
+  Auto-Start event Call-Events a Parallel-Process common event whose gate
+  switch is off for the whole run; its content still executes), confirmed to
+  fail when `build_resolver` is temporarily made to honour the gate switch,
+  restored before finalizing since nothing here needed to change.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for
@@ -3642,15 +3916,41 @@ codebase yet):
   the `@2000_battle_bot` Twitter account — worth a dedicated read-through
   once battle-system work resumes rather than transcribing it piecemeal
   now. A few structurally-significant points worth flagging early so
-  they're not missed later: displayed ability-value changes clamp to
+  they're not missed later: ✅ **displayed ability-value changes clamp to
   1–999 but the *underlying* unclamped total is still tracked internally
-  and can un-clamp back into view after a later change (e.g. lower Attack
+  and can un-clamp back into view after a later change** (e.g. lower Attack
   by more than the display can show, then raise it partway back — the
   displayed value stays pinned at its old clamp until the raise actually
-  pushes the real total back above it); a special skill's ability-value
-  *decrease* rounds up on ÷2, a status effect's own halving rounds *down*;
-  dual-wielding's off-hand attack animation is offset by a few frames from
-  the main hand's. ✅ **"Party wipe" for game-over purposes is now "every
+  pushes the real total back above it) — now fixed, see below; a special
+  skill's ability-value *decrease* rounds up on ÷2, a status effect's own
+  halving rounds *down*; dual-wielding's off-hand attack animation is
+  offset by a few frames from the main hand's. **Change Parameters' hidden
+  unclamped total is now tracked.** `Game::Actor#change_param`
+  (`mruby-rpg2k/mrblib/game.rb`) clamped and overwrote `@base[type]` on
+  every call, permanently discarding how far past the 1..999 (1..9999 for
+  max HP/MP) limit the real total had gone — lowering Attack by 2000 off a
+  base of 3, then raising it back by 1000, landed at the clamp ceiling
+  (999) instead of staying floored, even though the real total
+  (3 − 2000 + 1000 = −997) is still deep underwater. Fixed with a parallel
+  `@base_raw` shadow that `#change_param` accumulates the signed delta on
+  before clamping the result into `@base` — the value `#recompute_stats`
+  and every other reader still uses, so nothing outside `#change_param`
+  itself changed. `@base_raw` is reset alongside every wholesale
+  replacement of `@base` (`#set_level`, and all three branches of
+  `#change_class`'s param-mode handling), since a level-up or class change
+  establishes a fresh baseline rather than carrying stale drift across it
+  — the same reasoning `#set_level`'s own existing HP/MP re-clamp already
+  follows for vitals. This build has no existing notion of a "raw" vs.
+  "effective" stat elsewhere, so `@base_raw` is new state, not a rename;
+  save/load persistence of `@base` itself is a separate, pre-existing gap
+  (`Game::Party#load_state` re-derives `@base` purely from saved EXP via
+  `#set_level`, so a live Change Parameters adjustment — clamped or not —
+  does not currently survive a save at all) left untouched here. Covered
+  by a new `scripts/rpg2k_logic_check.rb` check (a large drop floors the
+  stat; a partial raise that doesn't cross back over 1 stays floored; a
+  further raise that does cross back over unclamps to the real total; an
+  ordinary never-clamped sequence is unaffected), confirmed to fail against
+  the pre-fix code before the fix. ✅ **"Party wipe" for game-over purposes is now "every
   member is both unable to act and does not recover naturally," not
   literally "every member's HP is 0"** — why Stone status can wipe a party
   without zeroing anyone's HP. `Game::Battle#alive?` (`mruby-rpg2k/mrblib/
@@ -4345,11 +4645,13 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `glyf`) and is reported rather than half-parsed into garbage, as are a
         malformed WOFF and a font stb_truetype rejects — silent blank text is
         exactly what let this hide.
-      - 🚧 Remaining for fonts: no CI test covers the unpacker, because it
-        needs a redistributable font and the bed ships none. Verified locally
-        instead, against two real TTFs repacked as WOFF: the unpacked sfnt comes
-        back byte-for-byte the size of the original, stb_truetype accepts it, the
-        vertical metrics and every A-Z advance/lsb match the original exactly,
-        and a glyph rasterises with real ink. Authoring a tiny TTF we own (the
-        way the bed's PNGs are authored) would let the smoke render text and
-        close this.
+      - ✅ CI coverage for the unpacker: it needed a redistributable font and the
+        bed ships none, and its result sits behind `game_font()`'s
+        process-lifetime cache, invisible to a font dropped in after another
+        test has already drawn text. `MV::Font.unpack_woff`/`smoke_test`
+        (test-only mrb bindings) reach `woff_to_sfnt` and a fresh
+        `stb_truetype` rasterisation directly; `mz_test.rb` hand-authors the
+        smallest font that can prove the pipeline (one glyph mapped from
+        `'A'`, the way the MV image fixtures are built) and checks the
+        unpacked sfnt comes back byte-for-byte identical and rasterises the
+        same real ink as the bare original.
