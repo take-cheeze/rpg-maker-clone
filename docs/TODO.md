@@ -334,6 +334,26 @@ The work below is roughly ordered by the critical path to a walkable game
   Change Event Location repositioning a vehicle; Proceed With Movement
   waiting on a vehicle route; the Change Graphic override reverting on
   Transfer Player), each confirmed to fail against the pre-fix code.
+  ✅ **A ridden vehicle now walk-cycles with the party**, closing half of the
+  walk-cycle gap the paragraph above flagged. `#draw_vehicle_frame` always
+  passed pattern `1` (the standing frame) to `Game::CharSet.frame_rect`, so a
+  sailing boat's paddle never moved even though its sprite already tracked
+  the party's own pixel position frame for frame (`draw_vehicles`' `ridden ?
+  px : v.x * TILE`) — the position was smooth, the pose was frozen. A boarded
+  vehicle rides the party's own in-tile slide exactly, so the pattern it
+  should show is the identical one the hero's own sprite would have, were it
+  not hidden underneath the vehicle's: `#player_walk_pattern` (factored out
+  of `#draw_player_frame`'s own `@moving ? WALK_PATTERNS[...] : 1`
+  expression) is now read by `#draw_vehicle_frame` too, keyed off whether the
+  vehicle being drawn is the ridden one. An unridden vehicle is untouched —
+  it snaps tile to tile with no in-tile progress to animate, and the
+  paragraph above's other follow-ups (its own smooth interpolation, hero/
+  event collision, and the rest) remain open. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (boarding a boat and sailing it walks
+  the vehicle sprite through the same non-standing pattern index the hero
+  would show, while an unridden vehicle placed on the map keeps its standing
+  pose), confirmed to fail against the pre-fix code (a `NoMethodError` for
+  the not-yet-extracted `#player_walk_pattern`) before the fix.
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
