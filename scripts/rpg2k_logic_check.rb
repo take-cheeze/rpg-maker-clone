@@ -1416,6 +1416,46 @@ check 'Jump to Label works from any position in the block, not just the start' d
   eq 1, st.variables[2], 'and landed on the label to run what follows it'
 end
 
+check 'Break Loop jumps to the very next End Loop by list position, not the enclosing one' do
+  # Simple, common case: nothing but the enclosing loop's own End Loop sits
+  # between the Break Loop and it, so an indent-blind forward scan finds the
+  # same command an indent-aware scan would -- this must keep working.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::LOOP, [], indent: 0),                          # 0
+    FakeCmd.new(IC::BREAK_LOOP, [], indent: 1),                    # 1
+    FakeCmd.new(IC::END_LOOP, [], indent: 0),                      # 2
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 0),  # 3: after the loop
+  ])
+  it.update
+  eq 1, st.variables[1], 'landed right after the enclosing End Loop, same as before'
+end
+
+check "Break Loop reproduces RPG_RT's own nesting bug against a closer, unrelated End Loop" do
+  # viprpg-dev wiki (200X共通/基本的な仕様, バグ) worked example: a Break Loop
+  # followed by a second, more-deeply-nested, *empty* Loop/End Loop pair
+  # before the enclosing loop's own End Loop. Real RPG_RT's scan does not
+  # care about nesting depth at all, so it hits the inner Loop's End Loop
+  # first, falls into whatever sits between it and the outer End Loop (here,
+  # `variables[1] = 1`), and then loops forever via the outer End Loop --
+  # the command after the outer loop (`variables[2] = 1`) is never reached.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::LOOP, [], indent: 0),                          # 0: outer loop
+    FakeCmd.new(IC::BREAK_LOOP, [], indent: 1),                    # 1
+    FakeCmd.new(IC::LOOP, [], indent: 1),                          # 2: inner loop (empty body)
+    FakeCmd.new(IC::END_LOOP, [], indent: 1),                      # 3: inner loop's own End Loop
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),  # 4: reached every lap
+    FakeCmd.new(IC::END_LOOP, [], indent: 0),                      # 5: outer loop's own End Loop
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 0, 1], indent: 0),  # 6: after the outer loop -- must never run
+  ])
+  it.update # bounded by MAX_STEPS; the reproduced bug loops forever otherwise
+  eq 1, st.variables[1], 'fell into the inner End Loop and ran what follows it'
+  eq 0, st.variables[2], 'never escaped to the command after the outer loop'
+end
+
 check 'Call Event with no resolver set is a safe no-op' do
   st = new_state
   it = Game::Interpreter.new(st)
