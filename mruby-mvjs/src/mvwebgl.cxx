@@ -57,6 +57,12 @@ namespace {
 // JS by integer handle (index + 1; 0 is the null handle), mirroring g_canvases.
 std::vector<mvgl::Context*> g_gl;
 
+// UNPACK_PREMULTIPLY_ALPHA_WEBGL's current value per context (see
+// js_gl_pixel_storei and premultiply_rgba below) -- WebGL pixel-store state
+// with no real GL equivalent to hold it in, so it is tracked here instead.
+// Parallel to g_gl (same handle, grown in lockstep in js_gl_create).
+std::vector<bool> g_premultiply;
+
 // Handle -> context, making it (and its FBO) current on the calling thread.
 // Tracks the last-bound handle so the common single-context case skips the
 // redundant eglMakeCurrent. Returns nullptr for an unknown handle.
@@ -164,6 +170,7 @@ JSValue js_gl_create(JSContext* ctx,
   if (!c)
     return JS_NewInt32(ctx, 0);
   g_gl.push_back(c);
+  g_premultiply.push_back(false);
   g_current = static_cast<int>(g_gl.size());
   return JS_NewInt32(ctx, g_current);
 }
@@ -378,15 +385,31 @@ JSValue js_gl_front_face(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// WebGL's own UNPACK_FLIP_Y_WEBGL enum value (see kWebGLPreamble's `K`); no
+// real GL equivalent, tracked below instead of forwarded.
+constexpr GLenum kUnpackPremultiplyAlphaWebGL = 0x9241;
+
 // WebGL's own UNPACK_* pixel-store parameters (FLIP_Y, PREMULTIPLY_ALPHA,
-// COLORSPACE_CONVERSION; 0x9240..0x9243) are not real GL enums and would raise
-// GL_INVALID_ENUM. Swallow those; forward the real ones
-// (UNPACK/PACK_ALIGNMENT). Honouring FLIP_Y for texture uploads is M6.3c.
+// COLORSPACE_CONVERSION; 0x9240..0x9245) are not real GL enums and would
+// raise GL_INVALID_ENUM if forwarded, so real ones (UNPACK/PACK_ALIGNMENT)
+// aside, this only swallows them -- except PREMULTIPLY_ALPHA, which PIXI
+// actually sets on every ordinary texture upload (BaseTexture's default
+// alphaMode premultiplies on upload) and is now honoured by premultiplying
+// pixels before the real upload call (see premultiply_rgba and its callers).
+// FLIP_Y stays a pure swallow: nothing in a stock PIXI v5 build ever sets it
+// true (only an explicit `false` reset), so there is nothing to reproduce yet.
 JSValue js_gl_pixel_storei(JSContext* ctx,
                            JSValueConst,
                            int argc,
                            JSValueConst* argv) {
   const GLenum pname = static_cast<GLenum>(gi(ctx, argc, argv, 1));
+  if (pname == kUnpackPremultiplyAlphaWebGL) {
+    const int handle = gi(ctx, argc, argv, 0);
+    if (handle >= 1 && static_cast<size_t>(handle) <= g_premultiply.size())
+      g_premultiply[static_cast<size_t>(handle) - 1] =
+          gi(ctx, argc, argv, 2) != 0;
+    return JS_UNDEFINED;
+  }
   if (pname >= 0x9240 && pname <= 0x9245)
     return JS_UNDEFINED;
   if (bind(gi(ctx, argc, argv, 0)))
@@ -887,6 +910,37 @@ JSValue js_gl_uniform_matrix(JSContext* ctx,
 
 // -- textures ----------------------------------------------------------------
 
+// Premultiply RGBA8 pixel data's colour channels by their own alpha (a/255),
+// matching what UNPACK_PREMULTIPLY_ALPHA_WEBGL does during a real browser's
+// texture upload. GLES has no equivalent pixel-store flag (js_gl_pixel_storei
+// above), so PIXI telling the (real) GL to premultiply on upload -- which it
+// does for every ordinary texture, since BaseTexture's default alphaMode is
+// UNPACK (= PREMULTIPLY_ON_UPLOAD) -- silently did nothing: textures uploaded
+// with straight alpha, then blended by PIXI's NORMAL blend mode
+// ([ONE, ONE_MINUS_SRC_ALPHA], which assumes premultiplied input) came out
+// over-bright on every partially-transparent pixel -- window corners, any
+// anti-aliased sprite edge. `src` is left untouched (it may be a canvas' own
+// live pixel buffer, read again later by game code); the premultiplied copy
+// goes into `out`.
+void premultiply_rgba(const uint8_t* src,
+                      size_t pixel_count,
+                      std::vector<uint8_t>& out) {
+  out.assign(src, src + pixel_count * 4);
+  for (size_t i = 0; i < pixel_count; ++i) {
+    uint8_t* p = &out[i * 4];
+    const unsigned a = p[3];
+    p[0] = static_cast<uint8_t>(p[0] * a / 255);
+    p[1] = static_cast<uint8_t>(p[1] * a / 255);
+    p[2] = static_cast<uint8_t>(p[2] * a / 255);
+  }
+}
+
+// Whether context `handle` currently has UNPACK_PREMULTIPLY_ALPHA_WEBGL set.
+bool premultiply_enabled(int handle) {
+  return handle >= 1 && static_cast<size_t>(handle) <= g_premultiply.size() &&
+         g_premultiply[static_cast<size_t>(handle) - 1];
+}
+
 JSValue js_gl_create_texture(JSContext* ctx,
                              JSValueConst,
                              int argc,
@@ -925,7 +979,8 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
                            JSValueConst,
                            int argc,
                            JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   const GLenum target = static_cast<GLenum>(gi(ctx, argc, argv, 1));
   const GLint level = gi(ctx, argc, argv, 2);
@@ -939,6 +994,12 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
     JSValue hold;
     size_t len = 0;
     uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
+    std::vector<uint8_t> premul;
+    if (p && format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
+        premultiply_enabled(handle)) {
+      premultiply_rgba(p, len / 4, premul);
+      p = premul.data();
+    }
     glTexImage2D(target, level, internalformat, w, h, border, format, type, p);
     JS_FreeValue(ctx, hold);
   } else {
@@ -949,21 +1010,29 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
 }
 
 // texImage2D from a 2D canvas source: upload the canvas' RGBA buffer. The
-// source overload PIXI uses to turn a rendered canvas into a texture. (Image
-// elements and the UNPACK_FLIP_Y convention come in M6.3c.)
+// source overload PIXI uses to turn a rendered canvas into a texture. (The
+// UNPACK_FLIP_Y convention stays open -- see js_gl_pixel_storei's comment.)
 JSValue js_gl_tex_image_2d_canvas(JSContext* ctx,
                                   JSValueConst,
                                   int argc,
                                   JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   int cw = 0, ch = 0;
   const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 6), &cw, &ch);
-  if (px)
+  if (px) {
+    std::vector<uint8_t> premul;
+    if (premultiply_enabled(handle)) {
+      premultiply_rgba(px, static_cast<size_t>(cw) * static_cast<size_t>(ch),
+                       premul);
+      px = premul.data();
+    }
     glTexImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
                  gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3), cw, ch, 0,
                  static_cast<GLenum>(gi(ctx, argc, argv, 4)),
                  static_cast<GLenum>(gi(ctx, argc, argv, 5)), px);
+  }
   return JS_UNDEFINED;
 }
 
@@ -976,19 +1045,28 @@ JSValue js_gl_tex_sub_image_2d(JSContext* ctx,
                                JSValueConst,
                                int argc,
                                JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   if (argc <= 9 || JS_IsNull(argv[9]) || JS_IsUndefined(argv[9]))
     return JS_UNDEFINED;
   JSValue hold;
   size_t len = 0;
   uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
-  if (p)
-    glTexSubImage2D(
-        static_cast<GLenum>(gi(ctx, argc, argv, 1)), gi(ctx, argc, argv, 2),
-        gi(ctx, argc, argv, 3), gi(ctx, argc, argv, 4), gi(ctx, argc, argv, 5),
-        gi(ctx, argc, argv, 6), static_cast<GLenum>(gi(ctx, argc, argv, 7)),
-        static_cast<GLenum>(gi(ctx, argc, argv, 8)), p);
+  if (p) {
+    const GLenum format = static_cast<GLenum>(gi(ctx, argc, argv, 7));
+    const GLenum type = static_cast<GLenum>(gi(ctx, argc, argv, 8));
+    std::vector<uint8_t> premul;
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
+        premultiply_enabled(handle)) {
+      premultiply_rgba(p, len / 4, premul);
+      p = premul.data();
+    }
+    glTexSubImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
+                    gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
+                    gi(ctx, argc, argv, 4), gi(ctx, argc, argv, 5),
+                    gi(ctx, argc, argv, 6), format, type, p);
+  }
   JS_FreeValue(ctx, hold);
   return JS_UNDEFINED;
 }
@@ -1005,16 +1083,24 @@ JSValue js_gl_tex_sub_image_2d_canvas(JSContext* ctx,
                                       JSValueConst,
                                       int argc,
                                       JSValueConst* argv) {
-  if (!bind(gi(ctx, argc, argv, 0)))
+  const int handle = gi(ctx, argc, argv, 0);
+  if (!bind(handle))
     return JS_UNDEFINED;
   int cw = 0, ch = 0;
   const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 7), &cw, &ch);
-  if (px)
+  if (px) {
+    std::vector<uint8_t> premul;
+    if (premultiply_enabled(handle)) {
+      premultiply_rgba(px, static_cast<size_t>(cw) * static_cast<size_t>(ch),
+                       premul);
+      px = premul.data();
+    }
     glTexSubImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
                     gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
                     gi(ctx, argc, argv, 4), cw, ch,
                     static_cast<GLenum>(gi(ctx, argc, argv, 5)),
                     static_cast<GLenum>(gi(ctx, argc, argv, 6)), px);
+  }
   return JS_UNDEFINED;
 }
 
@@ -1744,7 +1830,9 @@ const char* kWebGLPreamble = R"MVJS(
       } else if (src && src.canvas && src.canvas.__h !== undefined) {
         g.__mv_glTexImage2DCanvas(this.__gl, target, level, internalformat, a, b, src.canvas.__h);
       }
-      // Image-element uploads and Y-flip handling: M6.3c.
+      // Image elements route through the same __h canvas handle (they are
+      // backed by a canvas, see mvcanvas.cxx); UNPACK_FLIP_Y_WEBGL stays
+      // unimplemented (js_gl_pixel_storei's comment says why).
     }
   };
   // texSubImage2D has the same two overloads as texImage2D, one argument
