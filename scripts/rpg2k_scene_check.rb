@@ -2581,6 +2581,26 @@ check 'a teleport clears every shown picture' do
   ok st.pictures.empty?, 'the picture did not survive the map change'
 end
 
+check 'a Change Encounter Rate override does not survive a teleport' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_ENCOUNTER_RATE, [4]),
+    ECmd.new(ic::TELEPORT, [1, 4, 3]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  eq 4, st.encounter_rate, 'the override took effect before the teleport'
+  20.times { scene.update }
+  eq 1, st.map_id, 'teleported'
+  eq nil, st.encounter_rate,
+     'the destination reverts to the map\'s own encount_steps, matching Chipset/' \
+     'Panorama/Tile Replacement -- an override does not survive any map change'
+  eq 25, scene.send(:current_encounter_steps),
+     "current_encounter_steps falls back to the map tree node's own setting again"
+end
+
 check 'the menu opens on cancel only when menu access is allowed' do
   scene = new_scene({}, player: [2, 2])
   parent = scene.instance_variable_get(:@parent)
