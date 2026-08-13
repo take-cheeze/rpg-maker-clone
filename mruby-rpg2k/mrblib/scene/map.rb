@@ -1421,24 +1421,44 @@ class RPG2k
         $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
       end
 
-      # Play the database's battle BGM (System battle_music) when a fight opens,
-      # remembering the field/vehicle BGM that was playing so
-      # #restore_pre_battle_bgm can bring it back once the fight ends -- the
-      # same memorize/restore idiom #play_vehicle_bgm already uses for
-      # boarding. A game with no battle_music configured (or an unnamed file)
-      # leaves whatever music was already playing alone, matching RPG_RT's own
-      # no-op on an empty Music struct (Game_System::BgmPlay does nothing for
-      # a blank filename).
+      # System BGM slot indices, as used by Change System BGM (10660) --
+      # matches the slot 0 = battle reading already documented on the
+      # rpg2k_logic_check.rb coverage for that command.
+      SYSTEM_BGM_BATTLE = 0
+
+      # Play the battle BGM when a fight opens, remembering the field/vehicle
+      # BGM that was playing so #restore_pre_battle_bgm can bring it back once
+      # the fight ends -- the same memorize/restore idiom #play_vehicle_bgm
+      # already uses for boarding. A game with no battle BGM configured (or an
+      # unnamed file) leaves whatever music was already playing alone,
+      # matching RPG_RT's own no-op on an empty Music struct
+      # (Game_System::BgmPlay does nothing for a blank filename).
       def play_battle_bgm
-        name = music_name(db.system.battle_music)
-        return if name.nil? || name.empty?
+        music = battle_bgm
+        return unless music
         @pre_battle_bgm = @state.current_bgm
-        vol = music_volume(db.system.battle_music)
-        tempo = music_tempo(db.system.battle_music)
-        RGSS::Audio.bgm_play(name, vol, tempo)
-        @state.current_bgm = { name: name, volume: vol, tempo: tempo }
+        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
+        @state.current_bgm = music
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle BGM failed: #{e.message}"
+      end
+
+      # The battle BGM to play as { name:, volume:, tempo: }, or nil when
+      # neither source names a file. Prefers a Change System BGM override for
+      # the battle slot over the database's own System battle_music -- the
+      # same override-then-default idiom #system_se already uses for Change
+      # System SFX overrides, extended to BGM now that a battle actually
+      # plays music to override.
+      def battle_bgm
+        ov = @state.system_bgm[SYSTEM_BGM_BATTLE]
+        if ov && ov[:name] && !ov[:name].empty?
+          return { name: ov[:name], volume: ov[:volume] || 100,
+                    tempo: ov[:tempo] || 100 }
+        end
+        name = music_name(db.system.battle_music)
+        return nil if name.nil? || name.empty?
+        { name: name, volume: music_volume(db.system.battle_music),
+          tempo: music_tempo(db.system.battle_music) }
       end
 
       # Restore the BGM that was playing before the fight started. A no-op
