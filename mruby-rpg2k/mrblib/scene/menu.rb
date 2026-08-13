@@ -24,6 +24,7 @@ class RPG2k
         @index = 0
         @message = nil
         @skin = make_windowskin
+        @background = build_field_background(@skin)
         @commands = COMMAND_KEYS.map { |key, term_name, fallback|
           [key, term(term_name, fallback)]
         }
@@ -38,6 +39,7 @@ class RPG2k
 
       def dispose
         close_message
+        @background.dispose if @background
         @command.dispose if @command
         @status.dispose if @status
       end
