@@ -149,10 +149,13 @@ if wio
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       t.flags += cpu_flags
-      # Bare-metal newlib: give game data (maps/images loaded as strings) room
-      # beyond the 1 MiB default cap. Actual RAM fit is a separate concern
-      # handled by the streaming rework (P3).
-      t.defines << 'MRB_STR_LENGTH_MAX=4194304'
+      # Bare-metal newlib falls through mruby's string.c to a 1 MiB default cap
+      # (see below); game data (maps/images loaded as strings, and whole packed
+      # archives read in one shot by RGSSAD.open) can exceed that many times
+      # over, so disable the cap outright (0 = unlimited), matching what
+      # mruby already does for free on Linux/macOS/BSD. Actual RAM fit is a
+      # separate concern handled by the streaming rework (P3).
+      t.defines << 'MRB_STR_LENGTH_MAX=0'
     end
     conf.linker.flags += cpu_flags
 
@@ -197,9 +200,12 @@ if psp
       t.defines << 'PSP_BUILD'
       # newlib on the PSP defines none of __linux__/__APPLE__/__*BSD__, so
       # mruby's string.c falls through to the 1 MiB MRB_STR_LENGTH_MAX cap and
-      # rejects larger strings. Game data (maps, images loaded as strings) can
-      # exceed 1 MiB, so raise it to 4 MiB, matching the wasm/Wio builds.
-      t.defines << 'MRB_STR_LENGTH_MAX=4194304'
+      # rejects larger strings. Game data (maps, images loaded as strings, and
+      # whole packed archives read in one shot by RGSSAD.open) can exceed that
+      # many times over, so disable the cap outright (0 = unlimited), matching
+      # the wasm/Wio builds and what mruby already does for free on
+      # Linux/macOS/BSD.
+      t.defines << 'MRB_STR_LENGTH_MAX=0'
     end
     conf.linker.flags += cpu_flags
 
@@ -227,12 +233,15 @@ if emscripten
 
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == "-O0" }
-      # Raise the maximum string length to 4 MiB. On native platforms mruby
-      # defaults MRB_STR_LENGTH_MAX to 0 (unlimited), but Emscripten defines
-      # none of __linux__/__APPLE__/__*BSD__, so string.c falls through to the
-      # 1 MiB cap and rejects larger strings with "string too long". Game data
-      # (maps, images loaded as strings) can exceed 1 MiB, so bump it to 4 MiB.
-      t.defines << 'MRB_STR_LENGTH_MAX=4194304'
+      # On native platforms mruby defaults MRB_STR_LENGTH_MAX to 0 (unlimited),
+      # but Emscripten defines none of __linux__/__APPLE__/__*BSD__, so
+      # string.c falls through to a 1 MiB cap and rejects larger strings with
+      # "string too long". Game data (maps, images loaded as strings) routinely
+      # exceeds 1 MiB, and RGSSAD.open reads a whole packed archive into a
+      # single String, so any fixed cap just moves the crash to a bigger file
+      # (e.g. a real archive of 5.5 MiB blew past a prior 4 MiB cap here).
+      # Disable the cap outright, matching the native builds.
+      t.defines << 'MRB_STR_LENGTH_MAX=0'
     end
 
     rpg_maker_gems(conf)
