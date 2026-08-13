@@ -329,6 +329,20 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
       },
       timings: { 1 => OpenStruct.new(frame: 1, flash_scope: 2, flash_red: 31,
                                      flash_green: 31, flash_blue: 31, flash_power: 20) }
+    ),
+    # A second drawable animation (id 9), identical to id 8's frames but with a
+    # flash_scope 1 ("target") timing instead of a screen flash -- for the
+    # map-triggered target-flash checks below.
+    9 => OpenStruct.new(
+      animation_name: 'Anim', position: 1,
+      frames: {
+        1 => OpenStruct.new(cells: { 1 => OpenStruct.new(visible: true, cell_id: 0, x: 0, y: 0) }),
+        2 => OpenStruct.new(cells: { 1 => OpenStruct.new(visible: true, cell_id: 1, x: 0, y: 0) }),
+        3 => OpenStruct.new(cells: {}),
+        4 => OpenStruct.new(cells: {})
+      },
+      timings: { 1 => OpenStruct.new(frame: 1, flash_scope: 1, flash_red: 31,
+                                     flash_green: 0, flash_blue: 0, flash_power: 20) }
     ) },
     # Every tile of the synthetic map is chip 0, which the fake chipset tags as
     # terrain 42 — so this one row decides whether walking hurts, and (for the
@@ -4777,6 +4791,87 @@ check "a map-triggered Show Battle Animation carries the target's CharSet height
      "the player's own CharSet sprite height, not the battle-only nil fallback"
 end
 
+# A map-triggered Show Battle Animation's flash_scope-1 timing used to be
+# silently dropped: #fire_animation_flashes only ever reached
+# #fire_target_flash's battle-only enemy-sprite mechanism, which a map scene
+# (no @battle_ui at all) can never populate, so the flash simply never fired.
+# #fire_map_target_flash reuses the Flash Sprite command's own CharSet-tone
+# mechanism (@player_flash / an @events entry's [:flash]) instead of
+# inventing a second one. Animation 9 in the fake db carries a flash_scope 1
+# timing (see the fake-db comment above) rather than id 8's flash_scope 2, so
+# this is isolated from the screen-flash check above.
+check "a map-triggered Show Battle Animation's target-scope flash pulses the player" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [9, 10001, 1], indent: 0), # animation, player, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  seen = false
+  40.times do
+    scene.update
+    pf = scene.instance_variable_get(:@player_flash)
+    seen ||= (pf && pf[:red] == 248 && pf[:green] == 0 && pf[:blue] == 0)
+    break if st.switches[6]
+  end
+  ok seen, "the player's flash was armed, scaled from the LCF 0..31 fixture fields the same *8 way " \
+           'the battle-side enemy flash already is'
+  ok st.switches[6], 'the event resumed after the animation'
+end
+
+# The same timing aimed at a named map event instead pulses *that* event's own
+# flash, not the player's -- #map_animation_flash_target resolves a plain
+# event id the same way #animation_target_pixel already does for centring the
+# animation itself.
+check "a map-triggered Show Battle Animation's target-scope flash pulses the named map event, not the player" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [9, 2, 1], indent: 0), # animation, event 2, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  target_pg = page(trigger: 0) # stationary, never triggers on its own
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(4, 4, target_pg) })
+  st = scene.instance_variable_get(:@state)
+  seen_target = false
+  seen_player = false
+  40.times do
+    scene.update
+    ev2 = event_hashes(scene)[2]
+    seen_target ||= (ev2[:flash] && ev2[:flash][:red] == 248)
+    seen_player ||= !scene.instance_variable_get(:@player_flash).nil?
+    break if st.switches[6]
+  end
+  ok seen_target, "the targeted map event's own flash was armed"
+  ok !seen_player, 'the player, who was not the target, was never flashed'
+  ok st.switches[6], 'the event resumed after the animation'
+end
+
+# #map_animation_flash_target's own target-id decoding, isolated from the
+# full event pipeline above: a vehicle has no Flash Sprite-style CharSet tone
+# to hook (unlike a player/event target), an id no live event matches resolves
+# to nothing, and "this event" (0 / MOVE_TARGET_THIS) mirrors
+# #animation_target_pixel's own fallback to the player when there is no active
+# event (a common event Parallel Process's own Show Battle Animation has none).
+check '#map_animation_flash_target resolves vehicle, unknown-id and "this event" targets' do
+  scene = new_scene({ 3 => event(1, 1, page) })
+  mt = RPG2k::Scene::Map
+  eq :player, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_PLAYER)
+  eq nil, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_BOAT),
+     'a vehicle has no CharSet-tone flash mechanism to hook'
+  eq nil, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_SHIP)
+  eq nil, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_AIRSHIP)
+  eq nil, scene.send(:map_animation_flash_target, 999), 'an id no live event matches'
+  eq :player, scene.send(:map_animation_flash_target, 0),
+     '"this event" with no active event (a common event Parallel Process) falls back to the player'
+  ev3 = event_hashes(scene)[3]
+  scene.instance_variable_set(:@active_event, ev3)
+  eq ev3, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_THIS),
+     '"this event" with an active event resolves to it'
+end
+
 # yado.tk: only one Battle Animation is ever on screen at once -- true of the
 # map-level Show Battle Animation command (11210) same as an in-battle one.
 # That only means anything if a *parallel process* can show one at all: before
@@ -6675,7 +6770,7 @@ check 'a target-scope animation flash pulses the hit enemy, not the screen or a 
   bystander = ui[:enemy_sprites][1]
   timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
                           flash_blue: 0, flash_power: 20)
-  ma = { frame_i: 0, target_index: 0, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
   scene.send(:fire_animation_flashes, ma)
   ok spr.flash_color, 'the targeted enemy sprite was flashed'
   eq [248, 0, 0, 160],
@@ -6701,7 +6796,7 @@ check 'a target-scope flash with no resolvable target sprite is a silent no-op' 
   scene, = battle_at_command
   timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
                           flash_blue: 0, flash_power: 20)
-  ma = { frame_i: 0, target_index: nil, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: nil, timings: [timing] }
   scene.send(:fire_animation_flashes, ma) # must not raise
   ok true, 'no exception targeting nothing'
 end
