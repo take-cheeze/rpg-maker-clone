@@ -224,9 +224,12 @@ def fake_map_with_counters(id, events, counters)
 end
 
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
-            airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false)
+            airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
+            rpg2003: false, menu_commands: nil)
   OpenStruct.new(
+    rpg2003?: rpg2003,
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
+                           menu_commands: menu_commands,
                            battle_music: OpenStruct.new(file: 'BattleBGM', volume: 70, pitch: 110),
                            inn_music: OpenStruct.new(file: 'InnBGM', volume: 75, pitch: 105),
                            boat_music: OpenStruct.new(file: 'BoatBGM', volume: 80, pitch: 100),
@@ -7232,8 +7235,8 @@ class MenuStubParty
   def field_skills(_actor, _state = nil); []; end
 end
 
-def menu_scene(klass, state)
-  klass.new(fake_parent(fake_db), state)
+def menu_scene(klass, state, db = fake_db)
+  klass.new(fake_parent(db), state)
 end
 
 def menu_state
@@ -7297,7 +7300,9 @@ check 'Scene::Menu: the main command cursor wraps around' do
   RGSS::Input.triggered = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq 5, scene.instance_variable_get(:@index), 'Up from the first command wraps to the last (6 commands)'
+  eq 4, scene.instance_variable_get(:@index),
+     'Up from the first command wraps to the last (RPG2000\'s fixed 5 commands: ' \
+     'Item/Skill/Equip/Save/End Game -- no Status, see RPG2K_COMMAND_KEYS)'
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
@@ -7305,15 +7310,16 @@ check 'Scene::Menu: the main command cursor wraps around' do
 end
 
 check 'Scene::Menu: choosing Item pushes Scene::ItemMenu (and the rest their own scenes)' do
-  # COMMAND_KEYS order is Item, Skill, Equip, Status, Save, End Game; the first
-  # four each push their own scene onto the parent stack rather than falling
-  # into the generic "not implemented yet" message -- confirm the field Item
-  # command actually reaches Scene::ItemMenu, and its neighbours are not stubs.
+  # RPG2K_COMMAND_KEYS order is Item, Skill, Equip, Save, End Game -- RPG2000
+  # has no Status entry at all (see Scene::Menu's own doc comment, ported from
+  # EasyRPG's Scene_Menu::CreateCommandWindow); the first three each push their
+  # own scene onto the parent stack rather than falling into the generic "not
+  # implemented yet" message -- confirm the field Item command actually reaches
+  # Scene::ItemMenu, and its neighbours are not stubs.
   {
     0 => RPG2k::Scene::ItemMenu,
     1 => RPG2k::Scene::SkillMenu,
     2 => RPG2k::Scene::EquipMenu,
-    3 => RPG2k::Scene::StatusMenu,
   }.each do |index, klass|
     scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
     scene.instance_variable_set(:@index, index)
@@ -7328,13 +7334,53 @@ end
 check 'Scene::Menu: End Game returns to the title on the first press, like F12 and ' \
       'the Return to Title Screen event command' do
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
-  scene.instance_variable_set(:@index, 5)  # End Game, last of COMMAND_KEYS
+  scene.instance_variable_set(:@index, 4)  # End Game, last of RPG2K_COMMAND_KEYS
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
   ok scene.parent.returned_to_title,
      'End Game hands control back to the app immediately, with no confirmation ' \
      'message to dismiss first'
+end
+
+check 'Scene::Menu: RPG2000 (no rpg2003? flag) never offers Status at all' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  keys = scene.instance_variable_get(:@commands).map(&:first)
+  eq [:item, :skill, :equip, :save, :end_game], keys,
+     'the fixed RPG2000 five, matching EasyRPG\'s Player::IsRPG2k() branch -- ' \
+     'no Status, since a real RPG2000 database never customizes the menu'
+end
+
+check 'Scene::Menu: an RPG2003 database drives the command list from ' \
+      'System.menu_commands, Status included' do
+  # mtf-meido-action's own array, id-for-id (confirmed by loading its real
+  # RPG_RT.ldb): every one of RPG2003's eight customizable ids, in ascending
+  # order. Row (6) / Order (7) / Wait (8) are RPG2003 battle-system features
+  # this runtime does not model (the same reported-gap precedent as Toggle ATB
+  # Mode, 5003) and are silently skipped; End Game is appended unconditionally,
+  # matching EasyRPG's own unconditional Quit push outside the customized loop.
+  db = fake_db(rpg2003: true, menu_commands: [1, 2, 3, 4, 5, 6, 7, 8])
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
+  keys = scene.instance_variable_get(:@commands).map(&:first)
+  eq [:item, :skill, :equip, :save, :status, :end_game], keys,
+     'Status (id 5) is offered, and Row/Order/Wait are dropped rather than crashing'
+end
+
+check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' do
+  # An arbitrary game that put Status first, dropped Item and Skill entirely,
+  # and never touched Save: #build_commands must reproduce the game's own
+  # order and omissions, not fall back to the RPG2000 default shape.
+  db = fake_db(rpg2003: true, menu_commands: [5, 3])
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
+  keys = scene.instance_variable_get(:@commands).map(&:first)
+  eq [:status, :equip, :end_game], keys,
+     'Status then Equip, in the game\'s own order, End Game still appended last'
+  scene.instance_variable_set(:@index, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.pushed.last.is_a?(RPG2k::Scene::StatusMenu),
+     'selecting the reordered Status command actually opens Scene::StatusMenu'
 end
 
 check 'the item / skill target list shows who is afflicted' do

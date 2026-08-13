@@ -1609,7 +1609,46 @@ The work below is roughly ordered by the critical path to a walkable game
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
   command list. Save, End Game, **Item**, **Skill**, **Equip** and **Status** all
-  work — the full main-menu set. The **Item** command opens
+  work.
+  ✅ **The command list itself now matches the editor that wrote the game**,
+  rather than always showing the same fixed six. This line used to claim
+  Item/Skill/Equip/Status/Save/End Game was simply "the full main-menu set,"
+  which is EasyRPG's RPG**2003** menu, not RPG2000's: `Scene_Menu::
+  CreateCommandWindow`'s `Player::IsRPG2k()` branch hardcodes exactly **five**
+  commands — Item, Skill, Equip, Save, End Game, **no Status entry at all** —
+  regardless of database content, since RPG2000's party list already shows
+  name/level/HP/MP and Equip already shows the full stat block, leaving
+  nothing for a separate Status screen to add. RPG2003 instead builds the list
+  from the System database's own customizable field (chunk 22 field 27,
+  `menu_commands`, `mruby-lcf/mrblib/schema.rb` — parsed by the schema and
+  never read anywhere in `mruby-rpg2k` before this), matching EasyRPG's
+  `CommandOptionType` enum (Item=1, Skill=2, Equipment=3, Save=4, Status=5,
+  Row=6, Order=7, Wait=8), with Quit/End Game appended unconditionally outside
+  that list rather than being one of its ids. A real 2003 game's array both
+  picks *which* commands show and their *order* — mtf-meido-action's own
+  database (loaded directly, not guessed: `LCF::Database#rpg2003?` reads true
+  and chunk 22 field 27 decodes to `[1, 2, 3, 4, 5, 6, 7, 8]`, confirmed by
+  reading the System chunk by numeric id under the CRuby host harness, where
+  `db.system` itself resolves to `Kernel#system` — see
+  `scripts/rpg2k_testbed_logic_check.rb`'s own `DB_SYSTEM` comment) uses all
+  eight, Status included. `Scene::Menu#build_commands`
+  (`mruby-rpg2k/mrblib/scene/menu.rb`) now branches on `db.rpg2003?` (ADR
+  0013's edition detector): RPG2000 gets the fixed
+  `RPG2K_COMMAND_KEYS` five, RPG2003 filters its own `menu_commands` array
+  through `RPG2K3_COMMAND_IDS` — a small id→command table that has **no**
+  entry for Row (battle front/back rank), Order (party reordering) or Wait
+  (the ATB toggle), so a 2003 game listing them simply does not offer them,
+  the identical reported-gap precedent the Toggle ATB Mode (5003) event
+  command entry above already establishes for the same unmodelled RPG2003
+  battle system — rather than crashing or inventing a screen. Covered by new
+  `scripts/rpg2k_scene_check.rb` checks (a non-2003 fixture never offers
+  Status at all; a 2003 fixture's full eight-id array offers Status and drops
+  Row/Order/Wait; a 2003 fixture that reorders and omits commands is honoured
+  end to end, including actually opening the reordered Status screen),
+  confirmed to fail against the pre-fix code (Status always offered
+  regardless of edition; a 2003 reorder/omission silently ignored) before the
+  fix. See `changelog.d/menu-command-list-2003-rpg2k-status.fixed.md`. The
+  **Item** command opens
   `Scene::ItemMenu`: it lists the party's usable **medicines** (database item type
   6), **skill books** (type 7) and **seeds** (type 8) with their held counts. A
   medicine heals its target — a single-target item a chosen ally, an all-ally item
