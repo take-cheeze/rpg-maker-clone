@@ -115,6 +115,15 @@ class RPG2k
         @player_route = nil
         @player_char = nil
         @player_route_timer = 0
+        # Through Mode set on the player by a forced route (Set Move Route's
+        # Through Mode: Begin/End), which -- like the genuine runtime -- is a
+        # standing property of the hero, not scoped to the route that set it: it
+        # keeps affecting ordinary input-driven walking once the route ends,
+        # however that happened. Halt All Movement (Cancel All Designated Moves)
+        # deliberately does not clear it (see #apply_halt_request) -- RPG_RT
+        # aborts an in-progress route without unwinding its side effects, so a
+        # route cancelled mid-Through-Mode leaves the hero stuck pass-through.
+        @player_through = false
 
         # Player pixel position and step state. `player_jumping` marks the slide
         # as a hop, which is lifted along an arc (see player_jump_offset).
@@ -1448,6 +1457,15 @@ class RPG2k
       # move route in progress — the player's and each event's — so a route set by
       # an earlier Move Event stops where it is. Events fall back to their page's
       # autonomous movement; the player returns to input control.
+      #
+      # This is an abort, not an undo: RPG_RT's Cancel All Designated Moves does
+      # not unwind the side effects a route already applied, so a route
+      # cancelled mid-Through-Mode leaves the character stuck pass-through
+      # (yado.tk) rather than reverting it. That is why @player_through is left
+      # exactly as it stands here -- an event's own Through Mode already gets
+      # this for free (it lives on e[:char], never touched below), and clearing
+      # @player_through here would make the player the one case that quietly
+      # cleans up after itself.
       def apply_halt_request(interp)
         return unless interp.take_halt_movement_request
         @player_route = nil
@@ -1876,6 +1894,10 @@ class RPG2k
       # it. Input movement is suppressed while the route is active.
       def start_player_route(route, freq)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        # Through Mode carries over from whatever an earlier route (or one
+        # halted mid-Through-Mode) left it at -- a fresh mirror's own default
+        # (false) would otherwise silently turn it back off.
+        @player_char.through = @player_through
         @player_char.move_frequency = valid_move_freq(freq) ||
                                       @player_char.move_frequency
         @player_route = route
@@ -1899,6 +1921,10 @@ class RPG2k
         ox = @player_char.x
         oy = @player_char.y
         @player_route.step(@player_char, @world) unless @player_route.done?
+        # Mirror Through Mode out to the standing flag every step (not just when
+        # the route ends), so a Halt All Movement mid-route sees whatever the
+        # route had set so far rather than the mirror's now-discarded state.
+        @player_through = @player_char.through
         @state.direction = @player_char.direction
         if @player_char.x != ox || @player_char.y != oy || @player_char.jumped
           start_player_slide
@@ -4480,6 +4506,7 @@ class RPG2k
         # (see #player_draw_charset): RPG_RT reverts it on Transfer Player,
         # unlike the dedicated Change Hero Graphic command.
         @player_char = nil
+        @player_through = false # ... nor does Through Mode
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
@@ -5077,7 +5104,11 @@ class RPG2k
             start_event(touched)
             return
           end
-          return unless passable?(nx, ny, dir)
+          # Through Mode (see @player_through) bypasses collision the same way
+          # it does for an event's own #char_passable? -- touch triggers still
+          # fire above regardless, since through-ness is purely a collision
+          # bypass, not a trigger suppression.
+          return unless @player_through || passable?(nx, ny, dir)
         end
 
         @dest_x = nx

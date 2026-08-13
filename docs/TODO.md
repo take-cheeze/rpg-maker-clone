@@ -2047,11 +2047,32 @@ not yet verified:
   question, since there is no separate "page movement" for it to revert to.
   Covered by a new `scripts/rpg2k_scene_check.rb` check, confirmed to fail
   against the pre-fix code before the fix.
-- "Cancel All Designated Moves" aborts in-progress routes without
-  unwinding side effects: a route cancelled mid-"Through Mode: Begin"
-  leaves the character stuck pass-through; cancelling during an active
-  jump does **not** abort the jump physically (it still completes the
-  hop), only trailing queued steps are dropped.
+- ✅ **"Cancel All Designated Moves" aborts in-progress routes without
+  unwinding side effects.** Its jump half was already correct by
+  construction: `Game::MoveRoute#do_jump` resolves an entire Begin/End Jump
+  block inside one `step()` call (character.move lands it immediately; the
+  visual arc that follows is presentation only), so there is no frame at
+  which a halt can catch a jump "mid-flight" — a cancel issued right after
+  landing drops only the route's still-queued trailing steps, never the jump
+  itself. A map event's Through Mode was already correct too, for the same
+  reason as the rest of its collision state: it lives on `e[:char]`, the same
+  `Game::Character` the event's page movement uses afterward, and
+  `apply_halt_request` never touches it. The **player** side was genuinely
+  broken, though: a forced player route steps a disposable mirror character
+  (`@player_char`, "the player has no Game::Character") that Through Mode
+  lived on and nothing else did, so it vanished the moment the route ended —
+  by halting *or* by finishing normally, since a fresh route always started a
+  brand new mirror at `through = false`. `@player_through` is now a standing
+  flag on the scene: `start_player_route` seeds a new mirror from it rather
+  than always false, `step_player_route` mirrors the flag out every step (not
+  just at the end, so a halt mid-route still sees it), ordinary input-driven
+  walking (`step_movement`) now checks it the same way `char_passable?`
+  checks an event's `through`, and it resets only on Transfer Player (where
+  RPG_RT drops it too), never on Halt All Movement. Covered by new
+  `scripts/rpg2k_scene_check.rb` checks — one for each half, the jump one
+  confirming it already passed before any code changed, the Through Mode one
+  confirmed to fail against the pre-fix code (stuck at the tile the route
+  left it on) before the fix.
 - Moving a **map event** (not the hero) via Set Move Route bypasses that
   event's own occupied-tile membership tests the normal way a page-driven
   move does — no distinct finding beyond what's already covered by the
