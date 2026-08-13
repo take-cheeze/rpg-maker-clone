@@ -1393,19 +1393,18 @@ class RPG2k
         row.airship_land ? true : false
       end
 
-      # Play the vehicle's own BGM (the database System boat / ship / airship
-      # music), remembering the BGM that was playing so #restore_pre_vehicle_bgm
-      # can bring it back on disembark. A vehicle with no configured BGM leaves
-      # the current music playing.
+      # Play the vehicle's own BGM — a Change System BGM (10660) override for
+      # its slot when one is set, else the database System boat / ship /
+      # airship music — remembering the BGM that was playing so
+      # #restore_pre_vehicle_bgm can bring it back on disembark. A vehicle
+      # with no configured BGM (override or database) leaves the current
+      # music playing.
       def play_vehicle_bgm(type)
         music = vehicle_bgm(type)
-        name = music && music_name(music)
-        return if name.nil? || name.empty?
+        return unless music
         @pre_vehicle_bgm = @state.current_bgm
-        vol = music_volume(music)
-        tempo = music_tempo(music)
-        RGSS::Audio.bgm_play(name, vol, tempo)
-        @state.current_bgm = { name: name, volume: vol, tempo: tempo }
+        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
+        @state.current_bgm = music
       rescue StandardError => e
         $stderr.puts "[RPG2k] vehicle BGM failed: #{e.message}"
       end
@@ -1477,12 +1476,29 @@ class RPG2k
         $stderr.puts "[RPG2k] restoring BGM after battle failed: #{e.message}"
       end
 
-      # The database System BGM configured for vehicle `type` (boat / ship /
-      # airship), or nil when the database has none.
+      # System BGM slot indices for Change System BGM (10660), matching
+      # EasyRPG's Game_System::sys_bgm enum (Battle 0, Victory 1, Inn 2,
+      # Boat 3, Ship 4, Airship 5, GameOver 6) — the boat/ship/airship slots
+      # sit between the ones the battle and game-over BGM already resolve.
+      VEHICLE_SYSTEM_BGM_SLOT = { boat: 3, ship: 4, airship: 5 }.freeze
+
+      # The BGM to play for vehicle `type` as { name:, volume:, tempo: }, or
+      # nil when neither source names a file. Prefers a Change System BGM
+      # override for the vehicle's slot over the database's own boat / ship /
+      # airship music — the same override-then-default idiom #system_se
+      # already uses for Change System SFX.
       def vehicle_bgm(type)
+        slot = VEHICLE_SYSTEM_BGM_SLOT[type]
+        ov = slot && @state.system_bgm[slot]
+        if ov && ov[:name] && !ov[:name].to_s.empty?
+          return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100 }
+        end
         field = "#{type}_music"
         return nil unless @db.system.respond_to?(field)
-        @db.system.send(field)
+        bgm = @db.system.send(field)
+        name = music_name(bgm)
+        return nil if name.nil? || name.empty?
+        { name: name, volume: music_volume(bgm), tempo: music_tempo(bgm) }
       end
 
       # A parsed BGM chunk exposes file / volume / pitch; read them defensively so
