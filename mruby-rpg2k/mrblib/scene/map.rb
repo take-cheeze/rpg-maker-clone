@@ -1421,6 +1421,41 @@ class RPG2k
         $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
       end
 
+      # Play the database's battle BGM (System battle_music) when a fight opens,
+      # remembering the field/vehicle BGM that was playing so
+      # #restore_pre_battle_bgm can bring it back once the fight ends -- the
+      # same memorize/restore idiom #play_vehicle_bgm already uses for
+      # boarding. A game with no battle_music configured (or an unnamed file)
+      # leaves whatever music was already playing alone, matching RPG_RT's own
+      # no-op on an empty Music struct (Game_System::BgmPlay does nothing for
+      # a blank filename).
+      def play_battle_bgm
+        name = music_name(db.system.battle_music)
+        return if name.nil? || name.empty?
+        @pre_battle_bgm = @state.current_bgm
+        vol = music_volume(db.system.battle_music)
+        tempo = music_tempo(db.system.battle_music)
+        RGSS::Audio.bgm_play(name, vol, tempo)
+        @state.current_bgm = { name: name, volume: vol, tempo: tempo }
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle BGM failed: #{e.message}"
+      end
+
+      # Restore the BGM that was playing before the fight started. A no-op
+      # when the fight never touched the music (no battle_music configured),
+      # so the field/vehicle track was never interrupted and there is nothing
+      # to bring back -- and when the party is headed to the Game Over screen
+      # instead, which plays its own music and never returns to this map.
+      def restore_pre_battle_bgm
+        bgm = @pre_battle_bgm
+        @pre_battle_bgm = nil
+        return unless bgm && bgm[:name] && !bgm[:name].empty?
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        @state.current_bgm = bgm
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] restoring BGM after battle failed: #{e.message}"
+      end
+
       # The database System BGM configured for vehicle `type` (boat / ship /
       # airship), or nil when the database has none.
       def vehicle_bgm(type)
@@ -3186,6 +3221,7 @@ class RPG2k
       end
 
       def open_battle(req)
+        play_battle_bgm
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
@@ -4159,6 +4195,7 @@ class RPG2k
         if game_over
           perform_game_over
         else
+          restore_pre_battle_bgm
           @interpreter.resume_battle(result)
         end
       end
