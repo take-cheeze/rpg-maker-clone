@@ -4159,8 +4159,8 @@ module Game
       ce = db.common_event
       return list unless ce
       ce.each do |id, c|
-        list.push(id: id, trigger: c.start_term, need_flag: c.need_flag,
-                  switch_id: c.switch_id, commands: c.event)
+        list.push({ id: id, trigger: c.start_term, need_flag: c.need_flag,
+                    switch_id: c.switch_id, commands: c.event })
       end
       list
     rescue StandardError => e
