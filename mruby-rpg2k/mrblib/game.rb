@@ -3431,9 +3431,22 @@ module Game
       Character.step_tile(@x, @y, dir)
     end
 
-    # Turn to face `dir` without moving (a no-op while facing is locked).
+    # Turn to face `dir` without moving (a no-op while facing is locked) --
+    # movement-driven facing only (#move, #jump, #move_diagonal). An explicit
+    # Face Direction / Turn move-route sub-command always wins over a prior
+    # Direction Fix ON in the same route (yado.tk); see #face!.
     def face(dir)
       @direction = dir unless @facing_locked || dir.nil?
+    end
+
+    # Turn to face `dir`, ignoring the Direction Fix lock. The move-route
+    # "Face Up/Right/Down/Left/Random/Hero/Away from Hero" sub-commands use
+    # this (Turn Right/Left/180/Random already bypassed the lock by writing
+    # @direction directly) -- Direction Fix only suppresses the facing change
+    # that would otherwise happen from an ordinary move, not an explicit
+    # facing command issued later in the same route.
+    def face!(dir)
+      @direction = dir unless dir.nil?
     end
 
     # Whether the move just made was a jump (a Begin Jump / End Jump block)
@@ -3658,8 +3671,11 @@ module Game
         do_move(character, world, away_hero(character, world))
       when MOVE_FORWARD
         do_move(character, world, character.direction)
+      # A Face Direction sub-command always turns the sprite, even right after
+      # a Direction Fix ON earlier in the same route (yado.tk) -- #face!, not
+      # the lock-respecting #face movement uses.
       when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT
-        character.face(FACE_DIR[id]); [:turned, true]
+        character.face!(FACE_DIR[id]); [:turned, true]
       when TURN_RIGHT then character.turn_right;  [:turned, true]
       when TURN_LEFT  then character.turn_left;   [:turned, true]
       when TURN_180   then character.turn_around; [:turned, true]
@@ -3667,9 +3683,9 @@ module Game
         world.random(2) == 0 ? character.turn_right : character.turn_left
         [:turned, true]
       when FACE_RANDOM
-        character.face(Character::CARDINALS[world.random(4)]); [:turned, true]
-      when FACE_HERO      then character.face(toward_hero(character, world)); [:turned, true]
-      when FACE_AWAY_HERO then character.face(away_hero(character, world));  [:turned, true]
+        character.face!(Character::CARDINALS[world.random(4)]); [:turned, true]
+      when FACE_HERO      then character.face!(toward_hero(character, world)); [:turned, true]
+      when FACE_AWAY_HERO then character.face!(away_hero(character, world));  [:turned, true]
       when WAIT       then [:waited, true]
       when BEGIN_JUMP then do_jump(character, world)
       when END_JUMP   then [:effect, true] # an End Jump with no Begin: skipped

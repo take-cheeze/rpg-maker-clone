@@ -403,6 +403,23 @@ check 'face and turn commands change facing only' do
   eq [5, 5], [c.x, c.y]
 end
 
+check 'a Face Direction sub-command overrides an earlier Direction Fix ON in the same route' do
+  # yado.tk: Direction Fix only suppresses the facing change an ordinary move
+  # would otherwise cause -- an explicit Face Up/Right/Down/Left (or Turn)
+  # sub-command later in the same route still turns the sprite.
+  route = R.new([mc(R::LOCK_FACING), mc(R::MOVE_RIGHT), mc(R::FACE_UP)],
+                repeat: false)
+  c = Game::Character.new(5, 5, 2) # facing south
+  w = FakeWorld.new
+  route.step(c, w) # Direction Fix ON
+  eq true, c.facing_locked
+  route.step(c, w) # Move Right: steps east, facing stays south -- the lock holds
+  eq [6, 5], [c.x, c.y]
+  eq 2, c.direction
+  route.step(c, w) # Face Up: turns north despite the still-active lock
+  eq 8, c.direction
+end
+
 check 'switch on/off route commands drive the world switches' do
   route = R.new([mc(R::SWITCH_ON, a: 7), mc(R::SWITCH_OFF, a: 3)], repeat: false)
   c = Game::Character.new(0, 0)
