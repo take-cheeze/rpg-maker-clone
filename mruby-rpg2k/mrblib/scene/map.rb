@@ -2589,7 +2589,13 @@ class RPG2k
 
         if @interpreter.waiting?
           case @interpreter.wait_kind
-          when :message then open_message(@interpreter.message_lines, false)
+          when :message
+            # yado.tk: a still-pending forced move route (Move Event with no
+            # "wait for completion") implicitly auto-runs to completion the
+            # instant the event hits a Show Text, the same way an explicit
+            # Proceed With Movement would -- driven here exactly like the
+            # :movement branch below, before the window is actually opened.
+            open_message(@interpreter.message_lines, false) if step_forced_movement
           when :choice then open_message(@interpreter.choice_labels, true)
           when :number then open_number_input(@interpreter.input_digits)
           when :key_input then drive_key_input
@@ -2597,6 +2603,10 @@ class RPG2k
           when :shop then drive_shop
           when :battle then drive_battle
           when :wait
+            # Same implicit-Proceed-With-Movement rule as :message above, for a
+            # Wait command: the wait timer does not even start counting down
+            # until any pending forced route has finished.
+            return unless step_forced_movement
             drive_wait
             # RPG_RT resumes a Wait the instant its timer elapses and keeps
             # spending that same frame's step budget -- Wait 0.0 sec is

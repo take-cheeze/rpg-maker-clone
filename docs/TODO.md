@@ -2422,9 +2422,48 @@ not yet verified:
 - Move-route commands are asynchronous/fire-and-forget by default: the
   interpreter advances immediately while the character keeps sliding in
   the background; only "Proceed With Movement"/"Run All Designated Moves"
-  blocks until every pending route finishes. An implicit auto-run also
-  happens whenever the event's own command list ends or hits a
-  Wait/Show-Text — "Run All" is only needed to force it mid-list.
+  blocks until every pending route finishes. ✅ **An implicit auto-run now
+  also happens whenever the event hits a Wait or a Show Text** — "Run All"
+  is only needed to force it mid-list otherwise. This was a genuine gap:
+  `Game::Interpreter#do_show_message`/`#do_wait` (`mruby-rpg2k/mrblib/
+  interpreter.rb`) set their `:message`/`:wait` wait-kind unconditionally,
+  and `Scene::Map#drive_event`'s dispatch for both
+  (`mruby-rpg2k/mrblib/scene/map.rb`) opened the message window / started
+  the wait countdown immediately, with no awareness of a still-running
+  forced route (set by an earlier fire-and-forget Move Event in the same
+  script) at all — since a forced route only ever advances via
+  `#step_events` (skipped whenever `#event_busy?` is true, which it always
+  is while the triggering event's own interpreter is still running or
+  waiting) or the explicit `:movement` wait's `#step_forced_movement`, a
+  route left pending going into a Wait/Show Text sat completely frozen,
+  with zero progress, until the *whole* event's command list finished —
+  not "auto-running to completion" the way an inserted Proceed With
+  Movement would. Fixed by routing both branches through the same
+  `#step_forced_movement`/`#forced_movement_done?` machinery
+  `:movement` already uses: `:message` now only calls `#open_message` once
+  `#step_forced_movement` reports every forced route (player, every map
+  event, every vehicle — the same map-wide scope Proceed With Movement
+  itself already covers) done, driving it one frame further otherwise; `:wait`
+  gates `#drive_wait` the same way, so the wait timer does not even start
+  counting down until then. The "list ends" half of the original claim
+  needed no change: once the triggering event's own command list is
+  genuinely exhausted, `#event_busy?` already goes false on its own and
+  `#step_events` resumes driving the route at its normal pace — the same
+  outcome Proceed With Movement produces, just via the ordinary per-frame
+  path instead of the `:movement` wait, so nothing was actually broken
+  there. **Still open**: a fire-and-forget route sitting between two
+  *non-blocking* commands (e.g. a Move Event followed by several Control
+  Variables commands with no Wait/Show Text/Proceed before the list ends)
+  genuinely does not animate frame-by-frame while those commands run — it
+  stays frozen until one of the three trigger points above is reached,
+  same as before this fix; true concurrent background sliding while
+  arbitrary non-blocking commands keep executing is a larger,
+  unaddressed change. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a 3-tile forced route on a bystander event, immediately followed
+  by a Show Text with no Proceed With Movement, only opens the window once
+  the route lands; the same setup with a Wait in place of the Show Text
+  only starts that Wait's countdown once the route lands), both confirmed
+  to fail against the pre-fix code before the fix.
 - Moving onto an impassable tile without "Ignore If Can't Move" **hangs**
   at that command until the obstruction clears (not a skip) — a full
   control-lock freeze if the hero is the target. The same freeze class
