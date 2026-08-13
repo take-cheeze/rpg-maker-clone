@@ -2541,10 +2541,27 @@ not yet verified:
   real gap here — now fixed, see below.)
 - The built-in random-number operand is a genuine non-seeded RNG (two New
   Games produce different sequences) and accepts negative ranges.
-- `\N[]`/`\V[]` control codes can nest (`\N[\V[1]]`), but only on
-  post-"VALUE!" engine versions. An out-of-range `\N[]` argument crashes
-  the game; the same for `\V[]`/`\C[]`/`\S[]` degrades gracefully (e.g.
-  `\S[]` clamps).
+- ✅ **`\N[]`/`\V[]` control codes now accept a nested `\V[n]` as their own
+  argument** (`\N[\V[1]]` names the actor whose id is variable 1's *value*;
+  `\V[\V[1]]` displays variable 1's value indirectly) — this build has no
+  notion of the "post-VALUE!" engine-version gate the site names, so the
+  behaviour is implemented unconditionally, matching every real-world game
+  this codebase's test beds are drawn from. `Game::Message.read_bracket`
+  (`mruby-rpg2k/mrblib/game.rb`) used to stop at the first `]`, so
+  `\N[\V[1]]`'s argument read as the literal text `"\V[1"` (`.to_i` = 0, the
+  wrong actor) with the outer `]` left behind as stray text in the message;
+  it now balances nested `[`/`]` pairs, and a new `Game::Message.resolve_arg`
+  recursively unwraps a `\v[]`/`\V[]` argument to the variable's value before
+  the actor-name/variable lookup runs, leaving a plain numeric argument
+  (`\N[5]`, `\V[1]`) resolved exactly as before. `\C[]`/`\S[]` are untouched
+  — the site's wording doesn't name them as nesting-capable, only as
+  degrading gracefully out of range, which they already do (`\C[]` falls
+  back to a flat colour for an out-of-range index, already implemented;
+  `\S[]` is dropped outright today, a separate open question tracked in the
+  Message window doc above). An out-of-range `\N[]` argument crashing real
+  RPG_RT is a genuine engine crash, not reproduced here. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the
+  pre-fix code.
 
 **Pictures**
 - ✅ **50 concurrent picture slots; higher id always draws on top,

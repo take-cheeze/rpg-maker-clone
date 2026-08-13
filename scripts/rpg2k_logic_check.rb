@@ -851,6 +851,20 @@ check 'Message.expand fills v/n codes and drops display codes' do
   eq '', Game::Message.expand(nil, vars, names)
 end
 
+check 'Message.expand resolves a nested \V[] argument inside \N[]/\V[] (yado.tk indirect addressing)' do
+  vars = Game::Variables.new
+  vars[1] = 5   # \N[\V[1]] should name actor #5, not actor #0
+  vars[5] = 42  # \V[\V[1]] should display variable #5's value...
+  names = { 5 => 'Aria' }
+  eq 'Aria', Game::Message.expand('\N[\V[1]]', vars, names)
+  eq '42', Game::Message.expand('\V[\V[1]]', vars, names)
+  # A plain numeric argument is unaffected by the bracket-balancing change.
+  eq 'Aria', Game::Message.expand('\N[5]', vars, names)
+  eq '5', Game::Message.expand('\V[1]', vars, names)
+  # No stray ']' leaks into the text from the outer bracket.
+  eq 'Aria!', Game::Message.expand('\N[\V[1]]!', vars, names)
+end
+
 check 'Message.parse splits colour runs and expands codes within them' do
   vars = Game::Variables.new
   vars[3] = 7
