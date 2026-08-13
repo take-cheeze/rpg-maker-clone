@@ -1877,10 +1877,22 @@ Everything below is unverified against the codebase.
 - **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
   above).
-- **Encounter** — standing on a "hero touches event" tile suppresses random
-  encounters there (**related to the already-fixed priority-type work but
-  itself unverified** — check `try_encounter`/equivalent); Ctrl during test
-  play disables encounters.
+- **Encounter** — ✅ **standing on a "hero touches event" tile suppresses
+  random encounters there.** `Scene::Map#check_random_encounter` rolled for
+  a wandering-monster fight on every ordinary step regardless of what stood
+  on the landed tile; a Hero Touch (trigger 1) event's own tile answers
+  random encounters too (multiply corroborated — see the fuller writeup
+  under "Full-site sweep" below), which this codebase did not implement at
+  all. Fixed by adding an early-out, right after the existing flying
+  exemption: `event_at(@state.x, @state.y)` (the same tile lookup
+  `#try_action_trigger`/`#passable?` already use) and, if that tile holds an
+  event whose currently active page's trigger is `TRIGGER_PLAYER_TOUCH`,
+  the roll (and the encounter_total accumulation for that step) is skipped
+  entirely, exactly like flying or a forced-route step. A same-tile *Event
+  Touch* (trigger 2) event does **not** suppress it — only Hero Touch does —
+  covered by a new control case in `scripts/rpg2k_scene_check.rb`. Ctrl
+  during test play disabling encounters is a separate, still-open fact, not
+  addressed by this change.
 - **Screen Flash / Character Flash** — only one of each can be active at
   once (a second supersedes, doesn't stack); both are capped to 1/30s
   display while a Battle Animation plays concurrently (the animation's own
@@ -2151,9 +2163,13 @@ not yet verified:
   contact: fires instantly on overlap for a below/above-characters page,
   or repeatedly while a direction key is held against a same-as-characters
   (blocking) one.
-- Standing on a "Hero Touch" trigger's tile suppresses random encounters
-  there (multiply corroborated); moving via Set Move Route, Jump, or
-  holding Ctrl in test-play also all suppress encounters.
+- ✅ **Standing on a "Hero Touch" trigger's tile suppresses random
+  encounters there** (multiply corroborated) — see the fuller writeup under
+  "Untriaged backlog, from `2k/01_shoshin/011_siyou/`" above (the
+  `**Encounter**` bullet). Moving via Set Move Route or Jump already
+  suppressed encounters before this pass (the `@player_forced_step` /
+  random-encounters fix above); holding Ctrl in test-play doing the same is
+  a separate, still-open fact.
 
 **Move Route / Character Movement command**
 - Only **one pending move route per character** — issuing a second while
@@ -2416,11 +2432,35 @@ not yet verified:
   substituted value/name is long.
 
 **Battle system (default)**
-- Battle events fire once per turn, right after hero action is decided
-  but before the turn resolves — never before action-select, never after
-  the battle ends. **Every** satisfied page fires that turn (lower page
-  number first), unlike map/common events (already confirmed correct
-  above).
+- ✅ **Battle pages are checked far more often than once per turn** — the
+  yado.tk phrasing above ("right after hero action is decided but before the
+  turn resolves") undersold it, and so did this runtime: EasyRPG's
+  `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents` is called from two
+  places, `State_SelectOption` (before the round-start Fight/Auto/Escape menu
+  — the "before action-select" case this runtime already had) **and**, per
+  its own comment, from `ProcessSceneActionBattle`'s `ePreAction` substate,
+  which "happens before each battler acts and also right after the last
+  battler acts" — i.e. checked again before *every individual battler's*
+  action within the round, not just once at the start. A page whose
+  condition turns true mid-round (an enemy's HP crossing a threshold from an
+  earlier attacker's hit, say) used to sit until the *next* round's check;
+  real RPG_RT would run it immediately, before the next battler in the same
+  round even acts. `Scene::Map#drive_battle_animate` now checks between every
+  acting battler: a `battler_boundary` flag (set once `Game::Battle#step_action`
+  has drained the last buffered hit of one battler's action — a dual-wield
+  swing or an all-target Skill/Item queues several from the *same* battler,
+  and the check belongs between battlers, not between hits) triggers
+  `#run_battle_events` before the next `step_action` call, threading a new
+  `return_phase` (`:command` for the pre-existing between-rounds check,
+  `:animate` for this one) through to `#leave_battle_event_phase` so a page
+  started mid-round resumes the animation loop afterward instead of jumping
+  to the command menu partway through a round. **Every** satisfied page still
+  fires exactly once per turn regardless of how many times it is checked
+  (`pages_run`, unlike map/common events, already confirmed correct above) —
+  never before action-select (the original claim's other half already held),
+  never after the battle ends. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (an enemy-HP-conditioned page firing before the round settles back to
+  `:command`), confirmed to fail against the pre-fix code.
 - ✅ **Damage is hard-capped below 1000 (999) by engine spec.** RPG_RT's
   battle damage popup is a fixed three digits, so no single hit — however
   the underlying ATK/DEF/attribute/variance math computes it — can ever
@@ -2460,28 +2500,35 @@ not yet verified:
   state, then rolls RNG against those weights. A turn-condition shorthand
   like "3×?+5" means: first candidate on turn 5, then every 3 turns
   after.
-- ✅ **In-battle HP-increase cannot revive a downed (0 HP) combatant** —
-  already correctly implemented, not a gap. `Game::Battle#apply_command` /
-  `#apply_command_all` (`mruby-rpg2k/mrblib/game.rb`) gate every Skill/Item
-  command — single- and all-target alike — on `target.dead?` (`hp <= 0`)
-  *before* ever calling `#apply_skill_hit`: a command aimed at a downed
-  combatant fizzles outright (no SP spent, no log entry, HP untouched)
-  rather than reaching `#apply_skill_hit`'s HP-raising branch at all. That
-  is the in-battle mirror of the field-side rule
-  `Game::Actor#change_hp` already enforces with its own `return @hp if
-  dead?` guard (unchanged by this PR — it was already correct); the field
-  and battle paths now document the same reasoning at both sites so the
-  parity is explicit rather than coincidental. Verified — not fixed, since
-  no bug existed here — with regression coverage in
-  `scripts/rpg2k_logic_check.rb`: an all-ally heal aimed at both a downed
-  member and a wounded one skips the downed member entirely (HP stays 0)
-  while still healing the wounded member normally, confirmed to hold
-  against the pre-this-PR code exactly as it does after (this fact was
-  never broken; the two facts were bundled in one backlog line, and only
-  the damage-cap half above needed an actual fix). An explicit state-cure
-  (Full Recovery, a revive item/skill) remains the only modelled way to
-  stand a downed combatant back up, and does so by writing HP directly
-  rather than through this command path.
+- ✅ **An HP-increase cannot revive a downed (0 HP) combatant**, checked
+  across all three paths that can raise HP. The **field actor** path
+  (`Game::Actor#change_hp`, `mruby-rpg2k/mrblib/game.rb`) was already
+  correct: it returns early with `return @hp if dead?`, so no HP change
+  (heal or further damage) touches a downed party member until Change
+  State or Full Recovery clears the death state. The **enemy/battle-event**
+  path was the actual gap: `Game::Interpreter#do_change_monster_hp` (Change
+  Monster HP, code 13110, `mruby-rpg2k/mrblib/interpreter.rb`) applied its
+  delta straight to the `Game::Battle::Combatant` with no such guard, so a
+  positive amount on a 0 HP enemy (`dead?` is `hp <= 0` for a Combatant)
+  unconditionally raised it back above 0, silently reviving it — fixed by
+  making a positive amount a no-op once the target is already dead,
+  mirroring `Actor#change_hp`; a further (negative) hit on an already-dead
+  enemy is untouched by the guard and simply re-clamps to the command's
+  existing lethal-flag floor as before. The **in-battle Skill/Item
+  command** path (a heal spell/item cast mid-fight) was checked too and
+  found already correct: `Game::Battle#apply_command` / `#apply_command_all`
+  gate every Skill/Item command — single- and all-target alike — on
+  `target.dead?` *before* ever calling `#apply_skill_hit`, so a command
+  aimed at a downed combatant fizzles outright (no SP spent, no log entry,
+  HP untouched) rather than reaching the HP-raising branch at all. An
+  explicit state-cure (Full Recovery, a revive item/skill) remains the only
+  modelled way to stand a downed combatant back up, writing HP directly
+  rather than through any of these three paths. Regression coverage in
+  `scripts/rpg2k_logic_check.rb`: the Change Monster HP fix is confirmed to
+  fail against its pre-fix code, and an all-ally heal aimed at both a downed
+  member and a wounded one confirms the Skill/Item path skips the downed
+  member entirely while still healing the wounded member normally (true
+  both before and after, since that path was never broken).
 - Damage Processing (the raw event command) uses a **different formula**
   from the built-in normal attack: normal attack = `(ATK÷2) − (DEF÷4)`,
   but this command computes `AttackPower − (DEF÷4)` with **no automatic

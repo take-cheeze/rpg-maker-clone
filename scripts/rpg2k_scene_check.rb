@@ -4678,6 +4678,35 @@ check 'a battle page with no condition ticked at all never fires' do
   ok !st.switches[15], 'RPG_RT reads an unticked condition box as never, not always'
 end
 
+# EasyRPG's CheckBattleEndAndScheduleEvents runs "before each battler acts and
+# also right after the last battler acts", not just once between rounds --
+# Scene::Map#drive_battle_animate now checks between every acting battler
+# (see @battle_ui[:battler_boundary]).
+check 'a battle page conditioned on enemy HP fires mid-round, before the round settles' do
+  ic = Game::Interpreter::Cmd
+  # True only once the first troop member's HP falls to half or less -- which
+  # only happens once the hero's own attack lands this round, never before.
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 20, 20, 0])],
+                            Game::BattlePage::ENEMY_HP, enemy_hp_max: 50) }
+  scene, st = battle_scene_with_pages(pages)
+  phase_when_fired = nil
+  60.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target].include?(ui[:phase])
+    scene.update
+    RGSS::Input.triggered = []
+    ui = scene.instance_variable_get(:@battle_ui)
+    if st.switches[20] && phase_when_fired.nil?
+      phase_when_fired = ui && ui[:phase]
+    end
+    break if phase_when_fired
+  end
+  ok phase_when_fired, 'the page fired at all'
+  ok phase_when_fired != :command,
+     "fired mid-round (phase was #{phase_when_fired.inspect} when the switch " \
+     'landed), not only once the round settled back to :command for the next one'
+end
+
 check 'Terminate Battle from a page ends the fight and resumes the event' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
@@ -6255,6 +6284,40 @@ check 'a forced move route does not roll for a random encounter' do
   ok st.x > 0, "the forced route actually moved the player, at x=#{st.x}"
   ok scene.instance_variable_get(:@battle_ui).nil?,
      'the whole forced route ran without ever rolling for an encounter'
+end
+
+check 'standing on a Hero Touch event tile suppresses the random-encounter roll' do
+  # yado.tk quirk, multiply corroborated: the tile under a Hero Touch
+  # (trigger 1) event answers random encounters too, not just the event
+  # itself. Without the fix, this guaranteed-roll setup (encount_steps 1,
+  # default terrain rate -- see the "opens a battle" check above) would
+  # start a battle on the very first check regardless.
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  touch = page(trigger: 1)
+  touch.event_commands = [ECmd.new(0)] # a real page needs *a* command list
+  scene = new_scene({ 1 => event(0, 0, touch) }, player: [0, 0], map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  scene.send(:check_random_encounter)
+  scene.update # give it a frame too, in case a battle wait was queued anyway
+  ok scene.instance_variable_get(:@battle_ui).nil?,
+     "the party is standing on a Hero Touch event's own tile: no roll"
+  eq 0, st.encounter_total, 'the step never accumulated, matching the flying early-out above'
+end
+
+check 'standing on an Event Touch tile still rolls for a random encounter' do
+  # Control for the Hero Touch check above: an otherwise-identical setup,
+  # but the event on the party's tile uses a different trigger (Event
+  # Touch, 2) -- the guaranteed roll must still fire, proving the
+  # suppression is keyed to the trigger type and not "any event is here".
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  other = page(trigger: 2)
+  other.event_commands = [ECmd.new(0)]
+  scene = new_scene({ 1 => event(0, 0, other) }, player: [0, 0], map_tree: tree)
+  scene.send(:check_random_encounter)
+  scene.update # the roll only queues a :battle wait; a frame turns it into @battle_ui
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'an Event Touch event on the tile does not suppress the roll'
+  eq 1, ui[:troop].id, "the map tree node's own troop"
 end
 
 check "current_encounter_steps reads the map tree node's own setting, " \
