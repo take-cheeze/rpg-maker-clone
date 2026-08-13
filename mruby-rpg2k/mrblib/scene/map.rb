@@ -124,6 +124,11 @@ class RPG2k
         @wait_timer = nil
         @anim_wait = nil
         @map_animation = nil
+        # Which interpreter (the foreground event, or a parallel process) is
+        # waiting on @map_animation / @anim_wait right now -- see
+        # #drive_map_animation, so the right one gets #resume'd, not always
+        # the foreground @interpreter.
+        @map_animation_interp = nil
         # One window per timer (RPG2003 has two); built lazily when first shown.
         @timer_windows = [nil, nil]
         @timer_texts = [nil, nil]
@@ -1115,6 +1120,12 @@ class RPG2k
         elsif it.wait_kind == :key_input
           # Parallel processes commonly poll a key each frame into a variable.
           resolve_key_input(it)
+        elsif it.wait_kind == :animation
+          # A Show Battle Animation with its wait flag set, issued from a
+          # parallel process rather than the foreground event -- shares the
+          # same single on-screen animation slot #drive_map_animation already
+          # drives for the foreground, see there.
+          drive_map_animation(it)
         else
           it.resume # background: ignore message/choice/teleport requests
         end
@@ -2554,7 +2565,7 @@ class RPG2k
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
           when :name_input then drive_name_input
-          when :animation then drive_map_animation
+          when :animation then drive_map_animation(@interpreter)
           when :sprite_flash then @interpreter.resume unless sprite_flashing?
           when :save_menu then perform_event_save
           when :menu then perform_event_menu
@@ -4982,20 +4993,31 @@ class RPG2k
       ANIM_CELL = 96
       ANIM_SHEET_COLS = 5
 
-      # Drive a Show Battle Animation (11210) wait: play the animation over its
-      # target, then resume the event. When the animation's data / sheet is
+      # Drive a Show Battle Animation (11210) wait for interpreter `it` -- the
+      # foreground event, or a parallel process that issued one of its own (both
+      # share this one on-screen animation slot, matching yado.tk: only one
+      # battle animation is ever on screen at a time): play the animation over
+      # its target, then resume `it`. When the animation's data / sheet is
       # available it advances frame by frame (composited by #draw_map_animation),
       # firing the screen flashes its timings request; otherwise it degrades to a
-      # plain timed wait, so a cutscene paces the same as RPG_RT either way.
-      def drive_map_animation
-        init_map_animation if @map_animation.nil? && @anim_wait.nil?
+      # plain timed wait, so a cutscene paces the same as RPG_RT either way. If
+      # the slot is currently held by a *different* interpreter's animation, `it`
+      # simply waits its turn -- this build does not model one animation cutting
+      # another short, only that they cannot render concurrently.
+      def drive_map_animation(it)
+        if @map_animation.nil? && @anim_wait.nil?
+          @map_animation_interp = it
+          init_map_animation(it)
+        end
+        return unless @map_animation_interp.equal?(it)
         @map_animation ? step_map_animation : step_animation_wait
       end
 
-      # Begin the animation: build the frame-by-frame player from the request, or
-      # arm the timed-wait fallback when there is no drawable animation.
-      def init_map_animation
-        @map_animation = start_map_animation
+      # Begin the animation: build the frame-by-frame player from `it`'s
+      # request, or arm the timed-wait fallback when there is no drawable
+      # animation.
+      def init_map_animation(it)
+        @map_animation = start_map_animation(it)
         if @map_animation
           fire_animation_flashes(@map_animation) # frame 0 flashes
         else
@@ -5018,9 +5040,12 @@ class RPG2k
           # entry (see #animation_sheet) that a later replay of this
           # animation reuses, not something this one play owns.
           @map_animation = nil
-          # A battle animation is driven by the round rather than by an event
-          # command, so there is no paused interpreter waiting on it.
-          @interpreter.resume unless ma[:battle]
+          owner = @map_animation_interp
+          @map_animation_interp = nil
+          # A battle-round animation (#start_battle_animation) is driven by the
+          # round rather than by an event command, so it never set an owner --
+          # there is no paused interpreter waiting on it.
+          owner.resume unless ma[:battle] || owner.nil?
           return
         end
         fire_animation_flashes(ma)
@@ -5030,7 +5055,9 @@ class RPG2k
       def step_animation_wait
         if @anim_wait <= 0
           @anim_wait = nil
-          @interpreter.resume
+          owner = @map_animation_interp
+          @map_animation_interp = nil
+          owner.resume if owner
         else
           @anim_wait -= 1
         end
@@ -5038,8 +5065,8 @@ class RPG2k
 
       # Build the animation player, or nil when the animation is unknown or its
       # Battle/<name> sheet is missing (then the timed-wait fallback runs).
-      def start_map_animation
-        req = @interpreter.battle_animation
+      def start_map_animation(it)
+        req = it.battle_animation
         return nil unless req
         tx, ty = animation_target_pixel(req[:target])
         build_animation(req[:animation], tx, ty)

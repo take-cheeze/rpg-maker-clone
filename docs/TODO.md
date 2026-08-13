@@ -3011,6 +3011,32 @@ not yet verified:
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle
   Animation calls back-to-back produces a visible one-frame stutter.
+  ✅ **A Common Event Parallel Process's own Show Battle Animation (11210)
+  now actually plays**, rather than its "wait until it finishes" flag being
+  silently ignored. `Scene::Map#drive_parallel_wait`'s wait-kind dispatch had
+  no `:animation` case at all, so a parallel process that issued one fell
+  into the generic "background: ignore message/choice/teleport requests"
+  branch and was `#resume`d on the very next frame — the animation was never
+  built, drawn, or waited on, only the foreground `@interpreter`'s own
+  requests ever reached `#drive_map_animation`. Fixed by generalizing
+  `#drive_map_animation`/`#init_map_animation`/`#start_map_animation` to take
+  the waiting interpreter explicitly — a new `@map_animation_interp` tracks
+  which one currently owns the single `@map_animation`/`@anim_wait` slot, so
+  `#step_map_animation`/`#step_animation_wait` resume the right one instead of
+  always the foreground `@interpreter` — and adding a `:animation` branch to
+  `#drive_parallel_wait` that drives the same shared renderer. This only
+  covers making a parallel process's request render and block that process at
+  all; the "only one at a time, second forcibly cuts off the first" precedence
+  rule between two *concurrent* requests (which interpreter, if any, gets
+  bumped) is intentionally left unmodelled — a request arriving while the slot
+  is held simply waits its turn — since resolving it needs a real RPG_RT
+  comparison this environment cannot run. The "Wait frame is two 0.0s frames"
+  and "back-to-back calls stutter" claims are likewise still open. Covered by
+  two new `scripts/rpg2k_scene_check.rb` checks (a parallel process's Show
+  Battle Animation holds it, then resumes once the animation finishes; the
+  animation actually renders — sprite shown, screen flash fired — for a
+  parallel-process request, not just a foreground one), both confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a
