@@ -1422,9 +1422,10 @@ class RPG2k
       end
 
       # System BGM slot indices, as used by Change System BGM (10660) --
-      # matches the slot 0 = battle reading already documented on the
-      # rpg2k_logic_check.rb coverage for that command.
+      # matches the slot 0 = battle / 1 = victory reading already documented
+      # on the rpg2k_logic_check.rb coverage for that command.
       SYSTEM_BGM_BATTLE = 0
+      SYSTEM_BGM_VICTORY = 1
 
       # Play the battle BGM when a fight opens, remembering the field/vehicle
       # BGM that was playing so #restore_pre_battle_bgm can bring it back once
@@ -1459,6 +1460,42 @@ class RPG2k
         return nil if name.nil? || name.empty?
         { name: name, volume: music_volume(db.system.battle_music),
           tempo: music_tempo(db.system.battle_music) }
+      end
+
+      # Play the victory fanfare over the result window on a win, the same way
+      # #play_battle_bgm swaps in the battle track when the fight opens. RPG_RT
+      # stops the battle BGM the instant the last enemy falls and plays the
+      # System's battle_end_music (Change System BGM slot 1) for the "Victory! /
+      # EXP gained" screen; #restore_pre_battle_bgm already brings the
+      # pre-battle field/vehicle track back once that screen is dismissed
+      # (#finish_battle), so nothing here needs to remember or restore
+      # anything of its own. A game with no victory BGM configured leaves
+      # whatever was playing (the battle track) alone, the same blank-Music
+      # no-op #battle_bgm documents.
+      def play_victory_bgm
+        music = victory_bgm
+        return unless music
+        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
+        @state.current_bgm = music
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] victory BGM failed: #{e.message}"
+      end
+
+      # The victory BGM to play as { name:, volume:, tempo: }, or nil when
+      # neither source names a file. Prefers a Change System BGM override for
+      # the victory slot over the database's own System battle_end_music --
+      # the same override-then-default idiom #battle_bgm uses for the battle
+      # slot.
+      def victory_bgm
+        ov = @state.system_bgm[SYSTEM_BGM_VICTORY]
+        if ov && ov[:name] && !ov[:name].to_s.empty?
+          return { name: ov[:name], volume: ov[:volume] || 100,
+                    tempo: ov[:tempo] || 100 }
+        end
+        name = music_name(db.system.battle_end_music)
+        return nil if name.nil? || name.empty?
+        { name: name, volume: music_volume(db.system.battle_end_music),
+          tempo: music_tempo(db.system.battle_end_music) }
       end
 
       # Restore the BGM that was playing before the fight started. A no-op
@@ -4219,6 +4256,7 @@ class RPG2k
 
       def enter_battle_result(result)
         @battle_ui[:result] = result
+        play_victory_bgm if result == :victory
         lines = battle_result_lines(result, @battle_ui[:troop])
         [@battle_ui[:status_win], @battle_ui[:cmd_win]].each { |w| w.dispose if w }
         @battle_ui[:status_win] = nil

@@ -3647,6 +3647,51 @@ check 'Enemy Encounter scene: a Change System BGM battle override beats the data
   eq 'CustomBattle', st.current_bgm[:name]
 end
 
+check 'Enemy Encounter scene: victory plays the database battle_end_music over the result screen' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.db.system.battle_end_music =
+    OpenStruct.new(file: 'VictoryBGM', volume: 90, pitch: 105)
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  eq [['VictoryBGM', 90, 105]], RGSS::Audio.bgm_calls,
+     'the victory fanfare played as soon as the result screen appeared'
+  eq 'VictoryBGM', st.current_bgm[:name]
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
+  scene.update
+  RGSS::Input.triggered = []
+  eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
+     'the field BGM that was playing before the fight replays once the result is dismissed'
+  eq 'Field', st.current_bgm[:name]
+end
+
+check 'Enemy Encounter scene: a Change System BGM victory override beats the database battle_end_music' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.db.system.battle_end_music =
+    OpenStruct.new(file: 'VictoryBGM', volume: 90, pitch: 105)
+  # System BGM slot 1 is victory -- see the matching rpg2k_logic_check.rb note.
+  st.system_bgm[1] = { name: 'CustomVictory', fadein: 0, volume: 60, tempo: 130,
+                       balance: 50 }
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  eq [['CustomVictory', 60, 130]], RGSS::Audio.bgm_calls,
+     'the Change System BGM override played instead of the database battle_end_music'
+  eq 'CustomVictory', st.current_bgm[:name]
+end
+
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
