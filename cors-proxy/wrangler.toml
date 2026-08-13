@@ -30,3 +30,18 @@ CACHE_MAX_BYTES = "268435456"   # skip caching (not proxying) anything bigger
 [[r2_buckets]]
 binding = "ARCHIVE_CACHE"
 bucket_name = "rpg-maker-cors-proxy-cache"
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
