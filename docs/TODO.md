@@ -3354,6 +3354,137 @@ list if channel values are ever revisited); importing the same asset as
 both PNG and XYZ leaves both on disk, and the engine may pick either
 (documented source of "wrong graphic shows up" bugs).
 
+### viprpg-dev wiki backlog (2000 category)
+
+Findings from <https://wikiwiki.jp/viprpg-dev/2000> (VIPRPG@総合制作技術 Wiki's
+RPGツクール2000 category) and the `200X共通` pages it transcludes
+(`基本的な仕様`, `バグ`), plus `2000/デフォ戦/デフォ戦botまとめ`. A different
+source from the yado.tk backlog above — corroborates it in places (the
+parallel-process-goes-first-if-both-fire-the-same-frame rule, the 999 damage
+cap) but adds new specifics, especially around per-frame event step
+accounting and a documented RPG_RT loop-exit bug this codebase does not
+reproduce.
+
+**Flagged for priority triage** — checked against the current code this
+session (reading + documenting only, not fixed — see below):
+- **Break Loop does not reproduce RPG_RT's own nesting bug.**
+  `Game::Interpreter#do_break_loop` (`mruby-rpg2k/mrblib/interpreter.rb:1008`)
+  scans forward for the first `End Loop` whose `indent < cmd.indent`,
+  i.e. it deliberately skips any `End Loop` at the break command's own
+  nesting depth or deeper and lands exactly on the *enclosing* loop's own
+  end — which is the behaviourally "correct" outcome, but not what real
+  RPG_RT does. The wiki's worked example: a Loop containing (in order) a
+  Break Loop, then a second, empty, more-deeply-nested Loop/End Loop pair,
+  then a Show Text, before the outer loop's own End Loop and a final Show
+  Text after it. Real RPG_RT's Break Loop searches downward for the
+  **next** `End Loop` line with no regard for nesting depth at all, so it
+  lands on the *inner* loop's End Loop (the first one it meets) instead of
+  the outer one — control falls into the inner loop's body (the first Show
+  Text) and then loops back via the *outer* End Loop forever, so the
+  second Show Text after the outer loop is never reached and the first one
+  repeats indefinitely. This codebase's `indent`-aware scan means that
+  exact repro would correctly exit here instead of hanging — a
+  compatibility gap for any game whose logic (deliberately or not) depends
+  on this specific bug, not yet fixed.
+- **Autorun (auto-start) events run at most once per map visit, not once
+  per frame.** `Scene::Map#start_autostart` (`mruby-rpg2k/mrblib/scene/
+  map.rb:919`) picks the single lowest-id not-yet-started eligible
+  auto-start map event or common event, flips `@started_auto[id]` /
+  `@started_common[id]` and never considers that id again this visit —
+  already marked ✅ "done" above (`docs/TODO.md`'s "Common events" bullet)
+  with the explicit rationale "so an ungated process cannot hard-loop."
+  Per `200X共通/基本的な仕様`'s "マップイベントの挙動"/"コモンイベントの挙動"
+  sections, real RPG_RT instead re-triggers an eligible Autorun event from
+  its first line on **every subsequent frame** for as long as its page's
+  appearance condition keeps holding (not once ever) — an Autorun with no
+  wait-including command is the well-known "spams every frame" beginner
+  mistake, and a Common Event Autorun goes one step further: absent a wait
+  command it re-executes from the top **within the same frame**, up to the
+  10000-step-per-frame budget (worked example given: a one-line
+  `[0001] += 1` auto-start common event advances the variable by 5000
+  *every single frame*, not once ever, because each iteration costs 2 steps
+  — the operation plus the implicit blank terminator line — and
+  10000 / 2 = 5000). The current one-shot design is a deliberate,
+  documented simplification to keep the simulation from spinning forever
+  on an unthrottled Autorun, but it means a real game's every-frame
+  Autorun screen-effect/counter idiom (the exact pattern the wiki's own
+  worked example describes as ordinary usage, not an edge case) will only
+  ever run once here. Needs a real decision — re-trigger every frame and
+  rely on `MAX_STEPS`/the existing per-command step cost to bound it the
+  way real RPG_RT does, or keep the one-shot behaviour and record the
+  divergence as accepted scope — rather than staying marked ✅ as-is.
+
+**Untriaged backlog** (raw reference material, not checked against the
+codebase yet):
+- **Autorun cascading within one frame.** If the lowest-id eligible Autorun
+  map event's content contains no wait-including command, real RPG_RT lets
+  the next-lowest-id eligible Autorun event start immediately in the same
+  frame (potentially chaining through several before one of them blocks on
+  a wait). `#start_autostart` only ever starts one event per frame
+  regardless — entangled with the run-once-per-visit item above, since
+  fixing that one changes how this needs to be tested too.
+- **A body-less command block still spends a step.** The wiki's own
+  worked example: a `◆繰り返し処理` / (blank inner line) / `：以上繰り返し`
+  loop, and the empty branches of a `◆条件分岐`, each spend 1 step per
+  visit to their blank line, in addition to whatever `End Loop`/`End
+  Branch` itself costs. Worth confirming the LCF-parsed command list
+  actually carries a real entry for an empty loop/branch body (rather than
+  the parser collapsing/omitting it) and that `Interpreter#step_cost`
+  charges for it — `mruby-rpg2k/mrblib/interpreter.rb:495` already
+  differentiates `END_LOOP`/`CALL_EVENT`/`CALL_COMMON_EVENT`/`END_BRANCH`
+  (cost 2) and a taken/untaken `CONDITIONAL` (1 or 2), which lines up with
+  the wiki's "most commands cost 1, a few vary," but the empty-line case
+  specifically wasn't checked this session.
+- **Party wipe during "Show Text" freezes or crashes real RPG_RT** (also
+  reachable via "Damage Processing," not just "HP change"). Worked repros
+  given for both a blocking Autorun HP-drain-to-0-during-a-message and a
+  Parallel Process doing the same. Since this project already deliberately
+  does *not* reproduce other native RPG_RT crashes, this is presumably a
+  "leave it be" — the interesting question is only whether this codebase's
+  own game-over/party-wipe handling already behaves sanely in this exact
+  scenario (HP hits 0 while a message window from the same or a parallel
+  event is open) or has some other gap the freeze happened to have masked
+  in the original.
+- **Save data location fallback.** If `RPG_RT.exe` itself is read-only,
+  real RPG_RT reads/writes save files from `My Documents\<GameName>\`
+  instead of the game folder, and stops listing game-folder saves (even
+  ones shipped with the game) while that's active — presumably to support
+  running straight off read-only media. Not applicable to this project's
+  own portable `Marshal` save format today; relevant only if/when `.lsd`
+  save compatibility is targeted.
+- RTP graphic asset mistakes (`FaceSet/モンスター.png` has the Dark Elf's
+  face bleeding into the Grim Reaper's portrait next to it; `CharSet/
+  主人公3.png`'s female ninja sideways sprite has a transparency mistake in
+  her hair; two `ChipSet` off-by-one-pixel errors in `基本.png`'s castle
+  turret and `外観.png`'s roof tiling) are mistakes in Enterbrain's own
+  official RTP art assets, fixable by an official patch — not applicable
+  unless this project ever ships or tests against the stock RTP bitmaps
+  directly.
+- `2000/デフォ戦/デフォ戦botまとめ` is a large (~140-item), fine-grained
+  community trivia dump for default-battle-system fidelity, sourced from
+  the `@2000_battle_bot` Twitter account — worth a dedicated read-through
+  once battle-system work resumes rather than transcribing it piecemeal
+  now. A few structurally-significant points worth flagging early so
+  they're not missed later: displayed ability-value changes clamp to
+  1–999 but the *underlying* unclamped total is still tracked internally
+  and can un-clamp back into view after a later change (e.g. lower Attack
+  by more than the display can show, then raise it partway back — the
+  displayed value stays pinned at its old clamp until the raise actually
+  pushes the real total back above it); a special skill's ability-value
+  *decrease* rounds up on ÷2, a status effect's own halving rounds *down*;
+  "party wipe" for game-over purposes is defined as "every member is both
+  unable to act and does not recover naturally," not literally "every
+  member's HP is 0" (why Stone status can wipe a party without zeroing
+  anyone's HP); dual-wielding's off-hand attack animation is offset by a
+  few frames from the main hand's; Berserk/Confusion override target
+  selection but still honour "hits twice"/"ignores evasion," while Berserk
+  additionally collapses an "attack all" weapon down to a single target
+  and disables "always acts first"; and hit rate has both a floor and a
+  ceiling relative to the skill's *configured* rate depending on relative
+  Agility (a 90%-accuracy skill can't exceed 95% actual hit even against a
+  much slower target; an 80% one caps at 90%; the same skew works in
+  reverse against a much faster target).
+
 ## RPG Maker with RGSS (XP / VX / VXAce)
 
 An RPG Maker XP project stores its whole database as Ruby `Marshal` dumps
