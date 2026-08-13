@@ -2316,10 +2316,38 @@ not yet verified:
   (appearance-condition-unmet) map event.
 - "Through Mode: Begin" without a matching "End" leaves the character
   permanently able to pass through walls.
-- "Face Direction" always overrides Fixed Direction/Animation Type. After
-  Fixed-Direction movement (or after a diagonal move), "One Step Forward"
-  continues in the **last direction actually moved**, not the displayed
-  facing.
+- ✅ **A move-route "Face Direction" sub-command always overrides an earlier
+  "Direction Fix ON" (Lock Facing) in the same route.** Direction Fix only
+  ever suppresses the facing change an *ordinary move* would otherwise cause
+  (matching "Through Mode"'s and "Change Graphic"'s own don't-touch-explicit-
+  overrides pattern above) — it does not also swallow a later *explicit*
+  turn. `Game::MoveRoute#apply_command`'s Turn Right/Left/180/Random
+  sub-commands (`Character#turn_right`/`#turn_left`/`#turn_around`) already
+  wrote `@direction` directly, bypassing `facing_locked` entirely, but the
+  Face Up/Right/Down/Left/Random/Hero/Away-from-Hero sub-commands all routed
+  through `Character#face`, which *does* respect the lock
+  (`@direction = dir unless @facing_locked || dir.nil?`) — the same method
+  ordinary movement uses to update facing as a side effect, and correctly
+  should keep respecting it. Fixed by giving `Character` a second method,
+  `#face!` (lock-ignoring, mirrors the Turn commands' direct-write), and
+  routing the seven Face Direction sub-commands through it instead of
+  `#face`; `#move`/`#jump`/`#move_diagonal`'s own movement-driven facing
+  still goes through the original `#face` and still respects the lock,
+  unchanged. Covered by a new `scripts/rpg2k_logic_check.rb` check (Direction
+  Fix ON, then a Move Right that keeps the facing frozen, then a Face Up that
+  turns north despite the still-active lock), confirmed to fail against the
+  pre-fix code (asserting direction 8, getting 2) before the fix. **Still
+  open, a related but separate question, not addressed by this fix**: after a
+  Fixed-Direction move (or a diagonal move), "One Step Forward" is documented
+  to continue in the *last direction actually moved* rather than the
+  displayed facing — this codebase's `Game::Character` has only the one
+  `@direction` field for both (see its `#jump` doc comment), so implementing
+  this would need a second "last movement direction" field threaded through
+  `#move`/`#jump`/`#move_diagonal` and read by Move Route's `MOVE_FORWARD`
+  instead of `#direction`, a distinct enough change to scope out here. The
+  "Animation Type" half of the original claim (whether an Animation Type
+  setting is also overridden by a Face Direction command) is unverified
+  either way.
 - Jump needs paired Begin/End; movement commands between them sum into a
   net displacement vector (opposite-axis moves cancel); only the *landing*
   tile's passability is tested, tiles crossed are ignored; speed/direction
@@ -2695,6 +2723,24 @@ not yet verified:
   high-ATK, always-critical normal attack against a defenceless target
   clamps at 999 rather than the uncapped 6000 (2000 base × 3 crit), and an
   attack skill computing a raw 5000 HP hit likewise clamps at 999.
+  **A fifth site was missed by this fix and is now covered too: Simulated
+  Attack (10500, "Damage Processing" in the yado.tk write-up), the raw
+  event command that hurts a target with no attacker at all.**
+  `Game::Interpreter#do_simulated_attack` (`mruby-rpg2k/mrblib/
+  interpreter.rb`) computes its own damage independently of `Game::Battle` —
+  `atk - def * p_def / 400 - int * p_spi / 800`, matching the yado.tk
+  finding that this command's defence/spirit "effectiveness" percentages
+  divide by 4 and 8 respectively rather than the normal attack's own
+  `ATK÷2 − DEF÷4` formula (**confirmed already correct**, no change needed
+  for the formula itself) — and had no ceiling on the result, so a large
+  enough Attack Power parameter could apply (and report through the
+  command's store-in-variable option) far more than 999 in one hit. Fixed
+  by clamping to the same `Game::Battle::DAMAGE_CAP` before it reaches
+  `Actor#change_hp` or the result variable. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a 5000-power Simulated Attack
+  against a defenceless, high-max-HP target clamps at 999, both in the HP
+  change and the stored variable), confirmed to fail against the pre-fix
+  code.
 - ✅ **Turn-order tie-break on equal Agility: an ally acts before an
   equal-agility enemy; among tied allies, the lower actor id acts first.**
   The ally-before-enemy half was already correct by construction —
@@ -2761,12 +2807,17 @@ not yet verified:
   member and a wounded one confirms the Skill/Item path skips the downed
   member entirely while still healing the wounded member normally (true
   both before and after, since that path was never broken).
-- Damage Processing (the raw event command) uses a **different formula**
-  from the built-in normal attack: normal attack = `(ATK÷2) − (DEF÷4)`,
-  but this command computes `AttackPower − (DEF÷4)` with **no automatic
-  halving** of the given Attack Power — replicating a normal attack
-  requires manually halving the parameter first. Defense-effectiveness
-  100% = DEF/4 (not full DEF); Spirit-effectiveness 100% = Mind/8.
+- ✅ Damage Processing (the raw event command, Simulated Attack 10500) uses a
+  **different formula** from the built-in normal attack: normal attack =
+  `(ATK÷2) − (DEF÷4)`, but this command computes `AttackPower − (DEF÷4)`
+  with **no automatic halving** of the given Attack Power — replicating a
+  normal attack requires manually halving the parameter first.
+  Defense-effectiveness 100% = DEF/4 (not full DEF); Spirit-effectiveness
+  100% = Mind/8. **Confirmed already correct** —
+  `Game::Interpreter#do_simulated_attack` already implements exactly this
+  formula — but the command was missing the same 999 damage cap every other
+  damage path has, which is now fixed; see the fuller writeup under the
+  "Damage is hard-capped below 1000 (999)" bullet above.
 - ✅ Multiple active states: only the highest-priority one is **displayed**
   (`Game::States.significant`, unchanged), but all active states still
   mechanically apply (a hidden poison keeps ticking under a displayed
