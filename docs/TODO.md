@@ -3110,10 +3110,39 @@ not yet verified:
   `elsif magical` branch and computes `0 * dmg / 100 = 0`, not a sign flip —
   so a full immunity zeroes the hit rather than healing the target. No code
   change; the claim already held.
-- Battle Interrupt (from inside a battle event) satisfies **neither**
-  the Win nor Lose branch of the enclosing Battle Processing command —
-  it's a third, unlabeled outcome that resumes right after Branch End,
-  and only increments the battle-count stat (not loss/escape counts).
+- ✅ **Battle Interrupt (Terminate Battle, 13410) already satisfies neither
+  the Win nor Lose branch of the enclosing Enemy Encounter command, and
+  already leaves the win/escape/defeat tallies alone — confirmed rather
+  than an open claim, and the regression coverage that looked like it
+  already proved this was actually vacuous.** `Game::Interpreter#resume_battle`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) only bumps `win_count`/`defeat_count`/
+  `escape_count` inside a `case result when :victory/:defeat/:escape` block
+  with no `:abort` arm, and `#find_battle_option`'s `BATTLE_HANDLERS` lookup
+  table has no `:abort` key either, so an unmatched lookup (`want = nil`)
+  never finds a `[Victory]`/`[Escape]`/`[Defeat]` marker and instead lands on
+  the encounter's own `END_BATTLE` — resuming the event right after Branch
+  End, exactly as the site describes. `battle_count` (the "a battle was
+  entered" tally the site's "battle-count stat" bullet half refers to) is
+  bumped once at `do_enemy_encounter`, independent of any outcome, so it is
+  untouched by this path either way. No code change was needed for the game
+  logic — but the existing `scripts/rpg2k_scene_check.rb` check that looked
+  like it already covered this (`'Terminate Battle from a page ends the
+  fight and resumes the event'`) had a loop bug: `12.times { scene.update;
+  break if @battle_ui.nil? }` breaks on the very first frame, before the
+  battle has even opened, since `@battle_ui` reads as `nil` then too —
+  identical to how it reads once the fight has genuinely closed (the
+  Timer-force-end check right after it, which this bullet cites for the
+  "no Win/Escape/Defeat handler matched" half, avoided the trap already, by
+  explicitly waiting for `@battle_ui` to appear before ever expecting it to
+  clear). Confirmed by re-running the *original* (pre-fix) check against an
+  injected `:abort → win_count` bug: all 344 checks still "passed". Fixed by
+  a new `open_then_close_battle` helper that first asserts `@battle_ui`
+  actually appears, then asserts it disappears again, and by a new check
+  built on it (`'Terminate Battle matches neither Win/Escape/Defeat and only
+  bumps the battle-entry count'`) that asserts `battle_count == 1` with
+  `win_count`/`escape_count`/`defeat_count` all `0` and neither handler
+  switch set — confirmed to fail against both an injected win-count bug and
+  an injected `BATTLE_HANDLERS[:abort]` mapping.
 - ✅ **Enemy Appearance (Show Hidden Monster) already gets both halves of this
   right.** Targeting an already-appeared enemy is a silent no-op:
   `Scene::Map#reveal_battle_monster` (`mruby-rpg2k/mrblib/scene/map.rb`)
