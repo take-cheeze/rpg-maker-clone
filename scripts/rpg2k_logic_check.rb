@@ -420,6 +420,29 @@ check 'a Face Direction sub-command overrides an earlier Direction Fix ON in the
   eq 8, c.direction
 end
 
+check 'move forward after a Direction-Fix move continues in the last direction actually moved' do
+  # yado.tk: "One Step Forward" is documented to continue in the direction
+  # last *walked*, not the sprite's displayed facing -- the follow-up this
+  # codebase scoped out of the Face Direction fix above, since #direction
+  # alone cannot tell the two apart once a locked move and an explicit Face
+  # command have diverged. Character#last_move_direction (added for this)
+  # is what Move Forward now reads instead of #direction.
+  route = R.new([mc(R::LOCK_FACING), mc(R::MOVE_RIGHT), mc(R::FACE_UP),
+                 mc(R::MOVE_FORWARD)], repeat: false)
+  c = Game::Character.new(5, 5, 2) # facing south
+  w = FakeWorld.new
+  route.step(c, w) # Direction Fix ON
+  route.step(c, w) # Move Right: last-moved direction east, facing stays south
+  eq [6, 5], [c.x, c.y]
+  eq 6, c.last_move_direction
+  route.step(c, w) # Face Up: turns the sprite north; last-moved direction untouched
+  eq 8, c.direction
+  eq 6, c.last_move_direction
+  route.step(c, w) # One Step Forward: continues east (last walked), not north (facing)
+  eq [7, 5], [c.x, c.y]
+  eq 8, c.direction # the lock is still on, so the step itself doesn't re-face south
+end
+
 check 'switch on/off route commands drive the world switches' do
   route = R.new([mc(R::SWITCH_ON, a: 7), mc(R::SWITCH_OFF, a: 3)], repeat: false)
   c = Game::Character.new(0, 0)
