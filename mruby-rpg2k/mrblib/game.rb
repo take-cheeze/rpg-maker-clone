@@ -6274,6 +6274,15 @@ module Game
       end
     end
 
+    # Whether the entry #step_action just returned was the last buffered hit
+    # of its battler's action (a dual-wield swing or an all-target Skill/Item
+    # both queue several) -- true once nothing more of that battler's action
+    # remains to drain. The battle screen uses this to know when a *whole
+    # battler's turn* has finished, not just one hit of it, since a battle
+    # page is checked once per acting battler (see Scene::Map#run_battle_events),
+    # not once per hit.
+    def pending_empty?; @pending.empty?; end
+
     # Close a round begun with #begin_round: clear each ally's chosen action (so
     # the next round starts fresh) and settle the result once a side is wiped.
     def end_round

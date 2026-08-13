@@ -4678,6 +4678,35 @@ check 'a battle page with no condition ticked at all never fires' do
   ok !st.switches[15], 'RPG_RT reads an unticked condition box as never, not always'
 end
 
+# EasyRPG's CheckBattleEndAndScheduleEvents runs "before each battler acts and
+# also right after the last battler acts", not just once between rounds --
+# Scene::Map#drive_battle_animate now checks between every acting battler
+# (see @battle_ui[:battler_boundary]).
+check 'a battle page conditioned on enemy HP fires mid-round, before the round settles' do
+  ic = Game::Interpreter::Cmd
+  # True only once the first troop member's HP falls to half or less -- which
+  # only happens once the hero's own attack lands this round, never before.
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 20, 20, 0])],
+                            Game::BattlePage::ENEMY_HP, enemy_hp_max: 50) }
+  scene, st = battle_scene_with_pages(pages)
+  phase_when_fired = nil
+  60.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target].include?(ui[:phase])
+    scene.update
+    RGSS::Input.triggered = []
+    ui = scene.instance_variable_get(:@battle_ui)
+    if st.switches[20] && phase_when_fired.nil?
+      phase_when_fired = ui && ui[:phase]
+    end
+    break if phase_when_fired
+  end
+  ok phase_when_fired, 'the page fired at all'
+  ok phase_when_fired != :command,
+     "fired mid-round (phase was #{phase_when_fired.inspect} when the switch " \
+     'landed), not only once the round settled back to :command for the next one'
+end
+
 check 'Terminate Battle from a page ends the fight and resumes the event' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }

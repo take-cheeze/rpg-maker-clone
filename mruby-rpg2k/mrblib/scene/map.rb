@@ -2792,7 +2792,12 @@ class RPG2k
                        # already fired this turn (RPG2000 runs a page once per
                        # turn its condition holds, so this resets each round).
                        events: Game::Interpreter.new(@state), event_win: nil,
-                       pages_run: {} }
+                       pages_run: {},
+                       # Whether the just-drained #step_action entry finished
+                       # its battler's whole action (see #drive_battle_animate),
+                       # and which phase a running battle-event page resumes to
+                       # once it finishes (see #run_battle_events).
+                       battler_boundary: false, event_return_phase: :command }
         @battle_ui[:events].battle = @battle_ui[:battle]
         # A battle page can Call Common Event (1005), so it needs the same
         # resolver the map's events run against.
@@ -3387,6 +3392,18 @@ class RPG2k
           @battle_ui[:anim_timer] -= 1
           return
         end
+        # A battle page is checked once per *acting battler*, not once per
+        # round -- EasyRPG's CheckBattleEndAndScheduleEvents runs "before each
+        # battler acts and also right after the last battler acts" (the
+        # latter half is #finish_round_animation's own check, already in
+        # place). The boundary between two battlers' actions is exactly where
+        # the previous #step_action call left nothing buffered (a dual-wield
+        # swing or an all-target Skill/Item queues several hits from *one*
+        # battler; the check belongs between battlers, not between hits).
+        if @battle_ui[:battler_boundary]
+          @battle_ui[:battler_boundary] = false
+          return if run_battle_events(:animate)
+        end
         entry = @battle_ui[:battle].step_action
         if entry
           # An Item action consumes one from the real bag when it lands (so
@@ -3401,6 +3418,7 @@ class RPG2k
           # is, exactly as before.
           @battle_ui[:anim_timer] =
             start_battle_animation(entry) ? 0 : BATTLE_ANIM_FRAMES
+          @battle_ui[:battler_boundary] = @battle_ui[:battle].pending_empty?
         else
           finish_round_animation
         end
@@ -3480,7 +3498,14 @@ class RPG2k
       # page was started, so the caller knows whether to draw the command window
       # or hand the frame to the event. A troop that scripts nothing, or whose
       # pages have all fired, simply returns false.
-      def run_battle_events
+      #
+      # `return_phase` is where #leave_battle_event_phase resumes once the page
+      # (and any chained page after it) finishes: `:command` for the between-
+      # rounds check (the default -- the normal case, opening the next round's
+      # command menu), `:animate` for the between-battlers check
+      # (#drive_battle_animate), which needs to pick back up mid-round rather
+      # than restart the command phase.
+      def run_battle_events(return_phase = :command)
         ui = @battle_ui
         return false unless ui && ui[:troop].pages
         matched = Game::BattlePage.select_all(ui[:troop].pages, @state.switches,
@@ -3489,9 +3514,10 @@ class RPG2k
         return false unless entry
         ui[:pages_run][entry[0]] = true
         cmds = entry[1].event
-        return run_battle_events if cmds.nil? || cmds.empty? # empty page: try the next
+        return run_battle_events(return_phase) if cmds.nil? || cmds.empty? # empty page: try the next
         ui[:events].battle = ui[:battle]
         ui[:events].start(cmds)
+        ui[:event_return_phase] = return_phase
         ui[:phase] = :event
         true
       rescue StandardError => e
@@ -3624,15 +3650,22 @@ class RPG2k
         true
       end
 
-      # The running page finished: fire the next matching page, or hand the turn
-      # back — to the result window when the page decided the fight, otherwise to
-      # the party's command phase.
+      # The running page finished: fire the next matching page (chained pages
+      # keep the same return_phase, so a battler-boundary check that opens
+      # several pages in a row still resumes mid-round rather than jumping to
+      # the command phase partway through), or hand the turn back — to the
+      # result window when the page decided the fight, to the mid-round
+      # animation loop when this page was a between-battlers check, otherwise
+      # to the party's command phase (a between-rounds check, the default).
       def leave_battle_event_phase
         close_battle_event_window
-        return if run_battle_events
+        return_phase = @battle_ui[:event_return_phase] || :command
+        return if run_battle_events(return_phase)
         battle = @battle_ui[:battle]
         if battle.finished?
           enter_battle_result(battle.result)
+        elsif return_phase == :animate
+          @battle_ui[:phase] = :animate
         else
           @battle_ui[:phase] = :command
           draw_battle_command
