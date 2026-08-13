@@ -613,30 +613,30 @@ The work below is roughly ordered by the critical path to a walkable game
   (11740) records its payload too and **is consumed** — see the random-
   encounter entry below (`Scene::Map#current_encounter_steps`) — while
   **Change System BGM** (10660) round-trips its per-slot overrides through
-  the save (`@state.system_bgm[cmd.param(0)]`); slot 6 (game over) is now
-  read back too (see the Game Over paragraph under "Menus, save, battle"
-  below), so only the remaining slots (battle / victory / inn / boat / ship
-  / airship) are still save-fidelity-only. **Change System
+  the save (`@state.system_bgm[cmd.param(0)]`); slot 0 (battle) and slot 6
+  (game over) are now read back too (see the battle-BGM paragraph just
+  below and the Game Over paragraph under "Menus, save, battle" below), so
+  only the remaining slots (victory / inn / boat / ship / airship) are
+  still save-fidelity-only. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
   (`Scene::Map#system_se` / `play_system_se`).
-  ✅ **The battle scene now plays the database's own battle BGM too** —
-  independently of Change System BGM's still-unconsumed override slots.
-  `Scene::Map#open_battle` (both an Enemy Encounter event command and a
-  wandering-monster random encounter route through it) never touched the
-  music at all: a fight started in silence, or just let the field track
-  keep looping, no matter what `db.system.battle_music` named. New
-  `#play_battle_bgm` / `#restore_pre_battle_bgm` mirror the memorize/
+  ✅ **The battle scene now plays the database's own battle BGM too**, and a
+  Change System BGM override for it. `Scene::Map#open_battle` (both an Enemy
+  Encounter event command and a wandering-monster random encounter route
+  through it) never touched the music at all: a fight started in silence, or
+  just let the field track keep looping, no matter what `db.system.battle_music`
+  named. New `#play_battle_bgm` / `#restore_pre_battle_bgm` mirror the memorize/
   restore idiom `#play_vehicle_bgm` / `#restore_pre_vehicle_bgm` already use
   for boarding a boat/ship/airship: `#open_battle` remembers
-  `@state.current_bgm` and plays `battle_music` (via the same
+  `@state.current_bgm` and plays the resolved battle BGM (via the same
   `music_name`/`music_volume`/`music_tempo` helpers vehicle and title BGM
   already use) when one is configured, and `#finish_battle` restores it —
   but only on a victory, an allowed escape, or a defeat with a custom
   `[Defeat]` handler; a game-over defeat skips the restore, since
   `Scene::GameOver` plays its own `gameover_music` and the map is never
-  shown again. A game with no `battle_music` configured leaves whatever was
+  shown again. A game with no battle BGM configured leaves whatever was
   already playing alone, matching RPG_RT's own no-op on a blank Music
   struct. Left unaddressed: the victory jingle (`battle_end_music`) and
   RPG_RT's exact timing for when the field BGM resumes relative to it — that
@@ -647,6 +647,21 @@ The work below is roughly ordered by the critical path to a walkable game
   the configured battle BGM at its own vol/tempo the moment the battle UI
   opens, and the field BGM that was playing before replays once the fight
   is won), confirmed to fail against the pre-fix code before the fix.
+  **A Change System BGM override for the battle slot (slot 0) is now
+  consumed too**: `#play_battle_bgm`'s music source used to be
+  `db.system.battle_music` unconditionally, so an event that ran Change
+  System BGM before a fight silently had no effect on what played — the
+  command stored the override on `@state.system_bgm[0]` and nothing ever
+  read it back, the exact gap this paragraph used to describe. A new
+  `#battle_bgm` resolves the slot-0 override first (name/volume/tempo from
+  the stashed `{name:, volume:, tempo:, ...}` hash) and falls back to the
+  database default otherwise — the identical override-then-default idiom
+  `#system_se` already established for Change System SFX. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a Change System BGM override for
+  slot 0 plays instead of the database `battle_music` the moment the battle
+  UI opens), confirmed to fail against the pre-fix code before the fix. The
+  other System BGM slots (victory / inn / boat / ship / airship / game over)
+  are still save-fidelity-only, per the note above.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the

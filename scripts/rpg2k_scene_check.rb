@@ -3630,6 +3630,23 @@ check 'Enemy Encounter scene: battle BGM plays on entry, field BGM resumes after
   eq 'Field', st.current_bgm[:name]
 end
 
+check 'Enemy Encounter scene: a Change System BGM battle override beats the database default' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  # System BGM slot 0 is battle -- see the matching rpg2k_logic_check.rb note.
+  st.system_bgm[0] = { name: 'CustomBattle', fadein: 0, volume: 85, tempo: 120,
+                       balance: 50 }
+  RGSS::Audio.reset_bgm
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  eq [['CustomBattle', 85, 120]], RGSS::Audio.bgm_calls,
+     'the Change System BGM override played instead of the database BattleBGM'
+  eq 'CustomBattle', st.current_bgm[:name]
+end
+
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
