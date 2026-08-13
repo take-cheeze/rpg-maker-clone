@@ -105,6 +105,12 @@ class RPG2k
         end
         # Erased events, and the state revision the active pages were chosen at.
         @erased_events = {}
+        # An erased event's tile at the moment it was erased (yado.tk: "Get
+        # Event ID at Location" still resolves an id there, unlike collision
+        # and drawing, which #erase_event already drops it from). Keyed
+        # separately from @erased_events since this needs the position, not
+        # just the flag.
+        @erased_event_positions = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
@@ -1589,6 +1595,10 @@ class RPG2k
         @erased_events[ev[:id]] = true
         tile = [ev[:char].x, ev[:char].y]
         @event_tiles.delete(tile) if @event_tiles[tile].equal?(ev)
+        # Frozen at the tile it occupied right before erasure -- an erased
+        # event cannot move any further, and #event_id_at still needs it (see
+        # there) even though it no longer blocks or draws.
+        @erased_event_positions[ev[:id]] = tile
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
       end
 
@@ -2438,9 +2448,25 @@ class RPG2k
 
       # Id of the event standing on tile (x, y), for the Store Event ID command
       # (0 when no event is there). Queried by the interpreter via map_info.
+      # Ties (several events sharing a tile, live or erased) resolve to the
+      # highest id, matching #rebuild_event_tiles' own last-write-wins order.
+      # A **temporarily-erased** event still answers here even though it no
+      # longer blocks or draws (yado.tk: "Get Event ID at Location... still
+      # returns an id for a temporarily-erased event") -- #erase_event freezes
+      # its tile in @erased_event_positions instead of dropping it outright.
+      # An event whose current page conditions aren't met is a separate,
+      # still-open half of the same claim: it never gets a Game::Character
+      # built at all (see #build_events), so there is no position to answer
+      # from without deciding what "its" position even means while hidden --
+      # unverified, left for a follow-up.
       def event_id_at(x, y)
+        best = 0
         ev = @event_tiles[[x, y]]
-        ev ? ev[:id] : 0
+        best = ev[:id] if ev
+        @erased_event_positions.each do |id, tile|
+          best = id if tile == [x, y] && id > best
+        end
+        best
       end
       public :event_id_at
 
@@ -5169,6 +5195,7 @@ class RPG2k
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
+        @erased_event_positions = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
