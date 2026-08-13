@@ -6,6 +6,25 @@ endif()
 
 project(rpg_maker_clone C CXX)
 
+# Link with mold instead of the toolchain's default linker (bfd on the
+# nix/apt GCC builds) when it's available -- mold is dramatically faster on
+# this project's link steps (the main executable plus every 3rd/* static lib
+# and test binary). Doesn't apply to Emscripten, which always links through
+# wasm-ld regardless of -fuse-ld. check_linker_flag needs CMake 3.18, one
+# above this project's 3.10 floor, so an older cmake just skips the upgrade
+# and falls back to the default linker instead of failing to configure.
+option(USE_MOLD "Link with mold when available" ON)
+if(USE_MOLD AND NOT EMSCRIPTEN AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+  include(CheckLinkerFlag)
+  check_linker_flag(CXX "-fuse-ld=mold" CXX_LINKER_SUPPORTS_MOLD)
+  if(CXX_LINKER_SUPPORTS_MOLD)
+    message(STATUS "Linking with mold")
+    add_link_options("-fuse-ld=mold")
+  else()
+    message(STATUS "mold not available, using the default linker")
+  endif()
+endif()
+
 if(EMSCRIPTEN)
   # Emscripten ships SDL2 and SDL2_mixer as "ports": -sUSE_SDL=2 /
   # -sUSE_SDL_MIXER=2 provide both the headers (needed while compiling lvgl's
