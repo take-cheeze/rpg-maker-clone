@@ -128,8 +128,8 @@ module Game
           i += 2
           arg, i = read_bracket(text, i)
           case code
-          when 'v', 'V' then (s = variables[arg.to_i].to_s; cur << s; count += s.length) if arg
-          when 'n', 'N' then (s = (names[arg.to_i] || '').to_s; cur << s; count += s.length) if arg
+          when 'v', 'V' then (s = variables[resolve_arg(arg, variables)].to_s; cur << s; count += s.length) if arg
+          when 'n', 'N' then (s = (names[resolve_arg(arg, variables)] || '').to_s; cur << s; count += s.length) if arg
           when "\\"     then cur << "\\"; count += 1
           when '_'      then cur << ' '; count += 1 # half-width space
           when 'c', 'C' # colour change: close the current run, switch colour
@@ -193,13 +193,34 @@ module Game
     end
 
     # Read an optional "[digits]" argument at position i; returns [value, new_i].
+    # Brackets nest (yado.tk: `\N[]`/`\V[]` accept a `\V[n]` argument in place
+    # of a literal number, e.g. `\N[\V[1]]`), so an inner `[`/`]` pair widens
+    # the scan rather than closing it early -- otherwise `\N[\V[1]]` would read
+    # its argument as only `\V[1` (stopping at the *inner* `]`) and leave the
+    # outer `]` behind as stray literal text.
     def self.read_bracket(text, i)
       return [nil, i] unless i < text.length && text[i] == '['
       j = i + 1
-      j += 1 while j < text.length && text[j] != ']'
+      depth = 1
+      while j < text.length && depth > 0
+        depth += 1 if text[j] == '['
+        depth -= 1 if text[j] == ']'
+        j += 1 if depth > 0
+      end
       val = text[(i + 1)...j]
-      j += 1 if j < text.length # consume ']'
+      j += 1 if j < text.length # consume the matching ']'
       [val, j]
+    end
+
+    # Resolve a control code's bracket argument to the integer it names,
+    # recursively unwrapping a nested `\v[]`/`\V[]` (yado.tk: `\N[\V[1]]`
+    # substitutes variable 1's *value* as the actor id, not the literal text
+    # "\V[1]"; `\V[\V[1]]` reads the same way for indirect variable display).
+    # A plain numeric argument resolves the same as before (`"3".to_i`).
+    def self.resolve_arg(arg, variables)
+      return 0 if arg.nil?
+      m = /\A\\[vV]\[(.*)\]\z/m.match(arg)
+      m ? variables[resolve_arg(m[1], variables)].to_i : arg.to_i
     end
   end
 
