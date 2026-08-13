@@ -64,6 +64,7 @@
                 emscripten
                 ghc
                 git
+                lhasa
                 libXi
                 mold
                 ninja

@@ -762,12 +762,6 @@ jobs:
           ./scripts/download-prayforyou.bash
           ./scripts/download-yumenikki.bash
 
-      # TEMPORARY: one-off event-command inventory for the newly-added Yume
-      # Nikki test bed. Not meant to stay — drop this step once the analysis
-      # has been read out of the job log.
-      - name: Yume Nikki event-command analysis (temporary)
-        run: ruby scripts/analyze_game.rb data/yumenikki0.10
-
       - parallel:
           - name: LCF test-bed smoke check
             run: ruby scripts/lcf_testbed_check.rb

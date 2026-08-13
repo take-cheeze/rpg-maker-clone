@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 
-# RPG Maker 2000 test-bed game: Yume Nikki, version 0.10 -- Kikiyama's first
+# RPG2000-format test-bed game: Yume Nikki, version 0.10 -- Kikiyama's first
 # public release, freeware, hosted on Vector (a long-running Japanese
-# shareware/freeware archive). Distributed as a self-extracting .lzh, which
-# `unar` (already relied on for the Nepheshel/Pray-for-You .zip archives)
-# reads natively.
+# shareware/freeware archive). Distributed as an `.lzh`. Its RPG_RT.ldb is
+# actually RPG Maker **2003** data (lcf_testbed_check.rb's own edition
+# detection says so), same LCF format as the RPG2000 test beds beside it.
 #
-# `-o yumenikki0.10` pins the extraction target to a fixed directory name for
+# Extracted with `lha` (the `lhasa` package), not `unar`: `unar` 1.10.1 reads
+# this specific lh5 archive's directory silently wrong -- it reports "Failed!
+# (Attempted to read more data than was available)" for about a third of the
+# entries and, worse, still exits leaving *zero-byte* files behind for them
+# rather than skipping them, so a check that only tests for the file's
+# existence never notices half the maps came out empty. `lha` extracts every
+# entry, byte-for-byte, with no such failures.
+#
+# `w=yumenikki0.10` pins the extraction target to a fixed directory name for
 # the idempotency check below, regardless of whatever top-level layout the
 # archive itself uses -- the LCF/rpg2k checks that consume test-bed games
 # (lcf_testbed_check.rb, rpg2k_testbed_logic_check.rb, ...) find RPG_RT.ldb by
 # scanning ./data recursively, so the exact nesting under this directory does
 # not matter to them.
 #
-# See download-nepheshel.bash for why wget/unar are quietened.
+# See download-nepheshel.bash for why wget is quietened; `lha`'s own `q2`
+# mirrors that for extraction.
 
 set -eux -o pipefail
 
@@ -29,5 +38,5 @@ if [ ! -f yumenikki0.10.lzh ] ; then
 fi
 
 if [ ! -d yumenikki0.10 ] ; then
-    unar -q -o yumenikki0.10 yumenikki0.10.lzh
+    lha xq2w=yumenikki0.10 yumenikki0.10.lzh
 fi
