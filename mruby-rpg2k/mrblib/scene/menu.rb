@@ -123,7 +123,7 @@ class RPG2k
             show_message("You cannot save right now.")
           end
         when :end_game
-          show_message("Returning to title...", :end_game)
+          @parent.return_to_title
         else
           show_message("#{label} is not implemented yet.")
         end
@@ -131,12 +131,10 @@ class RPG2k
 
       def drive_message
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        done = @message[:done]
         close_message
-        @parent.return_to_title if done == :end_game
       end
 
-      def show_message(text, done = nil)
+      def show_message(text)
         return if @message
         w = SCREEN_W - 40
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
@@ -146,7 +144,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
-        @message = { window: win, done: done }
+        @message = { window: win }
       end
 
       def close_message

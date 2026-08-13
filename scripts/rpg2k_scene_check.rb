@@ -6281,6 +6281,18 @@ check 'Scene::Menu: choosing Item pushes Scene::ItemMenu (and the rest their own
   end
 end
 
+check 'Scene::Menu: End Game returns to the title on the first press, like F12 and ' \
+      'the Return to Title Screen event command' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 5)  # End Game, last of COMMAND_KEYS
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.returned_to_title,
+     'End Game hands control back to the app immediately, with no confirmation ' \
+     'message to dismiss first'
+end
+
 check 'the item / skill target list shows who is afflicted' do
   st = menu_state
   st.party.actors.first.add_state(4)                    # Sleep
