@@ -2557,10 +2557,33 @@ not yet verified:
 **Message window / Show Choices / control characters**
 - Two message windows can never be shown simultaneously — a hard engine
   limit.
-- A Face Graphic setting persists through the rest of the current event's
+- ✅ **A Face Graphic setting persists through the rest of the current event's
   execution content (not just the next message) and is auto-cleared when
-  the event ends, but not before — it must be explicitly "erased" to stop
-  mid-event. It also shrinks the per-line text capacity vs. no portrait.
+  the event ends, but not before** — it must be explicitly "erased" to stop
+  mid-event, unlike Message Options (transparency/position/etc.), which are
+  genuinely sticky game-wide with no such reset. `Game::Interpreter`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) modelled both the same way: plain
+  shared state on `Game::MessageConfig`, set by Change Face Graphic (10130)
+  and Message Options (10120) alike, with nothing anywhere clearing the face
+  once the event that set it finished — so it silently carried over into
+  every later event's own messages too. `#do_change_face` now marks the
+  interpreter as owning the shared face state whenever it sets a real
+  (non-empty) face (dropping the claim on an explicit empty clear, as
+  before), and `#update` drops that claim — clearing `message_config`'s face
+  — the instant its own command list genuinely finishes (`finished?`, the
+  same point that already flips `@running` false), Call Event nesting
+  included since a call shares the same interpreter and call stack; an
+  unrelated interpreter finishing elsewhere (a different parallel process,
+  say) never touches a face it didn't itself set. Message Options are
+  untouched by this — nothing resets them, matching RPG_RT's asymmetry
+  between the two commands. Covered by three new `scripts/
+  rpg2k_logic_check.rb` checks (the face applies across multiple messages
+  within one event but auto-clears once the event ends, while Message
+  Options set in the same event stay sticky afterward; a face set inside a
+  Call Event survives back into the caller and clears only once the whole
+  call — caller and callee — finishes), confirmed to fail against the
+  pre-fix code before the fix. It also shrinks the per-line text capacity
+  vs. no portrait — unverified, a separate open question.
 - 🚧 \c[]/\s[] (color/speed) control codes set inside Show Text **bleed into
   an attached Show Choices list** when the two merge into one window
   (≤4 combined lines) — an explicit `\c[0]` reset is needed to stop
