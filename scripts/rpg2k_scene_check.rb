@@ -4546,6 +4546,42 @@ check 'character_screen_position measures against the live camera' do
   eq nil, scene.character_screen_position(99), 'no such event on this map'
 end
 
+check "a vehicle's screen position now reads through the same operand a map event's does" do
+  # yado.tk: a vehicle's x/y/map id/facing can already be read via Control
+  # Variables from a different map than the one it currently occupies (see the
+  # vehicle_operand fix), but its *screen* x/y (attr 4/5) needs a live camera,
+  # which only the currently-loaded map's own scene has -- that half was left
+  # reading the same degenerate 0 an unresolvable map event gets. Ref 10002 is
+  # the boat, matching Scene::Map::MOVE_TARGET_BOAT.
+  scene = new_scene({}, player: [1, 2])
+  st = scene.instance_variable_get(:@state)
+  tile = RPG2k::Scene::Map::TILE
+  eq [0, 0], scene.camera_position, 'a map smaller than the view cannot scroll'
+
+  boat = st.vehicle(:boat)
+  eq nil, scene.character_screen_position(10002), 'an unplaced vehicle has nowhere on screen to report'
+
+  # Parked on this map, off to the side: reads exactly like a map event would
+  # at that same tile (the shared tile-centre/tile-bottom asymmetry included).
+  boat.map_id = st.map_id
+  boat.x = 3
+  boat.y = 4
+  parked = scene.character_screen_position(10002)
+  eq 3 * tile + tile / 2, parked[:x]
+  eq 4 * tile + tile, parked[:y]
+
+  boat.map_id = st.map_id + 1
+  eq nil, scene.character_screen_position(10002), "a vehicle parked on a different map isn't on this camera"
+  boat.map_id = st.map_id
+
+  # Boarded: it rides along with the hero's own interpolated pixel position,
+  # not wherever it was left parked.
+  st.boarded = :boat
+  ridden = scene.character_screen_position(10002)
+  hero = scene.character_screen_position(10001)
+  eq hero, ridden, 'a boarded vehicle reports the same screen position as the hero riding it'
+end
+
 check 'a scrolled camera shifts the screen position it reports' do
   # A tall map so the follow camera actually scrolls, and the hero's screen
   # position stops tracking its map position.

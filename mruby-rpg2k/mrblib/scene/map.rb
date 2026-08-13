@@ -6183,8 +6183,10 @@ class RPG2k
 
       # Where a character sits on screen, for the Control Variables "character"
       # operand's screen-coordinate selectors. `ref` is the operand's reference:
-      # 10001 the hero, a positive id a map event. nil when it names something
-      # this scene cannot place.
+      # 10001 the hero, 10002-10004 a vehicle (boat/ship/airship), a positive id
+      # a map event. nil when it names something this scene cannot place — a
+      # vehicle not currently on this map included, the same degenerate answer
+      # an unresolvable map event already gets.
       #
       # RPG_RT measures X from the tile's centre and Y from its *bottom* — the
       # asymmetry is real (EasyRPG's GetScreenX subtracts half a tile after
@@ -6192,8 +6194,10 @@ class RPG2k
       # reproduced rather than tidied up.
       def character_screen_position(ref)
         pixel =
-          if ref == 10001
+          if ref == MOVE_TARGET_PLAYER
             player_pixel
+          elsif ref >= MOVE_TARGET_BOAT && ref <= MOVE_TARGET_AIRSHIP
+            vehicle_pixel(Game::Vehicle::TYPES[ref - MOVE_TARGET_BOAT])
           else
             e = @events.find { |ev| ev[:id] == ref }
             e && event_pixel(e)
@@ -6201,6 +6205,18 @@ class RPG2k
         return nil unless pixel
         cam_x, cam_y = camera_position
         { x: pixel[0] - cam_x + TILE / 2, y: pixel[1] - cam_y + TILE }
+      end
+
+      # Current position of vehicle `type` in map pixels: the party's own
+      # interpolated pixel position while it's the one being ridden
+      # (#player_pixel, so it reads in lockstep with the hero mid-step),
+      # otherwise wherever it sits parked — the same rule #draw_vehicles
+      # renders a vehicle's sprite by. nil when the vehicle isn't placed on the
+      # currently loaded map at all (unplaced, or sitting on a different one).
+      def vehicle_pixel(type)
+        v = @state.vehicle(type)
+        return nil unless v.placed? && v.map_id == @state.map_id
+        @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
       public :camera_position, :character_screen_position
 
