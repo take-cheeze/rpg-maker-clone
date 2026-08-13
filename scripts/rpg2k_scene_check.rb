@@ -5827,6 +5827,40 @@ check 'Terminate Battle from a page ends the fight and resumes the event' do
   open_then_close_battle(scene)
 end
 
+# yado.tk / 01_shoshin's 011_siyou: "Picture -- none show on Menu/Battle
+# screens." The Menu half was already correct (Scene::Base#build_field_background
+# paints an opaque panel above the picture layer); the battle screen had no
+# equivalent -- the battle backdrop sits well below @picture_sprite's z, so a
+# picture shown before the encounter (or by a still-running Parallel Process)
+# used to draw straight over the battle UI.
+check 'pictures are hidden while the battle screen is up (yado.tk: none show on Menu/Battle screens)' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  sprite = scene.instance_variable_get(:@picture_sprite)
+  bmp = scene.instance_variable_get(:@picture_bmp)
+
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+    ok sprite.visible, 'the picture layer draws normally before any fight opens'
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  ok !sprite.visible, 'the picture layer is hidden the instant the battle screen is up'
+  bmp.clear_stretch_calls
+  scene.update
+  eq 0, bmp.stretch_calls.size, 'and stops compositing pictures entirely while the fight runs'
+
+  20.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui).nil?
+  end
+  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  ok sprite.visible, 'the picture layer reappears the instant the fight ends'
+end
+
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
 # enclosing Enemy Encounter's [Victory] nor [Escape]/[Defeat] handler branch --
 # it resumes right after Branch End, an unlabeled third outcome -- and only
