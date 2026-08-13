@@ -6721,7 +6721,7 @@ module Game
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       # An elemental weapon scales its damage by the target's resistance before
       # variance / criticals (EasyRPG's ApplyAttributeNormalAttackMultiplier).
-      dmg = dmg * attr_multiplier(b.atk_attrs, target) / 100
+      dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
       dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # No critical on a same-side hit (e.g. a confused ally striking an ally) or
       # against a target whose gear prevents criticals, matching EasyRPG.
@@ -6829,23 +6829,57 @@ module Game
       ATTR_RATE_PCT[rank]
     end
 
-    # The percentage `attr_ids` scale damage against `target`: the strongest
-    # (largest) rate among the attack's elements, per EasyRPG's
-    # Attribute::ApplyAttributeMultiplier (the physical / magical split isn't
-    # modelled). 100 (unchanged) for an attribute-less attack; a rank the target
-    # doesn't list defaults to C (100%).
-    def attr_multiplier(attr_ids, target)
-      return 100 if attr_ids.nil? || attr_ids.empty?
+    # Whether attribute `aid` is the database's weapon-type (property field 2,
+    # value 0) rather than magic-type (1) -- the same reading
+    # Game::Party#attribute_weapon_type? uses (for skill-usability gating),
+    # duplicated here since Battle reaches the property table through its own
+    # `@attributes` rather than a database reference shared with Party. An id
+    # the table doesn't define reads as magic-type, the permissive default
+    # #attribute_weapon_type? also falls back to.
+    def attribute_physical?(aid)
+      row = @attributes ? @attributes[aid] : nil
+      row && row.respond_to?(:type) && row.type == 0 ? true : false
+    end
+
+    # Scale `dmg` by `attr_ids`'s rate against `target`'s per-attribute
+    # defence ranks: EasyRPG's Attribute::ApplyAttributeMultiplier. Each
+    # attribute is either weapon-type (physical) or magic-type; the
+    # strongest (largest) rate *within* each type is kept, and an attack
+    # carrying both types at once multiplies the two rates as two successive
+    # percentage scalings of `dmg` -- not an average, and not just the
+    # single strongest rate across every attribute regardless of type (a
+    # 200%-physical, 50%-magical attack nets 100%, not 200%). Ported
+    # truncation-order and all (`magical * (physical * dmg / 100) / 100`)
+    # rather than precomputing a combined percentage first, since the two
+    # can round differently. Unchanged for an attribute-less attack; a rank
+    # the target doesn't list defaults to C (100%). RPG2000 attribute rates
+    # never go negative, so EasyRPG's "one side is negative" fallback branch
+    # (2003's `attribute.type` add-on) never applies here.
+    def apply_attr_multiplier(dmg, attr_ids, target)
+      return dmg if attr_ids.nil? || attr_ids.empty?
       ranks = target.attr_ranks || {}
-      best = nil
+      physical = nil
+      magical = nil
       attr_ids.each do |aid|
         rank = ranks[aid] || 2
         rank = 0 if rank < 0
         rank = 4 if rank > 4
         pct = attr_rate(aid, rank)
-        best = pct if best.nil? || pct > best
+        if attribute_physical?(aid)
+          physical = pct if physical.nil? || pct > physical
+        else
+          magical = pct if magical.nil? || pct > magical
+        end
       end
-      best || 100
+      if physical && magical
+        magical * (physical * dmg / 100) / 100
+      elsif physical
+        physical * dmg / 100
+      elsif magical
+        magical * dmg / 100
+      else
+        dmg
+      end
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act
@@ -6929,7 +6963,7 @@ module Game
         dmg = -hp
         # An elemental skill scales its damage by the target's resistance first
         # (EasyRPG's ApplyAttributeSkillMultiplier), then spreads by variance.
-        dmg = dmg * attr_multiplier(cmd[:attributes], target) / 100
+        dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
         # 吸収: the caster takes what the target loses, and can take no more than

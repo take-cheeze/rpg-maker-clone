@@ -5972,7 +5972,12 @@ check 'battle: an elemental skill scales its damage by the target resistance' do
 end
 
 # A property/state row carrying the RPG2000 A..E rank rates (property table).
-RateRow = Struct.new(:a_rate, :b_rate, :c_rate, :d_rate, :e_rate)
+# `type` (weapon 0 / magic 1, property field 2) is appended rather than
+# fitted in at its real field position so the existing 5-positional-arg
+# calls below keep working unmodified -- omitted, it defaults to nil, which
+# #attribute_physical? already reads as "magic-type" the same way an
+# attribute the table doesn't define at all does.
+RateRow = Struct.new(:a_rate, :b_rate, :c_rate, :d_rate, :e_rate, :type)
 
 check "battle: a database attribute's own rank rates override the defaults" do
   props = { 1 => RateRow.new(250, 180, 100, 40, 0) } # element 1: rank A = 250%
@@ -5985,6 +5990,38 @@ check "battle: a database attribute's own rank rates override the defaults" do
                          false, false, props)
   bat.begin_round
   eq 50, bat.step_action[:damage]                    # 20 * 250% (its own rate, not 300)
+end
+
+check 'battle: a weapon-type and a magic-type attribute on one attack multiply, ' \
+     'not just the strongest rate' do
+  props = { 1 => RateRow.new(200, 150, 100, 50, 0, 0),  # weapon-type
+            2 => RateRow.new(200, 150, 100, 50, 0, 1) } # magic-type
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]
+  foe = combatant('Foe', 0, 0, 5, 100_000)
+  foe.attr_ranks = { 1 => 0, 2 => 3 } # weapon rank A (200%), magic rank D (50%)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.command_attack(hero, foe)
+  bat.begin_round
+  # base atk damage = 40 / 2 - 0 / 4 = 20; 200% weapon * 50% magic = 100%,
+  # unchanged at 20 -- not 40, which is what "the single strongest rate
+  # (200%) wins regardless of type" would have given.
+  eq 20, bat.step_action[:damage]
+end
+
+check 'battle: two attributes of the same type keep the strongest rate, not multiply' do
+  props = { 1 => RateRow.new(200, 150, 100, 50, 0, 0),
+            2 => RateRow.new(200, 150, 100, 50, 0, 0) } # both weapon-type
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1, 2]
+  foe = combatant('Foe', 0, 0, 5, 100_000)
+  foe.attr_ranks = { 1 => 3, 2 => 0 } # 50% and 200%, same type: keep the 200%
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, props)
+  bat.command_attack(hero, foe)
+  bat.begin_round
+  eq 40, bat.step_action[:damage] # base 20 * 200%, not 200% * 200%
 end
 
 check "battle: a database state's own rank rate gates the infliction" do

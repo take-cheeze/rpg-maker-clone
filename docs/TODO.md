@@ -2428,12 +2428,24 @@ not yet verified:
   of "a weapon carrying **that** attribute", not confirmed against a
   multi-attribute skill since neither test bed ships one. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the pre-fix
-  code. **Still open**: weapon-type × magic-type attribute stacking on one
-  attack **multiplies** the two rates as fractions (200%×50%=100%), not an
-  average despite the site's own wording — a separate question from equip
-  gating, in the damage formula (`Game::Battle#attr_multiplier` currently
-  takes the strongest single rate, not a weapon/magic product) rather than
-  usability.
+  code. **Weapon-type × magic-type attribute stacking is built now too** — a
+  separate question from equip gating, in the damage formula rather than
+  usability. EasyRPG's `Attribute::ApplyAttributeMultiplier` keeps the
+  *strongest* rate within each type (physical/weapon and magical/magic
+  tracked independently) and, when an attack carries both at once,
+  **multiplies** the two as successive percentage scalings of the damage
+  (200%×50% nets 100%, not an average and not just the single strongest
+  rate across every attribute regardless of type). `Game::Battle#apply_attr_multiplier`
+  (renamed from `#attr_multiplier`, which returned a percentage rather than
+  the scaled damage — the truncation order between the two isn't always the
+  same, so it now takes and returns the actual damage figure, matching
+  `ApplyAttributeMultiplier`'s own signature) reads each attribute's type
+  off the same `@attributes` (`property`) table `#attr_rate` already uses.
+  RPG2000 attribute rates never go negative, so EasyRPG's "one side
+  negative" fallback branch (a 2003 `attribute.type` add-on) never applies
+  here. Covered by new `scripts/rpg2k_logic_check.rb` checks (both types at
+  once multiplying, and two attributes of the *same* type still keeping the
+  strongest rather than multiplying against each other).
 - Battle Animation: only one on screen at a time (a second forcibly cuts
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle
