@@ -1671,7 +1671,46 @@ The work below is roughly ordered by the critical path to a walkable game
   with no map or interpreter behind it, so it still cannot tell "this skill is
   legitimately state-gated" from "no menu reaches this skill" on its own, and
   keeps deferring those two types to this note instead of flagging them as
-  unreachable. Left unbuilt still: the battle-time skill variance.
+  unreachable.
+  ✅ **The battle-time skill variance is built now, for a recovery skill too —
+  not just an attack one.** This line used to end "Left unbuilt still: the
+  battle-time skill variance," describing only the missing half:
+  `Game::Party#battle_skill_command`'s attack branch (enemy-scope skills) has
+  carried a `variance:` figure since damage variance first landed (see the
+  Event command interpreter entry above), but its recovery branch (self /
+  single-ally / all-ally skills) never attached one at all, and
+  `Game::Battle#apply_skill_hit`'s recovery half never read `cmd[:variance]`
+  even when a caller supplied it — so every in-battle heal, buff or revive
+  landed exactly its deterministic base amount round after round, the one
+  thing `#skill_effect`'s own doc comment ("battle applies a +/- variance,
+  but field/menu use does not") already said should *not* happen there.
+  RPG2000's `Algo::VarianceAdjustEffect` is one function applied to whichever
+  signed effect `Algo::CalcSkillEffect` produces — a Cure spell's heal
+  wobbles the same way a Fire spell's damage does, there being no
+  damage-only/heal-only split in the reference algorithm — so the fix mirrors
+  the attack branch rather than inventing a new mechanism:
+  `battle_skill_command`'s `else` (heal) branch now reports `variance:
+  skill_variance(sk)` alongside its `hp`/`mp`, and `apply_skill_hit` spreads
+  `hp` and `mp` independently through the same `#varied` helper the attack
+  branch already calls (each rolls its own random offset, since HP and SP are
+  two separate effect values sharing one base rather than one number applied
+  twice), gated on the fight having variance enabled at all. Both the party's
+  own healers and an enemy's ally-scoped heal (行動パターン, see the Event
+  command interpreter entry) go through the identical `battle_skill_command`
+  call, so the fix reaches both sides symmetrically with no separate enemy-AI
+  change needed. An item's fixed recovery is untouched — items carry no
+  `variance` field on their schema, so the new spread is a no-op on that path
+  — and the field/menu Skill scene stays exactly as deterministic as before,
+  since `Game::Party#skill_effect` (the field formula) was never touched.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks (a seeded
+  in-battle heal spreads across the same base/variance range the equivalent
+  attack skill already spreads within; a variance-off fight heals for the
+  exact deterministic base; `battle_skill_command`'s heal branch reports the
+  skill's own variance rather than dropping it), plus an update to the
+  pre-existing `battle_skill_command yields attack damage, ally heal and self
+  recovery` check's expectations (both now include the `variance` key),
+  confirmed to fail against the pre-fix code (a constant heal across every
+  seeded cast; a missing `variance` key) before the fix.
   ✅ **A special item (type 9) invoking an Escape/Teleport skill is castable
   from the field Item menu now.** `#field_usable?` used to call
   `#field_skill?(db_skill(it.skill_id))` with no `Game::State` at all, so its
