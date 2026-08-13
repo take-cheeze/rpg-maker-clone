@@ -2677,10 +2677,22 @@ above are repeated here)
   ranks must be configured strictly `A>B>C>D>E` for the ±1-step logic to make
   sense. Covered by a new `scripts/rpg2k_logic_check.rb` check (both
   directions, and that repeat casts don't stack past the cap).
-- Enemy group members are numbered by add-order; **lower number renders
-  in front** (closer to camera); deleting a middle member shifts every
-  later member's number down by one, which can silently repoint any
-  battle-event command that names a member by number.
+- Enemy group members are numbered by add-order. ✅ **The lower-numbered
+  member renders in front (closer to camera)**: `Scene::Map#build_battle_sprites`
+  / `#rebuild_battler_sprite` / `#reveal_battle_monster`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) previously all set a battler sprite's
+  `z` to `100 + i` for add-order index `i`, but the native renderer draws the
+  *highest*-z sprite on top (`gfx_update`'s own "leaving the greatest z on
+  top") — so the code had it backwards, putting the *last*-added member in
+  front instead of the first. Now routed through a shared `#battler_z(i)`
+  that inverts the index (`100 + (members.size - 1 - i)`), so member 0 gets
+  the highest z of the group. Covered by a new assertion on the existing
+  `scripts/rpg2k_scene_check.rb` two-Slime battler-sprite check, confirmed to
+  fail against the pre-fix code. **Still open**: whether deleting a middle
+  member shifts every later member's number down by one (and whether a
+  battle-event command naming a member by number gets silently repointed by
+  it) is unverified — a separate question about troop-member identity/
+  numbering, not the render-order this PR fixes.
 - The "airborne" enemy display flag **only** changes its Y position on
   screen — it has no accuracy/hit-related effect. The "frequent miss"
   enemy option is a hardcoded 90%→70% drop to *normal-attack* accuracy

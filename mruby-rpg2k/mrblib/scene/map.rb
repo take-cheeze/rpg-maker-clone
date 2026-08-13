@@ -2804,6 +2804,16 @@ class RPG2k
         draw_battle_command unless run_battle_events
       end
 
+      # A troop member's sprite depth for its add-order index `i` (0-based).
+      # RPG2000 numbers troop members by add-order and renders the
+      # **lower**-numbered member closer to the camera (yado.tk); the native
+      # renderer draws the *highest*-z sprite on top (see `gfx_update`'s own
+      # "leaving the greatest z on top"), so index 0 needs the highest z here
+      # -- the reverse of the add-order index itself.
+      def battler_z(i)
+        100 + (@battle_ui[:troop].members.size - 1 - i)
+      end
+
       # RPG2000 is a front-view battle: the enemy troop is drawn as sprites over a
       # battle background, while the party is represented by the status window (not
       # sprites). Build the backdrop and one sprite per visible troop member,
@@ -2818,7 +2828,7 @@ class RPG2k
           spr.bitmap = bmp
           spr.x = enemy.x - bmp.width / 2
           spr.y = enemy.y - bmp.height / 2
-          spr.z = 100 + i
+          spr.z = battler_z(i)
           spr
         end
         # The battler each sprite was drawn from, so a transformation mid-fight
@@ -2982,7 +2992,7 @@ class RPG2k
         spr.bitmap = bmp
         spr.x = member.x - bmp.width / 2
         spr.y = member.y - bmp.height / 2
-        spr.z = 100 + i
+        spr.z = battler_z(i)
         spr.visible = !foe.out_of_play?
         sprites[i] = spr
         dispose_battle_sprite(old)
@@ -3584,7 +3594,7 @@ class RPG2k
         spr.bitmap = bmp
         spr.x = member.x - bmp.width / 2
         spr.y = member.y - bmp.height / 2
-        spr.z = 100 + index
+        spr.z = battler_z(index)
         dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
         @battle_ui[:enemy_sprites][index] = spr
       end
