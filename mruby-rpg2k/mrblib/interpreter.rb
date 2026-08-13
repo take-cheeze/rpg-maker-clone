@@ -2351,14 +2351,14 @@ module Game
         x = variables[x]
         y = variables[y]
       end
-      @location_requests.push(op: :set, target: cmd.param(0), x: x, y: y)
+      @location_requests.push({ op: :set, target: cmd.param(0), x: x, y: y })
     end
 
     # Trade Event Locations (Swap Event Locations): exchange the tiles of the two
     # characters named by param0 and param1 (same target ids as Change Event
     # Location). Queued as a `:swap` request the scene applies; non-blocking.
     def do_trade_event_locations(cmd)
-      @location_requests.push(op: :swap, a: cmd.param(0), b: cmd.param(1))
+      @location_requests.push({ op: :swap, a: cmd.param(0), b: cmd.param(1) })
     end
 
     # Store Terrain ID: write the terrain id of the tile at (x, y) into the
