@@ -7483,6 +7483,42 @@ check 'battle state at 0% auto_release_prob never wears off on its own' do
   eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
+# デフォ戦botまとめ: "'party wipe' for game-over purposes is defined as 'every
+# member is both unable to act and does not recover naturally,' not literally
+# 'every member's HP is 0' (why Stone status can wipe a party without zeroing
+# anyone's HP)." A do-nothing state that *can* still shake itself off (Sleep,
+# Paralysis with a nonzero auto_release_prob) does not count -- only a state
+# with zero chance of ever clearing does.
+check 'battle: a fully-Stoned party is a loss even though nobody took damage' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [8]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  ok bat.finished?, 'the whole party is incapacitated with no way back'
+  eq :defeat, bat.run
+  eq 100, hero.hp                                    # never actually damaged
+end
+
+check 'battle: a party-wide do-nothing state that can wear off keeps the fight going' do
+  states = { 9 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 50) } # do-nothing, 50% auto-release
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [9]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  ok !bat.finished?, 'sleep/paralysis-style states can still recover on their own'
+end
+
+check 'battle: one incapacitated ally among others is not a party wipe' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
+  stoned = combatant('Stoned', 40, 0, 20, 100)
+  stoned.states = [8]
+  healthy = combatant('Healthy', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([stoned, healthy], [slime], Game::Rng.new(1), states)
+  ok !bat.finished?, 'a still-able ally keeps the party in the fight'
+end
+
 check 'battle: a confused battler (restriction 3) attacks its own side' do
   states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
   hero = combatant('Hero', 40, 0, 1, 100)                 # slow: the foe acts first

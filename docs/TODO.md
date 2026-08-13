@@ -3553,15 +3553,37 @@ codebase yet):
   displayed value stays pinned at its old clamp until the raise actually
   pushes the real total back above it); a special skill's ability-value
   *decrease* rounds up on ÷2, a status effect's own halving rounds *down*;
-  "party wipe" for game-over purposes is defined as "every member is both
-  unable to act and does not recover naturally," not literally "every
-  member's HP is 0" (why Stone status can wipe a party without zeroing
-  anyone's HP — `Game::Battle#alive?`/`#finished?`, `mruby-rpg2k/mrblib/
-  game.rb`, still key off `Combatant#dead?`'s plain `hp <= 0` alone, so a
-  fully-Stoned party currently keeps grinding through `MAX_ROUNDS` rather
-  than losing immediately — a real, separate gap, not yet fixed); dual-
-  wielding's off-hand attack animation is offset by a few frames from the
-  main hand's. ✅ **Berserk/Confusion override target selection but still
+  dual-wielding's off-hand attack animation is offset by a few frames from
+  the main hand's. ✅ **"Party wipe" for game-over purposes is now "every
+  member is both unable to act and does not recover naturally," not
+  literally "every member's HP is 0"** — why Stone status can wipe a party
+  without zeroing anyone's HP. `Game::Battle#alive?` (`mruby-rpg2k/mrblib/
+  game.rb`) only ever asked `!b.out_of_play?` (dead or hidden), so a fully
+  restricted-but-undamaged party (every ally afflicted by a "do nothing"
+  state, RESTRICTION_DO_NOTHING, that never wears off on its own) read as
+  still fighting: `#finished?`/`#run` kept calling `#step`, which itself
+  never reaches an action for any of them (`apply_turn_states` returns
+  `can_act = false` for every one, `#step`'s inner loop just cycles to the
+  next battler), so the fight silently ground all the way to the
+  `MAX_ROUNDS` safety net before finally reading as a loss, rather than
+  ending the instant the last ally is afflicted. Fixed with a new
+  `#incapacitated?(b)`, used by `#alive?` in place of the bare
+  `!out_of_play?` check: true for a dead/hidden battler as before, or for
+  one carrying a state whose `restriction` is `RESTRICTION_DO_NOTHING` *and*
+  whose `auto_release_prob` is 0 — deliberately narrower than "any do-nothing
+  state," since a do-nothing state that *can* still shake itself off on its
+  own (Sleep, Paralysis with a nonzero `auto_release_prob`) does not count
+  towards a wipe, matching "does not recover naturally": the fight keeps
+  running, the same roll `#recovers_from_state?` would eventually use to
+  stand that battler back up. Applies symmetrically to both sides (an
+  all-Stoned enemy troop ends the fight in victory too), since nothing in
+  the source material suggests the rule is ally-only and `#alive?` was
+  already shared by both `@allies`/`@enemies` call sites. Covered by three
+  new `scripts/rpg2k_logic_check.rb` checks (a fully-Stoned party is a loss
+  with no HP ever moving, confirmed to fail against the pre-fix code before
+  the fix; a party-wide do-nothing state with a nonzero `auto_release_prob`
+  does *not* end the fight; one incapacitated ally among others is not a
+  wipe). ✅ **Berserk/Confusion override target selection but still
   honour "hits twice"/"ignores evasion," while Berserk additionally
   collapses an "attack all" weapon down to a single target and disables
   "always acts first."** `Game::Battle#strike`'s forced-restriction branch

@@ -6492,7 +6492,26 @@ module Game
       @rng.random(100) < prob
     end
 
-    def alive?(side); side.any? { |b| !b.out_of_play? }; end
+    # Whether `b` counts as out of the fight for win/loss purposes: dead or
+    # hidden (#out_of_play?), or locked into a "do nothing" restriction by a
+    # state with zero chance of ever shaking itself off. デフォ戦botまとめ:
+    # "party wipe" for game-over purposes means every member is both unable
+    # to act *and* does not recover naturally, not literally "every member's
+    # HP is 0" -- why a fully-Stoned party loses instantly even though nobody
+    # was ever damaged. A do-nothing state that *can* still clear itself
+    # (Sleep, Paralysis with a nonzero auto_release_prob) does not count: the
+    # fight keeps running, the same way #recovers_from_state? would
+    # eventually stand that battler back up on its own.
+    def incapacitated?(b)
+      return true if b.out_of_play?
+      (b.states || []).any? do |id|
+        d = state_def(id)
+        d && state_field(d, :restriction) == RESTRICTION_DO_NOTHING &&
+          state_field(d, :auto_release_prob) <= 0
+      end
+    end
+
+    def alive?(side); side.any? { |b| !incapacitated?(b) }; end
 
     def refill_queue
       @rounds += 1
