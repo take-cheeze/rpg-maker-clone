@@ -237,8 +237,17 @@ class RPG2k
     def update
       if @anim_frames_left > 0
         @anim_frames_left -= 1
-        @openness = [[@openness + @anim_step, 0.0].max, 1.0].min
-        self.visible = false if @anim_closing && @anim_frames_left <= 0
+        if @anim_frames_left <= 0
+          # Snap to the exact boundary on the last frame rather than trusting
+          # the accumulated float sum to land on it: 1.0 / 7 added 7 times
+          # comes out to 0.9999999999999999, one ULP short of 1.0, which would
+          # leave #fully_open? false forever and contents/cursor/the pause
+          # arrow permanently hidden behind an apparently-finished window.
+          @openness = @anim_closing ? 0.0 : 1.0
+          self.visible = false if @anim_closing
+        else
+          @openness = [[@openness + @anim_step, 0.0].max, 1.0].min
+        end
         redraw_for_animation
       end
       return unless @pause
