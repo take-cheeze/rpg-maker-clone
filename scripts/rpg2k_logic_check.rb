@@ -6597,6 +6597,30 @@ check 'Game::Enemy reads its per-attribute defence ranks' do
   eq({ 1 => 2, 2 => 4, 3 => 0 }, Game::Battle.from_enemy(e).attr_ranks)
 end
 
+check "Game::Enemy#attack_hit_rate: the 'miss' flag (yado.tk's 'frequent miss' " \
+      'enemy option) drops the base rate from 90 to 70' do
+  miss_row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                        :agility, :exp, :gold, :miss)
+  db = BattleDB.new({ 5 => miss_row.new('Wisp',  20, 0, 8, 4, 3, 10, 5, 5, true),
+                      6 => miss_row.new('Golem', 100, 0, 10, 10, 5, 10, 20, 50, false) }, {})
+  clumsy = Game::Enemy.new(db, 5)
+  steady = Game::Enemy.new(db, 6)
+  eq 70, clumsy.attack_hit_rate, 'the miss flag drops the base rate to 70'
+  eq 90, steady.attack_hit_rate, 'without it, the ordinary RPG2000 default'
+  eq 70, Game::Battle.hit_rate_of(clumsy), 'the polymorphic reader Battle#to_hit uses agrees'
+  eq 90, Game::Battle.hit_rate_of(steady)
+
+  # End to end: the flag actually reaches a live combat roll, not just the
+  # bare reader -- against a same-agility target (no agi-adjustment term to
+  # muddy the number, #to_hit reduces to the bare base rate).
+  target = combatant('Hero', 0, 0, 10, 30)
+  clumsy_atk = Game::Battle.from_enemy(clumsy)
+  steady_atk = Game::Battle.from_enemy(steady)
+  b = Game::Battle.new([target], [clumsy_atk, steady_atk], Game::Rng.new(1))
+  eq 70, b.to_hit(clumsy_atk, target), "the miss enemy's own reduced base reaches the roll"
+  eq 90, b.to_hit(steady_atk, target), 'an ordinary enemy is untouched'
+end
+
 # -- Battle escape ------------------------------------------------------------
 
 def escape_battle(party_agi, enemy_agi, seed = 1)
