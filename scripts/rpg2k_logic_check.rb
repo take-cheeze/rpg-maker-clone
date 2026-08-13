@@ -10339,7 +10339,7 @@ end
 check 'a chipset that stores no terrain table reads terrain 1' do
   cs = chipset_with(nil)
   eq 1, cs.terrain(0), 'the first lower tile'
-  eq 1, cs.terrain(4000), 'a block-E tile'
+  eq 1, cs.terrain(4000), 'a block-D tile'
   cs = chipset_with([])
   eq 1, cs.terrain(0), 'an empty table is the same absence'
 end
@@ -10350,6 +10350,19 @@ check 'a chipset that stores one reads it' do
   cs = chipset_with(td)
   eq 7, cs.terrain(0)
   eq 3, cs.terrain(4000)
+end
+
+# Block D (terrain autotiles, ids 4000-4599, index base 6) and block E (144
+# plain lower tiles, ids 5000-5143, index base 18, 1:1 stride) must land on
+# distinct, correctly-spaced indices — a uniform table can't tell a wrong
+# index from a right one, so this uses a distinct value per index.
+check 'block D and block E tiles resolve to their own distinct indices' do
+  td = Array.new(30) { |i| i }
+  cs = chipset_with(td)
+  eq 6, cs.terrain(4000), 'first block-D autotile -> index 6'
+  eq 17, cs.terrain(4599), 'last block-D autotile -> index 17 (11 groups of 50 from 6)'
+  eq 18, cs.terrain(5000), 'first block-E tile -> index 18'
+  eq 20, cs.terrain(5002), 'block-E tile 5002 -> index 20 (1:1 stride)'
 end
 
 # RPG_RT reads the first lower tile's terrain for anything it cannot index,
