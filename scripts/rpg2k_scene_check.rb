@@ -5275,6 +5275,23 @@ check 'the menu party list shows each member condition' do
   ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
 end
 
+check 'opening Scene::Menu auto-cancels an Erase Screen black-out (yado.tk)' do
+  st = menu_state
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # settle fully erased
+  eq 255, st.screen.fade_level, 'erased before the menu opens'
+  menu_scene(RPG2k::Scene::Menu, st)
+  eq 0, st.screen.fade_level,
+     'opening the menu instantly clears the black-out with no Show Screen'
+  ok !st.screen.fading?, 'no fade animation left running'
+end
+
+check 'opening Scene::Menu leaves an already-visible screen alone' do
+  st = menu_state
+  eq 0, st.screen.fade_level, 'starts fully visible'
+  menu_scene(RPG2k::Scene::Menu, st)
+  eq 0, st.screen.fade_level, 'still fully visible'
+end
+
 check 'Scene::Menu: the main command cursor wraps around' do
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@index), 'starts on the first command'
