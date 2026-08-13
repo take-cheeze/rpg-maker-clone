@@ -2531,12 +2531,29 @@ not yet verified:
   regardless of terrain, and Set Vehicle Location has **no** landability
   validation at all (will happily place it somewhere unlandable). Random
   encounters stay active on ships (governed by terrain settings) but are
-  **hard-disabled** on airships with no database toggle. Small/large ships
-  can never overlap an event's tile even with a passable graphic +
-  below-characters priority (which *does* let the walking hero overlap it
-  fine) — ships need the event's own move route to use Through Mode
-  instead; this is a real divergence from the hero's priority-type-gated
-  passability already implemented.
+  **hard-disabled** on airships with no database toggle.
+- ✅ **Small/large ships can never overlap an event's tile even with a
+  passable graphic + below-characters priority** (which *does* let the
+  walking hero overlap it fine via the already-implemented priority-type
+  gating) — a ship needs the *blocking event's own* move route to have
+  Through Mode on instead; ships ignore priority-type/`overlap_forbidden`
+  gating for this purpose entirely and just check the blocked event's own
+  Through Mode flag. `Scene::Map#vehicle_passable?`'s boat/ship branch
+  (`mruby-rpg2k/mrblib/scene/map.rb`) used to reuse the exact same
+  `blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden]` occupancy
+  test the hero's own `passable?`/`char_passable?` use, so a below-
+  characters event never blocked a ship at all — the opposite of RPG_RT,
+  which always blocks a ship on such a tile unless that specific event has
+  Through Mode enabled. The blocker check is now `blocker &&
+  !blocker[:char].through`, reading the same `Game::Character#through`
+  accessor (`attr_accessor :through`, toggled by the Set Move Route
+  Through Mode ON/OFF commands) that the hero's own Through Mode already
+  uses — this is a one-line, ship-specific divergence from the hero's rule,
+  not a change to the hero's passability or to the airship branch (which
+  ignores events entirely and flies over everything, unaffected). Covered
+  by a new `scripts/rpg2k_scene_check.rb` check (a boarded boat is stopped
+  by a below-characters event on an otherwise boat-passable tile; setting
+  that event's own Through Mode on lets the boat sail through it).
 
 **Save / Load persistence — consolidated master list**
 Runtime state that does **not** survive a map re-visit (leave and return,
