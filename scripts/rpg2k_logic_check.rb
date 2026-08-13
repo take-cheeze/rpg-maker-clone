@@ -2187,13 +2187,14 @@ class ClassedRow < SkillRow
 end
 
 class FakeActorDB
-  attr_reader :player, :system, :item, :skill, :job
-  def initialize(players, party_ids, items = {}, skills = {}, jobs = {})
+  attr_reader :player, :system, :item, :skill, :job, :situation
+  def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil)
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
     @skill = skills
     @job = jobs
+    @situation = situation
   end
 end
 
@@ -6884,6 +6885,113 @@ check 'States.significant: an id the table does not define reads as priority 0' 
   eq 9, Game::States.significant([9], table), 'but alone it is still what shows'
   # With no table at all every state ties at 0, so the highest id shows.
   eq 9, Game::States.significant([2, 9], nil)
+end
+
+check 'States.prune: a state 10+ priority below the current top is dropped' do
+  table = { 2 => display_state(name: 'Poison', priority: 30),
+            3 => display_state(name: 'Sleep',  priority: 70) }
+  eq [3], Game::States.prune([2, 3], table), 'Poison (30) trails Sleep (70) by 40'
+  # Order in the returned list follows the input order, not id/priority order.
+  eq [3], Game::States.prune([3, 2], table)
+end
+
+check 'States.prune: a gap of exactly 10 is enough to drop it, 9 is not' do
+  table = { 2 => display_state(name: 'A', priority: 30),
+            3 => display_state(name: 'B', priority: 39) }
+  eq [2, 3], Game::States.prune([2, 3], table), 'a 9-point gap survives'
+  table[3] = display_state(name: 'B', priority: 40)
+  eq [3], Game::States.prune([2, 3], table), 'a 10-point gap ("10+ below") drops it'
+end
+
+check 'States.prune: states sharing the top priority all survive' do
+  table = { 2 => display_state(name: 'A', priority: 70),
+            3 => display_state(name: 'B', priority: 70),
+            5 => display_state(name: 'C', priority: 20) }
+  eq [2, 3], Game::States.prune([2, 3, 5], table)
+end
+
+check 'States.prune: death is exempt both ways' do
+  table = { 4 => display_state(name: 'Poison', priority: 30) }
+  # Carrying death alongside a low-priority state does not drop the state --
+  # death's priority is never consulted, matching #significant.
+  eq [1, 4], Game::States.prune([1, 4], table)
+  # And death itself is never dropped, however it compares.
+  table[9] = display_state(name: 'Overwhelm', priority: 999)
+  eq [1, 9], Game::States.prune([1, 4, 9], table)
+end
+
+check 'States.prune: a single (or no) non-death state has nothing to compare' do
+  table = { 4 => display_state(name: 'Poison', priority: 30) }
+  eq [4], Game::States.prune([4], table)
+  eq [1, 4], Game::States.prune([1, 4], table)
+  eq [], Game::States.prune([], table)
+  eq nil, Game::States.prune(nil, table)
+end
+
+# A party (same actors as party_state) whose database also carries a state
+# (situation) table, for the Change Condition / cast_skill / battle pruning
+# checks below, none of which party_state or skill_party's plain FakeActorDB
+# gives a table to prune against.
+def party_state_with_states(states, skills = {})
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
+    2 => FakePlayerRow.new('Ally', '', 0, 3,
+                           max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
+  }
+  Game::State.new(
+    Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills, {}, states)), 1, 0, 0)
+end
+
+check 'Change Condition prunes a state it displaces, and one that displaces it' do
+  states = { 2 => display_state(name: 'Poison', priority: 30),
+             3 => display_state(name: 'Petrify', priority: 90) }
+  st = party_state_with_states(states)
+  interp = Game::Interpreter.new(st)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2) # seed with the low-priority state directly
+
+  ic = Game::Interpreter::Cmd
+  # Inflict the much-higher-priority state: it displaces Poison.
+  interp.start([FakeCmd.new(ic::CHANGE_CONDITION, [1, 1, 0, 3])])
+  interp.update
+  eq [3], hero.states, 'Petrify (90) pushed Poison (30) out on landing'
+
+  # A low-priority state inflicted onto an already-high-priority target is
+  # itself immediately pushed back out.
+  interp.start([FakeCmd.new(ic::CHANGE_CONDITION, [1, 1, 0, 2])])
+  interp.update
+  eq [3], hero.states, 'Poison could not gain a foothold against Petrify'
+end
+
+check "a field skill inflicting a state prunes the target's state set" do
+  states = { 2 => display_state(name: 'Poison', priority: 30),
+            3 => display_state(name: 'Petrify', priority: 90) }
+  skills = { 7 => fake_skill(name: 'Petrify Touch', scope: 0, sp_cost: 0,
+                             state_effects: [0, 0, 1], reverse_state: true) } # -> state 3, inflict
+  st = party_state_with_states(states, skills)
+  target = st.party.actor_by_id(1)
+  target.add_state(2)
+  st.party.cast_skill(target, 7, target, true)
+  eq [3], target.states, 'the field-cast Petrify displaced the held Poison'
+end
+
+check "a battle attack skill inflicting a state prunes the target's state set" do
+  states = { 2 => display_state(name: 'Poison', priority: 30),
+             3 => display_state(name: 'Petrify', priority: 90) }
+  skills = { 7 => fake_skill(name: 'Petrify Sting', scope: 0, sp_cost: 3, power: 20,
+                             mrate: 40, state_effects: [0, 0, 1], hit: 100) } # -> state 3
+  st = party_state_with_states(states, skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [2]
+  bat = Game::Battle.new([mage], [foe], Game::Rng.new(1), states)
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, foe)
+  eq [3], c[:inflict]
+  bat.command_skill(mage, foe, name: 'Petrify Sting', cost: c[:cost],
+                    hp: c[:hp], mp: c[:mp], inflict: c[:inflict], chance: c[:chance])
+  bat.run_round
+  eq [3], foe.states, 'the battle-inflicted Petrify displaced the held Poison'
 end
 
 check 'States.name / color fall back when the row does not say' do

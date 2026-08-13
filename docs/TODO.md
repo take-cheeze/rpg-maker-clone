@@ -2248,11 +2248,31 @@ not yet verified:
   halving** of the given Attack Power — replicating a normal attack
   requires manually halving the parameter first. Defense-effectiveness
   100% = DEF/4 (not full DEF); Spirit-effectiveness 100% = Mind/8.
-- Multiple active states: only the highest-priority one is **displayed**,
-  but all active states still mechanically apply (a hidden poison keeps
-  ticking under a displayed confusion); a state ≥10 priority below the
-  current highest is auto-removed; ties go to the higher state ID. State
-  #1 (Knockout) is **hardcoded** regardless of its own configured data.
+- ✅ Multiple active states: only the highest-priority one is **displayed**
+  (`Game::States.significant`, unchanged), but all active states still
+  mechanically apply (a hidden poison keeps ticking under a displayed
+  confusion — already true, since the map/battle slip-damage and
+  turn-restriction passes walk the whole `states` array, not just the
+  significant one). **A state ≥10 priority below the current highest is now
+  auto-removed** (`Game::States.prune`, called the instant a *new* state
+  lands — a state may itself immediately push an existing one out, or be
+  pushed out itself by one already held that outranks it by the gap).
+  Unlike `#significant`, ties don't matter for pruning — only the *value* of
+  the top priority does, so several states sharing it all survive; "ties go
+  to the higher state ID" is about which one **displays**, not which ones
+  live. State #1 (Knockout) is exempt on both sides — it is never pruned and
+  its own priority is never consulted as "the current highest" either,
+  matching `#significant`'s existing death special-case; knockout is tracked
+  through HP/`Actor#dead?`, not through this ranking. Wired into every
+  infliction path: `Game::Actor#add_state` callers (`Change Condition`, field
+  `cast_skill`) via a new `Game::Party#state_table` accessor, and
+  `Game::Battle#roll_inflict` via the battle's own state table. One
+  simplification, not confirmed against real RPG_RT: a state's accuracy-roll
+  "landed" report is unconditional even where pruning removes it again the
+  same instant — no test bed exercises two states with a large enough
+  priority gap to say whether the real messaging differs. Covered by new
+  `scripts/rpg2k_logic_check.rb` checks (the pure `States.prune` rule, and
+  one per infliction path), confirmed to fail against the pre-fix code.
 - A weapon-type Attribute (as opposed to a magic-type one) gates skill
   usability on having a matching-attribute **weapon** equipped — armor
   with the same attribute does not satisfy it (already flagged as a

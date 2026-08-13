@@ -2578,6 +2578,13 @@ module Game
       @db.skill[id]
     end
 
+    # The database's state (`situation`) table, for Game::States lookups --
+    # priority, display name/colour, message text. nil for a fixture without
+    # one, which every Game::States accessor already tolerates.
+    def state_table
+      @db.respond_to?(:situation) ? @db.situation : nil
+    end
+
     # The SP `caster` pays to cast skill `sk`: a fixed cost (sp_type 0) or a
     # percentage of the caster's max SP (sp_type 1). Mirrors EasyRPG's
     # CalculateSkillCost (the half-SP-cost modifier is a later refinement).
@@ -2872,12 +2879,18 @@ module Game
             changed = true
           end
         end
+        landed = false
         inflicted.each do |s|
           unless t.state?(s)
             t.add_state(s)
             changed = true
+            landed = true
           end
         end
+        # RPG_RT's crowding-out rule (see Game::States::PRUNE_GAP): a state
+        # just landed may itself immediately push out one already held, or
+        # be pushed out by one already held that outranks it.
+        t.states = Game::States.prune(t.states, state_table) if landed
         before_hp = t.hp
         before_mp = t.mp
         t.change_hp(amount) if sk.affect_hp && amount > 0
@@ -5225,6 +5238,37 @@ module Game
       best
     end
 
+    # A state's own `priority` field (0 for an unknown id or a fixture row
+    # that omits it), the same lookup #significant makes per-id.
+    def self.priority_of(id, table)
+      r = row(id, table)
+      r && r.respond_to?(:priority) ? (r.priority || 0) : 0
+    end
+
+    # How far below the current top priority a state may sit before RPG_RT
+    # drops it outright (yado.tk: multiple active states all still apply
+    # mechanically, but one 10+ priority below the current highest is
+    # auto-removed).
+    PRUNE_GAP = 10
+
+    # `ids` after RPG_RT's crowding-out rule: any state 10+ priority below the
+    # current highest-priority state it carries is dropped. Only the *value*
+    # of the top priority matters here (unlike #significant, no id is singled
+    # out), so ties do not change what survives -- everything within the gap
+    # of the top, however many states share it, stays. Death (DEATH_ID) is
+    # exempt on both sides: it never gets pruned, and (matching #significant,
+    # which never even reads its priority) it does not count toward "the
+    # current highest" either -- knockout is tracked through HP/#dead?, not
+    # through this ranking. `ids` with one or fewer non-death entries has
+    # nothing to compare, and comes back unchanged.
+    def self.prune(ids, table)
+      return ids if ids.nil? || ids.size <= 1
+      ranked = ids.reject { |id| id == DEATH_ID }
+      return ids if ranked.size <= 1
+      top = ranked.map { |id| priority_of(id, table) }.max
+      ids.select { |id| id == DEATH_ID || priority_of(id, table) > top - PRUNE_GAP }
+    end
+
     # The state's display name, or nil when the table does not name it (a
     # fixture, or an id the database does not define).
     def self.name(id, table)
@@ -6782,7 +6826,10 @@ module Game
         end
         prob = chance * state_susceptibility(target, sid) / 100
         next unless @rng.random(100) < prob
-        target.states = (target.states || []) + [sid]
+        # RPG_RT's crowding-out rule (Game::States::PRUNE_GAP): the state
+        # that just landed may itself immediately push out one already
+        # held, or be pushed out by one already held that outranks it.
+        target.states = Game::States.prune((target.states || []) + [sid], @states)
         inflicted << sid
       end
       [inflicted, already]

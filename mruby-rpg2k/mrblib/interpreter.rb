@@ -1653,7 +1653,15 @@ module Game
       state_id = cmd.param(3)
       remove = cmd.param(2) != 0
       stat_targets(cmd).each do |a|
-        remove ? a.remove_state(state_id) : a.add_state(state_id)
+        if remove
+          a.remove_state(state_id)
+        else
+          a.add_state(state_id)
+          # RPG_RT's crowding-out rule (Game::States::PRUNE_GAP): a state
+          # just inflicted may push out (or itself be pushed out by) one
+          # already held that outranks it by 10+ priority.
+          a.states = Game::States.prune(a.states, party.state_table)
+        end
       end
       check_game_over
     end
