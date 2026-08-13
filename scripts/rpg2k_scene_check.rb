@@ -3427,6 +3427,24 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+check 'Enter Hero Name: draws a full-screen background behind the widget' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0)] # actor 1, letters, no seed
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  ok ui[:background], 'a field background sprite is drawn behind the widget'
+  eq RPG2k::WIDTH, ui[:background].bitmap.width, 'the backdrop covers the full screen width'
+  eq RPG2k::HEIGHT, ui[:background].bitmap.height, 'the backdrop covers the full screen height'
+end
+
 check 'Enter Hero Name: the character grid cursor wraps around' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -3502,6 +3520,14 @@ check 'Enter Hero Name: hiragana/katakana grid opens on the requested page, seed
   eq :katakana, ui[:page], 'charset 1 opens on the katakana page'
   eq 'Hero', ui[:name], 'seeded with the actor current name'
   eq 0, ui[:sel], 'cursor starts on the first cell'
+
+  ok ui[:background], 'a field background sprite is drawn behind the kana widget'
+  eq RPG2k::WIDTH, ui[:background].bitmap.width, 'the backdrop covers the full screen width'
+  eq RPG2k::HEIGHT, ui[:background].bitmap.height, 'the backdrop covers the full screen height'
+
+  field_text = ui[:name_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[H e r o _ _], field_text,
+     'the name-so-far field shows the seeded characters, underscored past them'
 end
 
 check 'Enter Hero Name: typing a kana and confirming renames the actor' do
