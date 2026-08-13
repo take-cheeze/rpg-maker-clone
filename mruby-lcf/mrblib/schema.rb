@@ -1034,12 +1034,17 @@ module LCF
     # armour, helmet, accessory] — every slot's id resolves to an item of the
     # matching type in the database (slot 0 weapons, slot 2 armour, slot 3
     # helmets, slot 4 accessories; a dual-wield hero carries a second weapon in
-    # the shield slot). Field 1 is the (renamable) name — the hero's stored name
-    # matches the SAVE_TITLE hero_name exactly — but it is left unmodelled here
-    # because the runtime resolves names from the database and reserve actors
-    # store only a placeholder. Fields 2/33/34 are single bytes that are constant
-    # in the sampled save, so their meaning is not yet provable.
+    # the shield slot). Field 1 is the (renamable) actor name — the hero's
+    # stored name matches the SAVE_TITLE hero_name exactly, which is what
+    # confirmed it — and is now modelled, so a Change Actor Name override on a
+    # *non*-leader party member round-trips through Save/Continue too (chunk
+    # 100's title only ever carried the leader's). Fields 2/33/34 are single
+    # bytes that are constant in the sampled save, so their meaning is not yet
+    # provable; in particular field 2 is not confirmed to be the actor's title
+    # (Change Actor Title), so that override still does not survive a real
+    # `.lsd` round-trip.
     SAVE_PARTY_ACTOR = {
+      1 => { name: :actor_name, type: :string },            # 名前
       31 => { name: :level, type: :int, default: 1 },      # レベル
       32 => { name: :exp, type: :int, default: 0 },        # 経験値
       51 => { name: :skill_size, type: :int, default: 0 }, # 『特技』情報のデータ数

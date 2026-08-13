@@ -30,6 +30,29 @@ module RGSS
   def self.warn_stub(*); end
 end
 
+# mruby-lcf/mrblib is the same pure Ruby/mruby-common subset as game.rb -- not
+# the native LCF parser -- and #to_lsd/.from_lsd (Game::State) build/consume its
+# LCF::SaveData / LCF::Array1D straight from Ruby objects, no bytes involved,
+# for the round-trip checks below. LCF.cp932_to_utf8/utf8_to_cp932 are the one
+# native binding those classes call through (a string field's encode/decode);
+# stubbed with Ruby's own Windows-31J transcoder exactly as
+# scripts/rpg2k_save_load_check.rb already does for the same reason.
+require 'stringio'
+module LCF
+  def cp932_to_utf8(s)
+    s.dup.force_encoding('Windows-31J')
+     .encode('UTF-8', invalid: :replace, undef: :replace, replace: "\u{FFFD}")
+  end
+  def utf8_to_cp932(s)
+    s.dup.encode('Windows-31J', invalid: :replace, undef: :replace)
+     .force_encoding('BINARY')
+  end
+  module_function :cp932_to_utf8, :utf8_to_cp932
+end
+lcf_lib = File.expand_path('../mruby-lcf/mrblib', __dir__)
+load File.join(lcf_lib, 'lcf.rb')
+load File.join(lcf_lib, 'schema.rb')
+
 lib = File.expand_path('../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
 load File.join(lib, 'interpreter.rb')
@@ -2583,6 +2606,29 @@ check 'both timers round-trip through the save; an old save still loads' do
   old = Game::State.load(db, legacy)
   eq 30, old.timer(0).seconds, 'the first timer comes back from the old keys'
   eq 0, old.timer(1).seconds, 'and the second starts empty'
+end
+
+check 'to_lsd/from_lsd round-trips a non-leader actor\'s Change Actor Name' do
+  # Chunk 100 (the file-screen title) only ever carries the *leader's* name, so
+  # a Change Actor Name on a companion used to have nowhere to land in the real
+  # .lsd export -- only chunk 108 (SAVE_PARTY_ACTOR)'s per-actor field 1 does,
+  # and #to_lsd never wrote it. Confirmed against a real save in ADR 0014
+  # (field 1's bytes matched the SAVE_TITLE hero_name exactly for the leader).
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  db = FakeActorDB.new(players, [1])
+  party = Game::Party.new(db)
+  party.add_actor(2)
+  st = Game::State.new(party, 1, 0, 0)
+  st.party.leader.name = 'Renamed Hero'
+  st.party.actor_by_id(2).name = 'Renamed Ally'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 'Renamed Hero', round.party.leader.name, 'the leader (also covered by chunk 100) round-trips'
+  eq 'Renamed Ally', round.party.actor_by_id(2).name,
+     "a non-leader's renamed name now round-trips too, via chunk 108 field 1"
 end
 
 # -- the permanent actor roster (Game::Actors) --------------------------------

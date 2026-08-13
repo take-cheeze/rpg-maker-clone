@@ -1720,15 +1720,37 @@ The work below is roughly ordered by the critical path to a walkable game
   `:double` timestamp (via the new `LCF.pack_double`), the leader's
   name/level/HP and the party FaceSets — so a real RPG_RT/EasyRPG file-select
   screen shows the party. Still keeping the Marshal save *primary* (so Continue
-  prefers it) are two fields the `.lsd` cannot yet carry: the **game timer**
-  (liblcf's SaveSystem has no field for it — needs a documented chunk id) and
-  **per-actor name/title overrides for non-leader** members (only the leader's
-  name is in the title chunk). Both save paths carry the **whole actor roster**,
-  not just the current party: chunk 108 holds one entry per actor the party has
-  ever held (which is what a genuine RPG_RT save holds), so a companion who is
-  out of the party when the game is saved is written out and read back rather
-  than being silently dropped — `.from_lsd` used to skip exactly those rows. See
-  ADR 0030
+  prefers it) is one field the `.lsd` cannot yet carry: the **game timer**
+  (liblcf's SaveSystem has no field for it — needs a documented chunk id). Both
+  save paths carry the **whole actor roster**, not just the current party:
+  chunk 108 holds one entry per actor the party has ever held (which is what a
+  genuine RPG_RT save holds), so a companion who is out of the party when the
+  game is saved is written out and read back rather than being silently
+  dropped — `.from_lsd` used to skip exactly those rows. See ADR 0030.
+  ✅ **A non-leader party member's Change Actor Name override now round-trips
+  through the `.lsd` too**, closing the "per-actor name... for non-leader"
+  half of the gap this line used to describe (only the leader's name — via
+  the file-screen title chunk 100, which has room for exactly one — used to
+  survive). Chunk 108 (`SAVE_PARTY_ACTOR`)'s field 1 was already identified
+  in ADR 0014 as the actor's renamable name (a decoded real save's field 1
+  matched its own `SAVE_TITLE` `hero_name` exactly for the leader) but left
+  unmodelled, since nothing needed a *non*-leader's name at the time.
+  `LCF::Schema::SAVE_PARTY_ACTOR` now decodes it (`actor_name`),
+  `Game::State#to_lsd` writes every roster actor's current name into it (not
+  just the leader's), and `.from_lsd` restores it for every actor the chunk
+  covers — the leader's chunk-100 restore stays too, as a redundant
+  belt-and-braces source applied last. **Still not modelled: Change Actor
+  *Title***, since fields 2/33/34 stayed constant in the one sampled save and
+  are not provably the title field. Covered by a new `scripts/
+  rpg2k_logic_check.rb` check (a renamed leader and a renamed non-leader
+  roster member both come back correctly named from an in-memory
+  `to_lsd`/`from_lsd` round-trip — no bytes serialised, since `Array1D#[]=`
+  and `#[]` are already exact inverses on the schema-encoded value; the check
+  loads the pure-Ruby `mruby-lcf/mrblib` sources for the first time in this
+  script, stubbing `LCF.cp932_to_utf8`/`utf8_to_cp932` the same way
+  `scripts/rpg2k_save_load_check.rb` already does), confirmed to fail against
+  the pre-fix code (the non-leader's name came back as its un-renamed
+  database default) before the fix.
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done
