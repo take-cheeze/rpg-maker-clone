@@ -1493,8 +1493,28 @@ The work below is roughly ordered by the critical path to a walkable game
   switch table). A **special item** (type 9, 特殊) invokes the skill named in its
   `skill_id`, with the item standing in for the SP cost — the user pays nothing
   and need not have learnt it, which is what Nepheshel's whole thrown-bomb line
-  is. **Switch skills** (type 3) flip their switch: that is how a Nepheshel
-  player summons and dismisses a companion.
+  is. ✅ **A self/all-ally scope special item is castable from the item menu
+  now too**, not just a single-ally one. `Scene::ItemMenu#choose_item` picked
+  its no-prompt path (`sk.scope == 2 || sk.scope == 4`) the same way it does
+  for an all-ally medicine, and called `apply_item(id, nil)` the same way —
+  but a medicine's all-ally branch never reads that argument
+  (`Game::Party#use_medicine` pulls the whole party off `@actors` instead),
+  while `#use_special_item` treats its `actor` argument as the *caster* it
+  casts the invoked skill from and refuses outright when it is nil
+  (`return [] unless actor`, before the skill's own scope is ever
+  consulted) — so a self- or all-ally-scope special item (a thrown bomb's
+  ally-side counterpart, or a self-buff item) silently did nothing whenever
+  chosen, reporting "It had no effect." even though `#field_usable?` /
+  `#item_effective?` (both keyed off the *skill's* scope, not this dispatch)
+  said it should work. Fixed by passing `@state.party.leader` instead of
+  `nil` for that one branch, mirroring `Scene::SkillMenu`, which always has
+  a caster selected before it ever reaches the no-prompt scopes. The
+  single-ally branch (`prompt_item_target`) was never affected — it already
+  passes the chosen target as `actor`. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check, confirmed to fail against the
+  pre-fix code (recording the `nil` actor `#use_special_item` was called
+  with) before the fix. **Switch skills** (type 3) flip their switch: that is
+  how a Nepheshel player summons and dismisses a companion.
 
   What decides usability is the **type**, not the occasion flags, and getting
   that wrong used to leave the battle skill menu **empty in both test beds** —

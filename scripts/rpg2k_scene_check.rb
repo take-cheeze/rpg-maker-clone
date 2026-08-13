@@ -6963,6 +6963,55 @@ check 'Scene::ItemMenu: the item list and target cursors wrap around' do
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
 end
 
+# A party whose only item is a special (type 9) one invoking an all-ally scope
+# skill -- Game::Party's own decision logic (#use_special_item /
+# #field_usable?) is covered by scripts/rpg2k_logic_check.rb; this stub only
+# has to hand the scene something that behaves the same way, so the check
+# below stays about the RGSS wiring (does confirming the item actually cast
+# it, and who as?) rather than repeating that coverage under RGSS stubs.
+class SpecialItemStubParty < MenuStubParty
+  SPECIAL_ID = 40
+
+  attr_reader :use_item_calls
+
+  def initialize
+    super
+    @use_item_calls = []
+  end
+
+  def leader; @actors.first; end
+  def field_items; [[SPECIAL_ID, 3]]; end
+
+  def db_item(id)
+    return nil unless id == SPECIAL_ID
+    OpenStruct.new(name: 'Vial', type: Game::Party::ITEM_SPECIAL, skill_id: 90)
+  end
+
+  def db_skill(id)
+    return nil unless id == 90
+    OpenStruct.new(name: 'Heal All', type: 0, scope: 4) # an all-ally skill
+  end
+
+  # `actor` here is the *caster* #use_special_item casts the skill from (see
+  # the class comment above), not a chosen target -- recorded so the check
+  # can tell a real actor from the nil the pre-fix scene passed.
+  def use_item(id, actor = nil)
+    @use_item_calls << [id, actor]
+    actor ? [actor] : []
+  end
+end
+
+check 'Scene::ItemMenu: an all-ally special item is cast by the party leader, ' \
+      'not left uncastable with no actor at all' do
+  st = Game::State.new(SpecialItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- no target prompt
+  scene.update
+  RGSS::Input.triggered = []
+  eq [[SpecialItemStubParty::SPECIAL_ID, st.party.leader]], st.party.use_item_calls,
+     'the party leader casts it, rather than a nil actor #use_special_item rejects outright'
+end
+
 check 'Scene::SkillMenu: the skill list, caster and target cursors wrap around' do
   scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@skill_index), 'starts on the first skill'

@@ -76,7 +76,15 @@ class RPG2k
         elsif it && it.type == Game::Party::ITEM_SPECIAL
           sk = @state.party.db_skill(it.skill_id)
           if sk && (sk.scope == 2 || sk.scope == 4)
-            apply_item(id, nil)
+            # Unlike a medicine (whose all-ally scope needs no actor at all --
+            # #use_medicine reads the whole party off `@actors`, ignoring the
+            # argument), a special item's `actor` argument is the *caster*
+            # #use_special_item casts the skill from (mirroring
+            # Scene::SkillMenu, which always has a caster selected). Passing
+            # nil here left every self/all-ally special item uncastable
+            # through this menu -- #use_special_item's own `return [] unless
+            # actor` guard rejected it before the skill's scope ever mattered.
+            apply_item(id, @state.party.leader)
           else
             prompt_item_target(id)
           end
