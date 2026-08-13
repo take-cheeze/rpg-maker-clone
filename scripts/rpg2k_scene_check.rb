@@ -726,6 +726,50 @@ check "an unrelated event's page change does not reset another event's " \
   eq 5, ch.transparency, 'and Transparency Up/Down'
 end
 
+check "an unrelated event's page change does not reset another event's Move " \
+      "Route Change Graphic override, but the event's own page change still wins" do
+  # Event 1 is the bystander (own page never changes) and carries a Move
+  # Route Change Graphic override, poked directly onto its Character the same
+  # way the Through Mode check above pokes its four flags -- equivalent to
+  # what a Set Move Route Change Graphic sub-command applies via
+  # Character#set_graphic. Event 2 flips to a page gated on switch 3, the
+  # same map-wide #pages_changed? trigger that rebuilds every event's
+  # Character. Event 3 *also* changes its own page (same switch) to one with
+  # a different base charset and carries no override of its own: that page's
+  # own new graphic must still win outright, since #build_event always
+  # derives graphic_name/graphic_index fresh from whichever page is selected
+  # -- unlike Through Mode et al., a page *does* set this field, so only a
+  # bystander whose own page selection did not move gets its override carried
+  # forward.
+  bystander = page(trigger: 0, charset_name: 'Bystander')
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 4, charset_name: 'Ghost')
+  own_p1 = page(trigger: 0, charset_name: 'OwnBefore')
+  own_p2 = page(trigger: 0, charset_name: 'OwnAfter')
+  scene = new_scene({ 1 => event(1, 1, bystander),
+                      2 => two_page_event(2, 2, 3, p1, p2),
+                      3 => two_page_event(3, 3, 3, own_p1, own_p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+
+  event_hashes(scene)[1][:char].set_graphic('Override', 4)
+
+  st.switches[3] = true # flips event 2's own page and event 3's own page alike
+  5.times { scene.update }
+
+  ev2 = event_hashes(scene)[2]
+  eq 4, ev2[:trigger], "event 2's page did flip (switch 3 went on)"
+
+  ch1 = event_hashes(scene)[1][:char]
+  eq 'Override', ch1.graphic_name,
+     "event 1's Move Route Change Graphic override survived event 2's page rebuild"
+  eq 4, ch1.graphic_index
+
+  ch3 = event_hashes(scene)[3][:char]
+  eq 'OwnAfter', ch3.graphic_name,
+     "event 3's own page change still wins over whatever it was drawing before"
+end
+
 check 'a page change keeps the event where it stands' do
   # The event walks east on page 1; when it flips to page 2 it must stay put
   # rather than snapping back to its spawn tile.

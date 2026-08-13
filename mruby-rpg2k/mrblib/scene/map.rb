@@ -1689,6 +1689,22 @@ class RPG2k
       # other event's Control Switch/Variable/item write flips a page anywhere
       # on the map — the same "must be explicitly ended or it never turns back
       # off" state yado.tk documents for Through Mode specifically.
+      #
+      # A Move Route **Change Graphic** override is carried across the same
+      # way, but only for a bystander whose own page selection did not move
+      # (`old[:page].equal?(e[:page])`, the same page-identity test
+      # #pages_changed? and the move-route-continuation check just below both
+      # use) — unlike the four flags above, `#build_event` *does* set
+      # `graphic_name`/`graphic_index` from the page every time
+      # (`page_charset_name`/`page_charset_index`), so a genuine page switch
+      # for *this* event (a different page with its own different base
+      # sprite) must still win outright rather than have a stale override
+      # painted back over it. yado.tk documents the override as reverting on
+      # a real map transfer/save-load (unlike the dedicated Change Graphic
+      # event command) but says nothing about it surviving *this* event's own
+      # page reselecting — while an untouched bystander event, whose page
+      # never moved at all, has no such excuse to lose it either, the same
+      # reasoning already applied to Through Mode above.
       def rebuild_events_preserving_positions
         placed = {}
         @events.each { |e| placed[e[:id]] = e }
@@ -1703,6 +1719,9 @@ class RPG2k
           e[:char].facing_locked = old[:char].facing_locked
           e[:char].animation_stopped = old[:char].animation_stopped
           e[:char].transparency = old[:char].transparency
+          if old[:page].equal?(e[:page])
+            e[:char].set_graphic(old[:char].graphic_name, old[:char].graphic_index)
+          end
           next unless e[:move_type] == Game::MoveType::CUSTOM &&
                       old[:move_type] == Game::MoveType::CUSTOM
           if Game::MoveRoute.same_route?(page_move_route(old[:page]), page_move_route(e[:page]))
