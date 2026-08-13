@@ -2042,6 +2042,38 @@ check 'Play Memorized BGM with nothing memorized does nothing' do
   eq nil, st.memorized_bgm
 end
 
+check 'Play BGM with the file already playing does not restart it' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Same file re-triggered with different vol/tempo: RPG_RT keeps the track
+  # playing uninterrupted (single BGM channel, no break/restart) rather than
+  # calling into the backend a second time.
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 50, 120], string: 'town'),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town], names, 'only the first Play BGM actually reached the backend'
+  eq 'town', st.current_bgm[:name]
+  eq 50, st.current_bgm[:volume], 'state still tracks the latest requested volume'
+  eq 120, st.current_bgm[:tempo], 'state still tracks the latest requested tempo'
+end
+
+check 'Play BGM with a different file still restarts (or starts) playback' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'field'),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town field], names, 'a different file always reaches the backend'
+end
+
 # -- actor HP / MP commands ---------------------------------------------------
 
 # A database row for an actor, and a fake DB exposing just what Game::Party /
