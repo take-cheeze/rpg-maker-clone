@@ -6020,28 +6020,29 @@ check 'the battle animation draws in screen pixels, not map ones' do
      'placed from the target pixel itself, ignoring the camera'
 end
 
-check 'the battle status window shows each battler condition, or the normal term' do
+check 'the battle status window shows each ally condition, or the normal term' do
   scene, ui = battle_at_command
   texts = window_texts(ui[:status_win])
-  eq 3, texts.count { |t| t == 'Normal' },
-     'two foes and one ally all start clear, showing the database normal term'
+  eq 1, texts.count { |t| t == 'Normal' },
+     'the one ally starts clear, showing the database normal term'
 
-  ui[:foes][0].states = [3]                      # Poison
   ui[:allies][0].states = [4]                    # Sleep
   scene.send(:refresh_battle_status)
   texts = window_texts(ui[:status_win])
-  ok texts.include?('Poison'), 'the afflicted foe shows its state'
-  ok texts.include?('Sleep'), 'and so does the afflicted ally'
-  eq 1, texts.count { |t| t == 'Normal' }, 'only the untouched foe is normal'
+  ok texts.include?('Sleep'), 'the afflicted ally shows its state'
+  # RPG2000 is front-view: EasyRPG's Scene_Battle_Rpg2k builds exactly one
+  # Window_BattleStatus, defaulted to `enemy: false` -- the troop is never
+  # listed on this panel, only shown through its battler sprites.
+  ok !texts.include?(ui[:foes][0].name), "the enemy troop has no row here"
 end
 
 check 'the condition shown is the significant state, in the state colour' do
   scene, ui = battle_at_command
   # Sleep (priority 80) outranks Silence (10) whichever order they landed in.
-  ui[:foes][0].states = [4, 5]
+  ui[:allies][0].states = [4, 5]
   scene.send(:refresh_battle_status)
   ok window_texts(ui[:status_win]).include?('Sleep'), 'the higher priority wins'
-  ui[:foes][0].states = [5, 4]
+  ui[:allies][0].states = [5, 4]
   scene.send(:refresh_battle_status)
   ok window_texts(ui[:status_win]).include?('Sleep'), 'regardless of order'
 
@@ -6053,15 +6054,17 @@ check 'the condition shown is the significant state, in the state colour' do
   eq 4, Game::States.color(4, scene.db.situation), 'Sleep in colour 4'
 end
 
-check 'Change Monster Condition on a battle page shows on the status window' do
+check 'Change Monster Condition on a battle page updates the troop, off-panel' do
   ic = Game::Interpreter::Cmd
   # Inflict state 3 (Poison) on troop member 0 the moment the fight opens.
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_CONDITION, [0, 0, 3])]) }
   scene, ui = battle_at_command(pages)
   eq true, ui[:foes][0].state?(3), 'the page inflicted the state'
-  # ...and the panel says so without waiting for the next action to redraw it.
-  ok window_texts(ui[:status_win]).include?('Poison'),
-     'the status window was rebuilt after the page ran'
+  # The status window is party-only (see above), so a troop condition change
+  # has nowhere to show on it -- RPG_RT has no persistent enemy status panel
+  # either, only the battle log's own wording when a state lands.
+  ok !window_texts(ui[:status_win]).include?('Poison'),
+     'the troop never reaches the party-only status window'
 end
 
 # -- the battle log in the game's own words ------------------------------------
