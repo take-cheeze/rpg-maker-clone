@@ -397,6 +397,21 @@ class RPG2k
         # one block against its siblings (gfx_update's per-parent z sort), so
         # pulling this one sprite out changes only whether the map's tone
         # reaches it, not where it draws relative to the layers around it.
+        # z 150 also settles a previously-open question: it sits below
+        # @picture_sprite (z 250), so a Show Battle Animation always draws
+        # *under* the picture layer. EasyRPG Player's own Drawable::Priority
+        # enum (src/drawable.h) orders `Priority_PictureOld = 120 << z_offset`
+        # above `Priority_BattleAnimation = 110 << z_offset` -- the ordering
+        # every standard RPG2000/RPG2003 database uses, since Sprite_Picture's
+        # constructor (src/sprite_picture.cpp) seeds every picture at
+        # `Priority_PictureOld + pic_id` unconditionally, only overridden by
+        # `Priority_PictureNew` (100, *below* BattleAnimation) when
+        # `feature_priority_layers` -- `Player::IsMajorUpdatedVersion()` --
+        # detects the "RPG2000 Value!" English re-release or a specifically
+        # patched RPG2003 English runtime (`ultimate_rt_eb.dll`), neither of
+        # which this project has any file/version signal to detect from a
+        # plain .ldb/.lmt/.lmu triple. So "pictures always draw over a map
+        # animation" is correct for every ordinary database this runtime reads.
         @animation_sprite = Sprite.new
         @animation_sprite.z = 150
         @animation_sprite.visible = false
