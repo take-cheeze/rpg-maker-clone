@@ -1230,6 +1230,31 @@ class RPG2k
           # silently cleared the wait and let the process carry on with a
           # fully-dead party never reaching the Game Over screen.
           perform_game_over(it)
+        elsif it.wait_kind == :movement
+          # Proceed With Movement / Force Complete Move issued from a
+          # Parallel Process: block that process until every targeted
+          # character's forced route has actually finished, the same as
+          # #drive_event's own :movement branch does for the foreground --
+          # docs/TODO.md ("Move All / Force Complete Move ... blocks Event
+          # Content at that command until every targeted character's route
+          # finishes"), which used to apply to a foreground Autorun only.
+          # Before this branch existed this fell into the generic #resume
+          # below too, so the command never actually blocked anything issued
+          # from a parallel process -- it read as a fire-and-forget request
+          # regardless of "wait for completion", and a target stuck forever
+          # (e.g. hidden map event, see the sibling foreground check) never
+          # froze the process the way real RPG_RT does.
+          #
+          # Deliberately calls #forced_movement_done? rather than
+          # #step_forced_movement: the routes themselves are already stepped
+          # exactly once this frame elsewhere -- by the ordinary #step_events
+          # pass in #update's not-busy branch when the foreground is idle, or
+          # by the foreground's own #step_forced_movement call when it is
+          # itself parked on :message/:wait/:movement -- so stepping them
+          # again here would double-advance every forced route on any frame
+          # both a parallel process and the foreground happen to be waiting
+          # on movement at once.
+          it.resume if forced_movement_done?
         else
           it.resume # background: ignore message/choice/teleport requests
         end

@@ -3219,6 +3219,45 @@ check "Proceed With Movement also waits on a vehicle's forced route" do
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check "Proceed With Movement blocks a Parallel Process's own interpreter, not just the foreground's" do
+  # docs/TODO.md, `2k/09_bug/017_heiretu_totyu_end/hei_mukou.htm`: Set Move
+  # Route + "wait for completion" is documented to block whichever event's
+  # own Event Content issued it until every targeted character's route
+  # finishes -- the same rule already covered above for a foreground
+  # Autorun's own Proceed With Movement, but #drive_parallel_wait had no
+  # :movement case at all, so a Common Event Parallel Process issuing the
+  # identical command fell into the generic "background: ignore message/
+  # choice/teleport requests" #resume branch instead and read it as a plain
+  # fire-and-forget no-op regardless of "wait for completion".
+  ic = Game::Interpreter::Cmd
+  # Gated on switch 2, which the process itself turns off right after Proceed
+  # With Movement resumes -- otherwise a Parallel Process loops its command
+  # list forever by design, and a second lap's own Move Event would replace
+  # the still-settling forced route with a fresh one before the 200-frame
+  # budget below could tell "resumed on time" apart from "resumed early".
+  ce = OpenStruct.new(start_term: 4, need_flag: true, switch_id: 2,
+                      event: [
+                        ECmd.new(ic::MOVE_EVENT,
+                                 [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+                        ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+                        ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 1]), # gate off: one lap only
+                        ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+                      ])
+  scene = new_scene({ 2 => event(0, 1, page) }, common: { 1 => ce }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  st.switches[2] = true
+  c = chars(scene)[2]
+
+  10.times { scene.update } # mid-route: still moving, switch not yet flipped
+  ok c.x < 3, "route still in progress, at x=#{c.x}"
+  ok !st.switches[1],
+     'Proceed With Movement issued by a Parallel Process must wait too, not resume immediately'
+
+  200.times { scene.update } # enough frames for the freq-4 route to finish
+  eq 3, c.x, 'the forced event reached the end of its route'
+  ok st.switches[1], 'the Parallel Process resumed once the route actually finished'
+end
+
 check "a forced route auto-runs to completion before an immediately-following Show Text opens (yado.tk)" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
