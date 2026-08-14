@@ -5582,6 +5582,7 @@ class RPG2k
         if ma[:timer] > 0
           ma[:timer] -= 1
           hold_animation_screen_flash(ma)
+          hold_animation_target_flash(ma)
           return
         end
         ma[:frame_i] += 1
@@ -5602,6 +5603,7 @@ class RPG2k
         fire_animation_flashes(ma)
         ma[:timer] = ANIM_CELL_FRAMES
         hold_animation_screen_flash(ma)
+        hold_animation_target_flash(ma)
       end
 
       # yado.tk: Screen Flash / Character Flash are both capped to 1/30s of
@@ -5639,6 +5641,73 @@ class RPG2k
           ma[:screen_flash_hold] = hold - 1
         else
           @state.screen.flash(0, 0, 0, 0, 0)
+        end
+      end
+
+      # yado.tk's own "Character Flash" half of the same claim, capped the same
+      # way and for the same reason -- corroborated independently against
+      # EasyRPG's own C++ source right alongside #hold_animation_screen_flash's:
+      # `BattleAnimation::Update` calls `UpdateTargetFlash()` unconditionally on
+      # *every* real frame, right next to its `UpdateScreenFlash()` call
+      # (`src/battle_animation.cpp`), and `UpdateTargetFlash` always ends in
+      # `FlashTargets(r, g, b, p)` -- `BattleAnimationMap::FlashTargets`
+      # (`target->Flash(r, g, b, p, 0)`) and `BattleAnimationBattle::FlashTargets`
+      # (`battler->Flash(r, g, b, p, 0)`, the two map/battle-round shapes this
+      # codebase's own #fire_map_target_flash/#fire_target_flash mirror) are
+      # both unconditional the exact same way `Game_Screen::FlashOnce` is, with
+      # r/g/b/p either the most recently fired flash_scope-1 timing's own
+      # decaying value or all zero. So an unrelated Character Flash already
+      # running on this animation's own target -- a Flash Sprite (11320)
+      # command mid-decay on the player/a map event, or an enemy's own
+      # in-flight flash from an earlier battle-round hit -- gets silently
+      # overwritten the very next real frame too, regardless of its own
+      # configured duration, for as long as the animation is on screen.
+      # `ma[:target_flash_hold]` mirrors `ma[:screen_flash_hold]` exactly (set
+      # to ANIM_FLASH_FRAMES by #fire_animation_flashes whenever a flash_scope-1
+      # timing actually fires, ticking down here); once it lapses, the
+      # animation's own target is forcibly cleared again every real frame,
+      # capping any concurrent, unrelated flash on that same target to at most
+      # the one frame between two calls here. Scoped to just the animation's
+      # own target (#clear_target_flash / #clear_map_target_flash), unlike the
+      # screen-flash half -- a Character Flash on a *different* character is
+      # untouched, matching `FlashTargets`' own target-list scope.
+      def hold_animation_target_flash(ma)
+        hold = ma[:target_flash_hold]
+        if hold && hold > 0
+          ma[:target_flash_hold] = hold - 1
+        else
+          ma[:battle] ? clear_target_flash(ma[:target_index]) : clear_map_target_flash(ma[:flash_target])
+        end
+      end
+
+      # The battle-round half of #hold_animation_target_flash's forced clear:
+      # the same RGSS Sprite#flash primitive #fire_target_flash arms a flash
+      # with, called with a zero duration (flash_count 0 reads as "not
+      # flashing," mruby-rgss/src/lib.cxx's own spr_flash/spr_update) to drop
+      # whatever flash -- this animation's own decayed-away one, or an
+      # unrelated one -- is currently in flight on that enemy sprite. A nil
+      # target_index (an ally-scoped animation, no on-screen sprite) or a
+      # missing @battle_ui (the animation already finished/the fight already
+      # ended) is a silent no-op, matching #fire_target_flash's own guard.
+      def clear_target_flash(target_index)
+        sprites = @battle_ui && @battle_ui[:enemy_sprites]
+        spr = target_index && sprites ? sprites[target_index] : nil
+        spr.flash(nil, 0) if spr
+      end
+
+      # The map-triggered half: drop @player_flash / an @events entry's own
+      # [:flash] back to nil, the same "no flash in flight" state #tick_flash's
+      # own decay already leaves behind, mirroring #fire_map_target_flash's own
+      # arm call. A nil target (a vehicle, or an id no live event matches --
+      # see #map_animation_flash_target) is a no-op, since there is nothing to
+      # clear.
+      def clear_map_target_flash(target)
+        return if target.nil?
+        if target == :player
+          @last_frame = nil if @player_flash
+          @player_flash = nil
+        else
+          target[:flash] = nil
         end
       end
 
@@ -5783,6 +5852,11 @@ class RPG2k
             ma[:screen_flash_hold] = ANIM_FLASH_FRAMES
           when 1
             ma[:battle] ? fire_target_flash(ma[:target_index], t) : fire_map_target_flash(ma[:flash_target], t)
+            # #hold_animation_target_flash keeps re-asserting this fire (and,
+            # once it lapses, forcibly clearing the target's flash outright)
+            # every real frame, the exact same shape as #ma[:screen_flash_hold]
+            # just above.
+            ma[:target_flash_hold] = ANIM_FLASH_FRAMES
           end
         end
       end
