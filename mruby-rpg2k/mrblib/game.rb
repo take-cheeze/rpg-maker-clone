@@ -3422,6 +3422,50 @@ module Game
       end
     end
 
+    # Whether an enemy AI's own self/ally/troop-scope skill action `sk` could
+    # possibly help anyone on `caster`'s side (`troop`, its full battle Combatant
+    # roster including out-of-play members) -- ported from EasyRPG's
+    # EnemyAi::IsSkillEffectiveOnAnyTarget / IsSkillEffectiveOn
+    # (src/enemyai.cpp), which the real engine consults before letting an
+    # AI-selected skill enter its weighted draw at all: an enemy-scope skill
+    # (0 single enemy / 1 all enemies, aimed at the *party*) is always
+    # considered worth trying -- RPG_RT never checks whether the party side
+    # could be affected -- so only scope 2/3/4 (self/single ally/all allies,
+    # always the caster's own troop) is filtered here, against `caster` alone
+    # for scope 2 or every troop member for 3/4 (the real engine does not
+    # distinguish single- from all-ally scope for this purpose, since a single
+    # target is chosen only after an action is already selected). This port
+    # always runs the *actual* RPG_RT behaviour (EasyRPG's `emulate_bugs: true`
+    # -- its alternate bug-fixed "RPG_RT+" algorithm is never selected here,
+    # matching every other "authentic engine vs. EasyRPG's improved variant"
+    # choice elsewhere in this file), which collapses two of the ported
+    # function's branches to their `emulate_bugs` side outright: a
+    # Knockout-flagged (state id 1, a revival) skill reads as effective on any
+    # hidden/downed troop member purely from the flag being set -- an
+    # authentic bug, ignoring `reverse_state_effect` and whether the target is
+    # actually the one that is dead -- and an RPG2003 ally-scope skill with
+    # `reverse_state_effect` set (see `#battle_skill_command`'s `heals_states`)
+    # is checked by whether the target already *has* the state, the same as
+    # an ordinary cure, rather than by whether inflicting it would do
+    # anything.
+    def skill_helps_troop?(sk, caster, troop)
+      return true unless Party.normal_skill?(sk)
+      scope = sk.respond_to?(:scope) ? sk.scope : 0
+      return true if scope == 0 || scope == 1
+      targets = scope == 2 ? [caster] : troop
+      states = skill_state_ids(sk)
+      targets.any? do |t|
+        next false unless t
+        if t.out_of_play?
+          states.include?(1)
+        else
+          sk.affect_hp || sk.affect_sp || !skill_stat_mod_keys(sk).empty? ||
+            states.any? { |sid| t.state?(sid) } ||
+            (sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence && !skill_attributes(sk).empty?)
+        end
+      end
+    end
+
     # Cast field skill `sid` from `caster` on `target` (scope-dependent). Applies
     # the skill's status changes then restores HP and/or SP by the skill effect to
     # each target (clamped), then spends the caster's SP -- but only when it
@@ -6019,6 +6063,18 @@ module Game
       party.battle_skill_command(sk, caster, target)
     end
 
+    # Whether `sk`, cast by `caster` against its own `troop`, could possibly
+    # help anyone -- reuses Game::Party's own #skill_helps_troop? formula so an
+    # enemy's own AI reads the exact same skill-effectiveness rules a field
+    # cast's greyed-out-if-a-no-op check does. Defaults to "always worth
+    # trying" without a party to ask, matching every other tolerant accessor
+    # here.
+    def skill_helps_troop?(sk, caster, troop)
+      party = @state && @state.respond_to?(:party) ? @state.party : nil
+      return true unless party && party.respond_to?(:skill_helps_troop?)
+      party.skill_helps_troop?(sk, caster, troop)
+    end
+
     def switch?(id)
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
       sw ? sw[id] : false
@@ -7419,13 +7475,24 @@ module Game
         max_prio = r if r > max_prio
       end
       return nil if max_prio <= 0
-      total = 0
       prios = prios.map do |pr|
         v = pr > 0 ? pr - max_prio + 10 : 0
         v = 0 if v < 0
-        total += v
         v
       end
+      # A skill action's weight above is computed purely from its rating and
+      # #enemy_action_valid?; a high-rating but currently-ineffective skill
+      # (a self-heal at full HP, a cure with nothing to cure) still crowds out
+      # the *other* candidates via max_prio exactly as if it were still in the
+      # running -- EasyRPG's own two-pass structure (src/enemyai.cpp) does not
+      # recompute the weights above either. Only the ineffective skill's own
+      # draw is zeroed out, in this separate pass, once weights are settled.
+      list.each_with_index do |a, i|
+        next unless prios[i] > 0 && a.skill?
+        sk = @ai && @ai.skill(a.skill_id)
+        prios[i] = 0 if sk && !@ai.skill_helps_troop?(sk, b, @enemies)
+      end
+      total = prios.reduce(0) { |sum, v| sum + v }
       return nil if total <= 0
       which = @rng.random(total)
       chosen = nil

@@ -4691,9 +4691,60 @@ not yet verified:
   Enemy action-pattern selection: candidates are patterns whose condition
   is currently true; the engine looks from the highest priority tier down
   to priority−9, computes a per-pattern weighted "importance" from battle
-  state, then rolls RNG against those weights. A turn-condition shorthand
-  like "3×?+5" means: first candidate on turn 5, then every 3 turns
-  after.
+  state, then rolls RNG against those weights (**confirmed already
+  correct** — `Game::Battle#choose_enemy_action`'s `pr - max_prio + 10`
+  clamp, `mruby-rpg2k/mrblib/game.rb`, is an exact port of EasyRPG's
+  `SelectEnemyAiActionRpgRtCompat`, src/enemyai.cpp). A turn-condition
+  shorthand like "3×?+5" means: first candidate on turn 5, then every 3
+  turns after. ✅ **A self/ally-scope skill action with no target it could
+  possibly help was still fully eligible for that weighted draw**, cross-
+  checked directly against EasyRPG's actual C++ source rather than the
+  paraphrase above, which says nothing about this: `SelectEnemyAiAction
+  RpgRtCompat` runs a *second*, separate pass after computing every
+  action's weight (`IsSkillEffectiveOnAnyTarget`, `src/enemyai.cpp`) that
+  zeroes a skill action's own draw when it could not possibly do anything
+  — a self/ally/troop-scope skill (2/3/4; a party-scope 0/1 skill is
+  *never* filtered this way, since RPG_RT never checks whether the party
+  side could be affected) whose only content is state-inflict/cure and
+  none of the caster's own troop currently carries a state it would touch.
+  This codebase's `enemy_action_valid?`/`enemy_skill_ready?`
+  (`Game::Battle`) checked only affordability and silence, with no such
+  filter at all, so a "Cure" action with nothing on the caster's side to
+  cure could still dominate the weighted draw purely off its own rating,
+  casting a visible no-op turn after turn instead of yielding to whatever
+  else the pattern offered. Fixed with a new `Game::Party#skill_helps_
+  troop?` (ported from `IsSkillEffectiveOnAnyTarget`/`IsSkillEffectiveOn`,
+  reusing the exact same no-op rule the field menu's own `#skill_effective?`
+  already applies to grey out a wasted cast), reached through a new
+  `Game::EnemyAi#skill_helps_troop?` and consulted in a *separate* pass in
+  `#choose_enemy_action`, mirroring EasyRPG's own two-pass structure
+  exactly rather than folding the check into `#enemy_action_valid?`: an
+  ineffective skill's raw rating still counts toward `max_prio` (and so
+  still crowds out *other*, lower-rated candidates exactly as if it were
+  still in the running) even though its own draw ends up zeroed — folding
+  the check earlier would have silently recomputed `max_prio` without it
+  and let a lower-rated action back into the draw that real RPG_RT would
+  never offer. This port always runs the *actual* RPG_RT behaviour
+  (EasyRPG's `emulate_bugs: true`, matching every other "authentic engine
+  vs. the improved variant" choice made elsewhere in this file), which
+  collapses two of the ported function's branches to a genuine engine bug:
+  a Knockout-flagged (state id 1) skill reads as effective on any hidden/
+  downed troop member purely from the flag being set, and an HP/SP/stat-
+  affecting skill (`affect_hp`/`affect_sp`/`affect_attack`/`affect_
+  defense`/`affect_spirit`/`affect_agility`) is *always* considered
+  effective on a live target regardless of its actual HP/SP level — RPG_RT
+  never computes the effect before choosing, so a self-heal at full HP is
+  not filtered by this mechanism (confirmed directly against the C++
+  source; an earlier draft of this fix wrongly assumed it would be, before
+  checking). Covered by three new `scripts/rpg2k_logic_check.rb` checks (a
+  lone state-cure action with nothing to cure now yields to the plain
+  default attack instead of always firing; the identical action still
+  fires normally once a target actually carries the state; a three-action
+  fixture pins the `max_prio`-crowds-out-a-lower-rated-action nuance
+  specifically, confirming a rating-49 guard stays excluded by an
+  ineffective rating-60 skill's own rating even though the skill itself
+  never fires), all three confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **An HP-increase cannot revive a downed (0 HP) combatant**, checked
   across all three paths that can raise HP. The **field actor** path
   (`Game::Actor#change_hp`, `mruby-rpg2k/mrblib/game.rb`) was already
