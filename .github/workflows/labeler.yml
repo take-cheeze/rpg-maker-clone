@@ -21,7 +21,11 @@ concurrency:
 
 jobs:
   label:
-    runs-on: ubuntu-24.04
+    # Nothing here but the labeler action itself -- no checkout, no build
+    # tooling -- so the small `ubuntu-slim` image (1 CPU, 5 GB RAM, 15-minute
+    # cap) covers it at a lower rate. See `preview-gate` in build.yml for the
+    # same reasoning.
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/labeler@v7
         with:
