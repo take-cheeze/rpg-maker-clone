@@ -3831,6 +3831,31 @@ check 'Change Equipment command equips into the type slot and removes' do
   eq 8, a.equipment[2] # armour still on
 end
 
+check 'Change Equipment command creates/returns items implicitly -- it never ' \
+      "touches the party's bag, unlike the Equip menu screen" do
+  # A yado.tk-catalogued quirk (docs/TODO.md's "Items & equipment" bullet):
+  # the event command conjures the item onto the actor directly and drops it
+  # the same way on removal, with no bag interaction either direction --
+  # unlike Scene::EquipMenu's own #equip_from_bag/#unequip_to_bag, which
+  # explicitly swap through Game::Party's held-item counts. Confirmed by
+  # inspection (Game::Actor#equip_item/#unequip, which this command drives,
+  # call neither #gain_item nor #lose_item anywhere), and now asserted
+  # head-on: the bag's own count for the equipped item stays exactly 0
+  # throughout, whether or not the party ever held one.
+  items = { 7 => fake_item(atk: 15, type: 1) }   # weapon -> slot 0
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  eq 0, st.party.item_count(7), 'the bag starts with none of item 7 at all'
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  eq 7, a.equipment[0], 'the actor is equipped with an item the party never held'
+  eq 0, st.party.item_count(7), 'equipping created it out of thin air -- the bag is still empty'
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, 0])]); it.update }
+  eq 0, a.equipment[0], 'unequipped'
+  eq 0, st.party.item_count(7), 'and it did not land back in the bag either'
+end
+
 check 'Change Equipment command respects an actor_set restriction, per actor' do
   items = { 7 => fake_item(atk: 15, type: 1, actor_set: [true, false]) } # actor 1 only
   db = FakeActorDB.new(
@@ -3858,6 +3883,21 @@ def item_party(items)
     2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
   Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items)), 1, 0, 0)
+end
+
+check 'gain_item clamps at 99, silently, past a single gain or several ' \
+      'smaller ones' do
+  # A yado.tk-catalogued quirk (docs/TODO.md's "Items & equipment" bullet):
+  # counts silently cap at 99, not clamped-with-a-message, just ignored past
+  # it. Previously only exercised indirectly (through the Shop max_buy cap
+  # checks) -- asserted head-on here.
+  st = item_party({ 5 => fake_item(type: 6, rhp: 50) })
+  st.party.gain_item(5, 150)
+  eq 99, st.party.item_count(5), 'a single gain past 99 clamps, not overflows'
+  st.party.gain_item(5, 5) # already at the cap
+  eq 99, st.party.item_count(5), 'gaining more once already at the cap is a silent no-op'
+  st.party.lose_item(5, 50)
+  eq 49, st.party.item_count(5), 'losing still works normally once below the cap again'
 end
 
 check 'field_items lists only held medicines, in id order with counts' do
