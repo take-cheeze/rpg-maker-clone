@@ -8381,6 +8381,28 @@ check 'Open Main Menu pushes the field menu and resumes when it closes' do
   eq 1, st.variables[6], 'the event resumed after the menu closed'
 end
 
+check 'Open Main Menu ignores a Change Main Menu Access lock -- unlike the ' \
+      "player's own Cancel-key shortcut, the event-triggered menu still opens" do
+  # A yado.tk-catalogued quirk (docs/TODO.md's "Menu screen" bullet, Untriaged
+  # backlog): Prohibit Menu (Change Main Menu Access) only blocks the
+  # player's own Cancel-key shortcut for opening the field menu -- it does
+  # not gate this event command at all, the same way Change Save Access does
+  # not gate Open Save Menu (see that check just above). `perform_event_menu`
+  # (mruby-rpg2k/mrblib/scene/map.rb) already never reads `@state.menu_access`
+  # at all, so this was already correct -- this check just closes the gap
+  # where nothing exercised that specific claim.
+  cmds = [ECmd.new(IC2::OPEN_MAIN_MENU, [])]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  st.menu_access = false
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  2.times { scene.update } # raises the :menu wait, then opens the menu
+  eq 1, parent.pushed.length, 'the menu opens even though menu_access is false'
+  ok parent.pushed.first.is_a?(RPG2k::Scene::Menu),
+     "pushed Scene::Menu, got #{parent.pushed.first.class}"
+end
+
 check 'a BGM position that jumps backwards counts as one play-through' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
