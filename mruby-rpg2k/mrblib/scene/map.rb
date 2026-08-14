@@ -875,6 +875,13 @@ class RPG2k
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
+        anim_type = page_anim_type(page)
+        # A fixed-direction Animation Type (plain/continuous "fixed", or a
+        # never-animating fixed graphic) pins the *drawn* facing the same way
+        # Direction Fix ON does -- see Character#fixed_facing/#face's doc --
+        # so ordinary movement never turns the sprite, only an explicit move-
+        # route Face Direction / Turn sub-command (#face!) still can.
+        ch.fixed_facing = Game::EventGraphic.fixed_direction?(anim_type)
         layer = page_layer(page)
         ch.layer = layer # collision (see #char_passable?) follows priority type too
         # The page's "doesn't overlap" flag (LCF field 35) is a second,
@@ -899,7 +906,7 @@ class RPG2k
           # and is the one kind that slides across more than a single tile.
           layer: layer, overlap_forbidden: overlap_forbidden,
           translucent: page_translucent(page),
-          anim_type: page_anim_type(page), base_dir: dir,
+          anim_type: anim_type, base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
           moving: false, disp_x: x, disp_y: y, move_count: TILE,
           jumping: false }

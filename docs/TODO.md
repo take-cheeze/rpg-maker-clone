@@ -3486,10 +3486,54 @@ not yet verified:
   is no axis to be dominant when nothing moved. Covered by a new
   `scripts/rpg2k_logic_check.rb` check (Direction Fix ON, a locked Move
   Right, an explicit Face Up, then One Step Forward continues east, not
-  north), confirmed to fail against the pre-fix code before the fix. The
-  "Animation Type" half of the original claim (whether an Animation Type
-  setting is also overridden by a Face Direction command) is unverified
-  either way.
+  north), confirmed to fail against the pre-fix code before the fix. ✅ **The
+  "Animation Type" half of the original claim is now fixed too, verified
+  against EasyRPG Player's actual C++ source rather than guessed at.** A
+  page's own fixed-direction Animation Type (Fixed/Fixed-Continuous/Fixed-
+  Graphic, LCF field 36) does suppress facing the same way Direction Fix ON
+  does, but an explicit move-route Face Direction / Turn sub-command still
+  overrides *that* lock too, exactly like it already overrides Direction Fix.
+  `Game_Character::SetFacingLocked` (`src/game_character.h`) folds both
+  sources into one flag (`lock_facing = locked ||
+  IsDirectionFixedAnimationType(anim_type)`, the latter true for all three
+  fixed kinds, `Fixed_graphic` included), which only gates *movement-driven*
+  facing (`UpdateFacing`, called from `Move`/`Jump`) — `ParseMoveRoute`'s own
+  Face-command handling (`src/game_character.cpp`) ends in an unconditional
+  `SetFacing(GetDirection())` with no lock check at all, so it always wins
+  regardless of which of the two reasons set the lock. This codebase had no
+  such fold at all: `Game::EventGraphic.frame` (`mruby-rpg2k/mrblib/game.rb`)
+  hardcoded the page's own `base_dir` for *every* `fixed_direction?` anim_type
+  unconditionally, discarding the character's live `direction` outright — so
+  even though `Character#face!` (the Direction-Fix-bypass fix above) already
+  updated `@direction` correctly, the render layer threw the update away and
+  kept drawing the stale page facing regardless of what the move route asked
+  for. Fixed with a new `Character#fixed_facing` flag, set by `Scene::Map
+  #build_event` from `Game::EventGraphic.fixed_direction?(anim_type)`
+  alongside `#facing_locked` (the two are independent sources of the same
+  lock, matching `SetFacingLocked`'s own OR — an Animation Type lock cannot
+  be turned off by a Direction Fix OFF sub-command, and unlike
+  `#facing_locked` is never itself toggled by a move-route command): `#face`
+  (movement-driven turning) now checks `@facing_locked || @fixed_facing`,
+  while `#face!` (the seven Face Direction sub-commands, already bypassing
+  `#facing_locked`) is untouched, so it bypasses both. `EventGraphic.frame`
+  no longer substitutes `base_dir` for any anim_type — every kind, `FIXED_GRAPHIC`
+  included, now draws `char_dir` — since `char_dir` already stays pinned at
+  the page's own `base_dir` through ordinary movement once `#fixed_facing` is
+  set, and only an explicit Face/Turn command (`#face!`) moves it. `Fixed
+  Graphic`'s own "never animates" behaviour is unaffected: that is purely
+  about its walk-frame *column* never advancing (`EventGraphic.animated?`
+  already stops `#animate_event` from ever ticking `phase` for it), never
+  about its facing, matching `ResetAnimation`'s own scope in the C++ source
+  (only guards `SetAnimFrame`, not `SetFacing`). Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a `fixed_facing` character ignores a
+  Move Right's own facing but still turns on a later Face Up, mirroring the
+  Direction Fix check above; `Game::EventGraphic.frame` across all three fixed
+  kinds draws the live `char_dir`, not `base_dir`, while a `FIXED_GRAPHIC`'s
+  pattern column still stays put) and a new `scripts/rpg2k_scene_check.rb`
+  check (a `FIXED_NON_CONTINUOUS` event on a custom Move Right + Face Up route
+  keeps its drawn facing south through the Move Right step, then turns north
+  once the Face Up step runs), all three confirmed to fail against the
+  pre-fix code before the fix.
 - Jump needs paired Begin/End; movement commands between them sum into a
   net displacement vector (opposite-axis moves cancel); only the *landing*
   tile's passability is tested, tiles crossed are ignored; speed/direction

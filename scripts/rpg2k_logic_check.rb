@@ -466,6 +466,56 @@ check 'move forward after a Direction-Fix move continues in the last direction a
   eq 8, c.direction # the lock is still on, so the step itself doesn't re-face south
 end
 
+check 'a fixed-direction Animation Type suppresses movement-driven facing, but ' \
+      'an explicit Face Direction sub-command still turns it' do
+  # yado.tk: "Face Direction always overrides Fixed Direction/Animation Type" --
+  # verified against EasyRPG Player's actual C++ source rather than guessed at.
+  # Game_Character::SetFacingLocked (src/game_character.h) folds a page's own
+  # fixed-direction Animation Type into the exact same `lock_facing` flag an
+  # explicit Direction Fix ON sets (`locked || IsDirectionFixedAnimationType
+  # (anim_type)`), and ParseMoveRoute's Face-command handling
+  # (src/game_character.cpp) ends in an unconditional `SetFacing(GetDirection())`
+  # with no lock check at all -- only ordinary movement's own UpdateFacing()
+  # respects the lock -- so an explicit Face command always wins, the same as
+  # it already does over Direction Fix ON (the check above). Character#fixed_facing
+  # is the new lock source #face now also consults, set by Scene::Map#build_event
+  # from Game::EventGraphic.fixed_direction?; #face! (Turn/Face sub-commands)
+  # bypasses it exactly like it already bypasses #facing_locked.
+  route = R.new([mc(R::MOVE_RIGHT), mc(R::FACE_UP)], repeat: false)
+  c = Game::Character.new(5, 5, 2) # facing south, e.g. this page's base_dir
+  c.fixed_facing = true # this event's page Animation Type is one of the "fixed" kinds
+  w = FakeWorld.new
+  route.step(c, w) # Move Right: steps east, facing stays south -- the fixed-direction lock holds
+  eq [6, 5], [c.x, c.y]
+  eq 2, c.direction
+  route.step(c, w) # Face Up: turns north despite the fixed-direction lock
+  eq 8, c.direction
+end
+
+check "Game::EventGraphic.frame draws a fixed-direction event's live facing, " \
+      'not a hardcoded page facing' do
+  # The display-layer half of the same fix: #frame used to always substitute
+  # the page's own base_dir for every fixed_direction? anim_type, discarding
+  # char_dir outright -- so even once Character#face! correctly updated the
+  # character's own #direction (the check above), the render layer threw it
+  # away and drew the stale page facing regardless. Covers all three
+  # fixed_direction? kinds, FIXED_GRAPHIC ("never animates") included --
+  # EasyRPG only special-cases it for the *walk-frame column* (a fixed
+  # graphic's own pattern column never advances, still true here via
+  # #animated?), never for GetFacing()/its move-route Face handling.
+  eg = Game::EventGraphic
+  dir, col = eg.frame(eg::FIXED_NON_CONTINUOUS, 2, 1, 8, 0, false)
+  eq [8, 1], [dir, col], 'char_dir (an explicit Face Up), not base_dir (2, south)'
+
+  dir, col = eg.frame(eg::FIXED_CONTINUOUS, 2, 1, 8, 3, true)
+  eq 8, dir
+  eq eg.pattern_column(3), col, 'continuous walk-frame cycling is untouched'
+
+  dir, col = eg.frame(eg::FIXED_GRAPHIC, 2, 1, 8, 2, true)
+  eq [8, 1], [dir, col],
+     "a fixed graphic's own facing still turns; its pattern column never does"
+end
+
 check 'switch on/off route commands drive the world switches' do
   route = R.new([mc(R::SWITCH_ON, a: 7), mc(R::SWITCH_OFF, a: 3)], repeat: false)
   c = Game::Character.new(0, 0)
