@@ -63,13 +63,47 @@ least one of them can still blow the budget outright:
   inside a well-sized budget, but unmeasured on this target.
 - `RPGXP::RGSSAD.open` (`mruby-rpgxp/mrblib/rgssad.rb:60-61`) reads an
   **entire** packed `Game.rgssad`/`.rgss2a`/`.rgss3a` archive into one mruby
-  `String` before anything is decoded. A released RPG Maker XP/VX game
-  routinely packs tens of MB of graphics and audio into that single archive —
-  comfortably larger than the *entire* 24 MB budget by itself, before LVGL,
-  the mruby VM, or any decoded bitmap is counted. RPG2k bring-up doesn't touch
-  this path, so it isn't blocking the next slice, but it is a documented cliff
-  for the day an XP/VX game is pointed at the PSP build, not something to
-  discover as a crash on real hardware.
+  `String` before anything is decoded, and `RGSSData#initialize`
+  (`mruby-rpgxp/mrblib/rgss_data.rb:242-244`) keeps that `RGSSAD` object — and
+  so the whole `@data` string — alive in `@archive` for the database's entire
+  lifetime, not just for the duration of `open`. A released RPG Maker XP/VX
+  game routinely packs tens of MB of graphics and audio into that single
+  archive — comfortably larger than the *entire* 24 MB budget by itself,
+  before LVGL, the mruby VM, or any decoded bitmap is counted. RPG2k bring-up
+  doesn't touch this path, so it isn't blocking the next slice, but it is a
+  documented cliff for the day an XP/VX game is pointed at the PSP build, not
+  something to discover as a crash on real hardware.
+
+  This one already has a low-cost fix available, because the loader was built
+  to prefer loose files over the archive: `read_object`
+  (`rgss_data.rb:294-300`) checks `File.exist?` before ever touching
+  `@archive`, and `Bitmap#init_from_archive`
+  (`mruby-rgss/mrblib/lib.rb:606-620`) is likewise only a fallback after the
+  loose-file search misses ("loose shadows packed, as in RGSS" —
+  `mruby-rgss/mrblib/lib.rb:29`). So **pre-unpacking a packed game's archive
+  into a loose `Data/`/`Graphics/`/`Audio/` tree on the Memory Stick needs no
+  interpreter or gem code changes at all** — the existing readers already take
+  the loose path first. The unpack itself is naturally an *offline* step (run
+  the existing `RGSSAD` reader on a desktop build, where RAM is not a
+  constraint, and write each entry out as a file); nothing about it requires
+  new PSP-side code either.
+
+  The catch: `RGSSData#open_archive` (`rgss_data.rb:337-345`) calls
+  `RGSSAD.find`, which looks for `Game.rgssad`/`.rgss2a`/`.rgss3a` by *path
+  existence* and unconditionally opens (reads whole file) whichever one it
+  finds — regardless of whether every entry it contains is already shadowed by
+  a loose file. Unpacking without also removing the packed archive from the
+  PSP game directory buys nothing: `open_archive` still eagerly reads the
+  whole thing into memory, just to have it sit unused. So the fix is really
+  two parts, both deployment-time rather than code: ship the unpacked tree,
+  and *don't* ship (or delete on first run) the `Game.rgssad`/`.rgss2a`/
+  `.rgss3a` file alongside it.
+
+  A streaming/seekable `RGSSAD` reader (open a `File` handle and seek+decrypt
+  each entry on demand instead of slicing a fully-loaded `@data`) is a fallback
+  option that avoids duplicating storage on the Memory Stick, but it is new
+  code, whereas the unpack is not — so it is only worth it if Memory Stick
+  space (not RAM) turns out to be the binding constraint for a given release.
 
 ### Finding 3 — decoded bitmaps and the image cache
 
@@ -107,11 +141,16 @@ the interpreter-linking slice, in this order:
   mruby gets its own bounded arena. Whichever is chosen, fix
   `app/psp/lv_conf.h`'s comment to state it accurately instead of describing
   the un-taken option.
-- **P3 — gate whole-archive RGSSAD loading before XP/VX runs on PSP.** Add a
-  size check or a streaming reader to `RPGXP::RGSSAD.open` before an XP/VX
-  title is exercised on this target. Deferred relative to P1/P2 since RPG2k
-  bring-up never calls it, but tracked now so it isn't rediscovered as an
-  on-device crash.
+- **P3 — ship PSP XP/VX titles unpacked, not as `Game.rgssad`.** Pre-unpack
+  the archive offline (desktop-side, using the existing `RGSSAD` reader) into
+  a loose `Data`/`Graphics`/`Audio` tree, and exclude the packed
+  `Game.rgssad`/`.rgss2a`/`.rgss3a` from the PSP deployment so
+  `open_archive` never reads it. This needs no interpreter/gem changes — only
+  a packaging step and a place to hang it (e.g. a `scripts/` unpack tool). A
+  streaming `RGSSAD` reader is the fallback if Memory Stick space, not RAM,
+  turns out to be the constraint. Deferred relative to P1/P2 since RPG2k
+  bring-up never calls this path, but tracked now so it isn't rediscovered as
+  an on-device crash.
 - **P4 — bound the LVGL image cache** and confirm decoded-bitmap sizes for
   the target games' resolutions fit inside whatever pool P2 settles on.
 - **P5 — size and verify the main-thread stack** against measured mruby
@@ -130,8 +169,10 @@ the interpreter-linking slice, in this order:
 - **Risk register:** P2 (allocator split / pool sizing) is soft-blocking the
   interpreter-linking slice — the slice can land without it decided, but
   `LV_MEM_SIZE` will be guessed rather than sized until it is. P3 (RGSSAD
-  whole-archive loads) is hard-blocking for any future XP/VX PSP target,
-  deferred but documented rather than silently inherited. P4/P5 are lower-risk
+  whole-archive loads) is hard-blocking for any future XP/VX PSP target, but
+  cheap to close (a packaging step, not new runtime code) precisely because the
+  loose-file-first loaders already exist — the risk is forgetting to strip the
+  packed archive from the deployment, not the fix itself. P4/P5 are lower-risk
   follow-ups once a title actually renders.
 - Follow-up: once P1's real numbers exist, replace this ADR's estimates with
   measured figures (a memory budget table, as ADR 0007 has for the Wio
