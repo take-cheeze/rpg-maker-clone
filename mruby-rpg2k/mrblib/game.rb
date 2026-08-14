@@ -5018,6 +5018,34 @@ module Game
     # True while a pan/reset scroll has not yet reached its target.
     def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
 
+    # Persisted pan/lock state only, mirroring Weather's own `to_h`/`load_h`
+    # idiom. Every *other* field this class holds (tint transition, shake,
+    # flash, fade) stays deliberately transient -- see the class-level
+    # "Transient screen-effect state" comment on `Game::State#initialize` --
+    # but Pan Screen's Lock is not a per-frame effect the same way: it is a
+    # standing camera mode a script can leave active indefinitely (e.g. a
+    # cutscene that pans and locks the view before a Save event or the
+    # player opening the menu to save), and dropping it silently snapped the
+    # camera back to hero-centred *and* unlocked on every load -- the pan
+    # offset and its still-in-flight target/step are carried too so a pan
+    # that had not finished scrolling when the game was saved resumes the
+    # rest of that scroll instead of jumping straight to (or short of) its
+    # destination.
+    def to_h
+      { pan_x: @pan_x, pan_y: @pan_y, pan_tx: @pan_tx, pan_ty: @pan_ty,
+        pan_step: @pan_step, pan_locked: @pan_locked }
+    end
+
+    def load_h(h)
+      return unless h
+      @pan_x = h[:pan_x] || 0
+      @pan_y = h[:pan_y] || 0
+      @pan_tx = h[:pan_tx] || 0
+      @pan_ty = h[:pan_ty] || 0
+      @pan_step = h[:pan_step] || 1
+      @pan_locked = h[:pan_locked] ? true : false
+    end
+
     # Screen erasure level (0 fully visible .. 255 fully black). The scene draws
     # a black overlay at this opacity. While a shaped transition is running the
     # overlay is a mask instead (see #transition), and this holds the level the
@@ -8262,8 +8290,10 @@ module Game
       @vehicles = { boat: Vehicle.new(:boat), ship: Vehicle.new(:ship),
                     airship: Vehicle.new(:airship) }
       @boarded = nil
-      # Transient screen-effect state (tint transition); not serialised, so a
-      # reloaded game starts with a neutral screen.
+      # Screen effects: tint transition/shake/flash/fade stay transient (not
+      # serialised, so a reloaded game starts with them neutral) -- but the
+      # Pan Screen offset/lock *does* now survive a save/load, see
+      # Game::Screen#to_h/#load_h.
       @screen = Screen.new
       # Shown pictures, id => Game::Picture. Transient like @screen (RPG2000's
       # HUD pictures are re-shown by parallel events on load), so not serialised.
@@ -8456,6 +8486,7 @@ module Game
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         player_transparent: @player_transparent, weather: @weather.to_h,
+        screen: @screen.to_h,
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, encounter_total: @encounter_total,
         teleport_targets: @teleport_targets,
@@ -8867,6 +8898,7 @@ module Game
       state.memorized_bgm = h[:memorized_bgm]
       state.player_transparent = h[:player_transparent] ? true : false
       state.weather.load_h(h[:weather])
+      state.screen.load_h(h[:screen])
       state.teleport_access = h[:teleport_access] ? true : false
       state.escape_access = h[:escape_access] ? true : false
       # Registries default empty / unset; a save written before these existed

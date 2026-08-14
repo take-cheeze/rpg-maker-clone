@@ -4989,7 +4989,49 @@ mere map-revisit): screen-shake offset (never saved, always resets);
 BGM/SE playback position (always restarts a track from the beginning even
 though the *filename* is remembered); Screen Scroll offset (saved but
 documented as broken/buggy after resuming — the site explicitly
-recommends never saving mid-scroll). A **Common Event's** parallel-process
+recommends never saving mid-scroll). ✅ **This codebase's own authoritative
+save (the portable Marshal `to_h`/`State.load` pair `save_game`/
+`load_save_state` actually use, `mruby-rpg2k/mrblib/main.rb`) now carries
+the Pan Screen offset and Lock across a save/load, closing the clear-cut
+half of this gap** — whatever real RPG_RT's own "broken/buggy after
+resuming" quirk turns out to mean exactly (unconfirmed here, no wine rig
+in this environment to reproduce it against), dropping the state entirely
+was strictly worse: every other per-frame effect `Game::Screen` owns
+(tint transition, shake, flash, fade) is a genuinely transient animation
+with no standing "mode" a script leaves active, but Pan Screen's Lock
+operation is different in kind — a cutscene that pans the camera and
+locks it (so the hero no longer re-centres the view) can leave that mode
+active indefinitely, and a Save event or the player opening the menu to
+save while it holds used to silently snap the camera back to hero-centred
+*and* unlocked on load, with no way for a script to tell. `Game::State#
+to_h`/`.load` (`mruby-rpg2k/mrblib/game.rb`) already round-trips every
+other nested object this way (`@weather.to_h`/`#load_h`, the same idiom
+this fix copies); `@screen` was the one exception, built fresh every load
+with no serialisation at all. Fixed with a new `Game::Screen#to_h`/
+`#load_h` pair scoped to exactly `pan_x`/`pan_y`/`pan_tx`/`pan_ty`/
+`pan_step`/`pan_locked` — the pan offset, its still-in-flight scroll
+target/step, and the lock flag — deliberately excluding tint/shake/flash/
+fade, which stay reset-on-load exactly as before (shake in particular
+stays matched to the "never saved, always resets" fact this same bullet
+already records). A pan mid-scroll when the game is saved now resumes the
+rest of that scroll on load rather than jumping straight to (or stopping
+short of) its destination, since `pan_tx`/`pan_ty`/`pan_step` — not just
+the current `pan_x`/`pan_y` — are carried too. Out of scope: the `.lsd`
+export (`State#to_lsd`/`.from_lsd`) is untouched — real RPG_RT's own
+chunk-111 fields 1/2 store the *absolute* camera pixel position rather
+than a hero-relative pan offset (see `LCF::Schema::SAVE_MAP_EVENT` in
+`mruby-lcf/mrblib/schema.rb`, ADR 0021), which needs a live camera reading
+from whichever `Scene::Map` is open at save time — a bigger, separate
+plumbing question left for later, alongside chunks 113/114's still-opaque
+event-interpreter state the paragraph below already flags as `.lsd`-only
+gaps. Covered by a new `scripts/rpg2k_logic_check.rb` check (a locked,
+mid-scroll pan survives a `to_h`/`.load` round trip — the lock flag, the
+offset at whatever point it had reached, and the still-open scroll target,
+which then finishes advancing correctly afterward — while tint/shake/
+flash armed on the same `Game::Screen` are confirmed to *not* survive it;
+a legacy save missing the new `:screen` key loads a neutral, unlocked,
+zero-offset camera), confirmed to fail against the pre-fix code (the Lock
+lost on load) before the fix. A **Common Event's** parallel-process
 position **does** survive save/load (✅ fixed for the portable Marshal save,
 see "A Common Event's Parallel Process now survives a Transfer Player and a
 save/load" above; the `.lsd` export still does not, chunks 113/114 remain
