@@ -72,31 +72,43 @@ class RPG2k
       def update_slots
         party = @state.party.actors
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @parent.pop
         elsif Input.trigger?(Input::DOWN)
           @slot_index += 1
           @slot_index %= @slots.size
           refresh_slot_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @slot_index -= 1
           @slot_index %= @slots.size
           refresh_slot_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::RIGHT)
           @actor_index += 1
           @actor_index %= party.size
           rebuild_for_actor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT)
           @actor_index -= 1
           @actor_index %= party.size
           rebuild_for_actor
-        elsif Input.trigger?(Input::C) && !actor.equipment_fixed? && !actor.slot_cursed?(@slot_index)
+          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::C)
           # 装備固定 / 呪われた装備: RPG_RT refuses to even open the item list
           # for such an actor, or for a slot currently holding a cursed item
           # (EasyRPG's Scene_Equip#UpdateEquipSelection), rather than opening
-          # it and rejecting whatever gets chosen there.
-          @cand_index = 0
-          @mode = :items
-          build_cand_window
+          # it and rejecting whatever gets chosen there -- confirmed a
+          # rejected Decision plays Buzzer, matching every other "confirmed
+          # but refused" case this scene's siblings handle the same way.
+          if actor.equipment_fixed? || actor.slot_cursed?(@slot_index)
+            play_system_se(SFX_BUZZER)
+          else
+            play_system_se(SFX_DECISION)
+            @cand_index = 0
+            @mode = :items
+            build_cand_window
+          end
         end
       end
 
@@ -109,16 +121,20 @@ class RPG2k
 
       def update_items
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_items
         elsif Input.trigger?(Input::DOWN)
           @cand_index += 1
           @cand_index %= candidates.size
           refresh_cand_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @cand_index -= 1
           @cand_index %= candidates.size
           refresh_cand_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           apply_choice
         end
       end

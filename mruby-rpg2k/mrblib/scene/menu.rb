@@ -117,11 +117,14 @@ class RPG2k
           @index += 1
           @index %= @commands.size
           refresh_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @index -= 1
           @index %= @commands.size
           refresh_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @parent.pop
         elsif Input.trigger?(Input::C)
           select_command
@@ -135,15 +138,18 @@ class RPG2k
       def update_actor_selection
         party = @state.party.actors
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_actor_selection
         elsif Input.trigger?(Input::DOWN)
           @actor_index += 1
           @actor_index %= party.size
           refresh_status_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @actor_index -= 1
           @actor_index %= party.size
           refresh_status_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           confirm_actor_selection
         end
@@ -156,9 +162,13 @@ class RPG2k
         # `UpdateActorSelection`, whose Skill case alone gates on
         # `actor->CanAct()`; Equip/Status have no such gate. Checked first,
         # and left in actor-selection focus on failure (matching
-        # `UpdateActorSelection`'s own early `return` there), so the player
-        # can simply pick someone else.
-        return if @pending_key == :skill && !actor.can_act?
+        # `UpdateActorSelection`'s own early `return` there, buzzer instead
+        # of decision), so the player can simply pick someone else.
+        if @pending_key == :skill && !actor.can_act?
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         key, index = @pending_key, @actor_index
         leave_actor_selection
         case key
@@ -256,13 +266,28 @@ class RPG2k
         refresh_status_cursor
       end
 
+      # Which SE a command-list confirm plays -- Decision when the command
+      # actually does something, Buzzer when it is confirmed but refused
+      # outright, matching `Scene_Menu::UpdateCommand`'s own per-branch
+      # `SePlay` calls (Item/Skill/Equipment/Status all gate on an empty
+      # party the same way; Save gates on `save_access` instead).
       def select_command
         key, label = @commands[@index]
         case key
         when :item
-          @parent.push Scene::ItemMenu.new(@parent, @state)
+          if @state.party.actors.empty?
+            play_system_se(SFX_BUZZER)
+          else
+            play_system_se(SFX_DECISION)
+            @parent.push Scene::ItemMenu.new(@parent, @state)
+          end
         when :skill, :equip, :status
-          enter_actor_selection(key) unless @state.party.actors.empty?
+          if @state.party.actors.empty?
+            play_system_se(SFX_BUZZER)
+          else
+            play_system_se(SFX_DECISION)
+            enter_actor_selection(key)
+          end
         when :save
           # A disabled Save command (Change Save Access off) just refuses the
           # selection outright -- confirmed against EasyRPG's own
@@ -273,8 +298,14 @@ class RPG2k
           # this screen's own bleed-through fix turned out to be, but this
           # one only needed removing -- there was nothing to source instead,
           # matching RPG2000's own Term table, which has no slot for it.
-          @parent.push Scene::SaveLoad.new(@parent, @state, :save) if @state.save_access
+          if @state.save_access
+            play_system_se(SFX_DECISION)
+            @parent.push Scene::SaveLoad.new(@parent, @state, :save)
+          else
+            play_system_se(SFX_BUZZER)
+          end
         when :end_game
+          play_system_se(SFX_DECISION)
           @parent.return_to_title
         else
           show_message("#{label} is not implemented yet.")

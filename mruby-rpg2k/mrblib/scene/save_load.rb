@@ -77,6 +77,7 @@ class RPG2k
         return drive_message if @message
 
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @parent.pop
         elsif Input.trigger?(Input::DOWN)
           move_selection 1
@@ -94,21 +95,28 @@ class RPG2k
         @top = @index if @index < @top
         @top = @index - VISIBLE_SLOTS + 1 if @index >= @top + VISIBLE_SLOTS
         refresh_slot_windows
+        play_system_se(SFX_CURSOR)
       end
 
       def confirm_selection
         slot = @index + 1
         case @mode
         when :save
+          play_system_se(SFX_DECISION)
           ok = @parent.save_game(@state, slot)
           @slots[@index] = @parent.load_save_state(slot) if ok
           refresh_slot_windows
           show_message(ok ? "Game saved." : "Save failed.")
         when :load
-          # An empty slot has nothing to resume -- ignored, like the
+          # An empty slot has nothing to resume -- refused (Buzzer), like the
           # selection key on a title screen Continue with no save at all
           # (Scene::Title#update).
-          @parent.continue_game(slot) if @slots[@index]
+          if @slots[@index]
+            play_system_se(SFX_DECISION)
+            @parent.continue_game(slot)
+          else
+            play_system_se(SFX_BUZZER)
+          end
         end
       end
 

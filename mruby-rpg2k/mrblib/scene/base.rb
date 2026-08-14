@@ -127,6 +127,81 @@ class RPG2k
         s = s.to_s
         s.empty? ? fallback : s
       end
+
+      # RPG2000 system-sound slots (Change System SFX / 10670 stores overrides by
+      # these indices; the same order backs the database defaults). Shared by
+      # every scene that can play a system SE: Scene::Map (message choices,
+      # Change System SFX, the battle-related slots) and the field menu screens
+      # (Menu and its Item/Skill/Equip/Status/SaveLoad sub-screens).
+      SFX_CURSOR = 0
+      SFX_DECISION = 1
+      SFX_CANCEL = 2
+      SFX_BUZZER = 3
+      # The slots keep the database's own order (System fields 41..52), so slot 4
+      # is Battle Start and slot 5 Escape — the sound RPG_RT plays when someone
+      # runs from a fight (Force Flee, 1006).
+      SFX_BATTLE = 4
+      SFX_ESCAPE = 5
+      # The rest of that same run of fields (47..52): the per-hit sounds a fight
+      # itself plays. Slot numbers keep counting up through the database's own
+      # field order (field - 41) even for the one left unplayed below, since a
+      # Change System SFX command's slot argument is that same raw index and has
+      # to land on the right entry whichever slot it names -- skipping a number
+      # here would silently mis-target every slot after it.
+      SFX_ENEMY_ATTACK = 6
+      SFX_ENEMY_DAMAGE = 7
+      SFX_ACTOR_DAMAGE = 8
+      SFX_DODGE = 9
+      SFX_ENEMY_DEATH = 10
+      SFX_ITEM = 11
+      DB_SE_FIELD = { SFX_CURSOR => :cursor_se, SFX_DECISION => :decision_se,
+                      SFX_CANCEL => :cancel_se, SFX_BUZZER => :buzzer_se,
+                      SFX_BATTLE => :battle_se, SFX_ESCAPE => :escape_se,
+                      SFX_ENEMY_ATTACK => :enemy_attack_se,
+                      SFX_ENEMY_DAMAGE => :enemy_damaged_se,
+                      SFX_ACTOR_DAMAGE => :actor_damaged_se,
+                      SFX_DODGE => :dodge_se, SFX_ENEMY_DEATH => :enemy_death_se,
+                      SFX_ITEM => :item_se }.freeze
+      # `enemy_attack_se` (slot 6) is declared above so the slot numbering and
+      # Change System SFX overrides both land correctly, but nothing calls
+      # `play_system_se(SFX_ENEMY_ATTACK)` yet: RPG_RT plays it at the start of
+      # an enemy's swing, before the hit lands, and this build's round animation
+      # has no separate wind-up moment to hang that on -- a plain attack is one
+      # step (land the hit, then banner and pace by it), not a swing-then-impact
+      # pair. Playing it at the same moment as the impact sound would be a
+      # different, unverified timing rather than a faithful one.
+
+      # Play a system sound effect by slot, preferring a Change System SFX
+      # override held on the game state and falling back to the database's own
+      # sound. A no-op when neither names a file (or no audio backend is present),
+      # or when this scene has no `@state` at all (a bare fixture instance built
+      # without one, e.g. some host test harnesses).
+      def play_system_se(slot)
+        se = system_se(slot)
+        return unless se
+        Audio.se_play se[:name], se[:volume] || 100, se[:tempo] || 100
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] system SE '#{slot}' playback failed: #{e.message}"
+      end
+
+      # The audio for a system slot as { name:, volume:, tempo: } — the state
+      # override (set by Change System SFX) first, then the database default for
+      # that slot, or nil when neither names a file.
+      def system_se(slot)
+        ov = @state && @state.respond_to?(:system_sfx) ? @state.system_sfx[slot] : nil
+        return ov if ov && ov[:name] && !ov[:name].empty?
+        db_system_se(slot)
+      end
+
+      def db_system_se(slot)
+        field = DB_SE_FIELD[slot]
+        return nil unless field && db.system.respond_to?(field)
+        se = db.system.send(field)
+        name = se && se.respond_to?(:file) ? se.file : nil
+        return nil if name.nil? || name.empty?
+        { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
+          tempo: (se.respond_to?(:pitch) ? se.pitch : 100) }
+      end
     end
 
     # Adapter that exposes the running map to the movement engine
