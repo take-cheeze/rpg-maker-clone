@@ -3906,9 +3906,16 @@ Everything below is unverified against the codebase.
   turns off mid-run) and re-enabling it resumes exactly where it left off**
   — ✅ the same fact as the fixed "A Common Event's Parallel Process now
   survives a Transfer Player and a save/load" item above, restated.
-- **Move All / Force Complete Move** — blocks Event Content at that command
-  until every targeted character's route finishes; same freeze conditions
-  as Set Move Route above.
+- ✅ **Move All / Force Complete Move** — blocks Event Content at that
+  command until every targeted character's route finishes; same freeze
+  conditions as Set Move Route above (both halves now confirmed there).
+  `Scene::Map#forced_movement_done?` (the same gate Set Move Route's own
+  wait dispatch reads) checks the player route, every event's own
+  `:forced_route`, `@stuck_move_targets`, and every vehicle route at once —
+  Move All's own wait does not resume until all of them are simultaneously
+  clear, matching "every targeted character's route finishes," and a route
+  stuck on an impassable tile leaves its own entry non-empty forever the
+  same way Set Move Route's already-confirmed hang does.
 - **Autorun** — blocks hero control (unlike Parallel Process); runs to
   completion even if its own appearance condition goes false mid-run,
   *including across a map transfer*; only one Autorun engine-wide at a time,
@@ -7622,7 +7629,7 @@ above are repeated here)
   name, including two certain item drops from a two-member troop; a blank
   database falls back to the composed English for all three), both
   confirmed to fail against the pre-fix code before the fix.
-- **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
+- ✅ **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
   but free if placed in a shop's own buy list — confirmed already
   correct**, all three facts, no code change needed. `Game::Shop#sell_price`
   (`mruby-rpg2k/mrblib/game.rb`) is `price(id) / 2`, plain Integer division
@@ -7927,7 +7934,7 @@ above are repeated here)
   feeds that index straight into the same `draw_system_text` /
   `blend_text` path an ordinary `\c[n]` run uses — one palette, one lookup,
   for both.
-- **Call Event invoked from an Auto-Start parent runs the called content
+- ✅ **Call Event invoked from an Auto-Start parent runs the called content
   under Auto-Start semantics (blocks input) even if the called common
   event's own configured trigger is Parallel Process; Call Event always
   bypasses the target's own condition-switch state entirely — confirmed
