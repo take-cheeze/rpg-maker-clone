@@ -44,6 +44,20 @@ class RPG2k
       SLOT_LINES = 3
       SLOT_BOX_H = LINE_H * SLOT_LINES + Window::BORDER * 2
 
+      # RPG2000 FaceSet geometry (mirrors Scene::Map's own FACE_SIZE): a
+      # 48x48 cell cropped straight out of a member's FaceSet sheet, never
+      # scaled. `SLOT_BOX_H`'s own content height (LINE_H * SLOT_LINES = 48)
+      # already matches this exactly, which is why a slot box fits one row
+      # of faces with no extra vertical space to spare.
+      FACE_SIZE = 48
+      # EasyRPG's Window_SaveFile lays its four face slots out at
+      # `cx = 92 + i * 56` (Window_Base::DrawFace, 8px of gap past each
+      # 48px cell) -- this screen's own box is a different width, so the
+      # row is anchored to the box's own right edge instead of reusing that
+      # absolute offset, keeping the 56px pitch between slots.
+      FACE_SPACING = 56
+      MAX_SLOT_FACES = 4
+
       # (SCREEN_H - HEADER_H) / SLOT_BOX_H, i.e. how many slot boxes fit
       # below the header -- 3 on RPG2000's 320x240 screen (32 + 3*64 = 224,
       # leaving 16px for the scroll indicator #build_arrow_sprites draws).
@@ -250,11 +264,14 @@ class RPG2k
       end
 
       # `slot_index`'s box: the file label always, and -- when the slot holds
-      # a save -- the leader's name and level+HP beneath it. Confirmed
-      # against genuine RPG_RT under wine: an empty slot shows only the
-      # label (no placeholder text at all), and an occupied one shows
-      # neither gold nor the current map, and HP with no `/max`, unlike this
-      # screen's own previous single-list-window layout.
+      # a save -- the leader's name and level+HP beneath it, plus up to four
+      # party face thumbnails along the right edge. Confirmed against
+      # genuine RPG_RT under wine: an empty slot shows only the label (no
+      # placeholder text at all), and an occupied one shows neither gold nor
+      # the current map, and HP with no `/max`, unlike this screen's own
+      # previous single-list-window layout. The faces are data
+      # `Game::State#to_lsd` already exports into the save's title chunk
+      # (see docs/TODO.md) but this screen never read back.
       def draw_slot_box(win, inner_w, slot_index)
         label = slot_label(slot_index)
         c = Bitmap.new(inner_w, LINE_H * SLOT_LINES)
@@ -270,6 +287,7 @@ class RPG2k
           c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
                       "#{term(:level_short, 'Lv')}#{level}    " \
                       "#{term(:hp_short, 'HP')}#{hp}"
+          draw_slot_faces(c, inner_w, state.party.actors)
         end
         win.contents = c
         win.cursor_rect = if slot_index == @index
@@ -277,6 +295,49 @@ class RPG2k
                            else
                              Rect.new(0, 0, 0, 0)
                            end
+      end
+
+      # Up to `MAX_SLOT_FACES` party face thumbnails, right-anchored within
+      # the slot box, one member per slot in seat order (`actors[0..3]`, the
+      # same per-member order `Game::State#to_lsd` already writes them in).
+      # A member with no FaceSet set (a blank name) simply leaves its slot
+      # empty, matching `#draw_message_face`'s own "blank name -> no face"
+      # rule (`Scene::Map#load_face_bitmap`).
+      def draw_slot_faces(c, inner_w, actors)
+        start_x = inner_w - MAX_SLOT_FACES * FACE_SPACING
+        actors.first(MAX_SLOT_FACES).each_with_index do |actor, i|
+          name = actor.respond_to?(:faceset_name) ? actor.faceset_name : nil
+          next if name.nil? || name.empty?
+          sheet = load_face_bitmap(name)
+          next unless sheet
+          index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
+          cell = build_face_cell(sheet, index)
+          c.blt start_x + i * FACE_SPACING, 0, cell, Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
+        end
+      end
+
+      # Load a FaceSet graphic by name, or nil for a missing file (the caller
+      # then draws no thumbnail for that member). Mirrors
+      # `Scene::Map#load_face_bitmap` exactly, including the colour-key
+      # transparency every FaceSet sheet needs.
+      def load_face_bitmap(name)
+        Bitmap.new "FaceSet/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] face graphic '#{name}' load failed: #{e.message}"
+        nil
+      end
+
+      # Crop one 48x48 cell out of a FaceSet sheet. Unlike
+      # `Scene::Map#build_face_cell`, this screen never mirrors a face --
+      # EasyRPG's own `Window_Base::DrawFace` call for the save-file screen
+      # always passes `flip: false`, unlike a message window's Change Face
+      # Graphic, the only place a mirror flag exists in the data at all.
+      def build_face_cell(sheet, index)
+        src_x = (index % 4) * FACE_SIZE
+        src_y = (index / 4) * FACE_SIZE
+        cell = Bitmap.new(FACE_SIZE, FACE_SIZE)
+        cell.blt 0, 0, sheet, Rect.new(src_x, src_y, FACE_SIZE, FACE_SIZE)
+        cell
       end
 
       # The "Game saved." / "Save failed." feedback banner, mirroring
