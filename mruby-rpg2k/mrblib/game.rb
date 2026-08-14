@@ -5555,6 +5555,64 @@ module Game
     end
   end
 
+  # Which BGM (if any) a map auto-plays the instant the party arrives on it --
+  # the initial map and every Transfer Player alike.
+  #
+  # Each map-tree node (RPG_RT.lmt `map_properties` field 11 `bgm_type`, 12
+  # `bgm`) is the same tri-state shape as Backdrop's `backdrop_type` above
+  # (liblcf's `BGMType` enum, shared across both fields), but the middle value
+  # means something different for music than it does for a backdrop -- there
+  # is no "terrain" concept for BGM, so it means "no music" instead:
+  #
+  #   0 親マップと同じ  inherit whatever the parent map resolves to
+  #   1 指定なし        none -- leave whatever is already playing alone
+  #   2 指定する        the map's own `bgm` chunk, every time this map loads
+  #
+  # Verified against EasyRPG Player's actual C++ source: `Game_Map::PlayBgm`
+  # walks `music_type == 0` nodes up to their parent exactly like
+  # `Backdrop.name_for`/`MapAccess` do, then -- once landed on a non-inheriting
+  # node -- only actually plays when that node's own `music.name` is non-empty
+  # *and* its type is not 1 (`if (current_info->music_type == 1) { return; }`,
+  # a no-op that leaves whatever is currently playing alone rather than
+  # silencing it); called unconditionally from `Game_Player::MoveTo` right
+  # after every `Game_Map::Setup`, i.e. the initial map and every Transfer
+  # Player. A walk that runs off the root (or loops) resolves to nothing, the
+  # same "give up and change nothing" outcome as an unset/type-1 node.
+  module MapBgm
+    TYPE_PARENT = 0
+    TYPE_NONE   = 1
+    TYPE_SPECIFIC = 2
+
+    # The BGM chunk (responding to `file`/`volume`/`pitch`) to auto-play on
+    # `map_id`, or nil when the resolved node has no music configured or is
+    # explicitly type 1 (leave the current track alone). `properties` is the
+    # map tree's map_properties table, same shape `Backdrop.name_for` takes.
+    def self.chunk_for(map_id, properties)
+      seen = {}
+      id = map_id.to_i
+      while id > 0 && !seen[id]
+        seen[id] = true
+        row = properties ? properties[id] : nil
+        return nil unless row
+        type = int_field(row, :bgm_type)
+        if type == TYPE_PARENT
+          id = int_field(row, :parent_map_id)
+        else
+          bgm = row.respond_to?(:bgm) ? row.bgm : nil
+          name = bgm && bgm.respond_to?(:file) ? bgm.file.to_s : ''
+          return (type == TYPE_SPECIFIC && !name.empty?) ? bgm : nil
+        end
+      end
+      nil
+    end
+
+    def self.int_field(row, name)
+      return 0 unless row.respond_to?(name)
+      v = row.send(name)
+      v.nil? ? 0 : v.to_i
+    end
+  end
+
   # Whether the menu's Save command, and the Escape / Teleport field skill
   # types, are usable on a given map.
   #
