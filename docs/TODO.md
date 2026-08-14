@@ -1450,8 +1450,14 @@ The work below is roughly ordered by the critical path to a walkable game
   playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the
   target frame by frame and fires its screen flashes, holding the event with the
-  wait flag (per-cell zoom / tone and target-only flashes are approximations for
-  now). **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
+  wait flag. **Target-only flashes are precisely implemented, not an
+  approximation** (this line's own wording used to say otherwise, now stale
+  -- see the fuller, EasyRPG-source-verified writeup a few pages down, "A
+  plain Attack now plays its own animation too"'s neighbouring bullet, which
+  covers the player/map-event/vehicle target-flash mechanism this note used
+  to undersell); **per-cell zoom/tone genuinely still is** an approximation,
+  since it needs an `RGSS::Viewport` tone this codebase's map rendering
+  path has never had either -- see ADR 0037. **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
   place a boat / ship / airship and set its CharSet (persisted via
   `Game::Vehicle`), and the party can now **board and pilot** a placed vehicle on
   the map (`Game::State#boarded`; the airship flies over any tile whose terrain
