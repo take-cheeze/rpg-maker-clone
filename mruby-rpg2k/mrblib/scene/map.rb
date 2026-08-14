@@ -4446,6 +4446,7 @@ class RPG2k
       def drive_battle_event_wait(it)
         case it.wait_kind
         when :message, :choice then drive_battle_event_message(it)
+        when :animation then drive_map_animation(it)
         when :wait
           @battle_ui[:event_timer] ||= frames_from_tenths(it.wait_frames)
           if @battle_ui[:event_timer] <= 0
@@ -5756,9 +5757,15 @@ class RPG2k
           owner = @map_animation_interp
           @map_animation_interp = nil
           # A battle-round animation (#start_battle_animation) is driven by the
-          # round rather than by an event command, so it never set an owner --
-          # there is no paused interpreter waiting on it.
-          owner.resume unless ma[:battle] || owner.nil?
+          # round rather than by an event command, so it never sets
+          # @map_animation_interp in the first place -- owner is nil there by
+          # construction, not because ma[:battle] itself means "no owner": a
+          # battle-*page*'s own Show Battle Animation (13260,
+          # #start_battle_page_animation) also carries ma[:battle] true, for
+          # its screen-space pixel and enemy-sprite flash target, but very
+          # much does have one (the battle-event interpreter waiting on it),
+          # so this reads the actual owner rather than special-casing the flag.
+          owner.resume if owner
           return
         end
         fire_animation_flashes(ma)
@@ -5887,8 +5894,17 @@ class RPG2k
       # (`{ animation:, target:, ... }`), or nil when there is no request, the
       # animation is unknown, or its Battle/<name> sheet is missing (then the
       # timed-wait fallback runs).
+      #
+      # A request's own `battle` flag (set only by #do_show_battle_animation_b,
+      # the battle-*page* form of this command, 13260) picks which target
+      # scheme `req[:target]` names: a map target id (the player/"this
+      # event"/a map event/a vehicle) for the ordinary map-triggered form
+      # (11210), or a troop *member index* for the battle-page one -- the two
+      # are not interchangeable, so this dispatches to the matching builder
+      # rather than always reading `req[:target]` the map way.
       def start_map_animation(req)
         return nil unless req
+        return start_battle_page_animation(req) if req[:battle]
         tx, ty = animation_target_pixel(req[:target])
         # Every map target -- the player, a map event, a vehicle -- draws from
         # a CharSet frame of this one fixed size (see #draw_vehicles, which
@@ -5897,6 +5913,22 @@ class RPG2k
         # kind of character this actually is.
         build_animation(req[:animation], tx, ty, target_height: Game::CharSet::HEIGHT,
                          flash_target: map_animation_flash_target(req[:target]))
+      end
+
+      # Show Battle Animation (13260), the battle-page form of 11210: it needs
+      # the battle-*round*'s own positioning (#battle_animation_pixel, the
+      # targeted enemy's live sprite -- or the ally-side screen-centre
+      # fallback) and its Character Flash mechanism (#fire_target_flash, an
+      # `@battle_ui[:enemy_sprites]` entry), the same two `battle_animation_id`/
+      # `entry`-shaped inputs #start_battle_animation already builds from a
+      # round's own log entry -- just keyed off `req[:target]` (the command's
+      # own troop-member param) directly instead of an entry's
+      # `target_index`, since a battle page names its target explicitly
+      # rather than inheriting it from whichever action just landed.
+      def start_battle_page_animation(req)
+        tx, ty, height = battle_animation_pixel(target_index: req[:target])
+        build_animation(req[:animation], tx, ty, true, target_index: req[:target],
+                         target_height: height)
       end
 
       # The character a map-triggered flash_scope-1 timing (see
