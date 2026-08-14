@@ -257,10 +257,13 @@ check 'pattern_column walks middle,right,middle,left' do
   eq 1, EG.pattern_column(4) # wraps
 end
 
-check 'a fixed-graphic event never animates or turns' do
-  # anim type 4: always the page frame regardless of facing / phase / motion.
-  eq [2, 1], EG.frame(EG::FIXED_GRAPHIC, 2, 1, 8, 3, true)
-  eq [6, 0], EG.frame(EG::FIXED_GRAPHIC, 6, 0, 4, 1, false)
+check 'a fixed-graphic event never animates, but still draws its live facing' do
+  # anim type 4: always the page pattern regardless of phase / motion -- but
+  # the row drawn is char_dir, not base_dir, so an explicit Face Direction
+  # move-route command can still turn the sprite (Character#fixed_facing
+  # gates movement-driven turning only, not #face!'s explicit one).
+  eq [8, 1], EG.frame(EG::FIXED_GRAPHIC, 2, 1, 8, 3, true)
+  eq [4, 0], EG.frame(EG::FIXED_GRAPHIC, 6, 0, 4, 1, false)
 end
 
 check 'a spinning event derives facing from the phase but keeps its own ' \
@@ -280,16 +283,18 @@ check 'ordinary events walk while moving and rest on the page pose when idle' do
   # non-continuous (0): faces its movement, walks only while stepping.
   eq [6, 2], EG.frame(EG::NON_CONTINUOUS, 2, 1, 6, 1, true)  # moving -> walk col
   eq [6, 1], EG.frame(EG::NON_CONTINUOUS, 2, 1, 6, 1, false) # idle -> page pattern
-  # fixed-direction non-continuous (2): keeps the page facing.
-  eq [2, 2], EG.frame(EG::FIXED_NON_CONTINUOUS, 2, 1, 6, 1, true)
-  eq [2, 1], EG.frame(EG::FIXED_NON_CONTINUOUS, 2, 1, 6, 1, false)
+  # fixed-direction non-continuous (2): walk animation still gated on
+  # `moving`, but the row drawn is char_dir (pinned at base_dir by movement,
+  # turned only by an explicit Face Direction command), not base_dir itself.
+  eq [6, 2], EG.frame(EG::FIXED_NON_CONTINUOUS, 2, 1, 6, 1, true)
+  eq [6, 1], EG.frame(EG::FIXED_NON_CONTINUOUS, 2, 1, 6, 1, false)
 end
 
 check 'continuous events animate even while standing still' do
   # continuous (1): faces movement, always cycles regardless of `moving`.
   eq [6, 2], EG.frame(EG::CONTINUOUS, 2, 1, 6, 1, false)
-  # fixed continuous (3): page facing, always cycles.
-  eq [2, 2], EG.frame(EG::FIXED_CONTINUOUS, 2, 1, 6, 1, false)
+  # fixed continuous (3): always cycles, drawn at char_dir (see above).
+  eq [6, 2], EG.frame(EG::FIXED_CONTINUOUS, 2, 1, 6, 1, false)
 end
 
 check 'animation-type predicates classify the six types' do
