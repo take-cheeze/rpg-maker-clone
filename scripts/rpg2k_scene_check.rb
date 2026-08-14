@@ -301,7 +301,19 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                          use_item: 'を使った！', hp_recovery: '回復した！',
                          hp: 'ＨＰ', mp: 'ＭＰ',
                          enemy_hp_absorbed: '奪った！',
-                         actor_hp_absorbed: '奪われた！'),
+                         actor_hp_absorbed: '奪われた！',
+                         # An affect_attack/defense/spirit/agility skill's stat-mod
+                         # message and an affect_attr_defence skill's resistance-shift
+                         # message (EasyRPG's GetParameterChangeMessage /
+                         # GetAttributeShiftMessage) -- see #battle_state_lines.
+                         parameter_increase: '上がった！', parameter_decrease: '下がった！',
+                         resistance_increase: '耐性が上がった！',
+                         resistance_decrease: '耐性が下がった！',
+                         attack: '攻撃力', defense: '防御力', mind: '精神力',
+                         agility: '敏捷性'),
+    # The Attribute (elemental) table a resistance-shift skill's `attribute_effects`
+    # names, read by #battle_state_lines for the shifted attribute's own name.
+    property: { 1 => OpenStruct.new(name: '火') },
     # Skill rows for the battle log: RPG2000 gives each skill its own two
     # sentences. Skill 8 sets both, 9 only the first, 10 neither (an
     # English-release row), and 11 picks the second failure sentence.
@@ -9769,6 +9781,67 @@ check 'the state sentences still follow the action ones' do
                      { attacker: 'Slime', target: 'Hero', damage: 7,
                        inflicted: [3], target_ally: true })
   eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！', 'Hero is poisoned!'], lines
+end
+
+# -- ability-value / attribute-resistance messages (term fields 30/31/34/35) --
+#
+# An affect_attack/defense/spirit/agility skill (Game::Battle#apply_stat_mods)
+# and an affect_attr_defence skill (Game::Battle#apply_attr_shift) both already
+# moved the target's numbers with no line ever announcing it -- RPG_RT's own
+# GetParameterChangeMessage / GetAttributeShiftMessage read `term.
+# parameter_increase` / `_decrease` and `term.resistance_increase` / `_decrease`
+# for exactly this, matching every other landed-condition sentence above.
+
+check 'an affect_attack/defense/spirit/agility skill announces the stat rise ' \
+      'or drop, in the game\'s own words' do
+  scene, = battle_at_command
+  up = scene.send(:battle_state_lines, { target: 'Hero', target_ally: true,
+                                         stat_changed: { atk: 10 } })
+  eq ['Heroの攻撃力が 10 上がった！'], up
+
+  down = scene.send(:battle_state_lines, { target: 'Slime', target_ally: false,
+                                           stat_changed: { def: -4 } })
+  eq ['Slimeの防御力が 4 下がった！'], down
+
+  # Every ability-value key the mechanic can touch, and in the order
+  # #apply_stat_mods reports them.
+  all_four = scene.send(:battle_state_lines,
+                        { target: 'Hero', target_ally: true,
+                          stat_changed: { atk: 3, def: -2, spi: 1, agi: -5 } })
+  eq ['Heroの攻撃力が 3 上がった！', 'Heroの防御力が 2 下がった！',
+      'Heroの精神力が 1 上がった！', 'Heroの敏捷性が 5 下がった！'], all_four
+end
+
+check 'a zero-delta stat entry (already pinned at its cap) says nothing' do
+  scene, = battle_at_command
+  eq [], scene.send(:battle_state_lines,
+                    { target: 'Hero', target_ally: true, stat_changed: { atk: 0 } })
+end
+
+check 'an affect_attr_defence skill announces which way the target\'s ' \
+      'resistance moved, by the attribute\'s own name -- no magnitude, ' \
+      'matching EasyRPG\'s GetAttributeShiftMessage' do
+  scene, = battle_at_command
+  raised = scene.send(:battle_state_lines,
+                      { target: 'Hero', target_ally: true,
+                        attr_shifted: [1], attr_shift_dir: 1 })
+  eq ['Heroは火 耐性が上がった！'], raised
+
+  lowered = scene.send(:battle_state_lines,
+                       { target: 'Slime', target_ally: false,
+                         attr_shifted: [1], attr_shift_dir: -1 })
+  eq ['Slimeは火 耐性が下がった！'], lowered
+end
+
+check 'the stat and attribute-shift lines follow the damage line, like every ' \
+      'other landed condition' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Slime', target: 'Hero', damage: 7,
+                       target_ally: true, stat_changed: { def: -5 },
+                       attr_shifted: [1], attr_shift_dir: -1 })
+  eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！',
+      'Heroの防御力が 5 下がった！', 'Heroは火 耐性が下がった！'], lines
 end
 
 check 'a skill announces itself with its own two sentences, then the damage' do
