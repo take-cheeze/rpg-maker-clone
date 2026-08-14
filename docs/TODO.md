@@ -4150,17 +4150,45 @@ Everything below is unverified against the codebase.
   block-and-retry shape `:message`/`:choice`/`:number` already use) and a
   shown message window's own display priority interacting with an unrelated
   parallel process's battle opening concurrently.
-- **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
-  Ship aren't hardcoded to water, their passability follows the terrain
-  table's boat/ship-pass flags like any other vehicle rule; ✅ an airship
-  can't land on a tile a map event currently occupies (now fixed — see the
-  "Party / Actor / Vehicle" section under "Full-site sweep" below); airships
-  get no random encounters by default (**confirmed already correct**, same
-  section); hero-targeted Set Move Route commands (Dash,
-  Jump, etc.) still run normally while mounted and must be manually guarded
-  off; **setting a map event's trigger to Parallel Process and running "Set
-  Vehicle Position" from it crashes RPG_RT** (any other trigger type does
-  not) — an authentic engine crash, probably not worth reproducing; ✅ a
+- **Vehicles** — ✅ an unset vehicle defaults to map id 0, (0,0) (already
+  independently confirmed under "Full-site sweep" below — `Game::Vehicle
+  #initialize` defaults `map_id`/`x`/`y` to 0); ✅ Small/Large Ship aren't
+  hardcoded to water, their passability follows the terrain table's
+  boat/ship-pass flags like any other vehicle rule (`Scene::Map
+  #vehicle_passable?` reads `row.boat_pass`/`row.ship_pass`/
+  `row.airship_pass` straight off the per-tile terrain row, matching
+  EasyRPG's `Game_Map::IsPassableTile`); ✅ an airship can't land on a tile a
+  map event currently occupies (now fixed — see the "Party / Actor /
+  Vehicle" section under "Full-site sweep" below); airships get no random
+  encounters by default (**confirmed already correct**, same section). **A
+  real bug, now fixed: "hero-targeted Set Move Route commands (Dash, Jump,
+  etc.) still run normally while mounted" was true, but for the wrong
+  reason.** The commands weren't refused while boarded (`apply_move_request`'s
+  `MOVE_TARGET_PLAYER` case never checked `@state.boarded?`, matching the
+  claim on its face), but `#step_player_route` then always stepped the
+  route against the plain on-foot `@world` regardless of `@state.boarded?`
+  — never the ridden vehicle's own `boat_pass`/`ship_pass`/`airship_pass`
+  clearance the same command already gets under ordinary input movement
+  (`#try_move` already branches to `#vehicle_passable?` once boarded).
+  EasyRPG's `Game_Player::MakeWay` (`src/game_character.cpp`/
+  `game_player.cpp`) unconditionally delegates to the ridden vehicle's own
+  `MakeWay` whenever `IsAboard()`, with no separate branch for move-route-
+  driven movement vs. ordinary input — so a boarded hero's own Set Move
+  Route (Dash, Jump, plain movement, all alike) was checked against on-foot
+  chipset passability instead, letting a route sail/fly through terrain the
+  ridden vehicle itself could never cross, or stall on terrain it could.
+  Fixed by having `#step_player_route` pick `@vehicle_worlds[@state.boarded]`
+  instead of the unconditional `@world` whenever boarded — the existing
+  `VehicleWorld` (already used by `#force_vehicle_route` for a *vehicle*-
+  targeted Set Move Route) needed no changes, since it already accepts an
+  arbitrary `Game::Character` mirror. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a boarded boat's own hero-targeted
+  Set Move Route on a `boat_pass: false` map stays put instead of sailing
+  through), confirmed to fail against the pre-fix code (`[1, 1]` instead of
+  the correct `[0, 1]`) before the fix. **Setting a map event's trigger to
+  Parallel Process and running "Set Vehicle Position" from it crashes
+  RPG_RT** (any other trigger type does not) — an authentic engine crash,
+  probably not worth reproducing; ✅ a
   vehicle's x/y/screen-x/y can be read via variable ops from a different map
   than it currently occupies — `Game::Interpreter#event_operand`'s Control
   Variables "character position" operand (type 6) recognised the hero (ref
@@ -4202,10 +4230,21 @@ Everything below is unverified against the codebase.
   tile would; one parked on a different map reads nil again; a boarded one
   reports the identical screen position the hero riding it does), confirmed
   to fail against the pre-fix code before the fix.
-- **Battle Event** — separate command set from Map/Common events entirely;
+- ✅ **Battle Event** — separate command set from Map/Common events
+  entirely (`Game::Interpreter`'s battle-only opcodes — `CHANGE_MONSTER_HP`/
+  `MP`/`CONDITION`, `SHOW_HIDDEN_MONSTER`, `FORCE_FLEE`, `TERMINATE_BATTLE`,
+  etc. — are no-ops outside battle, and condition evaluation is its own
+  `Game::BattlePage` module, structurally distinct from `Game::EventPage`);
   ✅ no Pictures on the battle screen (see the fuller writeup under the
-  **Picture** bullet directly below — the same fix); Parallel Process can't
-  run in battle; no further pages run once battle ends.
+  **Picture** bullet directly below — the same fix); ✅ Parallel Process
+  can't run in battle (`@battle_ui`'s mere presence pauses `#step_parallels`
+  for every process except the one that itself opened the fight, kept alive
+  only so it can observe the result — deliberate, extensively commented);
+  ✅ no further pages run once battle ends (`#leave_battle_event_phase`
+  deliberately chains one more matching page *before* checking
+  `battle.finished?`, per its own comment about handing the turn to the
+  result window when the page itself decided the fight — no page runs after
+  the result screen opens).
 - **Picture** — ✅ **none show on Menu/Battle screens — the Menu half was
   already correct, the Battle half was a real gap, now fixed.**
   `Scene::Base#build_field_background` already paints an opaque panel above

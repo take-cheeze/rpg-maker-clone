@@ -5906,6 +5906,42 @@ check "a boat's move route is blocked by terrain the same way ordinary sailing i
   eq 0, boat.x, 'terrain blocked it before it ever moved'
 end
 
+# EasyRPG's own Game_Player::MakeWay (src/game_player.cpp) unconditionally
+# delegates to the ridden vehicle's own MakeWay whenever IsAboard(), with no
+# separate branch for move-route-driven movement vs. ordinary input
+# movement -- #try_move (the input path) already reads #vehicle_passable?
+# once boarded (see the boat/below-characters-event checks above), but
+# #step_player_route used to always step the player's route mirror against
+# the plain on-foot @world regardless of @state.boarded?, so a boarded
+# hero's own Set Move Route (Dash, Jump, plain movement, all alike) checked
+# on-foot chipset passability instead of the ridden vehicle's own
+# boat_pass/ship_pass/airship_pass clearance.
+check "a boarded hero's own Set Move Route respects the ridden vehicle's " \
+      'passability, not on-foot' do
+  # boat_pass left false (the default): the whole map is unsailable for the
+  # boat, exactly like "a boat's move route is blocked by terrain the same
+  # way ordinary sailing is" above -- but every tile is still ordinarily
+  # walkable on foot, so the pre-fix bug (checking on-foot passability while
+  # boarded) would have let this route sail through anyway.
+  scene = new_scene({}, player: [0, 1])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat in place (same tile)
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat'
+  route = Game::MoveRoute.new([Game::MoveCommand.new(R::MOVE_RIGHT)],
+                              repeat: false, skippable: true)
+  scene.send(:start_player_route, route, 8)
+  20.times { scene.update }
+  eq [0, 1], [st.x, st.y],
+     "the boarded hero's own Set Move Route must not sail where the boat itself " \
+     "can't -- ended at (#{st.x}, #{st.y})"
+end
+
 check 'a Move Route request targeting a currently-ridden vehicle is ignored' do
   scene = new_scene({}, player: [0, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
