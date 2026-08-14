@@ -5127,6 +5127,47 @@ above are repeated here)
   enemy-scoped Curse Fire shifting down, an ally-scoped Ward Fire shifting
   back up, both capped at one step from base), both confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **The RPG2003-only `reverse_state_effect` gate this same formula's sibling
+  question (attribute-defence direction, just above) explicitly left open is
+  now implemented too.** Verified against EasyRPG Player's actual C++
+  source, fetched twice for this fix: `Game_BattleAlgorithm::Skill::vExecute`
+  (`src/game_battlealgorithm.cpp`) computes `heals_states = IsPositive() ^
+  (Player::IsRPG2k3() && skill.reverse_state_effect)` and then either
+  `State::Remove` (cure) or an accuracy-rolled `State::Add` (inflict) per
+  listed state depending on it — on an RPG2000 database the XOR's right-hand
+  term is always false, so this collapses to the plain "ally scope cures,
+  enemy scope inflicts" rule `Game::Party#battle_skill_command`
+  (`mruby-rpg2k/mrblib/game.rb`) already modeled unconditionally, but a real
+  RPG2003 database with the flag set can flip *either* scope: a self/ally
+  skill inflicts its listed states on its own side instead of curing them (a
+  self-scoped Berserk that confuses its own caster), and an enemy skill cures
+  its target's states instead of adding new ones. `battle_skill_command` now
+  computes `heals_states` the same way, gated on the same `#rpg2003?`
+  accessor the variable-range-widen and enemy-levitate fixes already key
+  off, and routes each scope branch's `cured:`/`inflict:`/`chance:` keys off
+  it rather than off which branch it is. The consumer side needed matching
+  work: `Game::Battle#apply_skill_hit` (`mruby-rpg2k/mrblib/game.rb`) used to
+  only ever roll `cmd[:inflict]` on the attack (negative-HP) branch and only
+  ever apply `cmd[:cured]` on the recovery (non-negative-HP) branch, so
+  neither branch had anywhere to route the flipped case; both branches now
+  handle both keys (each normally empty on the side that doesn't apply, so
+  the ordinary RPG2000/non-reversed path is unaffected), reusing the
+  existing `roll_inflict`/cure-and-prune machinery unchanged. The field-skill
+  path (`#skill_cured_states`/`#skill_inflicted_states`, `Game_Battler::
+  UseSkill` in EasyRPG's `src/game_battler.cpp`) was checked too and found
+  already correct: that function's own `if (skill->reverse_state_effect)`
+  branch carries no `Player::IsRPG2k3()` gate at all, so a field skill's
+  cure-vs-inflict polarity is unconditional on the flag by design, matching
+  what this codebase already did — nothing there needed to change. Covered
+  by three `scripts/rpg2k_logic_check.rb` checks: an RPG2000-database
+  control (`reverse_state_effect` confirmed inert on every scope, matching
+  the prior behavior exactly), a new RPG2003-database check (the flag
+  flipping both an ally/self and an enemy scope, plus a same-database
+  reverse-off control pinning the plain rule still holds there), and an
+  update to the full-hash `battle_skill_command` assertion to expect the new
+  always-present `cured:`/`inflict:`/`chance:` keys — the RPG2003 check
+  confirmed to fail against the pre-fix code (asserting `[]`, getting `[2]`)
+  before the fix.
 - Enemy group members are numbered by add-order. ✅ **The lower-numbered
   member renders in front (closer to camera)**: `Scene::Map#build_battle_sprites`
   / `#rebuild_battler_sprite` / `#reveal_battle_monster`
