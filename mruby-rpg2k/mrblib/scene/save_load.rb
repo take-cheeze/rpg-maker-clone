@@ -46,10 +46,33 @@ class RPG2k
 
       # (SCREEN_H - HEADER_H) / SLOT_BOX_H, i.e. how many slot boxes fit
       # below the header -- 3 on RPG2000's 320x240 screen (32 + 3*64 = 224,
-      # leaving 16px for a scroll indicator this port does not draw yet).
+      # leaving 16px for the scroll indicator #build_arrow_sprites draws).
       # Matches the reference capture exactly: three boxes on screen, the
       # rest reached by scrolling.
       VISIBLE_SLOTS = (SCREEN_H - HEADER_H) / SLOT_BOX_H
+
+      # The list-scroll indicator: two independent blinking arrow sprites
+      # (not a scrollbar/track -- there is no such thing anywhere in
+      # RPG_RT), pinned at the very top and bottom of the whole slot
+      # viewport and shown only while a slot is hidden in that direction.
+      # Confirmed against EasyRPG's own `Scene_File` (`src/scene_file.cpp`,
+      # `MakeArrowSprite`/`UpdateArrows`): this is entirely `Scene_File`'s
+      # own doing, outside `Window_SaveFile` (which has no scroll logic of
+      # its own -- it just draws one slot's contents) and outside the
+      # generic `Window_Selectable` scroll-arrow mechanism other list
+      # windows use. It reuses the identical windowskin cells and 20-frame
+      # on/off blink this build's own `Window` already tracks for its
+      # "waiting for input" pause arrow (`Window::ARROW_*` -- RPG_RT draws
+      # both from the same System graphic block, the pause arrow and this
+      # screen's down arrow sharing one cell). The up arrow is the same
+      # block one row up (y=8 vs. y=16), which nothing in this codebase
+      # needed a constant for until now.
+      ARROW_W = Window::ARROW_W
+      ARROW_H = Window::ARROW_H
+      ARROW_SRC_X = Window::ARROW_SRC_X
+      UP_ARROW_SRC_Y = 8
+      DOWN_ARROW_SRC_Y = Window::ARROW_SRC_Y
+      ARROW_BLINK_FRAMES = Window::ARROW_BLINK_FRAMES
 
       def initialize parent, state, mode
         super parent
@@ -61,19 +84,24 @@ class RPG2k
         @slots = (1..SLOT_COUNT).map { |slot| parent.load_save_state(slot) }
         @index = 0
         @top = 0
+        @arrow_anim = 0
         @message = nil
         @slot_windows = []
         build_header_window
         build_slot_windows
+        build_arrow_sprites
       end
 
       def dispose
         close_message
         @header_window.dispose if @header_window
         @slot_windows.each(&:dispose)
+        @up_arrow.dispose if @up_arrow
+        @down_arrow.dispose if @down_arrow
       end
 
       def update
+        tick_arrows
         return drive_message if @message
 
         if Input.trigger?(Input::B)
@@ -95,6 +123,7 @@ class RPG2k
         @top = @index if @index < @top
         @top = @index - VISIBLE_SLOTS + 1 if @index >= @top + VISIBLE_SLOTS
         refresh_slot_windows
+        refresh_arrows
         play_system_se(SFX_CURSOR)
       end
 
@@ -117,6 +146,68 @@ class RPG2k
           else
             play_system_se(SFX_BUZZER)
           end
+        end
+      end
+
+      # Tick the blink phase every frame (RPG_RT's own arrows keep animating
+      # even while, say, this screen's save-result message is up -- there is
+      # nothing in EasyRPG's `UpdateArrows` that gates it on anything besides
+      # whether more slots are hidden) and refresh visibility from it.
+      def tick_arrows
+        return unless @up_arrow
+        @arrow_anim = (@arrow_anim + 1) % (ARROW_BLINK_FRAMES * 2)
+        refresh_arrows
+      end
+
+      # An arrow shows only while blinking "on" *and* there is a slot hidden
+      # in that direction -- `@top > 0` for up, and for down: whether the
+      # viewport's last visible row (`@top + VISIBLE_SLOTS - 1`) is still
+      # short of the last real slot (`SLOT_COUNT - 1`), i.e. `@top <
+      # SLOT_COUNT - VISIBLE_SLOTS` -- the same shape as EasyRPG's own
+      # `top_index < max_index - 2` for its fixed 3-visible layout.
+      def refresh_arrows
+        return unless @up_arrow
+        blink_on = @arrow_anim < ARROW_BLINK_FRAMES
+        @up_arrow.visible = blink_on && @top > 0
+        @down_arrow.visible = blink_on && @top < SLOT_COUNT - VISIBLE_SLOTS
+      end
+
+      # Two independent sprites (not part of any one slot's own Window),
+      # pinned to the top and bottom edge of the whole slot viewport and
+      # centred horizontally -- see the class comment above VISIBLE_SLOTS.
+      def build_arrow_sprites
+        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y)
+        @up_arrow.y = HEADER_H
+        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y)
+        @down_arrow.y = SCREEN_H - ARROW_H
+        refresh_arrows
+      end
+
+      def build_arrow_sprite(src_y)
+        sprite = Sprite.new
+        sprite.z = 450
+        sprite.x = (SCREEN_W - ARROW_W) / 2
+        bmp = Bitmap.new(ARROW_W, ARROW_H)
+        if @skin
+          bmp.blt 0, 0, @skin, Rect.new(ARROW_SRC_X, src_y, ARROW_W, ARROW_H)
+        else
+          draw_arrow_fallback(bmp, src_y == UP_ARROW_SRC_Y)
+        end
+        sprite.bitmap = bmp
+        sprite.visible = false
+        sprite
+      end
+
+      # No windowskin to take the arrow art from -- a small solid triangle,
+      # mirroring Window#draw_arrow_fallback's own shape (narrowing toward
+      # the point) but in either direction, since this screen needs both.
+      def draw_arrow_fallback(bmp, pointing_up)
+        color = Color.new(232, 232, 248, 255)
+        ARROW_H.times do |row|
+          r = pointing_up ? ARROW_H - 1 - row : row
+          w = ARROW_W - r * 2
+          next if w <= 0
+          bmp.fill_rect r, row, w, 1, color
         end
       end
 
