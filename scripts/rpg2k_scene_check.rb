@@ -302,7 +302,18 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                                      message_already: ' is already poisoned!',
                                      hp_change_map_steps: 4,
                                      hp_change_map_val: 1),
-                 4 => OpenStruct.new(name: 'Sleep', color: 4, priority: 80),
+                 # `restriction: 1` (do-nothing) + a nonzero auto_release_prob mirrors
+                 # RPG2000's own Sleep row -- a state that skips the afflicted
+                 # battler's turn entirely but can still wear off on its own, unlike
+                 # the always-comatose Stone row the battle-command-skip checks use.
+                 4 => OpenStruct.new(name: 'Sleep', color: 4, priority: 80,
+                                     restriction: 1, auto_release_prob: 50),
+                 # Do-nothing with 0% auto-release: never wears off on its own -- the
+                 # "everyone permanently incapacitated" battle-command-skip check
+                 # uses this one instead of Sleep so the round has no chance of
+                 # waking anyone back up mid-test.
+                 6 => OpenStruct.new(name: 'Stone', color: 8, priority: 90,
+                                     restriction: 1, auto_release_prob: 0),
                  5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10) },
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
@@ -1634,19 +1645,24 @@ end
 # EXP, with the leader Scene::Map reads while rendering.
 class BattleStubActor
   attr_accessor :exp, :hp, :mp
-  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills
+  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
-  # a defeat test passes weaker stats.
+  # a defeat test passes weaker stats. `states` seeds the Combatant Game::Battle
+  # ::from_actor builds (Game::Battle.actor_states reads it off any source that
+  # responds to `:states`), so a battle-command-skip check can start the fight
+  # with an ally already afflicted, without reaching into the built battle's
+  # own Combatant list after the fact.
   def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
-                 rename_skill: false, skill_name: '')
+                 rename_skill: false, skill_name: '', states: [])
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
-    @rename_skill = rename_skill; @skill_name = skill_name
+    @rename_skill = rename_skill; @skill_name = skill_name; @states = states
   end
   def gain_exp(n); @exp += n; end
   # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
-  # HP absolutely; the stub has no state model, so just clamp to [0, max].
+  # HP absolutely; the stub has no state model beyond the starting `states`
+  # above, so just clamp to [0, max].
   def set_hp(value); @hp = value < 0 ? 0 : (value > @max_hp ? @max_hp : value); end
   def dead?; @hp <= 0; end
   # Change HP (Game::Interpreter#do_change_hp), so a "Lose: Branch" recovery
@@ -7017,6 +7033,49 @@ check 'entering a battle with an all-KO\'d party is instant defeat too' do
   ok ui, 'the battle is open'
   eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
   eq :defeat, ui[:result]
+end
+
+# The "unrecoverable input-blocking state lock" case flagged as still open next
+# to the two fixes above: a living ally under a "do nothing" restriction
+# (asleep/paralysed) or a forced attack-ally/attack-enemy restriction
+# (confused/berserk) is not merely dead-or-alive -- #living_allies (rejects
+# only #dead?) used to still open the ordinary Attack/Skill/Defend/Item prompt
+# for one, waiting on a choice that #apply_turn_states/#strike (see
+# Game::Battle#command_restricted?) discard or override regardless of what
+# gets picked. EasyRPG's Scene_Battle_Rpg2k::SelectNextActor recurses straight
+# past exactly these two cases (`!CanAct()` / `GetSignificantRestriction() !=
+# Restriction_normal`) with no manual prompt shown at all.
+check 'an asleep ally is skipped straight to the next commandable one, no command prompt for it' do
+  scene, st = battle_scene_with_pages({})
+  st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, states: [4]),
+                                            BattleStubActor.new(id: 2)])
+  ui = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ok ui, 'the battle opened'
+  eq :command, ui[:phase], 'a still-commandable ally is left to open the prompt'
+  eq ui[:allies][1], scene.send(:current_actor),
+     'the asleep ally at index 0 was skipped straight to the awake one at index 1'
+end
+
+check 'a lone ally under a do-nothing state (asleep) never gets a command prompt -- the round starts on its own' do
+  scene, st = battle_scene_with_pages({})
+  st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, states: [4])])
+  saw_animate = false
+  ui = nil
+  30.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    saw_animate ||= ui && ui[:phase] == :animate
+    break if ui && ui[:phase] == :result
+  end
+  ok ui, 'the battle opened'
+  ok saw_animate || ui[:phase] == :result,
+     'the round left :command and started animating on its own -- no player input was ever supplied'
+  ok ui[:phase] != :command, 'the sole ally being asleep does not freeze the command phase forever'
 end
 
 check 'a turn-0 battle-event page runs as the fight opens' do

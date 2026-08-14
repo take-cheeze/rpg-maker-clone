@@ -8389,6 +8389,31 @@ check 'battle: one incapacitated ally among others is not a party wipe' do
   ok !bat.finished?, 'a still-able ally keeps the party in the fight'
 end
 
+# yado.tk's "unrecoverable input-blocking state lock" case, next to the
+# empty/all-KO'd-party fix: EasyRPG's Scene_Battle_Rpg2k::SelectNextActor
+# skips the Fight/Skill/Defend/Item prompt entirely for a "do nothing"
+# restriction (asleep/paralysed, !CanAct()) and a forced attack-ally/
+# attack-enemy restriction (confused/berserk, GetSignificantRestriction() !=
+# Restriction_normal) rather than asking the player to pick a command that
+# can never take effect. Game::Battle#command_restricted? is the predicate
+# Scene::Map's battle command loop now consults to auto-skip such an ally
+# (see the "unrecoverable input-blocking state lock" fix in docs/TODO.md).
+check 'battle: command_restricted? flags do-nothing/confused/berserk allies, not a free one' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0),  # do-nothing (asleep/paralysed)
+             6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0),  # attack-ally (confusion)
+             7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
+  asleep = combatant('Asleep', 40, 0, 20, 100); asleep.states = [8]
+  confused = combatant('Confused', 40, 0, 20, 100); confused.states = [6]
+  berserk = combatant('Berserk', 40, 0, 20, 100); berserk.states = [7]
+  free = combatant('Free', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([asleep, confused, berserk, free], [slime], Game::Rng.new(1), states)
+  ok bat.command_restricted?(asleep), 'a do-nothing state locks out a manual command'
+  ok bat.command_restricted?(confused), 'a forced attack-ally state locks out a manual command'
+  ok bat.command_restricted?(berserk), 'a forced attack-enemy state locks out a manual command'
+  ok !bat.command_restricted?(free), 'an unafflicted ally is still freely commandable'
+end
+
 check 'battle: a confused battler (restriction 3) attacks its own side' do
   states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
   hero = combatant('Hero', 40, 0, 1, 100)                 # slow: the foe acts first

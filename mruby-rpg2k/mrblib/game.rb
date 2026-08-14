@@ -6903,6 +6903,26 @@ module Game
       false
     end
 
+    # Whether `b` cannot be handed a manual command this round at all: a
+    # currently-active "do nothing" restriction (asleep/paralysed) discards
+    # whatever gets queued for it regardless, once the round actually runs
+    # (#apply_turn_states skips the whole turn outright), and a forced
+    # attack-ally/attack-enemy restriction (confused/berserk,
+    # #battler_restriction) overrides whatever gets queued with a random
+    # forced target regardless (#strike). Matches EasyRPG's
+    # `Scene_Battle_Rpg2k::SelectNextActor` (`!active_actor->CanAct()` /
+    # `GetSignificantRestriction() != Restriction_normal`), which skips the
+    # Fight/Skill/Defend/Item prompt entirely for exactly these two cases
+    # rather than asking the player to pick a command that can never take
+    # effect. The caller is expected to auto-advance past such an ally with
+    # nothing written to its command/action fields -- the same no-command
+    # default an unrestricted ally with no explicit choice already falls
+    # back to correctly (a random living foe via #attack_target).
+    def command_restricted?(b)
+      return true if battler_restriction(b) != 0
+      (b.states || []).any? { |id| state_field(state_def(id), :restriction) == RESTRICTION_DO_NOTHING }
+    end
+
     private
 
     # The state definition for `id` from the lookup, or nil (no lookup / unknown).

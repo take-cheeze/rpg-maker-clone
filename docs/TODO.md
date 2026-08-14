@@ -4715,8 +4715,11 @@ not yet verified:
 - ✅ **Empty party doesn't itself Game Over, but battling with one is instant
   defeat; an all-KO'd party reads as an instant defeat the same way.** (An
   unrecoverable input-blocking *state* lock — every member asleep/paralysed
-  at once, rather than HP 0 — is a separate, still-open case; nothing here
-  addresses it.) `Scene::Map#draw_battle_command`'s `current_actor`
+  at once, rather than HP 0 — was flagged as a separate, still-open case here;
+  ✅ **now fixed too, verified against EasyRPG Player's actual C++ source
+  rather than guessed at** — see the fuller writeup a few bullets below, at
+  "A living ally under a 'do nothing'... restriction now skips the manual
+  command prompt entirely".) `Scene::Map#draw_battle_command`'s `current_actor`
   (`living_allies[@battle_ui[:actor_i]]`) already resolved to `nil` for both
   an empty party and an all-KO'd one (`living_allies` rejects `dead?`), so it
   already declined to open a command window rather than crash (`return
@@ -4747,6 +4750,61 @@ not yet verified:
   fresh encounter straight to a `:defeat` result instead of stalling in
   `:command`), both confirmed to fail against the pre-fix code (the battle
   staying open in `:command` forever) before the fix.
+- ✅ **A living ally under a "do nothing" restriction (asleep/paralysed) or a
+  forced attack-ally/attack-enemy restriction (confused/berserk) now skips the
+  manual command prompt entirely, matching real RPG_RT**, instead of the
+  ordinary Attack/Skill/Defend/Item menu opening and waiting on a choice that
+  can never actually take effect — the "unrecoverable input-blocking state
+  lock" case flagged next to the empty/all-KO'd-party fix just above.
+  `Scene::Map`'s `#living_allies` (`reject(&:dead?)`) was the only filter the
+  battle command loop ever applied: `#draw_battle_command`/`#advance_actor`
+  opened a normal command window for *any* living ally regardless of state,
+  even though the round's own execution already discards or overrides
+  whatever gets queued for one of these two cases either way —
+  `Game::Battle#apply_turn_states` skips a do-nothing-restricted battler's
+  turn outright once the round runs, and `#strike`'s forced-target override
+  replaces a confused/berserk battler's command unconditionally
+  (`mruby-rpg2k/mrblib/game.rb`) — so the prompt was always pointless for
+  them, just never suppressed. Verified against EasyRPG Player's actual C++
+  source rather than guessed at: `Scene_Battle_Rpg2k::SelectNextActor`
+  (`src/scene_battle_rpg2k.cpp`) recurses straight past exactly these two
+  cases — `!active_actor->CanAct()` (a state with `restriction ==
+  Restriction_do_nothing`, `Game_Battler::CanAct`, `src/game_battler.cpp`)
+  auto-assigns a `None` battle algorithm and calls itself again with no
+  `State_SelectCommand` shown at all, and
+  `GetSignificantRestriction() != Restriction_normal` (attack-ally/
+  attack-enemy) auto-picks a random forced target and does the same — only an
+  ally with no active restriction at all ever reaches the Fight/Skill/Defend/
+  Item prompt. Fixed with a new `Game::Battle#command_restricted?(b)`
+  (`mruby-rpg2k/mrblib/game.rb`, public, defined next to `#battler_restriction`)
+  answering true for either case, and a new `Scene::Map#skip_restricted_actors`/
+  `#open_next_command` pair that advances `@battle_ui[:actor_i]` forward past
+  any such ally — writing nothing to its command/action fields, since the
+  no-command default an unrestricted ally with no explicit choice already
+  falls back to (`#attack_target`'s random-living-foe default) is exactly what
+  a do-nothing skip or a forced-restriction override needs anyway — before
+  deciding whether to draw the next ally's menu or, if every remaining living
+  ally is restricted, call `#start_round_animation` immediately the same way
+  running out of allies after the last manual command already does. Routed
+  through every place the command phase can be (re)entered: battle open
+  (`#open_battle`, replacing the bare `draw_battle_command` fallback),
+  `#advance_actor` (after a manual command), and the two battle-event-page
+  resume points that hand control back to `:command`
+  (`#finish_round_animation`, `#leave_battle_event_phase`) — a battle-event
+  page that puts the party to sleep before the first round, or mid-round
+  before the next round's prompt, is caught the same way. The "go back to the
+  previous member" Cancel/B path is symmetric: a new
+  `#prev_commandable_actor_index` walks backward skipping restricted allies
+  the same way, mirroring EasyRPG's `SelectPreviousActor`, so Cancel can never
+  re-open a menu for an ally the forward skip just passed over. Covered by two
+  new `scripts/rpg2k_scene_check.rb` checks (a two-ally party with the first
+  asleep opens the command prompt on the second ally, never the first; a
+  lone asleep ally never shows a command prompt at all — the round starts and
+  animates with zero simulated player input, where the pre-fix build sat
+  frozen in `:command` forever) and a new `scripts/rpg2k_logic_check.rb` check
+  (`command_restricted?` flags a do-nothing, a confused and a berserk ally,
+  and clears an unafflicted one), all three confirmed to fail against the
+  pre-fix code before the fix.
 - "Hero X is in the party" always evaluates in **database ID order**, not
   current seat/slot order — there is no built-in way to read a member's
   current seat position.
