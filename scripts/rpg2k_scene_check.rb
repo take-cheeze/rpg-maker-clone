@@ -3394,6 +3394,66 @@ check "Proceed With Movement also waits on a vehicle's forced route" do
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check "a wandered map event's position and facing survive a save/load, but " \
+      'reset to their own page default on an ordinary map re-visit' do
+  # docs/TODO.md's "Save / Load persistence -- consolidated master list":
+  # runtime state that does *not* survive a plain map re-visit (leave and
+  # return, no save involved) explicitly includes "map event positions
+  # (reset to their default page-1 placement)" -- but the same list's "does
+  # not survive a save/load specifically" half never names event positions,
+  # meaning they are expected to survive one, matching real RPG_RT's own
+  # SaveMapEvent chunk (x/y/direction, confirmed against EasyRPG's
+  # Game_Event -- see Game::State#map_event_positions). This codebase had no
+  # mechanism at all for the save/load half: Scene::Map#build_event always
+  # built a fresh Game::Character from the map's own ev.x/ev.y, so even a
+  # same-map Save-then-Continue snapped every wandered NPC back to its
+  # editor spawn tile.
+  ic = Game::Interpreter::Cmd
+  # Auto-start event 1 forces event 2 to walk two tiles east and turn to
+  # face down, blocking on Proceed With Movement so the route has actually
+  # landed by the time #update returns control.
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 8, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::FACE_DOWN]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+  ]
+  events = { 1 => event(0, 4, auto), 2 => event(1, 1, page) }
+  db = fake_db
+  state = Game::State.new(fake_party, 1, 5, 5)
+  state.map = fake_map(1, events)
+  # A map_maker that hands back the same event table on every load (rather
+  # than the default fake_parent's empty map), so event 2 still exists post-
+  # teleport for part two's reset assertion to mean anything.
+  parent = FakeParent.new(db) { |id| fake_map(id, events) }
+  scene = RPG2k::Scene::Map.new(parent, state)
+  40.times { scene.update }
+  c = chars(scene)[2]
+  eq 3, c.x, 'the forced route walked event 2 two tiles east'
+  eq 1, c.y, 'staying on its row'
+  eq 2, c.direction, 'and turned to face down at the end of the route'
+
+  # Part one: a save/load restores exactly that wandered spot.
+  restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
+  restored.map = fake_map(1, events)
+  fresh = RPG2k::Scene::Map.new(FakeParent.new(db) { |id| fake_map(id, events) },
+                                restored)
+  rc = chars(fresh)[2]
+  eq [3, 1, 2], [rc.x, rc.y, rc.direction],
+     'a fresh Scene::Map built from the saved state keeps the wandered spot, ' \
+     'not the map default'
+
+  # Part two: an ordinary re-visit (leave and return, no save involved) is
+  # documented to reset every event to its own page default instead -- a
+  # Transfer Player to this same map id must not carry the wandered position
+  # over the way a save/load does.
+  scene.send(:perform_teleport, [1, 5, 5, 0]) # leave and return to the same map
+  tc = chars(scene)[2]
+  eq [1, 1], [tc.x, tc.y],
+     'an ordinary map re-visit resets the event to its own default ' \
+     'placement, unlike a genuine save/load'
+end
+
 check "Proceed With Movement blocks a Parallel Process's own interpreter, not just the foreground's" do
   # docs/TODO.md, `2k/09_bug/017_heiretu_totyu_end/hei_mukou.htm`: Set Move
   # Route + "wait for completion" is documented to block whichever event's

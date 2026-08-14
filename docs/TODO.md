@@ -5158,6 +5158,66 @@ Change, Tile Replacement, a move-route "Change Graphic" on any character,
 Screen Scroll offset (snaps back instantly on return rather than
 animating), a map event's own parallel-process running state.
 
+✅ **Map event positions (and facing) now survive a save/load taken on the
+same map — a gap this consolidated list's own two halves only implicitly
+flagged, rather than named outright.** The "does not survive a map
+re-visit" list just above states every event resets to its page-1 default
+on an ordinary leave-and-return; the "does not survive a save/load
+specifically" list right below never names event positions among what a
+save/load itself resets — meaning this doc's own reading already expected
+them to persist through a save/load, distinct from a plain re-visit.
+Confirmed against EasyRPG Player's actual C++ source rather than taken on
+faith: `Game_Character::GetX`/`GetY`/`GetDirection` (`src/game_character.h`)
+read `data()->position_x`/`position_y`/`direction` straight off the
+per-event `SaveMapEvent` liblcf struct every `Game_Event` is backed by
+(`src/game_event.h`), so a genuine RPG_RT save captures exactly this for
+whichever map is loaded at save time. `Scene::Map#build_event`
+(`mruby-rpg2k/mrblib/scene/map.rb`) always built a fresh `Game::Character`
+straight from the map's own `ev.x`/`ev.y`, with no override path of any
+kind, so even a plain Save-then-Continue on the exact same map snapped
+every wandered NPC back to its editor spawn tile — the save/load half of
+this state was never modelled here at all, not merely broken. Fixed with a
+new `Game::State#map_event_positions` (`event_id => [x, y, direction]`,
+`mruby-rpg2k/mrblib/game.rb`), following the same scoped-override idiom
+`common_event_progress` and `Game::Screen#to_h`/`#load_h` already use —
+round-tripped through `Game::State#to_h`/`.load`, defaulting to `{}` for a
+save written before this field existed; a new
+`Scene::Map#record_map_event_positions` snapshots every live event's tile
+position and facing into it once per real frame, called from `#update`
+alongside the other per-frame bookkeeping (`@state.screen.update` and
+friends); and `#build_event` now takes a saved entry over `ev.x`/`ev.y`
+when one exists for that id, feeding the resolved coordinates into the
+display-origin `disp_x`/`disp_y` too so a restored event does not visibly
+slide in from its old spawn tile on the very first frame. Scoped to the
+currently-loaded map only, since event ids repeat per map and a stale
+entry from a different map would misapply to an unrelated event sharing
+its id: `Scene::Map#perform_teleport` clears the whole hash before
+rebuilding the destination's own events, so an ordinary map re-visit
+(leave and return, no save involved) still resets every event to its own
+page default exactly as the list above already documents — only a genuine
+save/load benefits. `#rebuild_events_preserving_positions`'s own in-place,
+same-map page-reselection copy loop is unaffected by the new override: it
+already overwrites `x`/`y`/`direction` from the live pre-rebuild character
+right after `build_events` runs, so the saved-position lookup is
+functionally a no-op there, just a harmless extra read before being
+immediately superseded by the fresher live value. **Not addressed**: the
+move-route execution *index* itself — the "a map event's move route/
+execution point if paused mid-way" claim in the "persists across both
+map-revisit and save/load" list below — a custom-route event mid-loop
+still restarts its route from the top after this fix exactly as it did
+before; only its raw tile position and facing are restored. Matching real
+RPG_RT's own `original_move_route_index`/`move_route_index` fields
+(`src/game_character.h`, alongside `move_route_finished`) would need those
+threaded through separately, a larger follow-up left open. Covered by a
+new `scripts/rpg2k_logic_check.rb` check (`map_event_positions` round-trips
+through `to_h`/`.load`, with a legacy-save fallback to `{}`) and a new
+`scripts/rpg2k_scene_check.rb` check (a Move Event forces event 2 two
+tiles east and turns it to face down via Proceed With Movement; a
+save/load taken afterward restores exactly that spot on a fresh
+`Scene::Map`, while an ordinary Transfer Player back to the same map id
+instead resets it to its own page default), both confirmed to fail against
+the pre-fix code before the fix.
+
 State that does **not** survive a save/load specifically (distinct from
 mere map-revisit): screen-shake offset (never saved, always resets);
 BGM/SE playback position (always restarts a track from the beginning even

@@ -8313,6 +8313,20 @@ module Game
     # portable Marshal save; not yet in `.lsd` (chunks 113/114 are still
     # opaque, see LCF::Schema::SAVE_FOREGROUND_EVENT / SAVE_COMMON_EVENT).
     attr_accessor :common_event_progress
+    # The current map's own live event positions, event id => [x, y, direction],
+    # snapshotted every frame by Scene::Map#record_map_event_positions. Real
+    # RPG_RT's SaveMapEvent chunk carries exactly this (plus a move-route index
+    # this codebase does not attempt to round-trip yet) for whichever map is
+    # loaded at save time -- a wandering NPC's exact spot survives a Save/
+    # Continue on the same map, distinct from an ordinary map re-visit (leave
+    # and return with no save involved), which genuinely does reset every event
+    # to its page's own default placement, matching the "Save / Load
+    # persistence" list in docs/TODO.md. Scoped to the single currently-loaded
+    # map only: event ids are per-map, not global, so this is cleared on every
+    # genuine map change (Scene::Map#perform_teleport) rather than carried
+    # across one, the same "resets on leaving-and-returning" family as
+    # #encounter_rate/#parallax just above.
+    attr_accessor :map_event_positions
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -8349,6 +8363,7 @@ module Game
       @teleport_targets = {}
       @escape_target = nil
       @common_event_progress = {}
+      @map_event_positions = {}
       @system_bgm = {}
       @system_sfx = {}
       # nil = "not configured yet"; #seed_screen_transitions fills each slot in
@@ -8563,6 +8578,7 @@ module Game
         encounter_rate: @encounter_rate, encounter_total: @encounter_total,
         teleport_targets: @teleport_targets,
         common_event_progress: @common_event_progress,
+        map_event_positions: @map_event_positions,
         steps: @steps,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
@@ -8985,6 +9001,7 @@ module Game
       state.escape_count = h[:escape_count] || 0
       state.teleport_targets = h[:teleport_targets] || {}
       state.common_event_progress = h[:common_event_progress] || {}
+      state.map_event_positions = h[:map_event_positions] || {}
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}

@@ -5417,6 +5417,25 @@ check 'common_event_progress (a Parallel Process interpreter checkpoint) round-t
   eq({}, Game::State.load(db, legacy).common_event_progress)
 end
 
+check 'map_event_positions (a wandered NPC\'s live tile + facing) round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.map_event_positions[3] = [5, 9, 8] # event 3, tile (5, 9), facing up
+  st.map_event_positions[7] = [0, 0, 2]
+  loaded = Game::State.load(db, st.to_h)
+  eq({ 3 => [5, 9, 8], 7 => [0, 0, 2] }, loaded.map_event_positions)
+  # A save written before this field existed restores an empty table, so every
+  # event falls back to its page's own default placement -- the same
+  # behaviour as before this change existed at all.
+  legacy = st.to_h
+  legacy.delete(:map_event_positions)
+  eq({}, Game::State.load(db, legacy).map_event_positions)
+end
+
 check 'Return to Title Screen raises a :return_title request' do
   st = party_state
   it = Game::Interpreter.new(st)

@@ -305,6 +305,7 @@ class RPG2k
             try_open_debug_menu
           end
         end
+        record_map_event_positions
         animate_events
         render
       end
@@ -858,7 +859,18 @@ class RPG2k
 
       def build_event(id, ev, page)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
-        ch = Game::Character.new(ev.x, ev.y, dir)
+        x, y = ev.x, ev.y
+        # A saved wandered position (see #record_map_event_positions) wins over
+        # the map's own default placement -- restoring a Save/Continue taken on
+        # this same map to wherever the NPC actually stood, not back to its
+        # editor spawn tile. Empty for a brand-new visit (perform_teleport
+        # clears it before a genuine map change) and for a fresh game, so those
+        # cases fall through to ev.x/ev.y exactly as before.
+        if (saved = @state.map_event_positions[id])
+          x, y = saved[0], saved[1]
+          dir = saved[2] if saved[2]
+        end
+        ch = Game::Character.new(x, y, dir)
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
@@ -888,8 +900,24 @@ class RPG2k
           translucent: page_translucent(page),
           anim_type: page_anim_type(page), base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
-          moving: false, disp_x: ev.x, disp_y: ev.y, move_count: TILE,
+          moving: false, disp_x: x, disp_y: y, move_count: TILE,
           jumping: false }
+      end
+
+      # Snapshot every live map event's current tile position and facing onto
+      # Game::State, once per real frame -- so a fresh Scene::Map built later
+      # from this state (a genuine save/load, see #build_event's saved-position
+      # override) restores a wandered NPC to wherever it actually stood rather
+      # than resetting it to the map's own default placement. Scoped to the
+      # current map's own event ids, which #perform_teleport clears before a
+      # genuine map change (see there) -- an ordinary map re-visit (leave and
+      # return, no save involved) still resets every event, matching the
+      # "Save / Load persistence" list in docs/TODO.md.
+      def record_map_event_positions
+        @events.each do |e|
+          ch = e[:char]
+          @state.map_event_positions[e[:id]] = [ch.x, ch.y, ch.direction]
+        end
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
@@ -6456,6 +6484,13 @@ class RPG2k
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
         @erased_event_positions = {}
+        # A saved wandered position is scoped to the map it was taken on --
+        # event ids repeat per map, so carrying this forward would misapply a
+        # stale entry to an unrelated event on the destination map. Dropped
+        # here, before the destination's own events are built, so every one of
+        # them falls back to its own page's default placement, matching an
+        # ordinary map re-visit (see #record_map_event_positions).
+        @state.map_event_positions = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
