@@ -8507,6 +8507,66 @@ check 'a captured transition falls back to a plain fade when the backend cannot 
   ok (fade.bitmap.blt_calls || []).empty?, 'nothing to blit without a snapshot'
 end
 
+check 'zoom in resamples a shrinking crop of the capture, stretched full-screen' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  snap = RGSS::Bitmap.new(320, 240)
+  RGSS::Graphics.snapshot = snap
+
+  st.screen.erase(Game::Transition::ZOOM_IN)
+  fade.bitmap.clear_stretch_calls
+  scene.update
+  eq 255, fade.opacity, 'a captured style paints, so it is fully opaque like a mask'
+  ok (fade.bitmap.blt_calls || []).empty?, 'zoom resamples, it never uses the 1:1 paste path'
+  stretches = fade.bitmap.stretch_calls || []
+  eq 1, stretches.length, 'zoom is a single resampled piece'
+  drect, src, srect = stretches.first
+  eq [0, 0, 320, 240], [drect.x, drect.y, drect.width, drect.height],
+     'the destination always fills the whole screen -- zoom crops the source, not the drawn size'
+  ok src.equal?(snap), 'resampled from the captured snapshot'
+  eq [4, 3, 312, 234], [srect.x, srect.y, srect.width, srect.height],
+     'frame 0 of zoom-in has barely cropped in from the full capture yet'
+
+  mid = Game::Transition.default_frames(Game::Transition::ZOOM_IN) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_stretch_calls
+  scene.update
+  srect = fade.bitmap.stretch_calls.first[2]
+  eq [160, 120, 0, 0], [srect.x, srect.y, srect.width, srect.height],
+     'finished: cropped down to nothing at the screen centre, so nothing paints over the black fill'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
+check 'zoom out resamples a growing crop of the capture, stretched full-screen' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # show is a no-op unless erased first
+  2.times { scene.update }
+  RGSS::Graphics.snapshot = RGSS::Bitmap.new(320, 240)
+
+  st.screen.show(Game::Transition::ZOOM_OUT)
+  fade.bitmap.clear_stretch_calls
+  scene.update
+  srect = fade.bitmap.stretch_calls.first[2]
+  eq [156, 117, 8, 6], [srect.x, srect.y, srect.width, srect.height],
+     'frame 0 of zoom-out starts as a sliver at the screen centre'
+
+  mid = Game::Transition.default_frames(Game::Transition::ZOOM_OUT) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_stretch_calls
+  scene.update
+  srect = fade.bitmap.stretch_calls.first[2]
+  eq [0, 0, 320, 240], [srect.x, srect.y, srect.width, srect.height],
+     'finished: the crop has grown back out to the whole capture'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
 check 'Flash Screen drives the flash layer, and refills only on a colour change' do
   scene = new_scene({}, player: [5, 5])
   _, flash = overlay(scene)

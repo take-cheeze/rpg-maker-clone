@@ -4869,25 +4869,24 @@ module Game
       CROSS_COMBINE, ZOOM_OUT, MOSAIC_IN, WAVE_IN, CUT_IN
     ].freeze
 
-    # The scroll and combine / division styles: a black mask cannot express them
-    # (the true old/new pixels have to move), so Scene::Map instead snapshots the
-    # screen once via RGSS::Graphics.snap_to_bitmap when one of these starts and
-    # blits that capture per #capture_ops every frame -- see docs/TODO.md's
-    # "Screen effects" entry. This class stays pure logic (no Graphics access,
-    # per the SCREEN_W/H comment above): it only computes where each piece of
-    # the capture goes.
+    # The scroll, combine / division and zoom styles: a black mask cannot
+    # express them (the true old/new pixels have to move or resample), so
+    # Scene::Map instead snapshots the screen once via
+    # RGSS::Graphics.snap_to_bitmap when one of these starts and composites
+    # that capture per #capture_ops every frame -- see docs/TODO.md's "Screen
+    # effects" entry. This class stays pure logic (no Graphics access, per the
+    # SCREEN_W/H comment above): it only computes where each piece of the
+    # capture goes.
     CAPTURED = [SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
                 SCROLL_UP_OUT, SCROLL_DOWN_OUT, SCROLL_LEFT_OUT,
                 SCROLL_RIGHT_OUT, VERTICAL_COMBINE, VERTICAL_DIVISION,
                 HORIZONTAL_COMBINE, HORIZONTAL_DIVISION, CROSS_COMBINE,
-                CROSS_DIVISION].freeze
+                CROSS_DIVISION, ZOOM_IN, ZOOM_OUT].freeze
 
-    # Styles this build paints for real. Zoom / mosaic / wave still fall through
-    # to a plain fade: mosaic and wave want a native per-pixel resample and zoom's
-    # own IN/OUT direction (which way the picture scales) has nothing in either
-    # test bed to confirm it against, so it is left rather than guessed. Random
-    # blocks wants RPG_RT's incremental per-frame block paint, which a mask can
-    # express but this does not do yet either.
+    # Styles this build paints for real. Mosaic / wave still fall through to a
+    # plain fade -- they want a native per-pixel resample, which is not built
+    # yet. Random blocks wants RPG_RT's incremental per-frame block paint,
+    # which a mask can express but this does not do yet either.
     DRAWN = [FADE_IN, FADE_OUT, BLIND_OPEN, BLIND_CLOSE, VERTICAL_STRIPES_IN,
              VERTICAL_STRIPES_OUT, HORIZONTAL_STRIPES_IN,
              HORIZONTAL_STRIPES_OUT, BORDER_TO_CENTER_IN, BORDER_TO_CENTER_OUT,
@@ -4996,10 +4995,20 @@ module Game
       CAPTURED.include?(@style)
     end
 
-    # The captured screen's pieces for this frame, each `[dx, dy, sx, sy, sw,
-    # sh]` -- paste the capture's `[sx, sy, sw, sh]` region at `(dx, dy)`. Only
-    # called for a captured style; Scene::Map paints these over a black fill, so
-    # a piece that has slid off-screen just leaves black behind it.
+    # Whether this captured style is drawn by resampling (stretch_blt) rather
+    # than pasted 1:1 (blt) -- Scene::Map uses this to pick which Bitmap method
+    # matches #capture_ops's return shape for this style (see #zoom_rect).
+    def zoom?
+      @style == ZOOM_IN || @style == ZOOM_OUT
+    end
+
+    # The captured screen's pieces for this frame. For every style but zoom,
+    # each piece is `[dx, dy, sx, sy, sw, sh]` -- paste the capture's `[sx, sy,
+    # sw, sh]` region at `(dx, dy)` with `Bitmap#blt` (destination size always
+    # matches source size). Zoom instead resamples, so its one piece is `[dx,
+    # dy, dw, dh, sx, sy, sw, sh]` for `Bitmap#stretch_blt` -- see #zoom?. Only
+    # called for a captured style; Scene::Map paints these over a black fill,
+    # so a piece that has slid (or shrunk) off leaves black behind it.
     def capture_ops
       case @style
       when SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
@@ -5012,6 +5021,8 @@ module Game
         horizontal_split_ops(@style == HORIZONTAL_COMBINE)
       when CROSS_COMBINE, CROSS_DIVISION
         cross_split_ops(@style == CROSS_COMBINE)
+      when ZOOM_IN, ZOOM_OUT
+        [zoom_rect]
       else
         []
       end
@@ -5112,6 +5123,41 @@ module Game
        [right_dx, top_dy, left_w, 0, right_w, top_h],
        [left_dx, bottom_dy, 0, top_h, left_w, bottom_h],
        [right_dx, bottom_dy, left_w, top_h, right_w, bottom_h]]
+    end
+
+    # Zoom: the capture is drawn full-screen every frame, resampled from a
+    # source region that shrinks toward the screen's centre (ZOOM_IN, an
+    # Erase, shrinking the departing scene down to nothing) or grows back out
+    # from it (ZOOM_OUT, a Show, growing the arriving scene up to full size).
+    #
+    # Confirmed against EasyRPG's `transition.cpp`: the destination rect is
+    # always the full screen (`dst.StretchBlit(Rect(0, 0, w, h), *screen,
+    # Rect(z_pos, z_size), 255)`), and it is the *source* rect that shrinks or
+    # grows -- cropping progressively closer to the zoom point and stretching
+    # that crop to fill the screen is what reads as "zooming in" on it, rather
+    # than the drawn image itself shrinking to a small rect. `z_size` there
+    # ramps `(tf_off - z_cf) / tf_off` with `z_cf = current_frame` for
+    # ZoomIn (so it starts full and ends at zero) and `z_cf = tf_off -
+    # current_frame` for ZoomOut (the same ramp run backwards) -- the same
+    # shrink/grow direction this mirrors with #frame_ratio. That settles the
+    # IN/OUT direction this build's own comment used to say was "left rather
+    # than guessed": ZOOM_IN shrinks, ZOOM_OUT grows.
+    #
+    # EasyRPG's own zoom point is the hero's screen position on the map (the
+    # screen centre otherwise); this class stays pure geometry with no scene
+    # or player access (see the SCREEN_W/H comment above CAPTURED), so it
+    # anchors on the screen centre unconditionally -- the same simplification
+    # #cross_split_ops's own quadrant motion already documents.
+    def zoom_rect
+      p, d = frame_ratio
+      if @style == ZOOM_OUT
+        sw = @width * p / d
+        sh = @height * p / d
+      else
+        sw = @width - @width * p / d
+        sh = @height - @height * p / d
+      end
+      [0, 0, @width, @height, (@width - sw) / 2, (@height - sh) / 2, sw, sh]
     end
 
     # Blinds: 8-pixel bands, each closing (or opening) from its top edge by one

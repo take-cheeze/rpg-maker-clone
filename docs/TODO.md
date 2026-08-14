@@ -1859,10 +1859,10 @@ The work below is roughly ordered by the critical path to a walkable game
   screen being left against the screen being arrived at (one of the two is always
   solid black). That draws the blinds, the vertical / horizontal stripes and the
   border-to-centre / centre-to-border windows for real. Remaining: the styles a
-  black mask cannot express — the scrolls and the combine / division pairs slide
-  the live scene itself, zoom / mosaic / wave resample it, and random blocks wants
-  thousands of block blits a frame — which run as a fade of the right length and
-  the right end state for now.
+  black mask cannot express — the scrolls, the combine / division pairs and zoom
+  slide or resample the live scene itself, mosaic / wave resample it too, and
+  random blocks wants thousands of block blits a frame — which run as a fade of
+  the right length and the right end state for now.
 
   **That remainder was written up as blocked on a screen capture the renderer
   does not have. It is not: `RGSS::Graphics.snap_to_bitmap` exists, is tested
@@ -1871,8 +1871,8 @@ The work below is roughly ordered by the critical path to a walkable game
   and it answers nil there), and the **RPG Maker XP scene already uses it**
   (`mruby-rpgxp/mrblib/scene.rb`) for exactly this — its own transitions.** The
   same mistake as the fade/flash note below: a capability assumed missing that
-  was already there. What was left per style (scroll and combine / division are
-  now done — see below):
+  was already there. What was left per style (scroll, combine / division and
+  zoom are now done — see below):
 
   - ✅ **Scroll (settings 9–12)** and **combine / division (13–15)**: capture the
     outgoing screen once when the transition starts, then each frame paint the
@@ -1880,7 +1880,11 @@ The work below is roughly ordered by the critical path to a walkable game
     sliding offset — rather than as a mask. `Bitmap#blt` is enough; no native
     work. The overlay is opaque and above everything, so painting the whole
     frame into it is what lets the scene appear to move, which a mask cannot do.
-  - **Zoom (16)**: the same, with `stretch_blt` instead of `blt`.
+  - ✅ **Zoom (16)**: the same, with `Bitmap#stretch_blt` instead of `blt` — the
+    destination is always the full screen, and it is the *source* rect that
+    shrinks toward (an Erase) or grows from (a Show) the screen centre, so
+    stretching that shrinking/growing crop over the whole screen is what reads
+    as zooming in.
   - **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
     exist but a full-screen loop per frame in Ruby is far too slow, so these are
     the only two that genuinely want a native pass.
@@ -1898,27 +1902,46 @@ The work below is roughly ordered by the critical path to a walkable game
   which is what makes the family worth finishing (`ruby scripts/analyze_game.rb
   --params --code 11010 data/mtf-meido-action/Debug`).
 
-  **Scroll and combine / division are done.** `Game::Transition#capture_ops`
+  **Scroll, combine / division and zoom are done.** `Game::Transition#capture_ops`
   computes, per style, where each piece of a captured screen goes this frame
   (a plain offset for the four scroll directions; two sliding pieces for
-  vertical/horizontal combine and division; four for cross), staying pure
-  logic exactly like `#visible_rects` above — no `Graphics` access, so it is
-  unit-testable without a renderer. `Scene::Map#draw_captured_transition`
-  snapshots the screen once (on the frame a captured `Game::Transition`
-  instance first appears, by object identity, so a same-style transition
-  right after it still re-snapshots) and blits the pieces over a black fill
-  every frame after, disposing the snapshot once the transition ends. The
-  wrinkle above did not end up mattering in practice: a shaped transition still
-  runs a plain fade at the moment a captured one starts (the two families
-  never chain outside a hand-built sequence), so there was no erase overlay
-  hiding the scene to worry about excluding — worth revisiting if that
-  assumption stops holding. Cross combine/division's exact quadrant motion
-  (diagonal from each screen corner) is this build's own reading, not
-  confirmed against RPG_RT — neither test bed exercises that specific style,
-  so the vertical/horizontal pair's confirmed-by-name motion was extended
-  rather than guessed from nothing. Covered by new checks in
-  `scripts/rpg2k_scene_check.rb`. Zoom, mosaic/wave and random blocks are
-  still unbuilt, per the per-style breakdown above.
+  vertical/horizontal combine and division; four for cross; one resampled crop
+  for zoom), staying pure logic exactly like `#visible_rects` above — no
+  `Graphics` access, so it is unit-testable without a renderer.
+  `Scene::Map#draw_captured_transition` snapshots the screen once (on the frame
+  a captured `Game::Transition` instance first appears, by object identity, so
+  a same-style transition right after it still re-snapshots) and composites the
+  pieces over a black fill every frame after — `blt` for every style but zoom,
+  `stretch_blt` for zoom (`Game::Transition#zoom?`) — disposing the snapshot
+  once the transition ends. The wrinkle above did not end up mattering in
+  practice: a shaped transition still runs a plain fade at the moment a
+  captured one starts (the two families never chain outside a hand-built
+  sequence), so there was no erase overlay hiding the scene to worry about
+  excluding — worth revisiting if that assumption stops holding. Cross
+  combine/division's exact quadrant motion (diagonal from each screen corner)
+  is this build's own reading, not confirmed against RPG_RT — neither test bed
+  exercises that specific style, so the vertical/horizontal pair's
+  confirmed-by-name motion was extended rather than guessed from nothing.
+
+  Zoom's own IN/OUT direction — which way the picture scales — used to have
+  nothing in either test bed to confirm it against and was left rather than
+  guessed. It is confirmed now: EasyRPG's `transition.cpp` always draws zoom's
+  destination as the full screen (`dst.StretchBlit(Rect(0, 0, w, h), *screen,
+  Rect(z_pos, z_size), 255)`) and instead shrinks or grows the *source* crop —
+  `z_size` ramps from the full capture down to nothing over the transition for
+  `TransitionZoomIn`, and the same ramp run backwards (from nothing up to the
+  full capture) for `TransitionZoomOut` — so **ZOOM_IN shrinks the departing
+  scene down to nothing (an Erase) and ZOOM_OUT grows the arriving scene back
+  out (a Show)**, both centred on the screen (EasyRPG itself centres on the
+  hero's screen position when the scene is the map; this class stays pure
+  geometry with no scene/player access, so it anchors on the screen centre
+  unconditionally, the same simplification cross combine/division's quadrant
+  motion above already documents). The RPG2003 test-bed's own Erase/Show Screen
+  parameters confirm setting 16 (zoom) is real, in-use data, not a corner case:
+  `ruby scripts/analyze_game.rb --params --code 11010 data/mtf-meido-action/Debug`
+  and `--code 11020` each show one use of param0 `16` among their mode tables.
+  Covered by new checks in `scripts/rpg2k_scene_check.rb`. Mosaic/wave and
+  random blocks are still unbuilt, per the per-style breakdown above.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already
