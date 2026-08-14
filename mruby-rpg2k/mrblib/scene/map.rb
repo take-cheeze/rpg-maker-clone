@@ -3670,18 +3670,45 @@ class RPG2k
       end
 
       # The four per-actor commands, in menu order (the cursor row is 1 + index,
-      # below the actor-name header), read from the database's battle-command
-      # terms with the standard RPG2k labels as fallback.
+      # below the actor-name header): **Attack, Skill, Defend, Item** — EasyRPG's
+      # `Scene_Battle_Rpg2k::CreateBattleCommandWindow` builds that exact array
+      # (`command_attack`, `command_skill`, `command_defend`, `command_item`),
+      # not the Item-before-Defend order this used to assume, read from the
+      # database's battle-command terms with the standard RPG2k labels as
+      # fallback. The Skill slot is not memoized any more: it substitutes the
+      # acting actor's own RPG2000 rename (`#skill_command_label` below) when
+      # the database sets one, so it can change from one actor's turn to the
+      # next. RPG2003's *own* battle-command customization (`Game::Actor
+      # #battle_commands`, edited by Change Battle Commands / a class change) is
+      # a separate list this menu still does not build from — still open, the
+      # same "reported gap, not silently invented" precedent the ATB toggle and
+      # menu-command entries elsewhere in this file already follow.
       def battle_commands
-        @battle_commands ||= [
+        [
           term(:battle_attack, 'Attack'),
-          term(:battle_skill, 'Skill'),
-          term(:battle_item, 'Item'),
-          term(:battle_defend, 'Defend')
+          skill_command_label,
+          term(:battle_defend, 'Defend'),
+          term(:battle_item, 'Item')
         ]
       end
 
-      # Per-actor command menu: Attack, Skill, Item or Defend.
+      # The Skill command's own label. RPG2000's Actor sheet has a "custom
+      # battle command" checkbox + name field (database fields 66/67,
+      # `Game::Actor#rename_skill?` / `#skill_command_name`) that renames just
+      # this one slot — EasyRPG's own `Game_Actor::GetSkillName`: `rename_skill
+      # ? skill_name : Data::terms.command_skill`. Parsed by the schema and
+      # never read anywhere in this gem before now, so a game that set it (e.g.
+      # renaming Skill to "Magic") showed the generic term regardless.
+      def skill_command_label
+        actor = current_actor_row
+        if actor && actor.respond_to?(:rename_skill?) && actor.rename_skill?
+          nonblank(actor.skill_command_name, term(:battle_skill, 'Skill'))
+        else
+          term(:battle_skill, 'Skill')
+        end
+      end
+
+      # Per-actor command menu: Attack, Skill, Defend or Item.
       def drive_battle_command
         if Input.trigger?(Input::DOWN)
           @battle_ui[:cmd] += 1
@@ -3733,10 +3760,10 @@ class RPG2k
           @battle_ui[:phase] = :target
           draw_battle_target
         when 1 then open_battle_skill
-        when 2 then open_battle_item
-        when 3 # Defend
+        when 2 # Defend
           @battle_ui[:battle].command_defend(current_actor)
           advance_actor
+        when 3 then open_battle_item
         end
       end
 
@@ -4730,12 +4757,15 @@ class RPG2k
         [text, STATUS_STATE_X, color]
       end
 
-      # The current actor's command menu — Attack / Skill / Item / Defend, with
+      # The current actor's command menu — Attack / Skill / Defend / Item, with
       # a cursor. RPG_RT does not put the actor's name in this window at all
       # (EasyRPG's `CreateBattleCommandWindow` builds it once from the four
-      # command terms, full stop): the acting actor is shown by the cursor
+      # command terms in that order): the acting actor is shown by the cursor
       # `#refresh_battle_status` puts on their row in the status window instead
-      # (EasyRPG's `status_window->SetIndex(actor_index)`).
+      # (EasyRPG's `status_window->SetIndex(actor_index)`). The Skill slot's own
+      # label can still change per actor (`#skill_command_label`), the same way
+      # EasyRPG's `RefreshCommandWindow` calls `SetItemText` on that one row
+      # after the window is built rather than rebuilding the whole thing.
       def draw_battle_command
         actor = current_actor
         return unless actor
