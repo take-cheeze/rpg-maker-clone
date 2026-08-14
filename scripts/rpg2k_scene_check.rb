@@ -3760,6 +3760,117 @@ check "Flash Sprite's own wait flag blocks a Parallel Process's own interpreter,
   ok st.switches[1], 'the Parallel Process resumed once the flash finished'
 end
 
+check "a Common Event Parallel Process's own Show Text now actually opens the shared message window" do
+  # docs/TODO.md "Two message windows can never be shown simultaneously -- a
+  # hard engine limit": #drive_parallel_wait had no :message case at all, so
+  # a Parallel Process's own Show Text fell into the generic "background:
+  # ignore message/choice requests" #resume branch and the interpreter
+  # sailed straight past it -- no window ever appeared, and the command right
+  # after it ran on the very next tick as if Show Text had been a no-op.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false,
+                      event: [
+                        ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi'),
+                        ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+                      ])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+
+  msg = open_msg(scene)
+  ok msg, "the Parallel Process's own Show Text opened the shared message window"
+  ok !st.switches[1],
+     'the command after Show Text has not run yet -- the process is blocked on the window'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # complete the (short) reveal
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # dismiss
+  ok !scene.instance_variable_get(:@message), 'message dismissed'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], 'the Parallel Process resumed and ran the command after Show Text'
+end
+
+check "a Map Event Parallel Process's own Show Choices now actually opens the shared message window" do
+  # Same defect class as Show Text just above, for the :choice wait kind.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0), # cancel forbidden
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'yes'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'no'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::END_BRANCH, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  msg = open_msg(scene)
+  ok msg, "the Parallel Process's own Show Choices opened the shared message window"
+  ok msg[:choice], 'the window is showing a choice list, not plain text'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # pick "yes" (index 0)
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'the choice window closed on pick'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], "the Parallel Process resumed into the picked choice's own branch"
+  ok !st.switches[2], 'the other branch never ran'
+end
+
+check "a Parallel Process's own Show Text waits for the foreground's already-open " \
+      'message window, then opens its own and resumes the right interpreter' do
+  # The cross-interpreter half of the "two message windows" rule: whichever
+  # interpreter -- foreground or a Parallel Process -- currently owns @message
+  # holds it until dismissed; a second, different interpreter reaching its own
+  # Show Text in the meantime must neither steal the window nor be dropped
+  # (the pre-fix generic #resume branch's bug) but block and retry, then open
+  # its own and resume *itself*, not whichever interpreter the window
+  # happened to belong to first (#open_message's `interp:` -- see there).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'first'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  parallel = page(trigger: 4)
+  parallel.event_commands = [
+    ECmd.new(ic::WAIT, [5]), # half a second: comfortably after 'first' opens
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'second'),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, parallel) },
+                    player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  msg = open_msg(scene)
+  ok msg, "the foreground's own Show Text opened the message window first"
+
+  40.times { scene.update } # the Parallel Process's own Wait elapses meanwhile
+  ok scene.instance_variable_get(:@message),
+     "the foreground's window is still the one open"
+  ok !st.switches[2],
+     "the Parallel Process's own Show Text must wait for the open window, not " \
+     'be silently dropped'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # complete the reveal of 'first'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # dismiss 'first', resume the foreground
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], 'the foreground resumed and ran its own command after Show Text'
+
+  msg2 = open_msg(scene)
+  ok msg2, "the Parallel Process's own Show Text finally opened, now that the window is free"
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # complete the reveal of 'second'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # dismiss 'second'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[2],
+     'the Parallel Process itself resumed (not the foreground) and ran its own command'
+end
+
 check "a forced route auto-runs to completion before an immediately-following Show Text opens (yado.tk)" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

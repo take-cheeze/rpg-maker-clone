@@ -4446,8 +4446,71 @@ not yet verified:
   restriction.
 
 **Message window / Show Choices / control characters**
-- Two message windows can never be shown simultaneously — a hard engine
-  limit.
+- ✅ **A Parallel Process's own Show Text/Show Choices now actually opens the
+  single shared message window, instead of being silently dropped** — closes
+  the missing half of "two message windows can never be shown
+  simultaneously — a hard engine limit," which this codebase's own single
+  `@message` slot already modelled correctly for the foreground but never
+  extended to a background process. `Scene::Map#drive_parallel_wait`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — the dispatch `#step_parallel` uses for
+  whichever wait kind a parallel-process interpreter is parked on — had cases
+  for `:wait`/`:key_input`/`:animation`/`:game_over`/`:movement`/`:teleport`/
+  `:screen`/`:picture`/`:sprite_flash` (each added over earlier rounds of this
+  same fix), but none for `:message` or `:choice`, the wait kinds
+  `Game::Interpreter#do_show_message`/`#do_show_choices` set — so a Common
+  Event or map event Parallel Process's own Show Text fell into the generic
+  `else` branch (`it.resume # background: ignore message/choice requests`)
+  and the interpreter sailed straight past it every frame, the command right
+  after it running as if Show Text had been a no-op; the window itself never
+  appeared. Fixed in two parts. First, `#open_message` gained an `interp:`
+  keyword (default `@interpreter`, so every pre-existing foreground call site
+  needs no change at all) recorded on the new window as `@message[:interp]`;
+  `#drive_message`'s choice-navigation branch and `#drive_text_message`
+  — the two places that already drove *whichever* window is currently open,
+  since `#drive_event`'s own `@message`/`@number_input` checks run ahead of
+  its `@interpreter.waiting?` dispatch and `#event_busy?` already treats a
+  live `@message` as busy regardless of which interpreter opened it — now
+  read `@message[:interp]` instead of hardcoding `@interpreter` for
+  `#choose`/`#cancel_choice`/`#choice_cancellable?`/`#message_followup`/
+  `#resume`, mirroring the same "generalize to a tracked owning interpreter"
+  shape the Show Battle Animation fix already used for a Parallel Process's
+  own animation (`@map_animation_interp`, see the "Full-site sweep" section
+  above). Second, `#drive_parallel_wait` gained `:message`/`:choice` cases
+  that call `open_message(it.message_lines, false, interp: it)` /
+  `open_message(it.choice_labels, true, interp: it)` only when `@message` is
+  `nil` — `#open_message`'s own pre-existing "already open" guard (`return
+  unless choice && @message[:awaiting_followup] == :choice`) is what then
+  enforces the one-window-at-a-time rule for *any* second requester, whether
+  that is the foreground's own next Show Text or a different interpreter's:
+  the request is simply dropped for that frame and the requesting interpreter
+  stays parked on its own wait, unresumed, to retry the next frame once the
+  window frees up — no busy-loop or dropped command either way. The
+  `:message` case additionally gates on `#forced_movement_done?` (not
+  `#step_forced_movement`, which actively steps every pending forced route
+  and would double-advance one on a frame both the foreground and a Parallel
+  Process reach their own Show Text on at once — the same reasoning the
+  `:movement` case above already documents), matching the existing "an
+  implicit auto-run also happens whenever the event hits a Wait or a Show
+  Text" rule; `:choice` has no such gate, matching `#drive_event`'s own
+  ungated `:choice` dispatch, since only Wait/Show Text are documented
+  auto-run trigger points. A Parallel Process's own message correctly blocks
+  bystander input/movement/other-event-starting the map-wide way any open
+  `@message` already does (`#event_busy?`), while other Parallel Processes
+  keep ticking independently of it exactly as an open message never pauses
+  them (`#parallels_paused?` only checks `@battle_ui`/a bursting foreground).
+  **Left open**: Input Number (`:number`) issued from a Parallel Process is
+  still silently dropped — `#open_number_input`'s standalone panel and its
+  merged-into-`@message` follow-up are both foreground-only machinery today,
+  a narrower, separate gap this fix does not close. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a Common Event Parallel Process's own
+  Show Text opens the window, blocks the command after it, then resumes once
+  dismissed; a map event Parallel Process's own Show Choices opens, and the
+  picked branch — not the other one — runs once resumed; a Parallel Process's
+  own Show Text blocks for the whole time the foreground's own message stays
+  open, then opens its own and resumes *itself*, not the foreground, proving
+  the tracked `interp:` owner is threaded through correctly rather than
+  hardcoded), all three confirmed to fail against the pre-fix code (the
+  window never opening, or opening on the wrong first attempt).
 - ✅ **A Face Graphic setting persists through the rest of the current event's
   execution content (not just the next message) and is auto-cleared when
   the event ends, but not before** — it must be explicitly "erased" to stop

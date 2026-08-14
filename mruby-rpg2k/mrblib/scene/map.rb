@@ -1405,6 +1405,47 @@ class RPG2k
           # its context is gone post-transfer".
           perform_teleport(it.teleport)
           it.resume
+        elsif it.wait_kind == :message
+          # Show Text issued from a Parallel Process: real RPG_RT has exactly
+          # one global message window, so this one shares @message with the
+          # foreground rather than getting a background mechanism of its own
+          # (docs/TODO.md "Two message windows can never be shown
+          # simultaneously -- a hard engine limit"). Before this branch
+          # existed this fell into the generic "background: ignore message/
+          # choice requests" #resume below, so a Parallel Process's own Show
+          # Text silently never displayed at all -- the interpreter sailed
+          # straight past it as if the command had not run. #open_message's
+          # own pre-existing "already open" guard (see there) is what
+          # enforces the one-window-at-a-time rule here: this call only opens
+          # a window when @message is nil, and simply leaves `it` parked on
+          # its own :message wait otherwise, to retry next frame once
+          # whichever window is currently up (the foreground's or another
+          # Parallel Process's) closes -- the same block-and-retry shape
+          # already used for :screen/:picture/:sprite_flash just below.
+          # #drive_event's own @message dispatch (unconditional on
+          # #event_busy?, which @message alone already forces true) then
+          # drives it to completion and resumes the tracked `interp:` owner,
+          # not always @interpreter, matching the generalisation that already
+          # threads a Common Event Parallel Process's own Show Battle
+          # Animation through a tracked owner (@map_animation_interp) rather
+          # than hardcoding the foreground.
+          #
+          # Gated on #forced_movement_done? rather than #step_forced_movement
+          # for the same reason the :movement branch above is: the pending
+          # routes are already stepped once a frame elsewhere, and stepping
+          # them again here would double-advance one on any frame both the
+          # foreground and a Parallel Process happen to reach their own
+          # Show Text on at once.
+          if @message.nil? && forced_movement_done?
+            open_message(it.message_lines, false, interp: it)
+          end
+        elsif it.wait_kind == :choice
+          # Show Choices issued from a Parallel Process: the same shared
+          # single window as :message just above, with no implicit-auto-run
+          # gate of its own -- matching #drive_event's own ungated :choice
+          # dispatch, since only Wait/Show Text are documented auto-run
+          # trigger points, not Show Choices.
+          open_message(it.choice_labels, true, interp: it) if @message.nil?
         elsif it.wait_kind == :screen
           # Erase/Show/Tint/Flash/Pan/Shake Screen issued with its own wait
           # flag from a Parallel Process: block that process until the effect
@@ -1425,7 +1466,13 @@ class RPG2k
           # the :screen/:picture cases just above.
           it.resume unless sprite_flashing?
         else
-          it.resume # background: ignore message/choice requests
+          # :message and :choice are handled above now; an Input Number
+          # request (:number) is the one wait kind still silently dropped
+          # here -- #open_number_input's standalone (no preceding Show Text)
+          # panel and its embedded-in-@message follow-up are both
+          # foreground-only machinery today, a narrower, separate gap left
+          # open by this fix.
+          it.resume
         end
       end
 
@@ -6772,7 +6819,16 @@ class RPG2k
         party.respond_to?(:leader) ? party.leader : nil
       end
 
-      def open_message(lines, choice)
+      # `interp:` is whichever interpreter's Show Text/Show Choices this window
+      # answers to -- the foreground @interpreter by default, or a Parallel
+      # Process's own interpreter when #drive_parallel_wait opens one (see
+      # there). #drive_message/#drive_text_message read @message[:interp]
+      # rather than @interpreter directly, so the window drives and resumes
+      # the interpreter that actually asked for it either way; the "one
+      # message window at a time" rule (yado.tk) that already made a second
+      # same-frame call from @interpreter itself no-op below now equally holds
+      # off a second, different interpreter's request until this one closes.
+      def open_message(lines, choice, interp: @interpreter)
         if @message
           # A Show Choices that directly follows a Show Text keeps the same
           # window: append the choice list below the text already on screen
@@ -6841,7 +6897,7 @@ class RPG2k
         end
         @message = { window: win, choice: choice, count: plain.length,
                      choice_start: 0, reveal: reveal, contents: contents,
-                     inner_w: inner_w, seg_lines: seg_lines,
+                     inner_w: inner_w, seg_lines: seg_lines, interp: interp,
                      face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
                      text_x: text_x, text_w: text_w, gold_window: gold_window,
@@ -7099,15 +7155,17 @@ class RPG2k
           elsif Input.trigger?(Input::C)
             play_system_se(SFX_DECISION)
             index = @choice_index
+            interp = @message[:interp]
             close_message
-            @interpreter.choose(index)
-          elsif Input.trigger?(Input::B) && @interpreter.choice_cancellable?
+            interp.choose(index)
+          elsif Input.trigger?(Input::B) && @message[:interp].choice_cancellable?
             # The Show Choices block says what cancelling means (pick a given
             # choice, or run its [Cancel] branch); a block that forbids it
             # swallows the key, as RPG_RT does.
             play_system_se(SFX_CANCEL)
+            interp = @message[:interp]
             close_message
-            @interpreter.cancel_choice
+            interp.cancel_choice
           end
         else
           drive_text_message
@@ -7201,6 +7259,7 @@ class RPG2k
       MSG_PAUSE_FULL = 61
 
       def drive_text_message
+        interp = @message[:interp]
         reveal = @message[:reveal]
         confirm = Input.trigger?(Input::C) || Input.trigger?(Input::B)
         # Holding Shift during Test Play fast-forwards dialogue *while it is
@@ -7230,7 +7289,7 @@ class RPG2k
         end
         # `\^` closes the finished window on its own; otherwise wait for a button.
         if reveal.auto_close? || confirm
-          followup = @interpreter.message_followup
+          followup = interp.message_followup
           if followup
             # A Show Choices / Input Number immediately follows this Show Text:
             # RPG_RT keeps the same window up, with the choices / digit entry
@@ -7239,7 +7298,7 @@ class RPG2k
           else
             close_message
           end
-          @interpreter.resume
+          interp.resume
         else
           @message[:window].pause = true
         end
