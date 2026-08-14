@@ -98,13 +98,18 @@ class RPG2k
 
         confirmed = Input.trigger?(Input::C)
         if confirmed && @selected_index == 1 && !@continue_available
-          # Continue is grayed out with nothing to resume: the selection key
-          # is ignored rather than landing on parent.continue_game's own
-          # "no save data" stub.
+          # Continue is grayed out with nothing to resume, but confirming it
+          # anyway is not silent -- confirmed against EasyRPG's own
+          # `Scene_Title::CommandContinue`, whose disabled branch is
+          # `SePlay(...SFX_Buzzer...); return;`, not a plain no-op (the
+          # enabled check lives inside the handler itself, not a guard in
+          # `vUpdate()` around calling it at all).
+          play_system_se(SFX_BUZZER)
         elsif confirmed || (auto = auto_select?)
           Audio.bgm_stop
           case @selected_index
           when 0  # New Game
+            play_system_se(SFX_DECISION)
             parent.start_new_game
           when 1  # Continue
             # A real player picks the slot themselves on the file-select list
@@ -114,8 +119,15 @@ class RPG2k
             # before this screen existed, which is all
             # scripts/compare-nepheshel-wine.bash (watching stderr for the
             # [RPG2k-MAP] marker only #continue_game emits) needs.
+            play_system_se(SFX_DECISION)
             auto ? parent.continue_game : parent.push(Scene::SaveLoad.new(parent, nil, :load))
           when 2  # Shutdown
+            # No confirmation dialog -- EasyRPG's own `CommandShutdown` plays
+            # Decision then exits immediately (a fade-out transition into
+            # `Scene::Pop`), unlike the field menu's own End Game command,
+            # which pushes a yes/no confirm screen this runtime does not
+            # model either.
+            play_system_se(SFX_DECISION)
             exit
           end
         end

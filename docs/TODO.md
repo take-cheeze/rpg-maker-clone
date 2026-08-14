@@ -2383,11 +2383,29 @@ The work below is roughly ordered by the critical path to a walkable game
   all wire cursor moves to Cursor SE, B to Cancel SE, and each confirm to
   Decision or Buzzer per the source above (including a "no effect" item/
   skill use, which the source's own `scene_item.cpp` treats the same as any
-  other refused confirm). **Not modelled:** `Scene::Title`'s own Decision/
-  Buzzer on New Game/Continue/Shutdown (it already had Cursor SE from an
-  earlier pass, `#play_cursor_se`, reading the database directly rather
-  than through a game state that does not exist yet at the title screen);
-  this is a smaller, same-shape gap left for a future pass. Verified this
+  other refused confirm). **Not modelled, at the time:** `Scene::Title`'s own
+  Decision/Buzzer on New Game/Continue/Shutdown (it already had Cursor SE
+  from an earlier pass, `#play_cursor_se`, reading the database directly
+  rather than through a game state that does not exist yet at the title
+  screen). ✅ **Now fixed too**, and it turned up a genuine, not just
+  missing-feature, gap along the way: confirmed against EasyRPG's own
+  `Scene_Title::CommandContinue` (`src/scene_title.cpp`, fetched verbatim),
+  a grayed-out Continue with no save to resume is **not silent** when
+  confirmed -- `if (continue_enabled || Shift) { ...Decision... } else {
+  ...Buzzer...; return; }`, i.e. the enabled check lives *inside* the
+  command handler, not as a guard around calling it at all, so RPG_RT plays
+  Buzzer there rather than doing nothing. This engine's own title screen
+  used to just eat the key silently (a real behavioural gap, not merely an
+  absent SE) -- `Scene::Title#update`'s disabled-Continue branch now plays
+  `SFX_BUZZER`, and the New Game / (enabled) Continue / Shutdown branches
+  each play `SFX_DECISION` right before acting, matching
+  `CommandNewGame`/`CommandContinue`/`CommandShutdown` exactly (Shutdown
+  has no confirmation dialog either way -- EasyRPG's own version fades out
+  and pops immediately, same as this engine's plain `exit`).
+  `scripts/rpg2k_scene_check.rb`'s existing disabled-Continue check
+  (previously titled "...does nothing") is renamed and its comment updated
+  to describe the Buzzer rather than silence, without loosening what it
+  actually asserts (still zero scenes pushed). Verified this
   engine's own build under Xvfb reaches Menu -> actor-selection -> Skill and
   back with no exception and no `[RPG2k] system SE ... playback failed`
   logged (audio itself is silent in this sandboxed container -- no ALSA
