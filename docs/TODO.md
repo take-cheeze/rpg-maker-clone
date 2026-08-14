@@ -6699,6 +6699,56 @@ above are repeated here)
   coverage is unaffected, since a Seed item is never equippable in the first
   place (`Actor#equip_slot_for`/`#equip_item` gate on item `type` 1-5, Seed
   is type 8).
+- ✅ **A state's "Avoid Attacks" flag (RPG2003, field 36, `avoid_attacks`)
+  is now implemented — found via the same "parsed by the schema, read
+  nowhere in `mruby-rpg2k`" sweep that already caught `levitate`/
+  `transparent` above.** `LCF::Schema`'s `situation` (state) table
+  (`mruby-lcf/mrblib/schema.rb`) already decoded the field off every
+  database, but `Game::Battle#to_hit` (`mruby-rpg2k/mrblib/game.rb`) never
+  consulted it, so a state built for exactly this purpose — RPG2000's
+  closest thing to a guaranteed-dodge "Blink"/intangibility status — did
+  nothing at all: a target carrying it still resolved a basic attack
+  through the ordinary hit-rate/agility math like any unafflicted target.
+  Verified against EasyRPG Player's actual C++ source rather than guessed
+  at: `Game_Battler::EvadesAllPhysicalAttacks` (`src/game_battler.cpp`) scans
+  the target's own inflicted states for the flag, and `Algo::
+  CalcNormalAttackToHit` (`src/algo.cpp`) checks it **first**, ahead of
+  every other term — including the "a `Restriction_do_nothing` target
+  always gets hit" rule right below it and a 必中 (`ignores_evasion`)
+  attacker's own evasion-skip branch further down — returning a flat `0`
+  the instant it answers true, with nothing able to override it. (The
+  sibling skill-side check, `CalcSkillToHit`'s own
+  `easyrpg_affected_by_evade_all_physical_attacks` gate, is an EasyRPG-only
+  runtime extension with no backing LCF field at all — not something a
+  plain `.ldb` this project reads can ever set — so this fix is correctly
+  scoped to the basic-attack path alone, matching what a real, unmodified
+  RPG2003 database can actually express.) Fixed with a new
+  `Game::Battle#evades_all_physical?(b)` (scanning `b.states` via
+  `state_def`/`state_field`, the identical shape `#hit_modifier` already
+  uses for `reduce_hit_ratio` a few lines below) and a `return 0 if
+  evades_all_physical?(target)` at the very top of `#to_hit`, before the
+  attacker's own base hit rate is even read — mirroring
+  `CalcNormalAttackToHit`'s own ordering exactly, so the state wins over a
+  必中 attacker or a restricted target the same way real RPG_RT's does. Not
+  edition-gated: `EvadesAllPhysicalAttacks` carries no
+  `Player::IsRPG2k3()` check of its own in the C++ source, so — matching
+  this codebase's usual "trust the data" stance for flags real RPG_RT
+  itself never conditions on the running edition — the fix applies
+  unconditionally to whatever state row sets the flag, RPG2000 database
+  included (the RPG2000 editor simply never exposes a way to set it).
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (a slow, low-agility
+  target that would otherwise land a hit-rate roll in its attacker's favour
+  dodges every basic attack unconditionally once flagged; an unafflicted
+  bystander in the same fight is unaffected; a 必中 attacker cannot bypass
+  it; a second, unrelated state alongside it changes nothing), confirmed to
+  fail against the pre-fix code (`expected 0, got 95`) before the fix.
+  **Left open, a separate and more involved feature**: the sibling RPG2003
+  state fields `reflect_magic` (skill/magic attacks bounce back onto their
+  caster, `Game_Battler::HasReflectState` /
+  `Game_BattleAlgorithm::Skill::IsReflected` in the same C++ source) and
+  `cursed` (`Game_Actor`'s own separate, unrelated usage) — both still
+  parsed but unread here, and both needing real target-redirection/removal
+  logic rather than a single early-return, unlike this narrower fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for
