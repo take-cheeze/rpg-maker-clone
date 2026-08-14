@@ -6136,7 +6136,7 @@ module Game
     # 999 either, no matter how large `recover_hp_rate` x max_hp computes it.
     RECOVER_CAP = 999
 
-    attr_reader :allies, :enemies, :rounds, :result, :log, :rng
+    attr_reader :allies, :enemies, :rounds, :result, :log, :rng, :escape_chance
 
     # `states` is an optional state-definition lookup (`[id]` -> a row exposing
     # `restriction` / `hp_change_val` / `hp_change_max` / `sp_change_val` /
@@ -6176,8 +6176,16 @@ module Game
       @ai = ai
       @rounds = 0
       @result = nil
-      @escaped = false     # set once the party successfully flees (#attempt_escape)
-      @escape_chance = nil # lazily computed from agilities on the first attempt
+      @escaped = false # set once the party successfully flees (#attempt_escape)
+      # Computed once, right here at battle start -- EasyRPG's Scene_Battle::Start
+      # calls InitEscapeChance() exactly once, before any turn runs, and
+      # #attempt_escape only ever adds to that one fixed starting value on a
+      # failure (Scene_Battle::TryEscape's `escape_chance += 10`); nothing
+      # re-derives it from the agilities again later. Computing it lazily on
+      # the first #attempt_escape call instead (as this used to) reads
+      # whatever a state has done to someone's agility by that point in the
+      # fight rather than what the roster carried when the fight began.
+      @escape_chance = compute_escape_chance
       @force_flee = false  # a battle page granted the party a guaranteed escape
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
@@ -6386,25 +6394,46 @@ module Game
       ally.action = nil; ally.defending = false; ally.command = nil; ally.skip = true
     end
 
-    # Average agility of the living battlers on `side` (0 when the side is wiped),
-    # state-adjusted (see #effective_agi).
+    # Average agility of every battler on `side` (EasyRPG's
+    # Game_Party_Base::GetAverageAgility, an int-truncating sum / count), 1 for
+    # an empty side (its own `battlers.empty() ? 1 : ...` fallback, so a
+    # division downstream never sees a zero party). **A fallen battler still
+    # counts**: GetAverageAgility sums over GetBattlers (every member) rather
+    # than GetActiveBattlers (the not-dead-or-hidden subset one might reach for
+    # here) -- there is no live/dead branch in it at all -- so a fight where two
+    # of four party members are already down still divides by four and adds
+    # their agility in, not the two survivors'. Each battler's own #effective_agi
+    # already folds in any agi-affecting state (GetAgi()'s own AdjustParam),
+    # which a death itself does not reset or exclude.
     def avg_agi(side)
-      living = side.reject(&:dead?)
-      return 0 if living.empty?
-      living.reduce(0) { |s, b| s + effective_agi(b) } / living.size
+      return 1 if side.empty?
+      side.reduce(0) { |s, b| s + effective_agi(b) } / side.size
     end
 
-    # The party's current escape chance as a percentage (0..100). On the first
-    # attempt it is EasyRPG's InitEscapeChance -- 150 - 100 * enemyAgi / partyAgi,
-    # clamped -- so a nimbler party flees more often and a slower one struggles;
-    # an agility-less party falls back to a coin toss. Each failed attempt adds
-    # 10 (see #attempt_escape).
-    def escape_chance
-      return @escape_chance unless @escape_chance.nil?
+    # The escape chance this fight started with, as a percentage (0..100)
+    # (see the class's own `attr_reader` above) -- fixed at construction by
+    # #compute_escape_chance and only ever bumped by +10 per failed
+    # #attempt_escape from there, ported from EasyRPG's
+    # Scene_Battle::InitEscapeChance() / TryEscape(), neither of which touches
+    # the agilities again once the fight is under way.
+    #
+    # EasyRPG's InitEscapeChance: 150 - round(100 * enemyAgi / partyAgi),
+    # clamped 0..100, so a nimbler party flees more often and a slower one
+    # struggles; an agility-less party falls back to a coin toss (partyAgi is
+    # never actually 0 here -- #avg_agi floors at 1 -- so this branch is a
+    # defensive guard against a Ruby ZeroDivisionError rather than a case
+    # InitEscapeChance itself has to handle). **The ratio is rounded to the
+    # nearest percent, not truncated**: InitEscapeChance computes it in
+    # `double` and finishes with `Utils::RoundTo<int>` (`std::lrint`, "RPG_RT /
+    # Delphi compatible rounding"), unlike this same battle's own #to_hit
+    # agility term, which RPG_RT computes in `float` and truncates on its
+    # implicit int conversion -- the two nearby agility-ratio formulas round
+    # differently in the reference itself, not just here.
+    def compute_escape_chance
       pa = avg_agi(@allies)
       ea = avg_agi(@enemies)
-      base = pa > 0 ? 100 * ea / pa : 100
-      @escape_chance = Game.clamp(150 - base, 0, 100)
+      base = pa > 0 ? (100.0 * ea / pa).round : 100
+      Game.clamp(150 - base, 0, 100)
     end
 
     # Attempt to flee the fight. A `preemptive` first strike always succeeds, as
