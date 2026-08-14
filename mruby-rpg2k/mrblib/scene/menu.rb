@@ -1,9 +1,15 @@
 class RPG2k
   module Scene
     # Main menu, opened over the map with the cancel button. Shows party status
-    # and a command list. Item, Skill, Equip and Status each push their own
-    # scene (Scene::ItemMenu / SkillMenu / EquipMenu / StatusMenu); Save opens
-    # the file-select screen (Scene::SaveLoad, in :save mode) and End Game
+    # and a command list. Item and Save act immediately; Skill, Equip and
+    # Status instead hand input focus to the party-status panel so the
+    # player picks *which actor* first (UP/DOWN, confirmed with C) before
+    # the corresponding scene (Scene::SkillMenu / EquipMenu / StatusMenu)
+    # opens for that one -- confirmed against EasyRPG's own
+    # `Scene_Menu::UpdateCommand`/`UpdateActorSelection` (`Skill`/
+    # `Equipment`/`Status`/`Row` all share this shape; RPG2003's Row, the
+    # battle front/back toggle, is not modelled here). Cancelling back out
+    # of actor selection returns focus to the command list. End Game
     # returns to the title. Any further command (there are none left in the
     # built command list today) falls back to a "not implemented yet" message.
     class Menu < Base
@@ -56,6 +62,9 @@ class RPG2k
         super parent
         @state = state
         @index = 0
+        @focus = :command       # :command (command list) or :actors (party-status panel)
+        @actor_index = 0
+        @pending_key = nil      # which command actor selection is for (:skill/:equip/:status)
         @message = nil
         @skin = make_windowskin
         @background = build_field_background(@skin)
@@ -98,7 +107,12 @@ class RPG2k
 
       def update
         return drive_message if @message
+        @focus == :actors ? update_actor_selection : update_command
+      end
 
+      private
+
+      def update_command
         if Input.trigger?(Input::DOWN)
           @index += 1
           @index %= @commands.size
@@ -114,7 +128,52 @@ class RPG2k
         end
       end
 
-      private
+      # Picking who Skill/Equip/Status applies to, on the party-status panel
+      # -- see the class comment. Entered by #select_command, left either by
+      # cancelling back to the command list or by successfully opening the
+      # chosen scene.
+      def update_actor_selection
+        party = @state.party.actors
+        if Input.trigger?(Input::B)
+          leave_actor_selection
+        elsif Input.trigger?(Input::DOWN)
+          @actor_index += 1
+          @actor_index %= party.size
+          refresh_status_cursor
+        elsif Input.trigger?(Input::UP)
+          @actor_index -= 1
+          @actor_index %= party.size
+          refresh_status_cursor
+        elsif Input.trigger?(Input::C)
+          confirm_actor_selection
+        end
+      end
+
+      def confirm_actor_selection
+        actor = @state.party.actors[@actor_index]
+        # A currently-restricted actor (asleep/paralysed) cannot be given a
+        # Skill command at all -- confirmed against EasyRPG's own
+        # `UpdateActorSelection`, whose Skill case alone gates on
+        # `actor->CanAct()`; Equip/Status have no such gate. Checked first,
+        # and left in actor-selection focus on failure (matching
+        # `UpdateActorSelection`'s own early `return` there), so the player
+        # can simply pick someone else.
+        return if @pending_key == :skill && !actor.can_act?
+        key, index = @pending_key, @actor_index
+        leave_actor_selection
+        case key
+        when :skill  then @parent.push Scene::SkillMenu.new(@parent, @state, index)
+        when :equip  then @parent.push Scene::EquipMenu.new(@parent, @state, index)
+        when :status then @parent.push Scene::StatusMenu.new(@parent, @state, index)
+        end
+      end
+
+      def leave_actor_selection
+        @focus = :command
+        @pending_key = nil
+        @command.active = true if @command
+        @status.active = false if @status
+      end
 
       # The command list this menu shows, in order: RPG2000's fixed five, or
       # RPG2003's customizable subset (plus an unconditional End Game at the
@@ -164,6 +223,11 @@ class RPG2k
                        "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
         end
         @status.contents = sc
+        # No cursor of its own until Skill/Equip/Status hands it focus (see
+        # #enter_actor_selection) -- Window#draw_cursor draws nothing at all
+        # while a window is inactive, the same mechanism the command list's
+        # own cursor disappears through once focus leaves it.
+        @status.active = false
       end
 
       def refresh_cursor
@@ -171,17 +235,34 @@ class RPG2k
           Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
       end
 
+      # Height of one party-status row (see #build_windows's own `y = i *
+      # 40`) -- the party-status panel's cursor cell spans one whole row.
+      STATUS_ROW_H = 40
+
+      def refresh_status_cursor
+        @status.cursor_rect =
+          Rect.new(0, @actor_index * STATUS_ROW_H, @status.contents.width, STATUS_ROW_H)
+      end
+
+      # Hand input focus to the party-status panel so the player picks which
+      # actor `key` (:skill/:equip/:status) applies to -- see the class
+      # comment and #confirm_actor_selection.
+      def enter_actor_selection(key)
+        @focus = :actors
+        @pending_key = key
+        @actor_index = 0
+        @command.active = false
+        @status.active = true
+        refresh_status_cursor
+      end
+
       def select_command
         key, label = @commands[@index]
         case key
         when :item
           @parent.push Scene::ItemMenu.new(@parent, @state)
-        when :skill
-          @parent.push Scene::SkillMenu.new(@parent, @state)
-        when :equip
-          @parent.push Scene::EquipMenu.new(@parent, @state)
-        when :status
-          @parent.push Scene::StatusMenu.new(@parent, @state)
+        when :skill, :equip, :status
+          enter_actor_selection(key) unless @state.party.actors.empty?
         when :save
           # A disabled Save command (Change Save Access off) just refuses the
           # selection outright -- confirmed against EasyRPG's own

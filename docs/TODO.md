@@ -2256,14 +2256,36 @@ The work below is roughly ordered by the critical path to a walkable game
   Skill screen already only ever showed the leader in practice, since it
   has no menu-side actor picker either, so nothing that previously worked
   stopped working), freeing LEFT/RIGHT for the confirmed grid navigation.
-  Real RPG_RT's actual way to check a *different* actor's skills --
-  `Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row` branch
-  (all four, identically) hands input focus to the menu's own party list
-  so the player picks an actor there (UP/DOWN) *before* a specific
-  `Scene_Skill`/`Scene_Equip`/etc. is even constructed -- remains
-  unimplemented (`Scene::Menu`'s own party-status panel is a plain display,
-  not a cursor-navigable list yet), a real, separate, larger follow-up
-  covering Equip and Status too, but no longer blocking this one.
+  ✅ **Real RPG_RT's actual way to check a *different* actor's skills is now
+  implemented too.** `Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/
+  `Status`/`Row` branch (all four, identically) hands input focus to the
+  menu's own party list so the player picks an actor there (UP/DOWN)
+  *before* a specific `Scene_Skill`/`Scene_Equip`/etc. is even constructed
+  (`Scene_Menu::UpdateActorSelection`, confirmed with the same source read
+  that found the Skill grid). `Scene::Menu` gains an `@focus` state
+  (`:command` or `:actors`), `#enter_actor_selection`/
+  `#confirm_actor_selection`/`#leave_actor_selection`, and a cursor on its
+  own `@status` party panel (`#refresh_status_cursor`) -- toggling
+  `Window#active` on `@command`/`@status` hides/shows each one's cursor via
+  the same mechanism `#draw_cursor` already gates on. Skill/Equip/Status
+  all take a new third constructor argument (the preselected actor's
+  index, default 0 for callers with no picker, e.g. the host test
+  harnesses) -- `Scene::EquipMenu`/`StatusMenu` keep their own existing
+  in-screen LEFT/RIGHT switching once opened (both confirmed via source to
+  have it, `scene_equip.cpp`/`scene_status.cpp`), `Scene::SkillMenu` does
+  not (per the grid fix above). `Game::Actor#can_act?` (a new, host-tested
+  method: false only when a currently-active state's `restriction` is
+  `RESTRICTION_DO_NOTHING`, porting EasyRPG's `Game_Battler::CanAct()`
+  exactly, including its deliberate choice not to check death separately)
+  gates the Skill case alone, matching `UpdateActorSelection`'s own
+  `actor->CanAct()` check there -- Equip/Status have no such gate. Verified
+  visually with this engine's own build: selecting Skill now shows the
+  party-status panel with its own cursor (the command list's cursor
+  disappears), and confirming an actor opens Skill for them.
+  RPG2003's Row (battle front/back toggle) shares the same menu-side gating
+  in real RPG_RT but is not modelled here at all (a pre-existing,
+  documented gap elsewhere), so it is left out of `Scene::Menu`'s own
+  `select_command` entirely rather than wired to a no-op.
   - The item count's separator glyph question is settled by the same source
     read two bullets up (`Window_Item`'s own default is `":"`) -- not a bug,
     the wine capture that looked like "＝" was almost certainly a colon

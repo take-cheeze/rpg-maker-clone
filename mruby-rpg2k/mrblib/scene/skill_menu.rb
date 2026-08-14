@@ -13,18 +13,17 @@ class RPG2k
     # cast_skill / cast_escape_skill / cast_teleport_skill), host-tested;
     # this is the RGSS UI over it.
     #
-    # There is no way to switch caster once this screen is open --
-    # confirmed against EasyRPG Player's own source (`scene_skill.h`'s
-    # `actor_index` is a constructor parameter `Scene_Skill::vUpdate` never
-    # changes, unlike `Scene_Equip`'s own LEFT/RIGHT actor-switch). Real
-    # RPG_RT instead hands input focus to the *menu's own party list* when
-    # Skill is selected there, letting the player pick which actor first
+    # There is no way to switch caster once this screen is open -- confirmed
+    # against EasyRPG Player's own source (`scene_skill.h`'s `actor_index`
+    # is a constructor parameter `Scene_Skill::vUpdate` never changes,
+    # unlike `Scene_Equip`'s own LEFT/RIGHT actor-switch). Real RPG_RT
+    # instead hands input focus to the *menu's own party list* when Skill
+    # is selected there, letting the player pick which actor first
     # (`Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row`
-    # branch); this engine has no such picker yet (see docs/TODO.md), so
-    # this screen always shows the party leader, same as it always could
-    # reach without that picker anyway -- unlike the LEFT/RIGHT in-screen
-    # switching this class used to have, which real RPG_RT's Skill screen
-    # never had to begin with.
+    # branch) -- `Scene::Menu#enter_actor_selection` now ports that, and
+    # passes the chosen actor's index in here as the third constructor
+    # argument (default 0, the leader, for callers that never had a picker
+    # to begin with, e.g. the host test harnesses).
     class SkillMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -37,11 +36,11 @@ class RPG2k
       # caster-switching (see the class comment above).
       COLUMN_MAX = 2
 
-      def initialize parent, state
+      def initialize parent, state, actor_index = 0
         super parent
         @state = state
         @skin = make_windowskin
-        @caster_index = 0
+        @caster_index = actor_index
         @skill_index = 0
         @target_index = 0
         @teleport_index = 0

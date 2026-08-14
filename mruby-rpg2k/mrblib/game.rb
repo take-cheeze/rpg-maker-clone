@@ -1367,6 +1367,21 @@ module Game
       @states.include?(state_id)
     end
 
+    # Whether this actor may be handed a Skill command at all right now:
+    # false only when a currently-inflicted state fully restricts action
+    # (asleep, paralysed). Ports EasyRPG's own `Game_Battler::CanAct()`,
+    # which (deliberately) does not check death separately, just this
+    # restriction -- `Scene::Menu`'s own actor-selection panel is the one
+    # caller, gating the Skill command the same way
+    # `Scene_Menu::UpdateActorSelection`'s Skill case does.
+    def can_act?
+      table = @db.respond_to?(:situation) ? @db.situation : nil
+      !@states.any? do |id|
+        row = Game::States.row(id, table)
+        row && row.respond_to?(:restriction) && row.restriction == Battle::RESTRICTION_DO_NOTHING
+      end
+    end
+
     # Inflict a status condition (no-ops for an absent/duplicate id). Inflicting
     # the death state (戦闘不能) knocks the actor out, zeroing HP.
     def add_state(state_id)

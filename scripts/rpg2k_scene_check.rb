@@ -9340,6 +9340,8 @@ class MenuStubActor
   end
   def exp_to_next; 120; end
   def add_state(id); @states.push(id) unless @states.include?(id); end
+  attr_accessor :can_act_flag
+  def can_act?; @can_act_flag.nil? ? true : @can_act_flag; end
   attr_accessor :equipment_fixed_flag
   def equipment_fixed?; !!@equipment_fixed_flag; end
   attr_accessor :cursed_slot
@@ -9430,15 +9432,30 @@ check 'Scene::Menu: the main command cursor wraps around' do
   eq 0, scene.instance_variable_get(:@index), 'Down from the last command wraps to the first'
 end
 
-check 'Scene::Menu: choosing Item pushes Scene::ItemMenu (and the rest their own scenes)' do
+check 'Scene::Menu: choosing Item pushes Scene::ItemMenu directly' do
   # RPG2K_COMMAND_KEYS order is Item, Skill, Equip, Save, End Game -- RPG2000
   # has no Status entry at all (see Scene::Menu's own doc comment, ported from
-  # EasyRPG's Scene_Menu::CreateCommandWindow); the first three each push their
-  # own scene onto the parent stack rather than falling into the generic "not
-  # implemented yet" message -- confirm the field Item command actually reaches
-  # Scene::ItemMenu, and its neighbours are not stubs.
+  # EasyRPG's Scene_Menu::CreateCommandWindow). Item acts on one confirm,
+  # unlike Skill/Equip/Status below, which hand focus to the party-status
+  # panel first -- confirm Item actually reaches Scene::ItemMenu rather than
+  # falling into the generic "not implemented yet" message.
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  pushed = scene.parent.pushed.last
+  ok pushed.is_a?(RPG2k::Scene::ItemMenu), "command #0 pushes a live Scene::ItemMenu, got #{pushed.class}"
+end
+
+check 'Scene::Menu: choosing Skill/Equip hands focus to the party-status panel, ' \
+      'a second confirm there opens the scene for the picked actor' do
+  # Confirmed against EasyRPG's own Scene_Menu::UpdateCommand /
+  # UpdateActorSelection: Skill/Equipment/Status don't open immediately --
+  # the command list goes inactive, the party-status panel goes active, and
+  # only confirming an actor there pushes the real scene (constructed with
+  # that actor's index, the third constructor argument).
   {
-    0 => RPG2k::Scene::ItemMenu,
     1 => RPG2k::Scene::SkillMenu,
     2 => RPG2k::Scene::EquipMenu,
   }.each do |index, klass|
@@ -9447,9 +9464,68 @@ check 'Scene::Menu: choosing Item pushes Scene::ItemMenu (and the rest their own
     RGSS::Input.triggered = [RGSS::Input::C]
     scene.update
     RGSS::Input.reset
+    eq :actors, scene.instance_variable_get(:@focus),
+       "command ##{index} hands focus to the party-status panel, not an immediate push"
+    ok scene.parent.pushed.empty?, 'nothing pushed yet'
+
+    RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second party member
+    scene.update
+    RGSS::Input.reset
+    eq 1, scene.instance_variable_get(:@actor_index)
+
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.reset
     pushed = scene.parent.pushed.last
-    ok pushed.is_a?(klass), "command ##{index} pushes a live #{klass}, got #{pushed.class}"
+    ok pushed.is_a?(klass), "confirming the actor pushes a live #{klass}, got #{pushed.class}"
+    eq :command, scene.instance_variable_get(:@focus), 'back to command focus once pushed'
   end
+end
+
+check 'Scene::Menu: cancelling actor selection returns focus to the command list' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 1)              # Skill
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :actors, scene.instance_variable_get(:@focus)
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :command, scene.instance_variable_get(:@focus)
+  ok scene.parent.pushed.empty?, 'nothing was ever pushed'
+end
+
+check 'Scene::Menu: a restricted actor cannot be given the Skill command, ' \
+      'unlike Equip' do
+  # Confirmed against EasyRPG's own Scene_Menu::UpdateActorSelection: its
+  # Skill case alone gates on actor->CanAct(); Equipment/Status do not.
+  st = wrap_menu_state
+  st.party.actors.first.can_act_flag = false
+  scene = menu_scene(RPG2k::Scene::Menu, st)
+  scene.instance_variable_set(:@index, 1)              # Skill
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]             # confirm the (restricted) first actor
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.pushed.empty?, 'nothing pushed for a restricted actor'
+  eq :actors, scene.instance_variable_get(:@focus), 'stays in actor selection -- pick someone else'
+
+  RGSS::Input.triggered = [RGSS::Input::B]             # cancel back, try Equip instead
+  scene.update
+  RGSS::Input.reset
+  scene.instance_variable_set(:@index, 2)              # Equip
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]             # confirm the (restricted) first actor
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.pushed.last.is_a?(RPG2k::Scene::EquipMenu),
+     'Equip has no CanAct gate, so the restricted actor still opens it'
 end
 
 check 'Scene::Menu: End Game returns to the title on the first press, like F12 and ' \
@@ -9497,7 +9573,10 @@ check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' 
   eq [:status, :equip, :end_game], keys,
      'Status then Equip, in the game\'s own order, End Game still appended last'
   scene.instance_variable_set(:@index, 0)
-  RGSS::Input.triggered = [RGSS::Input::C]
+  RGSS::Input.triggered = [RGSS::Input::C]         # Status hands focus to the party-status panel
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]         # confirming the first actor there opens it
   scene.update
   RGSS::Input.reset
   ok scene.parent.pushed.last.is_a?(RPG2k::Scene::StatusMenu),
