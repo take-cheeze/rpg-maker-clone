@@ -6532,6 +6532,38 @@ module Game
         f = FAILURE_TERMS[i || 0]
         f && action(terms, target_name, f)
       end
+
+      # 「リトの攻撃力が 10 上がった！」 / 「…下がった！」 — what an ATK/DEF/SPI
+      # (mind)/AGI-affecting skill (`skill.affect_attack` and friends, applied
+      # by `Game::Battle#apply_stat_mods`) did to a stat. `value` is the signed
+      # delta actually applied (already clamped against RPG_RT's own -(base/2)
+      # .. +base band); `points` is the 用語 name of the stat itself (`:attack`
+      # / `:defense` / `:mind` / `:agility`) rather than a pool. Same の…が…
+      # shape as #recovered above, but which of the two predicates
+      # (`parameter_increase` / `parameter_decrease`) speaks is `value`'s own
+      # sign rather than fixed -- EasyRPG's `GetParameterChangeMessage`.
+      def self.parameter_change(terms, target_name, value, points)
+        return nil if value.nil? || value == 0
+        t = term(terms, value > 0 ? :parameter_increase : :parameter_decrease)
+        pool = term(terms, points)
+        return nil unless t && pool
+        "#{target_name}の#{pool}が #{value.abs} #{t}"
+      end
+
+      # 「リトは火に対する耐性が 上がった！」 — an attribute-defence-shift skill
+      # (`skill.affect_attr_defence`, applied by `Game::Battle#apply_attr_shift`)
+      # moving a resistance rank. `positive` is the shift's own direction
+      # (`Game::Party#skill_attr_shift`'s `attr_shift`, +1 raises / -1 lowers,
+      # the same for every attribute id one skill cast touches) -- unlike the
+      # parameter version above, EasyRPG's `GetAttributeShiftMessage` never
+      # shows a magnitude here, only which way the rank moved, so there is no
+      # `value` argument to speak of.
+      def self.attribute_shift(terms, target_name, positive, attr_name)
+        return nil if attr_name.nil? || attr_name.to_s.empty?
+        t = term(terms, positive ? :resistance_increase : :resistance_decrease)
+        return nil unless t
+        "#{target_name}は#{attr_name} #{t}"
+      end
     end
 
     # Map-step slip damage: RPG2000's field poison. A state drains HP every
@@ -8752,7 +8784,8 @@ module Game
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, cured: cured,
-          attr_shifted: shifted, stat_changed: stat_changed,
+          attr_shifted: shifted, attr_shift_dir: cmd[:attr_shift],
+          stat_changed: stat_changed,
           target_ally: ally?(target), skill: cmd[:name],
           skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed }
@@ -8804,6 +8837,7 @@ module Game
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, inflicted: inflicted, already: already,
           target_ally: ally?(target), attr_shifted: shifted,
+          attr_shift_dir: cmd[:attr_shift],
           stat_changed: stat_changed, switch_id: cmd[:switch_id],
           target_hp: target.hp, target_mp: target.mp }
       end

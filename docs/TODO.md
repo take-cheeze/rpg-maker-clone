@@ -8108,6 +8108,60 @@ above are repeated here)
   transformation back to the zero-hue battler redraws with no rotation),
   confirmed to fail against the pre-fix code (`NoMethodError: undefined
   method 'battler_hue'`) before the fix.
+- ✅ **A skill's ATK/DEF/SPI/AGI stat change and attribute-defence shift now
+  announce themselves in battle — the mechanics themselves already landed
+  (see the ability-value and attribute-shift fixes above), but the message
+  RPG_RT prints for either one never did.** `ruby scripts/rpg2k_field_audit.rb`
+  (glob fixed to `mruby-rpg2k/mrblib/**/*.rb` — the shared copy's glob is
+  non-recursive and misses `scene/`, producing false positives for anything
+  read only there) flagged database `term` chunk fields 30/31/34/35
+  (`parameter_increase`/`parameter_decrease`/`resistance_increase`/
+  `resistance_decrease`) as parsed but never named anywhere in
+  `mruby-rpg2k`. `Game::Battle#apply_stat_mods`/`#apply_attr_shift`
+  (`mruby-rpg2k/mrblib/game.rb`) already compute the effect and thread it
+  onto every battle log entry as `stat_changed`/`attr_shifted`, but nothing
+  ever read either key back out — a Weaken landing was numerically correct
+  (confirmed by five existing `rpg2k_logic_check.rb` checks reading
+  `Combatant#atk_mod` directly) but silent on screen, same for an
+  attribute-defence buff/curse. Verified against EasyRPG Player's actual
+  C++ source: `scene_battle_rpg2k.cpp`'s `ProcessBattleActionStateEffects`/
+  `ProcessBattleActionAttributeEffects` push a `pending_message` from
+  `BattleMessage::GetAtkChangeMessage`/`GetDefChangeMessage`/
+  `GetSpiChangeMessage`/`GetAgiChangeMessage` (all four thin wrappers over
+  `GetParameterChangeMessage`, `game_message_terms.cpp`) and
+  `GetAttributeShiftMessage` respectively, for every landed action in
+  RPG2000's own battle scene — not an RPG2003-only path.
+  `GetParameterChangeMessage` reads `terms.parameter_increase`/
+  `_decrease` by the delta's own sign and shows the exact clamped
+  magnitude (`"{name}の{attack/defense/mind/agility}が {n} {term}"`, the
+  same の…が… shape this codebase's own `BattleText.recovered` already
+  used for HP/SP); `GetAttributeShiftMessage` reads
+  `terms.resistance_increase`/`_decrease` by the shift's own direction and
+  names only the attribute, no magnitude
+  (`"{name}は{attribute.name} {term}"`). Ported as
+  `Game::States::BattleText.parameter_change`/`.attribute_shift`
+  (`mruby-rpg2k/mrblib/game.rb`), and `Game::Battle#apply_skill_hit` now
+  also threads `attr_shift_dir` (the shift's own +1/-1, already computed by
+  `Game::Party#skill_attr_shift` but previously dropped once `apply_attr_shift`
+  reduced it to a bare list of moved attribute ids) onto both the attack-
+  and recovery-branch log entries alongside the existing `stat_changed`/
+  `attr_shifted`. `Scene::Map#battle_state_lines`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — the same method that already turns
+  `inflicted`/`already`/`cured`/`defeated` into their own sentences under
+  the action's damage line — now does the same for `stat_changed` (one
+  line per ATK/DEF/SPI/AGI key that actually moved, via a new
+  `STAT_CHANGE_TERM` table naming each stat's own 用語 field) and
+  `attr_shifted` (one line per shifted attribute id, looked up by name in
+  `db.property`), each falling back to composed English exactly like every
+  other sentence in that method when the database leaves the term blank.
+  Covered by five new `scripts/rpg2k_scene_check.rb` checks (a stat rise
+  and a stat drop read in the game's own words, all four ATK/DEF/SPI/AGI
+  keys in `apply_stat_mods`'s own reporting order; a zero-delta entry says
+  nothing; an attribute-shift rise and drop read by the attribute's own
+  name with no magnitude, matching `GetAttributeShiftMessage`; both new
+  line kinds follow the damage line in the same entry, like every other
+  landed condition), all confirmed to fail against the pre-fix code (`got
+  []`/a missing final line) before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

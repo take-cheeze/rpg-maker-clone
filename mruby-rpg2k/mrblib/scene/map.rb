@@ -6030,8 +6030,32 @@ class RPG2k
                                                  name, ally) ||
                     "#{name} is defeated!")
         end
+        terms = db.respond_to?(:term) ? db.term : nil
+        (entry[:stat_changed] || {}).each do |key, delta|
+          term_name = STAT_CHANGE_TERM[key]
+          next unless term_name && delta && delta != 0
+          lines << (Game::States::BattleText.parameter_change(terms, name, delta, term_name) ||
+                    "#{name}'s #{term_name} #{delta > 0 ? 'rose' : 'fell'} by #{delta.abs}")
+        end
+        attr_ids = entry[:attr_shifted] || []
+        unless attr_ids.empty?
+          positive = (entry[:attr_shift_dir] || 1) > 0
+          props = db.respond_to?(:property) ? db.property : nil
+          attr_ids.each do |aid|
+            row = props ? props[aid] : nil
+            attr_name = row && row.respond_to?(:name) ? row.name : "attribute #{aid}"
+            lines << (Game::States::BattleText.attribute_shift(terms, name, positive, attr_name) ||
+                      "#{name}'s resistance to #{attr_name} #{positive ? 'rose' : 'fell'}")
+          end
+        end
         lines
       end
+
+      # The 用語 field naming each ATK/DEF/SPI(mind)/AGI stat itself (as
+      # opposed to `Game::Battle::STAT_MOD_FIELD`, which names the Combatant
+      # accessor that holds the modifier) -- what #battle_state_lines passes
+      # `BattleText.parameter_change` as `points`.
+      STAT_CHANGE_TERM = { atk: :attack, def: :defense, spi: :mind, agi: :agility }.freeze
 
       def state_label(id, table)
         Game::States.name(id, table) || "state #{id}"
