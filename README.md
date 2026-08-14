@@ -682,10 +682,5 @@ part that explains it). Nothing else is collected.
   `timidity.js` and those packages alongside `index.*`
 
 ## TODO
-- Editor with [imgui](https://github.com/ocornut/imgui)
-- RPG2003's separate **ATB battle mode** (`Scene_Battle_Rpg2k3`, toggled by the
-  Toggle ATB Mode event command): the RPG2000 turn-based battle screen — item,
-  skill, equip and status menus included — is built and running; the RPG2003
-  active-time variant is not modelled
-- Audio pitch/tempo control (SDL_mixer exposes none), and MIDI for SE/BGS, which
-  play as samples rather than through the synthesiser
+
+See [`docs/TODO.md`](docs/TODO.md) for the detailed, per-maker TODO list.
