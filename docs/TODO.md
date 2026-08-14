@@ -3046,6 +3046,31 @@ The work below is roughly ordered by the critical path to a walkable game
   0..100 floor, 必中 skipping the term entirely, weapon-slot exclusion, and
   an end-to-end `Battle.from_actor` wiring check), confirmed to fail against
   the pre-fix code before the fix.
+- ✅ **The field Skill screen now shows the highlighted skill's own flavour
+  text in a one-line banner across the top** — `skill.description`, unread
+  by `mruby-rpg2k` anywhere. `ruby scripts/rpg2k_field_audit.rb` against
+  mtf-meido-action (downloaded fresh via `scripts/download-mtf-meido-action.bash`,
+  the only test bed reachable this session — Nepheshel's host is blocked by
+  this sandbox's network policy) flags it with 127 of 134 skills setting it.
+  `Scene::ItemMenu` and `Scene::EquipMenu` already grew the equivalent
+  description banner for `item.description` (see the two entries above); only
+  `Scene::SkillMenu` never did. Verified against EasyRPG Player's actual C++
+  source: `Window_Skill::UpdateHelp` (`src/window_skill.cpp`) sets
+  `help_window`'s text to `ToString(GetSkill()->description)` on every
+  selection change, and `Scene_Skill::Start` wires that same `Window_Help`
+  in above the skill list — the exact shape `Window_Item`/`Window_Equip`
+  already use for their own description banner. Fixed with a new
+  `Scene::SkillMenu#build_desc_window`/`#refresh_desc` pair, mirroring
+  `Scene::ItemMenu`'s own exactly, and a `DESC_H`-tall offset added to the
+  skill grid window's y position so the banner has room above it. The
+  banner tracks the cursor in the skill list and keeps showing the pending
+  skill's own text while picking a target or a teleport destination (the
+  same "the pending item is still the one thing on screen a description
+  could be about" rule `Scene::ItemMenu#refresh_desc` already follows).
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (the banner shows
+  the first skill's text, follows the cursor onto the second, and keeps
+  showing it once a target is being picked), confirmed to fail against the
+  pre-fix code before the fix.
 
 ### yado.tk quirks backlog
 
