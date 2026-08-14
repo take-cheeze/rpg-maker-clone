@@ -4138,8 +4138,23 @@ Everything below is unverified against the codebase.
 - **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
-  here — no "map data changed since save" concept). **A runtime Change
-  Tileset override not surviving save/load is confirmed already correct**:
+  here — no "map data changed since save" concept). **Resuming mid-Autorun
+  is a moot case here: `try_open_menu` (`Scene::Map#update`,
+  `mruby-rpg2k/mrblib/scene/map.rb`) is only ever reached from the
+  `!event_busy?` branch, so the field Menu — and with it Save — is
+  structurally unreachable while any foreground script (an Autorun
+  included) is running, exactly like real RPG_RT's own hero-control block;
+  there is no live path to actually invoke Save mid-Autorun to check this
+  claim against.** Resuming mid-Parallel-Process is **half fixed, half a
+  known, deliberately scoped-out gap**, per "A Common Event's Parallel
+  Process now survives a Transfer Player and a save/load" above: a
+  **Common Event's** own Parallel Process now genuinely resumes at its last
+  clean position via `Game::State#common_event_progress`, but **a Map
+  Event's own Parallel Process is untouched by that fix** — it has no
+  common-event id to key the same mechanism off, and still restarts fresh
+  on every visit, matching this doc's own note there rather than a fresh
+  finding. **A runtime Change Tileset override not surviving save/load is
+  confirmed already correct**:
   `@tileset_id` is a `Scene::Map` instance variable, not a `Game::State`
   field — `to_h`/`to_lsd` have nothing named `tileset`/`chipset` at all — and
   `RPG2k#continue_game` always builds a **fresh** `Scene::Map` from the
