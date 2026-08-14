@@ -2927,8 +2927,31 @@ not yet verified:
   than a cross-gem call. Covered by a new `scripts/rpg2k_logic_check.rb`
   check (an over/under-range constant assign clamps at the boundary; an
   in-range add that would overflow clamps too), confirmed to fail against the
-  pre-fix code. **Other numeric constants in this same bullet are already
-  confirmed correct, no code change needed**: Call Event / Event Call
+  pre-fix code. ✅ **The RPG2003-widens-to-±9999999 half flagged in this same
+  bullet's own opening line is now implemented too** — it had been left as
+  prose only; `Game::Variables::MAX`/`MIN` clamped every database at
+  RPG2000's narrower ±999999 unconditionally, with no RPG2003 case at all,
+  even though `LCF.var_max`/`var_min` (the schema-side source this same
+  bullet cites) already branch on it. Fixed by giving `Variables#initialize`
+  an `rpg2003` flag (a new `RPG2003_MAX`/`MIN = ±9_999_999` pair, picked at
+  construction instead of the fixed `MAX`/`MIN`) that `Game::State#initialize`
+  reads once, via `Game::Party#rpg2003?` (added alongside the "Control
+  Variables' map-event map-id read is an RPG2000-only quirk" fix elsewhere in
+  this file — `@db.respond_to?(:rpg2003?) && @db.rpg2003?`, false, not nil, on
+  a bare test double), to build its `Variables` object — reusing that same
+  already-verified per-loaded-database detection path (`LCF::Schema::Database
+  #rpg2003?`'s Classes-chunk-presence check, the same signal `Scene::Menu`
+  keys its RPG2003 command list off of) rather than adding a new one.
+  `State.load`'s restore path (`variables.replace`) writes stored
+  values directly and was already unaffected either way, so a save's own
+  variable values still round-trip byte-for-byte; only the live write-path
+  clamp changes. Covered by a new `scripts/rpg2k_logic_check.rb` check (an
+  RPG2003-flagged database's Control Variables writes clamp at ±9999999, a
+  value between the two editions' ceilings survives untouched, and a plain
+  RPG2000 database keeps the original narrower clamp), confirmed to fail
+  against the pre-fix code before the fix. **Other numeric constants in this
+  same bullet are already confirmed correct, no code change needed**: Call
+  Event / Event Call
   recursion ceiling of 1000 (`MAX_CALL_DEPTH`, `interpreter.rb`); party cap of
   4 (`Game::Party::MAX_SIZE`); item/equipment stack cap 99 and gold cap
   999999 (`Party#add_item`/`#gain_gold`); move speed 1-6 via `SPEED_UP`/

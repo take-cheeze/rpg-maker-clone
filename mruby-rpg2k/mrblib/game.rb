@@ -1076,15 +1076,28 @@ module Game
     MAX = 999_999
     MIN = -999_999
 
+    # RPG2003 widens the same clamp to +-9999999 (one more digit), matching
+    # `LCF.var_max`/`var_min`'s own `MODE == 2003` branch -- a fixed edition
+    # constant here rather than a call into mruby-lcf, for the same reason
+    # MAX/MIN above are.
+    RPG2003_MAX = 9_999_999
+    RPG2003_MIN = -9_999_999
+
     # See Switches#revision: page conditions read variables too.
     attr_reader :revision
 
-    def initialize; @data = {}; @revision = 0; end
+    def initialize(rpg2003 = false)
+      @data = {}
+      @revision = 0
+      @max = rpg2003 ? RPG2003_MAX : MAX
+      @min = rpg2003 ? RPG2003_MIN : MIN
+    end
+
     def [](id); @data[id] || 0; end
 
     def []=(id, v)
-      v = MAX if v > MAX
-      v = MIN if v < MIN
+      v = @max if v > @max
+      v = @min if v < @min
       return v if self[id] == v
       @data[id] = v
       @revision += 1
@@ -7962,7 +7975,11 @@ module Game
       @map = nil
       @pending_teleport = nil
       @switches = Switches.new
-      @variables = Variables.new
+      # RPG2003's own wider +-9999999 variable range (see Game::Variables)
+      # rather than RPG2000's +-999999 -- read once here from the party's
+      # database, since #replace (State.load's own restore path) never
+      # touches a Variables object's bound, only its stored values.
+      @variables = Variables.new(party.respond_to?(:rpg2003?) && party.rpg2003?)
       @timers = [Timer.new, Timer.new]
       @message_config = MessageConfig.new
       @menu_access = true
