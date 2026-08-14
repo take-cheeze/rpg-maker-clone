@@ -3631,10 +3631,14 @@ Everything below is unverified against the codebase.
   during test play disabling encounters (a separate fact from this one) is
   now also implemented — see `Scene::Map#debug_through?`, which the same
   `#check_random_encounter` early-outs on.
-- **Screen Flash / Character Flash** — only one of each can be active at
+- ✅ **Screen Flash / Character Flash** — only one of each can be active at
   once (a second supersedes, doesn't stack); both are capped to 1/30s
   display while a Battle Animation plays concurrently (the animation's own
-  per-frame flash occupies the effect).
+  per-frame flash occupies the effect). **Both halves of this claim are now
+  confirmed correct and fixed** — see the fuller writeup under "Screen
+  effects (Flash / Shake / Tone / Erase Screen / Weather)" above (the
+  `#hold_animation_screen_flash`/`#hold_animation_target_flash` fix), which
+  settles this exact claim against EasyRPG Player's actual C++ source.
 - **Set Move Route / Character movement** — route commands don't apply
   until Move-All/Show-Text/Wait/event-end; only one pending route per
   character (issuing two back-to-back discards the first entirely, not
