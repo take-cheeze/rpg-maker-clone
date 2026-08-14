@@ -1492,8 +1492,33 @@ class RPG2k
           # single window as :message just above, with no implicit-auto-run
           # gate of its own -- matching #drive_event's own ungated :choice
           # dispatch, since only Wait/Show Text are documented auto-run
-          # trigger points, not Show Choices.
-          open_message(it.choice_labels, true, interp: it) if @message.nil?
+          # trigger points, not Show Choices. `@message[:interp].equal?(it)`
+          # covers the *merged* shape too -- a Show Choices immediately
+          # following this same process's own Show Text in the same window
+          # (#drive_text_message's `awaiting_followup`, resumed once typing
+          # finishes but not yet reached this command): @message is not nil
+          # there (it is this process's own still-open window), so the plain
+          # `@message.nil?` guard alone would leave it parked forever, never
+          # reaching #open_message's existing "append instead of opening
+          # fresh" branch. A genuinely new, unrelated request still waits its
+          # turn until whichever window is currently up closes.
+          if @message.nil? || @message[:interp].equal?(it)
+            open_message(it.choice_labels, true, interp: it)
+          end
+        elsif it.wait_kind == :number
+          # Input Number issued from a Parallel Process: the same shared
+          # window as :message/:choice above, standalone panel and the
+          # merged-onto-a-preceding-Show-Text shape alike (#open_number_input
+          # already tells the two apart via @message[:awaiting_followup], the
+          # same way #open_message does for :choice, just above). Before this
+          # branch existed this wait kind fell into the generic #resume
+          # below, so an Input Number issued from a Parallel Process was
+          # silently dropped outright -- docs/TODO.md "Left open: Input
+          # Number (:number) issued from a Parallel Process is still
+          # silently dropped."
+          if @message.nil? || @message[:interp].equal?(it)
+            open_number_input(it.input_digits, interp: it)
+          end
         elsif it.wait_kind == :screen
           # Erase/Show/Tint/Flash/Pan/Shake Screen issued with its own wait
           # flag from a Parallel Process: block that process until the effect
@@ -1514,12 +1539,7 @@ class RPG2k
           # the :screen/:picture cases just above.
           it.resume unless sprite_flashing?
         else
-          # :message and :choice are handled above now; an Input Number
-          # request (:number) is the one wait kind still silently dropped
-          # here -- #open_number_input's standalone (no preceding Show Text)
-          # panel and its embedded-in-@message follow-up are both
-          # foreground-only machinery today, a narrower, separate gap left
-          # open by this fix.
+          # :message, :choice and :number are all handled above now.
           it.resume
         end
       end
@@ -7430,14 +7450,20 @@ class RPG2k
       # window below the text already shown; otherwise a standalone compact
       # panel opens near the bottom of the screen. Either way the interpreter
       # is resumed with the entered value on confirm.
-      def open_number_input(digits)
+      #
+      # `interp:` is whichever interpreter's Input Number this answers to --
+      # the foreground @interpreter by default, or a Parallel Process's own
+      # interpreter when #drive_parallel_wait opens one (mirrors #open_message's
+      # own `interp:` keyword). #drive_number_input reads it back to resume the
+      # interpreter that actually asked for it rather than always @interpreter.
+      def open_number_input(digits, interp: @interpreter)
         return if @number_input
         model = Game::NumberInput.new(digits || 1)
         if @message && @message[:awaiting_followup] == :number
           @message[:awaiting_followup] = nil
           x = @message[:inner_w] - model.digits * NUM_CELL
           y = @message[:seg_lines].length * MSG_LINE_H
-          @number_input = { model: model, embedded: true, x: x, y: y }
+          @number_input = { model: model, embedded: true, x: x, y: y, interp: interp }
           draw_number_input
           return
         end
@@ -7449,7 +7475,7 @@ class RPG2k
         win.z = 320
         win.windowskin = @windowskin
         contents = Bitmap.new(inner_w, inner_h)
-        @number_input = { window: win, contents: contents, model: model }
+        @number_input = { window: win, contents: contents, model: model, interp: interp }
         draw_number_input
         win.contents = contents
       end
@@ -7497,9 +7523,10 @@ class RPG2k
         elsif Input.trigger?(Input::C)
           value = model.value
           embedded = ni[:embedded]
+          interp = ni[:interp] || @interpreter
           close_number_input
           close_message if embedded
-          @interpreter.resume_number(value)
+          interp.resume_number(value)
         end
       end
 

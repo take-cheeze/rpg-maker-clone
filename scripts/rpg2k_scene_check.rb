@@ -3952,6 +3952,92 @@ check "a Parallel Process's own Show Text waits for the foreground's already-ope
      'the Parallel Process itself resumed (not the foreground) and ran its own command'
 end
 
+check "a Common Event Parallel Process's own standalone Input Number now actually opens the widget" do
+  # docs/TODO.md "Left open: Input Number (:number) issued from a Parallel
+  # Process is still silently dropped" -- #drive_parallel_wait had no :number
+  # case at all (unlike the already-fixed :message/:choice above), so the
+  # request fell into the generic "background: ignore..." #resume branch and
+  # the interpreter sailed straight past it, the command right after it
+  # running on the very next tick as if Input Number had been a no-op.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false,
+                      event: [
+                        ECmd.new(ic::INPUT_NUMBER, [2, 5]),
+                        ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+                      ])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+
+  ni = nil
+  12.times do
+    scene.update
+    ni = scene.instance_variable_get(:@number_input)
+    break if ni
+  end
+  ok ni, "the Parallel Process's own Input Number opened the shared widget"
+  ok !ni[:embedded], 'a standalone Input Number opens its own compact panel'
+  ok !st.switches[1],
+     'the command after Input Number has not run yet -- the process is blocked on the widget'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm
+  scene.update
+  ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
+  5.times { RGSS::Input.reset; scene.update }
+  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  ok st.switches[1], 'the Parallel Process resumed and ran the command after Input Number'
+end
+
+check "a Map Event Parallel Process's own Show Text + Input Number merges into the same window" do
+  # The merged shape docs/TODO.md's same "Left open" note names explicitly:
+  # "#open_number_input's standalone ... panel and its embedded-in-@message
+  # follow-up are both foreground-only machinery." @message is not nil once
+  # the process's own Show Text is still open awaiting this follow-up, so the
+  # plain "block until @message is nil" guard the standalone case alone would
+  # need is not enough here -- #open_message's own `@message[:interp].equal?
+  # (it)` check (mirrored for Input Number) is what lets it recognise this as
+  # its *own* window's follow-up rather than someone else's still-open one.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'enter a value'),
+    ECmd.new(ic::INPUT_NUMBER, [2, 5]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  msg = open_msg(scene)
+  ok msg, "the Parallel Process's own Show Text opened the shared message window"
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # complete the (short) reveal
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # advance past the finished text into the Input Number follow-up
+  RGSS::Input.reset # the still-held C from the dismiss above must not confirm the widget too
+
+  ni = nil
+  6.times do
+    scene.update
+    ni = scene.instance_variable_get(:@number_input)
+    break if ni
+  end
+  ok ni, "the Input Number follow-up opened, merged into the process's own still-open window"
+  ok ni[:embedded], 'merged onto the preceding Show Text, not a fresh standalone panel'
+  ok scene.instance_variable_get(:@message), 'the message window is still the one carrying it'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm
+  scene.update
+  ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
+  ok !scene.instance_variable_get(:@message), 'the merged message window closed with it'
+  5.times { RGSS::Input.reset; scene.update }
+  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  ok st.switches[1], 'the Parallel Process resumed and ran the command after Input Number'
+end
+
 check "a forced route auto-runs to completion before an immediately-following Show Text opens (yado.tk)" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
