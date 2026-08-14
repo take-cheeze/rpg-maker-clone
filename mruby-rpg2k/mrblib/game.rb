@@ -5890,6 +5890,16 @@ module Game
       # `Scene::Map#flying_offset` the same way. Read here regardless of
       # edition, same as every other schema field this class exposes.
       @levitate = row && row.respond_to?(:levitate) ? (row.levitate ? true : false) : false
+      # The "Appear Transparent" flag (field 10): the battle screen renders this
+      # enemy's sprite at reduced opacity for the whole fight -- purely cosmetic,
+      # like `levitate`, with no accuracy/evasion effect of any kind. Verified
+      # against EasyRPG Player's actual C++ source: `Game_Enemy::IsTransparent`
+      # (`src/game_enemy.h`) is a bare `enemy->transparent` passthrough, and
+      # `Sprite_Enemy::Draw` (`src/sprite_enemy.cpp`) computes `alpha = 160 *
+      # alpha / 255` whenever it is set -- 160/255 (~63%) of whatever opacity the
+      # sprite would otherwise have (255 outside of the death-fade/explode
+      # animations this codebase does not yet model).
+      @transparent = row && row.respond_to?(:transparent) ? (row.transparent ? true : false) : false
       # The 行動パターン table (field 42), decoded now since `row` isn't kept. An
       # enemy whose row lists none falls back to plain attacking.
       @actions = []
@@ -5905,6 +5915,9 @@ module Game
     # The "airborne" flag (field 28) -- see the comment in #initialize for what
     # it does and does not affect.
     attr_reader :levitate
+
+    # The "Appear Transparent" flag (field 10) -- see the comment in #initialize.
+    attr_reader :transparent
 
     # Base to-hit percentage for this enemy's normal attack (70 when the "miss"
     # flag is set, otherwise 90); fed into the battle's to-hit roll.

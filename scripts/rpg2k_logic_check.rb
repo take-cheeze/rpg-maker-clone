@@ -6654,6 +6654,24 @@ check 'Game::Enemy reads its treasure drop id and probability' do
   eq 0, Game::Enemy.new(battle_db, 2).drop_id, 'no drop when the row omits it'
 end
 
+# "Appear Transparent" (database field 10) -- a purely cosmetic reduced-opacity
+# battle-sprite flag, verified against EasyRPG Player's actual C++ source
+# (`Game_Enemy::IsTransparent`/`Sprite_Enemy::Draw`'s `alpha = 160 * alpha /
+# 255`, `src/game_enemy.h`/`src/sprite_enemy.cpp`) -- was parsed by the schema
+# but never read into `Game::Enemy` at all, the same "parsed but unused" shape
+# `levitate` had before its own fix. The scene-level opacity itself is covered
+# by `scripts/rpg2k_scene_check.rb`; this pins the bare reader.
+check 'Game::Enemy reads its "Appear Transparent" flag' do
+  ghost_row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                         :agility, :exp, :gold, :transparent)
+  db = BattleDB.new({ 5 => ghost_row.new('Ghost', 15, 0, 5, 2, 2, 6, 3, 6, true),
+                      6 => ghost_row.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, false) }, {})
+  eq true, Game::Enemy.new(db, 5).transparent, 'the flagged row reads true'
+  eq false, Game::Enemy.new(db, 6).transparent, 'an explicit false row reads false'
+  eq false, Game::Enemy.new(battle_db, 3).transparent,
+     'a row that omits the field entirely defaults to false, same as `levitate`'
+end
+
 check 'Troop#drops yields certain drops, skipping zero-chance / no-item foes' do
   db = BattleDB.new(
     { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, 7, 100),  # always drops 7

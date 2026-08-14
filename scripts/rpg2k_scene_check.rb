@@ -334,13 +334,23 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
              3 => OpenStruct.new(name: 'Bat', battler_name: 'Bat',
                                  max_hp: 20, max_sp: 0, attack: 6,
                                  defense: 2, spirit: 2, agility: 8, exp: 4,
-                                 gold: 8, levitate: true) },
+                                 gold: 8, levitate: true),
+             # "Appear Transparent" (field 10) fixture for the enemy-opacity
+             # checks; its own lone-member troop (group 3) keeps it from
+             # disturbing the two-Slime/lone-Bat troops' own assertions.
+             4 => OpenStruct.new(name: 'Ghost', battler_name: 'Ghost',
+                                 max_hp: 15, max_sp: 0, attack: 5,
+                                 defense: 2, spirit: 2, agility: 6, exp: 3,
+                                 gold: 6, transparent: true) },
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
       1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
       2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) },
       pages: troop_pages),
       2 => OpenStruct.new(name: 'Bats', members: {
         1 => OpenStruct.new(enemy_id: 3, x: 100, y: 80, invisible: false) },
+        pages: nil),
+      3 => OpenStruct.new(name: 'Ghosts', members: {
+        1 => OpenStruct.new(enemy_id: 4, x: 100, y: 80, invisible: false) },
         pages: nil) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
@@ -6727,6 +6737,7 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
   # Centred on the member's troop position (member 1 at x = 100, y = 80).
   eq 100 - sprites[0].bitmap.width / 2, sprites[0].x, 'sprite centred on its x'
   eq 80 - sprites[0].bitmap.height / 2, sprites[0].y, 'sprite centred on its y'
+  eq 255, sprites[0].opacity, 'a plain (non-"Appear Transparent") enemy draws fully opaque'
   ok sprites[0].z < 300, 'battlers sit below the UI windows (z >= 300)'
   ok ui[:back_sprite].z < sprites[0].z, 'the backdrop sits behind the battlers'
   # yado.tk: troop members are numbered by add-order and the *lower*-numbered
@@ -6735,6 +6746,46 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
 
   battle_attack_to_end(scene) # both Slimes fall
   ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
+end
+
+# The "Appear Transparent" flag (field 10, `Game::Enemy#transparent`) was
+# parsed by the schema but read nowhere in mruby-rpg2k -- the same
+# "parsed but unused" shape as the `levitate` flag above, and every enemy
+# battler sprite drew fully opaque regardless. Verified against EasyRPG
+# Player's actual C++ source: `Sprite_Enemy::Draw` (`src/sprite_enemy.cpp`)
+# computes `alpha = 160 * alpha / 255` whenever `Game_Enemy::IsTransparent`
+# is set, with no accuracy/evasion effect of any kind -- purely cosmetic,
+# like `levitate`. Troop 3's lone Ghost (enemy id 4) is the dedicated
+# fixture, kept off the two-Slime/lone-Bat troops so this never disturbs
+# their own opacity-agnostic assertions (now pinned at a plain 255 above).
+check 'Enemy Encounter scene: an "Appear Transparent" enemy draws at reduced ' \
+      'opacity everywhere its sprite is (re)built' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 3)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  member = ui[:troop].members[0]
+  ok member.transparent, 'the fixture enemy (id 4, Ghost) carries the flag'
+  eq 160, ui[:enemy_sprites][0].opacity,
+     'build_battle_sprites draws it at 160/255 opacity, matching EasyRPG exactly'
+
+  # A mid-fight transformation redraw (#rebuild_battler_sprite) keeps the
+  # reduced opacity, not just the initial build.
+  ui[:foes][0].battler_name = 'Wraith'
+  ui[:foes][0].name = 'Wraith'
+  scene.send(:refresh_battle_sprites)
+  eq 160, ui[:enemy_sprites][0].opacity,
+     'a transformation redraw keeps the reduced opacity'
+
+  # Show Hidden Monster (#reveal_battle_monster) builds a fresh sprite too.
+  ui[:foes][0].hidden = true
+  ui[:troop].members[0].hidden = true
+  scene.send(:reveal_battle_monster, 0)
+  eq 160, ui[:enemy_sprites][0].opacity,
+     'Show Hidden Monster also draws it at the reduced opacity'
 end
 
 check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
