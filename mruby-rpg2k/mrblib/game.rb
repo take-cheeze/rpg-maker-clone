@@ -4020,17 +4020,24 @@ module Game
     #
     # RPG_RT faces the jump's **dominant axis**, vertical winning a tie, which is
     # not the direction of the last enclosed move: a jump two right and two down
-    # lands facing down. A jump that ends where it started leaves both the
-    # facing and #last_move_direction alone -- there is no axis to be
-    # dominant when neither one moved.
+    # lands facing down. #last_move_direction always picks up that same
+    # dominant-axis direction, even for a jump that ends where it started --
+    # verified against EasyRPG Player's actual C++ source rather than guessed
+    # at: `Game_Character::Jump` (`src/game_character.cpp`) computes and
+    # applies `SetDirection` (this codebase's #last_move_direction, what Move
+    # Forward reads) unconditionally, before ever checking `dx != 0 || dy !=
+    # 0` -- a null jump's tie (`dy.abs() >= dx.abs()` when both are 0, `dy >=
+    # 0` when dy is 0) always resolves to Down. Only the *visible* facing
+    # (`SetFacing`, this codebase's #face) is gated behind that displacement
+    # check (and, inside it, `IsFacingLocked`, which #face already respects) --
+    # so a jump going nowhere still silently turns a character to face south
+    # internally, it just never shows on screen.
     def jump(x, y)
       dx = x - @x
       dy = y - @y
-      unless dx == 0 && dy == 0
-        dir = dy.abs >= dx.abs ? (dy >= 0 ? 2 : 8) : (dx >= 0 ? 6 : 4)
-        face(dir)
-        @last_move_direction = dir
-      end
+      dir = dy.abs >= dx.abs ? (dy >= 0 ? 2 : 8) : (dx >= 0 ? 6 : 4)
+      @last_move_direction = dir
+      face(dir) unless dx == 0 && dy == 0
       @x = x
       @y = y
       @jumped = true
