@@ -2228,44 +2228,42 @@ The work below is roughly ordered by the critical path to a walkable game
   own comment already notes they gate switch skills only *in this engine's
   own port*, which this result casts some doubt on as the full RPG_RT
   picture).
-  **Confirmed via EasyRPG Player's source instead, once the wine reference
-  runtime itself stopped rendering past Continue this session (see the
-  harness-quirk notes above):** `Window_Skill`'s constructor sets
-  `column_max = 2`, the same two-column shape `Scene::ItemMenu` already
-  ported -- so this genuinely is a gap, not just a guess. Its `DrawItem`
-  also settles the item-count separator glyph question left open below: it
-  draws each row's cost as `fmt::format("{}{:3d}", <separator term, default
-  "-">, cost)`, right-aligned near the row's right edge, with **no MP/SP
-  unit suffix at all** -- quite different from `Scene::SkillMenu`'s current
-  `"#{cost} #{mp_term}"`.
-  **Why this isn't fixed yet despite being confirmed:** `Window_Item`'s own
-  `DrawItem` uses the identical shape (`fmt::format("{}{:3d}", <separator
-  term, default ":">, count)`), and its default separator is `":"` -- which
-  is what `Scene::ItemMenu` already draws, settling the item-count
-  separator glyph question two bullets down as a non-issue rather than a
-  bug (the wine capture that suggested "＝" was almost certainly a
-  misreading of a colon at low zoom). But porting the *skill* row's format
-  surfaced a bigger, entangled question: `Scene::SkillMenu` currently uses
-  LEFT/RIGHT to cycle the caster **inside** the skill screen, and a
-  two-column grid needs LEFT/RIGHT for column navigation instead (the same
-  keys `Scene::ItemMenu`'s own grid fix repurposed) -- the two cannot both
-  live on the same input. Chasing that down through `EasyRPG/Player`'s own
-  source (`scene_skill.cpp`, `scene_skill.h`, `scene_menu.cpp`) found that
-  genuine RPG_RT/EasyRPG does not support switching actors *inside* the
-  Skill screen at all: `Scene_Skill`'s constructor takes a fixed
-  `actor_index` and its `vUpdate()` never changes it, while
+  ✅ **Confirmed via EasyRPG Player's source instead, once the wine
+  reference runtime itself stopped rendering past Continue this session
+  (see the harness-quirk notes above), and now fixed.** `Window_Skill`'s
+  constructor sets `column_max = 2`, the same two-column shape
+  `Scene::ItemMenu` already ported. Its `DrawItem` also settles the
+  item-count separator glyph question left open below: it draws each row's
+  cost as `fmt::format("{}{:3d}", <separator term, default "-">, cost)`,
+  right-aligned near the row's right edge, with **no MP/SP unit suffix at
+  all** -- quite different from `Scene::SkillMenu`'s old `"#{cost}
+  #{mp_term}"`.
+  Porting the row format surfaced a bigger, entangled question first:
+  `Scene::SkillMenu` used LEFT/RIGHT to cycle the caster *inside* the skill
+  screen, and a two-column grid needs LEFT/RIGHT for column navigation
+  instead (the same keys `Scene::ItemMenu`'s own grid fix repurposed) --
+  the two cannot both live on the same input. Chasing that down through
+  `EasyRPG/Player`'s own source (`scene_skill.cpp`, `scene_skill.h`,
+  `scene_menu.cpp`, `scene_equip.cpp`) resolved it cleanly rather than
+  blocking the fix: genuine RPG_RT/EasyRPG does not support switching
+  actors *inside* the Skill screen at all (`Scene_Skill`'s constructor
+  takes a fixed `actor_index` its `vUpdate()` never changes) -- unlike
+  `Scene_Equip`, whose own `UpdateEquipSelection` *does* handle LEFT/RIGHT
+  by constructing a fresh `Scene_Equip` for the new actor, confirming
+  `Scene::EquipMenu`'s existing in-screen actor-switching was already
+  correct and did not need touching. `Scene::SkillMenu`'s LEFT/RIGHT
+  caster-cycling is simply gone (removed, not replaced -- this engine's
+  Skill screen already only ever showed the leader in practice, since it
+  has no menu-side actor picker either, so nothing that previously worked
+  stopped working), freeing LEFT/RIGHT for the confirmed grid navigation.
+  Real RPG_RT's actual way to check a *different* actor's skills --
   `Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row` branch
-  (all four, identically) instead hands input focus to the menu's own party
-  list (`menustatus_window`) so the player picks *which actor* there
-  (UP/DOWN) before a specific `Scene_Skill(actors, menustatus_window-
-  >GetIndex())` is even constructed. That means this engine's whole
-  Menu -> Skill (and very possibly Equip/Status too, gated the same way in
-  that switch) entry flow needs an actor-preselection step this codebase
-  does not have yet (`Scene::Menu`'s own party-status panel is a plain
-  display, not a cursor-navigable list) before the grid fix's LEFT/RIGHT
-  repurposing can land without silently deleting the only way to check a
-  non-leader's skills. Left as its own, larger follow-up rather than
-  guessed at or rushed alongside the grid/format fix.
+  (all four, identically) hands input focus to the menu's own party list
+  so the player picks an actor there (UP/DOWN) *before* a specific
+  `Scene_Skill`/`Scene_Equip`/etc. is even constructed -- remains
+  unimplemented (`Scene::Menu`'s own party-status panel is a plain display,
+  not a cursor-navigable list yet), a real, separate, larger follow-up
+  covering Equip and Status too, but no longer blocking this one.
   - The item count's separator glyph question is settled by the same source
     read two bullets up (`Window_Item`'s own default is `":"`) -- not a bug,
     the wine capture that looked like "＝" was almost certainly a colon

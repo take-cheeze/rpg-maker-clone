@@ -10061,27 +10061,35 @@ check 'Scene::ItemMenu: cancelling the Teleport destination list returns to the 
   ok !parent.pop_to_map_called
 end
 
-check 'Scene::SkillMenu: the skill list, caster and target cursors wrap around' do
+check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, ' \
+      'the target cursor does wrap' do
   scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@skill_index), 'starts on the first skill'
+  # The skill list is a two-column grid (confirmed against EasyRPG's own
+  # Window_Skill, see Scene::SkillMenu::COLUMN_MAX): with only two skills,
+  # both sit in the same row, so UP/DOWN have no cell to move to.
   RGSS::Input.triggered = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq 1, scene.instance_variable_get(:@skill_index), 'Up from the first skill wraps to the last (2 skills)'
+  eq 0, scene.instance_variable_get(:@skill_index), 'Up from the first skill is a no-op (nothing above it)'
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
-  eq 0, scene.instance_variable_get(:@skill_index), 'Down from the last skill wraps to the first'
-
-  eq 0, scene.instance_variable_get(:@caster_index), 'starts on the first caster'
-  RGSS::Input.triggered = [RGSS::Input::LEFT]
-  scene.update
-  RGSS::Input.reset
-  eq 1, scene.instance_variable_get(:@caster_index), 'Left from the first caster wraps to the last (2 actors)'
+  eq 0, scene.instance_variable_get(:@skill_index), 'Down from the first skill is a no-op (nothing below it)'
   RGSS::Input.triggered = [RGSS::Input::RIGHT]
   scene.update
   RGSS::Input.reset
-  eq 0, scene.instance_variable_get(:@caster_index), 'Right from the last caster wraps to the first'
+  eq 1, scene.instance_variable_get(:@skill_index), 'Right moves onto the second skill, same row'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@skill_index), 'Left moves back onto the first skill'
+
+  # There is no way to switch caster inside this screen -- confirmed
+  # against EasyRPG's own Scene_Skill, whose actor_index is fixed at
+  # construction (see the class comment); LEFT/RIGHT above are grid
+  # navigation now, not a caster switch.
+  eq 0, scene.instance_variable_get(:@caster_index), 'caster stays fixed regardless of LEFT/RIGHT'
 
   # Target mode (single-ally scope skill) has its own cursor over the party.
   scene.instance_variable_set(:@mode, :target)
@@ -10165,7 +10173,10 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
   parent = fake_parent(fake_db)
   state = escape_teleport_state
   scene = RPG2k::Scene::SkillMenu.new(parent, state)
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto Teleport (row 2)
+  # The skill list is a two-column grid (confirmed against EasyRPG's own
+  # Window_Skill, see Scene::SkillMenu::COLUMN_MAX): with only two skills,
+  # the second sits beside the first in the same row, reached by RIGHT.
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Teleport
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
@@ -10191,7 +10202,10 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   parent = fake_parent(fake_db)
   state = escape_teleport_state
   scene = RPG2k::Scene::SkillMenu.new(parent, state)
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto Teleport (row 2)
+  # The skill list is a two-column grid (confirmed against EasyRPG's own
+  # Window_Skill, see Scene::SkillMenu::COLUMN_MAX): with only two skills,
+  # the second sits beside the first in the same row, reached by RIGHT.
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Teleport
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
