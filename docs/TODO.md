@@ -5995,16 +5995,82 @@ session (reading + documenting only, not fixed — see below):
   rely on `MAX_STEPS`/the existing per-command step cost to bound it the
   way real RPG_RT does, or keep the one-shot behaviour and record the
   divergence as accepted scope — rather than staying marked ✅ as-is.
+  **Re-checked this session against EasyRPG Player's actual C++ source
+  (`src/game_map.cpp`'s `Game_Map::UpdateForegroundEvents`,
+  `src/game_event.cpp`'s `Game_Event::ScheduleForegroundExecution`/
+  `CheckEventAutostart`) rather than the wiki paraphrase alone: the claim
+  holds structurally.** `Game_Event`/`Game_CommonEvent` have no "ran once,
+  ever" flag anywhere — only a transient `waiting_execution` bit
+  (`IsWaitingForegroundExecution`), armed every time `CheckEventAutostart`
+  runs (called from each event's own per-frame `UpdateNextMovementAction`,
+  unconditionally, regardless of whether it has already run before) and
+  cleared the instant `UpdateForegroundEvents` consumes it by pushing the
+  event onto the shared interpreter — so the *only* thing standing between
+  one lap finishing and the very same event's script restarting from the top
+  is whether `UpdateForegroundEvents`'s own `while (!interp.IsRunning() &&
+  !interp.ReachedLoopLimit())` loop happens to still be turning (see the
+  "Autorun cascading" fix just below, which implements exactly this loop's
+  cross-event half). This session deliberately did **not** implement the
+  same-event-restart half: doing so faithfully needs `Game::Interpreter`'s
+  `MAX_STEPS` budget threaded *across* repeated `#start`/`#update` calls
+  within one `Scene::Map#update` (today each call gets a fresh budget), and
+  — far more disruptively — would make *every* existing Auto-Start
+  `scripts/rpg2k_scene_check.rb` fixture that does not itself clear its own
+  eligibility (turn off its gating switch, change page, erase itself) before
+  its script naturally ends start looping every subsequent frame instead of
+  running once, which is not something a single surgical session can safely
+  audit and re-baseline across ~450 existing checks. Left open, now with a
+  precise citation trail for whoever picks it up next.
 
 **Untriaged backlog** (raw reference material, not checked against the
 codebase yet):
-- **Autorun cascading within one frame.** If the lowest-id eligible Autorun
-  map event's content contains no wait-including command, real RPG_RT lets
-  the next-lowest-id eligible Autorun event start immediately in the same
-  frame (potentially chaining through several before one of them blocks on
-  a wait). `#start_autostart` only ever starts one event per frame
-  regardless — entangled with the run-once-per-visit item above, since
-  fixing that one changes how this needs to be tested too.
+- ✅ **Autorun cascading within one frame — the narrower, cross-event half of
+  this claim is now fixed, verified against EasyRPG Player's actual C++
+  source rather than guessed at.** If the lowest-id eligible Autorun map
+  event's content contains no wait-including command, real RPG_RT lets the
+  next-lowest-id eligible Autorun event start immediately in the same frame
+  (potentially chaining through several before one of them blocks on a
+  wait). `Game_Map::UpdateForegroundEvents` (`src/game_map.cpp`) drives the
+  single shared foreground interpreter inside a `while (!interp.IsRunning()
+  && !interp.ReachedLoopLimit())` loop: the instant a pushed event's own
+  command list empties out (`IsRunning()` false), that same real-frame call
+  immediately rescans every `Game_Event`/`Game_CommonEvent`'s
+  `IsWaitingForegroundExecution()` flag and pushes another eligible one too
+  — a *different* event's own Auto-Start page is not, and never was, gated
+  on the first one having already finished a whole frame ago, only on the
+  shared interpreter (`Game_Map::GetInterpreter()`, `main_flag=true`) being
+  idle right now. `Scene::Map#update` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  used to call `#start_autostart` exactly once per real frame — a second,
+  distinct not-yet-run Auto-Start map/common event on the same map had to
+  wait for the *next* real frame even when the first one's own script ended
+  with no Wait at all, one tick later than real RPG_RT whenever both
+  happened to be eligible on the same frame. Fixed with a new
+  `Scene::Map#drive_autostart_cascade`, called instead of a bare
+  `#drive_event` once `#start_autostart` finds something: it loops
+  `#drive_event` then, once the interpreter genuinely goes idle again (not
+  merely parked on a Wait/Show Text/etc.), calls `#start_autostart` again for
+  a fresh candidate, stopping the moment nothing new starts or the
+  interpreter is left busy for a future frame to continue. Each distinct id
+  can still only ever be picked up once per visit (`@started_auto`/
+  `@started_common` are completely untouched by this), so the loop is
+  naturally bounded by the finite number of map/common Auto-Start events on
+  the map — no `MAX_STEPS`-style guard was needed. **The other, much larger
+  half of this same finding — whether the very *same* event, once its own
+  script hits its natural end with no Wait, immediately restarts from the
+  top and keeps consuming that frame's own step budget — remains open**, see
+  the "Autorun (auto-start) events run at most once per map visit" bullet
+  directly above, now itself re-verified against this same EasyRPG source and
+  confirmed accurate rather than a wiki misreading; deliberately left
+  unaddressed here since it would also require every existing Auto-Start
+  test in this suite to arrange for its own event to fall out of eligibility
+  once done, unlike this narrower, cross-event-only fix. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (two distinct no-Wait auto-start map
+  events both fire within a single `scene.update`; a still-Waiting first
+  event correctly blocks a second one from cascading in early, which then
+  fires normally once the Wait clears; a no-Wait auto-start map event
+  cascades into a distinct auto-start *common* event within the same frame),
+  the first and third confirmed to fail against the pre-fix code (the second
+  event's switch not yet set) before the fix.
 - **A body-less command block still spends a step.** The wiki's own
   worked example: a `◆繰り返し処理` / (blank inner line) / `：以上繰り返し`
   loop, and the empty branches of a `◆条件分岐`, each spend 1 step per
