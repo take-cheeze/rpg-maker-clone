@@ -5278,6 +5278,34 @@ not yet verified:
   (unverified, separate claim).
 - SE files must be WAVE; BGM accepts MIDI/WAVE/MP3 — an asymmetric format
   restriction.
+- ✅ **Opening a battle now plays the database's Battle Start system SE**,
+  found while auditing the LCF schema for fields parsed but never read
+  anywhere in `mruby-rpg2k` — the same sweep that already caught `levitate`/
+  `transparent`/`avoid_attacks`/`reflect_magic`/`force_ai` above.
+  `mruby-lcf/mrblib/schema.rb`'s database `system` table (fields 41-52)
+  decodes a `battle_se` slot right alongside `cursor_se`/`decision_se`/
+  `escape_se`/the per-hit sounds, and `Scene::Base::DB_SE_FIELD`
+  (`mruby-rpg2k/mrblib/scene/base.rb`) already maps `SFX_BATTLE` to that same
+  field name — but nothing ever called `#play_system_se(SFX_BATTLE)`.
+  Verified against EasyRPG Player's actual C++ source rather than guessed at:
+  `Scene_Battle`'s own constructor (`src/scene_battle.cpp`) plays
+  `GetSystemSE(SFX_BeginBattle)` as its very first act, unconditionally,
+  before even swapping to the battle BGM (`BgmPlay(GetSystemBGM(BGM_Battle))`
+  runs on the very next line) — every real encounter, so a foreground Enemy
+  Encounter command, one issued from a Parallel Process, and a random/
+  wandering-monster encounter all play it. `Scene::Map#open_battle`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — the one entry point all three of
+  those routes already share — called `#play_battle_bgm` but never the
+  matching system SE, so the database's own Battle Start sound (and any
+  Change System SFX override for that slot) never played on any encounter,
+  even though every other system-SE slot (cursor/decision/cancel/buzzer,
+  Escape, the per-hit sounds) was already wired up correctly. Fixed by adding
+  `play_system_se(SFX_BATTLE)` right before `play_battle_bgm`, matching
+  EasyRPG's own ordering. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (the database default plays the instant a fight opens through the
+  Autorun/Enemy-Encounter path; a Change System SFX override for slot 4 wins
+  over the database default, not layered alongside it), both confirmed to
+  fail against the pre-fix code before the fix.
 
 **Message window / Show Choices / control characters**
 - ✅ **A Parallel Process's own Show Text/Show Choices now actually opens the
