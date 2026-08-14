@@ -4130,9 +4130,11 @@ not yet verified:
   covers making a parallel process's request render and block that process at
   all; the "only one at a time, second forcibly cuts off the first" precedence
   rule between two *concurrent* requests (which interpreter, if any, gets
-  bumped) is intentionally left unmodelled — a request arriving while the slot
-  is held simply waits its turn — since resolving it needs a real RPG_RT
-  comparison this environment cannot run. "Back-to-back calls stutter" is
+  bumped) used to be intentionally left unmodelled — a request arriving while
+  the slot is held simply waited its turn — since resolving it needed a real
+  RPG_RT comparison this environment could not run; ✅ **now fixed, settled
+  against EasyRPG Player's actual C++ source** (see the fuller writeup a few
+  bullets below). "Back-to-back calls stutter" is
   likewise still open. Covered by two new `scripts/rpg2k_scene_check.rb`
   checks (a parallel process's Show Battle Animation holds it, then resumes
   once the animation finishes; the animation actually renders — sprite
@@ -4170,6 +4172,55 @@ not yet verified:
   confirmed to fail against the pre-fix code (`expected 2, got 3`) before
   the fix. "Back-to-back calls stutter" (the bullet's third, unrelated
   claim) remains open, as noted above.
+- ✅ **A second Show Battle Animation (11210) now forcibly cuts the first
+  one's sprite off, instead of the second request quietly waiting its turn
+  for the shared slot to free up** — the "only one on screen at a time"
+  precedence rule the map-triggered concurrency fix above (the "A Common
+  Event Parallel Process's own Show Battle Animation" bullet) deliberately
+  left unmodelled at the time, pending a real RPG_RT comparison. Settled
+  against EasyRPG Player's actual C++ source rather than guessed at:
+  `Game_Screen::ShowBattleAnimation` (`src/game_screen.cpp`) is a bare
+  `animation.reset(new BattleAnimationMap(...))` — an unconditional
+  `unique_ptr` replace with no check for whether the previous animation had
+  finished — and `Game_Interpreter_Map::CommandShowBattleAnimation`
+  (`src/game_interpreter_map.cpp`) arms the issuing interpreter's own "wait
+  until it finishes" as a plain precomputed frame-count (`_state.wait_time =
+  frames`, `frames` being `Game_Screen::ShowBattleAnimation`'s own return
+  value) rather than tying resumption to whether that interpreter's
+  animation is still the one actually on screen. `Scene::Map#drive_map_animation`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) used to only ever claim the shared
+  `@map_animation`/`@anim_wait` slot when it was free (`if @map_animation.nil?
+  && @anim_wait.nil?`) and otherwise just `return`ed early every frame for
+  any interpreter that was not the current owner — a second request sat
+  completely inert, doing nothing, until the first one's animation happened
+  to finish naturally and free the slot, the opposite of "forcibly cuts off."
+  Fixed by claiming the slot unconditionally for whichever interpreter's
+  request is being driven this frame (`unless @map_animation_interp.equal?
+  (it)`): if a *different* interpreter currently holds it, that request is
+  torn down (`@map_animation`/`@anim_wait` reset to `nil`) and immediately
+  resumed — its animation no longer exists, so real RPG_RT's own
+  independent countdown aside, there is nothing left here for it to keep
+  waiting on — before `it`'s own request takes the slot over via the
+  existing `init_map_animation`, same frame. `#draw_map_animation` (the
+  render-pass compositor) needed no change: it already re-derives
+  `@animation_sprite.visible` fresh from `@map_animation` every single
+  frame (`unless ma; @animation_sprite.visible = false; ...`), so a cut-off
+  drawable animation's stale last frame does not linger on screen even for
+  one render. Not reproduced: EasyRPG's own decoupled, precomputed-duration
+  wait, which would let a cut-off interpreter's original countdown keep
+  ticking rather than resuming the instant it loses the slot — matching that
+  exactly would need this build to precompute and track each request's own
+  duration independently of the shared visual object too, a larger change
+  than the observable "does the first get cut off" fact this closes; "Back-
+  to-back calls stutter" remains open as before. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (two Common Event Parallel Processes,
+  the first parked on a long ~20-frame fallback-wait animation and the
+  second issuing its own drawable one a few frames later: the shared slot
+  switches to the second's animation well before the first's own fallback
+  duration could ever have finished it naturally, and the first interpreter
+  resumes rather than hanging forever on a slot it no longer owns),
+  confirmed to fail against the pre-fix code (the slot still showing the
+  first request 15 frames later) before the fix.
 - ✅ **Show Battle Animation (11210) targeting a vehicle now plays over that
   vehicle's own live position**, instead of silently defaulting to the
   player's. `Scene::Map#animation_target_pixel` (`mruby-rpg2k/mrblib/
