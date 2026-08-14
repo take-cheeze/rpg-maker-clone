@@ -83,6 +83,7 @@ class RPG2k
 
       def update_items
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @parent.pop
         elsif Input.trigger?(Input::DOWN)
           move_item_cursor(COLUMN_MAX)
@@ -107,10 +108,15 @@ class RPG2k
         return if target < 0 || target >= items.size
         @item_index = target
         refresh_item_cursor
+        play_system_se(SFX_CURSOR)
       end
 
       def choose_item
-        return if items.empty?
+        if items.empty?
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         id, = items[@item_index]
         it = @state.party.db_item(id)
         # A switch item has no actor target; an all-ally medicine skips the
@@ -177,6 +183,7 @@ class RPG2k
           @state.switches[sid] = true
           @parent.pop_to_map
         else
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
       end
@@ -192,6 +199,7 @@ class RPG2k
         if target
           queue_teleport(target)
         else
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
       end
@@ -203,6 +211,7 @@ class RPG2k
         if target
           queue_teleport(target)
         else
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
       end
@@ -218,16 +227,20 @@ class RPG2k
       def update_teleport_target
         targets = teleport_targets
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_teleport_target
         elsif Input.trigger?(Input::DOWN) && !targets.empty?
           @teleport_index += 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) && !targets.empty?
           @teleport_index -= 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C) && !targets.empty?
+          play_system_se(SFX_DECISION)
           map_id, = targets[@teleport_index]
           apply_teleport_item(@pending_item, map_id)
         end
@@ -290,23 +303,33 @@ class RPG2k
       def update_target
         party = @state.party.actors
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_target_mode
         elsif Input.trigger?(Input::DOWN)
           @target_index += 1
           @target_index %= party.size
           refresh_target_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @target_index -= 1
           @target_index %= party.size
           refresh_target_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           apply_item(@pending_item, party[@target_index])
         end
       end
 
+      # A used item that changed nothing (everyone already full, an
+      # ineffective status cure, ...) plays Buzzer rather than a second
+      # Decision -- matching RPG_RT's own invalid-use handling elsewhere in
+      # `Scene_Item` (a rejected action gets the same SE as a confirm on an
+      # empty list or a disabled command, not a silent no-op).
       def apply_item(id, actor)
         affected = @state.party.use_item(id, actor)
         if affected.empty?
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         else
           names = affected.map { |a| a.name.to_s }.join(", ")

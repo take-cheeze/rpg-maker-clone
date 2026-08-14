@@ -2355,13 +2355,46 @@ The work below is roughly ordered by the critical path to a walkable game
   plays the buzzer SE (`SFX_Buzzer`) and does nothing else -- no message,
   no scene push, the menu simply stays where it is. `Scene::Menu`'s Save
   branch now does the same: `@parent.push Scene::SaveLoad.new(...) if
-  @state.save_access`, no `else`. **Not modelled:** the buzzer SE itself --
-  none of the field-menu scenes (`Scene::Menu`, `Scene::ItemMenu`,
-  `Scene::SkillMenu`, `Scene::EquipMenu`) play *any* system SE yet
-  (cursor-move, decision, cancel, buzzer), unlike `Scene::Title`, which
-  already has its own `#play_cursor_se`. Adding menu-wide SE playback is a
-  bigger, separate piece of work than this one hardcoded-message fix, left
-  for its own pass.
+  @state.save_access`, no `else`. This buzzer, and the rest of the field
+  menu's system SE playback, is now modelled too -- see the ✅ bullet just
+  below.
+  ✅ **The field menu screens now play RPG2000's four system sound effects
+  (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
+  work" the disabled-Save fix above left open.** Confirmed against three
+  separate pieces of EasyRPG Player source, fetched verbatim rather than
+  guessed at: `Window_Selectable::Update()` (`src/window_selectable.cpp`)
+  plays Cursor SE itself on every successful directional move -- not
+  `SetIndex`/`UpdateCursorRect`, and not the owning scene -- which is why a
+  *blocked* move (off the edge of the Item/Skill grid, an empty list) stays
+  silent; `Scene_Menu::UpdateCommand`/`UpdateActorSelection`
+  (`src/scene_menu.cpp`) play Decision right before doing something and
+  Buzzer instead whenever that same confirm is refused outright (an empty
+  party for Item/Skill/Equip/Status, `!GetAllowSave()` for Save,
+  `!actor->CanAct()` for Skill specifically -- confirmed this is a `return`,
+  leaving focus on the party list rather than falling through); and
+  `src/scene.cpp` plays *no* SE at all in `Push`/`Pop`/`Update` -- Cancel SE
+  is each scene's own responsibility right before it leaves, not
+  centralised. `Scene::Base` gained the shared `play_system_se`/
+  `system_se`/`db_system_se` lookup (Change System SFX override, falling
+  back to the database default) and the `SFX_*` slot constants, moved up
+  from `Scene::Map` (the only previous owner, for its own choice-prompt and
+  Change System SFX handling) so every scene can reach them.
+  `Scene::Menu`/`ItemMenu`/`SkillMenu`/`EquipMenu`/`StatusMenu`/`SaveLoad`
+  all wire cursor moves to Cursor SE, B to Cancel SE, and each confirm to
+  Decision or Buzzer per the source above (including a "no effect" item/
+  skill use, which the source's own `scene_item.cpp` treats the same as any
+  other refused confirm). **Not modelled:** `Scene::Title`'s own Decision/
+  Buzzer on New Game/Continue/Shutdown (it already had Cursor SE from an
+  earlier pass, `#play_cursor_se`, reading the database directly rather
+  than through a game state that does not exist yet at the title screen);
+  this is a smaller, same-shape gap left for a future pass. Verified this
+  engine's own build under Xvfb reaches Menu -> actor-selection -> Skill and
+  back with no exception and no `[RPG2k] system SE ... playback failed`
+  logged (audio itself is silent in this sandboxed container -- no ALSA
+  device -- so the SE calls' actual sound output was not itself heard, only
+  that they run cleanly); the full `rpg2k_scene_check.rb` (485),
+  `rpg2k_logic_check.rb` (773), `rpg2k_save_load_check.rb`, and
+  `rpg2k_testbed_logic_check.rb` (125) suites all still pass.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it

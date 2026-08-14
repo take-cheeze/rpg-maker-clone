@@ -41,15 +41,18 @@ class RPG2k
       def update
         party = @state.party.actors
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @parent.pop
         elsif Input.trigger?(Input::RIGHT)
           @actor_index += 1
           @actor_index %= party.size
           build_window
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT)
           @actor_index -= 1
           @actor_index %= party.size
           build_window
+          play_system_se(SFX_CURSOR)
         end
       end
 

@@ -84,6 +84,7 @@ class RPG2k
 
       def update_skills
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @parent.pop
         elsif Input.trigger?(Input::DOWN)
           move_skill_cursor(COLUMN_MAX)
@@ -107,10 +108,15 @@ class RPG2k
         return if target < 0 || target >= skills.size
         @skill_index = target
         refresh_skill_cursor
+        play_system_se(SFX_CURSOR)
       end
 
       def choose_skill
-        return if skills.empty?
+        if skills.empty?
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
         # A switch skill has no target at all; Escape warps straight to its one
@@ -139,23 +145,30 @@ class RPG2k
       def update_target
         party = @state.party.actors
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_target
         elsif Input.trigger?(Input::DOWN)
           @target_index += 1
           @target_index %= party.size
           refresh_target_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @target_index -= 1
           @target_index %= party.size
           refresh_target_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           apply_skill(@pending_skill, party[@target_index])
         end
       end
 
+      # A cast that changed nothing plays Buzzer rather than a second Decision
+      # -- see Scene::ItemMenu#apply_item's identical reasoning.
       def apply_skill(sid, target)
         affected = @state.party.cast_skill(caster, sid, target)
         if affected.empty?
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         else
           show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
@@ -171,6 +184,7 @@ class RPG2k
           @state.switches[switch] = true
           show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
         else
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
       end
@@ -187,16 +201,20 @@ class RPG2k
       def update_teleport_target
         targets = teleport_targets
         if Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_teleport_target
         elsif Input.trigger?(Input::DOWN) && !targets.empty?
           @teleport_index += 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) && !targets.empty?
           @teleport_index -= 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C) && !targets.empty?
+          play_system_se(SFX_DECISION)
           map_id, = targets[@teleport_index]
           apply_teleport_skill(@pending_skill, map_id)
         end
@@ -212,6 +230,7 @@ class RPG2k
         if target
           queue_teleport(target)
         else
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
       end
@@ -223,6 +242,7 @@ class RPG2k
         if target
           queue_teleport(target)
         else
+          play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
       end
