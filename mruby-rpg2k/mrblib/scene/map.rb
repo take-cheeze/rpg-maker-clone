@@ -1512,18 +1512,21 @@ class RPG2k
       # `src/scene_battle.cpp`: `BgmPlay(GetSystemBGM(BGM_Battle))`). This
       # codebase already ported that for the event-command path
       # (`Game::Interpreter#play_audio`'s `:bgm` branch, same
-      # `same_file_already_playing` idiom) but every helper here still called
-      # `RGSS::Audio.bgm_play` unconditionally, so a battle/vehicle/inn BGM
-      # configured to the exact same file as whatever was already playing
-      # broke and restarted it from the top instead of continuing seamlessly
-      # across the transition — including the asymmetric case of restoring a
-      # field track this scene itself never actually stopped. Volume/tempo/
-      # pan are still not adjusted in place on a same-file call: `RGSS::Audio`
-      # has no such primitive (`bgm_play` always restarts via SDL_mixer), the
-      # same already-documented limitation the event-command path carries.
+      # `same_file_already_playing` idiom, volume-in-place included) but every
+      # helper here still called `RGSS::Audio.bgm_play` unconditionally, so a
+      # battle/vehicle/inn BGM configured to the exact same file as whatever
+      # was already playing broke and restarted it from the top instead of
+      # continuing seamlessly across the transition — including the
+      # asymmetric case of restoring a field track this scene itself never
+      # actually stopped. Tempo/pan are still not adjusted in place on a
+      # same-file call: SDL_mixer has no live pitch control for a playing
+      # stream, and pan is not wired as a BGM parameter at all, the same
+      # already-documented limitation the event-command path carries.
       def play_bgm(music)
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == music[:name]
-        unless same_file_already_playing
+        if same_file_already_playing
+          RGSS::Audio.bgm_volume(music[:volume] || 100)
+        else
           RGSS::Audio.bgm_play(music[:name], music[:volume] || 100, music[:tempo] || 100)
         end
         @state.current_bgm = music

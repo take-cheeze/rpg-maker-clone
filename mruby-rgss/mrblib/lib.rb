@@ -1026,6 +1026,12 @@ module RGSS
         play_packed(:bgm, filename, volume, pitch)
       end
 
+      # Re-applies volume to the already-playing BGM stream in place, with no
+      # restart -- unlike #bgm_play, which always starts its track over.
+      def bgm_volume(volume)
+        _bgm_volume(volume)
+      end
+
       def bgm_stop
         _bgm_stop
       end

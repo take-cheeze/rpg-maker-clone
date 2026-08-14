@@ -349,6 +349,14 @@ void bgm_play(const char* path, int volume, int /*pitch*/) {
   play_music(g_bgm_path, volume, -1);
 }
 
+// Live volume change for whichever BGM is currently playing, with no restart:
+// Mix_VolumeMusic applies to the already-loaded Mix_Music stream directly,
+// unlike bgm_play's Mix_PlayMusic, which always begins the track from the top.
+void bgm_volume(int volume) {
+  g_bgm_volume = volume;
+  Mix_VolumeMusic(to_mix_volume(volume));
+}
+
 void bgm_play_mem(const char* name,
                   const void* data,
                   int size,
@@ -514,10 +522,10 @@ void update(void) {
 }
 
 const RgssAudioBackend kBackend = {
-    bgm_play,     bgm_stop,    bgm_fade,    bgm_pos,        bgs_play,
-    bgs_stop,     bgs_fade,    bgs_pos,     me_play,        me_stop,
-    me_fade,      se_play,     se_stop,     update,         bgm_play_mem,
-    bgs_play_mem, me_play_mem, se_play_mem, midi_available,
+    bgm_play,     bgm_volume,   bgm_stop,    bgm_fade,    bgm_pos,
+    bgs_play,     bgs_stop,     bgs_fade,    bgs_pos,     me_play,
+    me_stop,      me_fade,      se_play,     se_stop,     update,
+    bgm_play_mem, bgs_play_mem, me_play_mem, se_play_mem, midi_available,
 };
 
 }  // namespace

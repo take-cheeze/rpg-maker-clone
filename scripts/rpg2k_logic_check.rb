@@ -22,6 +22,7 @@ module RGSS
     class << self
       attr_accessor :log
       def bgm_play(*a); (@log ||= []) << [:bgm, *a]; end
+      def bgm_volume(*a); (@log ||= []) << [:bgm_volume, *a]; end
       def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
       def se_stop(*a);  (@log ||= []) << [:se_stop, *a]; end
@@ -2326,6 +2327,30 @@ check 'Play Memorized BGM does not restart a track that never stopped playing' d
   eq 80, st.current_bgm[:volume], 'state still tracks the memorized volume'
 end
 
+check 'Play Memorized BGM re-applies its stashed volume to a track that never stopped' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # "town" plays at volume 80, gets memorized, then a plain Play BGM re-ticks
+  # it at volume 30 (still not restarted, per the check above) before Play
+  # Memorized BGM restores the memorized volume (80) -- RPG_RT's single
+  # BgmPlay entry point "only adjusts volume and speed" on a same-file call
+  # rather than doing nothing at all, so the live volume must actually move
+  # back to 80, not stay wherever the intervening Play BGM left it.
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 30, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town], names, 'still only the very first Play BGM reached the restart path'
+  volumes = RGSS::Audio.log.select { |e| e[0] == :bgm_volume }.map { |e| e[1] }
+  eq [30, 80], volumes, 'the same-file Play BGM and then the memorized replay both re-applied volume live'
+  eq 80, st.current_bgm[:volume], 'the memorized volume wins back as the tracked current one'
+end
+
 check 'Play BGM with the file already playing does not restart it' do
   RGSS::Audio.log = []
   st = new_state
@@ -2343,6 +2368,8 @@ check 'Play BGM with the file already playing does not restart it' do
   eq 'town', st.current_bgm[:name]
   eq 50, st.current_bgm[:volume], 'state still tracks the latest requested volume'
   eq 120, st.current_bgm[:tempo], 'state still tracks the latest requested tempo'
+  volumes = RGSS::Audio.log.select { |e| e[0] == :bgm_volume }.map { |e| e[1] }
+  eq [50], volumes, 'the still-playing track had its volume re-applied live instead of doing nothing'
 end
 
 check 'Play BGM with a different file still restarts (or starts) playback' do
